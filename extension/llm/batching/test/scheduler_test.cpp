@@ -29,7 +29,6 @@ using executorch::extension::llm::batching::Position;
 using executorch::extension::llm::batching::Request;
 using executorch::extension::llm::batching::RequestId;
 using executorch::extension::llm::batching::RequestParams;
-using executorch::extension::llm::batching::Response;
 using executorch::extension::llm::batching::SamplingParams;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::SchedulerParams;
@@ -68,39 +67,9 @@ std::vector<RequestId> ids(const Batch& b) {
   return out;
 }
 
-bool settled(std::future<Response>& f) {
-  return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-}
-
-bool holds_tokens(const Response& r) {
-  return std::holds_alternative<std::vector<Token>>(r.payload);
-}
-
-const std::vector<Token>& tokens_of(const Response& r) {
-  return std::get<std::vector<Token>>(r.payload);
-}
-
-LogitsPtr logits_of(const Response& r) {
-  return std::get<LogitsPtr>(r.payload);
-}
-
-// Bounded wait. A regression that leaves a future unresolved must fail
-// diagnostically rather than hang the suite -- several tests here exist
-// precisely to catch non-settlement.
-constexpr std::chrono::seconds kSettleTimeout{5};
-
-testing::AssertionResult Settles(std::future<Response>& f) {
-  if (f.wait_for(kSettleTimeout) != std::future_status::ready) {
-    return testing::AssertionFailure()
-        << "future did not settle within " << kSettleTimeout.count() << "s";
-  }
-  return testing::AssertionSuccess();
-}
-
 } // namespace
 
 // Guards every get() whose absence would block instead of failing.
-#define ASSERT_SETTLES(f) ASSERT_TRUE(Settles(f))
 
 namespace {} // namespace
 
@@ -190,10 +159,10 @@ TEST(BatchTest, EmptyBatchReportsZeros) {
 
 TEST(BatchTest, SumsTokensAcrossSteps) {
   Scheduler s{SchedulerParams(2, 8)};
-  s.submit(make_request(1, 10, 1, 0));
-  s.submit(make_request(2, 20, 1, 0));
-  s.submit(make_request(3, 30, 6, 0));
-  s.submit(make_request(4, 40, 5, 100, OutputRows::All));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 6, 0)));
+  EXPECT_TRUE(s.submit(make_request(4, 40, 5, 100, OutputRows::All)));
 
   Batch b = s.get_work();
   EXPECT_EQ(ids(b), (std::vector<RequestId>{1, 2, 3, 4}));
@@ -202,7 +171,8 @@ TEST(BatchTest, SumsTokensAcrossSteps) {
 
 TEST(BatchTest, CarriesPayloadUninspected) {
   Scheduler s{SchedulerParams(1, 8)};
-  s.submit(make_request(1, 40, 5, 100, OutputRows::All, /*sample=*/false));
+  EXPECT_TRUE(
+      s.submit(make_request(1, 40, 5, 100, OutputRows::All, /*sample=*/false)));
 
   Batch b = s.get_work();
   ASSERT_EQ(b.requests.size(), 1u);
@@ -215,48 +185,23 @@ TEST(BatchTest, CarriesPayloadUninspected) {
 
 TEST(SubmitTest, RejectsEmptyStep) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto f = s.submit(make_request(1, 10, 0, 0));
-  ASSERT_SETTLES(f);
-  EXPECT_THROW((void)f.get(), std::runtime_error);
+  EXPECT_FALSE(s.submit(make_request(1, 10, 0, 0)));
   EXPECT_EQ(s.queued(), 0u);
 }
 
 TEST(SubmitTest, RejectsPrefillAboveChunkSize) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto f = s.submit(make_request(1, 10, 9, 0));
-  ASSERT_SETTLES(f);
-  EXPECT_THROW((void)f.get(), std::runtime_error);
+  EXPECT_FALSE(s.submit(make_request(1, 10, 9, 0)));
   EXPECT_EQ(s.queued(), 0u);
 }
 
-TEST(SubmitTest, RejectsDuplicateRequestIdRatherThanHanging) {
+TEST(SubmitTest, RejectsDuplicateRequestId) {
   Scheduler s{SchedulerParams(2, 4)};
-  auto first = s.submit(make_request(7, 10, 1, 0));
-  auto dup = s.submit(make_request(7, 20, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(7, 10, 1, 0)));
+  EXPECT_FALSE(s.submit(make_request(7, 20, 1, 0)));
 
-  ASSERT_SETTLES(dup);
-  EXPECT_THROW((void)dup.get(), std::runtime_error);
   EXPECT_EQ(s.queued(), 1u) << "rejected step must not inflate the count";
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{7}));
-  s.complete(7, std::vector<Token>{42});
-  ASSERT_SETTLES(first);
-  EXPECT_EQ(tokens_of(first.get()), (std::vector<Token>{42}));
-}
-
-TEST(SubmitTest, RequestIdIsReusableOnceSettled) {
-  Scheduler s{SchedulerParams(2, 4)};
-  auto first = s.submit(make_request(7, 10, 1, 0));
-  s.get_work();
-  s.complete(7, std::vector<Token>{1});
-  ASSERT_SETTLES(first);
-  EXPECT_EQ(tokens_of(first.get())[0], 1);
-  EXPECT_FALSE(s.pending(7));
-
-  auto second = s.submit(make_request(7, 10, 1, 1));
-  s.get_work();
-  s.complete(7, std::vector<Token>{2});
-  ASSERT_SETTLES(second);
-  EXPECT_EQ(tokens_of(second.get())[0], 2);
 }
 
 TEST(SubmitTest, DuplicateWorkWithDistinctIdsBothRun) {
@@ -266,26 +211,19 @@ TEST(SubmitTest, DuplicateWorkWithDistinctIdsBothRun) {
   a.request_id = s.next_request_id();
   b.request_id = s.next_request_id();
 
-  auto fa = s.submit(a);
-  auto fb = s.submit(b);
+  EXPECT_TRUE(s.submit(a));
+  EXPECT_TRUE(s.submit(b));
   EXPECT_EQ(s.get_work().requests.size(), 2u);
 
-  s.complete(a.request_id, std::vector<Token>{111});
-  s.complete(b.request_id, std::vector<Token>{222});
-  ASSERT_SETTLES(fa);
-  EXPECT_EQ(tokens_of(fa.get())[0], 111);
-  ASSERT_SETTLES(fb);
-  EXPECT_EQ(tokens_of(fb.get())[0], 222);
+  // Dispatch released them, so neither is tracked any more.
+  EXPECT_FALSE(s.pending(a.request_id));
+  EXPECT_FALSE(s.pending(b.request_id));
 }
 
 TEST(SubmitTest, RejectedStepEntersNoQueue) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto empty = s.submit(make_request(1, 10, 0, 0));
-  auto toobig = s.submit(make_request(2, 10, 9, 0));
-  ASSERT_SETTLES(empty);
-  EXPECT_THROW((void)empty.get(), std::runtime_error);
-  ASSERT_SETTLES(toobig);
-  EXPECT_THROW((void)toobig.get(), std::runtime_error);
+  EXPECT_FALSE(s.submit(make_request(1, 10, 0, 0)));
+  EXPECT_FALSE(s.submit(make_request(2, 10, 9, 0)));
 
   EXPECT_EQ(s.queued(), 0u);
   EXPECT_FALSE(s.has_work());
@@ -331,9 +269,9 @@ TEST(SubmitTest, NextRequestIdIsUniqueAcrossThreads) {
 
 TEST(DecodeTest, ServedInArrivalOrderUpToTheCap) {
   Scheduler s{SchedulerParams(2, 4)};
-  s.submit(make_request(1, 10, 1, 0));
-  s.submit(make_request(2, 20, 1, 0));
-  s.submit(make_request(3, 30, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 1, 0)));
 
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1, 2}));
   EXPECT_EQ(s.queued(), 1u);
@@ -343,21 +281,21 @@ TEST(DecodeTest, ServedInArrivalOrderUpToTheCap) {
 // A shorter queue must not give a later arrival a head start.
 TEST(DecodeTest, StaysFifoAcrossDrainAndRefill) {
   Scheduler s{SchedulerParams(2, 4)};
-  s.submit(make_request(1, 10, 1, 0));
-  s.submit(make_request(2, 20, 1, 0));
-  s.submit(make_request(3, 30, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 1, 0)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1, 2}));
 
-  s.submit(make_request(4, 40, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(4, 40, 1, 0)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{3, 4}));
 }
 
 TEST(DecodeTest, BeatsPrefillAndStillLeavesRoomForAFullChunk) {
   Scheduler s{SchedulerParams(3, 4)}; // batch = 11
-  s.submit(make_request(1, 10, 1, 0));
-  s.submit(make_request(2, 20, 1, 0));
-  s.submit(make_request(3, 30, 1, 0));
-  s.submit(make_request(50, 90, 4, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(50, 90, 4, 0)));
 
   Batch b = s.get_work();
   EXPECT_EQ(ids(b), (std::vector<RequestId>{1, 2, 3, 50}));
@@ -368,18 +306,18 @@ TEST(DecodeTest, BeatsPrefillAndStillLeavesRoomForAFullChunk) {
 
 TEST(PrefillTest, ChunksOfOneSessionStayInOrder) {
   Scheduler s{SchedulerParams(1, 2)};
-  s.submit(make_request(1, 7, 2, 0));
-  s.submit(make_request(2, 7, 2, 2));
+  EXPECT_TRUE(s.submit(make_request(1, 7, 2, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 7, 2, 2)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1, 2}));
 }
 
 TEST(PrefillTest, LongPromptCannotHogTheBatch) {
   Scheduler s{SchedulerParams(2, 4)};
   for (int c = 0; c < 4; ++c) {
-    s.submit(make_request(1 + c, 10, 4, c * 4));
+    EXPECT_TRUE(s.submit(make_request(1 + c, 10, 4, c * 4)));
   }
-  s.submit(make_request(5, 20, 4, 0));
-  s.submit(make_request(6, 20, 4, 4));
+  EXPECT_TRUE(s.submit(make_request(5, 20, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(6, 20, 4, 4)));
 
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1, 5}));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2, 6}));
@@ -390,16 +328,16 @@ TEST(PrefillTest, LongPromptCannotHogTheBatch) {
 
 TEST(PrefillTest, LoneSessionFillsTheBatchAcrossPasses) {
   Scheduler s{SchedulerParams(1, 4)}; // batch = 9
-  s.submit(make_request(1, 10, 4, 0));
-  s.submit(make_request(2, 10, 4, 4));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 10, 4, 4)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1, 2}));
 }
 
 TEST(PrefillTest, StopsWhenTheNextChunkDoesNotFit) {
   Scheduler s{SchedulerParams(1, 4)}; // batch = 9
-  s.submit(make_request(1, 10, 4, 0));
-  s.submit(make_request(2, 20, 4, 0));
-  s.submit(make_request(3, 30, 4, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 4, 0)));
 
   Batch b = s.get_work();
   EXPECT_EQ(b.requests.size(), 2u);
@@ -422,10 +360,10 @@ TEST(PrefillTest, DeferredSessionOutranksOneNeverReached) {
 
 TEST(PrefillTest, DeferredSessionsKeepTheirOrder) {
   Scheduler s{SchedulerParams(1, 4)}; // batch = 9
-  s.submit(make_request(1, 10, 4, 0));
-  s.submit(make_request(2, 20, 4, 0));
-  s.submit(make_request(3, 30, 4, 0));
-  s.submit(make_request(4, 40, 3, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(4, 40, 3, 0)));
 
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1, 2}));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{3, 4}));
@@ -437,7 +375,7 @@ TEST(PrefillTest, RotationIsFairAcrossCalls) {
   RequestId id = 1;
   for (SessionId session : {10, 20, 30}) {
     for (int c = 0; c < 8; ++c) {
-      s.submit(make_request(id++, session, 4, c * 4));
+      EXPECT_TRUE(s.submit(make_request(id++, session, 4, c * 4)));
     }
   }
 
@@ -452,329 +390,245 @@ TEST(PrefillTest, RotationIsFairAcrossCalls) {
   EXPECT_EQ(served[30], 6);
 }
 
-// --- completion ------------------------------------------------------------
+// --- cancelling a queued step ----------------------------------------------
 
-TEST(CompleteTest, SampledStepReturnsTokensAndNoLogits) {
+TEST(CancelStepTest, DropsAQueuedStepBeforeItRuns) {
   Scheduler s{SchedulerParams(2, 4)};
-  auto f = s.submit(make_request(1, 77, 1, 12));
-  s.get_work();
-  s.complete(1, std::vector<Token>{999});
+  EXPECT_TRUE(s.submit(make_request(1, 77, 1, 12)));
+  EXPECT_TRUE(s.pending(1));
+  EXPECT_EQ(s.queued(), 1u);
 
-  ASSERT_SETTLES(f);
-  Response r = f.get();
-  EXPECT_EQ(r.request_id, 1);
-  EXPECT_EQ(r.session_id, 77);
-  EXPECT_EQ(tokens_of(r), (std::vector<Token>{999}));
-  EXPECT_TRUE(holds_tokens(r));
+  s.cancel(1);
+  EXPECT_FALSE(s.pending(1));
+  EXPECT_EQ(s.queued(), 0u);
+  EXPECT_FALSE(s.has_work());
+  EXPECT_TRUE(s.get_work().empty()) << "the queued entry must be dropped";
 }
 
-// Greedy verification: one token per drafted position. How many are accepted,
-// and where the session continues, is the caller's business.
-TEST(CompleteTest, GreedyVerifyReturnsOneTokenPerOutputRow) {
-  Scheduler s{SchedulerParams(1, 8)};
-  auto f = s.submit(make_request(2, 77, 5, 100, OutputRows::All));
-
-  Batch b = s.get_work();
-  ASSERT_EQ(b.requests.size(), 1u);
-  EXPECT_EQ(b.requests[0].params.output_rows, OutputRows::All);
-  s.complete(2, std::vector<Token>{11, 22, 33, 44, 55});
-
-  ASSERT_SETTLES(f);
-  Response r = f.get();
-  EXPECT_EQ(tokens_of(r), (std::vector<Token>{11, 22, 33, 44, 55}))
-      << "a verify round must report the prediction at each drafted position, "
-         "in order";
-  EXPECT_TRUE(holds_tokens(r));
-}
-
-TEST(CompleteTest, UnsampledStepReturnsLogitsAndNoTokens) {
-  Scheduler s{SchedulerParams(1, 8)};
-  auto f =
-      s.submit(make_request(3, 77, 4, 200, OutputRows::All, /*sample=*/false));
-  s.get_work();
-
-  auto block = std::make_shared<LogitsBlock>();
-  block->n_rows = 4;
-  block->vocab = 3;
-  block->data = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-  s.complete(3, LogitsPtr(block));
-
-  ASSERT_SETTLES(f);
-  Response r = f.get();
-  EXPECT_FALSE(holds_tokens(r));
-  LogitsPtr got = logits_of(r);
-  ASSERT_NE(got, nullptr);
-  EXPECT_EQ(got->n_rows, 4);
-  EXPECT_EQ(got->vocab, 3);
-  ASSERT_EQ(got->data.size(), 12u);
-  EXPECT_FLOAT_EQ(got->data[11], 11.0f);
-}
-
-TEST(CompleteTest, PendingIsTrueUntilSettled) {
+TEST(CancelStepTest, UnknownIdIsIgnored) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto f = s.submit(make_request(9, 77, 4, 12));
-  EXPECT_TRUE(s.pending(9));
-  s.get_work();
-  EXPECT_TRUE(s.pending(9)) << "in flight still counts as pending";
-  s.complete(9, std::vector<Token>{1});
-  EXPECT_FALSE(s.pending(9));
-  EXPECT_FALSE(s.pending(12345));
-}
-
-TEST(CompleteTest, UnknownIdIsIgnoredByBothOverloads) {
-  Scheduler s{SchedulerParams(1, 4)};
-  s.complete(999, std::vector<Token>{1});
-  s.complete(999, LogitsPtr{});
+  s.cancel(404);
+  EXPECT_EQ(s.queued(), 0u);
   SUCCEED();
 }
 
-// --- failure ---------------------------------------------------------------
-
-TEST(FailTest, FailsOneStepAndLeavesOthersRunnable) {
-  Scheduler s{SchedulerParams(2, 4)};
-  auto doomed = s.submit(make_request(1, 10, 1, 0));
-  auto ok = s.submit(make_request(2, 10, 1, 1));
-
-  s.fail(1, "cancelled");
-  EXPECT_EQ(s.queued(), 1u);
-  EXPECT_FALSE(s.pending(1));
-  EXPECT_TRUE(s.pending(2));
-  ASSERT_SETTLES(doomed);
-  EXPECT_THROW((void)doomed.get(), std::runtime_error);
-
-  EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2}));
-  s.complete(2, std::vector<Token>{5});
-  ASSERT_SETTLES(ok);
-  EXPECT_EQ(tokens_of(ok.get())[0], 5);
-}
-
-TEST(FailTest, AllCancelledDecodesDrainToAnEmptyBatch) {
-  Scheduler s{SchedulerParams(2, 4)};
-  auto a = s.submit(make_request(1, 10, 1, 0));
-  auto b = s.submit(make_request(2, 20, 1, 0));
-  s.fail(1, "x");
-  s.fail(2, "x");
-
-  EXPECT_TRUE(s.get_work().empty());
-  EXPECT_EQ(s.queued(), 0u);
-  ASSERT_SETTLES(a);
-  EXPECT_THROW((void)a.get(), std::runtime_error);
-  ASSERT_SETTLES(b);
-  EXPECT_THROW((void)b.get(), std::runtime_error);
-}
-
-TEST(FailTest, CancelledPrefillLeavesTheRotation) {
-  Scheduler s{SchedulerParams(1, 2)};
-  auto doomed = s.submit(make_request(1, 7, 2, 0));
-  s.submit(make_request(2, 8, 2, 0));
-
-  s.fail(1, "cancelled");
-  EXPECT_EQ(s.queued(), 1u);
-  EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2}));
-  ASSERT_SETTLES(doomed);
-  EXPECT_THROW((void)doomed.get(), std::runtime_error);
-}
-
-TEST(FailTest, FailAllSettlesEverythingAndEmptiesTheQueues) {
+// Dispatch releases a step, so cancelling one already in a batch has nothing
+// to do. Callers abandoning a step can call this without knowing which state
+// it is in.
+TEST(CancelStepTest, DispatchedStepIsNoLongerTracked) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto a = s.submit(make_request(1, 10, 1, 0));
-  auto b = s.submit(make_request(2, 20, 4, 0));
+  EXPECT_TRUE(s.submit(make_request(9, 77, 4, 12)));
+  EXPECT_TRUE(s.pending(9));
 
-  s.fail_all("shutdown");
+  ASSERT_EQ(ids(s.get_work()), (std::vector<RequestId>{9}));
+  EXPECT_FALSE(s.pending(9)) << "get_work released it";
+  EXPECT_EQ(s.queued(), 0u);
+
+  s.cancel(9); // no-op, and must not disturb the count
+  EXPECT_EQ(s.queued(), 0u);
+  EXPECT_FALSE(s.has_work());
+}
+
+// The id is free for reuse the moment the step is dispatched, since nothing
+// tracks it any more.
+TEST(CancelStepTest, DispatchFreesTheIdForReuse) {
+  Scheduler s{SchedulerParams(2, 4)};
+  EXPECT_TRUE(s.submit(make_request(7, 10, 1, 0)));
+  ASSERT_EQ(ids(s.get_work()), (std::vector<RequestId>{7}));
+
+  EXPECT_TRUE(s.submit(make_request(7, 10, 1, 1)));
+  EXPECT_TRUE(s.pending(7));
+  EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{7}));
+}
+
+// --- cancellation
+// ---------------------------------------------------------------
+
+TEST(CancelTest, CancelsOneStepAndLeavesOthersRunnable) {
+  Scheduler s{SchedulerParams(2, 4)};
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
+
+  s.cancel(1);
+  EXPECT_FALSE(s.pending(1));
+  EXPECT_EQ(s.queued(), 1u);
+  EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2}));
+}
+
+TEST(CancelTest, AllCancelledDecodesDrainToAnEmptyBatch) {
+  Scheduler s{SchedulerParams(2, 4)};
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
+  s.cancel(1);
+  s.cancel(2);
+
   EXPECT_EQ(s.queued(), 0u);
   EXPECT_FALSE(s.has_work());
   EXPECT_TRUE(s.get_work().empty());
-  ASSERT_SETTLES(a);
-  EXPECT_THROW((void)a.get(), std::runtime_error);
-  ASSERT_SETTLES(b);
-  EXPECT_THROW((void)b.get(), std::runtime_error);
 }
 
-// fail_all() assigns queued_ = 0 rather than decrementing, so the mix cannot
-// underflow -- but it must still settle in-flight steps, not just queued ones.
-TEST(FailTest, FailAllSettlesQueuedAndInFlightTogether) {
+TEST(CancelTest, CancelledPrefillLeavesTheRotation) {
+  Scheduler s{SchedulerParams(1, 4)};
+  EXPECT_TRUE(s.submit(make_request(1, 10, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 4, 0)));
+  s.cancel(1);
+
+  EXPECT_EQ(s.queued(), 1u);
+  EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2}));
+}
+
+TEST(CancelTest, ClearEmptiesEveryQueue) {
+  Scheduler s{SchedulerParams(1, 4)};
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 4, 0)));
+
+  s.clear();
+  EXPECT_EQ(s.queued(), 0u);
+  EXPECT_FALSE(s.has_work());
+  EXPECT_TRUE(s.get_work().empty());
+  EXPECT_FALSE(s.pending(1));
+  EXPECT_FALSE(s.pending(2));
+}
+
+TEST(CancelTest, ClearSweepsQueuedAndInFlightTogether) {
   Scheduler s{SchedulerParams(2, 4)};
-  auto inflight_a = s.submit(make_request(1, 10, 1, 0));
-  auto inflight_b = s.submit(make_request(2, 20, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
   ASSERT_EQ(s.get_work().requests.size(), 2u);
   ASSERT_EQ(s.queued(), 0u);
 
-  auto queued_a = s.submit(make_request(3, 30, 1, 0));
-  auto queued_b = s.submit(make_request(4, 40, 4, 0));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(4, 40, 4, 0)));
   ASSERT_EQ(s.queued(), 2u);
 
-  s.fail_all("shutdown");
-
+  s.clear();
   EXPECT_EQ(s.queued(), 0u);
   EXPECT_FALSE(s.has_work());
-  EXPECT_TRUE(s.get_work().empty());
-  for (auto* f : {&inflight_a, &inflight_b, &queued_a, &queued_b}) {
-    ASSERT_SETTLES(*f);
-    EXPECT_THROW((void)f->get(), std::runtime_error);
+  for (RequestId id = 1; id <= 4; ++id) {
+    EXPECT_FALSE(s.pending(id));
   }
-  EXPECT_FALSE(s.pending(1));
-  EXPECT_FALSE(s.pending(3));
-
-  // A completion arriving after the sweep is ignored, not a double-settle.
-  s.complete(1, std::vector<Token>{1});
+  s.cancel(1); // cancelling after the sweep is ignored, not an error
   SUCCEED();
 }
 
-TEST(FailTest, UnknownIdIsIgnored) {
+TEST(CancelTest, UnknownIdIsIgnored) {
   Scheduler s{SchedulerParams(1, 4)};
-  s.fail(999, "nobody");
+  s.cancel(404);
+  EXPECT_EQ(s.queued(), 0u);
   SUCCEED();
 }
 
-// get_work() already uncounted the step, so fail() must not decrement again.
-TEST(FailTest, FailingInFlightStepDoesNotUnderflowQueued) {
-  Scheduler s{SchedulerParams(2, 4)};
-  auto a = s.submit(make_request(1, 10, 1, 0));
-  auto b = s.submit(make_request(2, 20, 1, 0));
-  ASSERT_EQ(s.queued(), 2u);
-  s.get_work();
+// An in-flight step was already uncounted by get_work(). Decrementing again
+// would wrap queued_ and leave has_work() permanently true.
+TEST(CancelTest, CancellingInFlightStepDoesNotUnderflowQueued) {
+  Scheduler s{SchedulerParams(1, 4)};
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  ASSERT_EQ(s.get_work().requests.size(), 1u);
   ASSERT_EQ(s.queued(), 0u);
 
-  s.fail(1, "in-flight fault");
+  s.cancel(1);
   EXPECT_EQ(s.queued(), 0u);
   EXPECT_FALSE(s.has_work());
-  ASSERT_SETTLES(a);
-  EXPECT_THROW((void)a.get(), std::runtime_error);
-
-  s.complete(2, std::vector<Token>{5});
-  ASSERT_SETTLES(b);
-  EXPECT_EQ(tokens_of(b.get())[0], 5);
 }
 
-// The same double-decrement would otherwise hide genuinely queued work and
-// stall an engine that waits on has_work().
-TEST(FailTest, FailingInFlightStepDoesNotHideQueuedWork) {
+// ...and the other direction: it must not drop a count that belongs to work
+// still waiting, or the engine would sleep with a full queue.
+TEST(CancelTest, CancellingInFlightStepDoesNotHideQueuedWork) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto inflight = s.submit(make_request(1, 10, 1, 0));
-  s.get_work();
-  auto waiting = s.submit(make_request(2, 20, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  ASSERT_EQ(s.get_work().requests.size(), 1u);
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
   ASSERT_EQ(s.queued(), 1u);
 
-  s.fail(1, "in-flight fault");
-  EXPECT_EQ(s.queued(), 1u);
+  s.cancel(1);
+  EXPECT_EQ(s.queued(), 1u) << "the queued step is still queued";
   EXPECT_TRUE(s.has_work());
-  ASSERT_SETTLES(inflight);
-  EXPECT_THROW((void)inflight.get(), std::runtime_error);
-
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2}));
-  s.complete(2, std::vector<Token>{7});
-  ASSERT_SETTLES(waiting);
-  EXPECT_EQ(tokens_of(waiting.get())[0], 7);
 }
 
-TEST(FailTest, FailingAQueuedStepStillDecrementsOnce) {
+TEST(CancelTest, CancellingAQueuedStepStillDecrementsOnce) {
   Scheduler s{SchedulerParams(2, 4)};
-  auto a = s.submit(make_request(1, 10, 1, 0));
-  auto b = s.submit(make_request(2, 20, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
   ASSERT_EQ(s.queued(), 2u);
 
-  s.fail(1, "cancelled");
+  s.cancel(1);
   EXPECT_EQ(s.queued(), 1u);
-  ASSERT_SETTLES(a);
-  EXPECT_THROW((void)a.get(), std::runtime_error);
-  EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2}));
-  EXPECT_EQ(s.queued(), 0u);
-  s.complete(2, std::vector<Token>{1});
-  ASSERT_SETTLES(b);
-  EXPECT_EQ(tokens_of(b.get())[0], 1);
+  s.cancel(1); // already gone
+  EXPECT_EQ(s.queued(), 1u);
 }
 
-TEST(FailTest, FailingEveryInFlightStepLeavesQueuedCountAtZero) {
+TEST(CancelTest, CancellingEveryInFlightStepLeavesQueuedCountAtZero) {
   Scheduler s{SchedulerParams(4, 4)};
-  std::vector<std::future<Response>> futures;
   for (RequestId id = 1; id <= 4; ++id) {
-    futures.push_back(s.submit(make_request(id, id, 1, 0)));
+    EXPECT_TRUE(s.submit(make_request(id, id, 1, 0)));
   }
   ASSERT_EQ(s.get_work().requests.size(), 4u);
   ASSERT_EQ(s.queued(), 0u);
 
   for (RequestId id = 1; id <= 4; ++id) {
-    s.fail(id, "fault");
+    s.cancel(id);
   }
   EXPECT_EQ(s.queued(), 0u);
   EXPECT_FALSE(s.has_work());
-  for (auto& f : futures) {
-    ASSERT_SETTLES(f);
-    EXPECT_THROW((void)f.get(), std::runtime_error);
-  }
 }
 
 // A cancelled entry is only dropped once it reaches the head of its queue, so
 // one buried behind live steps has to survive until then without disturbing
 // them or the count.
-TEST(FailTest, CancelledDecodeInTheMiddleOfTheQueue) {
+TEST(CancelTest, CancelledDecodeInTheMiddleOfTheQueue) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto a = s.submit(make_request(1, 10, 1, 0));
-  auto b = s.submit(make_request(2, 20, 1, 0));
-  auto c = s.submit(make_request(3, 30, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 20, 1, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 30, 1, 0)));
 
-  s.fail(2, "cancelled");
+  s.cancel(2);
   EXPECT_EQ(s.queued(), 2u);
-  ASSERT_SETTLES(b);
-  EXPECT_THROW((void)b.get(), std::runtime_error);
 
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1}));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{3}));
   EXPECT_EQ(s.queued(), 0u);
-
-  s.complete(1, std::vector<Token>{1});
-  s.complete(3, std::vector<Token>{3});
-  ASSERT_SETTLES(a);
-  EXPECT_EQ(tokens_of(a.get())[0], 1);
-  ASSERT_SETTLES(c);
-  EXPECT_EQ(tokens_of(c.get())[0], 3);
 }
 
-TEST(FailTest, CancelledPrefillChunkInTheMiddleOfASession) {
+TEST(CancelTest, CancelledPrefillChunkInTheMiddleOfASession) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto a = s.submit(make_request(1, 7, 4, 0));
-  auto b = s.submit(make_request(2, 7, 4, 4));
-  auto c = s.submit(make_request(3, 7, 4, 8));
+  EXPECT_TRUE(s.submit(make_request(1, 7, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(2, 7, 4, 4)));
+  EXPECT_TRUE(s.submit(make_request(3, 7, 4, 8)));
 
-  s.fail(2, "cancelled");
+  s.cancel(2);
   EXPECT_EQ(s.queued(), 2u);
-  ASSERT_SETTLES(b);
-  EXPECT_THROW((void)b.get(), std::runtime_error);
 
   // Surviving chunks of the session keep their relative order.
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1, 3}));
   EXPECT_EQ(s.queued(), 0u);
 }
 
-// A session is erased from the rotation when its last chunk is taken; a later
-// submit has to put it back.
 TEST(PrefillTest, SessionRejoinsTheRotationAfterDraining) {
   Scheduler s{SchedulerParams(1, 4)};
-  s.submit(make_request(1, 10, 4, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 4, 0)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{1}));
   EXPECT_TRUE(s.get_work().empty());
 
-  s.submit(make_request(2, 10, 4, 4));
+  EXPECT_TRUE(s.submit(make_request(2, 10, 4, 4)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2}));
 
   // And it interleaves normally with a second session afterwards.
-  s.submit(make_request(3, 10, 4, 8));
-  s.submit(make_request(4, 20, 4, 0));
+  EXPECT_TRUE(s.submit(make_request(3, 10, 4, 8)));
+  EXPECT_TRUE(s.submit(make_request(4, 20, 4, 0)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{3, 4}));
 }
 
 TEST(PrefillTest, SessionWhoseOnlyChunkIsCancelledLeavesNoStaleRotationEntry) {
   Scheduler s{SchedulerParams(1, 4)};
-  auto doomed = s.submit(make_request(1, 10, 4, 0));
-  s.fail(1, "cancelled");
-  ASSERT_SETTLES(doomed);
-  EXPECT_THROW((void)doomed.get(), std::runtime_error);
+  EXPECT_TRUE(s.submit(make_request(1, 10, 4, 0)));
+  s.cancel(1);
   EXPECT_EQ(s.queued(), 0u);
   EXPECT_TRUE(s.get_work().empty());
 
   // The stale rotation entry, if any, must not swallow the session's next turn.
-  s.submit(make_request(2, 10, 4, 0));
-  s.submit(make_request(3, 20, 4, 0));
+  EXPECT_TRUE(s.submit(make_request(2, 10, 4, 0)));
+  EXPECT_TRUE(s.submit(make_request(3, 20, 4, 0)));
   EXPECT_EQ(ids(s.get_work()), (std::vector<RequestId>{2, 3}));
 }
 
@@ -784,14 +638,13 @@ TEST(HasWorkTest, TracksQueuedStepsOnly) {
   Scheduler s{SchedulerParams(1, 4)};
   EXPECT_FALSE(s.has_work());
 
-  auto f = s.submit(make_request(1, 10, 1, 0));
+  EXPECT_TRUE(s.submit(make_request(1, 10, 1, 0)));
   EXPECT_TRUE(s.has_work());
 
   s.get_work();
   EXPECT_FALSE(s.has_work()) << "in flight is not queued";
-  s.complete(1, std::vector<Token>{1});
+  s.cancel(1);
   EXPECT_FALSE(s.has_work());
-  EXPECT_TRUE(settled(f));
 }
 
 // --- randomized invariants -------------------------------------------------
@@ -803,15 +656,13 @@ TEST(InvariantTest, QueuedCountStaysConsistentUnderRandomOps) {
   std::mt19937 rng(1234);
   Scheduler s{SchedulerParams(3, 4)};
 
-  std::map<RequestId, std::future<Response>> outstanding;
-  std::vector<RequestId> in_flight;
-  int submitted = 0, completed = 0, failed = 0;
+  // The scheduler tracks exactly the steps waiting for a batch: dispatch and
+  // cancel both release one.
+  std::set<RequestId> waiting;
+  int submitted = 0, dispatched = 0, cancelled = 0;
 
-  // Every outstanding step is either still queued or in flight, so the
-  // scheduler's count must be exactly the difference.
   auto expect_exact_count = [&](int op) {
-    ASSERT_GE(outstanding.size(), in_flight.size()) << "model broken at " << op;
-    EXPECT_EQ(s.queued(), outstanding.size() - in_flight.size())
+    EXPECT_EQ(s.queued(), waiting.size())
         << "queued() diverged from the model at op " << op;
   };
 
@@ -821,57 +672,36 @@ TEST(InvariantTest, QueuedCountStaysConsistentUnderRandomOps) {
       return;
     }
 
-    switch (rng() % 4) {
+    switch (rng() % 3) {
       case 0: { // submit
-        RequestId id = s.next_request_id();
-        SessionId session = static_cast<SessionId>(rng() % 4);
-        int n = static_cast<int>(1 + rng() % 4);
-        outstanding.emplace(
+        const RequestId id = s.next_request_id();
+        ASSERT_TRUE(s.submit(make_request(
             id,
-            s.submit(make_request(
-                id, session, n, static_cast<Position>(rng() % 100))));
+            static_cast<SessionId>(rng() % 4),
+            static_cast<int>(1 + rng() % 4),
+            static_cast<Position>(rng() % 100))));
+        waiting.insert(id);
         submitted++;
         break;
       }
-      case 1: { // drain a batch
+      case 1: { // dispatch a batch
         for (const Request& r : s.get_work().requests) {
-          in_flight.push_back(r.request_id);
+          EXPECT_EQ(waiting.erase(r.request_id), 1u)
+              << "a batch contained a step the model did not have queued";
+          EXPECT_FALSE(s.pending(r.request_id)) << "dispatch must release it";
+          dispatched++;
         }
         break;
       }
-      case 2: { // complete something in flight
-        if (in_flight.empty()) {
+      case 2: { // cancel something still waiting
+        if (waiting.empty()) {
           break;
         }
-        std::size_t k = rng() % in_flight.size();
-        RequestId id = in_flight[k];
-        in_flight.erase(in_flight.begin() + static_cast<std::ptrdiff_t>(k));
-        s.complete(id, std::vector<Token>{1});
-        auto it = outstanding.find(id);
-        if (it != outstanding.end()) {
-          ASSERT_SETTLES(it->second);
-          (void)it->second.get();
-          outstanding.erase(it);
-          completed++;
-        }
-        break;
-      }
-      case 3: { // fail something, queued or in flight
-        if (outstanding.empty()) {
-          break;
-        }
-        auto it = outstanding.begin();
-        std::advance(
-            it, static_cast<std::ptrdiff_t>(rng() % outstanding.size()));
-        RequestId id = it->first;
-        s.fail(id, "random");
-        ASSERT_SETTLES(it->second);
-        EXPECT_THROW((void)it->second.get(), std::runtime_error);
-        outstanding.erase(it);
-        in_flight.erase(
-            std::remove(in_flight.begin(), in_flight.end(), id),
-            in_flight.end());
-        failed++;
+        auto it = waiting.begin();
+        std::advance(it, static_cast<std::ptrdiff_t>(rng() % waiting.size()));
+        s.cancel(*it);
+        waiting.erase(it);
+        cancelled++;
         break;
       }
       default:
@@ -879,76 +709,59 @@ TEST(InvariantTest, QueuedCountStaysConsistentUnderRandomOps) {
     }
   }
 
-  // Drain: everything still outstanding must settle, and the count must land
+  // Drain: every remaining step must reach a batch, and the count must land
   // exactly on zero rather than wrapping past it.
-  while (!outstanding.empty()) {
+  while (!waiting.empty()) {
     Batch b = s.get_work();
     if (b.empty()) {
       break;
     }
     for (const Request& r : b.requests) {
-      s.complete(r.request_id, std::vector<Token>{1});
-      auto it = outstanding.find(r.request_id);
-      if (it != outstanding.end()) {
-        ASSERT_SETTLES(it->second);
-        (void)it->second.get();
-        outstanding.erase(it);
-        completed++;
-      }
+      waiting.erase(r.request_id);
+      dispatched++;
     }
   }
 
-  EXPECT_TRUE(outstanding.empty());
+  EXPECT_TRUE(waiting.empty());
   EXPECT_EQ(s.queued(), 0u);
   EXPECT_FALSE(s.has_work());
-  EXPECT_EQ(completed + failed, submitted);
+  EXPECT_EQ(dispatched + cancelled, submitted);
 }
 
 // --- concurrency -----------------------------------------------------------
 
-// Producers submit and await; one engine thread drains and completes.
 TEST(ConcurrencyTest, ProducersAndEngineMakeProgressWithoutLoss) {
   Scheduler s{SchedulerParams(4, 8)};
   constexpr int kProducers = 4;
   constexpr int kPer = 250;
   std::atomic<bool> stop{false};
-  std::atomic<int> completed{0};
-  std::atomic<int> lost{0};
+  std::atomic<int> accepted{0};
+  std::atomic<int> dispatched{0};
 
   std::thread engine([&] {
     while (!stop.load()) {
       Batch b = s.get_work();
-      for (const Request& r : b.requests) {
-        s.complete(r.request_id, std::vector<Token>{42});
-      }
+      dispatched += static_cast<int>(b.requests.size());
       if (b.empty()) {
         std::this_thread::yield();
       }
     }
+    // Drain after stop: work submitted between the last check and the store
+    // would otherwise never be dispatched.
     Batch b = s.get_work();
-    for (const Request& r : b.requests) {
-      s.complete(r.request_id, std::vector<Token>{42});
-    }
+    dispatched += static_cast<int>(b.requests.size());
   });
 
   std::vector<std::thread> producers;
   for (int t = 0; t < kProducers; ++t) {
     producers.emplace_back([&, t] {
       for (int i = 0; i < kPer; ++i) {
-        Request r = make_request(
-            s.next_request_id(),
-            (t * 7 + i) % 5,
-            (i % 3 == 0) ? 1 : 4,
-            static_cast<Position>(i));
-        auto f = s.submit(std::move(r));
-        // Bounded: a lost request must end this producer rather than block it,
-        // or the join below would never return and the engine never stop.
-        if (f.wait_for(kSettleTimeout) != std::future_status::ready) {
-          lost++;
-          return;
-        }
-        if (tokens_of(f.get()).size() == 1u) {
-          completed++;
+        if (s.submit(make_request(
+                s.next_request_id(),
+                (t * 7 + i) % 5,
+                (i % 3 == 0) ? 1 : 4,
+                static_cast<Position>(i)))) {
+          accepted++;
         }
       }
     });
@@ -956,12 +769,21 @@ TEST(ConcurrencyTest, ProducersAndEngineMakeProgressWithoutLoss) {
   for (std::thread& t : producers) {
     t.join();
   }
+  // Let the engine catch up before stopping it, so the count is meaningful.
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (dispatched.load() < accepted.load() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
   stop.store(true);
   engine.join();
 
-  EXPECT_EQ(lost.load(), 0) << "a request was never settled";
-  EXPECT_EQ(completed.load(), kProducers * kPer);
+  EXPECT_EQ(accepted.load(), kProducers * kPer) << "a submit was rejected";
+  EXPECT_EQ(dispatched.load(), accepted.load())
+      << "a step was never dispatched";
   EXPECT_EQ(s.queued(), 0u);
+  EXPECT_FALSE(s.has_work());
 }
 
 TEST(ConcurrencyTest, ObserversAreSafeDuringScheduling) {
@@ -987,13 +809,9 @@ TEST(ConcurrencyTest, ObserversAreSafeDuringScheduling) {
   }
 
   for (int i = 0; i < 500; ++i) {
-    auto f = s.submit(make_request(s.next_request_id(), 10, 1, 0));
-    Batch b = s.get_work();
-    for (const Request& r : b.requests) {
-      s.complete(r.request_id, std::vector<Token>{1});
-    }
-    ASSERT_SETTLES(f);
-    (void)f.get();
+    const RequestId id = s.next_request_id();
+    ASSERT_TRUE(s.submit(make_request(id, 10, 1, 0)));
+    (void)s.get_work(); // dispatch releases each step
   }
   stop.store(true);
   observer.join();

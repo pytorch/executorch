@@ -8,31 +8,26 @@
 
 #pragma once
 
-// Step scheduler for batched LLM serving. A Request is one step for one
-// sequence -- a single decode token, or one prefill chunk -- not a whole
-// generation. Callers submit a step, await its sampled token, and submit the
-// next one.
-//
-// get_work() takes decodes first, up to max_decode_sequences, then spends the
-// rest of max_batch_size on prefill, so prefill never delays a queued decode.
-// Decode is one arrival-order queue. Prefill is a FIFO per session plus a
-// rotation over sessions, and a pass takes at most one chunk from each, so a
-// long prompt advances a chunk at a time instead of monopolising the batch.
-//
-// No tensors, cache, or model here: where a step's KV lives belongs to the
-// planner. Callers split prefill into chunks of at most max_prefill_chunk_size,
-// which needs the session's position sequence and so is caller state.
+// Orders steps into batches. Decodes first, up to max_decode_sequences, then
+// the rest of max_batch_size on prefill, so prefill never delays a queued
+// decode. Decode is one arrival-order queue. Prefill is a FIFO per session
+// plus a rotation over sessions, and a pass takes at most one chunk from each,
+// so a long prompt advances a chunk at a time instead of monopolising the
+// batch.
 //
 // The scheduler reads exactly three things from a Request:
 //
 //   tokens.size()   budget arithmetic, and decode vs prefill routing
 //   session_id      which prefill FIFO, and a slot in the rotation
-//   request_id      the key its result is settled through
+//   request_id      the key it is tracked and cancelled under
 //
-// Everything else lives in RequestParams / ResponsePayload and is carried from
-// submit()
-// to Batch and back without being inspected, so payload fields can be added
-// without touching any scheduling logic.
+// Everything else is carried from submit() to Batch, one way, without being
+// inspected -- the executor reads it, not the scheduler -- so payload fields
+// can be added without touching any scheduling logic.
+//
+// Results do not come back through here, and a step stops being tracked the
+// moment it is handed to a Batch: whoever drains get_work() owns it from then
+// on. cancel() therefore only reaches steps still waiting for a batch.
 //
 // Every public method is guarded by mutex_. The Scheduler must outlive every
 // thread using it; params() hands out a reference into it.
@@ -40,118 +35,21 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
-#include <future>
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
+
+#include <executorch/extension/llm/batching/step.h>
 
 namespace executorch {
 namespace extension {
 namespace llm {
 namespace batching {
-
-using Token = std::int64_t;
-using RequestId = std::int64_t;
-using SessionId = std::int64_t;
-using Position = std::int32_t;
-
-// --- Payload: carried through the scheduler untouched ----------------------
-
-// Carried per step, so a caller may change sampling between turns.
-struct SamplingParams {
-  float temperature = 0.0f;
-  float top_p = 1.0f;
-  std::int32_t top_k = 0;
-  std::uint64_t seed = 0;
-};
-
-// Which positions of a step the model must produce output for. A verify step
-// needs every row -- it inspects the prediction at each drafted position --
-// while a decode or prefill chunk only needs the last. A sampled step yields
-// one token per row; an unsampled one yields one distribution per row.
-enum class OutputRows {
-  Last,
-  All,
-};
-
-// Raw model output for a step whose Request asked not to sample
-struct LogitsBlock {
-  std::vector<float> data;
-  std::int32_t n_rows = 0;
-  std::int32_t vocab = 0;
-};
-using LogitsPtr = std::shared_ptr<const LogitsBlock>;
-
-// How to execute a step. Promote to a variant if a second step kind ever needs
-// different fields rather than different values.
-struct RequestParams {
-  Position position = 0;
-  // Absent means: do not sample, return the raw distribution. Rejection
-  // sampling and constrained decoding need the distribution; greedy
-  // speculative verification does not, since argmax at every row is just
-  // sampling at temperature zero.
-  std::optional<SamplingParams> sampling;
-  OutputRows output_rows = OutputRows::Last;
-};
-
-// Which alternative is held follows from whether the Request asked to sample.
-// A sampled step yields one token per output row, so a greedy verify round
-// returns the prediction at every drafted position; deciding how many to
-// accept, and where the session therefore continues, is the caller's job.
-using ResponsePayload = std::variant<std::vector<Token>, LogitsPtr>;
-
-// --- Scheduling ------------------------------------------------------------
-
-// One step for one sequence. request_id names the submission and is always
-// unique, so the same work submitted twice is two requests that both run and
-// both get answered. Only request_id, session_id, and tokens.size() are read
-// by the scheduler; `params` is carried.
-struct Request {
-  RequestId request_id = 0;
-  SessionId session_id = 0;
-  std::vector<Token> tokens;
-  RequestParams params;
-
-  std::int32_t n_tokens() const {
-    return static_cast<std::int32_t>(tokens.size());
-  }
-
-  // A one-token prefill is indistinguishable from a decode and is treated as
-  // one: same single row of output, one decode slot.
-  bool is_decode() const {
-    return tokens.size() == 1;
-  }
-};
-
-struct Response {
-  RequestId request_id = 0;
-  SessionId session_id = 0;
-  ResponsePayload payload;
-};
-
-// One batch of steps for a single forward. Decodes first, then prefills, in
-// admission order.
-struct Batch {
-  std::vector<Request> requests;
-
-  bool empty() const {
-    return requests.empty();
-  }
-  std::int32_t n_tokens() const {
-    std::int32_t n = 0;
-    for (const Request& r : requests) {
-      n += r.n_tokens();
-    }
-    return n;
-  }
-};
 
 class SchedulerParams {
  public:
@@ -197,17 +95,14 @@ class SchedulerParams {
   std::int32_t max_prefill_chunk_size_;
 };
 
-// Held by shared_ptr because std::promise is move-only.
+// Held by shared_ptr so a queue entry and the index name the same step.
 struct PendingRequest {
   Request request;
-  // A deque cannot cheaply erase from the middle, so fail() marks and the
-  // queues drop on the way past.
+  // A deque cannot cheaply erase from the middle, so dropping a step marks it
+  // and the queue skips it on the way past.
   bool cancelled = false;
-  // Still waiting in a queue, as opposed to handed to a Batch. Only a queued
-  // step is counted by queued_, so this is what fail() checks before
-  // decrementing it.
+  // False once dispatched. Only a waiting step is counted by queued_.
   bool queued = true;
-  std::promise<Response> promise;
 };
 
 using PendingPtr = std::shared_ptr<PendingRequest>;
@@ -223,55 +118,15 @@ class Scheduler {
     return next_request_id_.fetch_add(1, std::memory_order_relaxed);
   }
 
-  // The future carries the sampled token, or an exception if the step is
-  // rejected: no tokens, a prefill above max_prefill_chunk_size, or a
-  // request_id already outstanding.
-  std::future<Response> submit(Request request) {
+  // Queue a step. False = rejected and nothing changed: no tokens, a prefill
+  // above max_prefill_chunk_size, or a request_id already waiting.
+  //
+  // Results are not delivered here: whoever drains get_work() runs the batch
+  // and already holds them, so a step carries no return channel of its own.
+  bool submit(Request request) {
     auto p = std::make_shared<PendingRequest>();
     p->request = std::move(request);
-    std::future<Response> fut = p->promise.get_future();
-
-    const std::int32_t n = p->request.n_tokens();
-    if (n == 0) {
-      set_error_(*p, "step carries no tokens");
-      return fut;
-    }
-    if (!p->request.is_decode() && n > params_.max_prefill_chunk_size()) {
-      set_error_(*p, "prefill chunk exceeds max_prefill_chunk_size");
-      return fut;
-    }
-
-    std::lock_guard<std::mutex> g(mutex_);
-    // emplace drops a duplicate silently, which would leave this promise never
-    // settled and the caller's future blocked forever.
-    auto [slot, inserted] = pending_requests_.emplace(p->request.request_id, p);
-    if (!inserted) {
-      set_error_(*p, "request_id already outstanding");
-      return fut;
-    }
-
-    try {
-      if (p->request.is_decode()) {
-        decode_queue_.push_back(p);
-      } else {
-        const SessionId sid = p->request.session_id;
-        // Rotation before map: a rotation entry with no session is harmless,
-        // since get_work() drops it, whereas a session missing from the
-        // rotation is never visited and its chunks never run.
-        if (prefill_by_session_.find(sid) == prefill_by_session_.end()) {
-          prefill_rotation_.push_back(sid);
-        }
-        prefill_by_session_[sid].push_back(p);
-      }
-    } catch (...) {
-      // Registered but unqueued would be unschedulable, so its future would
-      // never settle. Undo and reject instead.
-      pending_requests_.erase(slot);
-      set_error_(*p, "failed to queue step");
-      return fut;
-    }
-    queued_ += 1;
-    return fut;
+    return admit_(p);
   }
 
   // Whether get_work() would return a non-empty batch.
@@ -293,66 +148,31 @@ class Scheduler {
     return batch;
   }
 
-  // Settle a sampled step: one token per output row, so a greedy verify round
-  // reports the target's prediction at every drafted position. An unknown id is
-  // ignored, so a completion racing fail_all() is not an error.
-  void complete(RequestId request_id, std::vector<Token> tokens) {
-    Response r;
-    r.payload = std::move(tokens);
-    settle_(request_id, std::move(r));
+  // Drop a step that is still queued, so it is never handed to a Batch. A step
+  // already dispatched is not here to drop -- get_work() released it when it
+  // put it in the batch -- so this is a no-op for one in flight, and for an id
+  // that never existed. Callers that abandon a step can therefore call it
+  // without first knowing which state it is in.
+  void cancel(RequestId request_id) {
+    std::lock_guard<std::mutex> g(mutex_);
+    (void)take_(request_id);
   }
 
-  // Settle an unsampled step with its raw distribution.
-  void complete(RequestId request_id, LogitsPtr logits) {
-    Response r;
-    r.payload = std::move(logits);
-    settle_(request_id, std::move(r));
-  }
-
-  // Fails one step, queued or in flight. Cancelling a whole generation is the
-  // caller's loop over its outstanding ids.
-  void fail(RequestId request_id, const std::string& what) {
-    PendingPtr p;
-    {
-      std::lock_guard<std::mutex> g(mutex_);
-      auto it = pending_requests_.find(request_id);
-      if (it == pending_requests_.end()) {
-        return;
-      }
-      p = it->second;
-      p->cancelled = true;
-      // An in-flight step was already uncounted by get_work(); decrementing
-      // again would underflow queued_ or mask other queued work.
-      if (p->queued) {
-        p->queued = false;
-        queued_ -= 1;
-      }
-      pending_requests_.erase(it);
+  // Drop every queued step. For shutdown.
+  void clear() {
+    std::lock_guard<std::mutex> g(mutex_);
+    for (auto& entry : pending_requests_) {
+      entry.second->cancelled = true;
     }
-    set_error_(*p, what);
+    pending_requests_.clear();
+    queued_ = 0;
+    decode_queue_.clear();
+    prefill_by_session_.clear();
+    prefill_rotation_.clear();
   }
 
-  // For shutdown.
-  void fail_all(const std::string& what) {
-    std::vector<PendingPtr> doomed;
-    {
-      std::lock_guard<std::mutex> g(mutex_);
-      for (auto& entry : pending_requests_) {
-        entry.second->cancelled = true;
-        doomed.push_back(entry.second);
-      }
-      pending_requests_.clear();
-      queued_ = 0;
-      decode_queue_.clear();
-      prefill_by_session_.clear();
-      prefill_rotation_.clear();
-    }
-    for (PendingPtr& p : doomed) {
-      set_error_(*p, what);
-    }
-  }
-
-  // Whether `request_id` is still queued or in flight.
+  // True while the step is waiting for a batch. A dispatched step is no longer
+  // tracked, so this does not mean "submitted and unfinished".
   bool pending(RequestId request_id) const {
     std::lock_guard<std::mutex> g(mutex_);
     return pending_requests_.find(request_id) != pending_requests_.end();
@@ -369,32 +189,76 @@ class Scheduler {
   }
 
  private:
-  // Fills in identity and hands `r` to the waiter. Erasing under the lock
-  // before settling is what stops complete() and fail() both resolving the
-  // same promise.
-  void settle_(RequestId request_id, Response&& r) {
-    PendingPtr p;
-    {
-      std::lock_guard<std::mutex> g(mutex_);
-      auto it = pending_requests_.find(request_id);
-      if (it == pending_requests_.end()) {
-        return;
-      }
-      p = it->second;
-      pending_requests_.erase(it);
-      r.request_id = request_id;
-      r.session_id = p->request.session_id;
+  // Validate, register and queue. False = rejected and nothing changed.
+  bool admit_(const PendingPtr& p) {
+    const std::int32_t n = p->request.n_tokens();
+    if (n == 0) {
+      return false;
     }
-    p->promise.set_value(std::move(r)); // outside the lock: wakes the waiter
+    if (!p->request.is_decode() && n > params_.max_prefill_chunk_size()) {
+      return false;
+    }
+
+    std::lock_guard<std::mutex> g(mutex_);
+    // emplace drops a duplicate silently, which would leave the step
+    // registered under an id its owner already uses.
+    auto [slot, inserted] = pending_requests_.emplace(p->request.request_id, p);
+    if (!inserted) {
+      return false;
+    }
+
+    try {
+      if (p->request.is_decode()) {
+        decode_queue_.push_back(p);
+      } else {
+        const SessionId sid = p->request.session_id;
+        // Rotation before map: a rotation entry with no session is harmless,
+        // since get_work() drops it, whereas a session missing from the
+        // rotation is never visited and its chunks never run.
+        if (prefill_by_session_.find(sid) == prefill_by_session_.end()) {
+          prefill_rotation_.push_back(sid);
+        }
+        prefill_by_session_[sid].push_back(p);
+      }
+    } catch (...) {
+      // Registered but unqueued would be unschedulable: it would never appear
+      // in a batch, yet block its id. Undo and reject instead.
+      pending_requests_.erase(slot);
+      return false;
+    }
+    queued_ += 1;
+    return true;
   }
 
-  static void set_error_(PendingRequest& p, const std::string& what) {
-    p.promise.set_exception(
-        std::make_exception_ptr(std::runtime_error("scheduler: " + what)));
+  // Hand a step to a Batch: it leaves the queue and pending_requests_ at once,
+  // since that index only exists to find a step still waiting. Takes the id
+  // separately because the caller has already moved the request into the
+  // batch. Caller holds mutex_.
+  void dispatch_(const PendingPtr& p, RequestId request_id) {
+    p->queued = false;
+    queued_ -= 1;
+    pending_requests_.erase(request_id);
   }
 
-  // fail() already settled these and decremented queued_; they are only still
-  // here because a deque cannot erase from the middle.
+  // Remove a waiting step and return it, or null if it is not waiting -- which
+  // includes one already dispatched. Caller holds mutex_.
+  PendingPtr take_(RequestId request_id) {
+    auto it = pending_requests_.find(request_id);
+    if (it == pending_requests_.end()) {
+      return nullptr;
+    }
+    PendingPtr p = it->second;
+    // Marked so the queue drops it on the way past, since a deque cannot erase
+    // from the middle.
+    p->cancelled = true;
+    p->queued = false;
+    queued_ -= 1;
+    pending_requests_.erase(it);
+    return p;
+  }
+
+  // cancel() already dropped these and decremented queued_; they are only
+  // still here because a deque cannot erase from the middle.
   static void drop_cancelled_(PendingQueue& q) {
     while (!q.empty() && q.front()->cancelled) {
       q.pop_front();
@@ -410,13 +274,17 @@ class Scheduler {
       if (decode_queue_.empty()) {
         return;
       }
-      // Copy into the batch first: it is the only step here that can throw, and
-      // popping first would lose the request entirely.
-      batch.requests.push_back(decode_queue_.front()->request);
-      decode_queue_.front()->queued = false;
+      // Move rather than copy: dispatch_ releases the step on the next line,
+      // so the source is discarded either way, and a prefill chunk carries up
+      // to max_prefill_chunk_size tokens. Request's move is noexcept, so
+      // push_back still gives the strong guarantee -- nothing is lost if it
+      // throws. The id is read first, since the request is gone after.
+      const PendingPtr p = decode_queue_.front();
+      const RequestId id = p->request.request_id;
+      batch.requests.push_back(std::move(p->request));
+      dispatch_(p, id);
       decode_queue_.pop_front();
       budget -= 1;
-      queued_ -= 1;
     }
   }
 
@@ -449,12 +317,13 @@ class Scheduler {
         deferred.push_back(sid);
         continue;
       }
-      // Copy into the batch before mutating anything else; see take_decodes_.
-      batch.requests.push_back(dq.front()->request);
-      dq.front()->queued = false;
+      // Moved, not copied; see take_decodes_.
+      const PendingPtr p = dq.front();
+      const RequestId id = p->request.request_id;
+      batch.requests.push_back(std::move(p->request));
+      dispatch_(p, id);
       dq.pop_front();
       budget -= n;
-      queued_ -= 1;
       progress = true;
       if (dq.empty()) {
         prefill_by_session_.erase(it);
@@ -485,8 +354,8 @@ class Scheduler {
   std::unordered_map<SessionId, PendingQueue> prefill_by_session_;
   std::deque<SessionId> prefill_rotation_;
 
-  // Index from submit() until complete()/fail(); the queues hold the same
-  // shared_ptr.
+  // Every step waiting for a batch, from submit() until it is dispatched or
+  // cancelled; the queues hold the same shared_ptr.
   std::unordered_map<RequestId, PendingPtr> pending_requests_;
   std::size_t queued_ = 0;
   std::atomic<RequestId> next_request_id_{1};
