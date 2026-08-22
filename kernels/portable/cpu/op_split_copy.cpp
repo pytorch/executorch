@@ -49,6 +49,8 @@ void split_copy_Tensor_out(
   for (size_t i = 0; i < out.size(); ++i) {
     ET_KERNEL_CHECK(
         ctx, tensors_have_same_dim_order(input, out[i]), InvalidArgument, );
+    ET_KERNEL_CHECK(
+        ctx, tensor_is_default_dim_order(out[i]), InvalidArgument, );
   }
 
   const size_t leading_dims = getLeadingDims(input, dim);

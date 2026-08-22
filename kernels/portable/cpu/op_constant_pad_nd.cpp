@@ -252,6 +252,8 @@ Tensor& constant_pad_nd_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   // resize out tensor for dynamic shapes
   ET_KERNEL_CHECK_MSG(
       ctx,

@@ -484,3 +484,21 @@ TEST_F(OpConstantPadNDOutTest, IncorrectOutputShapeFail) {
 }
 
 GENERATE_SCALAR_OVERFLOW_TESTS(OpConstantPadNDOutTest)
+
+TEST_F(OpConstantPadNDOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor self = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out = tf.zeros_channels_last({1, 3, 2, 4});
+  const std::vector<int64_t> padding = {1, 1};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_constant_pad_nd_out(
+          self, IntArrayRef(padding.data(), padding.size()), 0.0, out));
+}
