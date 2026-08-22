@@ -844,7 +844,14 @@ class _BaseExtension(Extension):
             return Path(".")
 
     def is_cmake_artifact_used(self, installer: "InstallerBuildExt") -> bool:
-        cache_path = str(self._get_build_dir(installer) / "CMakeCache.txt")
+        # The flags name what the build turned on, so they are read from the build's cache
+        # rather than from wherever this entry's source happens to live. A file checked into
+        # the source tree resolves against the project root, which holds no cache, so every
+        # flag declared on such a file was silently ignored and the file always shipped.
+        cmake_cache_dir = getattr(
+            installer.get_finalized_command("build"), "cmake_cache_dir", None
+        )
+        cache_path = os.path.join(cmake_cache_dir or "", "CMakeCache.txt")
         if not os.path.exists(cache_path):
             # If this is not a CMake folder, then assume it's used.
             return True
@@ -2379,11 +2386,16 @@ setup(
                     is_dynamic_lib=True,
                     dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
                 ),
+                # The import library AOTInductor links generated code against when the CUDA
+                # delegate lowers for Windows. That is a cross compile, so it is needed on a
+                # Linux CUDA host too, but it is useless without the delegate: it is checked
+                # in rather than built, so a CPU wheel, including every macOS wheel, shipped
+                # a stub for a library it does not carry. Same flag as the library itself.
                 BuiltFile(
                     src_dir="backends/cuda/runtime/",
                     src_name="aoti_cuda_shims.lib",
                     dst="executorch/data/lib/",
-                    dependent_cmake_flags=[],
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
                 ),
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/cuda/%BUILD_TYPE%/",
