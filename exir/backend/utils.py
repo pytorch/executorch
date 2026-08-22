@@ -357,6 +357,16 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     constants_map = sig.inputs_to_lifted_tensor_constants
     buffers_to_mutate = sig.buffers_to_mutate
 
+    # Which buffers the program says are mutated. Reading the targets rather than
+    # matching the mutating node's name against a buffer's direct users is what makes
+    # this hold for a buffer that is not mutated in one step: a cache that is first
+    # concatenated with the new values and written back further down the chain has
+    # something other than the mutation as its user, and used to be taken for a
+    # constant. It would then be handed to a delegate as a buffer, and a backend that
+    # compiles mutable buffers into state — Core ML does — produced a model asking for
+    # state that the runtime had been told, by take_over_mutable_buffer=False, not to
+    # provide.
+    mutated_targets = set(buffers_to_mutate.values())
     mutated_buffer = set()
     for node in edge_program.graph.nodes:
         if node.op == "placeholder" and (
@@ -364,6 +374,12 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
             or node.name in buffers_map
             or node.name in constants_map
         ):
+            if buffers_map.get(node.name) in mutated_targets:
+                logging.info(
+                    "The buffer node is a mutated buffer node, which is not constant."
+                )
+                mutated_buffer.add(node)
+                continue
             for node_user in node.users:
                 if node_user.name in buffers_to_mutate:
                     logging.info(
