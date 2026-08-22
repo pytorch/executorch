@@ -126,7 +126,7 @@ add_executable(
 )
 
 foreach(parakeet_target parakeet_runner parakeet_helper)
-  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT DEFINED ENV{PK_NO_STRIP})
     target_link_options_gc_sections(${parakeet_target})
     if(NOT APPLE AND NOT MSVC)
       target_link_options(${parakeet_target} PRIVATE "LINKER:-s")
