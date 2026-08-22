@@ -152,11 +152,13 @@ def _load_qnn() -> list[TestFlow]:
         QNN_16A4W_TEST_FLOW,
         QNN_16A8W_TEST_FLOW,
         QNN_8A8W_TEST_FLOW,
+        QNN_ONLINE_PREPARE_TEST_FLOW,
         QNN_TEST_FLOW,
     )
 
     return [
         QNN_TEST_FLOW,
+        QNN_ONLINE_PREPARE_TEST_FLOW,
         QNN_16A16W_TEST_FLOW,
         QNN_16A8W_TEST_FLOW,
         QNN_16A4W_TEST_FLOW,
