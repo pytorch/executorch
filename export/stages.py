@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -245,6 +246,15 @@ class EdgeTransformAndLowerStage(Stage):
         # Use PassManager directly if found, otherwise use dict
         final_passes = pass_manager if pass_manager else transform_passes
 
+        export_recipe = artifact.context.get("export_recipe")
+        lowering_recipe = getattr(export_recipe, "lowering_recipe", None)
+
+        if (
+            lowering_recipe is not None
+            and lowering_recipe.pre_partitioning_callback is not None
+        ):
+            lowering_recipe.pre_partitioning_callback(self._partitioners, artifact.data)
+
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
                 exported_programs,
@@ -254,6 +264,12 @@ class EdgeTransformAndLowerStage(Stage):
                 compile_config=self._compile_config,
                 generate_etrecord=generate_etrecord,
             )
+
+        # Apply post-partitioning transforms if specified in the lowering recipe. These are used for graph transforms
+        #  that require the fully partitioned graph or for side effect operations.
+        if lowering_recipe is not None and lowering_recipe.post_partitioning_transforms:
+            for transform in lowering_recipe.post_partitioning_transforms:
+                edge_program_manager = transform(edge_program_manager)
 
         delegation_info = get_delegation_info(
             edge_program_manager.exported_program().graph_module
@@ -426,7 +442,7 @@ class QuantizeStage(Stage):
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
             logging.info(
-                "Quantization recipe is invalid to run QunatizeStage, returning original model"
+                "Quantization recipe is invalid to run QuantizeStage, returning original model"
             )
             self._artifact = artifact
             return
