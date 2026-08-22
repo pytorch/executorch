@@ -197,7 +197,7 @@ class InsertTableOpsPass(ArmPass):
     ) -> tuple[torch.Tensor, int]:
         """Compute LUT values for a INT16 TOSA.TABLE with 32 bit output.
         In practice the output is 23 bits that should be interpreted as 16 'whole' bits and 7 fractional bits, see
-        the specification: https://www.mlplatform.org/tosa/tosa_spec.html#_table. This means that the output
+        the specification: https://github.com/arm/tosa-specification/blob/main/chapters/ewise_binary.adoc#table. This means that the output
         will interpreted as 2**7=128 times too large unless accounted for by rescaling down the table output.
 
         Quantization can be either int16 or int32 which means that the op output could be larger than the 23 bits from
