@@ -3332,6 +3332,136 @@ class LayerNormTest(OpTestCase):
         return (x,)
 
 
+class GroupNormModel(nn.Module):
+    """Simple model using GroupNorm."""
+
+    def __init__(
+        self,
+        num_groups: int = 8,
+        num_channels: int = 32,
+        eps: float = 1e-5,
+        affine: bool = True,
+    ):
+        super().__init__()
+        self.group_norm = nn.GroupNorm(num_groups, num_channels, eps=eps, affine=affine)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.group_norm(x)
+
+
+@register_test
+class GroupNormTest(OpTestCase):
+    """Test case for nn.GroupNorm (aten.native_group_norm)."""
+
+    name = "group_norm"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        num_groups: int = 8,
+        num_channels: int = 32,
+        shape: Tuple[int, ...] = (2, 32, 8, 8),
+        eps: float = 1e-5,
+        affine: bool = True,
+        suffix: str = "",
+    ):
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.shape = shape
+        self.eps = eps
+        self.affine = affine
+        self.name = f"group_norm{suffix}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["GroupNormTest"]:
+        return [
+            cls(),
+            # affine=False exercises the no-weight/no-bias path
+            cls(affine=False, suffix="_no_affine"),
+            # one channel per group (instance norm) and one group (all channels)
+            cls(num_groups=32, suffix="_per_channel_groups"),
+            cls(num_groups=1, suffix="_single_group"),
+            # non-square spatial extent, and a 3D (N, C, L) input
+            cls(num_groups=4, num_channels=16, shape=(1, 16, 5, 7), suffix="_odd"),
+            cls(num_groups=4, num_channels=12, shape=(2, 12, 7), suffix="_3d"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return GroupNormModel(self.num_groups, self.num_channels, self.eps, self.affine)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(*self.shape),)
+
+
+class UpsampleNearest2dModel(nn.Module):
+    """Nearest-neighbour resize, by scale factor or by explicit output size."""
+
+    def __init__(
+        self,
+        scale_factor: Optional[Tuple[float, float]] = None,
+        size: Optional[Tuple[int, int]] = None,
+    ):
+        super().__init__()
+        self.scale_factor = scale_factor
+        self.size = size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.interpolate(
+            x, size=self.size, scale_factor=self.scale_factor, mode="nearest"
+        )
+
+
+@register_test
+class UpsampleNearest2dTest(OpTestCase):
+    """Test case for aten.upsample_nearest2d."""
+
+    name = "upsample_nearest2d"
+    rtol = 0
+    atol = 0
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (1, 3, 4, 4),
+        scale_factor: Optional[Tuple[float, float]] = (2.0, 2.0),
+        size: Optional[Tuple[int, int]] = None,
+        suffix: str = "",
+    ):
+        self.shape = shape
+        self.scale_factor = scale_factor
+        self.size = size
+        self.name = f"upsample_nearest2d{suffix}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["UpsampleNearest2dTest"]:
+        return [
+            cls(),
+            # different scale per axis
+            cls(shape=(2, 5, 3, 7), scale_factor=(3.0, 2.0), suffix="_anisotropic"),
+            # non-integer ratios, which a repeat-based lowering could not express
+            cls(shape=(1, 3, 6, 6), scale_factor=(1.5, 2.5), suffix="_fractional"),
+            cls(
+                shape=(1, 2, 5, 5),
+                scale_factor=None,
+                size=(12, 12),
+                suffix="_explicit_size",
+            ),
+            # output smaller than input
+            cls(
+                shape=(1, 4, 8, 8),
+                scale_factor=None,
+                size=(4, 4),
+                suffix="_downsample",
+            ),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return UpsampleNearest2dModel(self.scale_factor, self.size)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(*self.shape),)
+
+
 class Conv1dModel(nn.Module):
     """Simple model using Conv1d."""
 
