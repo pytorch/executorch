@@ -50,8 +50,10 @@ jobs:
       # header. So do not re-add ``push: branches`` above. Adding
       # ``workflow_dispatch`` is a different trap: it would make this
       # assertion pass and publish a viable-strict-gate success for a
-      # commit whose CI was path-filtered. ``schedule`` is the same trap
-      # by another name.
+      # commit whose CI was path-filtered. ``schedule`` is unsafe for the
+      # opposite reason: ``_ci-run-decision.yml`` returns false for a
+      # schedule event, so every tick would fail here and write a
+      # permanent failure row on the tip of main.
       - name: Check whether this commit is a full-coverage run
         env:
           IS_FULL_RUN: ${{ needs.run-decision.outputs.is-full-run }}

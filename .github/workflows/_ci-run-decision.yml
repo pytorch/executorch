@@ -23,12 +23,14 @@ name: CI Run Decision
 # from a promotion tag: pull, trunk, apple, windows-msvc, riscv64,
 # qnn-windows-msvc and viable-strict-gate. Only four of those call this
 # workflow. The other seven callers (cuda, cuda-windows, cuda-perf,
-# metal, mlx, rocm, vulkan) have their own ciflow tags but not
-# ``ciflow/trunk``, so a promotion tag never starts them, and they hold
-# 32 of the 48 jobs whose ``if:`` gates on ``is-full-run``. Most of those
-# 32 also have a changed-files branch and still run on main when their
-# own paths are touched; the 12 in mlx.yml do not, so for those the depth
-# sample below is the only thing that ever runs them on main.
+# metal, mlx, rocm, vulkan) do have ciflow tags, but none of them listens
+# for ``ciflow/trunk``, so a promotion tag never starts them, and they
+# hold 32 of the 48 jobs whose ``if:`` gates on ``is-full-run``. Most of
+# those 32 also have a changed-files branch and still run on main when
+# their own paths are touched; the 12 in mlx.yml do not, so for those the
+# depth sample below is the only thing that runs them automatically on a
+# push to main. (``workflow_dispatch`` and ``ciflow/mlx`` can still force
+# them by hand, which is not a substitute for running on main.)
 
 on:
   workflow_call:

@@ -18,9 +18,12 @@ name: Promote commit to viable/strict
 #
 # Can also be dispatched by hand for a specific commit, for example to
 # force full CI on one commit while bisecting a regression. Note that
-# update-viablestrict is configured with `main-branch: main`, so
 # promoting a commit that is only on a release branch runs CI for it but
-# will never advance viable/strict.
+# will never advance viable/strict: the updater only considers commits
+# reachable from the branch it checks out, which is main. (The
+# `main-branch: main` line in update-viablestrict.yml looks like it
+# controls this, but the action does not declare that input and passes a
+# hardcoded value, so it has no effect either way.)
 
 on:
   schedule:
@@ -163,8 +166,7 @@ jobs:
           # start from this tag. Four of them are in update-viablestrict's
           # required set; the other three run but do not gate. `lint` and
           # `Build documentation` are required too, and neither has a
-          # ciflow/trunk trigger (`Build documentation` only runs on
-          # version tags), so their rows come from the earlier push to
-          # main; if either was cancelled on that push, this tag cannot
+          # ciflow/trunk trigger, so their rows come from the earlier push
+          # to main; if either was cancelled on that push, this tag cannot
           # revive it.
           echo "::notice::Pushed $TAG. Workflow runs started by this tag: pull, trunk, Apple, viable-strict-gate, Windows MSVC Build, Test RISC-V Backend, Test QNN Windows MSVC build. Of those, update-viablestrict only requires pull, trunk, Apple and viable-strict-gate; the other three do not gate advancement. The two remaining required checks, lint and Build documentation, do not start from a ciflow/trunk tag and must already be green from the push to main. Once all six required checks are green, the next update-viablestrict cron (every 30 min) will advance viable/strict."
