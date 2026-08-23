@@ -14,9 +14,11 @@ name: CI Run Decision
 #   - pull_request / pull_request_target (use path filter instead)
 #   - push events not matching any of the above (path-filtered runs)
 #
-# See ``viable-strict-gate.yml``: viable/strict only advances on
-# commits where this is true, so the path-filtered fast path doesn't
-# silently advance partial signal.
+# viable/strict eligibility is not decided here. It follows from the
+# ``ciflow/trunk`` tag that ``promote-to-viable-strict.yml`` pushes; see
+# ``viable-strict-gate.yml``. The depth sample below only controls path
+# filtering, so a commit that misses it still gets full CI once it is
+# promoted.
 
 on:
   workflow_call:
