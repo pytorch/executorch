@@ -67,7 +67,7 @@ mkdir -p "$OUT_DIR/src" "$OUT_DIR/examples"
 # 1. Copy library metadata, wrapper header, and stubs
 # ─────────────────────────────────────────────────────────
 cp "$SCRIPT_DIR/library.properties" "$OUT_DIR/"
-cp "$SCRIPT_DIR/ExecuTorch.h" "$OUT_DIR/src/"
+cp "$SCRIPT_DIR/ExecuTorch.h" "$SCRIPT_DIR/ETModel.h" "$OUT_DIR/src/"
 cp "$SCRIPT_DIR/platform_stubs.c" "$OUT_DIR/src/"
 cp -r "$SCRIPT_DIR/examples/"* "$OUT_DIR/examples/"
 # Training checkpoints are how a model is regenerated, not something the
@@ -189,18 +189,22 @@ for yaml in "$TORCHGEN/packaged/ATen/native/tags.yaml" \
   fi
 done
 
-# The exporter and the runtime must be the same ExecuTorch. A pip release wheel
-# can be months behind this checkout, and a model exported against one schema
-# fails at Method::execute against a library built from another.
-ET_PY=$("$PYTHON" -c "import executorch; print(next(iter(executorch.__path__), ''))" 2>/dev/null || echo "")
-case "$ET_PY" in
-  "$ET_ROOT"*) ;;
-  "") echo "  NOTE: no executorch Python package found; the library will build but" ;
-      echo "        you cannot export models with this interpreter." ;;
-  *)  echo "  WARNING: $PYTHON imports executorch from $ET_PY, not $ET_ROOT." ;
-      echo "           Models exported with it may not match this library. See" ;
-      echo "           'Keeping this working' in examples/arduino/README.md." ;;
-esac
+# The exporter and the runtime must be the same ExecuTorch. A model exported
+# against one operator schema fails at Method::execute against a library built
+# from another, and nothing in that error says so. Compare what the installed
+# package was built from against this checkout; an install from here lands in
+# site-packages, so the path alone tells us nothing.
+ET_PY_SHA=$("$PYTHON" -c "import executorch.version as v; print(getattr(v, 'git_version', ''))" 2>/dev/null || echo "")
+ET_GIT_SHA=$(git -C "$ET_ROOT" rev-parse HEAD 2>/dev/null || echo "")
+if [ -z "$ET_PY_SHA" ]; then
+  echo "  NOTE: no executorch Python package found. The library will build, but"
+  echo "        you cannot export models with $PYTHON."
+elif [ -n "$ET_GIT_SHA" ] && [ "$ET_PY_SHA" != "$ET_GIT_SHA" ]; then
+  echo "  WARNING: $PYTHON has executorch built from ${ET_PY_SHA:0:12}, this tree"
+  echo "           is at ${ET_GIT_SHA:0:12}. Models exported with it may not match"
+  echo "           the library. Run ./install_executorch.sh, or see 'Keeping this"
+  echo "           working' in examples/arduino/README.md."
+fi
 
 CODEGEN_OUT="$ET_SRC/codegen"
 CORTEX_M_YAML="$ET_ROOT/backends/cortex_m/ops/operators.yaml"
@@ -310,6 +314,30 @@ for candidate in \
   fi
 done
 
+# Nothing vendors CMSIS-NN into a plain checkout -- the Cortex-M backend pulls
+# it with FetchContent at cmake time -- so fetch it at the revision that backend
+# pins. Without it the Cortex-M ops compile against headers that are not there.
+if [ -z "$CMSIS_NN" ]; then
+  CMSIS_NN_PIN=$(sed -n '/set(CMSIS_NN_VERSION/,/)/p' \
+    "$ET_ROOT/backends/cortex_m/CMakeLists.txt" | grep -oE '"[0-9a-f]{40}"' | tr -d '"')
+  if [ -z "$CMSIS_NN_PIN" ]; then
+    echo "ERROR: could not read CMSIS_NN_VERSION from backends/cortex_m/CMakeLists.txt"
+    exit 1
+  fi
+  CMSIS_NN="$ET_ROOT/third-party/cmsis-nn"
+  echo "  Fetching CMSIS-NN at ${CMSIS_NN_PIN:0:12} (pinned by the Cortex-M backend)"
+  rm -rf "$CMSIS_NN"
+  git init -q "$CMSIS_NN"
+  git -C "$CMSIS_NN" remote add origin https://github.com/ARM-software/CMSIS-NN.git
+  if ! git -C "$CMSIS_NN" fetch -q --depth 1 origin "$CMSIS_NN_PIN"; then
+    echo "ERROR: could not fetch CMSIS-NN $CMSIS_NN_PIN."
+    echo "       Clone it yourself to third-party/cmsis-nn, or point the build at"
+    echo "       an existing copy."
+    exit 1
+  fi
+  git -C "$CMSIS_NN" checkout -q FETCH_HEAD
+fi
+
 if [ -n "$CMSIS_NN" ]; then
   mkdir -p "$OUT_DIR/src/cmsis-nn"
   cp -r "$CMSIS_NN/Source" "$OUT_DIR/src/cmsis-nn/"
@@ -331,7 +359,8 @@ if [ -n "$CMSIS_NN" ]; then
   echo "[5/7] CMSIS-NN copied from $CMSIS_NN"
 else
   CMSIS_NN_REV="absent"
-  echo "[5/7] WARNING: CMSIS-NN not found. Cortex-M ops will not link."
+  echo "ERROR: CMSIS-NN unavailable; the Cortex-M ops cannot link without it."
+  exit 1
 fi
 
 # CMSIS Core headers (for arm_math_types.h)
@@ -397,48 +426,15 @@ find "$OUT_DIR" -path "*test*" -name "*.cpp" -delete 2>/dev/null || true
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/android.cpp"
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/posix.cpp"
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/windows.cpp"
-# minimal.cpp and zephyr.cpp both define the et_pal_* backend, so shipping both
-# leaves the choice to link order. minimal's logger is an empty body and its
-# et_pal_allocate returns nullptr, which silently discards every ET_LOG.
+# Ship one platform layer, written against the Arduino API rather than any one
+# board core. Upstream's zephyr.cpp calls k_uptime_ticks and k_malloc, which
+# would pin the library to the single Arduino core built on Zephyr; minimal.cpp
+# has an empty logger and an allocator that returns nullptr. Both define the
+# same et_pal_* symbols, so keeping any of them alongside ours would leave the
+# choice to link order.
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/minimal.cpp"
-
-# zephyr.cpp logs through fprintf, and platform_stubs.c stubs fprintf out to
-# nothing, so runtime diagnostics never reach the user. Route them to a weak
-# hook a sketch can implement -- see the examples for a Serial implementation.
-ZEPHYR_PAL="$OUT_DIR/src/executorch/runtime/platform/default/zephyr.cpp"
-"$PYTHON" - "$ZEPHYR_PAL" << 'PATCH'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = """  fprintf(
-      stderr,
-      "%c [executorch:%s:%zu %s()] %s\\n",
-      level,
-      filename,
-      line,
-      function,
-      message);"""
-new = """  char et_log_buf[256];
-  snprintf(
-      et_log_buf,
-      sizeof(et_log_buf),
-      "%c [ET:%s:%zu] %s",
-      (char)level,
-      filename,
-      line,
-      message);
-  et_arduino_log(et_log_buf);"""
-if old not in s:
-    sys.exit("ERROR: zephyr.cpp log call not found; the PAL changed upstream.")
-s = s.replace(old, new)
-s = s.replace(
-    "void et_pal_emit_log_message(",
-    'extern "C" __attribute__((weak)) void et_arduino_log(const char*) {}\n\n'
-    "void et_pal_emit_log_message(",
-    1,
-)
-open(p, "w").write(s)
-PATCH
+rm -f "$OUT_DIR/src/executorch/runtime/platform/default/zephyr.cpp"
+cp "$SCRIPT_DIR/arduino_pal.cpp" "$OUT_DIR/src/executorch/runtime/platform/default/"
 
 # Regenerate schema headers if flatc is available
 FLATC=""

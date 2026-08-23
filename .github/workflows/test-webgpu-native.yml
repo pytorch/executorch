@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -36,7 +36,11 @@ jobs:
       runner: linux.4xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
-      timeout: 120
+      # The test script alone runs about 60 minutes, and the checkout plus the
+      # Dawn and SwiftShader source builds in front of it have been measured
+      # between 18 and 64 minutes on this same runner type, so 120 does not
+      # cover a slow setup.
+      timeout: 150
       script: |
         set -eux
 

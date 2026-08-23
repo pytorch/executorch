@@ -311,9 +311,16 @@ class LLMEdgeManager:
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
                     logits_token_pos = -1
                     if self.use_kv_cache:
+                        input_dtype = self.example_inputs[0].dtype
+                        if self.example_kwarg_inputs is not None:
+                            input_pos_dtype = self.example_kwarg_inputs[
+                                "input_pos"
+                            ].dtype
+                        else:
+                            input_pos_dtype = self.example_inputs[1]["input_pos"].dtype
                         logits = module(
-                            torch.full((1, 1), token_list[pos]),
-                            {"input_pos": torch.tensor((pos,))},
+                            torch.full((1, 1), token_list[pos], dtype=input_dtype),
+                            {"input_pos": torch.tensor((pos,), dtype=input_pos_dtype)},
                         )
                     else:
                         prefix, logits_token_pos = self._prepare_calibration_prefix(

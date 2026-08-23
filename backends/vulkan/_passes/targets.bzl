@@ -132,7 +132,6 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
         ],
-        typing = True,
     )
 
     runtime.python_library(

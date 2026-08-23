@@ -1254,10 +1254,12 @@ from executorch.backends.webgpu.test.ops.test_conv2d import _chw_ramp, make_conv
 def _conv2d_suite() -> WebGPUTestSuite:
     # DaViT patch-embed / downsample convs + conv_transpose2d (same registration,
     # folded by the `transposed` arg). NCHW fp32. Routing coverage (all vs the
-    # same fp64 golden): patch_embed/conv3x3_pad1/strided/gemm_batched are
-    # groups==1 → im2col tiled GEMM (gemm_batched pins the B>1 output write);
-    # grouped_vec4 (groups=2, icpg=4) → direct vec4 kernel; depthwise (groups=8,
-    # icpg=1) → direct scalar; transpose2x → conv_transpose2d.
+    # same fp64 golden): patch_embed/conv3x3_pad1/strided are groups==1 → im2col
+    # tiled GEMM; grouped_vec4 (groups=2, icpg=4) → direct vec4 kernel; depthwise
+    # (groups=8, icpg=1) → direct scalar; transpose2x → conv_transpose2d.
+    # No batched (B>1) case: check_conv_node in backends/vulkan/op_registry.py
+    # refuses to delegate a 4-D convolution whose batch is not 1, so the export
+    # would fall back to CPU and test nothing. Add one back once it is accepted.
     return WebGPUTestSuite(
         module_factory=make_conv,
         cases=[
@@ -1303,11 +1305,6 @@ def _conv2d_suite() -> WebGPUTestSuite:
                     "groups": 2,
                 },
                 inputs=(InputSpec(shape=(1, 8, 8, 8), gen=_chw_ramp),),
-            ),
-            Case(
-                name="gemm_batched",
-                construct={"in_ch": 8, "out_ch": 16, "kernel": 3, "padding": 1},
-                inputs=(InputSpec(shape=(2, 8, 16, 16), gen=_chw_ramp),),
             ),
             Case(
                 name="transpose2x",

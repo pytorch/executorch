@@ -101,6 +101,11 @@ option(
   "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size"
   OFF
 )
+set(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE
+    ""
+    CACHE STRING
+          "Size of the SRAM-backed planned fast memory pool used for mem_id=3"
+)
 
 if(NOT DEFINED PYTHON_EXECUTABLE)
   find_package(
@@ -201,6 +206,10 @@ message(
 message(
   STATUS
     "ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE = ${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}"
+)
+message(
+  STATUS
+    "ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE = ${ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE}"
 )
 
 # Dependencies from the Ethos-U Core This is the platform target of
@@ -323,9 +332,9 @@ list(
   extension_runner_util
   ethosu_target_init
   -Wl,--whole-archive
-  executorch
   executorch_delegate_ethos_u
   -Wl,--no-whole-archive
+  executorch_core
   -Wl,--end-group
   -Xlinker
   -Map=arm_executor_runner.map
@@ -357,7 +366,7 @@ arm_runner_create_selected_ops_lib(
   KERNEL_LIBS
   portable_kernels
   DEPS
-  executorch
+  executorch_core
 )
 list(APPEND _arm_runner_selected_ops_libs arm_portable_ops_lib)
 set(_arm_runner_portable_archive_libs portable_kernels kernels_util_all_deps)
@@ -367,6 +376,24 @@ verify_targets_exist(
 list(APPEND _arm_runner_normal_archive_libs
      ${_arm_runner_portable_archive_libs}
 )
+
+arm_runner_create_selected_ops_lib(
+  PRIM_OPS
+  LIB_NAME
+  "arm_prim_ops_lib"
+  OP_LIST
+  "${EXECUTORCH_SELECT_OPS_LIST}"
+  OPS_FROM_MODEL
+  "${ET_PTE_FILE_PATH}"
+  DEPS
+  executorch_core
+)
+list(APPEND _arm_runner_selected_ops_libs arm_prim_ops_lib)
+set(_arm_runner_prim_archive_libs arm_prim_ops_lib_impl)
+verify_targets_exist(
+  CONTEXT arm_executor_runner TARGETS ${_arm_runner_prim_archive_libs}
+)
+list(APPEND _arm_runner_normal_archive_libs ${_arm_runner_prim_archive_libs})
 
 arm_runner_create_selected_ops_lib(
   LIB_NAME
@@ -405,7 +432,7 @@ arm_runner_create_selected_ops_lib(
   KERNEL_LIBS
   cortex_m_kernels
   DEPS
-  executorch
+  executorch_core
 )
 list(APPEND _arm_runner_selected_ops_libs arm_cortex_m_ops_lib)
 set(_arm_runner_cortex_m_archive_libs cortex_m_kernels portable_kernels
@@ -490,17 +517,17 @@ endif()
 # Keep static registration libraries force-loaded, but do it in the executable
 # link list rather than through INTERFACE_LINK_OPTIONS. The latter is emitted
 # before this target's objects and before the runner's dependency closure, which
-# breaks bare-metal archive resolution for the runner.
-set(_arm_runner_whole_archive_targets executorch executorch_delegate_ethos_u
-                                      ${_arm_runner_selected_ops_libs}
+# breaks bare-metal archive resolution for the runner. The same needs to be done
+# for the executorch target, that can be transitively included from the bundled
+# program lib. the executorch lib registers all prim-ops, but we want to include
+# them selectively.
+set(_suppress_interface_link_options_targets
+    executorch executorch_delegate_ethos_u ${_arm_runner_selected_ops_libs}
 )
-foreach(_arm_runner_whole_archive_target IN
-        LISTS _arm_runner_whole_archive_targets
-)
-  if(TARGET ${_arm_runner_whole_archive_target})
+foreach(_target_to_suppress IN LISTS _suppress_interface_link_options_targets)
+  if(TARGET ${_target_to_suppress})
     set_property(
-      TARGET ${_arm_runner_whole_archive_target} PROPERTY INTERFACE_LINK_OPTIONS
-                                                          ""
+      TARGET ${_target_to_suppress} PROPERTY INTERFACE_LINK_OPTIONS ""
     )
   endif()
 endforeach()
@@ -658,6 +685,14 @@ if(DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     arm_executor_runner
     PUBLIC
       ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}
+  )
+endif()
+
+if(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+  target_compile_definitions(
+    arm_executor_runner
+    PUBLIC
+      ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE=${ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE}
   )
 endif()
 

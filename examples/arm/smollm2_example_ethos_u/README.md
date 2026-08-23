@@ -14,11 +14,11 @@
 
 This document focuses on one validated flow:
 
-1. Export one generation-ready full-logits `w8a16` PTE with a fixed sequence window of 32.
+1. Export one generation-ready KV-cache `w8a16` PTE with a 64-token context.
 2. Build one runner that embeds that PTE and uses semihosting for host-side
    input/output tensor exchange.
 3. Run a short prompt-generation smoke test on Corstone-320 FVP.
-4. Optionally evaluate Wikitext perplexity with the same full-logits artifact.
+4. Optionally evaluate Wikitext perplexity with the same KV-cache artifact.
 
 In this example, semihosting is mainly a convenient FVP integration path for
 passing meaningful input tensors into the runner and reading output tensors back
@@ -29,15 +29,14 @@ copying the model file at runtime. On real silicon, the same preprocessing would
 more likely populate the model input buffer directly from software rather than
 via semihosting.
 
-The example uses a fixed sequence length of 32 because that is the current
-validated tradeoff for this branch on Corstone-320 FVP. Larger windows were more
-expensive in runtime and stalled in our experiments, while smaller windows were
-easier to validate earlier but produced weaker prompts and less representative
-perplexity results. This branch also does not use KV-cache decoding, so every
-generated token recomputes attention across the whole window and larger sequence
-lengths become even more costly. If KV-cache support is added later, it should
-reduce the incremental decode cost, but it is not the direct reason seq32 was
-chosen here.
+The primary path below uses KV-cache decoding with a 64-token context. Each
+runtime step executes one token plus its `input_pos`, while the exported context
+length controls the KV-cache capacity. The older static non-KV seq32 full-logits
+flow remains the safest fallback when debugging full-window execution. Larger
+non-KV windows are experimental: they are more expensive at runtime and require
+retuning the runner allocator pools. For example, a seq48 embedded-PTE smoke run
+needed a scratch pool just under 5 MiB instead of the 4 MiB pool used by the
+seq32 non-KV commands.
 
 ## 0. Prerequisites
 
@@ -100,10 +99,11 @@ These are the settings used by the main flow in this README:
 
 - `quantization.pt2e_quantize=ethosu_16a8w`
 - `quantization.quantize_scope=linear`
-- `export.max_seq_length=32`
-- `export.max_context_length=32`
-- `quantization.calibration_seq_length=32`
-- `quantization.calibration_limit=62`
+- `model.use_kv_cache=True`
+- `export.max_seq_length=64`
+- `export.max_context_length=64`
+- `quantization.calibration_seq_length=64`
+- `quantization.calibration_limit=1`
 - `backend.ethosu.target=ethos-u85-256`
 - `backend.ethosu.system_config=Ethos_U85_SYS_DRAM_High`
 - `backend.ethosu.memory_mode=Dedicated_Sram_512KB`
@@ -112,26 +112,27 @@ Why these settings matter:
 
 - `linear` scope means only the linear layers are quantized onto Ethos-U. This
   is the current validated path for meaningful output in this example.
-- `max_seq_length=32` and `calibration_seq_length=32` are kept equal so the
-  quantizer observes the same token-window shape that the runtime will execute.
-  Keeping them aligned avoids calibrating a shape that the deployed runner never
-  uses.
-- `calibration_limit=62` is the current fuller-calibration setting for this
-  README. With the newer full-logits calibration path, larger limits are now
-  practical enough to use by default. For quicker iteration, `calibration_limit=2`
-  is the fast validation setting discussed later in this document.
+- `model.use_kv_cache=True` exports the token and `input_pos` inputs used for
+  step-wise decoding.
+- `max_seq_length=64` and `max_context_length=64` set the documented 64-token
+  generation context. In KV-cache mode, `generate_sampled.py` can derive the
+  context length from `--window 64`; pass `--max-context-length 64` explicitly
+  when you want the command line to make that relationship obvious.
+- `calibration_limit=1` keeps this experimental KV-cache flow practical for
+  local iteration. Increase it when you want more calibration coverage.
 
 ## 3. Export the generation artifact
 
-This command produces the full-logits PTE used for the generation smoke test and optional perplexity evaluation. Static non-KV calibration uses padded prefixes, so calibrated exports must produce full logits to let calibration select the last real token position instead of a padded position.
+This command produces the KV-cache PTE used for the generation smoke test and optional perplexity evaluation.
 
 ```bash
 bash examples/arm/smollm2_example_ethos_u/export_smollm2_ethosu.sh \
   --mode=w8a16 \
-  --max_seq_length=32 \
-  --max_context_length=32 \
-  --calibration_limit=62 \
-  --calibration_seq_length=32 \
+  --use-kv-cache \
+  --max_seq_length=64 \
+  --max_context_length=64 \
+  --calibration_limit=1 \
+  --calibration_seq_length=64 \
   --quantize_scope=linear
 ```
 
@@ -140,20 +141,21 @@ What this command does:
 - `--mode=w8a16` selects the 16-bit activation, 8-bit weight Ethos-U quantizer.
 - By default the helper writes the exported `.pte` into the repository root, so
   the runner build commands below can reference the artifact by filename.
-- `--max_seq_length=32` fixes the deployed token window to 32 tokens.
-- `--max_context_length=32` keeps prompt context management consistent with that
-  same fixed window.
-- `--calibration_limit=62` uses the fuller calibration setting now recommended
-  for this example.
-- `--calibration_seq_length=32` calibrates on the same token length that the
-  runtime will execute.
+- `--use-kv-cache` exports token and `input_pos` inputs and disables full-logits
+  output naming.
+- `--max_seq_length=64` and `--max_context_length=64` set the documented
+  64-token KV-cache context.
+- `--calibration_limit=1` is the quick validation setting used for this
+  experimental KV-cache path.
+- `--calibration_seq_length=64` calibrates with the same context length used at
+  runtime.
 - `--quantize_scope=linear` keeps the validated hybrid setup where linear layers
   run on Ethos-U and the rest of the graph remains FP32.
 
 The output artifact is named:
 
 ```text
-smollm2_ethosu_seq32_w8a16_wikitext_full_logits.pte
+smollm2_ethosu_kv_seq64_w8a16_wikitext.pte
 ```
 
 ## 4. Build the semihosting runner
@@ -162,10 +164,10 @@ Build one runner that embeds the generation artifact:
 
 ```bash
 bash examples/arm/smollm2_example_ethos_u/build_executor_runner_semihosting.sh \
-  --pte=smollm2_ethosu_seq32_w8a16_wikitext_full_logits.pte \
-  --output=smollm2_ethosu_seq32_w8a16_wikitext_full_logits/cmake-out \
+  --pte=smollm2_ethosu_kv_seq64_w8a16_wikitext.pte \
+  --output=smollm2_ethosu_kv_seq64_w8a16_wikitext/cmake-out \
   --method_pool_size=0x01000000 \
-  --scratch_pool_size=0x00400000 \
+  --scratch_pool_size=0x00800000 \
   --input_file_pool_size=0x00100000
 ```
 
@@ -177,8 +179,8 @@ What this command does:
 - Uses the validated `Ethos_U85_SYS_DRAM_High` and `Dedicated_Sram_512KB`
   defaults from the build helper, so you do not need to pass them explicitly in
   the common case.
-- Sets three allocator pool sizes that keep the embedded-PTE full-logits runner inside a
-  practical Corstone-320 DDR budget.
+- Sets three allocator pool sizes that keep the embedded-PTE KV-cache runner
+  inside a practical Corstone-320 DDR budget.
 
 How to read the pool sizes:
 
@@ -189,8 +191,8 @@ How to read the pool sizes:
   as `i0.bin`.
 
 These values are not universal tuning rules. They are simply the validated pool
-sizes for this example's seq32 embedded-PTE runner. Start with them unless you
-are actively changing the export shape or runtime integration.
+sizes for this example's seq64 KV-cache embedded-PTE runner. Start with them
+unless you are actively changing the export shape or runtime integration.
 
 ## 5. Run a generation smoke test
 
@@ -201,13 +203,14 @@ output logits, and decode the generated token IDs into text:
 ```bash
 python examples/arm/smollm2_example_ethos_u/generate_sampled.py \
   --fvp examples/arm/arm-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320 \
-  --runner smollm2_ethosu_seq32_w8a16_wikitext_full_logits/cmake-out/arm_executor_runner \
+  --runner smollm2_ethosu_kv_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
   --embedded-pte \
   --tokenizer data/tokenizers/smollm2/tokenizer.json \
   --prompt "Once upon a time in a small village," \
-  --window 32 \
+  --window 64 \
+  --max-context-length 64 \
+  --use-kv-cache \
   --max-new-tokens 2 \
-  --full-logits \
   --temperature 0 \
   --top-p 0.9 \
   --repetition-penalty 1.1
@@ -217,13 +220,13 @@ How to interpret the main options:
 
 - `--embedded-pte` tells the script not to copy a separate `program.pte`,
   because the runner already contains the model.
-- `--window 32` must match the exported `max_seq_length`. If these differ, the
-  runner will reject the input tensor shape.
+- `--window 64` provides the main context length used by the script.
+- `--max-context-length 64` makes the KV-cache capacity explicit; omitting it
+  would use `--window`.
+- `--use-kv-cache` runs the two-input token/position path and keeps one FVP
+  process alive in semihosting server mode for step-wise decoding.
 - `--max-new-tokens 2` keeps the smoke test short. The goal here is to show the
   end-to-end path works, not to benchmark long decoding.
-- `--full-logits` tells `generate_sampled.py` to select the last valid prompt
-  row from the `[window, vocab]` output. This matches the calibrated static
-  non-KV export path and avoids sampling from padded positions.
 - `--temperature 0` switches to greedy decoding, which is the most stable way
   to compare short smoke runs.
 - `--top-p 0.9` is kept for consistency with the broader sampling interface,
@@ -233,60 +236,167 @@ How to interpret the main options:
 
 ## 6. Optional: evaluate Wikitext perplexity
 
-The calibrated generation artifact already returns full logits for every token position in the 32-token window, so the same PTE and runner can be used for perplexity scoring.
+The KV-cache generation artifact can also be used for step-wise perplexity scoring over the same 64-token context.
 
 ### 6.1 Build the matching runner
 
 ```bash
 bash examples/arm/smollm2_example_ethos_u/build_executor_runner_semihosting.sh \
-  --pte=smollm2_ethosu_seq32_w8a16_wikitext_full_logits.pte \
-  --output=smollm2_ethosu_seq32_w8a16_wikitext_full_logits/cmake-out \
+  --pte=smollm2_ethosu_kv_seq64_w8a16_wikitext.pte \
+  --output=smollm2_ethosu_kv_seq64_w8a16_wikitext/cmake-out \
   --method_pool_size=0x01000000 \
-  --scratch_pool_size=0x00400000 \
+  --scratch_pool_size=0x00800000 \
   --input_file_pool_size=0x00100000
 ```
 
-The full-logits artifact uses `--method_pool_size=0x01000000` (`16 MiB`).
+The KV-cache artifact uses `--method_pool_size=0x01000000` (`16 MiB`).
 
 ### 6.2 Run perplexity
 
 ```bash
 python examples/arm/smollm2_example_ethos_u/eval_wikitext_perplexity.py \
   --fvp examples/arm/arm-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320 \
-  --runner-w8a8 smollm2_ethosu_seq32_w8a16_wikitext_full_logits/cmake-out/arm_executor_runner \
-  --runner-w8a16 smollm2_ethosu_seq32_w8a16_wikitext_full_logits/cmake-out/arm_executor_runner \
-  --prompts-file outputs/$(date +%F)/wikitext_prompts_seq32.txt \
+  --runner-w8a8 smollm2_ethosu_kv_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
+  --runner-w8a16 smollm2_ethosu_kv_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
+  --prompts-file outputs/$(date +%F)/wikitext_prompts_kv_seq64.txt \
   --num-prompts 100 \
-  --ppl-prompts 100 \
-  --min-prompt-tokens 32 \
-  --max-prompt-tokens 32 \
-  --max-tokens-per-prompt 32 \
-  --window 32 \
-  --timeout 36000 \
+  --ppl-prompts 50 \
+  --min-prompt-tokens 64 \
+  --max-prompt-tokens 64 \
+  --max-tokens-per-prompt 64 \
+  --window 64 \
+  --max-context-length 64 \
+  --use-kv-cache \
+  --timeout 2400 \
   --refresh-prompts
 ```
 
-Why the prompt settings are all 32 here:
+Why the prompt settings are all 64 here:
 
-- `--window 32` must match the export shape.
-- `--min-prompt-tokens 32` and `--max-prompt-tokens 32` force every prompt to
-  fill exactly one scoring window, which makes the comparison easier to reason
-  about.
-- `--max-tokens-per-prompt 32` keeps scoring aligned with that same fixed
-  window.
+- `--window 64` and `--max-context-length 64` match the exported KV-cache
+  context.
+- `--min-prompt-tokens 64` and `--max-prompt-tokens 64` force every prompt to
+  fill one scoring context, which makes the comparison easier to reason about.
+- `--max-tokens-per-prompt 64` keeps scoring aligned with that same context.
 - `--num-prompts 100` builds a reusable prompt file with enough samples for a
   stable comparison.
-- `--ppl-prompts 100` then scores all prompts from that file. Lower this value
-  when you want a quicker but noisier local check.
+- `--ppl-prompts 50` keeps the FVP check manageable. Raise it when you want a
+  fuller but slower run.
 
 The evaluator script compares two runners, which is why it asks for both
 `--runner-w8a8` and `--runner-w8a16`. In this simplified `w8a16`-only flow, it
 is acceptable to pass the same runner to both options when you only want one
-number from the validated artifact.
+number from the validated artifact. A 50-prompt seq64 KV-cache run in this
+branch completed with perplexity around 45.
 
-## 7. Additional notes
+## 7. Experimental static quantized KV cache
 
-### Why padding is needed for full-logits evaluation
+Ethos-U does not support the dynamic per-token quantization used by
+`model.quantize_kv_cache=True`. The static path instead calibrates fixed
+per-channel K/V scales from Wikitext before export, stores the cache as int8,
+and uses standard tensor cache updates. It does not link the Llama custom cache
+operator, and runner inputs remain int32.
+
+Export the seq64 `w8a16` static-KVQ artifact with one Wikitext calibration
+sample:
+
+```bash
+bash examples/arm/smollm2_example_ethos_u/export_smollm2_ethosu.sh \
+  --mode=w8a16 \
+  --use-kv-cache \
+  --static-quantize-kv-cache \
+  --so_library=/path/to/cmake-out/kernels/quantized/libquantized_ops_aot_lib.so \
+  --max_seq_length=64 \
+  --max_context_length=64 \
+  --calibration_limit=1 \
+  --calibration_seq_length=64 \
+  --quantize_scope=linear
+```
+
+`--so_library` is needed only during export to register portable QDQ out
+variants. Build it with `EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON` if your
+ExecuTorch installation does not already provide it. The embedded runner uses
+the standard `quantized_ops_lib`; it does not link Llama custom cache operators.
+
+This produces:
+
+```text
+smollm2_ethosu_static_kvq_seq64_w8a16_wikitext.pte
+```
+
+Build it with the standard semihosting runner; no custom cache-op source or
+linkage is required:
+
+```bash
+bash examples/arm/smollm2_example_ethos_u/build_executor_runner_semihosting.sh \
+  --pte=smollm2_ethosu_static_kvq_seq64_w8a16_wikitext.pte \
+  --output=smollm2_ethosu_static_kvq_seq64_w8a16_wikitext/cmake-out \
+  --method_pool_size=0x01000000 \
+  --scratch_pool_size=0x00800000 \
+  --input_file_pool_size=0x00100000
+```
+
+Run the ten-token greedy smoke test:
+
+```bash
+python examples/arm/smollm2_example_ethos_u/generate_sampled.py \
+  --fvp examples/arm/arm-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320 \
+  --runner smollm2_ethosu_static_kvq_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
+  --embedded-pte \
+  --tokenizer data/tokenizers/smollm2/tokenizer.json \
+  --prompt "Once upon a time in a small village," \
+  --window 64 \
+  --max-context-length 64 \
+  --use-kv-cache \
+  --max-new-tokens 10 \
+  --temperature 0 \
+  --top-p 0.9 \
+  --repetition-penalty 1.1
+```
+
+Run all nine default prompts greedily and save the generated text:
+
+```bash
+python examples/arm/smollm2_example_ethos_u/generate_sampled.py \
+  --fvp examples/arm/arm-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320 \
+  --runner smollm2_ethosu_static_kvq_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
+  --embedded-pte \
+  --tokenizer data/tokenizers/smollm2/tokenizer.json \
+  --prompt-file examples/arm/smollm2_example_ethos_u/default_prompts.txt \
+  --prompt-all \
+  --save-generations outputs/$(date +%F)/ethosu_static_kvq_seq64_generations.txt \
+  --window 64 \
+  --max-context-length 64 \
+  --use-kv-cache \
+  --max-new-tokens 64 \
+  --temperature 0 \
+  --top-p 0.9 \
+  --repetition-penalty 1.1 \
+  --timeout 2400
+```
+
+For a 50-prompt comparison, pass the plain-KV runner as `w8a8` and the
+static-KVQ runner as `w8a16`; those labels are only result keys in this helper:
+
+```bash
+python examples/arm/smollm2_example_ethos_u/eval_wikitext_perplexity.py \
+  --runner-w8a8 smollm2_ethosu_kv_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
+  --runner-w8a16 smollm2_ethosu_static_kvq_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
+  --prompts-file outputs/$(date +%F)/wikitext_prompts_kv_seq64.txt \
+  --num-prompts 100 \
+  --ppl-prompts 50 \
+  --min-prompt-tokens 64 \
+  --max-prompt-tokens 64 \
+  --max-tokens-per-prompt 64 \
+  --window 64 \
+  --max-context-length 64 \
+  --use-kv-cache \
+  --timeout 24000
+```
+
+## 8. Additional notes
+
+### Non-KV fallback: why padding is needed for full-logits evaluation
 
 The full-logits export returns one logits row per position in the fixed window.
 Short prompts therefore need padding so the runtime still receives a tensor with
@@ -302,7 +412,7 @@ just the linear layers. That path exists for experimentation, but it is not the
 validated path in this README because the linear-only setup is the one that
 currently produces the clearest end-to-end result on Ethos-U FVP.
 
-### Can calibration be faster?
+### Non-KV fallback: can calibration be faster?
 
 Yes. The quickest way to iterate is to lower `--calibration_limit`. The tradeoff
 is that you are collecting activation statistics from fewer samples, which can
@@ -319,13 +429,6 @@ bearable as the fuller-calibration setting, while `--calibration_limit=2`
 remains the fast validation option. On the 100-prompt perplexity check, `2`
 scored best, but `62` was still competitive and is the more conservative
 default when export turnaround is less important than fuller calibration.
-
-### Historical seq8 artifacts
-
-Earlier experiments in this directory used smaller seq8 exports and separate
-included-PTE runners. They are useful as implementation history, but they are
-not the main path for this README because they add options without improving the
-clarity of the validated seq32 `w8a16` workflow.
 
 ### Clean-checkout checklist
 

@@ -33,6 +33,7 @@
 #include <optional>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace mlsdk;
 
@@ -889,21 +890,29 @@ VkResult create_tensor_unbound(
     const int64_t* shape,
     uint32_t stride_size,
     const int64_t* strides,
+    bool image_aliasing,
     VkTensorDescriptionARM* description,
     VkTensorARM* tensor,
     VkMemoryRequirements2* memory_requirements) {
+  VkTensorUsageFlagsARM tensor_usage = VK_TENSOR_USAGE_SHADER_BIT_ARM |
+      VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM |
+      VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM | VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
+
+  if (image_aliasing) {
+    tensor_usage |= VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM;
+  }
+
   *description = VkTensorDescriptionARM{
       .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
       .pNext = nullptr,
-      .tiling = VK_TENSOR_TILING_LINEAR_ARM,
+      .tiling = image_aliasing ? VK_TENSOR_TILING_OPTIMAL_ARM
+                               : VK_TENSOR_TILING_LINEAR_ARM,
       .format = format,
       .dimensionCount = shape_size,
       .pDimensions = shape,
-      .pStrides = (0 == stride_size ? nullptr : strides),
-      .usage = VK_TENSOR_USAGE_SHADER_BIT_ARM |
-          VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM |
-          VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM |
-          VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM,
+      .pStrides =
+          image_aliasing ? nullptr : (0 == stride_size ? nullptr : strides),
+      .usage = tensor_usage,
   };
 
   const VkTensorCreateInfoARM create_info = {
@@ -927,34 +936,16 @@ VkResult create_tensor_unbound(
       .pNext = nullptr,
       .tensor = *tensor,
   };
+
   *memory_requirements = VkMemoryRequirements2{
       .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
       .pNext = nullptr,
   };
+
   vkGetTensorMemoryRequirementsARM(
       device, &memory_requirements_info, memory_requirements);
-  return VK_SUCCESS;
-}
 
-VkTensorDescriptionARM make_data_graph_descriptor(
-    VkFormat format,
-    uint32_t shape_size,
-    const int64_t* shape,
-    uint32_t stride_size,
-    const int64_t* strides) {
-  return VkTensorDescriptionARM{
-      .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
-      .pNext = nullptr,
-      .tiling = VK_TENSOR_TILING_LINEAR_ARM,
-      .format = format,
-      .dimensionCount = shape_size,
-      .pDimensions = shape,
-      .pStrides = (0 == stride_size ? nullptr : strides),
-      .usage = VK_TENSOR_USAGE_SHADER_BIT_ARM |
-          VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM |
-          VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM |
-          VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM,
-  };
+  return VK_SUCCESS;
 }
 
 VkResult bind_tensor_memory_and_create_view(
@@ -1472,7 +1463,9 @@ static void debug_print_modules(
     ET_LOG(Info, "    entrypoint '%s'", entrypoint.c_str());
     ET_LOG(Info, "    has spirv %d", module_decoder->hasSPIRV(i));
     ET_LOG(
-        Info, "    code size %lu", spirv.size()); // read the .begin() to .end()
+        Info,
+        "    code size %lu",
+        spirv.size()); // read the .begin() to .end()
   }
 }
 
@@ -1560,10 +1553,12 @@ bool VgfRepr::process_vgf(
   };
   struct AliasGroupUsage {
     bool has_image = false;
-    bool has_tensor_like = false;
+    bool has_tensor = false;
+    bool has_buffer = false;
   };
   struct AliasImageState {
     bool needs_tensor_aliasing = false;
+    VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkImageLayout current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     vector<VkImage> images;
   };
@@ -1571,6 +1566,7 @@ bool VgfRepr::process_vgf(
   unordered_map<uint32_t, AliasGroupUsage> alias_group_usage;
   unordered_map<uint32_t, AliasLogicalContract> alias_logical_contracts;
   unordered_map<uint32_t, AliasImageState> alias_image_states;
+  unordered_set<uint32_t> output_image_alias_groups;
   int IO_count = resource_decoder->size();
 
   for (int i = 0; i < IO_count; i++) {
@@ -1582,9 +1578,11 @@ bool VgfRepr::process_vgf(
     auto descriptor_type = resolve_descriptor_type(resource_decoder, i);
     if (is_image_descriptor_type(descriptor_type)) {
       usage.has_image = true;
-    }
-    if (is_tensor_like_descriptor_type(descriptor_type)) {
-      usage.has_tensor_like = true;
+
+    } else if (descriptor_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
+      usage.has_tensor = true;
+    } else if (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+      usage.has_buffer = true;
     }
   }
 
@@ -1639,6 +1637,7 @@ bool VgfRepr::process_vgf(
           shape.size() == 0 ? &kScalarSentinelDimension : shape.begin(),
           static_cast<uint32_t>(stride.size()),
           stride.begin(),
+          alias_group_usage[*alias_group].has_image,
           &tensor_description,
           &tensor,
           &memory_requirements);
@@ -1676,7 +1675,7 @@ bool VgfRepr::process_vgf(
       }
       const VkImageUsageFlags image_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
           VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-          ((alias_group_usage[*alias_group].has_tensor_like)
+          ((alias_group_usage[*alias_group].has_tensor)
                ? VK_IMAGE_USAGE_TENSOR_ALIASING_BIT_ARM
                : 0) |
           ((resource_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
@@ -1763,6 +1762,8 @@ bool VgfRepr::process_vgf(
     const vector<int64_t> the_stride(stride.begin(), stride.end());
     const auto shape_size = shape.size();
     const bool uses_alias_group = alias_group.has_value();
+    const bool image_aliasing =
+        uses_alias_group && alias_group_usage[*alias_group].has_image;
 
     auto get_alias_backing = [&]() -> AliasBacking* {
       if (!uses_alias_group) {
@@ -1848,6 +1849,7 @@ bool VgfRepr::process_vgf(
               shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
               static_cast<uint32_t>(stride.size()),
               stride.begin(),
+              image_aliasing,
               &tensor_description,
               &tensor,
               &tensor_memory_requirements);
@@ -2036,8 +2038,7 @@ bool VgfRepr::process_vgf(
           const VkImageUsageFlags image_usage =
               VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
               VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-              ((uses_alias_group &&
-                alias_group_usage[*alias_group].has_tensor_like)
+              ((uses_alias_group && alias_group_usage[*alias_group].has_tensor)
                    ? VK_IMAGE_USAGE_TENSOR_ALIASING_BIT_ARM
                    : 0) |
               ((resource_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
@@ -2112,11 +2113,13 @@ bool VgfRepr::process_vgf(
             ET_LOG(Error, "Failed to bind image for VGF resource %d", i);
             return false;
           }
-          const bool needs_tensor_aliasing = uses_alias_group &&
-              alias_group_usage[*alias_group].has_tensor_like;
-          const VkImageLayout initial_layout = needs_tensor_aliasing
-              ? VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM
-              : VK_IMAGE_LAYOUT_GENERAL;
+          const bool needs_tensor_aliasing =
+              uses_alias_group && alias_group_usage[*alias_group].has_tensor;
+
+          const VkImageLayout initial_layout = is_in
+              ? VK_IMAGE_LAYOUT_GENERAL
+              : (needs_tensor_aliasing ? VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM
+                                       : VK_IMAGE_LAYOUT_GENERAL);
           result = transition_image_layout(
               vk_device,
               vk_command_pool,
@@ -2151,8 +2154,29 @@ bool VgfRepr::process_vgf(
           if (uses_alias_group) {
             auto& alias_state = alias_image_states[*alias_group];
             alias_state.needs_tensor_aliasing = needs_tensor_aliasing;
-            alias_state.current_layout = initial_layout;
+
+            if (alias_state.images.empty()) {
+              alias_state.initial_layout = initial_layout;
+              alias_state.current_layout = initial_layout;
+            } else if (alias_state.initial_layout != initial_layout) {
+              ET_LOG(
+                  Error,
+                  "Alias group %u has inconsistent initial image layouts",
+                  *alias_group);
+              free_image(
+                  vk_device,
+                  image_view,
+                  image,
+                  sampler,
+                  owns_image_memory ? image_memory : VK_NULL_HANDLE);
+              return false;
+            }
+
             alias_state.images.push_back(image);
+
+            if (!is_in) {
+              output_image_alias_groups.insert(*alias_group);
+            }
           }
           VkBuffer staging_buffer = VK_NULL_HANDLE;
           VkDeviceMemory staging_memory = VK_NULL_HANDLE;
@@ -2207,13 +2231,6 @@ bool VgfRepr::process_vgf(
               .sampler = sampler,
               .buffer_size = image_allocation_size,
           };
-          descriptors[i] = make_data_graph_descriptor(
-              resource_format,
-              shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
-              shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
-              static_cast<uint32_t>(stride.size()),
-              stride.begin());
-          descriptor_valid[i] = true;
         } else {
           ET_LOG(Error, "Unsupported descriptor type %u", resource_type);
           return false;
@@ -2221,7 +2238,8 @@ bool VgfRepr::process_vgf(
         break;
       }
       case vgflib::ResourceCategory::CONSTANT:
-        // Constants just need a descriptor; only graph segments can bind them.
+        // Constants just need a descriptor; only graph segments can bind
+        // them.
         descriptors[i] = VkTensorDescriptionARM{
             .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
             .pNext = nullptr,
@@ -2231,7 +2249,8 @@ bool VgfRepr::process_vgf(
                 shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
             .pDimensions =
                 shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
-            // Note: stride_data of 0's causes size==0, null means stride==size
+            // Note: stride_data of 0's causes size==0, null means
+            // stride==size
             .pStrides = (0 == stride.size() ? nullptr : stride.begin()),
             .usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM,
         };
@@ -2258,6 +2277,7 @@ bool VgfRepr::process_vgf(
               shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
               static_cast<uint32_t>(stride.size()),
               stride.begin(),
+              image_aliasing,
               &tensor_description,
               &tensor,
               &tensor_memory_requirements);
@@ -2376,6 +2396,7 @@ bool VgfRepr::process_vgf(
                 &buffer_memory);
             if (result != VK_SUCCESS) {
               destroy_buffer(vk_device, buffer);
+
               ET_LOG(
                   Error,
                   "Failed to allocate buffer memory for VGF resource %d",
@@ -2428,8 +2449,7 @@ bool VgfRepr::process_vgf(
           const VkImageUsageFlags image_usage =
               VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
               VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-              ((uses_alias_group &&
-                alias_group_usage[*alias_group].has_tensor_like)
+              ((uses_alias_group && alias_group_usage[*alias_group].has_tensor)
                    ? VK_IMAGE_USAGE_TENSOR_ALIASING_BIT_ARM
                    : 0) |
               ((resource_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
@@ -2504,11 +2524,14 @@ bool VgfRepr::process_vgf(
             ET_LOG(Error, "Failed to bind image for VGF resource %d", i);
             return false;
           }
-          const bool needs_tensor_aliasing = uses_alias_group &&
-              alias_group_usage[*alias_group].has_tensor_like;
+
+          const bool needs_tensor_aliasing =
+              uses_alias_group && alias_group_usage[*alias_group].has_tensor;
+
           const VkImageLayout initial_layout = needs_tensor_aliasing
               ? VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM
               : VK_IMAGE_LAYOUT_GENERAL;
+
           result = transition_image_layout(
               vk_device,
               vk_command_pool,
@@ -2543,7 +2566,24 @@ bool VgfRepr::process_vgf(
           if (uses_alias_group) {
             auto& alias_state = alias_image_states[*alias_group];
             alias_state.needs_tensor_aliasing = needs_tensor_aliasing;
-            alias_state.current_layout = initial_layout;
+
+            if (alias_state.images.empty()) {
+              alias_state.initial_layout = initial_layout;
+              alias_state.current_layout = initial_layout;
+            } else if (alias_state.initial_layout != initial_layout) {
+              ET_LOG(
+                  Error,
+                  "Alias group %u has inconsistent initial image layouts",
+                  *alias_group);
+              free_image(
+                  vk_device,
+                  image_view,
+                  image,
+                  sampler,
+                  owns_image_memory ? image_memory : VK_NULL_HANDLE);
+              return false;
+            }
+
             alias_state.images.push_back(image);
           }
 
@@ -2569,13 +2609,6 @@ bool VgfRepr::process_vgf(
               .sampler = sampler,
               .buffer_size = 0,
           };
-          descriptors[i] = make_data_graph_descriptor(
-              resource_format,
-              shape_size == 0 ? 1 : static_cast<uint32_t>(shape_size),
-              shape_size == 0 ? &kScalarSentinelDimension : shape.begin(),
-              static_cast<uint32_t>(stride.size()),
-              stride.begin());
-          descriptor_valid[i] = true;
         } else {
           ET_LOG(Error, "Unsupported descriptor type %u", resource_type);
           return false;
@@ -2681,6 +2714,8 @@ bool VgfRepr::process_vgf(
     // Prepare layout bindings from this segment's information
     vector<VkDescriptorSetLayoutBinding> layout_bindings;
     vector<VkDataGraphPipelineResourceInfoARM> data_graph_resources;
+    vector<VkDataGraphPipelineResourceInfoImageLayoutARM>
+        data_graph_image_layouts(resource_decoder->size());
     auto set_count =
         sequence_decoder->getSegmentDescriptorSetInfosSize(segment_id);
     if (set_count != 1) {
@@ -2719,13 +2754,38 @@ bool VgfRepr::process_vgf(
         layout_bindings.push_back(layout_binding);
 
         if (segment.use_data_graph_pipeline) {
-          if (!descriptor_valid[MRT_index]) {
-            ET_LOG(Error, "Missing descriptor for MRT index %u", MRT_index);
+          const void* resource_info_pnext = nullptr;
+
+          if (MRT_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
+            if (!descriptor_valid[MRT_index]) {
+              ET_LOG(
+                  Error,
+                  "Missing tensor descriptor for MRT index %u",
+                  MRT_index);
+              return false;
+            }
+            resource_info_pnext = &descriptors[MRT_index];
+          } else if (is_image_descriptor_type(MRT_type)) {
+            data_graph_image_layouts[MRT_index] =
+                VkDataGraphPipelineResourceInfoImageLayoutARM{
+                    .sType =
+                        VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_IMAGE_LAYOUT_ARM,
+                    .pNext = nullptr,
+                    .layout = VK_IMAGE_LAYOUT_GENERAL,
+                };
+            resource_info_pnext = &data_graph_image_layouts[MRT_index];
+          } else {
+            ET_LOG(
+                Error,
+                "Unsupported data-graph descriptor type %u for MRT index %u",
+                static_cast<uint32_t>(MRT_type),
+                MRT_index);
             return false;
           }
+
           const VkDataGraphPipelineResourceInfoARM resource{
               .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM,
-              .pNext = &descriptors[MRT_index],
+              .pNext = resource_info_pnext,
               .descriptorSet = d_idx,
               .binding = binding_index,
               .arrayElement = 0,
@@ -2956,8 +3016,7 @@ bool VgfRepr::process_vgf(
       VkDataGraphPipelineCreateInfoARM graph_pipeline_info{
           .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
           .pNext = &shader_info,
-          .flags = VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT |
-              VK_PIPELINE_CREATE_2_EARLY_RETURN_ON_FAILURE_BIT_KHR,
+          .flags = 0,
           .layout = segment.vk_pipeline_layout,
           .resourceInfoCount =
               static_cast<uint32_t>(data_graph_resources.size()),
@@ -2973,7 +3032,10 @@ bool VgfRepr::process_vgf(
           nullptr,
           &segment.vk_pipeline);
       if (result != VK_SUCCESS) {
-        ET_LOG(Error, "Failed to create DataGraphPipeline");
+        ET_LOG(
+            Error,
+            "Failed to create DataGraphPipeline, error %d",
+            static_cast<int>(result));
         return false;
       }
 
@@ -3226,12 +3288,15 @@ bool VgfRepr::process_vgf(
       sequence_decoder->getModelSequenceInputNamesHandle();
   auto output_names_handle =
       sequence_decoder->getModelSequenceOutputNamesHandle();
+
   const size_t model_input_count =
       sequence_decoder->getNamesSize(input_names_handle);
   const size_t model_output_count =
       sequence_decoder->getNamesSize(output_names_handle);
+
   this->model_input_count = model_input_count;
   this->model_output_count = model_output_count;
+
   model_input_io_index.assign(model_input_count, -1);
   model_output_io_index.assign(model_output_count, -1);
 
@@ -3239,30 +3304,136 @@ bool VgfRepr::process_vgf(
       sequence_decoder->getBindingsSize(input_handle);
   const size_t output_binding_count =
       sequence_decoder->getBindingsSize(output_handle);
-  for (size_t i = 0; i < input_binding_count && i < model_input_count; ++i) {
-    auto mrt_i = sequence_decoder->getBindingSlotMrtIndex(input_handle, i);
-    if (mrt_i < resource_index_to_io_index.size()) {
-      model_input_io_index[i] = resource_index_to_io_index[mrt_i];
+
+  // Model converter may eliminate dead inputs, so fewer bindings than model
+  // input names is valid. More bindings than names is not.
+  if (input_binding_count > model_input_count) {
+    ET_LOG(
+        Error,
+        "VGF has %zu model input bindings but only %zu model input names",
+        input_binding_count,
+        model_input_count);
+    return false;
+  }
+
+  // Every externally visible model output must have a resource binding.
+  if (output_binding_count != model_output_count) {
+    ET_LOG(
+        Error,
+        "VGF has %zu model output bindings for %zu model output names",
+        output_binding_count,
+        model_output_count);
+    return false;
+  }
+
+  for (size_t binding_pos = 0; binding_pos < input_binding_count;
+       ++binding_pos) {
+    const uint32_t binding =
+        sequence_decoder->getBindingSlotBinding(input_handle, binding_pos);
+    const uint32_t mrt_idx =
+        sequence_decoder->getBindingSlotMrtIndex(input_handle, binding_pos);
+
+    // Input binding IDs refer to the original model input index. The model
+    // converter may omit dead inputs from the binding-slot list, so binding_pos
+    // is not necessarily the model input index.
+    const size_t model_input_idx = static_cast<size_t>(binding);
+    if (model_input_idx >= model_input_count) {
+      ET_LOG(
+          Error,
+          "VGF input binding slot %zu refers to model input %u, "
+          "but the model has only %zu inputs",
+          binding_pos,
+          binding,
+          model_input_count);
+      return false;
     }
-  }
-  for (size_t i = 0; i < output_binding_count && i < model_output_count; ++i) {
-    auto mrt_i = sequence_decoder->getBindingSlotMrtIndex(output_handle, i);
-    if (mrt_i < resource_index_to_io_index.size()) {
-      model_output_io_index[i] = resource_index_to_io_index[mrt_i];
+
+    if (mrt_idx >= resource_index_to_io_index.size()) {
+      ET_LOG(
+          Error,
+          "VGF model input %zu binding %u has invalid MRT index %u",
+          model_input_idx,
+          binding,
+          mrt_idx);
+      return false;
     }
+
+    const int io_idx = resource_index_to_io_index[mrt_idx];
+    if (io_idx < 0 || static_cast<size_t>(io_idx) >= IOs.size() ||
+        !IOs[io_idx].is_input) {
+      ET_LOG(
+          Error,
+          "VGF model input %zu binding %u MRT %u does not reference "
+          "a model input IO resource",
+          model_input_idx,
+          binding,
+          mrt_idx);
+      return false;
+    }
+
+    if (model_input_io_index[model_input_idx] != -1) {
+      ET_LOG(
+          Error,
+          "VGF model input %zu is referenced by multiple input binding slots",
+          model_input_idx);
+      return false;
+    }
+
+    model_input_io_index[model_input_idx] = io_idx;
+
+    ET_LOG(
+        Info,
+        "VGF input: binding_slot=%zu model_input=%zu binding=%u "
+        "mrt=%u -> IO[%d]",
+        binding_pos,
+        model_input_idx,
+        binding,
+        mrt_idx,
+        io_idx);
   }
-  ET_LOG(
-      Info,
-      "Model IO mapping: inputs=%zu outputs=%zu (bindings in=%zu out=%zu)",
-      model_input_count,
-      model_output_count,
-      input_binding_count,
-      output_binding_count);
-  for (size_t i = 0; i < model_input_count; ++i) {
-    ET_LOG(Info, "  input[%zu] -> IO[%d]", i, model_input_io_index[i]);
-  }
-  for (size_t i = 0; i < model_output_count; ++i) {
-    ET_LOG(Info, "  output[%zu] -> IO[%d]", i, model_output_io_index[i]);
+
+  for (size_t output_idx = 0; output_idx < output_binding_count; ++output_idx) {
+    const uint32_t binding =
+        sequence_decoder->getBindingSlotBinding(output_handle, output_idx);
+    const uint32_t mrt_idx =
+        sequence_decoder->getBindingSlotMrtIndex(output_handle, output_idx);
+
+    if (mrt_idx >= resource_index_to_io_index.size()) {
+      ET_LOG(
+          Error,
+          "VGF model output %zu binding %u has invalid MRT index %u",
+          output_idx,
+          binding,
+          mrt_idx);
+      return false;
+    }
+
+    const int io_idx = resource_index_to_io_index[mrt_idx];
+    if (io_idx < 0 || static_cast<size_t>(io_idx) >= IOs.size() ||
+        IOs[io_idx].is_input) {
+      ET_LOG(
+          Error,
+          "VGF model output %zu binding %u MRT %u does not reference "
+          "a model output IO resource",
+          output_idx,
+          binding,
+          mrt_idx);
+      return false;
+    }
+
+    // Unlike model input bindings, output binding IDs are logical VGF binding
+    // IDs and are not model-output indices. The model converter serializes
+    // sequence output binding slots in model-output order, matching the output
+    // names vector, so map outputs by binding-slot position.
+    model_output_io_index[output_idx] = io_idx;
+
+    ET_LOG(
+        Info,
+        "VGF output: output=%zu binding=%u mrt=%u -> IO[%d]",
+        output_idx,
+        binding,
+        mrt_idx,
+        io_idx);
   }
 
   {
@@ -3424,16 +3595,24 @@ bool VgfRepr::process_vgf(
             continue;
           }
           const auto descriptor_type = resource_bindings[mrt_i].descriptor_type;
-          const auto desired_layout = is_image_descriptor_type(descriptor_type)
-              ? VK_IMAGE_LAYOUT_GENERAL
-              : VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM;
+
+          VkImageLayout desired_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+          if (is_image_descriptor_type(descriptor_type)) {
+            desired_layout = VK_IMAGE_LAYOUT_GENERAL;
+          } else if (descriptor_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
+            desired_layout = VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM;
+          } else {
+            // Storage-buffer aliases do not drive tensor/image layout state.
+            continue;
+          }
           auto desired_it = desired_alias_layouts.find(*alias_group);
           if (desired_it == desired_alias_layouts.end()) {
             desired_alias_layouts[*alias_group] = desired_layout;
           } else if (desired_it->second != desired_layout) {
             ET_LOG(
                 Error,
-                "Alias group %u mixes image and tensor-like descriptor use in segment %d",
+                "Alias group %u mixes image and tensor descriptor use in segment %d",
                 *alias_group,
                 segment.segment_id);
             return false;
@@ -3526,6 +3705,30 @@ bool VgfRepr::process_vgf(
         });
 
     if (has_output_image) {
+      // Only image-output alias groups need to leave tensor-aliasing layout.
+      // Other alias groups may still be consumed/read back through tensors.
+      for (uint32_t alias_group : output_image_alias_groups) {
+        auto alias_state_it = alias_image_states.find(alias_group);
+        if (alias_state_it == alias_image_states.end()) {
+          continue;
+        }
+
+        auto& alias_state = alias_state_it->second;
+        if (alias_state.current_layout == VK_IMAGE_LAYOUT_GENERAL) {
+          continue;
+        }
+
+        for (auto image : alias_state.images) {
+          record_image_layout_transition(
+              vk_execute_cmd,
+              image,
+              alias_state.current_layout,
+              VK_IMAGE_LAYOUT_GENERAL);
+        }
+
+        alias_state.current_layout = VK_IMAGE_LAYOUT_GENERAL;
+      }
+
       VkMemoryBarrier2 output_image_barrier = {
           .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
           .srcStageMask = vgf_execution_stage_mask(),
@@ -3533,6 +3736,7 @@ bool VgfRepr::process_vgf(
           .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
           .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
       };
+
       VkDependencyInfo output_image_dependency = {
           .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
           .memoryBarrierCount = 1,
@@ -3568,6 +3772,26 @@ bool VgfRepr::process_vgf(
               &copy_region);
         }
       }
+    }
+
+    // vk_execute_cmd is recorded once and may be submitted repeatedly. Restore
+    // every aliased image to the layout assumed at command-buffer entry so
+    // recorded oldLayout values remain valid on the next submission.
+    for (auto& alias_entry : alias_image_states) {
+      auto& alias_state = alias_entry.second;
+      if (alias_state.current_layout == alias_state.initial_layout) {
+        continue;
+      }
+
+      for (auto image : alias_state.images) {
+        record_image_layout_transition(
+            vk_execute_cmd,
+            image,
+            alias_state.current_layout,
+            alias_state.initial_layout);
+      }
+
+      alias_state.current_layout = alias_state.initial_layout;
     }
 
     VkMemoryBarrier2 barrier_2 = {
@@ -3804,8 +4028,8 @@ void VgfRepr::free_vgf() {
 
 static uint32_t get_format_size(VkFormat format) {
   // Note: While this is a small subset of VkFormat, this supports all base
-  //       types for tensors coming from the compiler flow. Tensor formats only
-  //       specify single element type.
+  //       types for tensors coming from the compiler flow. Tensor formats
+  //       only specify single element type.
   switch (format) {
     case VK_FORMAT_R8_BOOL_ARM:
     case VK_FORMAT_R8_UINT:

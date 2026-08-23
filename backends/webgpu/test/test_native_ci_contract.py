@@ -71,5 +71,9 @@ class TestNativeCIContract(unittest.TestCase):
         ).read_text()
 
         self.assertIn("export_rope_hf_dynamic('${ROPE_HF_DIR}')", script)
+        self.assertIn("export_rope_hf_dynamic_sequence('${ROPE_HF_DIR}')", script)
         self.assertIn('WEBGPU_TEST_ROPE_HF_DIR="${ROPE_HF_DIR}"', script)
         self.assertIn('require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"', script)
+        self.assertIn(
+            'require_file "${ROPE_HF_DIR}/rope_hf_dynamic_sequence.pte"', script
+        )

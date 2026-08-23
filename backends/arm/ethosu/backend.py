@@ -1,3 +1,5 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 # Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -14,10 +16,11 @@
 import logging
 from typing import final, List
 
-from executorch.backends.arm.arm_vela import vela_compile
+from executorch.backends.arm.arm_vela import vela_compile, VelaCompileResult
 from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
 
 from executorch.backends.arm.tosa.backend import TOSABackend
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -37,8 +40,9 @@ class EthosUBackend(BackendDetails):
 
     @staticmethod
     def _compile_tosa_flatbuffer(
-        tosa_flatbuffer: bytes, compile_spec: EthosUCompileSpec
-    ) -> bytes:
+        tosa_flatbuffer: bytes,
+        compile_spec: EthosUCompileSpec,
+    ) -> VelaCompileResult:
         """Compile a TOSA flatbuffer into a target-specific binary stream.
 
         Args:
@@ -46,9 +50,8 @@ class EthosUBackend(BackendDetails):
                 ``TOSABackend``.
             compile_spec (EthosUCompileSpec): Compile specification providing
                 Vela flags and intermediate paths.
-
         Returns:
-            bytes: Target-specific binary stream produced by Vela.
+            VelaCompileResult: Binary stream and external payloads from Vela.
 
         """
         compile_flags = compile_spec.compiler_flags
@@ -70,13 +73,15 @@ class EthosUBackend(BackendDetails):
             )
 
         # Pass on the TOSA flatbuffer to the vela compiler.
-        binary = vela_compile(
+        return vela_compile(
             tosa_flatbuffer,
             compile_flags,
             verbose=logger.getEffectiveLevel() <= logging.INFO,
             intermediate_path=compile_spec._get_intermediate_path(),
+            block_placements=(
+                compile_spec.external_block_placements.to_block_placements()
+            ),
         )
-        return binary
 
     @staticmethod
     def preprocess(
@@ -108,8 +113,21 @@ class EthosUBackend(BackendDetails):
         # which can be passed on to next compilation step.
         tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
 
-        binary = EthosUBackend._compile_tosa_flatbuffer(
+        compile_result = EthosUBackend._compile_tosa_flatbuffer(
             tosa_preprocess.processed_bytes, compile_spec
         )
+        if not compile_result.external_blocks:
+            return PreprocessResult(processed_bytes=compile_result.processed_bytes)
 
-        return PreprocessResult(processed_bytes=binary)
+        data_store = NamedDataStore()
+        for external_block in compile_result.external_blocks:
+            data_store.add_named_data(
+                external_block.key,
+                external_block.payload,
+                alignment=external_block.alignment,
+                external_tag=external_block.placement,
+            )
+        return PreprocessResult(
+            processed_bytes=compile_result.processed_bytes,
+            data_store_output=data_store.get_named_data_store_output(),
+        )

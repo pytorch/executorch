@@ -1700,6 +1700,160 @@ TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
   EXPECT_TRUE(tensor.numel() == exp_numel);
 }
 
+// Sizes an image can carry but its extents cannot express: rank 4, and a
+// sequence dim that is not the packed one.
+static const std::vector<int64_t> kExternalSizes = {1, 37, 8, 64};
+
+static vTensor make_image_owner() {
+  return vTensor(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_image_keeps_logical_sizes) {
+  vTensor owner = make_image_owner();
+
+  vTensor view(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      &owner.image());
+
+  EXPECT_TRUE(view.sizes() == kExternalSizes);
+  EXPECT_TRUE(view.packed_dim() == 0);
+  EXPECT_TRUE(view.numel() == owner.numel());
+
+  // Reconstructing from the extents instead would collapse this to 3 sizes.
+  EXPECT_TRUE(vTensor(context(), owner.image()).sizes().size() == 3);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_image_rejects_size_mismatch) {
+  vTensor owner = make_image_owner();
+
+  std::vector<int64_t> mismatched = kExternalSizes;
+  mismatched.back() *= 2;
+
+  EXPECT_THROW(
+      vTensor(
+          context(),
+          mismatched,
+          vkapi::kFloat,
+          utils::kTexture3D,
+          utils::kWidthPacked,
+          /*allocate_memory = */ false,
+          utils::kDefaultAxisMap,
+          &owner.image()),
+      vkapi::Error);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_image_does_not_own_it) {
+  vTensor owner = make_image_owner();
+
+  {
+    vTensor view(
+        context(),
+        kExternalSizes,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        /*allocate_memory = */ false,
+        utils::kDefaultAxisMap,
+        &owner.image());
+
+    EXPECT_TRUE(view.image().is_copy_of(owner.image()));
+  }
+
+  // The view is gone and its deferred cleanup has run; the image it aliased
+  // belongs to `owner` and is still live.
+  context()->flush();
+  EXPECT_TRUE(owner.image());
+  EXPECT_FALSE(owner.image().is_copy());
+}
+
+static vTensor make_buffer_owner() {
+  return vTensor(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_keeps_sizes) {
+  vTensor owner = make_buffer_owner();
+
+  vTensor view(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      /*external_image = */ nullptr,
+      &owner.buffer());
+
+  EXPECT_TRUE(view.sizes() == kExternalSizes);
+  EXPECT_TRUE(view.numel() == owner.numel());
+  EXPECT_TRUE(view.storage_type() == utils::kBuffer);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_buffer_rejects_overflow) {
+  vTensor owner = make_buffer_owner();
+
+  std::vector<int64_t> too_large = kExternalSizes;
+  too_large.back() *= 2;
+
+  EXPECT_THROW(
+      vTensor(
+          context(),
+          too_large,
+          vkapi::kFloat,
+          utils::kBuffer,
+          utils::kWidthPacked,
+          /*allocate_memory = */ false,
+          utils::kDefaultAxisMap,
+          /*external_image = */ nullptr,
+          &owner.buffer()),
+      vkapi::Error);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_does_not_own_it) {
+  vTensor owner = make_buffer_owner();
+
+  {
+    vTensor view(
+        context(),
+        kExternalSizes,
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        /*allocate_memory = */ false,
+        utils::kDefaultAxisMap,
+        /*external_image = */ nullptr,
+        &owner.buffer());
+
+    EXPECT_TRUE(view.buffer().is_copy_of(owner.buffer()));
+  }
+
+  context()->flush();
+  EXPECT_TRUE(owner.buffer());
+  EXPECT_FALSE(owner.buffer().is_copy());
+}
+
 TEST(VulkanComputeGraphTest, test_values_scalars) {
   GraphConfig config;
   ComputeGraph graph(config);

@@ -94,6 +94,9 @@
  * ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE - Size of memory area
  *                                                          used when running
  *                                                          inferences
+ * ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE              - Size of the fast
+ *                                                          planned memory area
+ *                                                          for mem_id = 3
  */
 
 #include <errno.h>
@@ -150,9 +153,7 @@ using printf_size_t = unsigned long;
  * e.g. the input file data and the pte file data
  * In our unit test flow, we have the capability to provide an enitre model to
  * the Corstone-3xx FVP using semi hosting. Hence, the input file allocation
- * pool needs to be large enough to take an entire model and input. On the FVP,
- * input_data_sec is linked to the DDR, which is large (256MB on
- * Corstone-300).
+ * pool needs to be large enough to take an entire model and input.
  * If you use semihosting on your HW this can be lowered to fit your
  * files/memory
  */
@@ -163,7 +164,7 @@ using printf_size_t = unsigned long;
 const size_t input_file_allocation_pool_size =
     ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section(".bss.input_file_allocator_sec"),
     aligned(16))) input_file_allocation_pool[input_file_allocation_pool_size];
 #endif
 
@@ -192,6 +193,7 @@ unsigned char __attribute__((
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
 using executorch::extension::BufferDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -231,7 +233,7 @@ using torch::executor::etdump_result;
 const size_t method_allocation_pool_size =
     ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section(".bss.method_allocator_sec"),
     aligned(16))) method_allocation_pool[method_allocation_pool_size];
 
 #if defined(ET_BUNDLE_IO)
@@ -289,8 +291,17 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 }
 #endif
 
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+const size_t planned_fast_memory_pool_size =
+    ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE;
+unsigned char __attribute__((
+    section(".fast_memory"),
+    aligned(16))) planned_fast_memory_pool[planned_fast_memory_pool_size];
+#endif
+constexpr size_t FAST_MEMORY_REGION_INDEX = 2;
+
 [[maybe_unused]] void et_pal_init(void) {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   // Armv8.1-M Mainline cores (M55, M85) have the optional PMU extension.
   // Pre-Armv8.1-M cores lack ARM_PMU_*; et_pal_current_ticks() returns 0.
   ARM_PMU_Enable();
@@ -317,7 +328,7 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 }
 
 [[maybe_unused]] et_timestamp_t et_pal_current_ticks(void) {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   return ARM_PMU_Get_CCNTR();
 #else
   return 0;
@@ -489,9 +500,19 @@ Error prepare_input_tensors(
             tensor_size);
         err = Error::InvalidArgument;
       } else if (input_evalues[i].isTensor()) {
-        // Copy the data from the input buffer to the tensor
-        Tensor& tensor = input_evalues[i].toTensor();
-        std::memcpy(tensor.mutable_data_ptr<int8_t>(), buffer, buffer_size);
+        // set_input copies shape metadata into its method-owned input tensor.
+        // For unplanned inputs it aliases only buffer, which remains valid
+        // through execute(); this temporary TensorImpl is not retained.
+        TensorImpl impl = TensorImpl(
+            tensor_meta->scalar_type(),
+            static_cast<ssize_t>(tensor_meta->sizes().size()),
+            const_cast<TensorImpl::SizesType*>(tensor_meta->sizes().data()),
+            buffer,
+            const_cast<TensorImpl::DimOrderType*>(
+                tensor_meta->dim_order().data()));
+        Tensor tensor(&impl);
+        err = method.set_input(tensor, i);
+        ET_CHECK_OK_OR_RETURN_ERROR(err);
       }
     }
 
@@ -581,6 +602,7 @@ struct RunnerContext {
   Box<BufferDataLoader> loader;
   Box<Program> program;
   Box<ArmMemoryAllocator> method_allocator;
+  Box<ArmMemoryAllocator> planned_fast_allocator;
   Box<ArmMemoryAllocator> temp_allocator;
   std::vector<Span<uint8_t>> planned_spans;
   Box<HierarchicalAllocator> planned_memory;
@@ -595,8 +617,33 @@ struct RunnerContext {
 #if defined(SEMIHOSTING)
   Box<ArmMemoryAllocator> input_file_allocator;
   const char* output_basename = nullptr;
+  bool server_mode = false;
+  std::vector<const char*> input_filenames;
 #endif
 };
+
+#if defined(SEMIHOSTING)
+Error read_input_files(
+    RunnerContext& ctx,
+    const std::vector<const char*>& input_filenames,
+    std::vector<std::pair<char*, size_t>>& input_buffers) {
+  input_buffers.clear();
+  for (size_t i = 0; i < input_filenames.size(); ++i) {
+    auto [buffer, buffer_size] =
+        read_binary_file(input_filenames[i], ctx.input_file_allocator.value());
+    if (buffer == nullptr) {
+      ET_LOG(
+          Error,
+          "Reading input tensor %zu from file %s failed.",
+          i + 1,
+          input_filenames[i]);
+      return Error::AccessFailed;
+    }
+    input_buffers.push_back(std::make_pair(buffer, buffer_size));
+  }
+  return Error::Ok;
+}
+#endif
 
 void runner_init(
     RunnerContext& ctx,
@@ -672,6 +719,15 @@ void runner_init(
   ctx.method_allocator.reset(
       method_allocation_pool_size, method_allocation_pool);
 
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+  ET_LOG(
+      Info,
+      "Setup planned FAST_MEMORY_REGION pool. Size: %lu bytes.",
+      static_cast<unsigned long>(planned_fast_memory_pool_size));
+  ctx.planned_fast_allocator.reset(
+      planned_fast_memory_pool_size, planned_fast_memory_pool);
+#endif
+
   ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
   ctx.planned_spans.reserve(num_memory_planned_buffers);
@@ -680,20 +736,49 @@ void runner_init(
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+
     ET_LOG(
         Info,
-        "Setting up planned buffer %lu, size %lu.",
-        static_cast<unsigned long>(id),
+        "Setting up planned buffer with mem_id=%lu, size %lu.",
+        static_cast<unsigned long>(id + 1),
         static_cast<unsigned long>(buffer_size));
+    if (buffer_size == 0) {
+      ctx.planned_spans.push_back(Span<uint8_t>(
+          static_cast<uint8_t*>(nullptr), static_cast<size_t>(0)));
+      continue;
+    }
 
-    /* Move to it's own allocator when MemoryPlanner is in place. */
-    /* Ethos-U driver requires 16 bit alignment. */
-    uint8_t* buffer = reinterpret_cast<uint8_t*>(
-        ctx.method_allocator->allocate(buffer_size, 16UL));
+    uint8_t* buffer = nullptr;
+    const char* memory_region = nullptr;
+    switch (id) {
+      case FAST_MEMORY_REGION_INDEX:
+        memory_region = "FAST_MEMORY_REGION";
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+        buffer = reinterpret_cast<uint8_t*>(
+            ctx.planned_fast_allocator->allocate(buffer_size, 16UL));
+#else
+        ET_CHECK_MSG(
+            false,
+            "Planned buffer %lu uses mem_id=%lu/FAST_MEMORY_REGION, but "
+            "ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE is not set",
+            static_cast<unsigned long>(id),
+            static_cast<unsigned long>(id + 1));
+#endif
+        break;
+      default:
+        memory_region = "SLOW_MEMORY_REGION";
+        /* Ethos-U driver requires 16 bit alignment. */
+        buffer = reinterpret_cast<uint8_t*>(
+            ctx.method_allocator->allocate(buffer_size, 16UL));
+        break;
+    }
     ET_CHECK_MSG(
         buffer != nullptr,
-        "Could not allocate memory for memory planned buffer size %lu",
-        static_cast<unsigned long>(buffer_size));
+        "Could not allocate memory for planned buffer with mem_id=%lu, size "
+        "%lu in %s",
+        static_cast<unsigned long>(id + 1),
+        static_cast<unsigned long>(buffer_size),
+        memory_region);
     ctx.planned_spans.push_back({buffer, buffer_size});
   }
 
@@ -916,6 +1001,23 @@ void log_mem_status(RunnerContext& ctx) {
         Info,
         "method_allocator_planned:  %lu bytes",
         static_cast<unsigned long>(ctx.planned_buffer_memsize));
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+    if (ctx.planned_fast_allocator->size() > 0) {
+      ET_LOG(
+          Info,
+          "planned_fast_allocator:    %lu / %lu free: %lu ( used: %lu %% ) ",
+          static_cast<unsigned long>(ctx.planned_fast_allocator->used_size()),
+          static_cast<unsigned long>(ctx.planned_fast_allocator->size()),
+          static_cast<unsigned long>(ctx.planned_fast_allocator->free_size()),
+          static_cast<unsigned long>(
+              100 * ctx.planned_fast_allocator->used_size() /
+              ctx.planned_fast_allocator->size()));
+      ET_LOG(
+          Info,
+          "planned_fast_used:         %lu bytes",
+          static_cast<unsigned long>(ctx.planned_fast_allocator->used_size()));
+    }
+#endif
     ET_LOG(
         Info,
         "method_allocator_loaded:   %lu bytes",
@@ -1255,6 +1357,48 @@ bool run_model(RunnerContext& ctx, const void* model_data) {
   return model_ok;
 }
 
+#if defined(SEMIHOSTING)
+bool run_model_server(
+    RunnerContext& ctx,
+    const void* model_data,
+    std::vector<std::pair<char*, size_t>>& input_buffers) {
+  ET_LOG(Info, "Running in semihosting server mode.");
+  char line[16];
+  int server_inference_count = 0;
+  while (fgets(line, sizeof(line), stdin) != nullptr) {
+    ctx.input_file_allocator.reset(
+        input_file_allocation_pool_size, input_file_allocation_pool);
+    Error status = read_input_files(ctx, ctx.input_filenames, input_buffers);
+    ET_CHECK_MSG(
+        status == Error::Ok, "Could not reload inputs: 0x%" PRIx32, status);
+
+    status = ::prepare_input_tensors(
+        *ctx.method.value(), ctx.temp_allocator.value(), input_buffers);
+    ET_CHECK_MSG(
+        status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, status);
+
+    StartMeasurements();
+    status = ctx.method.value()->execute();
+    StopMeasurements(1);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Execution of method %s failed with status 0x%" PRIx32,
+        ctx.method_name,
+        status);
+
+    print_outputs(ctx);
+    ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
+    ET_LOG(Info, "SERVER_INFERENCE_DONE %d", server_inference_count++);
+    fflush(stdout);
+    fflush(stderr);
+  }
+
+  bool model_ok = verify_result(ctx, model_data);
+  ET_LOG(Info, "Model run: %d", model_ok);
+  return model_ok;
+}
+#endif
+
 } // namespace
 
 int main(int argc, const char* argv[]) {
@@ -1330,6 +1474,7 @@ int main(int argc, const char* argv[]) {
         _exit(1);
       }
       input_buffers.push_back(std::make_pair(buffer, buffer_size));
+      ctx.input_filenames.push_back(input_tensor_filename);
     } else if (std::strcmp(argv[i], "-m") == 0) {
       const char* pte_filename = argv[++i];
       ET_LOG(Info, "Reading pte model from file %s", pte_filename);
@@ -1345,6 +1490,19 @@ int main(int argc, const char* argv[]) {
     } else if (std::strcmp(argv[i], "-o") == 0) {
       // store the base filename to write output to.
       ctx.output_basename = argv[++i];
+    } else if (std::strcmp(argv[i], "--server_mode") == 0) {
+      if (++i >= argc) {
+        ET_LOG(Fatal, "--server_mode requires true or false");
+        return 1;
+      }
+      if (std::strcmp(argv[i], "true") == 0) {
+        ctx.server_mode = true;
+      } else if (std::strcmp(argv[i], "false") == 0) {
+        ctx.server_mode = false;
+      } else {
+        ET_LOG(Fatal, "Invalid --server_mode value: %s", argv[i]);
+        return 1;
+      }
     }
   }
 #endif
@@ -1373,7 +1531,15 @@ int main(int argc, const char* argv[]) {
 
   runner_init(ctx, model_data, model_size, input_buffers);
   bool model_ok = true;
+#if defined(SEMIHOSTING)
+  if (ctx.server_mode) {
+    model_ok = run_model_server(ctx, model_data, input_buffers);
+  } else {
+    model_ok = run_model(ctx, model_data);
+  }
+#else
   model_ok = run_model(ctx, model_data);
+#endif
   ET_LOG(Info, "Model run: %d", model_ok);
 
   log_mem_status(ctx);

@@ -61,6 +61,23 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh "${{ matrix.python-version }}"
 
+  test-arduino-library:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_arduino_library.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/cortex_m/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arduino/') ||
+      contains(needs.changed-files.outputs.changed-files, 'kernels/portable/') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
+      contains(needs.changed-files.outputs.changed-files, 'schema/')
+    name: test-arduino-library
+    uses: ./.github/workflows/_test_arduino_library.yml
+    permissions:
+      id-token: write
+      contents: read
+
   test-minimal-wheel-linux:
     needs: changed-files
     if: |
@@ -824,7 +841,7 @@ jobs:
       contents: read
     with:
       runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
