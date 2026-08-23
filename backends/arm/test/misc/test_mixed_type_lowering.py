@@ -33,14 +33,17 @@ dq_tosa_ops = {
 }
 q_tosa_ops = {
     "CAST": {"INT8": 1},
-    "MUL": {"FP32": 1},  # scale multiplication
-    "ADD": {"FP32": 2},  # zero-point addition, rounding
-    "SUB": {"FP32": 1},  # for rounding
-    "CLAMP": {"FP32": 1},  # clamp
-    "GREATER_EQUAL": {"BOOL": 1},  # for rounding
-    "SELECT": {"FP32": 1},  # for rounding
+    "MUL": {"FP32": 2},  # scale multiplication + round()'s internal multiply
+    "ADD": {"FP32": 1},  # zero-point addition
+    "SUB": {"FP32": 2},  # for rounding
     "CEIL": {"FP32": 1},  # for rounding
-    "FLOOR": {"FP32": 1},  # for rounding
+    "CLAMP": {"FP32": 1},  # clamp
+    "SELECT": {"FP32": 1},  # for rounding
+    "FLOOR": {"FP32": 2},  # for rounding
+    "EQUAL": {"BOOL": 2},  # for rounding
+    "GREATER": {"BOOL": 1},  # for rounding
+    "LOGICAL_AND": {"BOOL": 1},  # for rounding
+    "LOGICAL_OR": {"BOOL": 1},  # for rounding
 }
 
 
