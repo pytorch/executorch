@@ -189,9 +189,7 @@ class Vocoder(nn.Module):
 
     def _validate_input(self, latent: torch.Tensor) -> None:
         if latent.ndim != 3 or latent.shape[1] != self.latent_channels:
-            raise ValueError(
-                f"latent must have shape [B, {self.latent_channels}, L]"
-            )
+            raise ValueError(f"latent must have shape [B, {self.latent_channels}, L]")
         if latent.shape[2] <= 0:
             raise ValueError("latent length must be positive")
 

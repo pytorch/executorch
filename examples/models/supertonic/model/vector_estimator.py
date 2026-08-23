@@ -237,10 +237,13 @@ class StyleAttention(nn.Module):
         query = self._split_heads(self.W_query(inputs))
         projected_key = self._split_heads(self.W_key(key))
         projected_value = self._split_heads(self.W_value(value))
-        scores = torch.matmul(
-            query,
-            torch.tanh(projected_key.transpose(-2, -1)),
-        ) / self.score_scale
+        scores = (
+            torch.matmul(
+                query,
+                torch.tanh(projected_key.transpose(-2, -1)),
+            )
+            / self.score_scale
+        )
         weights = torch.softmax(scores, dim=-1)
         weights = torch.where(
             query_mask.transpose(1, 2).unsqueeze(0) != 0,
@@ -316,9 +319,7 @@ class VectorField(nn.Module):
         max_positions: int,
     ) -> None:
         super().__init__()
-        self.proj_in = Conv1dProjection(
-            latent_channels, hidden_channels, 1, bias=False
-        )
+        self.proj_in = Conv1dProjection(latent_channels, hidden_channels, 1, bias=False)
         self.time_encoder = TimeEncoder(time_dim, time_hidden_channels)
         blocks: list[nn.Module] = []
         for block_index in range(num_main_blocks):
@@ -384,13 +385,9 @@ class VectorField(nn.Module):
         for block_index in range(self.num_main_blocks):
             offset = block_index * 6
             hidden = self.main_blocks[offset](hidden, latent_mask)
-            hidden = self.main_blocks[offset + 1](
-                hidden, time_embedding, latent_mask
-            )
+            hidden = self.main_blocks[offset + 1](hidden, time_embedding, latent_mask)
             hidden = self.main_blocks[offset + 2](hidden, latent_mask)
-            hidden = self.main_blocks[offset + 3](
-                hidden, text, latent_mask, text_mask
-            )
+            hidden = self.main_blocks[offset + 3](hidden, text, latent_mask, text_mask)
             hidden = self.main_blocks[offset + 4](hidden, latent_mask)
             hidden = self.main_blocks[offset + 5](
                 hidden, style_key, style_value, latent_mask
@@ -422,15 +419,11 @@ class VectorEstimator(nn.Module):
         super().__init__()
         if config.ttl.latent_dim <= 0 or config.ttl.chunk_compress_factor <= 0:
             raise ValueError("config.ttl dimensions must be positive")
-        latent_channels = (
-            config.ttl.latent_dim * config.ttl.chunk_compress_factor
-        )
+        latent_channels = config.ttl.latent_dim * config.ttl.chunk_compress_factor
         self.uncond_masker = UnconditionalMasker(
             text_channels, style_tokens, style_channels
         )
-        self.style_key = nn.Parameter(
-            torch.randn(1, style_tokens, style_channels)
-        )
+        self.style_key = nn.Parameter(torch.randn(1, style_tokens, style_channels))
         self.vector_field = VectorField(
             latent_channels,
             hidden_channels,
@@ -453,7 +446,7 @@ class VectorEstimator(nn.Module):
         self.style_channels = style_channels
         self.max_positions = max_positions
 
-    def _validate_inputs(
+    def _validate_inputs(  # noqa: C901
         self,
         noisy_latent: torch.Tensor,
         text_emb: torch.Tensor,
@@ -463,17 +456,12 @@ class VectorEstimator(nn.Module):
         current_step: torch.Tensor,
         total_step: torch.Tensor,
     ) -> None:
-        if (
-            noisy_latent.ndim != 3
-            or noisy_latent.shape[1] != self.latent_channels
-        ):
+        if noisy_latent.ndim != 3 or noisy_latent.shape[1] != self.latent_channels:
             raise ValueError(
                 f"noisy_latent must have shape [B, {self.latent_channels}, L]"
             )
         if text_emb.ndim != 3 or text_emb.shape[1] != self.text_channels:
-            raise ValueError(
-                f"text_emb must have shape [B, {self.text_channels}, T]"
-            )
+            raise ValueError(f"text_emb must have shape [B, {self.text_channels}, T]")
         if style_ttl.ndim != 3 or style_ttl.shape[1:] != (
             self.style_tokens,
             self.style_channels,
@@ -521,9 +509,7 @@ class VectorEstimator(nn.Module):
         if not torch.all(
             torch.isfinite(latent_valid_counts) & (latent_valid_counts > 0)
         ).item():
-            raise ValueError(
-                "latent_mask must contain a valid position per sample"
-            )
+            raise ValueError("latent_mask must contain a valid position per sample")
         text_valid_counts = text_mask.sum(dim=(1, 2))
         if not torch.all(
             torch.isfinite(text_valid_counts) & (text_valid_counts > 0)
@@ -565,18 +551,14 @@ class VectorEstimator(nn.Module):
         style_key = torch.cat(
             (
                 self.style_key.expand(batch, -1, -1),
-                self.uncond_masker.style_key_special_token.expand(
-                    batch, -1, -1
-                ),
+                self.uncond_masker.style_key_special_token.expand(batch, -1, -1),
             ),
             dim=0,
         )
         style_value = torch.cat(
             (
                 style_ttl,
-                self.uncond_masker.style_value_special_token.expand(
-                    batch, -1, -1
-                ),
+                self.uncond_masker.style_value_special_token.expand(batch, -1, -1),
             ),
             dim=0,
         )

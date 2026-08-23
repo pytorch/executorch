@@ -132,7 +132,9 @@ class UnicodeProcessor:
             raise ValueError("text vocabulary size must be positive")
         with Path(unicode_indexer_path).open(encoding="utf-8") as indexer_file:
             self.indexer: Sequence[int] | dict[str, int] = json.load(indexer_file)
-        token_ids = self.indexer.values() if isinstance(self.indexer, dict) else self.indexer
+        token_ids = (
+            self.indexer.values() if isinstance(self.indexer, dict) else self.indexer
+        )
         if any(
             not isinstance(token_id, int)
             or isinstance(token_id, bool)
@@ -166,8 +168,7 @@ class UnicodeProcessor:
             raise ValueError("expected at least one text and language")
 
         processed = [
-            preprocess_text(text, language)
-            for text, language in zip(texts, languages)
+            preprocess_text(text, language) for text, language in zip(texts, languages)
         ]
         lengths = np.asarray([len(text) for text in processed], dtype=np.int64)
         text_ids = np.zeros((len(processed), int(lengths.max())), dtype=np.int64)

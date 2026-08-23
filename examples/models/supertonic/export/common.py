@@ -127,7 +127,7 @@ def dynamic_shapes(bounds: ExportBounds) -> dict[str, tuple[dict | None, ...]]:
     }
 
 
-def validate_vector_inputs(
+def validate_vector_inputs(  # noqa: C901
     inputs: tuple[torch.Tensor, ...],
     config: TTSConfig,
     bounds: ExportBounds,
@@ -216,10 +216,9 @@ def text_vocabulary_size(models: Mapping[str, nn.Module]) -> int:
         duration_size = models[
             "duration_predictor"
         ].sentence_encoder.text_embedder.char_embedder.num_embeddings
-        encoder_size = (
-            models["text_encoder"]
-            .text_encoder.text_embedder.char_embedder.num_embeddings
-        )
+        encoder_size = models[
+            "text_encoder"
+        ].text_encoder.text_embedder.char_embedder.num_embeddings
     except (AttributeError, KeyError) as error:
         raise ValueError("models do not expose the text vocabulary contract") from error
     if duration_size <= 0 or duration_size != encoder_size:

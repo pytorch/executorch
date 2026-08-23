@@ -170,9 +170,7 @@ _VECTOR_TARGETS = [
 ]
 for block in range(4):
     offset = block * 6
-    _VECTOR_TARGETS.extend(
-        _convnext_targets(f"vector_field.main_blocks.{offset}", 4)
-    )
+    _VECTOR_TARGETS.extend(_convnext_targets(f"vector_field.main_blocks.{offset}", 4))
     _VECTOR_TARGETS.extend(
         (
             f"vector_field.main_blocks.{offset + 1}.linear.linear.weight",
@@ -211,9 +209,7 @@ _VECTOR_TARGETS.append("vector_field.proj_out.net.weight")
 VECTOR_ESTIMATOR_INITIALIZER_MAP = {
     target: f"vector_estimator.tts.ttl.{target}" for target in _VECTOR_TARGETS
 }
-VECTOR_ESTIMATOR_INITIALIZER_MAP["style_key"] = (
-    "/vector_estimator/Expand_output_0"
-)
+VECTOR_ESTIMATOR_INITIALIZER_MAP["style_key"] = "/vector_estimator/Expand_output_0"
 
 _VECTOR_MATMUL_WEIGHTS = {
     1: 3384,
@@ -232,9 +228,7 @@ _VECTOR_MATMUL_WEIGHTS = {
 for block_index, initializer_index in _VECTOR_MATMUL_WEIGHTS.items():
     if block_index % 6 == 1:
         target = f"vector_field.main_blocks.{block_index}.linear.linear.weight"
-        VECTOR_ESTIMATOR_INITIALIZER_MAP[target] = (
-            f"onnx::MatMul_{initializer_index}"
-        )
+        VECTOR_ESTIMATOR_INITIALIZER_MAP[target] = f"onnx::MatMul_{initializer_index}"
         continue
     attention_name = "attn" if block_index % 6 == 3 else "attention"
     for projection, offset in (
@@ -284,8 +278,7 @@ _VECTOR_GENERATED_STATIC = {
     "onnx::Tile_1065",
 }
 _VECTOR_GENERATED_SPLITS = {
-    f"/vector_estimator/vector_field/main_blocks.{block}/attn/"
-    f"{split}/{suffix}"
+    f"/vector_estimator/vector_field/main_blocks.{block}/attn/" f"{split}/{suffix}"
     for block in (3, 9, 15, 21)
     for split, suffixes in (
         (
@@ -365,9 +358,7 @@ _VOCODER_TARGETS.extend(
     )
 )
 
-VOCODER_INITIALIZER_MAP = {
-    target: f"tts.ae.{target}" for target in _VOCODER_TARGETS
-}
+VOCODER_INITIALIZER_MAP = {target: f"tts.ae.{target}" for target in _VOCODER_TARGETS}
 VOCODER_INITIALIZER_MAP.update(
     {
         "normalizer.scale": "tts.ttl.normalizer.scale",
@@ -490,9 +481,7 @@ def load_onnx_initializers(
         unused_sources = sorted(set(initializers) - set(mapping.values()))
         unexpected_unused = sorted(set(unused_sources) - set(allowed_unused))
         if unexpected_unused:
-            raise ValueError(
-                f"unused initializer: {', '.join(unexpected_unused)}"
-            )
+            raise ValueError(f"unused initializer: {', '.join(unexpected_unused)}")
 
     loaded_state: dict[str, torch.Tensor] = {}
     for target_name, initializer_name in mapping.items():
@@ -536,9 +525,7 @@ def load_text_encoder(model_path: str | Path, config: TTSConfig) -> TextEncoder:
     return model
 
 
-def load_vector_estimator(
-    model_path: str | Path, config: TTSConfig
-) -> VectorEstimator:
+def load_vector_estimator(model_path: str | Path, config: TTSConfig) -> VectorEstimator:
     model = VectorEstimator(config)
     load_onnx_initializers(
         model,
