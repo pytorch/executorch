@@ -13,9 +13,7 @@ from examples.models.supertonic.model.config import TTSConfig
 
 
 def _vector_estimator():
-    return importlib.import_module(
-        "examples.models.supertonic.model.vector_estimator"
-    )
+    return importlib.import_module("examples.models.supertonic.model.vector_estimator")
 
 
 def _config(
@@ -245,13 +243,11 @@ def test_vector_estimator_uses_current_and_total_steps() -> None:
             "total_step must be finite and positive",
         ),
         (
-            lambda values: values[:5]
-            + [torch.tensor([float("inf"), 2.0]), values[6]],
+            lambda values: values[:5] + [torch.tensor([float("inf"), 2.0]), values[6]],
             "current_step must be finite",
         ),
         (
-            lambda values: values[:5]
-            + [torch.tensor([float("nan"), 2.0]), values[6]],
+            lambda values: values[:5] + [torch.tensor([float("nan"), 2.0]), values[6]],
             "current_step must be finite",
         ),
     ],
@@ -461,9 +457,7 @@ def test_rotary_attention_masks_keys_before_and_queries_after_softmax() -> None:
             projection.linear.weight.copy_(torch.eye(4))
             projection.linear.bias.zero_()
     inputs = torch.tensor([[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]])
-    context = torch.tensor(
-        [[[2.0, 3.0, 4.0, 5.0], [1000.0, 1000.0, 1000.0, 1000.0]]]
-    )
+    context = torch.tensor([[[2.0, 3.0, 4.0, 5.0], [1000.0, 1000.0, 1000.0, 1000.0]]])
     query_mask = torch.tensor([[[1.0, 0.0]]])
     key_mask = torch.tensor([[[1.0, 0.0]]])
 

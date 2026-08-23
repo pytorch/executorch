@@ -8,11 +8,11 @@ import json
 
 import pytest
 import torch
-from torch import nn
 
 from examples.models.supertonic.export import common
 from examples.models.supertonic.loaders import checkpoint_loader
 from examples.models.supertonic.model.config import TTSConfig
+from torch import nn
 
 
 def _config() -> TTSConfig:
@@ -181,9 +181,7 @@ def _valid_vector_inputs() -> tuple[torch.Tensor, ...]:
 
 def test_example_inputs_reject_flow_steps_the_native_runner_cannot_execute() -> None:
     with pytest.raises(ValueError, match="flow steps must be 5"):
-        common.example_inputs(
-            _config(), common.ExportBounds(4, 3), flow_steps=4
-        )
+        common.example_inputs(_config(), common.ExportBounds(4, 3), flow_steps=4)
 
 
 @pytest.mark.parametrize(

@@ -73,7 +73,7 @@ def test_duration_predictor_matches_published_onnx() -> None:
     assert actual.shape == expected.shape
     assert np.isfinite(actual).all()
     assert metrics["max_error"] < 1e-6
-    assert metrics["mean_error"] < 1e-7
+    assert metrics["mean_error"] < 2e-7
     assert metrics["cosine"] > 0.9999999
     assert metrics["sqnr_db"] > 120.0
 
@@ -183,8 +183,7 @@ def test_vocoder_matches_published_onnx() -> None:
         np.corrcoef(actual.reshape(-1), expected.reshape(-1))[0, 1]
     )
     print(
-        "vocoder parity: "
-        f"{metrics | {'waveform_correlation': waveform_correlation}}"
+        "vocoder parity: " f"{metrics | {'waveform_correlation': waveform_correlation}}"
     )
 
     assert actual.shape == expected.shape

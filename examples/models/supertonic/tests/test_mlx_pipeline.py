@@ -9,8 +9,7 @@ import platform
 import pytest
 import torch
 
-from examples.models.supertonic.export import common
-from examples.models.supertonic.export import export_supertonic
+from examples.models.supertonic.export import common, export_supertonic
 from examples.models.supertonic.model.config import TTSConfig
 from examples.models.supertonic.model.duration_predictor import DurationPredictor
 from examples.models.supertonic.model.text_encoder import TextEncoder
@@ -235,9 +234,7 @@ def test_saved_multi_method_pte_reloads_and_runs_dynamic_lengths(
     assert set(tmp_path.iterdir()) == {pte_path}
     program = Runtime.get().load_program(pte_path, verification=Verification.Minimal)
 
-    metadata = common.runtime_metadata(
-        config, BOUNDS, text_vocabulary_size=256
-    )
+    metadata = common.runtime_metadata(config, BOUNDS, text_vocabulary_size=256)
     assert program.method_names == set(common.METHOD_NAMES) | set(metadata)
     for method_name, expected in metadata.items():
         actual = program.load_method(method_name).execute([])[0]

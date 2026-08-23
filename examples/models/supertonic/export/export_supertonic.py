@@ -10,9 +10,8 @@ from typing import Mapping
 
 import torch
 from torch import nn
-from torch.export import ExportedProgram, export
+from torch.export import export, ExportedProgram
 
-from . import common
 from ..model.config import TTSConfig
 from ..source_transformations.mlx import (
     exportable_vector_estimator,
@@ -20,6 +19,11 @@ from ..source_transformations.mlx import (
     replace_same_padding,
     replace_vocoder_causal_padding,
 )
+
+from . import common
+
+
+_DEFAULT_EXPORT_BOUNDS = common.ExportBounds()
 
 
 def export_programs(
@@ -64,10 +68,7 @@ def lower_to_mlx(
 ):
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
-    from executorch.exir import (
-        EdgeCompileConfig,
-        to_edge_transform_and_lower,
-    )
+    from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
     return to_edge_transform_and_lower(
         dict(programs),
@@ -96,7 +97,7 @@ def export_from_assets(
     asset_dir: str | Path,
     output_path: str | Path,
     *,
-    bounds: common.ExportBounds = common.ExportBounds(),
+    bounds: common.ExportBounds = _DEFAULT_EXPORT_BOUNDS,
     flow_steps: int = common.DEFAULT_FLOW_STEPS,
 ) -> Path:
     config, models = common.load_models(asset_dir)

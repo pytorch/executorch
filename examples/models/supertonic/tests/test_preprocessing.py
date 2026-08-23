@@ -11,9 +11,9 @@ import pytest
 
 from examples.models.supertonic.preprocessing import (
     AVAILABLE_LANGUAGES,
-    UnicodeProcessor,
     chunk_text_for_language,
     preprocess_text,
+    UnicodeProcessor,
 )
 
 
