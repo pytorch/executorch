@@ -13,7 +13,9 @@ from io import StringIO
 import torch
 
 from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.schema import DeviceType
 from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
@@ -786,3 +788,44 @@ class PybindingsTest(unittest.TestCase):
         message = str(caught.exception)
         self.assertIn("is on device meta", message)
         self.assertIn("only CPU and CUDA tensors", message)
+
+    def test_program_loads_when_one_method_is_device_planned(self):
+        # Linking the CUDA backend registers a CUDA allocator at static init, and the
+        # registry has no way to drop one, so there the device load would succeed with
+        # or without the fix and this test could not tell them apart.
+        if "CudaBackend" in self.runtime._get_registered_backend_names():
+            self.skipTest("a registered CUDA allocator satisfies the device load")
+
+        exported_program, inputs = create_program(
+            ModuleMulti(),
+            et_config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+            partitioner={"forward2": DeviceAwarePartitioner()},
+        )
+
+        # Without this the test would quietly become a second copy of
+        # test_method_multiple_entry if the planner stopped tagging devices.
+        planned_devices = {
+            plan.name: [
+                buffer.device_type for buffer in (plan.non_const_buffer_device or [])
+            ]
+            for plan in exported_program.executorch_program.execution_plan
+        }
+        self.assertIn(DeviceType.CUDA, planned_devices["forward2"])
+        self.assertNotIn(DeviceType.CUDA, planned_devices["forward"])
+
+        program = self.load_prog_fn(exported_program.buffer)
+        self.assertEqual(program.num_methods(), 2)
+
+        method = program.load_method("forward")
+        self.assertTrue(torch.allclose(method.call(inputs)[0], torch.ones(2, 2) * 2))
+
+        # Asking for device memory at all is what this asserts. Before the fix the
+        # loader put every planned buffer in host memory, so the device-planned method
+        # never asked and simply loaded. Now it asks, and with no device allocator
+        # registered the request is refused.
+        with self.assertRaises(RuntimeError) as caught:
+            program.load_method("forward2")
+        self.assertIn("on device", str(caught.exception))
+
+        # A failed load must leave the method that already loaded usable.
+        self.assertTrue(torch.allclose(method.call(inputs)[0], torch.ones(2, 2) * 2))
