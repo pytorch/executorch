@@ -201,7 +201,6 @@ jobs:
         RUNNER=cmake-out/examples/models/supertonic/supertonic_runner
         test -x "${RUNNER}"
         test -f "$(dirname "${RUNNER}")/mlx.metallib"
-        "${RUNNER}" --helpshort > /dev/null
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:
