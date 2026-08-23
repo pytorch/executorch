@@ -844,7 +844,18 @@ class _BaseExtension(Extension):
             return Path(".")
 
     def is_cmake_artifact_used(self, installer: "InstallerBuildExt") -> bool:
-        cache_path = str(self._get_build_dir(installer) / "CMakeCache.txt")
+        # The flags name what the build turned on, so read them from the build's cache and
+        # not from wherever this entry's source lives. A source tree file resolves to the
+        # working directory, which holds no cache, so its flags were silently ignored.
+        cmake_cache_dir = getattr(
+            installer.get_finalized_command("build"), "cmake_cache_dir", None
+        )
+        if not cmake_cache_dir:
+            # CMake did not run, so there is nothing to test against. An entry that needs
+            # the build directory still fails in src_path right after this.
+            return True
+
+        cache_path = os.path.join(cmake_cache_dir, "CMakeCache.txt")
         if not os.path.exists(cache_path):
             # If this is not a CMake folder, then assume it's used.
             return True
