@@ -46,11 +46,17 @@ jobs:
     # GH_PYTORCHBOT_TOKEN is an environment secret, not a repository
     # secret, so a job that does not name the environment cannot read it
     # and would see an empty string. Same pattern as
-    # weekly-pytorch-pin-bump.yml and nightly.yml.
+    # weekly-pytorch-pin-bump.yml.
+    #
+    # This environment's deployment branch policy allows `main` only, so
+    # a hand dispatch from any other ref is refused before the first
+    # step. That also means this job cannot be exercised from a pull
+    # request branch; it is first live after merge.
     environment: update-commit-hash
     permissions:
-      # The tag is pushed with the bot token below, not with GITHUB_TOKEN,
-      # so GITHUB_TOKEN only needs to read the repository for checkout.
+      # Both the checkout and the tag push use the bot token below, so no
+      # step uses GITHUB_TOKEN at all. Declared read-only rather than
+      # omitted so that a future step cannot silently inherit write.
       contents: read
     steps:
       # Checked before the tag is pushed rather than after, so a missing
@@ -154,8 +160,11 @@ jobs:
           git push origin "$TAG"
 
           # Only the workflows that list ciflow/trunk/* under `on.push.tags`
-          # start from this tag. `lint` and `Build documentation` are also
-          # required by update-viablestrict but have no tag trigger, so
-          # their rows come from the earlier push to main; if either was
-          # cancelled on that push, this tag cannot revive it.
-          echo "::notice::Pushed $TAG. Workflow runs started by this tag: pull, trunk, Apple, viable-strict-gate, windows-msvc, riscv64, qnn-windows-msvc. The other two checks update-viablestrict requires, lint and Build documentation, do not trigger on tags and must already be green from the push to main. Once all of them pass, the next update-viablestrict cron (every 30 min) will advance viable/strict."
+          # start from this tag. Four of them are in update-viablestrict's
+          # required set; the other three run but do not gate. `lint` and
+          # `Build documentation` are required too, and neither has a
+          # ciflow/trunk trigger (`Build documentation` only runs on
+          # version tags), so their rows come from the earlier push to
+          # main; if either was cancelled on that push, this tag cannot
+          # revive it.
+          echo "::notice::Pushed $TAG. Workflow runs started by this tag: pull, trunk, Apple, viable-strict-gate, Windows MSVC Build, Test RISC-V Backend, Test QNN Windows MSVC build. Of those, update-viablestrict only requires pull, trunk, Apple and viable-strict-gate; the other three do not gate advancement. The two remaining required checks, lint and Build documentation, do not start from a ciflow/trunk tag and must already be green from the push to main. Once all six required checks are green, the next update-viablestrict cron (every 30 min) will advance viable/strict."
