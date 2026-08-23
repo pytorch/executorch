@@ -16,9 +16,16 @@ name: CI Run Decision
 #
 # viable/strict eligibility is not decided here. It follows from the
 # ``ciflow/trunk`` tag that ``promote-to-viable-strict.yml`` pushes; see
-# ``viable-strict-gate.yml``. The depth sample below only controls path
-# filtering, so a commit that misses it still gets full CI once it is
-# promoted.
+# ``viable-strict-gate.yml``.
+#
+# Do not assume promotion makes the depth sample redundant. Only the
+# workflows that list ``ciflow/trunk/*`` under ``on.push.tags`` re-run
+# from that tag: pull, trunk, apple, windows-msvc, riscv64,
+# qnn-windows-msvc. The other seven callers of this workflow (cuda,
+# cuda-windows, cuda-perf, metal, mlx, rocm, vulkan) have no tag trigger,
+# so for them the depth sample below is the only thing that ever produces
+# a full run on main. Removing it would drop 35 of the 56 jobs gated on
+# ``is-full-run`` from main entirely.
 
 on:
   workflow_call:

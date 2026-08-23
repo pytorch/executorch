@@ -17,7 +17,10 @@ name: Promote commit to viable/strict
 # full CI and reach that day's nightly build.
 #
 # Can also be dispatched by hand for a specific commit, for example to
-# bisect a regression or to pin a release branch tip.
+# force full CI on one commit while bisecting a regression. Note that
+# update-viablestrict is configured with `main-branch: main`, so
+# promoting a commit that is only on a release branch runs CI for it but
+# will never advance viable/strict.
 
 on:
   schedule:
@@ -31,9 +34,6 @@ on:
         required: false
         type: string
 
-permissions:
-  contents: write
-
 concurrency:
   # One in-flight promotion at a time; safer than racing tag pushes.
   group: promote-to-viable-strict
@@ -43,6 +43,15 @@ jobs:
   push-ciflow-tag:
     if: ${{ github.repository_owner == 'pytorch' }}
     runs-on: ubuntu-22.04
+    # GH_PYTORCHBOT_TOKEN is an environment secret, not a repository
+    # secret, so a job that does not name the environment cannot read it
+    # and would see an empty string. Same pattern as
+    # weekly-pytorch-pin-bump.yml and nightly.yml.
+    environment: update-commit-hash
+    permissions:
+      # The tag is pushed with the bot token below, not with GITHUB_TOKEN,
+      # so GITHUB_TOKEN only needs to read the repository for checkout.
+      contents: read
     steps:
       # Checked before the tag is pushed rather than after, so a missing
       # secret is reported as itself instead of as an opaque checkout
@@ -53,7 +62,7 @@ jobs:
         run: |
           set -eu
           if [ -z "${BOT_TOKEN:-}" ]; then
-            echo "::error::Secret GH_PYTORCHBOT_TOKEN is not set on this repository. Promotion needs a bot token with contents write access, because a ref pushed with the default GITHUB_TOKEN does not start any workflow run and the tag would do nothing."
+            echo "::error::GH_PYTORCHBOT_TOKEN resolved to an empty string. It is an environment secret on the 'update-commit-hash' environment, so check that this job still declares that environment and that the secret is still present on it. Promotion needs a bot token with contents write access, because a ref pushed with the default GITHUB_TOKEN does not start any workflow run and the tag would do nothing."
             exit 1
           fi
 
@@ -118,7 +127,13 @@ jobs:
           # Nothing to promote if viable/strict already contains the
           # commit. This is the common case for a scheduled tick that
           # finds main unchanged since the last one.
-          if git merge-base --is-ancestor "$SHA" origin/viable/strict 2>/dev/null; then
+          #
+          # Only applied when we picked the SHA ourselves. Almost all of
+          # main is already an ancestor of viable/strict, so applying it
+          # to a hand-dispatched SHA would turn nearly every deliberate
+          # request into a silent no-op that still reports success.
+          if [ -z "${INPUT_SHA:-}" ] \
+             && git merge-base --is-ancestor "$SHA" origin/viable/strict 2>/dev/null; then
             echo "$SHA is already contained in viable/strict; nothing to do."
             exit 0
           fi
@@ -138,4 +153,9 @@ jobs:
           git tag "$TAG" "$SHA"
           git push origin "$TAG"
 
-          echo "::notice::Pushed $TAG. Watch the tag-triggered workflow runs (pull / trunk / viable-strict-gate); once they pass, the next update-viablestrict cron (every 30 min) will advance viable/strict."
+          # Only the workflows that list ciflow/trunk/* under `on.push.tags`
+          # start from this tag. `lint` and `Build documentation` are also
+          # required by update-viablestrict but have no tag trigger, so
+          # their rows come from the earlier push to main; if either was
+          # cancelled on that push, this tag cannot revive it.
+          echo "::notice::Pushed $TAG. Workflow runs started by this tag: pull, trunk, Apple, viable-strict-gate, windows-msvc, riscv64, qnn-windows-msvc. The other two checks update-viablestrict requires, lint and Build documentation, do not trigger on tags and must already be green from the push to main. Once all of them pass, the next update-viablestrict cron (every 30 min) will advance viable/strict."

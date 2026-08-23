@@ -41,9 +41,16 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # Only tag pushes reach this workflow, so is-full-run is always
-      # true here. Kept as an assertion: if a trigger that does not
-      # force a full run is ever added above, this fails loudly rather
-      # than quietly making partial signal eligible.
+      # true here. Kept as an assertion against a future trigger that
+      # does not force a full run.
+      #
+      # Failing is the correct behaviour for a tag push, which is a
+      # deliberate request, but it is NOT a safe way to reject ordinary
+      # commits: a failure row here is permanent, for the reason in the
+      # header. So do not re-add ``push: branches`` above. Adding
+      # ``workflow_dispatch`` is a different trap: it would make this
+      # assertion pass and publish a viable-strict-gate success for a
+      # commit whose CI was path-filtered.
       - name: Check whether this commit is a full-coverage run
         env:
           IS_FULL_RUN: ${{ needs.run-decision.outputs.is-full-run }}
