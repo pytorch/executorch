@@ -328,6 +328,7 @@ import torch
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch,
     _load_for_executorch_from_buffer,
 )
 
@@ -432,14 +433,26 @@ with tempfile.TemporaryDirectory() as work_dir:
     with open(blob_path, "rb") as handle:
         blob_bytes = handle.read()
 
+    # The runner scripts pass this file by path, not as bytes, so exercise the
+    # path-based loader here while the file still exists, or a regression in it
+    # stays green.
+    file_module = _load_for_executorch(pte_path, blob_path)
+    file_actual = file_module.forward(list(weighted_example))[0]
+    torch.testing.assert_close(
+        file_actual.cpu(), weighted_eager, rtol=1e-3, atol=1e-3
+    )
+
+# Loading from bytes as well, because _load_for_executorch_from_buffer is what a
+# caller with the data already in memory uses, and it builds the data map by a
+# different route.
 module = _load_for_executorch_from_buffer(pte_bytes, blob_bytes)
 actual = module.forward(list(weighted_example))[0]
 
 torch.testing.assert_close(actual.cpu(), weighted_eager, rtol=1e-3, atol=1e-3)
 print(
     f"PASS: a CUDA-delegated model with weights ran on sm_{capability[0]}{capability[1]} from a "
-    f"{blob_size}-byte aoti_cuda_blob.ptd carrying {blob_size - empty_size} bytes of weights, and "
-    f"matched eager"
+    f"{blob_size}-byte aoti_cuda_blob.ptd carrying {blob_size - empty_size} bytes of weights, "
+    f"loaded both by path and from bytes, and matched eager"
 )
 """
 
