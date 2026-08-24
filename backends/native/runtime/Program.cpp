@@ -51,4 +51,17 @@ size_t Program::num_methods() const {
   return methods == nullptr ? 0 : methods->size();
 }
 
+std::vector<std::string> Program::method_names() const {
+  std::vector<std::string> names;
+  const auto* methods = program_fb_->methods();
+  if (methods != nullptr) {
+    names.reserve(methods->size());
+    for (flatbuffers::uoffset_t i = 0; i < methods->size(); ++i) {
+      const auto* nm = methods->Get(i)->name();
+      names.push_back(nm != nullptr ? nm->str() : std::string());
+    }
+  }
+  return names;
+}
+
 } // namespace ptn
