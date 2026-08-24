@@ -4,16 +4,25 @@ import re
 import shutil
 import subprocess
 import tempfile
-from typing import Sequence, Tuple
+from dataclasses import dataclass
+from typing import List, Literal, Optional, Sequence, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import pandas as pd
 import torch
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchProfileLevel,
+)
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.utils import dump_context_from_pte
 
 from graphviz import Digraph
-
 
 class DrawGraph:
     def __init__(
@@ -190,14 +199,78 @@ class DrawGraph:
                 shutil.move(dot_file, dot_dest_file)
 
 
+@dataclass(frozen=True)
+class QnnHtpProfileArtifacts:
+    """Files emitted for one HTP optrace/hextimate run.
+
+    Data fields:
+    - binary_path: dumped `.dlc` or `.bin` input.
+    - mode: `"optrace"` for on-device hardware counters, or `"hextimate"`
+      for host-only compile-time estimation.
+    - prepare_mode: `"online"` for `.dlc` from `QnnConfig.online_prepare=True`,
+      or `"offline"` for `.bin` from `online_prepare=False`.
+    - chrometrace_json: Chrome trace JSON, viewable with `chrome://tracing` or
+      Perfetto.
+    - qhas_json: QHAS JSON
+    - qhas_html: QHAS HTML report.
+    - htp_graph_json: HTP graph JSON after optimization.
+    - htp_graph_before_json: HTP graph JSON before optimization.
+    - runtrace_json: runtrace JSON for optrace, or None when not emitted.
+
+    Use visualizer_reports() for the subset safe to pass to
+    qairt_visualizer.view(reports=...).
+    """
+
+    binary_path: str
+    mode: Literal["optrace", "hextimate"]
+    prepare_mode: Literal["online", "offline"]
+    chrometrace_json: str
+    qhas_json: Optional[str]
+    qhas_html: str
+    htp_graph_json: str
+    htp_graph_before_json: str
+    runtrace_json: Optional[str]
+
+    def visualizer_reports(self) -> List[str]:
+        """Reports safe to pass to qairt_visualizer.view(reports=...)."""
+        reports = [self.chrometrace_json]
+        if self.qhas_json is not None:
+            reports.append(self.qhas_json)
+        return reports
+
+
+
+#   Hextimate (compile-time perf estimation) requires SDK >= 2.41. Below that,
+#   qnn-context-binary-generator silently drops the hextimate parameters
+_MIN_SDK_FOR_HEXTIMATE = "2.41"
+_HEXTIMATE_SUPPORTED_SOCS = (
+    QcomChipset.SA8540,
+    QcomChipset.SA8255,
+    QcomChipset.QCS9100,
+    QcomChipset.SA8797,
+)
+
+
+#   - QNN: libQnnHtpNetRunExtensions.so
+#   - QAIRT: libQairtHtpBackendExtensions.so (QAIRT 2.49+ sdk)
+_BACKEND_EXTENSIONS_LIB = "libQnnHtpNetRunExtensions.so"
+
+
 class QnnTool:
+    """Host-side wrapper around the QNN profiling CLI toolchain.
+
+    Compatibility (see README.md §QAIRT Profiling for the user-facing table):
+        - Optrace: SDK 2.37+
+        - Hextimate: SDK 2.41+ (gate and raise error)
+
+    """
     def __init__(
         self,
-        tmp_dir,
-        sample_input,
+        artifact_dir,
         soc_id,
         adb,
-        build_folder,
+        sample_input=None,
+        build_folder=None,
         workspace="/data/local/tmp/qnn_executorch_test",
     ):
         self.qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
@@ -205,17 +278,18 @@ class QnnTool:
         assert self.qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
         assert self.ndk, "ANDROID_NDK_ROOT was not found in environment variable"
 
-        self.tmp_dir = tmp_dir
+        self.artifact_dir = artifact_dir
         self.workspace = workspace
         self.adb = adb
         self.sample_input = sample_input
         self.build_folder = build_folder
-        self.root = os.getcwd()
-        self.config = {
-            "backend_extension_config": {
-                "backend_extensions": {
-                    "config_file_path": "config.json",
-                },
+        self.soc_id = soc_id
+
+    def _get_base_config(self):
+        # Generate base device profile — every subprocess call clones from this.
+        return {
+            "backend_extensions": {
+                "config_file_path": os.path.join(self.artifact_dir, "config.json"),
             },
             "config": {
                 "devices": [
@@ -224,59 +298,82 @@ class QnnTool:
                         "cores": [
                             {"perf_profile": "burst", "rpc_control_latency": 100}
                         ],
-                        "soc_id": int(soc_id),
+                        "soc_id": int(self.soc_id),
                     }
                 ]
             },
         }
 
-    def qnn_context_binary_generator(
-        self,
-        qnn_binary_file="forward_0.dlc",
-        binary_name="forward.serialized",
-    ):
-        for file_name, data in self.config.items():
-            with open(f"{self.tmp_dir}/{file_name}.json", "w") as json_file:
-                json.dump(data, json_file, indent=4)
+    def _write_config_files(self, backend_extensions: Optional[dict] = None) -> Tuple[str, str]:
+        """Write backend_extension_config.json and config.json in artifact_dir.
 
-        target = "x86_64-linux-clang"
-        cmds = [
-            f"{self.qnn_sdk}/bin/{target}/qnn-context-binary-generator",
-            "--backend",
-            f"{self.qnn_sdk}/lib/{target}/libQnnHtp.so",
-            "--model",
-            f"{self.qnn_sdk}/lib/{target}/libQnnModelDlc.so",
-            "--dlc_path",
-            f"{self.tmp_dir}/{qnn_binary_file}",
-            f"--config_file {self.tmp_dir}/backend_extension_config.json",
-            f"--binary_file {binary_name}",
-            f"--output_dir {self.tmp_dir}",
-            "--profiling_level detailed",
-            "--profiling_option optrace",
-        ]
-        result = subprocess.run(
-            " ".join(cmds),
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
+        Returns (backend_ext_path, config_path).
+        """
+
+        if backend_extensions is None:
+            backend_extensions = self._get_base_config()["backend_extensions"]
+
+        backend_ext_path = os.path.join(self.artifact_dir, "backend_extension_config.json")
+        config_path = os.path.join(self.artifact_dir, "config.json")
+        with open(backend_ext_path, "w") as f:
+            json.dump({"backend_extensions": backend_extensions}, f, indent=4)
+        with open(config_path, "w") as f:
+            json.dump(self._get_base_config()["config"], f, indent=4)
+        return backend_ext_path, config_path
+
+    def _run(self, cmd: List[str], step: str) -> None:
+        """Run a subprocess with argv list; assert on non-zero exit."""
+        result = subprocess.run(cmd, capture_output=True, cwd=self.artifact_dir)
+        assert result.returncode == 0, (
+            f"{step} failed (exit {result.returncode}): "
+            f"{result.stderr.decode('utf-8', errors='replace')}"
         )
-        assert os.path.isfile(f"{self.tmp_dir}/{binary_name}.bin"), result.stderr
 
-    def qnn_net_run(self, graph_name="forward.serialized"):
+    def _qnn_context_binary_generator(
+        self,
+        qnn_binary_file: str,
+        binary_name: str,
+        enable_hextimate: bool,
+    ) -> None:
+        target = "x86_64-linux-clang"
+        backend_ext = self._get_base_config()["backend_extensions"]
+        if enable_hextimate:
+            backend_ext["shared_library_path"] = (
+                f"{self.qnn_sdk}/lib/{target}/{_BACKEND_EXTENSIONS_LIB}"
+            )
+        backend_ext_path, _ = self._write_config_files(backend_ext)
 
-        self.config["backend_extension_config"]["backend_extensions"][
-            "shared_library_path"
-        ] = "./libQnnHtpNetRunExtensions.so"
-        for file_name, data in self.config.items():
-            with open(f"{self.tmp_dir}/{file_name}.json", "w") as json_file:
-                json.dump(data, json_file, indent=4)
+        cmd = [
+            f"{self.qnn_sdk}/bin/{target}/qnn-context-binary-generator",
+            "--backend", f"{self.qnn_sdk}/lib/{target}/libQnnHtp.so",
+            "--model", f"{self.qnn_sdk}/lib/{target}/libQnnModelDlc.so",
+            "--dlc_path", os.path.join(self.artifact_dir, qnn_binary_file),
+            "--config_file", backend_ext_path,
+            "--binary_file", binary_name,
+            "--output_dir", self.artifact_dir,
+            "--profiling_level", "detailed",
+            "--profiling_option", "optrace",
+        ]
+        self._run(cmd, "qnn-context-binary-generator")
+        expected = os.path.join(self.artifact_dir, f"{binary_name}.bin")
+        assert os.path.isfile(expected), (
+            f"qnn-context-binary-generator ran but did not produce {expected}"
+        )
+
+    def _qnn_net_run(self, graph_name: str) -> None:
+        # backend-extensions library path is device-relative when running via adb
+        backend_ext = {
+            "shared_library_path": f"./{_BACKEND_EXTENSIONS_LIB}",
+            "config_file_path": "config.json",
+        }
+        backend_ext_path, config_path = self._write_config_files(backend_ext)
 
         target = "aarch64-android"
         files = [
-            f"{self.qnn_sdk}/lib/{target}/libQnnHtpNetRunExtensions.so",
-            f"{self.tmp_dir}/backend_extension_config.json",
-            f"{self.tmp_dir}/config.json",
-            f"{self.tmp_dir}/{graph_name}.bin",
+            f"{self.qnn_sdk}/lib/{target}/{_BACKEND_EXTENSIONS_LIB}",
+            backend_ext_path,
+            config_path,
+            os.path.join(self.artifact_dir, f"{graph_name}.bin"),
             f"{self.qnn_sdk}/bin/{target}/qnn-net-run",
         ]
         cmds = [
@@ -303,132 +400,279 @@ class QnnTool:
                 "pull",
                 "-a",
                 f"{self.workspace}/output/qnn-profiling-data_0.log",
-                self.tmp_dir,
+                self.artifact_dir,
             ]
         )
 
         assert os.path.isfile(
-            f"{self.tmp_dir}/qnn-profiling-data_0.log"
-        ), f"Error: qnn-profiling-data_0.log not found in {self.tmp_dir}"
+            f"{self.artifact_dir}/qnn-profiling-data_0.log"
+        ), f"Error: qnn-profiling-data_0.log not found in {self.artifact_dir}"
 
-    def qnn_profile_viewer(self, graph_name="forward_schematic", graph_idx=0):
-        self.config["backend_extension_config"] = {"features": {"qhas_json": True}}
-        for file_name, data in self.config.items():
-            with open(f"{self.tmp_dir}/{file_name}.json", "w") as json_file:
-                json.dump(data, json_file, indent=4)
+
+    def _qnn_profile_viewer(self, schematic_stem: str, graph_idx: int) -> None:
+        # profile-viewer takes its own config schema (`features`), not the
+        # device profile schema. Written to the SAME file name because that's
+        # the flag qnn-profile-viewer expects — a per-step fresh config avoids
+        # any leak from earlier CBG/net-run configs.
+        backend_ext_path = os.path.join(
+            self.artifact_dir, "backend_extension_config.json"
+        )
+        with open(backend_ext_path, "w") as f:
+            json.dump({"features": {"qhas_json": True}}, f, indent=4)
 
         target = "x86_64-linux-clang"
-        cmds = [
-            f"{self.qnn_sdk}/bin/{target}/qnn-profile-viewer",
-            f"--config {self.tmp_dir}/backend_extension_config.json",
-            f"--schematic {self.root}/{graph_name}.bin",
-            f"--reader {self.qnn_sdk}/lib/{target}/libQnnHtpOptraceProfilingReader.so",
-            f"--input_log {self.tmp_dir}/qnn-profiling-data_0.log",
-            f"--output {self.tmp_dir}/optrace_{graph_idx}.json",
-        ]
-        result = subprocess.run(
-            " ".join(cmds),
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
+        schematic = os.path.join(self.artifact_dir, f"{schematic_stem}.bin")
+        assert os.path.isfile(schematic), (
+            f"qnn-profile-viewer expected schematic at {schematic}; "
+            "in case of online_prepare, the context-binary-generator step should have produced it in artifact_dir. "
+            "in case of offline_prepare, the schematic should be dumpped from pte, make sure profiling_level=3 when generating pte. "
         )
-        assert (
-            result.returncode == 0
-        ), f"Process failed with error: {result.stderr.decode('utf-8')}"
 
-    def generate_optrace(
+        cmd = [
+            f"{self.qnn_sdk}/bin/{target}/qnn-profile-viewer",
+            "--config", backend_ext_path,
+            "--schematic", schematic,
+            "--reader",
+            f"{self.qnn_sdk}/lib/{target}/libQnnHtpOptraceProfilingReader.so",
+            "--input_log", os.path.join(self.artifact_dir, "qnn-profiling-data_0.log"),
+            "--output", os.path.join(self.artifact_dir, f"optrace_{graph_idx}.json"),
+        ]
+        self._run(cmd, "qnn-profile-viewer")
+
+    def _validated_qhas_json(self, qhas_path: str) -> Optional[str]:
+        """Return path if the QHAS JSON parses; None if truncated (hextimate SDK bug).
+
+        Note: QHAS JSON is truncated for hextimate mode (SDK bug, still open as of
+        2.50 nightly). When time_us == 0, the SDK divides 1e6 / 0 = +Infinity,
+        rapidjson rejects the write, and the JSON stream is cut at ~3900 bytes
+        with "inf_per_s": <no value>. We detect this and return qhas_json=None
+        rather than repair — the HTML report and chrometrace remain valid.
+        """
+        if not os.path.isfile(qhas_path):
+            return None
+        try:
+            with open(qhas_path, "r") as f:
+                json.load(f)
+            return qhas_path
+        except json.JSONDecodeError:
+            return None
+
+    def run(
         self,
-        qnn_binary_file="forward_0.dlc",
-    ):
-        """
-        Generate Qnn HTP Optrace Profiling https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/htp_backend.html#qnn-htp-optrace-profiling
-        and QNN HTP Analysis Summary (QHAS) https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/htp_backend.html#qnn-htp-analysis-summary-qhas
-        . You can utilize the QAIRT Visualizer (https://pypi.org/project/qairt-visualizer/) to visualize the results from the files above.
-        """
-        graph_name, file_extension = os.path.splitext(qnn_binary_file)
-        assert file_extension in [
-            ".dlc",
-            ".bin",
-        ], f"Invalid file extension '{file_extension}'. Supported extensions are 'dlc' and 'bin'."
+        mode: Literal["optrace", "hextimate"],
+        binary_file: str,
+    ) -> QnnHtpProfileArtifacts:
+        """Run qnn-profile-viewer for one dumped .dlc/.bin.
 
-        # Attempt to extract a numeric index from the end of the graph name (e.g., "forward_123")
+        Docs:
+        - Optrace:   https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/htp_backend.html#qnn-htp-optrace-profiling
+        - Hextimate: https://docs.qualcomm.com/doc/80-63442-10/topic/htp_backend.html#qnn-htp-hextimate-profiling
+        - QHAS:      https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/htp_backend.html#qnn-htp-analysis-summary-qhas
+        """
+        assert mode in ("optrace", "hextimate"), f"unknown mode {mode!r}"
+
+        graph_name, ext = os.path.splitext(binary_file)
+        if mode == "optrace":
+            assert ext in (".dlc", ".bin"), (
+                f"optrace supports .dlc (online prepare) and .bin (offline prepare); "
+                f"got {ext!r}"
+            )
+        else:  # hextimate
+            assert ext == ".dlc", (
+                f"hextimate requires .dlc (online prepare); got {ext!r}. "
+                "For offline-prepare context binaries, use mode='optrace' instead."
+            )
+            if is_qnn_sdk_version_less_than(_MIN_SDK_FOR_HEXTIMATE):
+                # SDK < 2.41 silently drops hextimate config and produces a
+                # standard context binary — fail loudly before that trap.
+                raise AssertionError(
+                    f"hextimate requires QNN SDK >= {_MIN_SDK_FOR_HEXTIMATE}; "
+                    f"the current SDK at $QNN_SDK_ROOT={self.qnn_sdk} is older. "
+                    "Older SDKs silently ignore hextimate parameters and emit "
+                    "an ordinary profiling log with no hextimate events."
+                )
+
+        prepare_mode: Literal["online", "offline"] = (
+            "online" if ext == ".dlc" else "offline"
+        )
+
+        # Extract graph index if the file follows the "<name>_<n>" convention.
         match = re.match(r"^(.*)_(\d+)$", graph_name)
-        graph_base_name = graph_name
-        graph_idx = 0
-
         if match:
             graph_base_name = match.group(1)
             graph_idx = int(match.group(2))
+        else:
+            graph_base_name = graph_name
+            graph_idx = 0
 
-        # Handle .dlc file extension by generating a serialized version of the graph
-        if file_extension == ".dlc":
-            self.qnn_context_binary_generator(
-                qnn_binary_file, f"{graph_base_name}.serialized"
+        # Step 1: for online-prepare (.dlc), materialize the context binary +
+        # schematic on the host. Offline-prepare (.bin) already has both.
+        if ext == ".dlc":
+            self._qnn_context_binary_generator(
+                qnn_binary_file=binary_file,
+                binary_name=f"{graph_base_name}.serialized",
+                enable_hextimate=(mode == "hextimate"),
             )
             graph_name = f"{graph_base_name}.serialized"
 
-        # Run the QNN graph and generate the schematic
-        self.qnn_net_run(graph_name=graph_name)
-        self.qnn_profile_viewer(
-            graph_name=f"{graph_base_name}_schematic", graph_idx=graph_idx
+        # Step 2: for optrace, run on device. Hextimate is host-only.
+        if mode == "optrace":
+            self._qnn_net_run(graph_name=graph_name)
+
+        # Step 3: post-process into optrace.json + QHAS side-artifacts.
+        self._qnn_profile_viewer(
+            schematic_stem=f"{graph_base_name}_schematic",
+            graph_idx=graph_idx,
         )
 
-        # Clean up the schematic binary file if it exists
-        schematic_bin_path = os.path.join(self.root, f"{graph_base_name}_schematic.bin")
-        if os.path.isfile(schematic_bin_path):
-            os.remove(schematic_bin_path)
+        # Collect the six output files. qnn-profile-viewer names them by
+        # stripping `.json` off --output and appending suffixes.
+        base = os.path.join(self.artifact_dir, f"optrace_{graph_idx}")
+        chrometrace_json = f"{base}.json"
+        qhas_json_candidate = f"{base}_qnn_htp_analysis_summary.json"
+        qhas_html = f"{base}_qnn_htp_analysis_summary.html"
+        htp_graph_json = f"{base}_htp.json"
+        htp_graph_before_json = f"{base}_htp_graph_before.json"
+        runtrace_json = f"{base}_runtrace.json"
 
-        optrace_path = os.path.join(self.tmp_dir, f"optrace_{graph_idx}.json")
-        qhas_path = os.path.join(
-            self.tmp_dir, f"optrace_{graph_idx}_qnn_htp_analysis_summary.json"
+        assert os.path.isfile(chrometrace_json), (
+            f"qnn-profile-viewer did not produce {chrometrace_json}"
         )
-        assert os.path.isfile(optrace_path) and os.path.isfile(qhas_path), (
-            "Error: Required files not found - either "
-            f"{os.path.basename(optrace_path)} or {os.path.basename(qhas_path)} is missing."
+
+        return QnnHtpProfileArtifacts(
+            binary_path=os.path.join(self.artifact_dir, binary_file),
+            mode=mode,
+            prepare_mode=prepare_mode,
+            chrometrace_json=chrometrace_json,
+            qhas_json=self._validated_qhas_json(qhas_json_candidate),
+            qhas_html=qhas_html,
+            htp_graph_json=htp_graph_json,
+            htp_graph_before_json=htp_graph_before_json,
+            runtrace_json=(
+                runtrace_json if os.path.isfile(runtrace_json) else None
+            ),
         )
 
-        return optrace_path, qhas_path
+
+def _validate_pte_profile_level(pte_path: str) -> None:
+    """Assert that any offline-prepare .pte was built with profile_level=3.
+    """
+    from executorch.exir._serialize._program import deserialize_pte_binary
+
+    with open(pte_path, "rb") as f:
+        program = deserialize_pte_binary(f.read()).program
+
+    for execution_plan in program.execution_plan:
+        for delegate in execution_plan.delegates:
+            if delegate.id != "QnnBackend":
+                continue
+            spec = delegate.compile_specs[0]
+            options = flatbuffer_to_option(bytes(spec.value))
+            if options.online_prepare:
+                continue  # online-prepare: profile_level is set on-host later
+            assert (
+                options.profile_level == QnnExecuTorchProfileLevel.kProfileOptrace
+            ), (
+                f"{pte_path} was compiled with online_prepare=False and "
+                f"profile_level={options.profile_level.name}."
+                "HTP Profling (Optrace) feature requires profile_level=3 (kProfileOptrace) "
+                "at build_executorch_binary() time — \n"
+                "Please re-export with qnn_config.profile_level=3, or use online_prepare=True"
+            )
+
+def _validate_hextimate_soc(soc_id: QcomChipset) -> None:
+    if soc_id not in _HEXTIMATE_SUPPORTED_SOCS:
+        supported = ", ".join(soc.name for soc in _HEXTIMATE_SUPPORTED_SOCS)
+        raise AssertionError(
+            f"hextimate currently supports only {supported}; got {soc_id.name}."
+        )
 
 
-def generate_optrace(
-    artifact,
+def _generate_htp_analysis_result(
+    artifact_dir: str,
     soc_id: QcomChipset,
-    adb,
     pte_path: str,
-    inputs: Sequence[Tuple[torch.Tensor]],
-):
-    """
-    Generate optrace and QHAS (QNN HTP Analysis Summary) JSON files.
+    mode: Literal["optrace", "hextimate"],
+    inputs: Optional[Sequence[Tuple[torch.Tensor]]] = None,
+    adb=None,
+) -> List[QnnHtpProfileArtifacts]:
+    assert mode in ("optrace", "hextimate"), f"unknown mode {mode!r}"
+    if mode == "optrace":
+        assert adb is not None, "optrace requires adb for on-device execution"
+    _validate_pte_profile_level(pte_path)
 
-    Args:
-        artifact (str): Path to the artifact folder.
-        adb (SimpleADB): An object for communicating with Android device
-        pte_path (str): The path to the generated PTE file, including the file extension (e.g., model.pte).
-        inputs Sequence((Tuple[torch.Tensor])): The input tensors for the model.
+    dumpfiles = dump_context_from_pte(pte_path, output_dir=artifact_dir)
 
-
-    Returns:
-        dict: A dictionary where keys are the dumped file paths and values are tuples containing the paths
-        to the generated optrace and QHAS JSON files.
-    """
-    filename, _ = os.path.splitext(pte_path.split(os.sep)[-1])
-
-    # Dump compiled binaries
-    dumpfiles = dump_context_from_pte(pte_path)
-
-    # Generate optrace and QHAS
     qnn_tool = QnnTool(
-        artifact,
-        inputs,
-        soc_id,
-        adb,
-        build_folder=adb.build_path,
-        workspace=adb.workspace,
+        artifact_dir=artifact_dir,
+        sample_input=inputs,
+        soc_id=soc_id,
+        adb=adb,
+        build_folder=(adb.build_path if adb is not None else None),
+        workspace=(adb.workspace if adb is not None else None),
     )
 
-    binaries_trace = {}
-    for file in dumpfiles:
-        filename = file.split(os.sep)[-1]
-        optrace, qhas = qnn_tool.generate_optrace(filename)
-        binaries_trace[file] = (optrace, qhas)
-    return binaries_trace
+    return [
+        qnn_tool.run(mode=mode, binary_file=os.path.basename(f))
+        for f in dumpfiles
+    ]
+
+
+def generate_htp_profile_result(
+    artifact_dir: str,
+    soc_id: QcomChipset,
+    pte_path: str,
+    inputs: Sequence[Tuple[torch.Tensor]],
+    adb,
+) -> List[QnnHtpProfileArtifacts]:
+    """Generate HTP optrace artifacts from a .pte by running on device.
+
+    Arguments:
+    - artifact_dir: host directory for dumped `.dlc`/`.bin`, schematics, QNN
+      configs, profiling logs, and qnn-profile-viewer outputs.
+    - soc_id: target SoC used by the compiled `.pte`; must match the device.
+    - pte_path: `.pte` produced by build_executorch_binary().
+    - inputs: sample input tensors used by qnn-net-run for optrace collection.
+    - adb: SimpleADB helper for pushing files, running qnn-net-run, and
+      pulling `qnn-profiling-data_0.log` from the device.
+
+    Supported prepare modes for the input pte file:
+    - `QnnConfig.online_prepare=True`: `.pte` contains `.dlc`;
+      We will create the context binary and schematic before device execution.
+    - `QnnConfig.online_prepare=False`: `.pte` contains finalized `.bin`, user must
+      also set `QnnConfig.profile_level=3` so optrace instrumentation is already baked in;
+      We will extract schematic and context binary from pte and continue device execution.
+
+    """
+    return _generate_htp_analysis_result(
+        artifact_dir=artifact_dir,
+        soc_id=soc_id,
+        pte_path=pte_path,
+        inputs=inputs,
+        mode="optrace",
+        adb=adb,
+    )
+
+
+def estimate_htp_profile_result(
+    artifact_dir: str,
+    soc_id: QcomChipset,
+    pte_path: str,
+) -> List[QnnHtpProfileArtifacts]:
+    """Estimate HTP performance with host-only hextimate artifacts.
+
+    Arguments:
+    - artifact_dir: host directory for dumped `.dlc`, QNN configs, and
+      qnn-profile-viewer outputs.
+    - soc_id: target SoC used by the compiled `.pte`; currently limited to:
+      SA8540, SA8255, QCS9100, and SA8797.
+    - pte_path: `.pte` produced by build_executorch_binary(),  requiring
+    `QnnConfig.online_prepare=True` for `.pte` generation and QNN SDK >= 2.41.
+    """
+    _validate_hextimate_soc(soc_id)
+    return _generate_htp_analysis_result(
+        artifact_dir=artifact_dir,
+        soc_id=soc_id,
+        pte_path=pte_path,
+        mode="hextimate",
+    )

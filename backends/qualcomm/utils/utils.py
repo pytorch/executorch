@@ -201,10 +201,10 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
     return replace_linear(module)
 
 
-def dump_context_from_pte(pte_path) -> List[str]:
+def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
     """
-    Dump compiled binaries under the same directory of pte_path.
-    For partitioned graph, there will be multiple files with names f"{method_name}_{index}".
+    Dump compiled binaries under output_dir, or the same directory as pte_path
+    when output_dir is not set.
     'method_name' refers to the name of a method in the nn.Module that was traced to
     generate this program, while 'index' indicates the order of execution.
 
@@ -220,7 +220,8 @@ def dump_context_from_pte(pte_path) -> List[str]:
 
     program = deserialize_pte_binary(program_data).program
 
-    ctx_path = os.path.dirname(pte_path)
+    ctx_path = output_dir or os.path.dirname(pte_path)
+    os.makedirs(ctx_path, exist_ok=True)
     dumpfiles = []
     for execution_plan in program.execution_plan:
         for i, delegate in enumerate(execution_plan.delegates):
@@ -236,6 +237,32 @@ def dump_context_from_pte(pte_path) -> List[str]:
                 dump_file = f"{ctx_path}/{execution_plan.name}_{i}{file_extension}"
                 with open(dump_file, "wb") as f:
                     f.write(binary)
+                
+                # ==============================================================================
+                # Unpack embedded schematic binaries if present.
+                # Details of the serialization schema and why it is perfectly safe
+                # can be found in executorch/backends/qualcomm/qnn_preprocess.py.
+                # ==============================================================================
+                import struct
+                if len(processed_bytes) >= 16 and processed_bytes[-8:] == b"SCHEMATI":
+                    block_len, = struct.unpack("<Q", processed_bytes[-16:-8])
+                    if len(processed_bytes) >= 16 + block_len:
+                        schematic_block = processed_bytes[-16 - block_len : -16]
+                        offset = 0
+                        while offset < len(schematic_block):
+                            name_len, = struct.unpack("<I", schematic_block[offset : offset + 4])
+                            offset += 4
+                            graph_name = schematic_block[offset : offset + name_len].decode('utf-8')
+                            offset += name_len
+                            data_len, = struct.unpack("<Q", schematic_block[offset : offset + 8])
+                            offset += 8
+                            data = schematic_block[offset : offset + data_len]
+                            offset += data_len
+                            
+                            schematic_file = f"{ctx_path}/{graph_name}_schematic.bin"
+                            with open(schematic_file, "wb") as sf:
+                                sf.write(data)
+                
                 dumpfiles.append(dump_file)
     return dumpfiles
 
@@ -1339,6 +1366,7 @@ def get_soc_to_chipset_map():
         "SW6100": QcomChipset.SW6100,
         "QCM6490": QcomChipset.QCM6490,
         "SM8845": QcomChipset.SM8845,
+        "SA8540": QcomChipset.SA8540,
     }
 
 
