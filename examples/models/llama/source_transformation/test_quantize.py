@@ -8,12 +8,24 @@ import logging
 import unittest
 from unittest.mock import patch
 
+import torch
 import torch.nn as nn
 
 from executorch.examples.models.llama.source_transformation.quantize import quantize
 
 
 class TestQuantize(unittest.TestCase):
+    def test_8da8w_quantizes_and_exports(self):
+        model = nn.Sequential(nn.Linear(128, 32), nn.ReLU(), nn.Linear(32, 16))
+        inputs = (torch.randn(2, 128),)
+
+        quantize(model, qmode="8da8w", group_size=0)
+        exported = torch.export.export(model, inputs)
+        output = exported.module()(*inputs)
+
+        self.assertEqual(output.shape, (2, 16))
+        self.assertTrue(torch.isfinite(output).all())
+
     @patch("torchao.quantization.quantize_")
     def test_reports_linears_skipped_by_group_size(self, mock_quantize):
         model = nn.Sequential(nn.Linear(128, 16), nn.Linear(96, 16))
