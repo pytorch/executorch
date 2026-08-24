@@ -8,7 +8,6 @@
 
 import json
 import os
-from pathlib import Path
 import socket
 import sys
 import threading
@@ -80,7 +79,9 @@ def _wait_until(predicate, timeout=10.0):
     return False
 
 
-@pytest.mark.skipif(os.name != "posix", reason="cancellation control pipe is POSIX-only")
+@pytest.mark.skipif(
+    os.name != "posix", reason="cancellation control pipe is POSIX-only"
+)
 def test_socket_disconnect_cancels_matching_worker_request(tmp_path):
     worker_script = tmp_path / "fake_worker.py"
     marker = tmp_path / "cancelled.json"
