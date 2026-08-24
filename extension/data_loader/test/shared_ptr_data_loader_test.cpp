@@ -181,7 +181,10 @@ TEST_F(SharedPtrDataLoaderTest, LoadIntoCopiesRequestedData) {
           DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
           buffer),
       Error::Ok);
-  EXPECT_EQ(0, std::memcmp(buffer, data.get() + kDataSize - sizeof(buffer), 3));
+  EXPECT_EQ(
+      0,
+      std::memcmp(
+          buffer, data.get() + kDataSize - sizeof(buffer), sizeof(buffer)));
 
   EXPECT_EQ(
       edl.load_into(
