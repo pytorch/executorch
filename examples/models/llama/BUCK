@@ -258,6 +258,18 @@ fbcode_target(_kind = runtime.python_test,
 )
 
 fbcode_target(_kind = runtime.python_test,
+    name = "quantize_source_transform_test",
+    srcs = [
+        "source_transformation/test_quantize.py",
+    ],
+    deps = [
+        ":source_transformation",
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
     name = "quantized_sdpa_with_kv_cache_test",
     srcs = [
         "source_transformation/test_sdpa_with_quantized_kv_cache.py",
