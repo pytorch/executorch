@@ -44,6 +44,7 @@ class ModuleDeviceMemoryTest : public ::testing::Test {
   }
 
   void SetUp() override {
+    g_mock_cuda.fail_allocations_ = false;
     g_mock_cuda.allocate_count_ = 0;
     g_mock_cuda.deallocate_count_ = 0;
     g_mock_cuda.last_allocate_size_ = 0;
@@ -144,6 +145,28 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
 
   auto err = module.load_method("forward");
   EXPECT_EQ(err, Error::NotSupported);
+}
+
+TEST_F(ModuleDeviceMemoryTest, DeviceAllocationFailureIsReportedNotFatal) {
+  const char* path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
+  ASSERT_NE(path, nullptr) << "ET_MODULE_ADD_WITH_DEVICE_PATH not set";
+
+  // Stand in for a device that is out of memory, or one whose allocator was
+  // never registered. Either way the caller gets an error and the process
+  // survives to handle it.
+  g_mock_cuda.fail_allocations_ = true;
+
+  Module module(path);
+  EXPECT_EQ(module.load_method("forward"), Error::MemoryAllocationFailed);
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 0);
+  EXPECT_EQ(g_mock_cuda.deallocate_count_, 0);
+
+  // The failure must not leave the Module half-built: with the device back,
+  // the same call reaches the allocator again.
+  g_mock_cuda.fail_allocations_ = false;
+  (void)module.load_method("forward");
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
 }
 
 TEST_F(

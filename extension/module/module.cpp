@@ -368,7 +368,8 @@ Module::make_planned_memory_with_shared_arenas(
   return planned;
 }
 
-std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
+runtime::Result<std::unique_ptr<Module::PlannedMemory>>
+Module::make_planned_memory_with_devices(
     const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta) {
   auto planned = std::make_unique<PlannedMemory>();
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
@@ -379,9 +380,11 @@ std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
 
   for (size_t i = 0; i < num_buffers; ++i) {
     auto size = method_meta.memory_planned_buffer_size(i);
-    ET_CHECK_MSG(size.ok(), "Failed to get buffer size for index %zu", i);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        size.error(), "Failed to get buffer size for index %zu", i);
     auto device = method_meta.memory_planned_buffer_device(i);
-    ET_CHECK_MSG(device.ok(), "Failed to get buffer device for index %zu", i);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        device.error(), "Failed to get buffer device for index %zu", i);
     planned->planned_devices.push_back(device.get());
 
     if (device->is_cpu()) {
@@ -391,13 +394,17 @@ std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
     } else {
       // Allocate device memory via DeviceAllocator and store the RAII buffer.
       planned->planned_buffers.emplace_back(); // empty CPU placeholder
+      // Whether a device allocator exists, and whether the device has room,
+      // are properties of the machine rather than of the program, so report
+      // them to the caller instead of aborting the process.
       auto dmb = runtime::DeviceMemoryBuffer::create(
           size.get(), device->type(), device->index());
-      ET_CHECK_MSG(
-          dmb.ok(),
-          "Failed to allocate device memory for buffer %zu (device_type=%d)",
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          dmb.error(),
+          "Failed to allocate device memory for buffer %zu (device_type=%d, device_index=%d)",
           i,
-          static_cast<int>(device->type()));
+          static_cast<int>(device->type()),
+          static_cast<int>(device->index()));
       planned->planned_spans.emplace_back(dmb->as_span());
       planned->device_buffers.push_back(std::move(dmb.get()));
     }
@@ -473,10 +480,15 @@ runtime::Error Module::load_method(
       ET_CHECK_OK_OR_RETURN_ERROR(meta_res.error());
       auto& meta = meta_res.get();
 
+      // A failed device query must not read as "this buffer is on the host",
+      // which would silently hand a backend host memory. The index is always
+      // in range here, so this only fires if the metadata itself is broken.
       bool has_device_buffers = false;
       for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
         auto dev = meta.memory_planned_buffer_device(i);
-        if (dev.ok() && !dev->is_cpu()) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            dev.error(), "Failed to get buffer device for index %zu", i);
+        if (!dev->is_cpu()) {
           has_device_buffers = true;
           break;
         }
@@ -493,7 +505,9 @@ runtime::Error Module::load_method(
 
         // Device-aware path: allocate CPU and device buffers. The device
         // span is owned by the HierarchicalAllocator inside PlannedMemory.
-        method_holder.planned_memory = make_planned_memory_with_devices(meta);
+        auto planned_res = make_planned_memory_with_devices(meta);
+        ET_CHECK_OK_OR_RETURN_ERROR(planned_res.error());
+        method_holder.planned_memory = std::move(planned_res.get());
         planned_memory = method_holder.planned_memory->planned_memory.get();
       } else if (!share_memory_arenas_) {
         auto sizes_res = get_mem_planned_buffer_sizes(method_name);
