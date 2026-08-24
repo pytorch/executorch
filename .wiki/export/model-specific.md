@@ -122,7 +122,7 @@ When building C++ applications with ExecuTorch, you can selectively include only
 ```cmake
 gen_selected_ops(
   LIB_NAME "select_build_lib"
-  ROOT_OPS "aten::add.out"
+  SELECT_OPS_LIST "aten::add.out"
   INCLUDE_ALL_OPS "OFF"
 )
 generate_bindings_for_kernels(
