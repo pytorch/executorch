@@ -24,11 +24,6 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.serialization.qnn_tail_protocol import (
-    pack_schematic_payload,
-    pack_tail,
-    SECTION_SCHEMATIC,
-)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
     QCOM_TENSOR_NAME,
@@ -52,34 +47,6 @@ DEFAULT_GRAPH_NAME = "forward"
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-
-
-def _package_tail(qnn_context_binary, graph_names, obj_options):
-    """Append host-side metadata sections after the QNN context binary.
-
-    Currently packages schematic binaries when profile_level is kProfileOptrace.
-    See qnn_tail_protocol.py for the wire format specification.
-    """
-    if obj_options.profile_level != QnnExecuTorchProfileLevel.kProfileOptrace:
-        return bytes(qnn_context_binary)
-
-    named_blobs = []
-    for graph_name in graph_names:
-        schematic_path = os.path.join(os.getcwd(), f"{graph_name}_schematic.bin")
-        if os.path.isfile(schematic_path):
-            with open(schematic_path, "rb") as f:
-                data = f.read()
-            try:
-                os.remove(schematic_path)
-            except OSError:
-                pass
-            named_blobs.append((graph_name, data))
-
-    if not named_blobs:
-        return bytes(qnn_context_binary)
-
-    sections = [(SECTION_SCHEMATIC, pack_schematic_payload(named_blobs))]
-    return bytes(qnn_context_binary) + pack_tail(sections)
 
 @final
 class QnnBackend(BackendDetails):
@@ -179,9 +146,8 @@ class QnnBackend(BackendDetails):
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.DestroyContext()
         # For now, debug_handle_map is not used by QNN ExecuTorch
-        processed_bytes = _package_tail(qnn_context_binary, qnn_manager.GetGraphNames(), obj_options)
         return PreprocessResult(
-            processed_bytes=processed_bytes,
+            processed_bytes=bytes(qnn_context_binary),
             debug_handle_map={},
         )
 
@@ -261,12 +227,11 @@ class QnnBackend(BackendDetails):
                     len(qnn_context_binary) != 0
                 ), "Failed to generate Qnn context binary."
                 qnn_manager.DestroyContext()
-                processed_bytes = _package_tail(qnn_context_binary, graph_names, option)
                 # methods should share the same context binary for current partition
                 for key in edge_programs.keys():
                     all_processed_results[key].append(
                         PreprocessResult(
-                            processed_bytes=processed_bytes,
+                            processed_bytes=bytes(qnn_context_binary),
                             debug_handle_map=debug_handle_builder.get_delegate_mapping(),
                         )
                     )

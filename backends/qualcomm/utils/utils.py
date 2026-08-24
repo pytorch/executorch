@@ -237,24 +237,6 @@ def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
                 dump_file = f"{ctx_path}/{execution_plan.name}_{i}{file_extension}"
                 with open(dump_file, "wb") as f:
                     f.write(binary)
-                
-                # Unpack embedded metadata sections (e.g. schematic binaries)
-                # if the tail protocol appendix is present.
-                # See: backends/qualcomm/serialization/qnn_tail_protocol.py
-                from executorch.backends.qualcomm.serialization.qnn_tail_protocol import (
-                    has_tail,
-                    unpack_tail_sections,
-                    unpack_schematic_payload,
-                    SECTION_SCHEMATIC,
-                )
-                if has_tail(processed_bytes):
-                    sections = unpack_tail_sections(processed_bytes)
-                    for payload in sections.get(SECTION_SCHEMATIC, []):
-                        for graph_name, data in unpack_schematic_payload(payload):
-                            schematic_file = f"{ctx_path}/{graph_name}_schematic.bin"
-                            with open(schematic_file, "wb") as sf:
-                                sf.write(data)
-                
                 dumpfiles.append(dump_file)
     return dumpfiles
 

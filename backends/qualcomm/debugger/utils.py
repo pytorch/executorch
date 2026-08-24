@@ -323,7 +323,7 @@ class QnnTool:
 
     def _run(self, cmd: List[str], step: str) -> None:
         """Run a subprocess with argv list; assert on non-zero exit."""
-        result = subprocess.run(cmd, capture_output=True, cwd=self.artifact_dir)
+        result = subprocess.run(cmd, capture_output=True)
         assert result.returncode == 0, (
             f"{step} failed (exit {result.returncode}): "
             f"{result.stderr.decode('utf-8', errors='replace')}"
@@ -421,7 +421,9 @@ class QnnTool:
             json.dump({"features": {"qhas_json": True}}, f, indent=4)
 
         target = "x86_64-linux-clang"
-        schematic = os.path.join(self.artifact_dir, f"{schematic_stem}.bin")
+        # TODO: remove assumption that AOT dumpped schematic file exists in same cwd
+        # we need to make .pte self-contained.
+        schematic = os.path.join(os.getcwd(), f"{schematic_stem}.bin")
         assert os.path.isfile(schematic), (
             f"qnn-profile-viewer expected schematic at {schematic}; "
             "in case of online_prepare, the context-binary-generator step should have produced it in artifact_dir. "
