@@ -1568,7 +1568,10 @@ struct PyProgram final {
         continue;
       }
       for (size_t j = 0; j < method_meta.num_memory_planned_buffers(); j++) {
-        int64_t buffer_size = method_meta.memory_planned_buffer_size(j).get();
+        auto size = method_meta.memory_planned_buffer_size(j);
+        THROW_IF_ERROR(
+            size.error(), "Failed to get size of planned buffer %zu", j);
+        int64_t buffer_size = size.get();
         if (non_const_buffer_sizes.find(j) == non_const_buffer_sizes.end()) {
           non_const_buffer_sizes.insert({j, buffer_size});
         } else {
