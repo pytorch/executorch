@@ -110,6 +110,11 @@ class QnnOperatorSupport(OperatorSupportBase):
             return False
 
         supported = False
+        if node.target.__name__ not in self.node_visitors:
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | No node visitor, unsupported"
+            )
+            return False
         op_wrapper = self.node_visitors[node.target.__name__].define_node(
             node, self.nodes_to_wrappers
         )

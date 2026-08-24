@@ -12,7 +12,6 @@ import sys
 import tempfile
 import unittest
 
-from argparse import Namespace
 from pathlib import Path
 
 import executorch.codegen.tools.gen_oplist as gen_oplist
@@ -27,7 +26,7 @@ from executorch.codegen.gen import (
 )
 
 from executorch.codegen.model import ETKernelIndex, ETKernelKey, ETParsedYaml
-from torchgen.gen import get_custom_build_selector, LineLoader, make_file_manager
+from torchgen.gen import get_custom_build_selector, LineLoader
 from torchgen.model import (
     BackendIndex,
     BackendMetadata,
@@ -37,6 +36,7 @@ from torchgen.model import (
     OperatorName,
 )
 from torchgen.selective_build.selector import SelectiveBuilder
+from torchgen.utils import FileManager
 
 
 TEST_YAML = """
@@ -502,6 +502,31 @@ static Kernel kernels_to_register[] = {
             )
         return aten_yaml_path, included_ops_yaml_path, tags_yaml_path
 
+    def _find_template_dir(self) -> Path:
+        for probe in self._candidate_template_dirs():
+            if (probe / "RegisterCodegenUnboxedKernels.cpp").exists():
+                return probe
+        return Path(__file__).parents[1] / "templates"
+
+    def _candidate_template_dirs(self):
+        candidates: list[Path] = []
+        try:
+            from importlib.resources import files as _files  # type: ignore[import]
+
+            candidates.append(Path(str(_files("executorch.codegen") / "templates")))
+        except Exception:
+            pass
+        try:
+            import executorch.codegen.gen as _gen_mod  # type: ignore[import]
+
+            candidates.append(
+                Path(_gen_mod.__file__).parent / "templates"  # type: ignore[attr-defined]
+            )
+        except Exception:
+            pass
+        candidates.append(Path(__file__).parents[1] / "templates")
+        yield from candidates
+
     def _assert_selection_generates_empty_buildable_cpp(
         self,
         temp_dir: str,
@@ -513,14 +538,15 @@ static Kernel kernels_to_register[] = {
         old_main_file = getattr(main_module, "__file__", None)
         main_module.__file__ = __file__
         try:
-            options = Namespace(
-                source_path=str(Path(__file__).parents[1]),
-                install_dir=temp_dir,
+            template_dir = self._find_template_dir()
+            cpu_fm = FileManager(
+                install_dir=Path(temp_dir),
+                template_dir=template_dir,
                 dry_run=False,
             )
             gen_unboxing(
                 native_functions=parsed_yaml.native_functions,
-                cpu_fm=make_file_manager(options=options),
+                cpu_fm=cpu_fm,
                 selector=selector,
                 use_aten_lib=False,
                 kernel_index=parsed_yaml.kernel_index,

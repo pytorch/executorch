@@ -15,6 +15,26 @@ To enable VGF neural accelerator statistics collection, set:
 EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS=1
 ```
 
+The statistics mode defaults to mode 1. Select mode 0 or 1 explicitly with:
+
+```text
+EXECUTORCH_VGF_NEURAL_STATISTICS_MODE=0
+# or
+EXECUTORCH_VGF_NEURAL_STATISTICS_MODE=1
+```
+
+The public values `0` and `1` map to Vulkan
+`VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS0_ARM` and
+`VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM`, respectively. Invalid
+mode values produce a warning and fall back to mode 1. Set these environment
+variables before the VGF backend initializes its Vulkan device.
+
+When statistics are requested, the backend enables
+`VK_ARM_data_graph_neural_accelerator_statistics` only if both the device
+extension and `dataGraphNeuralAcceleratorStatistics` feature are supported. If
+support is missing, inference still proceeds and the emitted metadata reports
+statistics as unavailable.
+
 When this option is not set, the backend does not emit the
 VGF_NEURAL_STATISTICS delegate metadata event, even if general ETDump/runtime
 profiling is enabled.

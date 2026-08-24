@@ -14,14 +14,7 @@ from typing import Callable, cast, DefaultDict, Iterable, Optional, Sequence, Ty
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    CompileMode,
-    create_cadence_pass_filter,
-    normalize_compile_mode,
-    register_cadence_pass,
-    resolve_opt_level,
-)
+from executorch.backends.cadence.aot.pass_utils import CompileMode
 from executorch.backends.cadence.aot.utils import get_shape, is_node_in_flattened_output
 from executorch.exir import memory
 from executorch.exir.pass_manager import PassManager
@@ -66,16 +59,11 @@ class MemConstraints:
 
     def __init__(
         self,
-        mode: CompileMode | int | None = None,
+        mode: CompileMode = CompileMode.DEFAULT,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
-        opt_level: Optional[int] = None,
     ) -> None:
-        normalized_mode = normalize_compile_mode(mode, opt_level)
-        self.opt_level = resolve_opt_level(normalized_mode)
-        self.mode: Optional[CompileMode] = (
-            normalized_mode if isinstance(normalized_mode, CompileMode) else None
-        )
+        self.mode = CompileMode(mode)
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
 
@@ -404,7 +392,6 @@ def get_relative_offset_of_slice(slice_node: torch.fx.Node) -> int:
     return offset
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class GenerateCatNopConstraints(PassBase):
     """
     For cat op where the concatenation is along the outermost dimension, generate
@@ -586,7 +573,6 @@ class GenerateCatNopConstraints(PassBase):
         graph_module.recompile()
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class GenerateMemoryViewConstraints(PassBase):
     """
     For memory.view ops, where input and output use the same underlying memory,
@@ -603,7 +589,6 @@ class GenerateMemoryViewConstraints(PassBase):
             self.constraint.add_relative_placement_constraint(node.args[0], node)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class GenerateSliceAndSelectNopConstraints(PassBase):
     """
     For slice ops, where the slice is along the outermost dimension, generate
@@ -705,7 +690,6 @@ ConstraintsGenPass: TypeAlias = Callable[
 ]
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class GenerateIdmaConstraints(PassBase):
     """Generate constraints for idma ops."""
 
@@ -750,25 +734,26 @@ class GenerateMemConstraints:
         )
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Colocation constraints for cat/slice/select no-ops are optimizations;
+        # the idma and memory-view constraints are always required.
         constraint_gen_passes: Sequence[ConstraintsGenPass] = cast(
             list[ConstraintsGenPass],
-            [
-                GenerateIdmaConstraints,
-                GenerateMemoryViewConstraints,
-                GenerateSliceAndSelectNopConstraints,
-                GenerateCatNopConstraints,
-            ],
+            (
+                [
+                    GenerateIdmaConstraints,
+                    GenerateMemoryViewConstraints,
+                ]
+                if self.mem_constraints.mode is CompileMode.MINIMAL
+                else [
+                    GenerateIdmaConstraints,
+                    GenerateMemoryViewConstraints,
+                    GenerateSliceAndSelectNopConstraints,
+                    GenerateCatNopConstraints,
+                ]
+            ),
         ) + list(self.additional_constraint_gen_passes)
-        # Create a filter using the opt level in mem_constraints, and filter
-        # the relevant passes.
-        pass_filter = create_cadence_pass_filter(self.mem_constraints.opt_level)
-        filtered_passes = [
-            mcg_pass(self.mem_constraints)
-            for mcg_pass in cast(
-                list[ConstraintsGenPass],
-                # pyre-ignore[6]: Incompatible parameter type.
-                list(filter(pass_filter, constraint_gen_passes)),
-            )
-        ]
-        # Now run the pass manager on the filtered passes
-        return PassManager(passes=filtered_passes)(graph_module)
+        return PassManager(
+            passes=[
+                mcg_pass(self.mem_constraints) for mcg_pass in constraint_gen_passes
+            ]
+        )(graph_module)

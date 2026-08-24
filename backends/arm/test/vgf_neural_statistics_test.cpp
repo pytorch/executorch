@@ -7,12 +7,99 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
 
 namespace vgf = executorch::backends::vgf;
+
+namespace {
+
+void set_env(const char* name, const char* value) {
+#ifdef _WIN32
+  _putenv_s(name, value == nullptr ? "" : value);
+#else
+  if (value == nullptr) {
+    unsetenv(name);
+  } else {
+    setenv(name, value, 1);
+  }
+#endif
+}
+
+class ScopedNeuralStatisticsEnv {
+ public:
+  ScopedNeuralStatisticsEnv() {
+    const char* enable = std::getenv(vgf::kVgfNeuralStatisticsEnableEnv);
+    const char* mode = std::getenv(vgf::kVgfNeuralStatisticsModeEnv);
+    if (enable != nullptr) {
+      old_enable_ = enable;
+      had_enable_ = true;
+    }
+    if (mode != nullptr) {
+      old_mode_ = mode;
+      had_mode_ = true;
+    }
+  }
+
+  ~ScopedNeuralStatisticsEnv() {
+    set_env(
+        vgf::kVgfNeuralStatisticsEnableEnv,
+        had_enable_ ? old_enable_.c_str() : nullptr);
+    set_env(
+        vgf::kVgfNeuralStatisticsModeEnv,
+        had_mode_ ? old_mode_.c_str() : nullptr);
+  }
+
+ private:
+  bool had_enable_ = false;
+  bool had_mode_ = false;
+  std::string old_enable_;
+  std::string old_mode_;
+};
+
+} // namespace
+
+TEST(VgfNeuralStatisticsTest, RuntimeConfigDefaultsToMode1) {
+  ScopedNeuralStatisticsEnv scoped_env;
+  set_env(vgf::kVgfNeuralStatisticsEnableEnv, "1");
+  set_env(vgf::kVgfNeuralStatisticsModeEnv, nullptr);
+
+  const auto config = vgf::get_vgf_neural_statistics_runtime_config();
+  EXPECT_TRUE(config.requested);
+  EXPECT_EQ(config.mode_index, 1);
+}
+
+TEST(VgfNeuralStatisticsTest, RuntimeConfigMapsMode0ToStatistics0) {
+  ScopedNeuralStatisticsEnv scoped_env;
+  set_env(vgf::kVgfNeuralStatisticsEnableEnv, "true");
+  set_env(vgf::kVgfNeuralStatisticsModeEnv, "0");
+
+  const auto config = vgf::get_vgf_neural_statistics_runtime_config();
+  EXPECT_TRUE(config.requested);
+  EXPECT_EQ(config.mode_index, 0);
+}
+
+TEST(VgfNeuralStatisticsTest, RuntimeConfigFallsBackToMode1) {
+  ScopedNeuralStatisticsEnv scoped_env;
+  set_env(vgf::kVgfNeuralStatisticsEnableEnv, "1");
+  set_env(vgf::kVgfNeuralStatisticsModeEnv, "not-a-mode");
+
+  const auto config = vgf::get_vgf_neural_statistics_runtime_config();
+  EXPECT_TRUE(config.requested);
+  EXPECT_EQ(config.mode_index, 1);
+}
+
+TEST(VgfNeuralStatisticsTest, RuntimeConfigRecognizesFalseLikeValues) {
+  ScopedNeuralStatisticsEnv scoped_env;
+  set_env(vgf::kVgfNeuralStatisticsEnableEnv, "Off");
+  set_env(vgf::kVgfNeuralStatisticsModeEnv, "1");
+
+  const auto config = vgf::get_vgf_neural_statistics_runtime_config();
+  EXPECT_FALSE(config.requested);
+}
 
 TEST(VgfNeuralStatisticsTest, SerializesUnavailableWrapper) {
   const std::string metadata =

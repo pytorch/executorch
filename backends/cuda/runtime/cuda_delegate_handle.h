@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <memory>
 #include <vector>
 
@@ -22,7 +22,7 @@ namespace cuda {
 struct CudaStreamDeleter {
   void operator()(cudaStream_t* stream) const {
     if (stream != nullptr && *stream != nullptr) {
-      cudaStreamDestroy(*stream);
+      (void)cudaStreamDestroy(*stream);
     }
     delete stream;
   }
@@ -86,16 +86,16 @@ struct CudaGraphState {
 
   ~CudaGraphState() {
     if (graph_exec) {
-      cudaGraphExecDestroy(graph_exec);
+      (void)cudaGraphExecDestroy(graph_exec);
     }
     if (graph) {
-      cudaGraphDestroy(graph);
+      (void)cudaGraphDestroy(graph);
     }
     // Only free input buffers — output buffers are owned by the AOTI runtime
     // (allocated during graph capture via the caching allocator).
     for (auto* ptr : static_input_ptrs) {
       if (ptr)
-        cudaFree(ptr);
+        (void)cudaFree(ptr);
     }
   }
 
@@ -121,12 +121,12 @@ struct CudaGraphState {
     if (this != &other) {
       // Clean up existing resources
       if (graph_exec)
-        cudaGraphExecDestroy(graph_exec);
+        (void)cudaGraphExecDestroy(graph_exec);
       if (graph)
-        cudaGraphDestroy(graph);
+        (void)cudaGraphDestroy(graph);
       for (auto* ptr : static_input_ptrs) {
         if (ptr)
-          cudaFree(ptr);
+          (void)cudaFree(ptr);
       }
 
       phase = other.phase;
