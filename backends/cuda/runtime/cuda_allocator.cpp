@@ -61,11 +61,23 @@ Error copy_impl(
   }
 
   int prev_device = 0;
-  cudaError_t prev_device_err = cudaSuccess;
+  bool switched_device = false;
 
   if (index >= 0) {
-    prev_device_err = cudaGetDevice(&prev_device);
-    if (prev_device_err == cudaSuccess) {
+    // Without the current device there is no way to switch to `index` and no
+    // way to restore afterwards, so copying would run against whatever device
+    // happens to be current and report success. Fail instead, as
+    // cuda_mutable_state.cpp does for the same call.
+    cudaError_t prev_device_err = cudaGetDevice(&prev_device);
+    if (prev_device_err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "%s: cudaGetDevice failed: %s",
+          method,
+          cudaGetErrorString(prev_device_err));
+      return Error::Internal;
+    }
+    if (static_cast<int>(index) != prev_device) {
       cudaError_t set_err = cudaSetDevice(index);
       if (set_err != cudaSuccess) {
         // Nothing was switched, so there is nothing to restore. Copying now
@@ -78,6 +90,7 @@ Error copy_impl(
             cudaGetErrorString(set_err));
         return Error::Internal;
       }
+      switched_device = true;
     }
   }
   cudaError_t err = cudaSuccess;
@@ -90,7 +103,7 @@ Error copy_impl(
     err = cudaMemcpy(dst, src, nbytes, kind);
   }
 
-  if (index >= 0 && prev_device_err == cudaSuccess) {
+  if (switched_device) {
     (void)cudaSetDevice(prev_device);
   }
 
@@ -141,23 +154,40 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
 
   void* ptr = nullptr;
   int prev_device = 0;
-  cudaError_t prev_device_err = cudaGetDevice(&prev_device);
+  bool switch_device = false;
 
-  // If index == -1, fall back to the current device returned by cudaGetDevice
-  // and skip the set/restore round-trip.
-  const bool switch_device = index >= 0 && prev_device_err == cudaSuccess &&
-      static_cast<int>(index) != prev_device;
+  // If index == -1, fall back to the current device and skip the set/restore
+  // round-trip.
+  if (index >= 0) {
+    // Without the current device there is no way to switch to `index` and no
+    // way to restore afterwards, so the allocation would land on whatever
+    // device happens to be current while the caller records it as living on
+    // `index`. Fail instead.
+    cudaError_t prev_device_err = cudaGetDevice(&prev_device);
+    if (prev_device_err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "CudaAllocator::allocate: cudaGetDevice failed: %s",
+          cudaGetErrorString(prev_device_err));
+      return Error::Internal;
+    }
+    switch_device = static_cast<int>(index) != prev_device;
+  }
+
   if (switch_device) {
     cudaError_t set_err = cudaSetDevice(index);
     if (set_err != cudaSuccess) {
       // Allocating now would return a pointer on the current device while the
-      // caller records it as living on the requested one.
+      // caller records it as living on the requested one. cudaSetDevice reports
+      // more than a bad ordinal here (a valid device can be unavailable or in
+      // prohibited mode), so report it the way the rest of the CUDA runtime
+      // code does rather than blaming the caller's argument.
       ET_LOG(
           Error,
           "CudaAllocator::allocate: cudaSetDevice(%d) failed: %s",
           static_cast<int>(index),
           cudaGetErrorString(set_err));
-      return Error::MemoryAllocationFailed;
+      return Error::Internal;
     }
   }
 
@@ -199,27 +229,37 @@ void CudaAllocator::deallocate(void* ptr, DeviceIndex index) {
   }
 
   int prev_device = 0;
-  cudaError_t prev_device_err = cudaSuccess;
+  bool switched_device = false;
 
   if (index >= 0) {
-    prev_device_err = cudaGetDevice(&prev_device);
-    if (prev_device_err == cudaSuccess) {
+    cudaError_t prev_device_err = cudaGetDevice(&prev_device);
+    if (prev_device_err != cudaSuccess) {
+      // cudaFree accepts a pointer from any device under unified addressing, so
+      // free it anyway rather than leak, but do not try to restore a device we
+      // never read.
+      ET_LOG(
+          Error,
+          "CudaAllocator::deallocate: cudaGetDevice failed: %s",
+          cudaGetErrorString(prev_device_err));
+    } else if (static_cast<int>(index) != prev_device) {
       cudaError_t set_err = cudaSetDevice(index);
       if (set_err != cudaSuccess) {
-        // cudaFree accepts a pointer from any device under unified addressing,
-        // so keep going rather than leak it, but do not stay silent about it.
+        // Same reasoning: keep going rather than leak it, but do not stay
+        // silent about it.
         ET_LOG(
             Error,
             "CudaAllocator::deallocate: cudaSetDevice(%d) failed: %s",
             static_cast<int>(index),
             cudaGetErrorString(set_err));
+      } else {
+        switched_device = true;
       }
     }
   }
 
   cudaError_t err = cudaFree(ptr);
 
-  if (index >= 0 && prev_device_err == cudaSuccess) {
+  if (switched_device) {
     (void)cudaSetDevice(prev_device);
   }
 
