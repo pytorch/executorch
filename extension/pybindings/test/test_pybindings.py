@@ -6,7 +6,9 @@
 
 # pyre-unsafe
 
+import os
 import sys
+import tempfile
 import unittest
 from io import StringIO
 
@@ -829,3 +831,112 @@ class PybindingsTest(unittest.TestCase):
 
         # A failed load must leave the method that already loaded usable.
         self.assertTrue(torch.allclose(method.call(inputs)[0], torch.ones(2, 2) * 2))
+
+    def test_device_planned_method_allocates_on_the_device(self):
+        # The other device test covers the refusal. This one covers what the
+        # refusal is protecting: on a build that does have a device allocator,
+        # the arena has to come off the device, not out of host memory. It needs
+        # a real accelerator, so it only runs where one is present.
+        if "CudaBackend" not in self.runtime._get_registered_backend_names():
+            self.skipTest("needs a build with the CUDA backend linked in")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        # Large enough that the arena is far bigger than the noise in
+        # mem_get_info, which moves by a few MiB as contexts are created.
+        side = 2048
+        inputs = (torch.ones(side, side), torch.ones(side, side))
+
+        class HostOnly(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        class Delegated(torch.nn.Module):
+            def forward(self, x, y):
+                return (x + y) * 2.0
+
+        edge = to_edge_transform_and_lower(
+            {
+                "forward": export(HostOnly(), inputs, strict=True),
+                "forward2": export(Delegated(), inputs, strict=True),
+            },
+            partitioner={
+                "forward2": [CudaPartitioner([CompileSpec("method_name", b"forward2")])]
+            },
+        )
+        exported_program = edge.to_executorch(
+            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True)
+        )
+
+        plans = {
+            plan.name: plan
+            for plan in exported_program.executorch_program.execution_plan
+        }
+        device_buffers = {
+            buffer.buffer_idx
+            for buffer in (plans["forward2"].non_const_buffer_device or [])
+        }
+        self.assertTrue(device_buffers, "the planner tagged nothing for the device")
+        self.assertFalse(plans["forward"].non_const_buffer_device or [])
+        device_bytes = sum(
+            size
+            for index, size in enumerate(plans["forward2"].non_const_buffer_sizes)
+            if index in device_buffers
+        )
+
+        # The CUDA backend keeps its weights in a separate file, so the program
+        # has to be loaded from disk with that file alongside it.
+        with tempfile.TemporaryDirectory() as directory:
+            pte_path = os.path.join(directory, "program.pte")
+            with open(pte_path, "wb") as pte_file:
+                exported_program.write_to_file(pte_file)
+            data_names = sorted(exported_program._tensor_data or {})
+            exported_program.write_tensor_data_to_file(directory)
+            data_path = (
+                os.path.join(directory, data_names[0] + ".ptd") if data_names else None
+            )
+
+            torch.cuda.init()
+            program = self.runtime._load_program(pte_path, data_path=data_path)
+
+            torch.cuda.synchronize()
+            free_before, _ = torch.cuda.mem_get_info()
+
+            # The host-only method must not touch the device at all.
+            host_method = program.load_method("forward")
+            torch.cuda.synchronize()
+            free_after_host, _ = torch.cuda.mem_get_info()
+            self.assertLess(free_before - free_after_host, device_bytes // 2)
+
+            device_method = program.load_method("forward2")
+            torch.cuda.synchronize()
+            free_after_device, _ = torch.cuda.mem_get_info()
+            self.assertGreaterEqual(
+                free_after_host - free_after_device, device_bytes * 0.9
+            )
+
+            # Before the fix this ran on a host pointer and the backend rejected
+            # it, so getting the right answer back is itself part of the check.
+            expected = (inputs[0] + inputs[1]) * 2.0
+            self.assertTrue(
+                torch.allclose(device_method.call(inputs)[0].cpu(), expected)
+            )
+            self.assertTrue(
+                torch.allclose(host_method.call(inputs)[0].cpu(), inputs[0] + inputs[1])
+            )
+            # The device arenas are private, so running the host method in
+            # between must not disturb them.
+            self.assertTrue(
+                torch.allclose(device_method.call(inputs)[0].cpu(), expected)
+            )
+
+            del device_method
+            del host_method
+            del program
+            torch.cuda.synchronize()
+            free_at_end, _ = torch.cuda.mem_get_info()
+            self.assertGreaterEqual(free_at_end - free_after_device, device_bytes * 0.9)

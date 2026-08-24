@@ -26,6 +26,8 @@ on:
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
       - examples/models/muse-glimmer/**
+      - extension/pybindings/**
+      - runtime/__init__.py
   workflow_dispatch:
 
 concurrency:
