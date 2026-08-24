@@ -224,7 +224,9 @@ class SessionRuntime:
         if self._failure is not None:
             raise self._failure
         if not self.healthy:
-            self._failure = WorkerError("model worker is unavailable; restart the server")
+            self._failure = WorkerError(
+                "model worker is unavailable; restart the server"
+            )
             raise self._failure
 
     def _mark_failed(self, message: str) -> WorkerError:
@@ -258,9 +260,7 @@ class SessionRuntime:
         """Request an in-flight generation stop at the next token boundary."""
         return bool(self._worker.stop())
 
-    async def _wait_for_worker(
-        self, future: asyncio.Future, timeout: float
-    ) -> bool:
+    async def _wait_for_worker(self, future: asyncio.Future, timeout: float) -> bool:
         try:
             await asyncio.wait_for(asyncio.shield(future), timeout=timeout)
             return True

@@ -414,8 +414,9 @@ def test_repeated_cancellation_does_not_interrupt_cleanup():
             await pending
         return runtime.healthy, worker.abort_count, worker.finished.is_set()
 
-    import pytest
     import time
+
+    import pytest
 
     assert asyncio.run(scenario()) == (False, 1, True)
 

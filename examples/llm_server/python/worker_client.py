@@ -108,6 +108,23 @@ def _close_fd(fd: Optional[int]) -> None:
         pass
 
 
+def _try_process_call(call, *args, **kwargs) -> bool:
+    try:
+        call(*args, **kwargs)
+        return True
+    except Exception:  # noqa: BLE001 - process shutdown remains best-effort
+        return False
+
+
+def _close_process_streams(streams: tuple) -> None:
+    # Closing buffered stdout while another thread is reading it can block, so
+    # callers invoke this only after the process has been reaped.
+    for stream in streams:
+        close = getattr(stream, "close", None)
+        if close is not None:
+            _try_process_call(close)
+
+
 def _shutdown_process(proc: subprocess.Popen, streams: Optional[tuple] = None) -> bool:
     """Invalidate process pipes and synchronously reap a child, best effort."""
     if streams is None:
@@ -118,45 +135,23 @@ def _shutdown_process(proc: subprocess.Popen, streams: Optional[tuple] = None) -
     except Exception:  # noqa: BLE001 - fake/foreign Popen objects may be immutable
         pass
 
-    reaped = False
     try:
-        try:
-            running = proc.poll() is None
-        except Exception:  # noqa: BLE001 - still attempt bounded termination
-            running = True
-        if running:
-            try:
-                proc.terminate()
-            except Exception:  # noqa: BLE001 - wait/kill below remain best-effort
-                pass
-        try:
-            proc.wait(timeout=_PROCESS_WAIT_TIMEOUT_SECONDS)
-            reaped = True
-        except Exception:  # noqa: BLE001 - escalate to kill, preserving caller error
-            pass
-        if reaped:
-            return True
-        try:
-            proc.kill()
-        except Exception:  # noqa: BLE001 - final reap attempt still matters
-            pass
-        try:
-            proc.wait(timeout=_PROCESS_WAIT_TIMEOUT_SECONDS)
-            reaped = True
-        except Exception:  # noqa: BLE001 - caller may retry process cleanup
-            pass
-    finally:
-        # Closing a buffered stdout while another thread is reading it can block.
-        # The client references are already invalidated; close detached streams
-        # only after reap, and leave an unsuccessful cleanup retryable.
-        if reaped:
-            for stream in streams:
-                try:
-                    close = getattr(stream, "close", None)
-                    if close is not None:
-                        close()
-                except Exception:  # noqa: BLE001 - shutdown remains best-effort
-                    pass
+        running = proc.poll() is None
+    except Exception:  # noqa: BLE001 - still attempt bounded termination
+        running = True
+    if running:
+        _try_process_call(proc.terminate)
+
+    reaped = _try_process_call(
+        proc.wait, timeout=_PROCESS_WAIT_TIMEOUT_SECONDS
+    )
+    if not reaped:
+        _try_process_call(proc.kill)
+        reaped = _try_process_call(
+            proc.wait, timeout=_PROCESS_WAIT_TIMEOUT_SECONDS
+        )
+    if reaped:
+        _close_process_streams(streams)
     return reaped
 
 
@@ -384,7 +379,7 @@ class WorkerClient:
             if written is not None and written != len(payload):
                 raise OSError("short write to worker stdin")
             stdin.flush()
-        except (BrokenPipeError, OSError, ValueError) as error:
+        except (OSError, ValueError) as error:
             failure = self._record_failure(WorkerError("worker stdin is closed"))
             raise failure from error
 
