@@ -28,6 +28,37 @@ enum class ValueKind : int8_t {
   List = 3,
 };
 
+// How a Value's storage is owned / sourced (a method-binding fact stamped by
+// the deserializer). Intermediate: produced by a node (a pooled activation).
+// The rest classify a placeholder: UserInput (caller-wired each call);
+// Parameter / ConstantTensor (frozen external data, located by
+// Value::data_key); Buffer (persistent state when data_key is set, else
+// zero-initialized at load). Mirrors the schema InputKind, plus Intermediate
+// for non-placeholder values.
+enum class ValueRole : int8_t {
+  Intermediate = 0,
+  UserInput = 1,
+  Parameter = 2,
+  Buffer = 3,
+  ConstantTensor = 4,
+};
+
+inline const char* value_role_name(ValueRole role) {
+  switch (role) {
+    case ValueRole::Intermediate:
+      return "Intermediate";
+    case ValueRole::UserInput:
+      return "UserInput";
+    case ValueRole::Parameter:
+      return "Parameter";
+    case ValueRole::Buffer:
+      return "Buffer";
+    case ValueRole::ConstantTensor:
+      return "ConstantTensor";
+  }
+  return "?";
+}
+
 // A single SSA value (dataflow edge) in a Graph: its contents plus def-use
 // wiring, a storage-alias fact, and an open attrs map.
 //
@@ -55,6 +86,12 @@ class Value {
   std::vector<NodeRef> consumer_refs;
   // Shares storage with this value (a view); fresh if invalid.
   ValueRef alias_ref = kInvalid;
+  // Storage ownership / source class, stamped by the deserializer from the
+  // Method bindings.
+  ValueRole role = ValueRole::Intermediate;
+  // External-constant key for Parameter / ConstantTensor / persistent Buffer;
+  // empty otherwise.
+  std::string data_key;
   // Scratch + planner annotations.
   std::unordered_map<std::string, std::any> attrs;
 
