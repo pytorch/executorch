@@ -1235,7 +1235,9 @@ bool has_device_buffers(const MethodMeta& method_meta) {
 }
 
 /// Arenas sized and placed for a single method, used when that method's
-/// buffers cannot come from the program-wide host arenas.
+/// buffers cannot come from the program-wide host arenas. Returns nullptr when
+/// every buffer is on the host, so one pass over the metadata answers both
+/// whether the method needs its own arenas and how big they are.
 std::shared_ptr<ProgramMemory> make_method_memory(
     const MethodMeta& method_meta) {
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
@@ -1243,14 +1245,19 @@ std::shared_ptr<ProgramMemory> make_method_memory(
   std::vector<runtime::etensor::Device> devices;
   sizes.reserve(num_buffers);
   devices.reserve(num_buffers);
+  bool needs_device_memory = false;
   for (size_t i = 0; i < num_buffers; i++) {
     auto size = method_meta.memory_planned_buffer_size(i);
     THROW_IF_ERROR(size.error(), "Failed to get size of planned buffer %zu", i);
     auto device = method_meta.memory_planned_buffer_device(i);
     THROW_IF_ERROR(
         device.error(), "Failed to get device of planned buffer %zu", i);
+    needs_device_memory |= !device.get().is_cpu();
     sizes.push_back(size.get());
     devices.push_back(device.get());
+  }
+  if (!needs_device_memory) {
+    return nullptr;
   }
   return std::make_shared<ProgramMemory>(std::move(sizes), std::move(devices));
 }
@@ -1651,10 +1658,11 @@ struct PyProgram final {
         method_name.c_str(),
         static_cast<uint32_t>(meta.error()));
     // Device memory is claimed here rather than at program load so that one
-    // accelerator method cannot make the rest of the program unloadable.
-    auto memory = has_device_buffers(meta.get())
-        ? make_method_memory(meta.get())
-        : memory_;
+    // accelerator method cannot make the rest of the program unloadable. A
+    // host-only method keeps sharing the program-wide arenas, so its planned
+    // memory is not isolated from the other host-only methods of this program.
+    auto method_memory = make_method_memory(meta.get());
+    auto memory = method_memory ? std::move(method_memory) : memory_;
     Result<Method> res = state_->program_->load_method(
         method_name.c_str(),
         memory->mem_manager(),
