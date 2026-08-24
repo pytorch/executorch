@@ -186,11 +186,14 @@ class Program:
         Memory-planned buffers are allocated differently depending on where the
         program placed them. A method whose buffers are all on the host shares
         one set of arenas with every other host-only method of this program,
-        sized to the largest of them, so running a second host-only method may
-        overwrite the intermediate and output values of the first. A method
-        with any buffer placed on an accelerator gets its own arenas instead,
-        claimed on the first load of that method, so a missing or exhausted
-        accelerator affects only that method and not the rest of the program.
+        sized to the largest of them, so two such methods overwrite each
+        other's intermediate values. Outputs are copied out on every call, so
+        that sharing does not change what execute returns. A method with any
+        buffer placed on an accelerator gets its own arenas instead, claimed
+        when that method is first loaded and held until the program is
+        released. A missing or exhausted accelerator therefore fails that one
+        load rather than the whole program, but whatever it does claim stays
+        claimed for every method loaded after it.
 
         Args:
             name: The name of the method to load.
