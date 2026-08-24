@@ -1087,9 +1087,8 @@ class ProgramMemory {
   ///
   /// Members initialize in declaration order and each one reads the members
   /// declared before it, so that order is load-bearing. Device buffers come
-  /// first because they hold the only allocation that can fail, and throwing
-  /// before the host arenas exist avoids zero-filling memory that is about to
-  /// be discarded.
+  /// first so that a device that is missing or out of memory throws before the
+  /// host arenas are allocated and zero-filled, rather than after.
   ProgramMemory(
       std::vector<int64_t>&& sizes,
       std::vector<runtime::etensor::Device>&& devices)
@@ -1165,9 +1164,9 @@ class ProgramMemory {
     if (planned_devices_.empty()) {
       return result;
     }
-    // HierarchicalAllocator aborts rather than throws if the span count and
-    // the device count disagree, so reject that here where a Python caller can
-    // still catch it.
+    // Both vectors are filled in lockstep today, so this only fires if a
+    // future caller breaks that. HierarchicalAllocator aborts on a mismatch,
+    // so check here instead, where a Python caller can catch it.
     THROW_IF_ERROR(
         planned_devices_.size() == planned_sizes_.size()
             ? Error::Ok
@@ -1562,8 +1561,9 @@ struct PyProgram final {
     for (size_t i = 0; i < state_->program_->num_methods(); ++i) {
       auto name = state_->program_->get_method_name(i).get();
       auto method_meta = state_->program_->method_meta(name).get();
-      // A device-planned method gets its own arenas in load_method, so its
-      // sizes must not inflate the shared host arenas nobody will read.
+      // A device-planned method gets its own arenas in load_method and never
+      // reads these, so letting its sizes in would only grow the host arenas
+      // the other methods share.
       if (has_device_buffers(method_meta)) {
         continue;
       }
