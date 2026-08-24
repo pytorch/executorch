@@ -142,7 +142,8 @@ TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
 }
 
 TEST_F(SharedPtrDataLoaderTest, LoadIntoNullDstFails) {
-  std::shared_ptr<uint8_t[]> data(new uint8_t[256]());
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[256](), std::default_delete<uint8_t[]>());
   SharedPtrDataLoader edl(data, 256);
 
   EXPECT_EQ(
@@ -166,7 +167,8 @@ TEST_F(SharedPtrDataLoaderTest, LoadIntoNullDstFails) {
 
 TEST_F(SharedPtrDataLoaderTest, LoadIntoCopiesRequestedData) {
   constexpr size_t kDataSize = 256;
-  std::shared_ptr<uint8_t[]> data(new uint8_t[kDataSize]);
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[kDataSize], std::default_delete<uint8_t[]>());
   for (size_t i = 0; i < kDataSize; ++i) {
     data[i] = static_cast<uint8_t>(i);
   }
