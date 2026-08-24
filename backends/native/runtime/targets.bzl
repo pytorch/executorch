@@ -57,3 +57,20 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
     )
+
+    # A named method: one top-level Graph plus its stateful signature bindings
+    # (data bindings + output specs). Sits at the Program level (peer to the reader),
+    # above the graph/ arena package.
+    runtime.cxx_library(
+        name = "method",
+        srcs = ["Method.cpp"],
+        exported_headers = [
+            "Method.h",
+        ],
+        exported_deps = [
+            "//executorch/backends/native/runtime/graph:graph",
+            "//executorch/backends/native/runtime/graph:ids",
+            "//executorch/backends/native/runtime/graph:value",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
