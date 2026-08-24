@@ -1751,6 +1751,7 @@ bool VgfRepr::process_vgf(
   }
 
   for (int i = 0; i < IO_count; i++) {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_RESOURCE");
     auto resource_type = resolve_descriptor_type(resource_decoder, i);
     auto resource_format = vgflib::ToVkFormat(resource_decoder->getVkFormat(i));
     auto alias_group = get_resource_alias_group_id(resource_decoder, i);
@@ -2624,6 +2625,7 @@ bool VgfRepr::process_vgf(
   segments.clear();
   segments.reserve(segment_count);
   for (int segment_id = 0; segment_id < segment_count; ++segment_id) {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_BUILD_SEGMENT");
     const auto segment_type = sequence_decoder->getSegmentType(segment_id);
     if (segment_type != vgflib::ModuleType::GRAPH &&
         segment_type != vgflib::ModuleType::COMPUTE) {
@@ -2679,8 +2681,11 @@ bool VgfRepr::process_vgf(
         .codeSize = segment_m_spirv.size() * sizeof(uint32_t),
         .pCode = segment_m_spirv.begin(),
     };
-    result =
-        vkCreateShaderModule(vk_device, &smci, nullptr, &segment.vk_shader);
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_SHADER_MODULE");
+      result =
+          vkCreateShaderModule(vk_device, &smci, nullptr, &segment.vk_shader);
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to load shader from segment %d", segment_module);
       return false;
@@ -2802,8 +2807,11 @@ bool VgfRepr::process_vgf(
         .bindingCount = static_cast<uint32_t>(layout_bindings.size()),
         .pBindings = layout_bindings.data(),
     };
-    result = vkCreateDescriptorSetLayout(
-        vk_device, &layout_info, nullptr, &segment.vk_layout);
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_DESCRIPTOR_SET_LAYOUT");
+      result = vkCreateDescriptorSetLayout(
+          vk_device, &layout_info, nullptr, &segment.vk_layout);
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to create descriptor layout");
       return false;
@@ -2833,8 +2841,14 @@ bool VgfRepr::process_vgf(
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data(),
     };
-    result = vkCreateDescriptorPool(
-        vk_device, &descriptor_pool_info, nullptr, &segment.vk_descriptor_pool);
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_DESCRIPTOR_POOL");
+      result = vkCreateDescriptorPool(
+          vk_device,
+          &descriptor_pool_info,
+          nullptr,
+          &segment.vk_descriptor_pool);
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to create descriptor pool");
       return false;
@@ -2849,8 +2863,11 @@ bool VgfRepr::process_vgf(
     };
 
     segment.descriptor_sets.resize(set_count);
-    result = vkAllocateDescriptorSets(
-        vk_device, &descriptor_set_info, segment.descriptor_sets.data());
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_DESCRIPTOR_SETS");
+      result = vkAllocateDescriptorSets(
+          vk_device, &descriptor_set_info, segment.descriptor_sets.data());
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to allocate descriptor sets");
       return false;
@@ -2907,7 +2924,10 @@ bool VgfRepr::process_vgf(
               .pBufferInfo = nullptr,
               .pTexelBufferView = nullptr,
           };
-          vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+          {
+            VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_UPDATE_DESCRIPTOR_SET");
+            vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+          }
         } else if (
             binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
           ET_LOG(
@@ -2934,7 +2954,10 @@ bool VgfRepr::process_vgf(
               .pBufferInfo = &buffer_info,
               .pTexelBufferView = nullptr,
           };
-          vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+          {
+            VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_UPDATE_DESCRIPTOR_SET");
+            vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+          }
         } else if (
             binding_info.descriptor_type ==
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
@@ -2974,7 +2997,10 @@ bool VgfRepr::process_vgf(
               .pBufferInfo = nullptr,
               .pTexelBufferView = nullptr,
           };
-          vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+          {
+            VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_UPDATE_DESCRIPTOR_SET");
+            vkUpdateDescriptorSets(vk_device, 1, &desc_set, 0, nullptr);
+          }
         } else {
           ET_LOG(
               Error,
@@ -2994,8 +3020,14 @@ bool VgfRepr::process_vgf(
         .pushConstantRangeCount = 0,
         .pPushConstantRanges = nullptr,
     };
-    result = vkCreatePipelineLayout(
-        vk_device, &pipeline_layout_info, nullptr, &segment.vk_pipeline_layout);
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_PIPELINE_LAYOUT");
+      result = vkCreatePipelineLayout(
+          vk_device,
+          &pipeline_layout_info,
+          nullptr,
+          &segment.vk_pipeline_layout);
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to create pipeline layout");
       return false;
@@ -3023,14 +3055,17 @@ bool VgfRepr::process_vgf(
           .pResourceInfos = data_graph_resources.data(),
       };
 
-      result = vkCreateDataGraphPipelinesARM(
-          vk_device,
-          VK_NULL_HANDLE,
-          VK_NULL_HANDLE,
-          1,
-          &graph_pipeline_info,
-          nullptr,
-          &segment.vk_pipeline);
+      {
+        VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_DATA_GRAPH_PIPELINE");
+        result = vkCreateDataGraphPipelinesARM(
+            vk_device,
+            VK_NULL_HANDLE,
+            VK_NULL_HANDLE,
+            1,
+            &graph_pipeline_info,
+            nullptr,
+            &segment.vk_pipeline);
+      }
       if (result != VK_SUCCESS) {
         ET_LOG(
             Error,
@@ -3046,8 +3081,11 @@ bool VgfRepr::process_vgf(
           .flags = 0,
           .dataGraphPipeline = segment.vk_pipeline,
       };
-      result = vkCreateDataGraphPipelineSessionARM(
-          vk_device, &pipeline_session_info, nullptr, &segment.vk_session);
+      {
+        VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_DATA_GRAPH_SESSION");
+        result = vkCreateDataGraphPipelineSessionARM(
+            vk_device, &pipeline_session_info, nullptr, &segment.vk_session);
+      }
       if (result != VK_SUCCESS) {
         ET_LOG(Error, "Failed to create DataGraphPipelineSession");
         return false;
@@ -3062,8 +3100,15 @@ bool VgfRepr::process_vgf(
           };
 
       uint32_t bind_point_count = 0;
-      result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
-          vk_device, &bind_point_requirements_info, &bind_point_count, nullptr);
+      {
+        VGF_PROFILE_SCOPE(
+            event_tracer, "VGF_INIT_QUERY_DATA_GRAPH_BIND_POINT_COUNT");
+        result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+            vk_device,
+            &bind_point_requirements_info,
+            &bind_point_count,
+            nullptr);
+      }
       if (result != VK_SUCCESS) {
         ET_LOG(Error, "Failed to get session bind point count");
         return false;
@@ -3072,17 +3117,22 @@ bool VgfRepr::process_vgf(
       vector<VkDataGraphPipelineSessionBindPointRequirementARM>
           bind_point_requirements;
       bind_point_requirements.resize(bind_point_count);
-      result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
-          vk_device,
-          &bind_point_requirements_info,
-          &bind_point_count,
-          bind_point_requirements.data());
+      {
+        VGF_PROFILE_SCOPE(
+            event_tracer, "VGF_INIT_QUERY_DATA_GRAPH_BIND_POINTS");
+        result = vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+            vk_device,
+            &bind_point_requirements_info,
+            &bind_point_count,
+            bind_point_requirements.data());
+      }
       if (result != VK_SUCCESS) {
         ET_LOG(Error, "Failed to get session bind point requirements");
         return false;
       }
 
       for (auto& bind_point_requirement : bind_point_requirements) {
+        VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_SETUP_DATA_GRAPH_BIND_POINT");
         const bool is_transient_bind_point = bind_point_requirement.bindPoint ==
             VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM;
 
@@ -3263,13 +3313,16 @@ bool VgfRepr::process_vgf(
           .basePipelineHandle = VK_NULL_HANDLE,
           .basePipelineIndex = -1,
       };
-      result = vkCreateComputePipelines(
-          vk_device,
-          VK_NULL_HANDLE,
-          1,
-          &compute_info,
-          nullptr,
-          &segment.vk_pipeline);
+      {
+        VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_COMPUTE_PIPELINE");
+        result = vkCreateComputePipelines(
+            vk_device,
+            VK_NULL_HANDLE,
+            1,
+            &compute_info,
+            nullptr,
+            &segment.vk_pipeline);
+      }
       if (result != VK_SUCCESS) {
         ET_LOG(Error, "Failed to create compute pipeline");
         return false;
