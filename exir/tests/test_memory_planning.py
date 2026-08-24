@@ -1765,3 +1765,387 @@ class TestInPlaceElemWise(unittest.TestCase):
             if node.op == "call_function"
         )
         self.assertFalse(has_inplace)
+
+
+class SharedStateArenaModel(nn.Module):
+    """A mutable buffer plus an unrelated activation that a custom pass pins to
+    a non-default arena, so the shared buffer coexists with a device-style arena.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("state", torch.zeros(4))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self.state.add_(x)
+        y = x * x
+        return self.state + y
+
+    def reset(self, z: torch.Tensor) -> None:
+        self.state.copy_(z)
+
+
+class _ForceArenaThreePass(MemoryPlanningPass):
+    """Pins every ``mul.out`` output onto arena 3, mimicking a program that has
+    an unrelated tensor on a non-default (e.g. device) arena.
+    """
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: Optional[ExportGraphSignature] = None,
+    ) -> PassResult:
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.mul.out:
+                for spec in get_node_tensor_specs(node):
+                    spec.mem_id = 3
+        return super().run(graph_module, graph_signature)
+
+
+class TestSharedBufferMemoryPlanning(unittest.TestCase):
+    """Arena-aware sharing of mutable buffers via ``shared_buffer_fqns``."""
+
+    def _prepare_state_model(
+        self, size: int
+    ) -> Tuple[GraphModule, ExportGraphSignature]:
+        class StateModel(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(size))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.add_(x)
+                return self.state * 2
+
+        model = StateModel().eval()
+        edge = to_edge(export(model, (torch.ones(size),), strict=True))
+        gm = edge.exported_program().graph_module
+        gs = edge.exported_program().graph_signature
+        gm = PassManager(passes=[SpecPropPass(), ToOutVarPass()])(gm).graph_module
+        return gm, gs
+
+    def _declared_specs(
+        self,
+        gm: GraphModule,
+        gs: ExportGraphSignature,
+        fqns: frozenset[str],
+    ) -> dict[str, TensorSpec]:
+        mutated = set(gs.buffers_to_mutate.values())
+        out: dict[str, TensorSpec] = {}
+        for node in gm.graph.nodes:
+            if node.op == "placeholder" and isinstance(node.target, str):
+                fqn = gs.inputs_to_buffers.get(node.target)
+                if fqn in fqns and fqn in mutated:
+                    out[fqn] = get_node_tensor_specs(node)[0]
+        return out
+
+    def _build_shared_program(
+        self, mem_pass: MemoryPlanningPass
+    ) -> Any:  # pyre-ignore[3]
+        model = SharedStateArenaModel().eval()
+        forward_ep = export(model, (torch.ones(4),))
+        with patch_forward(model, model.reset):
+            reset_ep = export(model, (torch.zeros(4),))
+        edge = to_edge({"forward": forward_ep, "reset": reset_ep})
+        return edge.to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=mem_pass,
+                emit_mutable_buffer_names=True,
+            )
+        )
+
+    def test_multi_arena_shared_buffer(self) -> None:
+        """Shared buffer gets identical (mem_id, offset) across methods, and an
+        unrelated non-default-arena tensor does not trip the old blanket guard.
+        """
+        et = self._build_shared_program(
+            _ForceArenaThreePass(
+                share_mutable_buffers=True,
+                shared_buffer_fqns=frozenset({"state"}),
+            )
+        )
+
+        placements = []
+        for plan in et.executorch_program.execution_plan:
+            state_vals = [
+                v
+                for v in plan.values
+                if hasattr(v.val, "extra_tensor_info")
+                and v.val.extra_tensor_info is not None
+                and v.val.extra_tensor_info.fully_qualified_name == "state"
+            ]
+            self.assertEqual(len(state_vals), 1)
+            ai = state_vals[0].val.allocation_info
+            placements.append((ai.memory_id, ai.memory_offset_low))
+
+        self.assertEqual(placements[0], placements[1])
+        self.assertEqual(placements[0][0], 1)
+        self.assertEqual(placements[0][1], 0)
+
+        # The unrelated arena-3 tensor is present (would have raised before).
+        forward_plan = et.executorch_program.execution_plan[0]
+        self.assertGreaterEqual(len(forward_plan.non_const_buffer_sizes), 4)
+        self.assertGreater(forward_plan.non_const_buffer_sizes[3], 0)
+
+    def test_legacy_path_rejects_non_default_arena(self) -> None:
+        """Without shared_buffer_fqns, the legacy guard rejects a non-default arena."""
+        with self.assertRaises(ValueError):
+            self._build_shared_program(_ForceArenaThreePass(share_mutable_buffers=True))
+
+    def test_orphan_shared_buffer_fqns_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            MemoryPlanningPass(shared_buffer_fqns=frozenset({"state"}))
+
+    def test_size_mismatch_raises(self) -> None:
+        mem_pass = MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state"}),
+        )
+        gm1, gs1 = self._prepare_state_model(4)
+        mem_pass.run(gm1, gs1)
+
+        gm2, gs2 = self._prepare_state_model(8)
+        with self.assertRaises(ValueError) as cm:
+            mem_pass.run(gm2, gs2)
+        self.assertIn("state", str(cm.exception))
+
+    def test_declared_but_absent_raises(self) -> None:
+        mem_pass = MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state", "nonexistent"}),
+        )
+        gm, gs = self._prepare_state_model(4)
+        with self.assertRaises(ValueError) as cm:
+            mem_pass.run(gm, gs)
+        self.assertIn("nonexistent", str(cm.exception))
+
+    def test_declared_buffer_on_non_default_arena(self) -> None:
+        """The declared buffer itself lives on a non-default arena; it is
+        front-packed within that arena and agrees across methods.
+        """
+        mem_pass = MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state"}),
+        )
+        placements = []
+        for _ in range(2):
+            gm, gs = self._prepare_state_model(4)
+            state_spec = self._declared_specs(gm, gs, frozenset({"state"}))["state"]
+            state_spec.mem_id = 2  # pin the buffer itself onto a non-default arena
+            mem_pass.run(gm, gs)
+            placements.append((state_spec.mem_id, state_spec.mem_offset))
+            # The buffer is the only tensor on arena 2, so the arena must be
+            # exactly its size -- relocating it to the front leaves no hole.
+            self.assertEqual(
+                gm.meta["non_const_buffer_sizes"][2], state_spec.allocated_memory
+            )
+        self.assertEqual(placements[0], (2, 0))
+        self.assertEqual(placements[0], placements[1])
+
+    def test_shared_arena_no_hole(self) -> None:
+        """A buffer sharing an arena with activations is relocated to the front
+        without growing the arena: the compacting shift reclaims its old slot.
+
+        Compared against plain planning of the same graph, so no size is
+        hardcoded; a residual (interior) hole shows up as extra bytes on arena 1.
+        """
+        gm_base, gs_base = self._prepare_state_model(4)
+        MemoryPlanningPass().run(gm_base, gs_base)
+        baseline = gm_base.meta["non_const_buffer_sizes"][1]
+
+        gm, gs = self._prepare_state_model(4)
+        MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state"}),
+        ).run(gm, gs)
+        self.assertEqual(gm.meta["non_const_buffer_sizes"][1], baseline)
+
+    def test_multi_buffer_sorted_front_pack(self) -> None:
+        """Two declared buffers on one arena pack in sorted-FQN order at
+        accumulating offsets.
+        """
+
+        class TwoBufferModel(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("cache_v", torch.zeros(8))
+                self.register_buffer("cache_k", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.cache_k.add_(x[:4])
+                self.cache_v.add_(x)
+                return self.cache_k.sum() + self.cache_v.sum()
+
+        model = TwoBufferModel().eval()
+        edge = to_edge(export(model, (torch.ones(8),), strict=True))
+        gm = edge.exported_program().graph_module
+        gs = edge.exported_program().graph_signature
+        gm = PassManager(passes=[SpecPropPass(), ToOutVarPass()])(gm).graph_module
+
+        declared = frozenset({"cache_k", "cache_v"})
+        MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=declared,
+        ).run(gm, gs)
+
+        specs = self._declared_specs(gm, gs, declared)
+        k, v = specs["cache_k"], specs["cache_v"]
+        self.assertEqual(k.mem_id, v.mem_id)
+        # "cache_k" < "cache_v", so cache_k is packed first at offset 0 and
+        # cache_v accumulates directly after it.
+        self.assertEqual(k.mem_offset, 0)
+        self.assertEqual(v.mem_offset, k.allocated_memory)
+
+    def test_multi_arena_declared_buffers(self) -> None:
+        """Declared buffers on different arenas are each front-packed at offset 0
+        of their OWN arena; per-arena reserved/vacated bookkeeping keeps them
+        independent (one arena's front region does not shift the other's).
+        """
+
+        class TwoBufferModel(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("cache_k", torch.zeros(4))
+                self.register_buffer("cache_v", torch.zeros(8))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.cache_k.add_(x[:4])
+                self.cache_v.add_(x)
+                return self.cache_k.sum() + self.cache_v.sum()
+
+        model = TwoBufferModel().eval()
+        edge = to_edge(export(model, (torch.ones(8),), strict=True))
+        gm = edge.exported_program().graph_module
+        gs = edge.exported_program().graph_signature
+        gm = PassManager(passes=[SpecPropPass(), ToOutVarPass()])(gm).graph_module
+
+        declared = frozenset({"cache_k", "cache_v"})
+        specs = self._declared_specs(gm, gs, declared)
+        specs["cache_v"].mem_id = 2  # pin cache_v onto its own arena
+
+        MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=declared,
+        ).run(gm, gs)
+
+        k, v = specs["cache_k"], specs["cache_v"]
+        # Each buffer front-packs at offset 0 of its own arena: cache_v on arena 2
+        # does not push cache_k off offset 0 on arena 1, nor vice versa.
+        self.assertEqual((k.mem_id, k.mem_offset), (1, 0))
+        self.assertEqual((v.mem_id, v.mem_offset), (2, 0))
+        # cache_v is alone on arena 2, so it is sized to exactly the buffer.
+        self.assertEqual(gm.meta["non_const_buffer_sizes"][2], v.allocated_memory)
+
+    def test_inplace_alias_follows_shared_buffer(self) -> None:
+        """A spec that aliases a declared buffer in place (inplace_base chains to
+        it) stays pinned to the buffer's front offset instead of being shifted.
+
+        This mirrors the annotation-only reinplace path where a distinct alloc
+        spec aliases a write-only mutated buffer. Without pinning, the aliased
+        write silently diverges from the buffer.
+        """
+
+        class WriteOnlyModel(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.add_(x)
+                return x * x
+
+        model = WriteOnlyModel().eval()
+        edge = to_edge(export(model, (torch.ones(4),), strict=True))
+        gm = edge.exported_program().graph_module
+        gs = edge.exported_program().graph_signature
+        gm = PassManager(passes=[SpecPropPass(), ToOutVarPass()])(gm).graph_module
+
+        state_spec = self._declared_specs(gm, gs, frozenset({"state"}))["state"]
+        mul_spec = None
+        for node in gm.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.mul.out:
+                mul_spec = node.meta["spec"]
+        self.assertIsNotNone(mul_spec)
+        self.assertIsNot(mul_spec, state_spec)
+        # Alias the mul result onto the buffer, as _set_alloc_node_spec would for
+        # an annotation-only reinplaced write.
+        mul_spec.inplace_base = state_spec
+
+        MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state"}),
+        ).run(gm, gs)
+
+        self.assertEqual(state_spec.mem_offset, 0)
+        self.assertEqual(mul_spec.mem_id, state_spec.mem_id)
+        self.assertEqual(mul_spec.mem_offset, state_spec.mem_offset)
+
+    def test_empty_shared_buffer_fqns_raises(self) -> None:
+        """An empty (but non-None) shared_buffer_fqns with sharing on is a
+        silently-broken config (no legacy and no arena-aware sharing), so reject it.
+        """
+        with self.assertRaises(ValueError):
+            MemoryPlanningPass(
+                share_mutable_buffers=True,
+                shared_buffer_fqns=frozenset(),
+            )
+
+    def test_iter_unique_specs_flattens_nested_pytree(self) -> None:
+        """node.meta['spec'] can be an arbitrary pytree; a nested spec must still
+        be enumerated (and thus relocated), not only top-level list/tuple entries.
+        """
+        from executorch.exir.passes.memory_planning_pass import _iter_unique_specs
+
+        gm, _ = self._prepare_state_model(4)
+        nested_spec = TensorSpec.from_tensor(torch.zeros(4))
+        placeholder = next(n for n in gm.graph.nodes if n.op == "placeholder")
+        placeholder.meta["spec"] = {"outer": [nested_spec]}
+
+        found = {id(s) for s in _iter_unique_specs(gm)}
+        self.assertIn(id(nested_spec), found)
+
+    def test_read_only_in_one_method_shared_buffer(self) -> None:
+        """A declared buffer mutated in one method but read-only in another is
+        collected (via _is_buffer) and front-packed to the same slot in both,
+        instead of being rejected as 'not present' in the read-only method.
+        """
+
+        class TwoMethodModel(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.add_(x)  # mutates
+                return self.state * 2
+
+            def peek(self, x: torch.Tensor) -> torch.Tensor:
+                return self.state + x  # read-only
+
+        model = TwoMethodModel().eval()
+        forward_ep = export(model, (torch.ones(4),))
+        with patch_forward(model, model.peek):
+            peek_ep = export(model, (torch.ones(4),))
+
+        mem_pass = MemoryPlanningPass(
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state"}),
+        )
+
+        offsets = []
+        for ep in (forward_ep, peek_ep):
+            edge = to_edge(ep)
+            gm = edge.exported_program().graph_module
+            gs = edge.exported_program().graph_signature
+            gm = PassManager(passes=[SpecPropPass(), ToOutVarPass()])(gm).graph_module
+            mem_pass.run(gm, gs)  # must not raise, including the read-only method
+            spec = None
+            for node in gm.graph.nodes:
+                if node.op == "placeholder" and isinstance(node.target, str):
+                    if gs.inputs_to_buffers.get(node.target) == "state":
+                        spec = get_node_tensor_specs(node)[0]
+            self.assertIsNotNone(spec)
+            offsets.append(spec.mem_offset)
+
+        self.assertEqual(offsets[0], 0)
+        self.assertEqual(offsets[0], offsets[1])
