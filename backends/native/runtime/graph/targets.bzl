@@ -98,3 +98,19 @@ def define_common_targets():
         deps = [":format"],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    # The index arena: a pure function body owning the Nodes and Values that Refs
+    # index into, plus ordered graph I/O and the per-graph subgraph arena.
+    runtime.cxx_library(
+        name = "graph",
+        srcs = ["Graph.cpp"],
+        exported_headers = [
+            "Graph.h",
+        ],
+        exported_deps = [
+            ":ids",
+            ":node",
+            ":value",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )

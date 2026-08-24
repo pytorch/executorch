@@ -47,9 +47,11 @@ class Value {
  public:
   // SSA name, scoped to the enclosing Graph.
   std::string name;
-  // Defining node; invalid => graph input.
+  // Defining node (a placeholder node for a graph input); invalid => unwired.
   NodeRef producer_ref = kInvalid;
-  // Def-use, built by inverting node inputs.
+  // Def-use, built by inverting node inputs. The consuming nodes, each listed
+  // once: a node that reads this value twice (`add(x, x)`) appears once, so
+  // size() counts consumers rather than uses.
   std::vector<NodeRef> consumer_refs;
   // Shares storage with this value (a view); fresh if invalid.
   ValueRef alias_ref = kInvalid;
