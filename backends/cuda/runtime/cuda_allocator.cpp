@@ -66,7 +66,18 @@ Error copy_impl(
   if (index >= 0) {
     prev_device_err = cudaGetDevice(&prev_device);
     if (prev_device_err == cudaSuccess) {
-      (void)cudaSetDevice(index);
+      cudaError_t set_err = cudaSetDevice(index);
+      if (set_err != cudaSuccess) {
+        // Nothing was switched, so there is nothing to restore. Copying now
+        // would silently run against whatever device is still current.
+        ET_LOG(
+            Error,
+            "%s: cudaSetDevice(%d) failed: %s",
+            method,
+            static_cast<int>(index),
+            cudaGetErrorString(set_err));
+        return Error::Internal;
+      }
     }
   }
   cudaError_t err = cudaSuccess;
@@ -137,7 +148,17 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
   const bool switch_device = index >= 0 && prev_device_err == cudaSuccess &&
       static_cast<int>(index) != prev_device;
   if (switch_device) {
-    (void)cudaSetDevice(index);
+    cudaError_t set_err = cudaSetDevice(index);
+    if (set_err != cudaSuccess) {
+      // Allocating now would return a pointer on the current device while the
+      // caller records it as living on the requested one.
+      ET_LOG(
+          Error,
+          "CudaAllocator::allocate: cudaSetDevice(%d) failed: %s",
+          static_cast<int>(index),
+          cudaGetErrorString(set_err));
+      return Error::MemoryAllocationFailed;
+    }
   }
 
   cudaError_t err = cudaMalloc(&ptr, nbytes);
@@ -183,7 +204,16 @@ void CudaAllocator::deallocate(void* ptr, DeviceIndex index) {
   if (index >= 0) {
     prev_device_err = cudaGetDevice(&prev_device);
     if (prev_device_err == cudaSuccess) {
-      (void)cudaSetDevice(index);
+      cudaError_t set_err = cudaSetDevice(index);
+      if (set_err != cudaSuccess) {
+        // cudaFree accepts a pointer from any device under unified addressing,
+        // so keep going rather than leak it, but do not stay silent about it.
+        ET_LOG(
+            Error,
+            "CudaAllocator::deallocate: cudaSetDevice(%d) failed: %s",
+            static_cast<int>(index),
+            cudaGetErrorString(set_err));
+      }
     }
   }
 
