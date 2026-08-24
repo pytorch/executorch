@@ -40,6 +40,12 @@ on:
     - cron: 0 10 * * *
 
 jobs:
+  # linux_job_v3 needs a fully qualified image: the OSDC runner pod pulls the
+  # container before any step runs, so nothing in the job can resolve it.
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   check-if-aar-exists:
     name: check-if-aar-exists
     runs-on: ubuntu-22.04
@@ -71,16 +77,16 @@ jobs:
 
   build-aar:
     name: build-aar
-    needs: check-if-aar-exists
+    needs: [docker-image, check-if-aar-exists]
     if: ${{ !github.event.pull_request.head.repo.fork && needs.check-if-aar-exists.outputs.should-skip != 'true' }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     secrets: inherit
     permissions:
       id-token: write
       contents: read
     with:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+      docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.sha }}
       timeout: 90

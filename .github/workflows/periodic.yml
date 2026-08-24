@@ -21,6 +21,12 @@ concurrency:
 permissions: read-all
 
 jobs:
+  # linux_job_v3 needs a fully qualified image: the OSDC runner pod pulls the
+  # container before any step runs, so nothing in the job can resolve it.
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   gather-models:
     runs-on: ubuntu-22.04
     outputs:
@@ -42,17 +48,17 @@ jobs:
 
   test-models-linux:
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
-    needs: gather-models
+    needs: [docker-image, gather-models]
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ matrix.timeout }}

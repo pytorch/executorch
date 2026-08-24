@@ -18,8 +18,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # linux_job_v3 needs a fully qualified image: the OSDC runner pod pulls the
+  # container before any step runs, so nothing in the job can resolve it.
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   build:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -29,8 +36,8 @@ jobs:
           - build-tool: buck2
     with:
       job-name: Build doc
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+      runner: mt-l-x86iavx512-8-64
+      docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       repository: pytorch/executorch
       upload-artifact: docs
@@ -98,15 +105,16 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     secrets: inherit
     with:
       repository: pytorch/executorch
       download-artifact: docs
       ref: gh-pages
-      # Publish on the host so actions/checkout's persisted credentials are
-      # available to git push.
-      run-with-docker: false
+      # v2 needed run-with-docker: false here, because the script ran through a
+      # docker exec that could not see the credentials checkout persisted on the
+      # host. v3 checks out and runs the script in the same container, so the
+      # git config the push relies on is already there.
       timeout: 90
       script: |
         set -euo pipefail

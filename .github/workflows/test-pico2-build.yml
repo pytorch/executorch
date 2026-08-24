@@ -18,15 +18,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # linux_job_v3 needs a fully qualified image: the OSDC runner pod pulls the
+  # container before any step runs, so nothing in the job can resolve it.
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   test-pico2-fp32-build:
+    needs: docker-image
     name: test-pico2-fp32-build
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -89,14 +96,15 @@ jobs:
         echo "PASS: FP32 firmware fits in Pico2 memory (SRAM: ${SRAM_USED}/532480, Flash: ${FLASH_USED}/4194304)"
 
   test-pico2-cmsis-build:
+    needs: docker-image
     name: test-pico2-cmsis-nn-build
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120

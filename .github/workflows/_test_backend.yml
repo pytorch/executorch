@@ -40,15 +40,25 @@ on:
         description: 'Runner type for Linux jobs'
         required: false
         type: string
-        default: linux.4xlarge.memory
+        default: mt-l-x86iavx512-16-128
       docker-image:
-        description: 'Docker image for Linux jobs'
+        description: |
+          ECR repository and tag prefix of the CI image, e.g.
+          ci-image:executorch-ubuntu-22.04-clang12. The registry and the
+          .ci/docker hash are appended by this workflow.
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12
 
 jobs:
+  # linux_job_v3 needs a fully qualified image: the OSDC runner pod pulls the
+  # container before any step runs, so nothing in the job can resolve it.
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   test-backend-linux:
+    needs: docker-image
     if: ${{ inputs.run-linux }}
     strategy:
       fail-fast: false
@@ -57,11 +67,14 @@ jobs:
         suite: [models, operators]
         exclude: ${{ fromJSON(inputs.exclude) }}
 
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
     with:
       ref: ${{ inputs.ref }}
       runner: ${{ inputs.runner-linux }}
-      docker-image: ${{ inputs.docker-image }}
+      docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}

@@ -1,0 +1,130 @@
+name: Resolve CI docker image
+
+# OSDC jobs run inside a container the runner pod pulls before any step of the
+# job executes, so unlike linux_job_v2 there is no in-job step that can resolve
+# `ci-image:<name>` to an ECR reference or wait for docker-builds to push it.
+# Callers depend on this workflow instead and spell the image out as
+# 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:<name>-<hash>.
+
+on:
+  workflow_call:
+    outputs:
+      ci-docker-hash:
+        description: |
+          Tag suffix shared by every executorch CI image built from this commit,
+          i.e. `git rev-parse HEAD:.ci/docker`. Matches the tag docker-builds
+          pushes and the one calculate-docker-image derives for linux_job_v2.
+        value: ${{ jobs.resolve.outputs.ci-docker-hash }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: resolve
+    runs-on: ubuntu-latest
+    # docker-builds gives itself 240 minutes, so the wait below has to be able
+    # to outlast a full rebuild of the slowest image.
+    timeout-minutes: 250
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      ci-docker-hash: ${{ steps.hash.outputs.ci-docker-hash }}
+
+    steps:
+      - name: Checkout ExecuTorch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Compute the docker tag
+        id: hash
+        run: |
+          set -eu
+          echo "ci-docker-hash=$(git rev-parse HEAD:.ci/docker)" >> "$GITHUB_OUTPUT"
+
+      # A commit that leaves .ci/docker alone reuses an image that is already in
+      # ECR, so only a commit that changes the tree has to wait for a rebuild.
+      - name: Check whether this commit rebuilds the images
+        id: rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+
+          REPO="${{ github.repository }}"
+          BASE=""
+
+          case "${{ github.event_name }}" in
+            pull_request|pull_request_target)
+              BASE="${{ github.event.pull_request.base.sha }}"
+              HEAD="${{ github.event.pull_request.head.sha }}"
+              ;;
+            push)
+              BASE="${{ github.event.before }}"
+              HEAD="${{ github.sha }}"
+              ;;
+          esac
+
+          ZERO_SHA="0000000000000000000000000000000000000000"
+          if [ -z "$BASE" ] || [ "$BASE" = "$ZERO_SHA" ]; then
+            # No diff base (workflow_dispatch, schedule, tag or branch creation).
+            # docker-builds is not path-filtered on those events either, so
+            # whatever is in ECR for this tag is what the job gets.
+            echo "No diff base for event '${{ github.event_name }}'; not waiting"
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if gh api "repos/$REPO/compare/$BASE...$HEAD" --paginate \
+               --jq '.files[]?.filename' | grep -q '^\.ci/docker/'; then
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for docker-builds to push the images
+        if: steps.rebuild.outputs.rebuild == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+
+          REPO="${{ github.repository }}"
+          QUERY="repos/$REPO/actions/workflows/docker-builds.yml/runs?head_sha=$HEAD_SHA&per_page=1"
+
+          # 240 x 60s outlasts docker-builds' own 240 minute job timeout.
+          for _ in $(seq 1 240); do
+            RUN=$(gh api "$QUERY" \
+              --jq '(.workflow_runs[0] // {}) | "\(.status // "") \(.conclusion // "")"' \
+              2>/dev/null || echo " ")
+            STATUS="${RUN%% *}"
+            CONCLUSION="${RUN##* }"
+
+            case "$STATUS" in
+              completed)
+                if [ "$CONCLUSION" = "success" ]; then
+                  echo "docker-builds succeeded for $HEAD_SHA"
+                  exit 0
+                fi
+                echo "::error::docker-builds concluded '$CONCLUSION' for $HEAD_SHA." \
+                     "The CI images for this commit were never pushed, so every" \
+                     "job that needs one would fail pulling its container."
+                exit 1
+                ;;
+              "")
+                # The run is created by the same event as this one, so an empty
+                # response early on is a lag rather than a missing build.
+                echo "No docker-builds run for $HEAD_SHA yet; waiting"
+                ;;
+              *)
+                echo "docker-builds is $STATUS for $HEAD_SHA; waiting"
+                ;;
+            esac
+            sleep 60
+          done
+
+          echo "::error::Timed out waiting for docker-builds on $HEAD_SHA"
+          exit 1

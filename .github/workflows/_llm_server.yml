@@ -4,20 +4,30 @@ on:
   workflow_call:
     inputs:
       docker-image:
-        description: Docker image to use for Linux tests.
+        description: |
+          ECR repository and tag prefix of the CI image, e.g.
+          ci-image:executorch-ubuntu-22.04-clang12. The registry and the
+          .ci/docker hash are appended by this workflow.
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12
 
 jobs:
+  # linux_job_v3 needs a fully qualified image: the OSDC runner pod pulls the
+  # container before any step runs, so nothing in the job can resolve it.
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
-      docker-image: ${{ inputs.docker-image }}
+      runner: mt-l-x86iavx512-8-64
+      docker-image: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
