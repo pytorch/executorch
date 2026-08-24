@@ -197,6 +197,13 @@ class Program:
         than the whole program, but whatever it does claim stays claimed for
         every method loaded after it.
 
+        A program exported with ``share_mutable_buffers=True`` relies on every
+        method reading its shared mutable state from one allocation. A method
+        with accelerator-placed buffers gets its own arenas instead, so it also
+        gets its own copy of that state and will not observe writes made through
+        another method. Export without ``share_mutable_buffers`` if a method
+        needs both accelerator memory and shared state.
+
         Args:
             name: The name of the method to load.
 

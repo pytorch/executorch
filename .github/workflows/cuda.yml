@@ -200,7 +200,24 @@ jobs:
         # a device allocator registered, so this test cannot run in the CPU
         # jobs. It needs the install above and nothing built below, so run it
         # here and fail before the long builds.
-        python -m unittest -v executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device
+        #
+        # unittest exits 0 when a test skips, and this test skips when the CUDA
+        # backend is missing or no GPU is visible. Both are the prerequisites
+        # this job exists to provide, so treat a skip as a failure rather than
+        # let a packaging regression pass silently. `tee` would otherwise hide
+        # the real exit status behind its own, so read it back explicitly.
+        set +e
+        python -m unittest -v executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device 2>&1 | tee /tmp/pybindings_device_test.log
+        pybindings_device_status=${PIPESTATUS[0]}
+        set -e
+        if [ "${pybindings_device_status}" -ne 0 ]; then
+          echo "::error::the pybindings device test failed"
+          exit "${pybindings_device_status}"
+        fi
+        if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
+          echo "::error::the pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+          exit 1
+        fi
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
