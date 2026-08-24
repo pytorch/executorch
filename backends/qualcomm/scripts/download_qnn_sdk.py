@@ -252,6 +252,14 @@ def _download_archive(
     logger.debug("Archive will be saved to: %s", archive_path)
 
     session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+            )
+        }
+    )
     retries = Retry(
         total=5,
         backoff_factor=1.0,
