@@ -15,15 +15,18 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include <executorch/backends/native/runtime/Program.h>
 #include <gflags/gflags.h>
 
 DEFINE_string(program, "", "Path to the *.nptg to load. Required.");
 DEFINE_string(constants, "", "Path to the out-of-line constant file.");
+DEFINE_bool(dot, false, "Emit Graphviz DOT to stdout, then exit.");
 
 namespace {
 
@@ -62,6 +65,12 @@ bool has_program_magic(const std::vector<uint8_t>& buf) {
       0;
 }
 
+// Emit `text` on stdout. False on a short write, so a full disk truncating a
+// redirected dump is reported rather than exiting 0 on partial output.
+bool write_stdout(const std::string& text) {
+  return std::fwrite(text.data(), 1, text.size(), stdout) == text.size();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -77,6 +86,24 @@ int main(int argc, char** argv) {
   if (!program) {
     return 1;
   }
+
+  // --dot: parse + verify via the program reader, emit Graphviz DOT to stdout
+  // (nothing else), then exit. Pipe to a file and render with `dot -Tpng`.
+  if (FLAGS_dot) {
+    try {
+      const ptn::Program prog =
+          ptn::Program::load(program->data(), program->size());
+      if (!write_stdout(prog.to_dot())) {
+        std::fprintf(stderr, "error: short write emitting DOT\n");
+        return 1;
+      }
+      return 0;
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "error: %s\n", e.what());
+      return 2;
+    }
+  }
+
   const bool magic_ok = has_program_magic(*program);
   std::printf("program:   %s\n", FLAGS_program.c_str());
   std::printf("  bytes:   %zu\n", program->size());
