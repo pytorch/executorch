@@ -30,6 +30,7 @@
 using executorch::extension::Module;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
+using executorch::runtime::get_device_allocator;
 using executorch::runtime::register_device_allocator;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::testing::MockCudaAllocator;
@@ -40,7 +41,11 @@ class ModuleDeviceMemoryTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(&g_mock_cuda);
+    // The registry is a process-wide static, so a second registration for the
+    // same device type aborts. Repeat runs re-enter this function.
+    if (get_device_allocator(DeviceType::CUDA) == nullptr) {
+      register_device_allocator(&g_mock_cuda);
+    }
   }
 
   void SetUp() override {
