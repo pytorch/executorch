@@ -42,3 +42,28 @@ def define_common_targets():
         ],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    # Index-arena handles (NodeRef / ValueRef); header-only.
+    runtime.cxx_library(
+        name = "ids",
+        exported_headers = [
+            "Ids.h",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    # A single SSA value: a std::variant (tensor / scalar / list / none) plus
+    # def-use wiring, storage alias, and an attrs scratch map.
+    runtime.cxx_library(
+        name = "value",
+        srcs = ["Value.cpp"],
+        exported_headers = [
+            "Value.h",
+        ],
+        exported_deps = [
+            ":ids",
+            ":scalar",
+            ":tensor_meta",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
