@@ -21,6 +21,7 @@
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
@@ -103,6 +104,7 @@ using torch::executor::ETDumpGen;
 #ifndef USE_ATEN_LIB
 using ::executorch::extension::alias_attensor_to_etensor;
 using ::executorch::extension::alias_etensor_to_attensor;
+using ::executorch::extension::torch_to_executorch_device;
 using ::executorch::extension::torch_to_executorch_scalar_type;
 #endif // !USE_ATEN_LIB
 
@@ -401,11 +403,21 @@ struct PyBundledModule : public BundledModule {
 struct ProgramState final {
   std::unique_ptr<DataLoader> loader_;
   std::unique_ptr<Program> program_;
+  // Owned here rather than by PyProgram, beside the loader it reads
+  // through, because a Method borrows the map and outlives the call that
+  // loaded it. Both stay alive as long as any method does.
+  std::unique_ptr<DataLoader> data_map_loader_;
+  std::unique_ptr<FlatTensorDataMap> data_map_;
 
   explicit ProgramState(
       std::unique_ptr<DataLoader> loader,
-      std::unique_ptr<Program> program)
-      : loader_(std::move(loader)), program_(std::move(program)) {}
+      std::unique_ptr<Program> program,
+      std::unique_ptr<DataLoader> data_map_loader = nullptr,
+      std::unique_ptr<FlatTensorDataMap> data_map = nullptr)
+      : loader_(std::move(loader)),
+        program_(std::move(program)),
+        data_map_loader_(std::move(data_map_loader)),
+        data_map_(std::move(data_map)) {}
   ProgramState(const ProgramState&) = delete;
   ProgramState& operator=(const ProgramState&) = delete;
   ProgramState(ProgramState&&) = default;
@@ -794,18 +806,35 @@ struct PyModule final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_name + " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
         input_dim_order.push_back(std::move(dim_order));
+        // The runtime has two device types, so a device outside that pair
+        // cannot be represented at all and the tensor would carry a label that
+        // does not describe its memory.
+        auto mapped_device = torch_to_executorch_device(at_tensor.device());
+        // An empty tensor has no buffer for a label to describe, so it is left
+        // alone rather than rejected for a device it never touches.
+        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " + method_name +
+              " is on device " + at_tensor.device().str() +
+              ", and only CPU and CUDA tensors can be passed to a method.");
+        }
+        const auto device = mapped_device.value_or(
+            torch::executor::Device(torch::executor::DeviceType::CPU));
         input_tensors.emplace_back(
             type,
             dim,
             input_sizes.back().data(),
             nullptr,
             input_dim_order.back().data(),
-            input_strides.back().data());
+            input_strides.back().data(),
+            torch::executor::TensorShapeDynamism::STATIC,
+            device.type(),
+            device.index());
 
         torch::executor::Tensor temp =
             torch::executor::Tensor(&input_tensors.back());
@@ -1013,14 +1042,36 @@ struct PyModule final {
 
 inline std::shared_ptr<ProgramState> load_program(
     std::unique_ptr<DataLoader> loader,
-    Program::Verification program_verification) {
+    Program::Verification program_verification,
+    std::optional<const std::string> data_path = std::nullopt) {
   Result<Program> res = Program::load(loader.get(), program_verification);
   THROW_IF_ERROR(
       res.error(),
       "Failed to load program, error: 0x:%" PRIx32,
       static_cast<uint32_t>(res.error()));
+  // A program whose weights live outside the pte names them through a data
+  // map. The CUDA delegate emits exactly that: a pte holding the compiled
+  // kernels and a separate file holding the weights, so loading the pte alone
+  // produces a program that fails when a method runs rather than when it
+  // loads.
+  std::unique_ptr<DataLoader> data_map_loader;
+  std::unique_ptr<FlatTensorDataMap> data_map;
+  if (data_path.has_value()) {
+    data_map_loader = loader_from_file(data_path.value());
+    Result<FlatTensorDataMap> map_res =
+        FlatTensorDataMap::load(data_map_loader.get());
+    THROW_IF_ERROR(
+        map_res.error(),
+        "Failed to load data map from %s, error: 0x:%" PRIx32,
+        data_path.value().c_str(),
+        static_cast<uint32_t>(map_res.error()));
+    data_map = std::make_unique<FlatTensorDataMap>(std::move(map_res.get()));
+  }
   return std::make_shared<ProgramState>(
-      std::move(loader), std::make_unique<Program>(std::move(res.get())));
+      std::move(loader),
+      std::make_unique<Program>(std::move(res.get())),
+      std::move(data_map_loader),
+      std::move(data_map));
 }
 
 /// A wrapper/util class for executorch memory allocations/manager.
@@ -1128,11 +1179,26 @@ struct PyMethod final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
               " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
+        // Record where the buffer actually lives. The conversion copied every
+        // other property and left the device at CPU, so an accelerator buffer
+        // was described as host memory.
+        auto mapped_device = torch_to_executorch_device(at_tensor.device());
+        // An empty tensor has no buffer for a label to describe, so it is left
+        // alone rather than rejected for a device it never touches.
+        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " +
+              method_->method_meta().name() + " is on device " +
+              at_tensor.device().str() +
+              ", and only CPU and CUDA tensors can be passed to a method.");
+        }
+        const auto device =
+            mapped_device.value_or(aten::Device(aten::DeviceType::CPU));
         TensorPtr tensor = for_blob(
                                mutable_tensor_data_ptr_no_cow(at_tensor),
                                std::move(sizes),
@@ -1140,6 +1206,7 @@ struct PyMethod final {
                                .strides(std::move(strides))
                                .dim_order(std::move(dim_order))
                                .dynamism(aten::TensorShapeDynamism::STATIC)
+                               .device(device)
                                .make_tensor_ptr();
         input_tensors.push_back(tensor);
         EValue evalue(input_tensors.back());
@@ -1343,8 +1410,10 @@ struct PyProgram final {
       std::unique_ptr<ETDumpGen> tracer = nullptr,
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
-          Program::Verification::Minimal)
-      : state_(load_program(std::move(loader), program_verification)),
+          Program::Verification::Minimal,
+      std::optional<const std::string> data_path = std::nullopt)
+      : state_(
+            load_program(std::move(loader), program_verification, data_path)),
         event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
     // Figure out the size of each non_const layer we need to support every
@@ -1390,7 +1459,8 @@ struct PyProgram final {
       bool enable_etdump,
       size_t debug_buffer_size,
       Program::Verification program_verification =
-          Program::Verification::Minimal) {
+          Program::Verification::Minimal,
+      std::optional<const std::string> data_path = std::nullopt) {
     std::unique_ptr<DataLoader> loader = loader_from_buffer(
         buffer.cast<std::string_view>().data(), py::len(buffer));
     return std::make_unique<PyProgram>(
@@ -1398,7 +1468,8 @@ struct PyProgram final {
         enable_etdump ? std::make_unique<torch::executor::ETDumpGen>()
                       : nullptr,
         debug_buffer_size,
-        program_verification);
+        program_verification,
+        data_path);
   }
 
   static std::unique_ptr<PyProgram> load_from_file(
@@ -1406,14 +1477,16 @@ struct PyProgram final {
       bool enable_etdump,
       size_t debug_buffer_size,
       Program::Verification program_verification =
-          Program::Verification::Minimal) {
+          Program::Verification::Minimal,
+      std::optional<const std::string> data_path = std::nullopt) {
     std::unique_ptr<DataLoader> loader = loader_from_file(path);
     return std::make_unique<PyProgram>(
         std::move(loader),
         enable_etdump ? std::make_unique<torch::executor::ETDumpGen>()
                       : nullptr,
         debug_buffer_size,
-        program_verification);
+        program_verification,
+        data_path);
   }
 
   PyProgram(const PyProgram&) = delete;
@@ -1436,7 +1509,10 @@ struct PyProgram final {
 
   std::unique_ptr<PyMethod> load_method(const std::string& method_name) {
     Result<Method> res = state_->program_->load_method(
-        method_name.c_str(), memory_->mem_manager(), event_tracer_.get());
+        method_name.c_str(),
+        memory_->mem_manager(),
+        event_tracer_.get(),
+        state_->data_map_.get());
     THROW_IF_ERROR(
         res.error(),
         "Failed to load method %s, error: 0x:%" PRIx32,
@@ -1738,6 +1814,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
       py::arg("program_verification") = Program::Verification::Minimal,
+      py::arg("data_path") = std::nullopt,
       call_guard);
   m.def(
       "_load_program_from_buffer",
@@ -1746,6 +1823,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
       py::arg("program_verification") = Program::Verification::Minimal,
+      py::arg("data_path") = std::nullopt,
       call_guard);
   py::class_<PyProgram>(m, "ExecuTorchProgram")
       .def("num_methods", &PyProgram::num_methods, call_guard)

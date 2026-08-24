@@ -873,6 +873,22 @@ for _target, _node_cls, _op_name in _SCALAR_INT_OPS:
     REGISTRY.register(target=[_target])(_make_scalar_int_handler(_node_cls, _op_name))
 
 
+@REGISTRY.register(target=[operator.neg])
+def _operator_neg_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    # operator.neg -> multiply by -1, reusing MultiplyIntNode.
+    args = P.args(n)
+    require_args(args, 1, 1, "operator.neg")
+    require_kwargs(P.kwargs(n), set(), "operator.neg")
+    (a,) = args
+    out = P.make_or_get_slot(n)
+    P.emit(
+        MultiplyIntNode(
+            a=P.to_int_or_vid(a), b=P.to_int_or_vid(-1), out=P.slot_to_vid(out)
+        )
+    )
+    return out
+
+
 _REDUCTION_OPS: List[Tuple[List[Any], Any, str, int]] = [
     (
         [torch.ops.aten.sum.dim_IntList, torch.ops.aten.sum.default],
@@ -1861,6 +1877,31 @@ def _gather_mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
     return out
+
+
+@REGISTRY.register_support_check(target=[torch.ops.mlx.gather_qmm.default])
+def _gather_qmm_supported(P: MLXProgramBuilder, n: Node) -> bool:
+    """Whether _gather_qmm_handler can repack these expert weights.
+
+    Mirrors the to_mlx_qparams asserts against the [E, out, in] weight's
+    metadata rather than the weight itself -- MoE experts are the largest
+    constants in the model, so repacking them just to answer a support query is
+    the most expensive way to ask.
+    """
+    w_node = n.args[1] if len(n.args) > 1 else None
+    if not isinstance(w_node, Node):
+        return False
+    w = w_node.meta.get("val", None)
+    if w is None or w.dim() != 3:
+        return False
+    cols = w.shape[-1]
+    if not isinstance(cols, int):
+        return False
+    bits = n.args[8] if len(n.args) > 8 else n.kwargs.get("bits", 4)
+    if w.dtype == torch.uint8:
+        # Prepacked nibbles are viewed straight to uint32, two values per byte.
+        return bits == 4 and cols % 4 == 0
+    return w.dtype == torch.int8 and (cols * bits) % 32 == 0
 
 
 @REGISTRY.register(target=[torch.ops.mlx.gather_qmm.default])

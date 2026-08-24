@@ -10,8 +10,15 @@ import urllib.request
 
 import pytest
 
-from executorch.examples.llm_server.python.chat_template import ChatTemplate
-from executorch.examples.llm_server.python.protocol import ChatMessage
+# The serving stack is built on pydantic, which ships with the llm_server
+# extras (examples/llm_server/python/requirements.txt) rather than core
+# ExecuTorch, so skip instead of failing collection when it is absent.
+pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+
+from executorch.examples.llm_server.python.chat_template import (  # noqa: E402
+    ChatTemplate,
+)
+from executorch.examples.llm_server.python.protocol import ChatMessage  # noqa: E402
 
 _SERVER = os.environ.get("MUSE_GLIMMER_SERVER_URL")
 _HF_DIR = os.environ.get("MUSE_GLIMMER_HF_DIR")

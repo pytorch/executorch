@@ -1,3 +1,5 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 # Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -34,6 +36,34 @@ class CortexMMaxPool2d(torch.nn.Module):
         return self.pool(x)
 
 
+class CortexMMaxPool2dPermutedView(torch.nn.Module):
+    """A single-channel NHWC image permuted to NCHW.
+
+    With C == 1 the channels-last strides also satisfy plain contiguity, so
+    .contiguous() hands the reference back the very tensor it was given while
+    aten keeps dispatching on the memory-format hint. This case is what pins
+    the .to(memory_format=...) in quantized_max_pool2d_impl: it fails at the
+    dialect stage if that is written as .contiguous().
+    """
+
+    # The permute brings its own quant/dequant pair, so only the pool itself
+    # is pinned here.
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+    }
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_max_pool2d_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 0,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.pool = torch.nn.MaxPool2d(*args, **kwargs)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.pool(x.permute(0, 3, 1, 2))
+
+
 class CortexMMaxPool2dIndices(torch.nn.Module):
     ops_before_transforms = CortexMMaxPool2d.ops_before_transforms
     ops_after_transforms = CortexMMaxPool2d.ops_after_transforms
@@ -67,6 +97,18 @@ test_cases = {
     "maxpool_2x2_indices": McuTestCase(
         CortexMMaxPool2dIndices(kernel_size=2, stride=2),
         (ramp_tensor(-50, 50, (1, 1, 6, 6)),),
+    ),
+    # 576 spatial elements (24x24), past the 127 that aten's channels-last int8
+    # max_pool2d accepts; the reference pools a contiguous copy to avoid it.
+    # randn rather than a ramp: a ramp over this many elements puts a whole
+    # pooling window inside one int8 code, so it cannot tell max from min.
+    "maxpool_2x2_large_channels_last": McuTestCase(
+        CortexMMaxPool2d(kernel_size=2, stride=2),
+        ((torch.randn(1, 64, 24, 24) * 30).to(memory_format=torch.channels_last),),
+    ),
+    "maxpool_2x2_single_channel_view": McuTestCase(
+        CortexMMaxPool2dPermutedView(kernel_size=2, stride=2),
+        ((torch.randn(1, 24, 24, 1) * 30),),
     ),
 }
 

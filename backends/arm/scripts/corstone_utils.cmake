@@ -25,7 +25,8 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  set(ethos_u_base_tag "26.02")
+  set(ethos_u_base_tag "26.05.1")
+  set(ethos_u_manifest_version "26.05")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY
@@ -43,7 +44,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   FetchContent_MakeAvailable(ethos_u)
   # Patch manifest to remove unused projects.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
-  set(ethos_u_base_rev "26.02")
+  set(ethos_u_base_rev "26.05.1")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}" "${ethos_u_base_rev}" "${patch_dir}" "${ET_DIR_PATH}"
   )
@@ -54,12 +55,12 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   )
     execute_process(
       COMMAND ${Python3_EXECUTABLE} fetch_externals.py -c
-              ${ethos_u_base_tag}.json fetch
+              ${ethos_u_manifest_version}.json fetch
       WORKING_DIRECTORY ${ETHOS_SDK_PATH}
     )
   endif()
   # Patch core_software to remove unused projects.
-  set(core_software_base_rev "26.02")
+  set(core_software_base_rev "26.05")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_software" "${core_software_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
@@ -71,7 +72,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # Cortex-M cores. Once the equivalent guards land upstream in
   # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
   # commits, delete the 0002 and 0003 patches.
-  set(core_platform_base_rev "26.02")
+  set(core_platform_base_rev "26.05")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_platform" "${core_platform_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
@@ -108,7 +109,66 @@ function(set_ethosu_dedicated_sram_fast_scratch_size OUT_VAR MEMORY_MODE)
   )
 endfunction()
 
+#[[
+Return the linker script used by the Corstone FVP for SYSTEM_CONFIG.
+]]
+function(get_corstone_linker_script OUT_VAR SYSTEM_CONFIG)
+  if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
+    set(_linker_script "Corstone-300.ld")
+  elseif(SYSTEM_CONFIG MATCHES "Ethos_U85")
+    set(_linker_script "Corstone-320.ld")
+  else()
+    message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
+  endif()
+  set(${OUT_VAR}
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../cmake/linker_scripts/${_linker_script}"
+      PARENT_SCOPE
+  )
+endfunction()
+
 function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
+  if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
+    # Both model and scratch in DRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA dram)
+  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
+    # Model in DRAM, scratch in SRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA sram)
+  else()
+    message(
+      FATAL_ERROR
+        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
+    )
+  endif()
+
+  # Set ETHOSU_MODEL/ARENA to 0 or 1 depending on MEMORY_MODEL/ARENA: sram -> 0,
+  # dram -> 1.
+  set(_ethosu_memory_regions sram dram)
+  list(FIND _ethosu_memory_regions "${MEMORY_MODEL}" ETHOSU_MODEL)
+  list(FIND _ethosu_memory_regions "${MEMORY_ARENA}" ETHOSU_ARENA)
+
+  # Make sure each value is visible to its consumer. core_platform declares
+  # MEMORY_* as cache variables. Parent-scope linker-script preprocessing reads
+  # ETHOSU_* after this function returns.
+
+  set(ETHOSU_MODEL
+      ${ETHOSU_MODEL}
+      PARENT_SCOPE
+  )
+  set(ETHOSU_ARENA
+      ${ETHOSU_ARENA}
+      PARENT_SCOPE
+  )
+  set(MEMORY_MODEL
+      "${MEMORY_MODEL}"
+      CACHE STRING "Memory config for model" FORCE
+  )
+  set(MEMORY_ARENA
+      "${MEMORY_ARENA}"
+      CACHE STRING "Memory config for arena" FORCE
+  )
+
   if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
     add_subdirectory(
       ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target
@@ -119,38 +179,6 @@ function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
     )
   else()
     message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
-  endif()
-  if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
-    # Both model and scratch in DRAM.
-    set(ETHOSU_MODEL
-        1
-        PARENT_SCOPE
-    )
-    set(ETHOSU_ARENA
-        1
-        PARENT_SCOPE
-    )
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=1
-    )
-  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
-    # Model in DRAM, scratch in SRAM.
-    set(ETHOSU_MODEL
-        1
-        PARENT_SCOPE
-    )
-    set(ETHOSU_ARENA
-        0
-        PARENT_SCOPE
-    )
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=0
-    )
-  else()
-    message(
-      FATAL_ERROR
-        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
-    )
   endif()
 endfunction()
 

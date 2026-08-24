@@ -947,6 +947,51 @@ class TestFuseTransposeOrPermuteOpPairsPass(TestFusionPassesBase):
         else:
             raise ValueError(f"Unsupported op: {op}")
 
+    def test_per_channel_qdq_is_not_bypassed_without_axis_remap(self) -> None:
+        for op, x_data in (
+            (
+                exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+                torch.randn(1, 2, 3, 4),
+            ),
+            (
+                exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+                torch.randint(-128, 127, (1, 2, 3, 4), dtype=torch.int8),
+            ),
+        ):
+            with self.subTest(op=op):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", x_data)
+                scales = builder.placeholder("scales", torch.tensor([0.25, 0.5]))
+                zero_points = builder.placeholder(
+                    "zero_points", torch.tensor([0, 0], dtype=torch.int64)
+                )
+                to_nhwc = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                qdq = builder.call_operator(
+                    op=op,
+                    args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+                )
+                to_nchw = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(qdq, [0, 3, 1, 2]),
+                )
+                builder.output([to_nchw])
+                graph_module = builder.get_graph_module()
+
+                result = cast(
+                    PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module)
+                )
+
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    2,
+                )
+
 
 class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
     def _create_operator(
