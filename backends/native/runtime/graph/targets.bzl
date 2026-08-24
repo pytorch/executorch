@@ -19,6 +19,17 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    # A concrete scalar value (int / double / bool), tagged. c10::Scalar analog.
+    runtime.cxx_library(
+        name = "scalar",
+        srcs = ["Scalar.cpp"],
+        exported_headers = [
+            "Scalar.h",
+        ],
+        deps = [":format"],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
     # Concrete in-memory IR value types (pure std; no ExecuTorch, no flatbuffers).
     runtime.cxx_library(
         name = "tensor_meta",
