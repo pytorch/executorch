@@ -320,6 +320,9 @@ def test_the_delegate_registers() -> None:
 # search path is in place before glibc caches it. Kept as source rather than a separate file
 # because the smoke test is invoked directly and ships as one module.
 _EXECUTION_CHILD = """
+import os
+import tempfile
+
 import torch
 
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -357,6 +360,87 @@ actual = module.forward(list(example))[0]
 torch.testing.assert_close(actual.cpu(), eager, rtol=1e-3, atol=1e-3)
 capability = torch.cuda.get_device_capability(0)
 print(f"PASS: a CUDA-delegated model ran on sm_{capability[0]}{capability[1]} and matched eager")
+
+
+# The model above has no weights, so it needs nothing from the data file and runs whether or not
+# the delegate's external data path works. Anything a user would actually ship has weights, and
+# the CUDA delegate does not put them in the .pte: it writes them to a separate aoti_cuda_blob.ptd
+# that the caller has to supply at load time. Nothing here loaded one, so a wheel that shipped a
+# broken data path passed this check. Measured on sm_80: given the same model without the blob,
+# the delegate reports the weights as not found, and the run then dies inside forward with an
+# illegal memory access rather than returning wrong numbers.
+class Weighted(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = torch.nn.Linear(8, 4)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
+weighted = Weighted().eval()
+weighted_example = (torch.randn(2, 8),)
+with torch.no_grad():
+    weighted_eager = weighted(*weighted_example)
+
+weighted_program = to_edge_transform_and_lower(
+    torch.export.export(weighted, weighted_example), partitioner=[CudaPartitioner([])]
+).to_executorch()
+
+assert b"CudaBackend" in weighted_program.buffer, (
+    "the weighted program carries no CUDA delegate, so it would run on the portable kernels and "
+    "never reach the external weights path this check exists for"
+)
+
+# Only the weight matrix, not every parameter. Measured on sm_80, the delegate wrote the 128-byte
+# weight of this Linear into the data file and kept its 16-byte bias out, so the sum over
+# parameters() is not a bound on what the file has to hold.
+weight_bytes = weighted.fc.weight.numel() * weighted.fc.weight.element_size()
+
+with tempfile.TemporaryDirectory() as work_dir:
+    pte_path = os.path.join(work_dir, "weighted.pte")
+    with open(pte_path, "wb") as handle:
+        weighted_program.write_to_file(handle)
+    weighted_program.write_tensor_data_to_file(work_dir)
+
+    blob_path = os.path.join(work_dir, "aoti_cuda_blob.ptd")
+    assert os.path.exists(blob_path), (
+        "the export wrote no aoti_cuda_blob.ptd, so the weights of this model went nowhere and "
+        f"every runner script that passes that file by name would fail: {sorted(os.listdir(work_dir))}"
+    )
+
+    # A data file is written even for a model with no weights, and it is not small: measured on
+    # sm_80, the weightless model above produces a 256-byte container around an empty payload. So
+    # the file's presence says nothing and its raw size says nothing either. What means something
+    # is the amount by which this file exceeds that empty container, so write one and subtract it
+    # instead of comparing against a constant, which would stop catching anything the next time
+    # the container grows.
+    empty_dir = os.path.join(work_dir, "weightless")
+    os.mkdir(empty_dir)
+    lowered.write_tensor_data_to_file(empty_dir)
+    empty_size = os.path.getsize(os.path.join(empty_dir, "aoti_cuda_blob.ptd"))
+
+    blob_size = os.path.getsize(blob_path)
+    assert blob_size - empty_size >= weight_bytes, (
+        f"aoti_cuda_blob.ptd is {blob_size} bytes against {empty_size} bytes for a model with no "
+        f"weights, a difference of {blob_size - empty_size}, which does not cover this model's "
+        f"{weight_bytes}-byte weight matrix, so the weights were not written to it"
+    )
+
+    with open(pte_path, "rb") as handle:
+        pte_bytes = handle.read()
+    with open(blob_path, "rb") as handle:
+        blob_bytes = handle.read()
+
+module = _load_for_executorch_from_buffer(pte_bytes, blob_bytes)
+actual = module.forward(list(weighted_example))[0]
+
+torch.testing.assert_close(actual.cpu(), weighted_eager, rtol=1e-3, atol=1e-3)
+print(
+    f"PASS: a CUDA-delegated model with weights ran on sm_{capability[0]}{capability[1]} from a "
+    f"{blob_size}-byte aoti_cuda_blob.ptd carrying {blob_size - empty_size} bytes of weights, and "
+    f"matched eager"
+)
 """
 
 
@@ -396,11 +480,16 @@ def _glibcxx_versions(library: Path) -> Set[str]:
 
 
 def test_a_model_runs_through_the_delegate() -> None:
-    """Export a model to the CUDA delegate and run it, comparing against eager.
+    """Export two models to the CUDA delegate and run them, comparing against eager.
 
     Every other check in this file reads a shipped artifact. This one executes, because a wheel whose
     libraries are all present and correctly linked can still fail to compute, and nothing above would
     notice. The x86_64 rows land on a GPU runner, so this is the row where that can be proven.
+
+    The second model carries weights. The CUDA delegate keeps those out of the .pte and writes them
+    to a separate aoti_cuda_blob.ptd, which the caller then has to supply, so a wheel can run the
+    weightless model and still be unable to run anything real. That path is only covered by the
+    second model.
 
     Only the aarch64 rows may skip, and they say why, so a green result never stands for work that
     did not happen. On x86_64 the absent device or the mismatched torch build is itself the failure:
