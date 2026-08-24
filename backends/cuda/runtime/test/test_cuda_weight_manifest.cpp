@@ -36,7 +36,9 @@ void append_string(std::vector<uint8_t>& output, const std::string& value) {
   output.insert(output.end(), value.begin(), value.end());
 }
 
-std::vector<uint8_t> valid_manifest(uint32_t dtype = 6) {
+std::vector<uint8_t> valid_manifest(
+    uint32_t dtype = 6,
+    uint32_t device_type = 1) {
   std::vector<uint8_t> output(
       cuda::kCudaFqnWeightsMagic,
       cuda::kCudaFqnWeightsMagic + cuda::kCudaFqnWeightsMagicSize);
@@ -47,6 +49,7 @@ std::vector<uint8_t> valid_manifest(uint32_t dtype = 6) {
   append_u32(output, 7); // method-local storage group
   append_u64(output, 24); // storage bytes
   append_u32(output, dtype); // dtype
+  append_u32(output, device_type); // device type (CUDA)
   append_u64(output, 0); // storage offset
   append_u32(output, 2); // ndim
   append_u64(output, 2);
@@ -79,6 +82,7 @@ TEST(CudaWeightManifestTest, ParsesVersionedManifest) {
   EXPECT_EQ(entry.storage_group, 7u);
   EXPECT_EQ(entry.storage_nbytes, 24u);
   EXPECT_EQ(entry.dtype, 6);
+  EXPECT_EQ(entry.device_type, 1);
   EXPECT_EQ(entry.sizes, (std::vector<int64_t>{2, 3}));
   EXPECT_EQ(entry.strides, (std::vector<int64_t>{3, 1}));
   EXPECT_TRUE(entry.shareable);
@@ -102,6 +106,15 @@ TEST(CudaWeightManifestTest, RejectsTruncationAndTrailingData) {
 TEST(CudaWeightManifestTest, RejectsUnsupportedDtype) {
   const std::vector<uint8_t> bytes =
       valid_manifest(7); // Double is unsupported.
+  cuda::CudaFqnWeightManifest manifest;
+  EXPECT_EQ(
+      cuda::parse_cuda_fqn_weight_manifest(
+          bytes.data(), bytes.size(), manifest),
+      Error::InvalidProgram);
+}
+
+TEST(CudaWeightManifestTest, RejectsUnsupportedDeviceType) {
+  const std::vector<uint8_t> bytes = valid_manifest(6, 2);
   cuda::CudaFqnWeightManifest manifest;
   EXPECT_EQ(
       cuda::parse_cuda_fqn_weight_manifest(

@@ -232,8 +232,6 @@ class ET_EXPERIMENTAL CudaBackend final
     LOAD_OPTIONAL_SYMBOL(
         get_constant_dtype, AOTInductorModelContainerGetConstantDtype);
     LOAD_OPTIONAL_SYMBOL(
-        get_constant_data_size, AOTInductorModelContainerGetConstantDataSize);
-    LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
@@ -1117,6 +1115,11 @@ class ET_EXPERIMENTAL CudaBackend final
         InvalidArgument,
         "CUDA FQN weights require a named data map");
 
+    const auto device_type =
+        static_cast<slim::c10::DeviceType>(entry.device_type);
+    const bool is_cuda_storage = device_type == slim::c10::DeviceType::CUDA;
+    const int storage_device_index = is_cuda_storage ? device_index : 0;
+
     uintptr_t mutable_scope = 0;
     if (!entry.shareable) {
       const auto scope = storage_scope_by_key.find(entry.storage_key);
@@ -1133,14 +1136,16 @@ class ET_EXPERIMENTAL CudaBackend final
         // Immutable bytes are safe to reuse across methods and model
         // instances solely by content identity.
         return std::string("immutable:") + item.storage_key +
-            "@cuda:" + std::to_string(device_index);
+            (is_cuda_storage ? "@cuda:" + std::to_string(device_index)
+                             : "@cpu");
       }
       // Stateful buffers with identical initial bytes are not interchangeable.
       // Scope their logical FQN identity to the underlying PTD instance so
       // methods in one model share state without leaking it to another live
       // model instance.
       return std::string("mutable:") + std::to_string(mutable_scope) + ":" +
-          item.fqn + "@cuda:" + std::to_string(device_index);
+          item.fqn +
+          (is_cuda_storage ? "@cuda:" + std::to_string(device_index) : "@cpu");
     };
 
     std::vector<std::string> cache_keys;
@@ -1156,7 +1161,8 @@ class ET_EXPERIMENTAL CudaBackend final
       for (const CudaFqnWeightEntry* alias : *mutable_group) {
         ET_CHECK_OR_RETURN_ERROR(
             alias != nullptr && !alias->shareable &&
-                alias->storage_nbytes == entry.storage_nbytes,
+                alias->storage_nbytes == entry.storage_nbytes &&
+                alias->device_type == entry.device_type,
             InvalidProgram,
             "CUDA mutable FQN storage group %u is inconsistent",
             entry.storage_group);
@@ -1171,12 +1177,12 @@ class ET_EXPERIMENTAL CudaBackend final
         std::shared_ptr<CudaWeightStorage> candidate = cached->second.lock();
         if (candidate != nullptr) {
           ET_CHECK_OR_RETURN_ERROR(
-              candidate->nbytes == entry.storage_nbytes,
+              candidate->nbytes == entry.storage_nbytes &&
+                  candidate->device_type == device_type &&
+                  candidate->device_index == storage_device_index,
               InvalidProgram,
-              "CUDA FQN storage '%s' has inconsistent sizes (%zu vs %llu)",
-              entry.storage_key.c_str(),
-              candidate->nbytes,
-              static_cast<unsigned long long>(entry.storage_nbytes));
+              "CUDA FQN storage '%s' has inconsistent allocation metadata",
+              entry.storage_key.c_str());
           ET_CHECK_OR_RETURN_ERROR(
               storage == nullptr || storage.get() == candidate.get(),
               InvalidProgram,
@@ -1194,24 +1200,43 @@ class ET_EXPERIMENTAL CudaBackend final
       return Error::Ok;
     }
 
-    void* device_data = nullptr;
+    void* storage_data = nullptr;
     const size_t allocation_size =
         std::max<size_t>(1, static_cast<size_t>(entry.storage_nbytes));
-    const cudaError_t allocation_error =
-        cudaMalloc(&device_data, allocation_size);
-    if (allocation_error != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "cudaMalloc failed for FQN storage '%s': %s",
-          entry.storage_key.c_str(),
-          cudaGetErrorString(allocation_error));
-      return Error::MemoryAllocationFailed;
+    if (is_cuda_storage) {
+      const cudaError_t allocation_error =
+          cudaMalloc(&storage_data, allocation_size);
+      if (allocation_error != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaMalloc failed for FQN storage '%s': %s",
+            entry.storage_key.c_str(),
+            cudaGetErrorString(allocation_error));
+        return Error::MemoryAllocationFailed;
+      }
+    } else {
+      storage_data = std::malloc(allocation_size);
+      if (storage_data == nullptr) {
+        ET_LOG(
+            Error,
+            "malloc failed for CPU FQN storage '%s'",
+            entry.storage_key.c_str());
+        return Error::MemoryAllocationFailed;
+      }
     }
+
+    const auto free_storage_data = [&]() {
+      if (is_cuda_storage) {
+        (void)cudaFree(storage_data);
+      } else {
+        std::free(storage_data);
+      }
+    };
 
     if (entry.storage_nbytes > 0) {
       auto host_data = named_data_map->get_data(entry.storage_key.c_str());
       if (!host_data.ok()) {
-        cudaFree(device_data);
+        free_storage_data();
         ET_LOG(
             Error,
             "CUDA FQN storage '%s' is missing",
@@ -1219,7 +1244,7 @@ class ET_EXPERIMENTAL CudaBackend final
         return Error::NotFound;
       }
       if (host_data->size() != entry.storage_nbytes) {
-        cudaFree(device_data);
+        free_storage_data();
         ET_LOG(
             Error,
             "CUDA FQN storage '%s' has size %zu, expected %llu",
@@ -1228,14 +1253,22 @@ class ET_EXPERIMENTAL CudaBackend final
             static_cast<unsigned long long>(entry.storage_nbytes));
         return Error::InvalidProgram;
       }
-      const cudaError_t copy_error = cudaMemcpy(
-          device_data,
-          host_data->data(),
-          static_cast<size_t>(entry.storage_nbytes),
-          cudaMemcpyHostToDevice);
+      cudaError_t copy_error = cudaSuccess;
+      if (is_cuda_storage) {
+        copy_error = cudaMemcpy(
+            storage_data,
+            host_data->data(),
+            static_cast<size_t>(entry.storage_nbytes),
+            cudaMemcpyHostToDevice);
+      } else {
+        std::memcpy(
+            storage_data,
+            host_data->data(),
+            static_cast<size_t>(entry.storage_nbytes));
+      }
       host_data->Free();
       if (copy_error != cudaSuccess) {
-        cudaFree(device_data);
+        free_storage_data();
         ET_LOG(
             Error,
             "cudaMemcpy failed for FQN storage '%s': %s",
@@ -1246,7 +1279,10 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     storage = std::make_shared<CudaWeightStorage>(
-        device_data, static_cast<size_t>(entry.storage_nbytes), device_index);
+        storage_data,
+        static_cast<size_t>(entry.storage_nbytes),
+        device_type,
+        storage_device_index);
     for (const std::string& key : cache_keys) {
       shared_fqn_weight_storages_[key] = storage;
     }
@@ -1264,7 +1300,6 @@ class ET_EXPERIMENTAL CudaBackend final
     ET_CHECK_OR_RETURN_ERROR(
         handle->get_num_constants && handle->get_constant_name &&
             handle->get_constant_original_fqn && handle->get_constant_dtype &&
-            handle->get_constant_data_size &&
             handle->update_user_managed_constant_buffer_pairs,
         NotSupported,
         "AOTI library does not expose the APIs required by CUDA FQN weights");
@@ -1275,13 +1310,11 @@ class ET_EXPERIMENTAL CudaBackend final
         "Failed to enumerate CUDA AOTI constants");
     std::unordered_map<std::string, std::vector<std::string>>
         fqn_to_internal_names;
-    std::unordered_map<std::string, std::pair<int32_t, size_t>>
-        fqn_to_aoti_metadata;
+    std::unordered_map<std::string, int32_t> fqn_to_aoti_dtype;
     for (size_t index = 0; index < num_constants; ++index) {
       const char* internal_name = nullptr;
       const char* fqn = nullptr;
       int32_t dtype = 0;
-      size_t data_size = 0;
       ET_CHECK_OK_OR_RETURN_ERROR(
           handle->get_constant_name(
               handle->container_handle, index, &internal_name),
@@ -1296,19 +1329,11 @@ class ET_EXPERIMENTAL CudaBackend final
           handle->get_constant_dtype(handle->container_handle, index, &dtype),
           "Failed to read CUDA AOTI constant dtype at index %zu",
           index);
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          handle->get_constant_data_size(
-              handle->container_handle, index, &data_size),
-          "Failed to read CUDA AOTI constant size at index %zu",
-          index);
       if (internal_name != nullptr && fqn != nullptr && fqn[0] != '\0') {
         fqn_to_internal_names[fqn].emplace_back(internal_name);
-        auto [metadata, inserted] =
-            fqn_to_aoti_metadata.emplace(fqn, std::make_pair(dtype, data_size));
+        auto [metadata, inserted] = fqn_to_aoti_dtype.emplace(fqn, dtype);
         ET_CHECK_OR_RETURN_ERROR(
-            inserted ||
-                (metadata->second.first == dtype &&
-                 metadata->second.second == data_size),
+            inserted || metadata->second == dtype,
             InvalidProgram,
             "CUDA AOTI constant FQN '%s' has inconsistent metadata",
             fqn);
@@ -1320,6 +1345,7 @@ class ET_EXPERIMENTAL CudaBackend final
     struct LocalStorage {
       std::string storage_key;
       uint64_t storage_nbytes;
+      int32_t device_type;
       std::shared_ptr<CudaWeightStorage> storage;
     };
     std::unordered_map<std::string, LocalStorage> local_storages;
@@ -1369,14 +1395,16 @@ class ET_EXPERIMENTAL CudaBackend final
           InvalidProgram,
           "CUDA FQN weight '%s' is not present in its AOTI library",
           entry.fqn.c_str());
-      const auto aoti_metadata = fqn_to_aoti_metadata.find(entry.fqn);
+      const auto aoti_dtype = fqn_to_aoti_dtype.find(entry.fqn);
       ET_CHECK_OR_RETURN_ERROR(
-          aoti_metadata != fqn_to_aoti_metadata.end() &&
-              aoti_metadata->second.first == entry.dtype &&
-              aoti_metadata->second.second == entry.storage_nbytes,
+          aoti_dtype != fqn_to_aoti_dtype.end() &&
+              aoti_dtype->second == entry.dtype,
           InvalidProgram,
-          "CUDA FQN weight '%s' metadata does not match its AOTI library",
-          entry.fqn.c_str());
+          "CUDA FQN weight '%s' dtype does not match its AOTI library "
+          "(manifest=%d, AOTI=%d)",
+          entry.fqn.c_str(),
+          entry.dtype,
+          aoti_dtype == fqn_to_aoti_dtype.end() ? -1 : aoti_dtype->second);
       ET_CHECK_OR_RETURN_ERROR(
           bound_fqns.emplace(entry.fqn).second,
           InvalidProgram,
@@ -1411,12 +1439,17 @@ class ET_EXPERIMENTAL CudaBackend final
         reused_storages += reused ? 1 : 0;
         local_storages.emplace(
             local_key,
-            LocalStorage{entry.storage_key, entry.storage_nbytes, storage});
+            LocalStorage{
+                entry.storage_key,
+                entry.storage_nbytes,
+                entry.device_type,
+                storage});
         handle->fqn_weight_storages.push_back(storage);
       } else {
         ET_CHECK_OR_RETURN_ERROR(
             local_storage->second.storage_key == entry.storage_key &&
-                local_storage->second.storage_nbytes == entry.storage_nbytes,
+                local_storage->second.storage_nbytes == entry.storage_nbytes &&
+                local_storage->second.device_type == entry.device_type,
             InvalidProgram,
             "CUDA FQN storage group %u has inconsistent backing storage",
             entry.storage_group);
@@ -1428,7 +1461,12 @@ class ET_EXPERIMENTAL CudaBackend final
           slim::makeArrayRef(entry.sizes),
           slim::makeArrayRef(entry.strides),
           static_cast<slim::c10::ScalarType>(entry.dtype),
-          Device(slim::c10::DeviceType::CUDA, device_index),
+          Device(
+              static_cast<slim::c10::DeviceType>(entry.device_type),
+              entry.device_type ==
+                      static_cast<int32_t>(slim::c10::DeviceType::CUDA)
+                  ? device_index
+                  : 0),
           entry.storage_offset));
       AtenTensorHandle tensor_handle =
           reinterpret_cast<AtenTensorHandle>(tensor.get());

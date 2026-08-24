@@ -11,6 +11,7 @@
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/extension/cuda/runtime_api.h>
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -23,22 +24,28 @@ using AOTInductorModelContainerGetConstantDtypeFunc =
         aoti::AOTInductorModelContainerHandle container_handle,
         size_t idx,
         int32_t* dtype);
-using AOTInductorModelContainerGetConstantDataSizeFunc =
-    aoti::AOTIRuntimeError (*)(
-        aoti::AOTInductorModelContainerHandle container_handle,
-        size_t idx,
-        size_t* data_size);
-
 struct CudaWeightStorage {
   void* data{nullptr};
   size_t nbytes{0};
+  aoti::slim::c10::DeviceType device_type{aoti::slim::c10::DeviceType::CUDA};
   int device_index{0};
 
-  CudaWeightStorage(void* data_, size_t nbytes_, int device_index_)
-      : data(data_), nbytes(nbytes_), device_index(device_index_) {}
+  CudaWeightStorage(
+      void* data_,
+      size_t nbytes_,
+      aoti::slim::c10::DeviceType device_type_,
+      int device_index_)
+      : data(data_),
+        nbytes(nbytes_),
+        device_type(device_type_),
+        device_index(device_index_) {}
 
   ~CudaWeightStorage() {
     if (data == nullptr) {
+      return;
+    }
+    if (device_type == aoti::slim::c10::DeviceType::CPU) {
+      std::free(data);
       return;
     }
     int previous_device = 0;
@@ -189,8 +196,6 @@ struct CudaGraphState {
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // Extra AOTI metadata used to validate per-FQN manifests before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
-  AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size{
-      nullptr};
 
   // CUDA stream for this handle, support both shared mode and single mode.
   // In shared mode, all cuda delegate handles share the same stream (e.g., for

@@ -66,8 +66,11 @@ from torch.nn.attention import SDPBackend
 
 _CPU_CLONE_GUARD = threading.local()
 
-_FQN_WEIGHTS_MAGIC = b"ETCUDAFQN1"
+_FQN_WEIGHTS_MAGIC = b"ETCUDAFQN2"
 _FQN_WEIGHTS_CAPTURE = threading.local()
+
+_AOTI_DEVICE_TYPE_CPU = 0
+_AOTI_DEVICE_TYPE_CUDA = 1
 
 
 @dataclass
@@ -77,6 +80,7 @@ class _FqnWeightEntry:
     storage_group: int
     storage_nbytes: int
     dtype: int
+    device_type: int
     storage_offset: int
     sizes: Tuple[int, ...]
     strides: Tuple[int, ...]
@@ -105,6 +109,29 @@ def _trim_host_memory() -> None:
         ctypes.CDLL(None).malloc_trim(0)
     except AttributeError:
         pass
+
+
+def _aoti_device_type_for_weight(tensor: torch.Tensor) -> int:
+    # Low-memory compilation clones lifted CUDA buffers onto CPU, while the
+    # patched wrapper records them as CUDA constants. Mirror that target-device
+    # substitution in the manifest. Outside that scoped mode the serialized
+    # tensor's actual device is the AOTI constant's device.
+    if _is_cpu_clone_active() or tensor.device.type == "cuda":
+        return _AOTI_DEVICE_TYPE_CUDA
+    if tensor.device.type == "cpu":
+        return _AOTI_DEVICE_TYPE_CPU
+    raise RuntimeError(
+        f"Unsupported AOTI constant device for CUDA export: {tensor.device}"
+    )
+
+
+def _stateful_buffer_fqns(graph_signature: Any) -> set[str]:
+    # Some generated-code mutations (notably conditional cache updates) are
+    # not surfaced through buffers_to_mutate. Treat every registered buffer as
+    # model-instance-local, then include any explicitly reported mutations.
+    fqns = set(getattr(graph_signature, "buffers", ()))
+    fqns.update(getattr(graph_signature, "buffers_to_mutate", {}).values())
+    return fqns
 
 
 @contextlib.contextmanager
@@ -482,13 +509,14 @@ def _materialize_fqn_weights(  # noqa: C901
     _trim_host_memory()
     entries: List[_FqnWeightEntry] = []
     storages: Dict[str, FileBackedData] = {}
-    records: List[Tuple[str, torch.Tensor, Any, Tuple[Any, ...], int]] = []
+    records: List[Tuple[str, torch.Tensor, Any, Tuple[Any, ...], int, int]] = []
     record_indices_by_identity: Dict[Tuple[Any, ...], List[int]] = {}
 
     for index, (fqn, (tensor, properties)) in enumerate(weights.items()):
         storage = tensor.untyped_storage()
         storage_nbytes = storage.nbytes()
         storage_ptr = storage.data_ptr()
+        device_type = _aoti_device_type_for_weight(tensor)
         property_storage_ptr = getattr(properties, "storage_ptr", None)
         if property_storage_ptr not in (None, 0):
             # TensorProperties describes the graph constant's real storage.
@@ -498,6 +526,7 @@ def _materialize_fqn_weights(  # noqa: C901
                 "aoti",
                 int(property_storage_ptr),
                 str(tensor.dtype),
+                device_type,
             )
         else:
             identity = (
@@ -505,9 +534,10 @@ def _materialize_fqn_weights(  # noqa: C901
                 tensor.device.index if tensor.device.index is not None else -1,
                 storage_ptr if storage_ptr != 0 else -(index + 1),
                 storage_nbytes,
+                device_type,
             )
         del storage
-        records.append((fqn, tensor, properties, identity, storage_nbytes))
+        records.append((fqn, tensor, properties, identity, storage_nbytes, device_type))
         record_indices_by_identity.setdefault(identity, []).append(index)
 
     storage_info_by_identity: Dict[Tuple[Any, ...], Tuple[str, int, int]] = {}
@@ -561,7 +591,7 @@ def _materialize_fqn_weights(  # noqa: C901
             storage_group,
         )
 
-    for fqn, tensor, properties, identity, _storage_nbytes in records:
+    for fqn, tensor, properties, identity, _storage_nbytes, device_type in records:
         storage_key, serialized_nbytes, storage_group = storage_info_by_identity[
             identity
         ]
@@ -596,6 +626,7 @@ def _materialize_fqn_weights(  # noqa: C901
                 storage_group=storage_group,
                 storage_nbytes=serialized_nbytes,
                 dtype=int(scalar_type_enum(tensor.dtype)),
+                device_type=device_type,
                 storage_offset=storage_offset,
                 sizes=sizes,
                 strides=strides,
@@ -635,10 +666,11 @@ def _encode_fqn_weight_manifest(
         write_string(entry.storage_key)
         output.extend(
             struct.pack(
-                "<IQiqI",
+                "<IQiiqI",
                 entry.storage_group,
                 entry.storage_nbytes,
                 entry.dtype,
+                entry.device_type,
                 entry.storage_offset,
                 len(entry.sizes),
             )
@@ -774,9 +806,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         cls, edge_program: Any, compile_specs: List[CompileSpec]
     ) -> PreprocessResult:
         """Compile CUDA weights as independently addressable AOTI storages."""
-        mutated_fqns = set(
-            getattr(edge_program.graph_signature, "buffers_to_mutate", {}).values()
-        )
+        # Keep every buffer model-instance-local while still sharing it by FQN
+        # across methods in that model instance.
+        mutated_fqns = _stateful_buffer_fqns(edge_program.graph_signature)
         previous_capture = getattr(_FQN_WEIGHTS_CAPTURE, "current", None)
         capture = _FqnWeightCapture(mutated_fqns=mutated_fqns)
         # AotiBackend packages weights synchronously on this thread. TLS keeps
@@ -809,8 +841,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         # legacy runtime path remains able to consume old dense blobs.
         parent_store = result.data_store_output
         named_data_store = NamedDataStore()
+        keep_compatibility_blob = not artifact.storages
         for key, entry in parent_store.pte_data.items():
-            if key != compatibility_blob_key:
+            if key != compatibility_blob_key or keep_compatibility_blob:
                 named_data_store.add_named_data(
                     key,
                     parent_store.buffers[entry.buffer_index],
@@ -819,7 +852,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 )
         for tag, entries in parent_store.external_data.items():
             for key, entry in entries.items():
-                if key != compatibility_blob_key:
+                if key != compatibility_blob_key or keep_compatibility_blob:
                     named_data_store.add_named_data(
                         key,
                         parent_store.buffers[entry.buffer_index],
@@ -1110,9 +1143,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         else:
             # Linux platform
 
-            assert (
-                shim_library_path is None
-            ), "shim_library_path should not be set for Linux"
+            assert shim_library_path is None, (
+                "shim_library_path should not be set for Linux"
+            )
         return options
 
     @classmethod

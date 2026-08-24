@@ -17,7 +17,7 @@
 
 namespace executorch::backends::cuda {
 
-constexpr char kCudaFqnWeightsMagic[] = "ETCUDAFQN1";
+constexpr char kCudaFqnWeightsMagic[] = "ETCUDAFQN2";
 constexpr size_t kCudaFqnWeightsMagicSize = sizeof(kCudaFqnWeightsMagic) - 1;
 
 struct CudaFqnWeightEntry {
@@ -26,6 +26,7 @@ struct CudaFqnWeightEntry {
   uint32_t storage_group{0};
   uint64_t storage_nbytes{0};
   int32_t dtype{0};
+  int32_t device_type{0};
   int64_t storage_offset{0};
   std::vector<int64_t> sizes;
   std::vector<int64_t> strides;
@@ -53,6 +54,11 @@ inline bool is_supported_cuda_fqn_dtype(int32_t dtype) {
     default:
       return false;
   }
+}
+
+inline bool is_supported_cuda_fqn_device_type(int32_t device_type) {
+  // Values match c10::DeviceType and the slim AOTI runtime.
+  return device_type == 0 || device_type == 1; // CPU or CUDA
 }
 
 inline bool is_cuda_fqn_weight_manifest(const void* data, size_t size) {
@@ -186,6 +192,8 @@ inline executorch::runtime::Error parse_cuda_fqn_weight_manifest(
         !reader.read_u64(entry.storage_nbytes) ||
         !reader.read_i32(entry.dtype) ||
         !is_supported_cuda_fqn_dtype(entry.dtype) ||
+        !reader.read_i32(entry.device_type) ||
+        !is_supported_cuda_fqn_device_type(entry.device_type) ||
         !reader.read_i64(entry.storage_offset) || !reader.read_u32(ndim) ||
         ndim > kMaxTensorDimensions) {
       return Error::InvalidProgram;

@@ -9,6 +9,7 @@ import operator
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from typing import Tuple
 from unittest.mock import patch
 
@@ -17,6 +18,7 @@ from executorch.backends.cuda.cuda_backend import (
     _encode_fqn_weight_manifest,
     _FQN_WEIGHTS_MAGIC,
     _materialize_fqn_weights,
+    _stateful_buffer_fqns,
     CudaBackend,
 )
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -31,6 +33,16 @@ from torch.fx.passes.utils.fuser_utils import validate_partition
 
 
 class TestCudaLowMemoryExport(unittest.TestCase):
+    def test_all_buffers_are_model_instance_local(self) -> None:
+        signature = SimpleNamespace(
+            buffers=("persistent", "conditional_cache"),
+            buffers_to_mutate={"copy_out": "explicitly_mutated"},
+        )
+        self.assertEqual(
+            _stateful_buffer_fqns(signature),
+            {"persistent", "conditional_cache", "explicitly_mutated"},
+        )
+
     @patch.object(CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True)
     def test_all_cuda_exports_request_structured_weights(self, _) -> None:
         options = CudaBackend.get_aoti_compile_options(
@@ -65,6 +77,8 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertEqual(2, len(artifact.storages))
             self.assertTrue(artifact.entries[0].shareable)
             self.assertFalse(artifact.entries[1].shareable)
+            self.assertEqual(artifact.entries[0].device_type, 0)
+            self.assertEqual(artifact.entries[1].device_type, 0)
             self.assertEqual(
                 bytes(first.untyped_storage()),
                 artifact.storages[artifact.entries[0].storage_key].to_bytes(),
@@ -78,6 +92,20 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertTrue(manifest.startswith(_FQN_WEIGHTS_MAGIC))
             self.assertIn(b"first", manifest)
             self.assertIn(b"second", manifest)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    @patch(
+        "executorch.backends.cuda.cuda_backend._is_cpu_clone_active",
+        return_value=True,
+    )
+    def test_low_memory_cpu_clones_keep_cuda_device_type(self, _) -> None:
+        tensor = torch.tensor([1, 2], dtype=torch.int16)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = _materialize_fqn_weights(weights, directory, set())
+            self.assertEqual(artifact.entries[0].device_type, 1)
             for storage in artifact.storages.values():
                 storage.close()
 
