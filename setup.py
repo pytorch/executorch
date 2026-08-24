@@ -646,9 +646,21 @@ def _base_dependencies() -> List[str]:
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-        "coremltools==9.0; (platform_system == 'Darwin' or platform_system == 'Linux') and python_version < '3.14'",
-        # scikit-learn is used to support palettization in the coreml backend.
-        "scikit-learn>=1.7.1",
+        # Linux is deliberate: the Core ML export flow runs there, so a model can be lowered
+        # for Apple hardware from a Linux machine. Linux is narrowed to x86_64 because that is
+        # the only Linux architecture coremltools publishes a build for. Everywhere else pip
+        # falls back to the source archive and produces a py3-none-any install with none of the
+        # compiled extensions, which imports and then cannot write a model, because
+        # libmilstoragepython, which stores the weights of an mlprogram, is absent. Measured
+        # with coremltools 9.0 on a Linux aarch64 machine. Keep this in sync with the condition
+        # in conftest.py; .ci/scripts/tests/test_coreml_markers.py checks that the two agree.
+        "coremltools==9.0; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
+        # coremltools uses scikit-learn for palettization, so it follows coremltools. Without a
+        # marker it also installed where coremltools does not, most visibly on Windows, and
+        # brought scipy with it. Nothing in this repository imports scikit-learn from the Core
+        # ML backend; the example scripts that do import it, and the scripts that import scipy,
+        # now name both in requirements-examples.txt rather than relying on this entry.
+        "scikit-learn>=1.7.1; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]
