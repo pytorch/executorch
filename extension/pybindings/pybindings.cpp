@@ -1084,14 +1084,20 @@ class ProgramMemory {
   /// `devices` is empty when every buffer is on the host, which keeps
   /// `MemoryManager::has_device_memory()` false for CPU-only programs.
   /// Otherwise it holds one entry per buffer, indexed like `sizes`.
+  ///
+  /// Members initialize in declaration order and each one reads the members
+  /// declared before it, so that order is load-bearing. Device buffers come
+  /// first because they hold the only allocation that can fail, and throwing
+  /// before the host arenas exist avoids zero-filling memory that is about to
+  /// be discarded.
   ProgramMemory(
       std::vector<int64_t>&& sizes,
       std::vector<runtime::etensor::Device>&& devices)
       : runtime_allocator_(),
         planned_sizes_(std::move(sizes)),
         planned_devices_(std::move(devices)),
-        non_const_buffers_(allocate_host_buffers()),
         device_buffers_(allocate_device_buffers()),
+        non_const_buffers_(allocate_host_buffers()),
         non_const_spans_(create_non_const_spans()),
         non_const_allocator_(create_non_const_allocator()),
         mem_manager_(
@@ -1123,13 +1129,13 @@ class ProgramMemory {
 
   std::vector<runtime::etensor::Device> planned_devices_;
 
-  // Backs CPU-tagged buffers; the entry is empty for a device-tagged buffer.
-  std::vector<std::vector<uint8_t>> non_const_buffers_;
-
   // Backs device-tagged buffers; the entry is empty for a CPU-tagged buffer.
   // Parallel to non_const_buffers_ so both index by planned buffer id. Empty
   // for an all-host program.
   std::vector<DeviceMemoryBuffer> device_buffers_;
+
+  // Backs CPU-tagged buffers; the entry is empty for a device-tagged buffer.
+  std::vector<std::vector<uint8_t>> non_const_buffers_;
 
   std::vector<Span<uint8_t>> non_const_spans_;
 
