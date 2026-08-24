@@ -95,6 +95,12 @@ jobs:
           REPO="${{ github.repository }}"
           QUERY="repos/$REPO/actions/workflows/docker-builds.yml/runs?head_sha=$HEAD_SHA&per_page=1"
 
+          # docker-builds has no pull_request trigger, so on a PR it only runs
+          # once the ciflow/docker label tags this commit. Give that tag a few
+          # minutes to show up, then say so, rather than blocking for hours on a
+          # build nobody asked for.
+          missing=0
+
           # 240 x 60s outlasts docker-builds' own 240 minute job timeout.
           for _ in $(seq 1 240); do
             RUN=$(gh api "$QUERY" \
@@ -115,11 +121,17 @@ jobs:
                 exit 1
                 ;;
               "")
-                # The run is created by the same event as this one, so an empty
-                # response early on is a lag rather than a missing build.
+                missing=$((missing + 1))
+                if [ "$missing" -gt 5 ]; then
+                  echo "::error::This commit changes .ci/docker, so it needs images" \
+                       "that do not exist yet, but no docker-builds run was found for" \
+                       "$HEAD_SHA. Add the ciflow/docker label to build them."
+                  exit 1
+                fi
                 echo "No docker-builds run for $HEAD_SHA yet; waiting"
                 ;;
               *)
+                missing=0
                 echo "docker-builds is $STATUS for $HEAD_SHA; waiting"
                 ;;
             esac
