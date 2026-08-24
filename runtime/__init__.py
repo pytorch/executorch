@@ -190,10 +190,12 @@ class Program:
         other's intermediate values. Outputs are copied out on every call, so
         that sharing does not change what execute returns. A method with any
         buffer placed on an accelerator gets its own arenas instead, claimed
-        when that method is first loaded and held until the program is
-        released. A missing or exhausted accelerator therefore fails that one
-        load rather than the whole program, but whatever it does claim stays
-        claimed for every method loaded after it.
+        when that method is first loaded and owned by that method until the
+        method itself is released. This program caches every method it loads,
+        so in normal use those arenas live as long as the program does. A
+        missing or exhausted accelerator therefore fails that one load rather
+        than the whole program, but whatever it does claim stays claimed for
+        every method loaded after it.
 
         Args:
             name: The name of the method to load.
