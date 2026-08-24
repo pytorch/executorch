@@ -162,6 +162,8 @@ jobs:
   unittest-cuda:
     name: unittest-cuda
     needs: [changed-files, run-decision]
+    # This job runs the pybindings device test, so it also has to fire on the
+    # two pybindings paths the workflow filter lists.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -169,6 +171,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -191,6 +195,12 @@ jobs:
         # which the default system libstdc++ doesn't have. Install a newer one.
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        # The pybindings loader only asks for device memory on a build that has
+        # a device allocator registered, so this test cannot run in the CPU
+        # jobs. It needs the install above and nothing built below, so run it
+        # here and fail before the long builds.
+        python -m unittest -v executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda

@@ -80,11 +80,6 @@ except Exception as e:
     exit(1)
 "
 
-    # The pybindings loader only asks for device memory on a build that has a
-    # device allocator registered, so this job is the only place that path runs.
-    python -m unittest -v \
-        executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device
-
     echo "SUCCESS: ExecuTorch CUDA ${cuda_version} build and verification completed successfully"
 }
 
