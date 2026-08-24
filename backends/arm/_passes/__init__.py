@@ -74,6 +74,7 @@ from .decompose_index_tensor_to_gather_pass import (  # noqa
     DecomposeIndexTensorToGatherPass,
 )
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
+from .decompose_isinf_isnan_pass import DecomposeIsInfAndIsNanPass  # noqa
 from .decompose_large_stride_maxpool2d_pass import (  # noqa
     DecomposeLargeStrideMaxPool2dForU55Pass,
 )
