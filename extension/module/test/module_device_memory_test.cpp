@@ -156,9 +156,8 @@ TEST_F(ModuleDeviceMemoryTest, DeviceAllocationFailureIsReportedNotFatal) {
   const char* path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
   ASSERT_NE(path, nullptr) << "ET_MODULE_ADD_WITH_DEVICE_PATH not set";
 
-  // Stand in for a device that is out of memory, or one whose allocator was
-  // never registered. Either way the caller gets an error and the process
-  // survives to handle it.
+  // Stand in for a device that is out of memory. The caller gets an error and
+  // the process survives to handle it.
   g_mock_cuda.fail_allocations_ = true;
 
   Module module(path);
