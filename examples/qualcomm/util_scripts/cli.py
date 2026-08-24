@@ -354,14 +354,7 @@ def execute(args):
     io_info = get_io_info(args.artifact, compiler_specs)
     logger.info("preparing ADB connection")
 
-    qnn_config = QnnConfig(
-        build_folder=args.build_folder,
-        device=args.device,
-        soc_model=args.soc_model,
-        host=args.host,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
-    )
+    qnn_config = QnnConfig.load_config(args)
     # leverage SimpleADB for e2e inference
     adb = SimpleADB(
         qnn_config=qnn_config,
@@ -640,6 +633,12 @@ def main():
         help="Path to cmake binary directory for android, e.g., /path/to/build-android",
         type=str,
         required=True,
+    )
+    sub_execute.add_argument(
+        "--direct_build_folder",
+        help="Path to cmake binary directory for direct_mode. E.g., path/to/build-direct."
+        "If enabled, run self-defined protocol to control fastrpc communication.",
+        type=str,
     )
     sub_execute.add_argument(
         "-H",
