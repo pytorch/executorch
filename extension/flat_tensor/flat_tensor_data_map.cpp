@@ -293,6 +293,20 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   const flat_tensor_flatbuffer::FlatTensor* flat_tensor =
       flat_tensor_flatbuffer::GetFlatTensor(flat_tensor_data->data());
 
+  // The file identifier above only says that this is FlatTensor data. The
+  // schema version says which shape of data, so a file written by a newer
+  // exporter is refused here instead of being misread field by field. Older
+  // files stay loadable because the schema only grows by appending optional
+  // fields.
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor->version() <= kMaxSupportedSchemaVersion,
+      InvalidExternalData,
+      "FlatTensor schema version %u is newer than the highest this runtime "
+      "supports (%u). Export the data with an older ExecuTorch, or update the "
+      "runtime.",
+      flat_tensor->version(),
+      kMaxSupportedSchemaVersion);
+
   // Validate flat_tensor.
   ET_CHECK_OR_RETURN_ERROR(
       flat_tensor->named_data() != nullptr,

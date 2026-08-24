@@ -42,7 +42,10 @@ _HEADER_BYTEORDER: Literal["little"] = "little"
 # Alignment of the flatbuffer (after the header).
 _FLATBUFFER_ALIGNMENT: int = 16
 
-# Current version. Keep in sync with c++ version number in serialize.
+# Current version. Keep in sync with c++ version number in serialize, and with
+# FlatTensorDataMap::kMaxSupportedSchemaVersion in
+# //executorch/extension/flat_tensor/flat_tensor_data_map.h, which is the
+# highest version the runtime agrees to load.
 _FLAT_TENSOR_VERSION: int = 0
 
 
