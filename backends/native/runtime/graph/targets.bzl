@@ -67,3 +67,18 @@ def define_common_targets():
         ],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    # One fx argument value: a std::variant over the schema ArgumentValue
+    # payload kinds (in-graph refs resolved to ValueRefs), plus NamedArgument.
+    runtime.cxx_library(
+        name = "argument",
+        srcs = ["Argument.cpp"],
+        exported_headers = [
+            "Argument.h",
+        ],
+        exported_deps = [
+            ":ids",
+            ":scalar_type",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
