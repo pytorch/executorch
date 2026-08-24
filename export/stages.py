@@ -30,6 +30,12 @@ from torchao.quantization.pt2e.quantizer import (
 from torchao.utils import unwrap_tensor_subclass
 
 
+def _drop_empty(
+    passes_by_method: Dict[str, List[PassType]]
+) -> Dict[str, List[PassType]]:
+    return {method: p for method, p in passes_by_method.items() if p}
+
+
 class PipelineArtifact:
     def __init__(
         self,
@@ -242,8 +248,11 @@ class EdgeTransformAndLowerStage(Stage):
             if pass_manager:
                 break
 
-        # Use PassManager directly if found, otherwise use dict
-        final_passes = pass_manager if pass_manager else transform_passes
+        # An empty pass dict is not the same as no passes: EdgeProgramManager
+        # deep-copies the graph and weights of every method the dict does not
+        # name, so passing one applies nothing at the cost of a copy. Methods
+        # whose callables resolved to nothing are dropped for the same reason.
+        final_passes = pass_manager or _drop_empty(transform_passes) or None
 
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
@@ -619,11 +628,10 @@ class EdgeProgramManagerTransformStage(Stage):
             if pass_manager:
                 break
 
-        # Use PassManager directly if found, otherwise use dict
-        final_passes = pass_manager if pass_manager else transform_passes
-
-        # Apply edge transform passes
-        edge_program_manager = edge_program_manager.transform(final_passes)
+        # See EdgeTransformAndLowerStage.run.
+        final_passes = pass_manager or _drop_empty(transform_passes) or None
+        if final_passes is not None:
+            edge_program_manager = edge_program_manager.transform(final_passes)
 
         # Run edge manager transform passes
         for pass_callable in self._edge_manager_transform_passes:

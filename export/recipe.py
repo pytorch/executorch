@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+import dataclasses
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
@@ -30,6 +31,36 @@ Export recipe definitions for ExecuTorch.
 This module provides the data structures needed to configure the export process
 for ExecuTorch models, including export configurations and quantization recipes.
 """
+
+
+# Operator lists say which ops to keep, not in what order.
+_UNORDERED_EDGE_CONFIG_FIELDS = ("preserve_ops", "_core_aten_ops_exception_list")
+
+
+def _edge_config_key(config: EdgeCompileConfig) -> tuple:
+    return tuple(
+        (
+            frozenset(getattr(config, f.name) or [])
+            if f.name in _UNORDERED_EDGE_CONFIG_FIELDS
+            else getattr(config, f.name)
+        )
+        for f in dataclasses.fields(config)
+    )
+
+
+def _edge_compile_configs_agree(
+    left: EdgeCompileConfig, right: EdgeCompileConfig
+) -> bool:
+    return left is right or _edge_config_key(left) == _edge_config_key(right)
+
+
+def _edge_compile_config_summary(config: EdgeCompileConfig) -> str:
+    """The fields a backend is most likely to disagree on."""
+    preserved = sorted(str(op) for op in config.preserve_ops or [])
+    return (
+        f"(_check_ir_validity={config._check_ir_validity}, "
+        f"preserve_ops={preserved})"
+    )
 
 
 class RecipeTypeMeta(EnumMeta, ABCMeta):
@@ -249,6 +280,17 @@ class ExportRecipe:
         Returns:
             Combined ExportRecipe for multi-backend deployment
         """
+        overriding = [
+            r.name or f"recipes[{i}]"
+            for i, r in enumerate(backend_recipes)
+            if r.pipeline_stages
+        ]
+        if overriding:
+            raise ValueError(
+                "Cannot combine recipes that override pipeline_stages, there is no "
+                f"correct way to merge the orderings: {overriding}"
+            )
+
         # Extract components from individual recipes
         all_partitioners = []
         all_quantizers = []
@@ -300,18 +342,36 @@ class ExportRecipe:
                 ),
             )
 
-        # Create combined lowering recipe
-        combined_lowering_recipe = None
-        if all_partitioners or all_transform_passes:
-            edge_compile_config = None
-            for recipe in backend_recipes:
-                if (
-                    recipe.lowering_recipe
-                    and recipe.lowering_recipe.edge_compile_config
-                ):
-                    edge_compile_config = recipe.lowering_recipe.edge_compile_config
-                    break
+        # Create combined lowering recipe. Two backends asking for different
+        # to_edge configurations cannot both be honoured, and picking one by
+        # position would decide the graph by argument order. Compare by value:
+        # every provider builds a fresh config object, so asking the same thing
+        # twice is not a conflict.
+        distinct: List[tuple[str, EdgeCompileConfig]] = []
+        for i, recipe in enumerate(backend_recipes):
+            config = (
+                recipe.lowering_recipe.edge_compile_config
+                if recipe.lowering_recipe
+                else None
+            )
+            if config is None or any(
+                _edge_compile_configs_agree(config, seen) for _, seen in distinct
+            ):
+                continue
+            distinct.append((recipe.name or f"recipes[{i}]", config))
 
+        if len(distinct) > 1:
+            raise ValueError(
+                "Cannot combine recipes whose edge_compile_configs disagree: "
+                + "; ".join(
+                    f"{name} {_edge_compile_config_summary(config)}"
+                    for name, config in distinct
+                )
+            )
+        edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
+
+        combined_lowering_recipe = None
+        if all_partitioners or all_transform_passes or edge_compile_config:
             combined_lowering_recipe = LoweringRecipe(
                 partitioners=all_partitioners if all_partitioners else None,
                 edge_transform_passes=(

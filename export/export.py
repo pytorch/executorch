@@ -297,8 +297,8 @@ class ExportSession:
         """Build the stage registry from the given stages."""
         stage_registry: Dict[StageType, Stage] = {}
 
-        stage = None
         for stage_type in stages or self._get_default_pipeline():
+            stage = None
             if stage_type == StageType.SOURCE_TRANSFORM:
                 stage = SourceTransformStage(
                     self._quant_recipe,
@@ -329,10 +329,10 @@ class ExportSession:
                 stage = ExecutorchStage(self._export_recipe.executorch_backend_config)
             else:
                 logging.info(
-                    f"{stage_type} is unknown, you have to register it before executing export()"
+                    f"{stage_type} is unknown, register it with session.register_stage()"
                 )
 
-            if stage:
+            if stage is not None:
                 stage_registry[stage_type] = stage
         return stage_registry
 
@@ -422,7 +422,7 @@ class ExportSession:
             stage_instance = self._stage_registry.get(current_stage)
             if stage_instance is None:
                 raise ValueError(
-                    f"Stage {current_stage} not found in registry, , register it using session.register_stage()"
+                    f"Stage {current_stage} not found in registry, register it using session.register_stage()"
                 )
 
             valid_predecessors = stage_instance.valid_predecessor_stages
@@ -439,6 +439,11 @@ class ExportSession:
         self._validate_pipeline_sequence(
             stages=self._pipeline_stages,
         )
+
+        # Only once the run is committed to: a pipeline rejected above never
+        # executes, so it must not destroy an earlier run's results. Cleared
+        # in place, since get_stage_artifacts() hands out this dict.
+        self._stage_to_artifacts.clear()
 
         current_artifact = PipelineArtifact(data=self._model, context=self._run_context)
 
