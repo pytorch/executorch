@@ -3045,9 +3045,23 @@ bool VgfRepr::process_vgf(
           .pConstants = constants.data(),
       };
 
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+      VkDataGraphPipelineNeuralStatisticsCreateInfoARM neural_statistics_info{
+          .sType =
+              VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_NEURAL_STATISTICS_CREATE_INFO_ARM,
+          .pNext = &shader_info,
+          .allowNeuralStatistics = VK_TRUE,
+      };
+      const void* graph_pipeline_pnext = neural_statistics_device_enabled_
+          ? static_cast<const void*>(&neural_statistics_info)
+          : static_cast<const void*>(&shader_info);
+#else
+      const void* graph_pipeline_pnext = &shader_info;
+#endif
+
       VkDataGraphPipelineCreateInfoARM graph_pipeline_info{
           .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
-          .pNext = &shader_info,
+          .pNext = graph_pipeline_pnext,
           .flags = 0,
           .layout = segment.vk_pipeline_layout,
           .resourceInfoCount =
@@ -3074,10 +3088,30 @@ bool VgfRepr::process_vgf(
         return false;
       }
 
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+      const VkNeuralAcceleratorStatisticsModeARM neural_statistics_mode =
+          neural_statistics_mode_index_ == 0
+          ? VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS0_ARM
+          : VK_NEURAL_ACCELERATOR_STATISTICS_MODE_STATISTICS1_ARM;
+
+      VkDataGraphPipelineSessionNeuralStatisticsCreateInfoARM
+          neural_statistics_session_info{
+              .sType =
+                  VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_NEURAL_STATISTICS_CREATE_INFO_ARM,
+              .pNext = nullptr,
+              .mode = neural_statistics_mode,
+          };
+      const void* pipeline_session_pnext = neural_statistics_device_enabled_
+          ? static_cast<const void*>(&neural_statistics_session_info)
+          : nullptr;
+#else
+      const void* pipeline_session_pnext = nullptr;
+#endif
+
       VkDataGraphPipelineSessionCreateInfoARM pipeline_session_info{
           .sType =
               VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM,
-          .pNext = nullptr,
+          .pNext = pipeline_session_pnext,
           .flags = 0,
           .dataGraphPipeline = segment.vk_pipeline,
       };
@@ -3137,7 +3171,7 @@ bool VgfRepr::process_vgf(
             VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM;
 
         bool is_neural_statistics_bind_point = false;
-#ifdef VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_NEURAL_ACCELERATOR_STATISTICS_ARM
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
         is_neural_statistics_bind_point = bind_point_requirement.bindPoint ==
             VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_NEURAL_ACCELERATOR_STATISTICS_ARM;
 #endif
@@ -3160,6 +3194,13 @@ bool VgfRepr::process_vgf(
               segment.neural_statistics_status = message;
               ET_LOG(Info, "%s", message.c_str());
             };
+
+        if (is_neural_statistics_bind_point &&
+            !neural_statistics_device_enabled_) {
+          mark_neural_statistics_unavailable(
+              "Neural accelerator statistics were not enabled for this device");
+          continue;
+        }
 
         if (bind_point_requirement.bindPointType !=
             VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM) {
@@ -3962,6 +4003,11 @@ VgfRepr::get_neural_statistics_segment_contexts() const {
 }
 
 std::string VgfRepr::collect_neural_statistics_metadata() const {
+  if (neural_statistics_requested_ && !neural_statistics_device_enabled_) {
+    return make_vgf_neural_statistics_unavailable_metadata(
+        "VK_ARM_data_graph_neural_accelerator_statistics is unavailable or its feature is disabled");
+  }
+
   return collect_vgf_neural_statistics_metadata(
       vk_device, get_neural_statistics_segment_contexts());
 }
