@@ -1165,6 +1165,16 @@ class ProgramMemory {
     if (planned_devices_.empty()) {
       return result;
     }
+    // HierarchicalAllocator aborts rather than throws if the span count and
+    // the device count disagree, so reject that here where a Python caller can
+    // still catch it.
+    THROW_IF_ERROR(
+        planned_devices_.size() == planned_sizes_.size()
+            ? Error::Ok
+            : Error::InvalidArgument,
+        "Have %zu planned buffer sizes but %zu device tags",
+        planned_sizes_.size(),
+        planned_devices_.size());
     result.reserve(planned_sizes_.size());
     for (size_t i = 0; i < planned_sizes_.size(); i++) {
       if (!is_device_buffer(i)) {
