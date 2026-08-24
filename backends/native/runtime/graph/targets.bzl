@@ -82,3 +82,19 @@ def define_common_targets():
         ],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    # One fx node: an op invocation or graph-boundary marker, with typed Outputs
+    # preserving the op return ABI (single / tuple / tensor-list / scalar).
+    runtime.cxx_library(
+        name = "node",
+        srcs = ["Node.cpp"],
+        exported_headers = [
+            "Node.h",
+        ],
+        exported_deps = [
+            ":argument",
+            ":ids",
+        ],
+        deps = [":format"],
+        visibility = ["//executorch/backends/native/..."],
+    )
