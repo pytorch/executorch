@@ -1149,7 +1149,7 @@ class ProgramMemory {
   std::vector<std::vector<uint8_t>> allocate_host_buffers() {
     std::vector<std::vector<uint8_t>> result;
     result.reserve(planned_sizes_.size());
-    for (size_t i = 0; i < planned_sizes_.size(); i++) {
+    for (size_t i = 0; i < planned_sizes_.size(); ++i) {
       if (is_device_buffer(i)) {
         result.emplace_back();
       } else {
@@ -1175,7 +1175,7 @@ class ProgramMemory {
         planned_sizes_.size(),
         planned_devices_.size());
     result.reserve(planned_sizes_.size());
-    for (size_t i = 0; i < planned_sizes_.size(); i++) {
+    for (size_t i = 0; i < planned_sizes_.size(); ++i) {
       if (!is_device_buffer(i)) {
         result.emplace_back();
         continue;
@@ -1199,7 +1199,7 @@ class ProgramMemory {
   std::vector<Span<uint8_t>> create_non_const_spans() {
     std::vector<Span<uint8_t>> result;
     result.reserve(planned_sizes_.size());
-    for (size_t i = 0; i < planned_sizes_.size(); i++) {
+    for (size_t i = 0; i < planned_sizes_.size(); ++i) {
       if (is_device_buffer(i)) {
         result.push_back(device_buffers_[i].as_span());
       } else {
@@ -1222,7 +1222,7 @@ class ProgramMemory {
 
 /// True if any of the method's memory-planned buffers must live off the host.
 bool has_device_buffers(const MethodMeta& method_meta) {
-  for (size_t i = 0; i < method_meta.num_memory_planned_buffers(); i++) {
+  for (size_t i = 0; i < method_meta.num_memory_planned_buffers(); ++i) {
     auto device = method_meta.memory_planned_buffer_device(i);
     THROW_IF_ERROR(
         device.error(), "Failed to get device of planned buffer %zu", i);
@@ -1245,7 +1245,7 @@ std::shared_ptr<ProgramMemory> make_method_memory(
   sizes.reserve(num_buffers);
   devices.reserve(num_buffers);
   bool needs_device_memory = false;
-  for (size_t i = 0; i < num_buffers; i++) {
+  for (size_t i = 0; i < num_buffers; ++i) {
     auto size = method_meta.memory_planned_buffer_size(i);
     THROW_IF_ERROR(size.error(), "Failed to get size of planned buffer %zu", i);
     auto device = method_meta.memory_planned_buffer_device(i);
@@ -1567,7 +1567,7 @@ struct PyProgram final {
       if (has_device_buffers(method_meta)) {
         continue;
       }
-      for (size_t j = 0; j < method_meta.num_memory_planned_buffers(); j++) {
+      for (size_t j = 0; j < method_meta.num_memory_planned_buffers(); ++j) {
         auto size = method_meta.memory_planned_buffer_size(j);
         THROW_IF_ERROR(
             size.error(), "Failed to get size of planned buffer %zu", j);
