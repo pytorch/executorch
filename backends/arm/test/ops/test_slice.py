@@ -386,12 +386,6 @@ def test_slice_tensor_u85_INT_step(test_data: Tuple):
 @common.parametrize(
     "test_data",
     test_data_step_int | test_data_step_fp,
-    xfails={
-        "arange_fp32_2d_step4": (
-            "MLCE-1969: Emlayer 0.10 Interval memory planner corrupts "
-            "multi-input CONCAT output"
-        ),
-    },
 )
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant_step(test_data: Tuple):
