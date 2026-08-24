@@ -481,8 +481,9 @@ runtime::Error Module::load_method(
       auto& meta = meta_res.get();
 
       // A failed device query must not read as "this buffer is on the host",
-      // which would silently hand a backend host memory. The index is always
-      // in range here, so this only fires if the metadata itself is broken.
+      // which would silently hand a backend host memory. The loop bounds i by
+      // num_memory_planned_buffers(), so the callee's range check cannot fire
+      // today; this keeps the failure handled if that ever stops holding.
       bool has_device_buffers = false;
       for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
         auto dev = meta.memory_planned_buffer_device(i);
