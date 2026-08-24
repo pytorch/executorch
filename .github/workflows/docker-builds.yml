@@ -24,6 +24,12 @@ concurrency:
 
 env:
   AWS_DEFAULT_REGION: us-east-1
+  ECR_REGISTRY: 308535385114.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY: executorch/ci-image
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   docker-build:
@@ -31,7 +37,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [linux.4xlarge]
+        # BuildKit runs out of cluster on the OSDC BuildKit pool; this runner is
+        # only an orchestrator that streams the (tiny) .ci/docker context and
+        # waits, so the smallest label of the right architecture is enough. The
+        # architecture still has to match, because the helper picks the
+        # per-architecture buildkitd address off `uname -m`.
+        runner: [mt-l-x86iavx512-8-64]
         docker-image-name: [
           executorch-ubuntu-22.04-gcc11,
           executorch-ubuntu-22.04-gcc9-nopytorch,
@@ -45,49 +56,53 @@ jobs:
           executorch-ubuntu-22.04-clang12-android,
           executorch-ubuntu-24.04-gcc14,
           executorch-ubuntu-26.04-gcc14,
+          # Built on x86: this image only cross-compiles for CUDA on Windows,
+          # so building it never needed the GPU runner it used to run on.
+          executorch-ubuntu-22.04-cuda-windows,
         ]
         include:
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g2-6-25
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64-android
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g2-6-25
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk
-            runner: linux.arm64.2xlarge
-          - docker-image-name: executorch-ubuntu-22.04-cuda-windows
-            runner: linux.g5.4xlarge.nvidia.gpu
+            runner: mt-l-arm64g2-6-25
 
-    runs-on: [self-hosted, "${{ matrix.runner }}"]
-    env:
-      DOCKER_IMAGE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ matrix.docker-image-name }}
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/actions/actions-runner:latest
     steps:
-      - name: Clean workspace
+      - name: Checkout ExecuTorch
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/arc
+          aws-region: us-east-1
+          role-duration-seconds: 18000
+
+      # buildx forwards the client's registry auth to the remote builder, so the
+      # push at the end of build.sh authenticates with what this step writes.
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registries: "308535385114"
+
+      - name: Compute the image tag
+        id: tag
         shell: bash
         run: |
-          echo "${GITHUB_WORKSPACE}"
-          sudo rm -rf "${GITHUB_WORKSPACE}"
-          mkdir "${GITHUB_WORKSPACE}"
+          set -eux
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          # Same tag that calculate-docker-image derives for consumers of
+          # `ci-image:<name>`, so jobs still on linux_job_v2 keep resolving.
+          DOCKER_TAG=$(git rev-parse HEAD:.ci/docker)
+          echo "docker-image=${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ matrix.docker-image-name }}-${DOCKER_TAG}" >> "${GITHUB_OUTPUT}"
 
-      - name: Setup SSH (Click me for login details)
-        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+      # No step timeout: the action retries a cold BuildKit pool for up to two
+      # hours, and the job's timeout-minutes is what bounds that.
+      - name: Build and push to ECR
+        uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
         with:
-          github-secret: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout Executorch
-        uses: actions/checkout@v3
-
-      - name: Setup Linux
-        uses: pytorch/test-infra/.github/actions/setup-linux@main
-
-      - name: Build docker image
-        id: build-docker-image
-        timeout-minutes: 145
-        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
-        with:
-          docker-image-name: ci-image:${{ matrix.docker-image-name }}
-          always-rebuild: true
-          push: true
-          force-push: true
-
-      - name: Teardown Linux
-        uses: pytorch/test-infra/.github/actions/teardown-linux@main
-        if: always()
+          command: cd .ci/docker && REMOTE_BUILDKIT=1 ./build.sh ${{ matrix.docker-image-name }} -t ${{ steps.tag.outputs.docker-image }}
