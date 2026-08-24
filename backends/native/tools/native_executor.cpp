@@ -27,6 +27,7 @@
 DEFINE_string(program, "", "Path to the *.nptg to load. Required.");
 DEFINE_string(constants, "", "Path to the out-of-line constant file.");
 DEFINE_bool(dot, false, "Emit Graphviz DOT to stdout, then exit.");
+DEFINE_bool(methods, false, "Dump every deserialized method, then exit.");
 
 namespace {
 
@@ -96,6 +97,28 @@ int main(int argc, char** argv) {
       if (!write_stdout(prog.to_dot())) {
         std::fprintf(stderr, "error: short write emitting DOT\n");
         return 1;
+      }
+      return 0;
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "error: %s\n", e.what());
+      return 2;
+    }
+  }
+
+  // --methods: deserialize each method into the in-memory IR and dump it.
+  if (FLAGS_methods) {
+    try {
+      const ptn::Program prog =
+          ptn::Program::load(program->data(), program->size());
+      const std::vector<std::string> names = prog.method_names();
+      std::printf("methods: %zu\n", names.size());
+      for (const std::string& name : names) {
+        const ptn::Method& method = prog.get_method(name);
+        std::printf("\n===== method: %s =====\n", name.c_str());
+        if (!write_stdout(method.to_string())) {
+          std::fprintf(stderr, "error: short write dumping %s\n", name.c_str());
+          return 1;
+        }
       }
       return 0;
     } catch (const std::exception& e) {
