@@ -1,5 +1,9 @@
 name: docker-builds
 
+# The ciflow/docker tag is the path that works on OSDC: a fork PR gets no OIDC
+# token, so a pull_request-triggered build cannot assume role/arc to push. The
+# label tags the PR head, which fires the push trigger below with the PR's own
+# SHA. pull_request is kept for now and comes out once that path is proven.
 on:
   workflow_dispatch:
   pull_request:
@@ -11,6 +15,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/docker/*
     paths:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
