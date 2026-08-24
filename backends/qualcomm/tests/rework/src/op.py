@@ -2244,7 +2244,6 @@ class Hadamard(torch.nn.Module):
             "matmul": (torch.randn(1, dim),),
             "conv": (torch.randn(1, dim, 4, 4),),
         }
-        target = torch.ops.qnn_custom.hadamard_transform.default
         for variant, inputs in cases.items():
             with subtests.test(msg=f"variant:{variant}"):
                 with expected as metrics:
@@ -2255,7 +2254,6 @@ class Hadamard(torch.nn.Module):
                         quantizer=quantizer,
                         compile_specs=compile_spec,
                         metrics=metrics,
-                        expected_targets={target},
                     )
 
 

@@ -801,6 +801,16 @@ class CudaBackend(AotiBackend, BackendDetails):
 
             if shim_library_path is None:
                 lib_dir = resources.files("executorch").joinpath("data/lib")
+                # Only a CUDA build ships the import library, and a package directory
+                # that does not exist still reads back as an ordinary path rather than
+                # raising, so without this the failure surfaces from the linker instead.
+                if not lib_dir.joinpath("aoti_cuda_shims.lib").is_file():
+                    raise RuntimeError(
+                        "Lowering for Windows links against aoti_cuda_shims.lib, which "
+                        "only a CUDA build of executorch ships. Install a CUDA build, "
+                        "or pass a shim_library_path compile spec naming a directory "
+                        "that holds the import library."
+                    )
                 shim_library_path = str(lib_dir)
             options.update(
                 {
