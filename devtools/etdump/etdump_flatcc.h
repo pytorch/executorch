@@ -186,6 +186,11 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
 
   Result<long> write_tensor_or_return_error(executorch::aten::Tensor tensor);
 
+  /// Stages a tensor that lives on an accelerator through host memory before
+  /// handing it to the data sink, which can only read host pointers.
+  Result<long> write_device_tensor_or_return_error(
+      executorch::aten::Tensor tensor);
+
   struct flatcc_builder* builder_;
   size_t num_blocks_ = 0;
   DataSinkBase* data_sink_;

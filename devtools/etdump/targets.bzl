@@ -132,6 +132,7 @@ def define_common_targets():
                 "etdump_flatcc.h",
             ],
             deps = [
+                "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/platform:platform",
             ],
             exported_deps = [

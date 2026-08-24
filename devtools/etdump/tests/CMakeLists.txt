@@ -19,16 +19,29 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs etdump_test.cpp)
 
+# etdump_test.cpp includes etdump_filter.h, which needs re2, and the devtools
+# build does not pull re2 in.
+if(TARGET re2::re2)
+  et_cxx_test(
+    sdk_etdump_tests
+    SOURCES
+    ${_test_srcs}
+    EXTRA_LIBS
+    bundled_program
+    etdump
+    flatccrt
+  )
+  target_include_directories(
+    sdk_etdump_tests PRIVATE ${CMAKE_INSTALL_PREFIX}/sdk/include
+                             ${EXECUTORCH_ROOT}/third-party/flatcc/include
+  )
+endif()
+
 et_cxx_test(
-  sdk_etdump_tests
-  SOURCES
-  ${_test_srcs}
-  EXTRA_LIBS
-  bundled_program
-  etdump
-  flatccrt
+  etdump_device_test SOURCES etdump_device_test.cpp EXTRA_LIBS etdump flatccrt
 )
-target_include_directories(
-  sdk_etdump_tests PRIVATE ${CMAKE_INSTALL_PREFIX}/sdk/include
-                           ${EXECUTORCH_ROOT}/third-party/flatcc/include
+
+et_cxx_test(
+  etdump_device_no_allocator_test SOURCES etdump_device_no_allocator_test.cpp
+  EXTRA_LIBS etdump flatccrt
 )
