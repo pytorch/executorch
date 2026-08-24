@@ -183,6 +183,15 @@ class Program:
     def load_method(self, name: str) -> Optional[Method]:
         """Loads a method from the program.
 
+        Memory-planned buffers are allocated differently depending on where the
+        program placed them. A method whose buffers are all on the host shares
+        one set of arenas with every other host-only method of this program,
+        sized to the largest of them, so running a second host-only method may
+        overwrite the intermediate and output values of the first. A method
+        with any buffer placed on an accelerator gets its own arenas instead,
+        claimed on the first load of that method, so a missing or exhausted
+        accelerator affects only that method and not the rest of the program.
+
         Args:
             name: The name of the method to load.
 
