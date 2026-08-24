@@ -142,14 +142,10 @@ def _shutdown_process(proc: subprocess.Popen, streams: Optional[tuple] = None) -
     if running:
         _try_process_call(proc.terminate)
 
-    reaped = _try_process_call(
-        proc.wait, timeout=_PROCESS_WAIT_TIMEOUT_SECONDS
-    )
+    reaped = _try_process_call(proc.wait, timeout=_PROCESS_WAIT_TIMEOUT_SECONDS)
     if not reaped:
         _try_process_call(proc.kill)
-        reaped = _try_process_call(
-            proc.wait, timeout=_PROCESS_WAIT_TIMEOUT_SECONDS
-        )
+        reaped = _try_process_call(proc.wait, timeout=_PROCESS_WAIT_TIMEOUT_SECONDS)
     if reaped:
         _close_process_streams(streams)
     return reaped
