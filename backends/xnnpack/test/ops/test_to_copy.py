@@ -9,7 +9,10 @@ import unittest
 
 import torch
 
-from executorch.backends.xnnpack.operators.op_to_copy import ToCopy, ToCopyOperation
+from executorch.backends.xnnpack.operators.op_to_copy import (
+    sort_decomposed_operations,
+    ToCopyOperation,
+)
 from executorch.backends.xnnpack.test.tester import Tester, ToEdgeTransformAndLower
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 
@@ -21,11 +24,11 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     def test_transpose_cast_order_uses_smaller_dtype_for_transpose(self):
         ops = [ToCopyOperation.TRANSPOSE, ToCopyOperation.CAST]
 
-        ToCopy._sort_decomposed_operations(ops, torch.float16, torch.float32)
+        sort_decomposed_operations(ops, torch.float16, torch.float32)
 
         self.assertEqual(ops, [ToCopyOperation.TRANSPOSE, ToCopyOperation.CAST])
 
-        ToCopy._sort_decomposed_operations(ops, torch.float32, torch.float16)
+        sort_decomposed_operations(ops, torch.float32, torch.float16)
 
         self.assertEqual(ops, [ToCopyOperation.CAST, ToCopyOperation.TRANSPOSE])
 

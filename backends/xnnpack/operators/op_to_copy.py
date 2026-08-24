@@ -9,6 +9,9 @@ from enum import auto, Enum
 from typing import Dict, List
 
 import torch
+from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
+    ChannelsLastTaggedReshapePass,
+)
 from executorch.backends.xnnpack.operators.node_visitor import (
     get_tensor_value,
     NodeVisitor,
@@ -40,15 +43,64 @@ class ToCopyOperation(Enum):
     COPY = auto()
 
 
+def sort_decomposed_operations(
+    decomposed_operations: List[ToCopyOperation],
+    input_dtype: torch.dtype,
+    output_dtype: torch.dtype,
+) -> None:
+    """Sort transpose+cast so transpose runs on the smaller dtype."""
+    if (
+        ToCopyOperation.TRANSPOSE not in decomposed_operations
+        or ToCopyOperation.CAST not in decomposed_operations
+    ):
+        return
+
+    input_element_size = torch.empty((), dtype=input_dtype).element_size()
+    output_element_size = torch.empty((), dtype=output_dtype).element_size()
+    if input_element_size == output_element_size:
+        return
+
+    first_operation = (
+        ToCopyOperation.TRANSPOSE
+        if output_element_size > input_element_size
+        else ToCopyOperation.CAST
+    )
+    decomposed_operations.sort(key=lambda operation: operation != first_operation)
+
+
 @register_node_visitor
 class ToCopy(NodeVisitor):
     # _to_copy lowers dtype changes to XNNConvert, 4D contiguous/channels_last
     # memory-format changes to XNNStaticTranspose, and no-op copies to XNNCopy.
     target = "aten._to_copy.default"
 
-    @staticmethod
-    def _is_channels_last(dim_order: List[int]) -> bool:
-        return dim_order == PERM_NCHW_TO_NHWC
+    def _resolve_input_output_layouts(
+        self, input_node: torch.fx.Node, node: torch.fx.Node
+    ) -> tuple[bool, bool]:
+        # ChannelsLastTaggedReshapePass is the source of truth in the normal
+        # XNNPACK pipeline. Fall back to memory_format only for untagged nodes,
+        # such as direct visitor tests or use before that pass has run.
+        if ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in node.meta:
+            return (
+                ChannelsLastTaggedReshapePass.is_nhwc_node(input_node),
+                ChannelsLastTaggedReshapePass.is_nhwc_node(node),
+            )
+
+        input_val = input_node.meta["val"]
+        memory_format = node.kwargs.get("memory_format", torch.preserve_format)
+
+        if memory_format == torch.channels_last:
+            return False, True
+        elif memory_format == torch.contiguous_format:
+            return input_val.dim() == 4, False
+        elif memory_format in (None, torch.preserve_format):
+            input_is_channels_last = (
+                input_val.dim() == 4
+                and list(input_val.dim_order()) == PERM_NCHW_TO_NHWC
+            )
+            return input_is_channels_last, input_is_channels_last
+
+        return False, False
 
     def _define_intermediate_tensor(
         self,
@@ -117,7 +169,7 @@ class ToCopy(NodeVisitor):
         current_dims: List[int],
         input_dtype: XNNDatatype,
         output_dtype: XNNDatatype,
-        output_dim_order: List[int],
+        output_is_channels_last: bool,
         output_quant_params: QuantParams | None,
         convert_to_nhwc: bool,
         last_operation: bool,
@@ -129,9 +181,7 @@ class ToCopy(NodeVisitor):
 
         if operation == ToCopyOperation.TRANSPOSE:
             permute_order = (
-                PERM_NCHW_TO_NHWC
-                if self._is_channels_last(output_dim_order)
-                else PERM_NHWC_TO_NCHW
+                PERM_NCHW_TO_NHWC if output_is_channels_last else PERM_NHWC_TO_NCHW
             )
             output_dims = [current_dims[i] for i in permute_order]
         elif operation == ToCopyOperation.CAST:
@@ -160,31 +210,6 @@ class ToCopy(NodeVisitor):
             output_dtype_for_operation,
             permute_order,
         )
-
-    @staticmethod
-    def _sort_decomposed_operations(
-        decomposed_operations: List[ToCopyOperation],
-        input_dtype: torch.dtype,
-        output_dtype: torch.dtype,
-    ) -> None:
-        """Sort transpose+cast so transpose runs on the smaller dtype."""
-        if (
-            ToCopyOperation.TRANSPOSE not in decomposed_operations
-            or ToCopyOperation.CAST not in decomposed_operations
-        ):
-            return
-
-        input_element_size = torch.empty((), dtype=input_dtype).element_size()
-        output_element_size = torch.empty((), dtype=output_dtype).element_size()
-        if input_element_size == output_element_size:
-            return
-
-        first_operation = (
-            ToCopyOperation.TRANSPOSE
-            if output_element_size > input_element_size
-            else ToCopyOperation.CAST
-        )
-        decomposed_operations.sort(key=lambda operation: operation != first_operation)
 
     @staticmethod
     def _append_transpose_node(
@@ -218,10 +243,11 @@ class ToCopy(NodeVisitor):
         input_node = get_input_node(node, 0)
         input_val = input_node.meta["val"]
         output_val = node.meta["val"]
-        input_dim_order = list(input_val.dim_order())
-        output_dim_order = list(output_val.dim_order())
+        input_is_channels_last, output_is_channels_last = (
+            self._resolve_input_output_layouts(input_node, node)
+        )
         changes_dtype = input_val.dtype != output_val.dtype
-        changes_dim_order = input_dim_order != output_dim_order
+        changes_dim_order = input_is_channels_last != output_is_channels_last
 
         input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
         output_quant_params = QuantParams.from_outputs(node)
@@ -231,7 +257,7 @@ class ToCopy(NodeVisitor):
             xnn_graph,
             vals_to_ids,
             quant_params=input_quant_params,
-            convert_to_nhwc=self._is_channels_last(input_dim_order),
+            convert_to_nhwc=input_is_channels_last,
         )
 
         decomposed_operations = []
@@ -242,7 +268,7 @@ class ToCopy(NodeVisitor):
         if len(decomposed_operations) == 0:
             decomposed_operations.append(ToCopyOperation.COPY)
         else:
-            self._sort_decomposed_operations(
+            sort_decomposed_operations(
                 decomposed_operations, input_val.dtype, output_val.dtype
             )
 
@@ -266,9 +292,9 @@ class ToCopy(NodeVisitor):
                 current_dims,
                 input_dtype,
                 output_dtype,
-                output_dim_order,
+                output_is_channels_last,
                 output_quant_params,
-                self._is_channels_last(output_dim_order),
+                output_is_channels_last,
                 last_operation,
             )
             match operation:
