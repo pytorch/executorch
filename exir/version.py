@@ -6,4 +6,7 @@
 
 # pyre-strict
 
+# Stamped into Program.version of every exported PTE file. Keep in sync with
+# Program::kMaxSupportedSchemaVersion in //executorch/runtime/executor/program.h,
+# which is the highest version the C++ runtime agrees to load.
 EXECUTORCH_SCHEMA_VERSION = 0

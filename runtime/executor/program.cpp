@@ -226,6 +226,19 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
+  // The file identifier above only says that this is a program. The schema
+  // version says which shape of program, so a file written by a newer exporter
+  // is refused here instead of being misread field by field. Older files stay
+  // loadable because the schema only grows by appending optional fields.
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_program->version() <= kMaxSupportedSchemaVersion,
+      InvalidProgram,
+      "Program schema version %u is newer than the highest this runtime "
+      "supports (%u). Export the model with an older ExecuTorch, or update "
+      "the runtime.",
+      flatbuffer_program->version(),
+      kMaxSupportedSchemaVersion);
+
   // Instantiate PteDataMap if named_data is present.
   const auto named_data = flatbuffer_program->named_data();
   std::optional<internal::PteDataMap> pte_data_map = std::nullopt;
