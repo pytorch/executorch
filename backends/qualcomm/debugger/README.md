@@ -30,6 +30,14 @@ Different HTP profiling feature support different set of prepare mode, prepare m
 | `estimate_htp_profile_result` (`"hextimate"`) | Compile-time performance-model estimate | No (host only) | Yes              |
 
 
+**Profile level**
+
+| `profile_level` | QNN configuration | Use |
+|:----------------|:------------------|:----|
+| `0` | Profiling disabled | Default inference. |
+| `2` | `QNN_PROFILE_LEVEL_DETAILED` | Collect QNN graph and per-node timing through the ExecuTorch profiler. |
+| `3` | Detailed + `QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE` | Enable HTP Optrace hardware-trace artifacts for `qnn-profile-viewer`; required at export for offline-prepare Optrace. |
+
 The rest of the guide is arranged here:
 1. **`.pte` generation prepare mode:** 
 We introduce how to trigger each preparation mode in section 1.1 and 1.2:
@@ -43,7 +51,6 @@ We introduce how to trigger each preparation mode in section 1.1 and 1.2:
 4. **HTP Profile Output Format:**  `QnnHtpProfileArtifacts` contains genrated HTML, JSON and chrometrace files.
 
 5. **Qairt-Visualizer:** QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
-
 ## 1. Select AOT Prepare modes for `.pte` Generation
 Users choose one prepare mode before exporting the `.pte`:
 
