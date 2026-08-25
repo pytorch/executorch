@@ -5,8 +5,6 @@
 
 from typing import Set, Type
 
-import torch
-
 from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm.tosa.dialect.shape import is_shape_op_node
 
@@ -41,7 +39,7 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
         return (isinstance(padding, ProxyValue) and is_shape_op_node(padding.node)) or (
             (
                 isinstance(padding, (list, tuple))
-                and any(isinstance(p, torch.SymInt) for p in padding)
+                and any(isinstance(p, ProxyValue) for p in padding)
             )
         )
 

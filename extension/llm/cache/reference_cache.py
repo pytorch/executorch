@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -54,6 +54,33 @@ class AttendSpec:
     mask: Optional[torch.Tensor] = None  # EXPLICIT only: bool, true = attend
 
 
+class LayerKind(Enum):
+    FLAT = "flat"  # retains all history
+    RING = "ring"  # sliding window over the newest `window` positions
+
+
+@dataclass(frozen=True)
+class LayerPolicy:
+    """Per-layer cache kind and its parameters."""
+
+    kind: LayerKind = LayerKind.FLAT
+    window: int = 0  # RING only: window size in positions
+
+    def __post_init__(self):
+        if self.kind is LayerKind.RING and self.window <= 0:
+            raise ValueError("a ring layer needs a positive window")
+        if self.kind is LayerKind.FLAT and self.window != 0:
+            raise ValueError("a flat layer retains all history; window must be 0")
+
+    @classmethod
+    def flat(cls) -> "LayerPolicy":
+        return cls(kind=LayerKind.FLAT)
+
+    @classmethod
+    def ring(cls, window: int) -> "LayerPolicy":
+        return cls(kind=LayerKind.RING, window=window)
+
+
 @experimental(
     "update_and_attend KV cache is experimental and may change without notice."
 )
@@ -66,10 +93,17 @@ class CacheConfig:
     sizing: CacheSizing = CacheSizing.DYNAMIC
     dtype: torch.dtype = torch.float32
     batch_size: int = 1
+    # Per-layer policy: one entry applies to every layer, else one per layer.
+    layers: Sequence[LayerPolicy] = (LayerPolicy.flat(),)
 
     def __post_init__(self):
         if self.capacity <= 0:
             raise ValueError("capacity must be positive")
+        if len(self.layers) not in (1, self.n_layers):
+            raise ValueError("layers must be one policy, or one per layer")
+
+    def policy_for(self, layer_id: int) -> LayerPolicy:
+        return self.layers[0] if len(self.layers) == 1 else self.layers[layer_id]
 
 
 @experimental(
@@ -154,23 +188,33 @@ class ContiguousReferenceCache:
             v_hist = self._v[layer_id]
         self._used[layer_id] = new_used
 
-        return k_hist, v_hist, self._spec(q_len, new_used, k.device)
+        return k_hist, v_hist, self._spec(layer_id, q_len, new_used, k.device)
 
-    @staticmethod
-    def _spec(q_len: int, total: int, device: torch.device) -> AttendSpec:
-        """The mask semantic for q_len new cells at the tail of a total window."""
-        if q_len == 1:
+    def _spec(
+        self, layer_id: int, q_len: int, total: int, device: torch.device
+    ) -> AttendSpec:
+        """The mask semantic for q_len new cells at the tail of a total window.
+
+        The new cells are at the tail, so query i attends keys up to
+        ``i + total - q_len``, and a sliding window bounds it from below at
+        ``i + total - q_len - window``. Whichever bound the fused kinds cannot
+        express is what makes the step EXPLICIT.
+        """
+        window = self.config.policy_for(layer_id).window
+        windowed = 0 < window < total
+        if q_len == 1 and not windowed:
             return AttendSpec(kind=MaskKind.NONE)
-        if q_len == total:
+        if q_len == total and not windowed:
             return AttendSpec(kind=MaskKind.CAUSAL)
-        # Continuation (chunked / multi-turn): the new cells are at the tail, so
-        # query i attends keys up to i + total - q_len. A backend whose causal is
-        # lower-right aligned fuses that as CAUSAL; torch's is_causal
-        # is upper-left, so the reference hands back the band itself.
+        # torch's is_causal is upper-left and expresses no window, so the band
+        # is handed back explicitly.
         offsets = torch.arange(total, device=device) - torch.arange(
             q_len, device=device
         ).unsqueeze(-1)
-        return AttendSpec(kind=MaskKind.EXPLICIT, mask=offsets <= total - q_len)
+        band = offsets <= total - q_len
+        if windowed:
+            band &= offsets > total - q_len - window
+        return AttendSpec(kind=MaskKind.EXPLICIT, mask=band)
 
 
 # A cell's owners are a bitset in a torch int64, so bit 63 (the sign bit) is out.
@@ -217,10 +261,24 @@ def flatten_step(
 
 @dataclass
 class _CellStepPlan:
-    """One step's allocation, shared by every layer of that forward."""
+    """One step's allocation, shared by every layer of that forward.
+
+    Layers can differ in window, so the mask is per *policy* rather than per
+    layer: membership and causality are common, and only the lower bound moves.
+    `masks` memoizes one per distinct window (0 = unwindowed) as layers ask, so
+    a mixed model costs two masks a step rather than one per layer.
+    """
 
     cells: torch.Tensor  # [n_tok] long -- the cell each query token was given
-    mask: torch.Tensor  # [n_tok, read_len] bool -- true = attend
+    base: torch.Tensor  # [n_tok, read_len] bool -- occupied, same seq, causal
+    cell_pos: torch.Tensor  # [read_len] -- the window's positions
+    tok_pos: torch.Tensor  # [n_tok, 1] -- this step's positions
+    masks: Dict[int, torch.Tensor]  # window -> mask; 0 is `base` itself
+
+    def mask_for(self, window: int) -> torch.Tensor:
+        if window not in self.masks:
+            self.masks[window] = self.base & (self.cell_pos > self.tok_pos - window)
+        return self.masks[window]
 
 
 @experimental(
@@ -233,14 +291,19 @@ class CellReferenceCache:
     sequences owning it, so a sequence need not be contiguous and two may share
     cells -- a fork sets a second bit instead of copying K/V. Visibility is then
     a property of the cell rather than of the layout: query i attends cell j iff
-    j is occupied, shares a sequence with i, and is no newer than i. No causal
-    alignment can express that, so the spec is always EXPLICIT.
+    j is occupied, shares a sequence with i, and is no newer than i -- and, on a
+    windowed layer, no older than its window. No causal alignment can express
+    that, so the spec is always EXPLICIT.
 
     The batch is flat: tokens from every sequence sit on one axis with B = 1,
     and sequence identity is supplied out-of-band. ``begin_step`` declares which
     sequence each of the next forward's tokens belongs to; the positions arrive
     with the forward itself, in the op's ``position`` tensor, so cells are
     allocated on the first layer of the step and memoized for the rest of it.
+
+    Layers may window differently: the mask is memoized per window rather than
+    per layer, over cells they all share. Nothing is evicted -- reclaiming under
+    mixed windows needs one cache per policy group.
 
     DYNAMIC sizing grows the pool to the occupied extent, so a short session
     reserves a short pool rather than the whole context. Growth must keep every
@@ -383,7 +446,7 @@ class CellReferenceCache:
             self._plan = self._allocate(position)
         self._served.add(layer_id)
 
-        read_len = self._plan.mask.shape[-1]
+        read_len = self._plan.base.shape[-1]
         self._ensure(layer_id, read_len)
         cells = self._plan.cells
         self._k[layer_id][:, :, cells, :] = k.to(self.config.dtype)
@@ -391,7 +454,10 @@ class CellReferenceCache:
         return (
             self._k[layer_id][:, :, :read_len, :],
             self._v[layer_id][:, :, :read_len, :],
-            AttendSpec(kind=MaskKind.EXPLICIT, mask=self._plan.mask),
+            AttendSpec(
+                kind=MaskKind.EXPLICIT,
+                mask=self._plan.mask_for(self.config.policy_for(layer_id).window),
+            ),
         )
 
     # -- internals ----------------------------------------------------------
@@ -419,9 +485,10 @@ class CellReferenceCache:
             self._claim(pos, 1 << seq_id)
             for pos, seq_id in zip(positions, self._step_seq_ids)
         ]
-        # Occupied, sharing a sequence, and no newer than the query. The step's
-        # own cells are already placed, so a query sees itself and any earlier
-        # token of its sequence in the same batch.
+        # Occupied, sharing a sequence, and no newer than the query -- plus, when
+        # windowed, no older than its window. The step's own cells are already
+        # placed, so a query sees itself and any earlier token of its sequence in
+        # the same batch.
         n = self._used_end
         cell_pos = torch.tensor(self._pos[:n], device=device)
         cell_owners = torch.tensor(self._owners[:n], device=device)
@@ -429,9 +496,13 @@ class CellReferenceCache:
         tok_bit = torch.tensor(
             [1 << seq_id for seq_id in self._step_seq_ids], device=device
         ).unsqueeze(-1)
-        mask = (cell_pos >= 0) & ((cell_owners & tok_bit) != 0) & (cell_pos <= tok_pos)
+        base = (cell_pos >= 0) & ((cell_owners & tok_bit) != 0) & (cell_pos <= tok_pos)
         return _CellStepPlan(
-            cells=torch.tensor(cells, dtype=torch.long, device=device), mask=mask
+            cells=torch.tensor(cells, dtype=torch.long, device=device),
+            base=base,
+            cell_pos=cell_pos,
+            tok_pos=tok_pos,
+            masks={0: base},
         )
 
     def _ensure(self, layer_id: int, rows: int) -> None:

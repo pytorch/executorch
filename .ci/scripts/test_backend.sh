@@ -95,6 +95,32 @@ if [[ "$FLOW" == *arm* ]]; then
     fi
 fi
 
+if [[ "$FLOW" == *cortex_m* ]]; then
+    # Cortex-M runs on the Corstone-300 FVP, using the same Arm toolchain as the
+    # Ethos-U flows but its own semihosting runner.
+    .ci/scripts/setup-arm-baremetal-tools.sh
+    source examples/arm/arm-scratch/setup_path.sh
+
+    backends/cortex_m/test/build_test_runner.sh
+fi
+
+if [[ "$FLOW" == *nxp* ]]; then
+    # Install the eIQ Toolkit Python packages (NSYS simulator and Neutron converter).
+    pip install -r backends/nxp/requirements-eiq.txt
+
+    # Enable the Neutron delegate, portable kernels, pybindings and extensions
+    # required by the operator test suite.
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_NXP_NEUTRON=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_PYBIND=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON"
+fi
+
 if [[ "$FLOW" == *openvino* ]]; then
     # Setup OpenVINO environment
     source .ci/scripts/setup-openvino.sh --nightly
@@ -107,6 +133,23 @@ else
     SETUP_SCRIPT=.ci/scripts/setup-linux.sh
 fi
 CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
+
+if [[ "$FLOW" == *nxp* ]]; then
+    # Install test-time Python requirements (neutron-test helpers, etc.).
+    pip install -r backends/nxp/requirements-tests-pypi.txt
+    PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
+
+    # Build nxp_executor_runner as a standalone binary. The cmake-out subproject
+    # build may produce a differently-linked binary; the standalone build is known
+    # to work correctly with the NSYS simulator firmware.
+    mkdir -p examples/nxp/executor_runner/build
+    pushd examples/nxp/executor_runner/build
+    cmake -DCMAKE_BUILD_TYPE=Release ..
+    make -j"$(nproc)" nxp_executor_runner
+    popd
+
+    export NXP_RUNNER_PATH="$(pwd)/examples/nxp/executor_runner/build/nxp_executor_runner"
+fi
 
 GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"

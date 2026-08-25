@@ -74,13 +74,13 @@ def register_attention(name: str):
 def _get_gated_delta_rule_op() -> Optional[Any]:
     """Return the fused gated delta rule op, or None if it is unavailable.
 
-    ``channelwise_gated_delta_rule`` accepts a per-head scalar decay as a 3D
+    ``gated_delta_rule`` accepts a per-head scalar decay as a 3D
     ``[B, H, T]`` tensor, which is the layout GatedDeltaNet produces. Resolve it
     lazily (importing the custom ops library on first use) and memoize so
     environments without the custom op fall back to the Python recurrence.
     """
     try:
-        return torch.ops.llama.channelwise_gated_delta_rule.default
+        return torch.ops.llama.gated_delta_rule.default
     except (AttributeError, RuntimeError):
         pass
 
@@ -91,7 +91,7 @@ def _get_gated_delta_rule_op() -> Optional[Any]:
         return None
 
     try:
-        return torch.ops.llama.channelwise_gated_delta_rule.default
+        return torch.ops.llama.gated_delta_rule.default
     except (AttributeError, RuntimeError):
         return None
 
@@ -131,7 +131,7 @@ class KVCache(nn.Module):
             torch._check(start_pos < self.max_context_length)
             dim_to_slice = 2
             seq_length = k_val.size(dim_to_slice)
-            indices = torch.arange(seq_length) + start_pos
+            indices = torch.arange(seq_length, device=self.k_cache.device) + start_pos
             self.k_cache.index_copy_(dim_to_slice, indices, k_val)
             self.v_cache.index_copy_(dim_to_slice, indices, v_val)
             return self.k_cache, self.v_cache
@@ -181,7 +181,9 @@ class SDPA(nn.Module):
 def _create_causal_mask_for_ring_buffer(
     cache_positions, window_size, start_pos, seq_len
 ):
-    pos_q = start_pos + torch.arange(seq_len, dtype=torch.long).view(-1, 1)
+    pos_q = start_pos + torch.arange(
+        seq_len, dtype=torch.long, device=cache_positions.device
+    ).view(-1, 1)
     delta = pos_q - cache_positions
     attn_mask = (cache_positions >= 0) & (delta >= 0) & (delta < window_size)
     attn_mask = torch.where(attn_mask == True, 0, float("-inf"))  # noqa E712
@@ -239,11 +241,18 @@ class CachePositionsManager(nn.Module):
         """
         start_pos = input_pos[0].item()
         torch._check_is_size(start_pos)
-        orig_indices = torch.arange(seq_len, dtype=torch.long) + start_pos
+        device = self.cache_positions.device
+        orig_indices = (
+            torch.arange(seq_len, dtype=torch.long, device=device) + start_pos
+        )
         indices = orig_indices % self.max_context_length
 
-        full_t = torch.full((self.max_context_length,), -1, dtype=torch.long)
-        arange_tensor = torch.arange(self.max_context_length, dtype=torch.long)
+        full_t = torch.full(
+            (self.max_context_length,), -1, dtype=torch.long, device=device
+        )
+        arange_tensor = torch.arange(
+            self.max_context_length, dtype=torch.long, device=device
+        )
         cache_positions = torch.where(
             arange_tensor < start_pos, self.cache_positions, full_t
         )

@@ -133,6 +133,11 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
 
     By default, all currently implemented channels_last dialect ops are replaced.
     Pass a custom op_map to restrict or extend the set of replacements.
+
+    Metadata from each replaced operator is preserved so provenance and backend
+    annotations survive the rewrite. ExportPass recomputes shape metadata after
+    retracing. Callers must reject or remap semantic metadata tied to dimensions
+    changed by ``input_indices`` or ``output_indices``, such as per-channel axes.
     """
 
     def __init__(
@@ -229,7 +234,7 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
                     args=tuple(args),
                     kwargs=node.kwargs,
                 )
-                nhwc_node.meta = {}
+                nhwc_node.meta = dict(node.meta)
 
                 users = list(node.users)
                 if all(

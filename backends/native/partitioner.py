@@ -45,6 +45,10 @@ _HOP_SUBMODULE_ARG_INDICES = {
 }
 
 EXTERNAL_CONSTANTS_TAG_KEY = "external_constants_tag"
+# Opt preprocess into handing constants back on NativeDelegateInfo instead of
+# copying them into a NamedDataStore. Set by to_native; a program lowered this way
+# has no constants to serialize into a PTE, so it must not reach to_executorch.
+PTN_SERIALIZATION_KEY = "serialize_as_ptn"
 
 
 class NativeSupportedOperators(OperatorSupportBase):
@@ -120,9 +124,29 @@ def _submodule_fully_supported(
 @final
 class NativePartitioner(Partitioner):
     def __init__(
-        self, external_constants_tag: Optional[str] = "native_weights"
+        self,
+        external_constants_tag: Optional[str] = "native_weights",
+        *,
+        _serialize_as_ptn: bool = False,
     ) -> None:
+        """Partition for the native backend.
+
+        Args:
+            external_constants_tag: NamedDataStore tag for constant data, or None
+                to embed it in the PTE.
+            _serialize_as_ptn: Private, for ``to_native`` only. A program lowered
+                with this set has no constants to serialize into a PTE, so
+                ``to_executorch`` would emit an incomplete one. Public callers get
+                the ordinary ExecuTorch delegate path.
+        """
         from executorch.backends.native.preprocess import NativeBackend
+
+        if _serialize_as_ptn and external_constants_tag is not None:
+            raise ValueError(
+                "NativePartitioner: external_constants_tag only applies to the "
+                "NamedDataStore path; pass external_constants_tag=None alongside "
+                "_serialize_as_ptn=True."
+            )
 
         compile_specs: List[CompileSpec] = []
         if external_constants_tag is not None:
@@ -132,6 +156,8 @@ class NativePartitioner(Partitioner):
                     external_constants_tag.encode("utf-8"),
                 )
             )
+        if _serialize_as_ptn:
+            compile_specs.append(CompileSpec(PTN_SERIALIZATION_KEY, b"1"))
         self.delegation_spec = DelegationSpec(NativeBackend.__name__, compile_specs)
 
     def ops_to_not_decompose(

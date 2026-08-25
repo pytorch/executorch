@@ -8,12 +8,6 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
-from executorch.backends.nxp.ops_aliases import (
-    AddTensor,
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-)
 
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import (
@@ -27,6 +21,12 @@ from executorch.backends.nxp.tests.model_output_comparator import (
 )
 from executorch.backends.nxp.tests.models import AddTensorModule, MaxPoolAddTensorModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    AddTensor,
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -34,6 +34,15 @@ from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 def reseed_model_per_test_run():
     torch.manual_seed(23)
     np.random.seed(23)
+
+
+class AddTensorAlphaModule(torch.nn.Module):
+    def __init__(self, alpha):
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, x, y):
+        return torch.add(x, y, alpha=self.alpha)
 
 
 class TestAddTensor:
@@ -257,3 +266,17 @@ class TestAddTensor:
             comparator,
             remove_quant_io_ops=remove_quant_io_ops,
         )
+
+    def test__alpha(self):
+        model = AddTensorAlphaModule(alpha=2)
+        shape = (42,)
+
+        delegated_ep = to_quantized_edge_program(
+            model, [ModelInputSpec(shape), ModelInputSpec(shape)]
+        ).exported_program()
+
+        # Make sure the `add.Tensor` was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [AddTensor])
