@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -100,6 +100,7 @@ help:
 	@echo "  voxtral-metal       - Build Voxtral runner with Metal backend (macOS only)"
 	@echo "  voxtral-mlx         - Build Voxtral runner with MLX backend"
 	@echo "  voxtral_realtime-cuda - Build Voxtral Realtime runner with CUDA backend"
+	@echo "  voxtral_realtime-rocm - Build Voxtral Realtime runner with ROCm backend"
 	@echo "  voxtral_realtime-cpu - Build Voxtral Realtime runner with CPU backend"
 	@echo "  voxtral_realtime-metal - Build Voxtral Realtime runner with Metal backend (macOS only)"
 	@echo "  voxtral_realtime-mlx - Build Voxtral Realtime runner with MLX backend"
@@ -326,6 +327,15 @@ voxtral_realtime-cuda:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
 
+voxtral_realtime-rocm:
+	@echo "==> Building and installing ExecuTorch with ROCm..."
+	cmake --workflow --preset llm-release-rocm
+	@echo "==> Building Voxtral Realtime runner with ROCm..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-rocm
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out-rocm-llm/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
 voxtral_realtime-mlx:
 	@echo "==> Building and installing ExecuTorch with MLX..."
 	cmake --workflow --preset mlx-release
@@ -508,3 +518,8 @@ clean:
 	rm -rf cmake-out \
 	       extension/llm/tokenizers/build \
 	       extension/llm/tokenizers/pytorch_tokenizers.egg-info
+
+# qwen3_dflash-mlx target removed: it depended on the C++ engine sources
+# (CMakeLists.txt, CMakePresets.json, qwen3_dflash_engine.*), which are
+# gitignored/not yet landed. Restore this target in the follow-up PR that
+# actually lands the C++ engine.

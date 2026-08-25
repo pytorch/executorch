@@ -7,6 +7,7 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -21,6 +22,7 @@
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
@@ -30,6 +32,7 @@
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
+#include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -80,6 +83,7 @@ using ::executorch::ET_RUNTIME_NAMESPACE::get_num_registered_backends;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels;
 using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
 using ::executorch::ET_RUNTIME_NAMESPACE::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::MethodMeta;
 using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
@@ -87,6 +91,7 @@ using ::executorch::extension::MmapDataLoader;
 using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::extension::pybindings::PyDataLoader;
 using ::executorch::runtime::DataLoader;
+using ::executorch::runtime::DeviceMemoryBuffer;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
@@ -402,11 +407,21 @@ struct PyBundledModule : public BundledModule {
 struct ProgramState final {
   std::unique_ptr<DataLoader> loader_;
   std::unique_ptr<Program> program_;
+  // Owned here rather than by PyProgram, beside the loader it reads
+  // through, because a Method borrows the map and outlives the call that
+  // loaded it. Both stay alive as long as any method does.
+  std::unique_ptr<DataLoader> data_map_loader_;
+  std::unique_ptr<FlatTensorDataMap> data_map_;
 
   explicit ProgramState(
       std::unique_ptr<DataLoader> loader,
-      std::unique_ptr<Program> program)
-      : loader_(std::move(loader)), program_(std::move(program)) {}
+      std::unique_ptr<Program> program,
+      std::unique_ptr<DataLoader> data_map_loader = nullptr,
+      std::unique_ptr<FlatTensorDataMap> data_map = nullptr)
+      : loader_(std::move(loader)),
+        program_(std::move(program)),
+        data_map_loader_(std::move(data_map_loader)),
+        data_map_(std::move(data_map)) {}
   ProgramState(const ProgramState&) = delete;
   ProgramState& operator=(const ProgramState&) = delete;
   ProgramState(ProgramState&&) = default;
@@ -1031,30 +1046,67 @@ struct PyModule final {
 
 inline std::shared_ptr<ProgramState> load_program(
     std::unique_ptr<DataLoader> loader,
-    Program::Verification program_verification) {
+    Program::Verification program_verification,
+    std::optional<const std::string> data_path = std::nullopt) {
   Result<Program> res = Program::load(loader.get(), program_verification);
   THROW_IF_ERROR(
       res.error(),
       "Failed to load program, error: 0x:%" PRIx32,
       static_cast<uint32_t>(res.error()));
+  // A program whose weights live outside the pte names them through a data
+  // map. The CUDA delegate emits exactly that: a pte holding the compiled
+  // kernels and a separate file holding the weights, so loading the pte alone
+  // produces a program that fails when a method runs rather than when it
+  // loads.
+  std::unique_ptr<DataLoader> data_map_loader;
+  std::unique_ptr<FlatTensorDataMap> data_map;
+  if (data_path.has_value()) {
+    data_map_loader = loader_from_file(data_path.value());
+    Result<FlatTensorDataMap> map_res =
+        FlatTensorDataMap::load(data_map_loader.get());
+    THROW_IF_ERROR(
+        map_res.error(),
+        "Failed to load data map from %s, error: 0x:%" PRIx32,
+        data_path.value().c_str(),
+        static_cast<uint32_t>(map_res.error()));
+    data_map = std::make_unique<FlatTensorDataMap>(std::move(map_res.get()));
+  }
   return std::make_shared<ProgramState>(
-      std::move(loader), std::make_unique<Program>(std::move(res.get())));
+      std::move(loader),
+      std::make_unique<Program>(std::move(res.get())),
+      std::move(data_map_loader),
+      std::move(data_map));
 }
 
 /// A wrapper/util class for executorch memory allocations/manager.
 class ProgramMemory {
  public:
-  explicit ProgramMemory(std::vector<std::vector<uint8_t>>&& non_const_buffers)
+  /// `devices` is empty when every buffer is on the host, which keeps
+  /// `MemoryManager::has_device_memory()` false for CPU-only programs.
+  /// Otherwise it holds one entry per buffer, indexed like `sizes`.
+  ///
+  /// Members initialize in declaration order and each one reads the members
+  /// declared before it, so that order is load-bearing. Device buffers come
+  /// first so that a device that is missing or out of memory throws before the
+  /// host arenas are allocated and zero-filled, rather than after.
+  ProgramMemory(
+      std::vector<int64_t>&& sizes,
+      std::vector<runtime::etensor::Device>&& devices)
       : runtime_allocator_(),
-        non_const_buffers_(std::move(non_const_buffers)),
+        planned_sizes_(std::move(sizes)),
+        planned_devices_(std::move(devices)),
+        device_buffers_(allocate_device_buffers()),
+        non_const_buffers_(allocate_host_buffers()),
         non_const_spans_(create_non_const_spans()),
-        non_const_allocator_(
-            {non_const_spans_.data(), non_const_spans_.size()}),
+        non_const_allocator_(create_non_const_allocator()),
         mem_manager_(
             &const_allocator_,
             &non_const_allocator_,
             &runtime_allocator_,
             &temp_allocator_) {}
+
+  explicit ProgramMemory(std::vector<int64_t>&& sizes)
+      : ProgramMemory(std::move(sizes), {}) {}
 
   /// Returns a pointer to the internal memory manager, the Memory instance
   /// must outlive this pointer.
@@ -1072,6 +1124,16 @@ class ProgramMemory {
 
   MallocMemoryAllocator temp_allocator_{};
 
+  std::vector<int64_t> planned_sizes_;
+
+  std::vector<runtime::etensor::Device> planned_devices_;
+
+  // Backs device-tagged buffers; the entry is empty for a CPU-tagged buffer.
+  // Parallel to non_const_buffers_ so both index by planned buffer id. Empty
+  // for an all-host program.
+  std::vector<DeviceMemoryBuffer> device_buffers_;
+
+  // Backs CPU-tagged buffers; the entry is empty for a device-tagged buffer.
   std::vector<std::vector<uint8_t>> non_const_buffers_;
 
   std::vector<Span<uint8_t>> non_const_spans_;
@@ -1080,15 +1142,124 @@ class ProgramMemory {
 
   MemoryManager mem_manager_;
 
-  std::vector<Span<uint8_t>> create_non_const_spans() {
-    std::vector<Span<uint8_t>> result;
-    for (size_t i = 0; i < non_const_buffers_.size(); i++) {
-      result.push_back(
-          {non_const_buffers_[i].data(), non_const_buffers_[i].size()});
+  bool is_device_buffer(size_t index) const {
+    return index < planned_devices_.size() && !planned_devices_[index].is_cpu();
+  }
+
+  std::vector<std::vector<uint8_t>> allocate_host_buffers() {
+    std::vector<std::vector<uint8_t>> result;
+    result.reserve(planned_sizes_.size());
+    for (size_t i = 0; i < planned_sizes_.size(); ++i) {
+      if (is_device_buffer(i)) {
+        result.emplace_back();
+      } else {
+        result.emplace_back(planned_sizes_[i]);
+      }
     }
     return result;
   }
+
+  std::vector<DeviceMemoryBuffer> allocate_device_buffers() {
+    std::vector<DeviceMemoryBuffer> result;
+    if (planned_devices_.empty()) {
+      return result;
+    }
+    // Both vectors are filled in lockstep today, so this only fires if a
+    // future caller breaks that. HierarchicalAllocator aborts on a mismatch,
+    // so check here instead, where a Python caller can catch it.
+    THROW_IF_ERROR(
+        planned_devices_.size() == planned_sizes_.size()
+            ? Error::Ok
+            : Error::InvalidArgument,
+        "Have %zu planned buffer sizes but %zu device tags",
+        planned_sizes_.size(),
+        planned_devices_.size());
+    result.reserve(planned_sizes_.size());
+    for (size_t i = 0; i < planned_sizes_.size(); ++i) {
+      if (!is_device_buffer(i)) {
+        result.emplace_back();
+        continue;
+      }
+      auto buffer = DeviceMemoryBuffer::create(
+          planned_sizes_[i],
+          planned_devices_[i].type(),
+          planned_devices_[i].index());
+      THROW_IF_ERROR(
+          buffer.error(),
+          "Failed to allocate %" PRId64 " bytes for buffer %zu on device %d:%d",
+          planned_sizes_[i],
+          i,
+          static_cast<int>(planned_devices_[i].type()),
+          static_cast<int>(planned_devices_[i].index()));
+      result.emplace_back(std::move(buffer.get()));
+    }
+    return result;
+  }
+
+  std::vector<Span<uint8_t>> create_non_const_spans() {
+    std::vector<Span<uint8_t>> result;
+    result.reserve(planned_sizes_.size());
+    for (size_t i = 0; i < planned_sizes_.size(); ++i) {
+      if (is_device_buffer(i)) {
+        result.push_back(device_buffers_[i].as_span());
+      } else {
+        result.push_back(
+            {non_const_buffers_[i].data(), non_const_buffers_[i].size()});
+      }
+    }
+    return result;
+  }
+
+  HierarchicalAllocator create_non_const_allocator() {
+    Span<Span<uint8_t>> buffers(
+        non_const_spans_.data(), non_const_spans_.size());
+    return planned_devices_.empty()
+        ? HierarchicalAllocator(buffers)
+        : HierarchicalAllocator(
+              buffers, {planned_devices_.data(), planned_devices_.size()});
+  }
 };
+
+/// True if any of the method's memory-planned buffers must live off the host.
+bool has_device_buffers(const MethodMeta& method_meta) {
+  for (size_t i = 0; i < method_meta.num_memory_planned_buffers(); ++i) {
+    auto device = method_meta.memory_planned_buffer_device(i);
+    THROW_IF_ERROR(
+        device.error(), "Failed to get device of planned buffer %zu", i);
+    if (!device.get().is_cpu()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Arenas sized and placed for a single method, used when that method's
+/// buffers cannot come from the program-wide host arenas. Returns nullptr when
+/// every buffer is on the host, so one pass over the metadata answers both
+/// whether the method needs its own arenas and how big they are.
+std::shared_ptr<ProgramMemory> make_method_memory(
+    const MethodMeta& method_meta) {
+  const size_t num_buffers = method_meta.num_memory_planned_buffers();
+  std::vector<int64_t> sizes;
+  std::vector<runtime::etensor::Device> devices;
+  sizes.reserve(num_buffers);
+  devices.reserve(num_buffers);
+  bool needs_device_memory = false;
+  for (size_t i = 0; i < num_buffers; ++i) {
+    auto size = method_meta.memory_planned_buffer_size(i);
+    THROW_IF_ERROR(size.error(), "Failed to get size of planned buffer %zu", i);
+    auto device = method_meta.memory_planned_buffer_device(i);
+    THROW_IF_ERROR(
+        device.error(), "Failed to get device of planned buffer %zu", i);
+    needs_device_memory |= !device.get().is_cpu();
+    sizes.push_back(size.get());
+    devices.push_back(device.get());
+  }
+  if (!needs_device_memory) {
+    return nullptr;
+  }
+  return std::make_shared<ProgramMemory>(std::move(sizes), std::move(devices));
+}
 
 struct PyMethod final {
   explicit PyMethod(
@@ -1377,8 +1548,10 @@ struct PyProgram final {
       std::unique_ptr<ETDumpGen> tracer = nullptr,
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
-          Program::Verification::Minimal)
-      : state_(load_program(std::move(loader), program_verification)),
+          Program::Verification::Minimal,
+      std::optional<const std::string> data_path = std::nullopt)
+      : state_(
+            load_program(std::move(loader), program_verification, data_path)),
         event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
     // Figure out the size of each non_const layer we need to support every
@@ -1388,8 +1561,17 @@ struct PyProgram final {
     for (size_t i = 0; i < state_->program_->num_methods(); ++i) {
       auto name = state_->program_->get_method_name(i).get();
       auto method_meta = state_->program_->method_meta(name).get();
-      for (size_t j = 0; j < method_meta.num_non_const_buffers(); j++) {
-        int64_t buffer_size = method_meta.non_const_buffer_size(j).get();
+      // A device-planned method gets its own arenas in load_method and never
+      // reads these, so letting its sizes in would only grow the host arenas
+      // the other methods share.
+      if (has_device_buffers(method_meta)) {
+        continue;
+      }
+      for (size_t j = 0; j < method_meta.num_memory_planned_buffers(); ++j) {
+        auto size = method_meta.memory_planned_buffer_size(j);
+        THROW_IF_ERROR(
+            size.error(), "Failed to get size of planned buffer %zu", j);
+        int64_t buffer_size = size.get();
         if (non_const_buffer_sizes.find(j) == non_const_buffer_sizes.end()) {
           non_const_buffer_sizes.insert({j, buffer_size});
         } else {
@@ -1399,16 +1581,14 @@ struct PyProgram final {
       }
     }
 
-    // Allocate the arenas. Using vector because we need to remember the size as
-    // well, so vector is easier then unique_ptr.
-    std::vector<std::vector<uint8_t>> non_const_buffers_;
-    for (std::map<size_t, int64_t>::iterator i = non_const_buffer_sizes.begin();
-         i != non_const_buffer_sizes.end();
-         i++) {
-      non_const_buffers_.push_back(std::vector<uint8_t>(i->second));
+    // Allocate the shared host arenas.
+    std::vector<int64_t> planned_sizes;
+    planned_sizes.reserve(non_const_buffer_sizes.size());
+    for (const auto& entry : non_const_buffer_sizes) {
+      planned_sizes.push_back(entry.second);
     }
 
-    memory_ = std::make_shared<ProgramMemory>(std::move(non_const_buffers_));
+    memory_ = std::make_shared<ProgramMemory>(std::move(planned_sizes));
     if (event_tracer_ && debug_buffer_size > 0) {
       // If a debug buffer was requested for the ETDump, allocate it and make
       // sure its lifetime is as long as the event_tracer.
@@ -1424,7 +1604,8 @@ struct PyProgram final {
       bool enable_etdump,
       size_t debug_buffer_size,
       Program::Verification program_verification =
-          Program::Verification::Minimal) {
+          Program::Verification::Minimal,
+      std::optional<const std::string> data_path = std::nullopt) {
     std::unique_ptr<DataLoader> loader = loader_from_buffer(
         buffer.cast<std::string_view>().data(), py::len(buffer));
     return std::make_unique<PyProgram>(
@@ -1432,7 +1613,8 @@ struct PyProgram final {
         enable_etdump ? std::make_unique<torch::executor::ETDumpGen>()
                       : nullptr,
         debug_buffer_size,
-        program_verification);
+        program_verification,
+        data_path);
   }
 
   static std::unique_ptr<PyProgram> load_from_file(
@@ -1440,14 +1622,16 @@ struct PyProgram final {
       bool enable_etdump,
       size_t debug_buffer_size,
       Program::Verification program_verification =
-          Program::Verification::Minimal) {
+          Program::Verification::Minimal,
+      std::optional<const std::string> data_path = std::nullopt) {
     std::unique_ptr<DataLoader> loader = loader_from_file(path);
     return std::make_unique<PyProgram>(
         std::move(loader),
         enable_etdump ? std::make_unique<torch::executor::ETDumpGen>()
                       : nullptr,
         debug_buffer_size,
-        program_verification);
+        program_verification,
+        data_path);
   }
 
   PyProgram(const PyProgram&) = delete;
@@ -1469,15 +1653,33 @@ struct PyProgram final {
   }
 
   std::unique_ptr<PyMethod> load_method(const std::string& method_name) {
+    Result<MethodMeta> meta =
+        state_->program_->method_meta(method_name.c_str());
+    THROW_IF_ERROR(
+        meta.error(),
+        "Failed to get method meta for method %s, error: 0x:%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(meta.error()));
+    // Device memory is claimed here rather than at program load so that one
+    // accelerator method cannot make the rest of the program unloadable. A
+    // host-only method keeps sharing the program-wide arenas, so its planned
+    // memory is not isolated from the other host-only methods of this program.
+    auto method_memory = make_method_memory(meta.get());
+    auto memory = method_memory ? std::move(method_memory) : memory_;
     Result<Method> res = state_->program_->load_method(
-        method_name.c_str(), memory_->mem_manager(), event_tracer_.get());
+        method_name.c_str(),
+        memory->mem_manager(),
+        event_tracer_.get(),
+        state_->data_map_.get());
     THROW_IF_ERROR(
         res.error(),
         "Failed to load method %s, error: 0x:%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
     return std::make_unique<PyMethod>(
-        memory_, state_, std::make_unique<Method>(std::move(res.get())));
+        std::move(memory),
+        state_,
+        std::make_unique<Method>(std::move(res.get())));
   }
 
   Span<uint8_t> get_etdump_debug_buffer() {
@@ -1772,6 +1974,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
       py::arg("program_verification") = Program::Verification::Minimal,
+      py::arg("data_path") = std::nullopt,
       call_guard);
   m.def(
       "_load_program_from_buffer",
@@ -1780,6 +1983,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
       py::arg("program_verification") = Program::Verification::Minimal,
+      py::arg("data_path") = std::nullopt,
       call_guard);
   py::class_<PyProgram>(m, "ExecuTorchProgram")
       .def("num_methods", &PyProgram::num_methods, call_guard)

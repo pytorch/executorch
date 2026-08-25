@@ -578,7 +578,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
-                Conv1dUnsqueezePass(),
+                Conv1dUnsqueezePass(exported_program),
             ]
         )
 
@@ -665,6 +665,8 @@ class ArmPassManager(ExportedProgramPassManager):
                 # permute pairs they expose.
                 RemoveNoopPass(),
                 CanonicalizeViewCopyPermutePass(),
+                # Fuse views again after permutes may have been replaced by views.
+                FuseViewCopyTransformPass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]

@@ -108,6 +108,39 @@ TEST_F(VulkanComputeAPITest, print_adapter) {
   std::cout << *(context()->adapter_ptr()) << std::endl;
 }
 
+TEST_F(VulkanComputeAPITest, device_to_host_staging_prefers_cached_memory) {
+  vkapi::VulkanBuffer staging_buffer =
+      context()->adapter_ptr()->vma().create_staging_buffer(
+          4096, vkapi::CopyDirection::DEVICE_TO_HOST);
+  const VmaAllocator allocator = staging_buffer.vma_allocator();
+  ASSERT_NE(allocator, VK_NULL_HANDLE);
+
+  const VkPhysicalDeviceMemoryProperties* memory_properties = nullptr;
+  vmaGetMemoryProperties(allocator, &memory_properties);
+  ASSERT_NE(memory_properties, nullptr);
+
+  bool has_host_cached_memory = false;
+  for (uint32_t i = 0; i < memory_properties->memoryTypeCount; ++i) {
+    const VkMemoryPropertyFlags flags =
+        memory_properties->memoryTypes[i].propertyFlags;
+    has_host_cached_memory = has_host_cached_memory ||
+        ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+         (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT));
+  }
+  if (!has_host_cached_memory) {
+    GTEST_SKIP() << "Device does not expose host-cached visible memory";
+  }
+
+  const VmaAllocation allocation = staging_buffer.allocation();
+  ASSERT_NE(allocation, VK_NULL_HANDLE);
+
+  VkMemoryPropertyFlags selected_flags = 0;
+  vmaGetAllocationMemoryProperties(allocator, allocation, &selected_flags);
+
+  EXPECT_TRUE(selected_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+      << "Selected memory with flags " << selected_flags;
+}
+
 #if defined(VK_KHR_pipeline_executable_properties) && \
     defined(ETVK_INSPECT_PIPELINES)
 
@@ -1779,6 +1812,79 @@ TEST_F(VulkanComputeAPITest, test_tensor_over_external_image_does_not_own_it) {
   context()->flush();
   EXPECT_TRUE(owner.image());
   EXPECT_FALSE(owner.image().is_copy());
+}
+
+static vTensor make_buffer_owner() {
+  return vTensor(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_keeps_sizes) {
+  vTensor owner = make_buffer_owner();
+
+  vTensor view(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      /*external_image = */ nullptr,
+      &owner.buffer());
+
+  EXPECT_TRUE(view.sizes() == kExternalSizes);
+  EXPECT_TRUE(view.numel() == owner.numel());
+  EXPECT_TRUE(view.storage_type() == utils::kBuffer);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_buffer_rejects_overflow) {
+  vTensor owner = make_buffer_owner();
+
+  std::vector<int64_t> too_large = kExternalSizes;
+  too_large.back() *= 2;
+
+  EXPECT_THROW(
+      vTensor(
+          context(),
+          too_large,
+          vkapi::kFloat,
+          utils::kBuffer,
+          utils::kWidthPacked,
+          /*allocate_memory = */ false,
+          utils::kDefaultAxisMap,
+          /*external_image = */ nullptr,
+          &owner.buffer()),
+      vkapi::Error);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_does_not_own_it) {
+  vTensor owner = make_buffer_owner();
+
+  {
+    vTensor view(
+        context(),
+        kExternalSizes,
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        /*allocate_memory = */ false,
+        utils::kDefaultAxisMap,
+        /*external_image = */ nullptr,
+        &owner.buffer());
+
+    EXPECT_TRUE(view.buffer().is_copy_of(owner.buffer()));
+  }
+
+  context()->flush();
+  EXPECT_TRUE(owner.buffer());
+  EXPECT_FALSE(owner.buffer().is_copy());
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
