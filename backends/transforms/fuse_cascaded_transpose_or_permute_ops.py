@@ -7,7 +7,7 @@
 # pyre-unsafe
 
 from executorch.backends.transforms.channels_last_layout import (
-    composed_permute_target,
+    ATEN_PERMUTE_COPY,
     PERMUTE_COPY_TARGETS,
 )
 from executorch.backends.transforms.permute_pass_utils import (
@@ -75,7 +75,7 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
         else:
             with node.graph.inserting_before(node):
                 new_permute = node.graph.call_function(
-                    composed_permute_target(parent_node, node),
+                    ATEN_PERMUTE_COPY,
                     args=(input_of_parent, dims),
                 )
                 new_permute.meta = dict(node.meta)

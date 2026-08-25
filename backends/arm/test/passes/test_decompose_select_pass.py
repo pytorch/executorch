@@ -63,11 +63,18 @@ def test_decompose_select_negative_symbolic_index_uses_symbolic_sub() -> None:
 
     slice_node = slice_nodes[0]
     assert slice_node.args[1] == 1
-    assert slice_node.args[2] != -1
-    assert isinstance(slice_node.args[2], torch.SymInt)
-    assert isinstance(slice_node.args[3], torch.SymInt)
-    assert str(slice_node.args[2]).endswith(" - 1")
-    assert str(slice_node.args[3]) in str(slice_node.args[2])
+    # Start/end are now FX nodes (materialized from SymInts) rather than raw
+    # SymInts, since Graph.create_node rejects raw symbolic leaves in
+    # call_function args. The original SymInt is preserved in meta['val'].
+    start_arg, end_arg = slice_node.args[2], slice_node.args[3]
+    assert isinstance(start_arg, torch.fx.Node)
+    assert isinstance(end_arg, torch.fx.Node)
+    start_val = start_arg.meta["val"]
+    end_val = end_arg.meta["val"]
+    assert isinstance(start_val, torch.SymInt)
+    assert isinstance(end_val, torch.SymInt)
+    assert str(start_val).endswith(" - 1")
+    assert str(end_val) in str(start_val)
     assert squeeze_nodes[0].args == (slice_node, [1])
 
     result.graph_module.graph.lint()
