@@ -838,6 +838,7 @@ for _targets, _node_cls, _op_name, _lift_b in _BINARY_OPS:
         _make_binary_handler(_node_cls, _op_name, _lift_b)
     )
 
+
 _SCALAR_INT_OPS: List[Tuple[Any, Any, str]] = [
     (operator.add, AddIntNode, "operator.add"),
     (operator.sub, SubtractIntNode, "operator.sub"),
@@ -938,6 +939,7 @@ for _targets, _node_cls, _op_name, _max_args in _REDUCTION_OPS:
         _make_reduction_handler(_node_cls, _op_name, _max_args)
     )
 
+
 _FULL_OPS: List[Tuple[List[Any], str, Optional[float]]] = [
     ([torch.ops.aten.full.default], "aten.full", None),
     ([torch.ops.aten.zeros.default], "aten.zeros", 0.0),
@@ -987,6 +989,7 @@ def _make_full_handler(op_name: str, fixed_fill: Optional[float]):
 
 for _targets, _op_name, _fixed_fill in _FULL_OPS:
     REGISTRY.register(target=_targets)(_make_full_handler(_op_name, _fixed_fill))
+
 
 _FULL_LIKE_OPS: List[Tuple[List[Any], str, Optional[float]]] = [
     ([torch.ops.aten.full_like.default], "aten.full_like", None),
