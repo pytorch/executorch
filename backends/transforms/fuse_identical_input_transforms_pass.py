@@ -9,8 +9,7 @@ from collections.abc import Sequence
 from typing import Any, Callable, cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
-from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.backends.transforms.dim_maps import (
     _dim_equals,
     PermuteMap,
@@ -107,7 +106,7 @@ class NormalizeTransformInputPlaceholdersPass(ExportPass):
         return spec
 
 
-class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
+class FuseIdenticalInputTransformsPass(ExportPass):
     """Sink identical input transforms through pointwise ops with multiple
     inputs. Note that this is only valid for data movement transforms; most
     operators cannot be swapped in this way while preserving semantics.

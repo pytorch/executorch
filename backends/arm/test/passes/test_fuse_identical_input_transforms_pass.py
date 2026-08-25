@@ -10,7 +10,7 @@ from typing import cast, Sequence
 import pytest
 import torch
 from executorch.backends.arm import process_node
-from executorch.backends.arm._passes.fuse_identical_input_transforms_pass import (
+from executorch.backends.transforms.fuse_identical_input_transforms_pass import (
     FuseIdenticalInputTransformsPass,
     NormalizeTransformInputPlaceholdersPass,
 )

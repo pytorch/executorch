@@ -207,6 +207,30 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "fuse_duplicate_users_pass",
+        srcs = ["fuse_duplicate_users_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_identical_input_transforms_pass",
+        srcs = ["fuse_identical_input_transforms_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            ":dim_maps",
+            ":permute_view_meta",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "canonicalize_view_copy_permute_pass",
         srcs = [
             "canonicalize_view_copy_permute_pass.py",
