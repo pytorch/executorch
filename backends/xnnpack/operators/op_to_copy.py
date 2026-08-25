@@ -171,7 +171,6 @@ class ToCopy(NodeVisitor):
         output_dtype: XNNDatatype,
         output_is_channels_last: bool,
         output_quant_params: QuantParams | None,
-        convert_to_nhwc: bool,
         last_operation: bool,
     ) -> tuple[int, List[int], XNNDatatype, List[int] | None]:
         """Compute properties of output tensor and add it to the graph."""
@@ -193,7 +192,7 @@ class ToCopy(NodeVisitor):
                 xnn_graph,
                 vals_to_ids,
                 quant_params=output_quant_params,
-                convert_to_nhwc=convert_to_nhwc,
+                convert_to_nhwc=output_is_channels_last,
             )
             return (
                 vals_to_ids[node],
@@ -294,7 +293,6 @@ class ToCopy(NodeVisitor):
                 output_dtype,
                 output_is_channels_last,
                 output_quant_params,
-                output_is_channels_last,
                 last_operation,
             )
             match operation:

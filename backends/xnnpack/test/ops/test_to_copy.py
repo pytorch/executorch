@@ -13,8 +13,12 @@ from executorch.backends.xnnpack.operators.op_to_copy import (
     sort_decomposed_operations,
     ToCopyOperation,
 )
+from executorch.backends.xnnpack.partition.config.generic_node_configs import (
+    ToCopyConfig,
+)
 from executorch.backends.xnnpack.test.tester import Tester, ToEdgeTransformAndLower
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class TestChannelsLastTaggedReshapePass(unittest.TestCase):
@@ -31,6 +35,21 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         sort_decomposed_operations(ops, torch.float32, torch.float16)
 
         self.assertEqual(ops, [ToCopyOperation.CAST, ToCopyOperation.TRANSPOSE])
+
+    def test_to_copy_config_rejects_integer_dtype_conversion(self):
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = torch.randint(0, 10, (1, 3, 6, 6), dtype=torch.int32)
+        to_copy = graph.call_function(
+            exir_ops.edge.aten._to_copy.default,
+            (x,),
+            {"dtype": torch.float32, "memory_format": torch.channels_last},
+        )
+        to_copy.meta["val"] = torch.randn(1, 3, 6, 6).to(
+            memory_format=torch.channels_last
+        )
+
+        self.assertFalse(ToCopyConfig().check_constraints(to_copy, None))
 
     def run_tester(self, module, inputs, skip_dim_order=False):
         tester = Tester(
@@ -96,7 +115,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     def test_dtype_and_memory_format_conversion(self):
         self.run_tester(
             self.DtypeAndMemoryFormatConversionModule,
-            (torch.randint(0, 10, (1, 3, 6, 6), dtype=torch.int32),),
+            (torch.randn(1, 3, 6, 6, dtype=torch.float16),),
         )
 
     class DtypeAndMemoryFormatWithLinear(torch.nn.Module):
@@ -113,7 +132,19 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     def test_dtype_and_memory_format_with_linear(self):
         self.run_tester(
             self.DtypeAndMemoryFormatWithLinearModule,
-            (torch.randint(0, 10, (1, 3, 3, 3), dtype=torch.int16),),
+            (torch.randn(1, 3, 3, 3, dtype=torch.float16),),
+        )
+
+    def test_integer_to_float_to_copy_does_not_partition(self):
+        to_dim_order_copy_name = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+        (
+            Tester(
+                self.DtypeAndMemoryFormatConversionModule,
+                (torch.randint(0, 10, (1, 3, 6, 6), dtype=torch.int32),),
+            )
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({to_dim_order_copy_name: 1})
         )
 
     class DtypeOnlyConversion(torch.nn.Module):

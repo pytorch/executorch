@@ -537,11 +537,32 @@ class ToCopyConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
-        if not self.check_common_constraints(node, ep):
-            return False
         input_node = get_input_node(node, 0)
         input_meta = input_node.meta["val"]
         output_meta = node.meta["val"]
+
+        input_dtype = input_meta.dtype
+        output_dtype = output_meta.dtype
+        if input_dtype != output_dtype:
+            supported_cast_dtypes = {torch.float32, torch.float16}
+            if self.enable_bf16:
+                supported_cast_dtypes.add(torch.bfloat16)
+            if (
+                input_dtype not in supported_cast_dtypes
+                or output_dtype not in supported_cast_dtypes
+            ):
+                why(
+                    node,
+                    reason=(
+                        "dtype conversion only supports fp32/fp16"
+                        f"{'/bf16' if self.enable_bf16 else ''}, "
+                        f"got {input_dtype} to {output_dtype}"
+                    ),
+                )
+                return False
+
+        if not self.check_common_constraints(node, ep):
+            return False
 
         # The visitor handles only 4D NCHW <-> NHWC dim-order conversions.
         input_dim_order = list(input_meta.dim_order())
