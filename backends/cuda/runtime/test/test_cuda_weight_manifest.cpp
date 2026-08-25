@@ -46,7 +46,6 @@ std::vector<uint8_t> valid_manifest(
   append_u32(output, 1); // entries
   append_string(output, "model.weight");
   append_string(output, "storage-key");
-  append_u32(output, 7); // method-local storage group
   append_u64(output, 24); // storage bytes
   append_u32(output, dtype); // dtype
   append_u32(output, device_type); // device type (CUDA)
@@ -56,7 +55,6 @@ std::vector<uint8_t> valid_manifest(
   append_u64(output, 3);
   append_u64(output, 3);
   append_u64(output, 1);
-  output.push_back(1); // shareable
   return output;
 }
 
@@ -79,13 +77,11 @@ TEST(CudaWeightManifestTest, ParsesVersionedManifest) {
   const auto& entry = manifest.entries[0];
   EXPECT_EQ(entry.fqn, "model.weight");
   EXPECT_EQ(entry.storage_key, "storage-key");
-  EXPECT_EQ(entry.storage_group, 7u);
   EXPECT_EQ(entry.storage_nbytes, 24u);
   EXPECT_EQ(entry.dtype, 6);
   EXPECT_EQ(entry.device_type, 1);
   EXPECT_EQ(entry.sizes, (std::vector<int64_t>{2, 3}));
   EXPECT_EQ(entry.strides, (std::vector<int64_t>{3, 1}));
-  EXPECT_TRUE(entry.shareable);
 }
 
 TEST(CudaWeightManifestTest, RejectsTruncationAndTrailingData) {

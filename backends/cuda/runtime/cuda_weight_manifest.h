@@ -17,20 +17,18 @@
 
 namespace executorch::backends::cuda {
 
-constexpr char kCudaFqnWeightsMagic[] = "ETCUDAFQN2";
+constexpr char kCudaFqnWeightsMagic[] = "ETCUDAFQN3";
 constexpr size_t kCudaFqnWeightsMagicSize = sizeof(kCudaFqnWeightsMagic) - 1;
 
 struct CudaFqnWeightEntry {
   std::string fqn;
   std::string storage_key;
-  uint32_t storage_group{0};
   uint64_t storage_nbytes{0};
   int32_t dtype{0};
   int32_t device_type{0};
   int64_t storage_offset{0};
   std::vector<int64_t> sizes;
   std::vector<int64_t> strides;
-  bool shareable{false};
 };
 
 struct CudaFqnWeightManifest {
@@ -78,14 +76,6 @@ class CudaWeightManifestReader final {
       return false;
     }
     cursor_ += size;
-    return true;
-  }
-
-  bool read_u8(uint8_t& value) {
-    if (remaining() < 1) {
-      return false;
-    }
-    value = *cursor_++;
     return true;
   }
 
@@ -185,10 +175,8 @@ inline executorch::runtime::Error parse_cuda_fqn_weight_manifest(
   for (uint32_t index = 0; index < num_entries; ++index) {
     CudaFqnWeightEntry entry;
     uint32_t ndim = 0;
-    uint8_t shareable = 0;
     if (!reader.read_string(entry.fqn) || entry.fqn.empty() ||
         !reader.read_string(entry.storage_key) || entry.storage_key.empty() ||
-        !reader.read_u32(entry.storage_group) ||
         !reader.read_u64(entry.storage_nbytes) ||
         !reader.read_i32(entry.dtype) ||
         !is_supported_cuda_fqn_dtype(entry.dtype) ||
@@ -211,11 +199,9 @@ inline executorch::runtime::Error parse_cuda_fqn_weight_manifest(
         return Error::InvalidProgram;
       }
     }
-    if (!reader.read_u8(shareable) || shareable > 1 ||
-        entry.storage_offset < 0) {
+    if (entry.storage_offset < 0) {
       return Error::InvalidProgram;
     }
-    entry.shareable = shareable != 0;
     manifest.entries.push_back(std::move(entry));
   }
 

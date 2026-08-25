@@ -7,23 +7,23 @@
 
 import contextlib
 import copy
-import ctypes
 import functools
-import gc
-import hashlib
 import logging
 import os
 import shutil
-import struct
-import tempfile
 import threading
 import typing
-from dataclasses import dataclass
 from importlib import resources
-from typing import Any, Dict, final, List, Optional, Tuple
+from typing import Any, Dict, final, List, Optional
 
 import torch
 from executorch.backends.aoti.aoti_backend import AotiBackend
+from executorch.backends.cuda.cuda_weight_collector import (
+    AOTI_DEVICE_TYPE_CPU,
+    AOTI_DEVICE_TYPE_CUDA,
+    CudaWeightCollector,
+    trim_host_memory,
+)
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
@@ -34,11 +34,9 @@ from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
 from executorch.exir._serialize._cord import FileBackedData
-from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.tensor import scalar_type_enum
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.nn.attention import SDPBackend
 
@@ -66,49 +64,9 @@ from torch.nn.attention import SDPBackend
 
 _CPU_CLONE_GUARD = threading.local()
 
-_FQN_WEIGHTS_MAGIC = b"ETCUDAFQN2"
-_FQN_WEIGHTS_CAPTURE = threading.local()
-
-_AOTI_DEVICE_TYPE_CPU = 0
-_AOTI_DEVICE_TYPE_CUDA = 1
-
-
-@dataclass
-class _FqnWeightEntry:
-    fqn: str
-    storage_key: str
-    storage_group: int
-    storage_nbytes: int
-    dtype: int
-    device_type: int
-    storage_offset: int
-    sizes: Tuple[int, ...]
-    strides: Tuple[int, ...]
-    shareable: bool
-
-
-@dataclass
-class _FqnWeightArtifact:
-    entries: List[_FqnWeightEntry]
-    storages: Dict[str, FileBackedData]
-
-
-@dataclass
-class _FqnWeightCapture:
-    mutated_fqns: set[str]
-    artifact: Optional[_FqnWeightArtifact] = None
-
 
 def _is_cpu_clone_active() -> bool:
     return getattr(_CPU_CLONE_GUARD, "active", False)
-
-
-def _trim_host_memory() -> None:
-    gc.collect()
-    try:
-        ctypes.CDLL(None).malloc_trim(0)
-    except AttributeError:
-        pass
 
 
 def _aoti_device_type_for_weight(tensor: torch.Tensor) -> int:
@@ -117,21 +75,12 @@ def _aoti_device_type_for_weight(tensor: torch.Tensor) -> int:
     # substitution in the manifest. Outside that scoped mode the serialized
     # tensor's actual device is the AOTI constant's device.
     if _is_cpu_clone_active() or tensor.device.type == "cuda":
-        return _AOTI_DEVICE_TYPE_CUDA
+        return AOTI_DEVICE_TYPE_CUDA
     if tensor.device.type == "cpu":
-        return _AOTI_DEVICE_TYPE_CPU
+        return AOTI_DEVICE_TYPE_CPU
     raise RuntimeError(
         f"Unsupported AOTI constant device for CUDA export: {tensor.device}"
     )
-
-
-def _stateful_buffer_fqns(graph_signature: Any) -> set[str]:
-    # Some generated-code mutations (notably conditional cache updates) are
-    # not surfaced through buffers_to_mutate. Treat every registered buffer as
-    # model-instance-local, then include any explicitly reported mutations.
-    fqns = set(getattr(graph_signature, "buffers", ()))
-    fqns.update(getattr(graph_signature, "buffers_to_mutate", {}).values())
-    return fqns
 
 
 @contextlib.contextmanager
@@ -463,224 +412,6 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
     return value == "ON"
 
 
-def _write_tensor_storage(tensor: torch.Tensor, path: str) -> bytes:
-    """Stream one AOTI storage to ``path`` and return its SHA-256 digest."""
-    chunk_size = 8 * 1024 * 1024
-    digest = hashlib.sha256()
-
-    def write_chunk(output, chunk) -> None:
-        digest.update(chunk)
-        output.write(chunk)
-
-    if tensor.is_mkldnn:
-        raise RuntimeError("MKLDNN constants are not supported by CUDA AOTI")
-    storage = tensor.untyped_storage()
-    nbytes = storage.nbytes()
-    with open(path, "wb") as output:
-        if nbytes and tensor.is_cuda:
-            byte_tensor = torch.empty(0, dtype=torch.uint8, device=tensor.device).set_(
-                storage, 0, (nbytes,), (1,)
-            )
-            for offset in range(0, nbytes, chunk_size):
-                cpu_chunk = byte_tensor[offset : offset + chunk_size].cpu()
-                write_chunk(output, memoryview(cpu_chunk.numpy()))
-            del byte_tensor, cpu_chunk
-        elif nbytes:
-            raw_array = (ctypes.c_ubyte * nbytes).from_address(storage.data_ptr())
-            raw_view = memoryview(raw_array).cast("B")
-            for offset in range(0, nbytes, chunk_size):
-                write_chunk(output, raw_view[offset : offset + chunk_size])
-            del raw_view, raw_array
-    del storage
-    return digest.digest()
-
-
-def _materialize_fqn_weights(  # noqa: C901
-    weights: Any,
-    directory: str,
-    mutated_fqns: set[str],
-) -> _FqnWeightArtifact:
-    """Turn AOTI ``Weights`` into content-addressed storage files + views."""
-    # The graph can contain hundreds of independent storages.  Trimming around
-    # every storage is both ineffective (``records`` below still owns all of
-    # the tensors) and extremely expensive for large exported graphs.  Trim
-    # once at artifact boundaries; streamed CPU chunks are released by normal
-    # reference counting as they are replaced.
-    _trim_host_memory()
-    entries: List[_FqnWeightEntry] = []
-    storages: Dict[str, FileBackedData] = {}
-    records: List[Tuple[str, torch.Tensor, Any, Tuple[Any, ...], int, int]] = []
-    record_indices_by_identity: Dict[Tuple[Any, ...], List[int]] = {}
-
-    for index, (fqn, (tensor, properties)) in enumerate(weights.items()):
-        storage = tensor.untyped_storage()
-        storage_nbytes = storage.nbytes()
-        storage_ptr = storage.data_ptr()
-        device_type = _aoti_device_type_for_weight(tensor)
-        property_storage_ptr = getattr(properties, "storage_ptr", None)
-        if property_storage_ptr not in (None, 0):
-            # TensorProperties describes the graph constant's real storage.
-            # The value tensor can be a clone (including a CPU clone in CUDA
-            # low-memory mode), so its data_ptr is not a stable alias key.
-            identity = (
-                "aoti",
-                int(property_storage_ptr),
-                str(tensor.dtype),
-                device_type,
-            )
-        else:
-            identity = (
-                tensor.device.type,
-                tensor.device.index if tensor.device.index is not None else -1,
-                storage_ptr if storage_ptr != 0 else -(index + 1),
-                storage_nbytes,
-                device_type,
-            )
-        del storage
-        records.append((fqn, tensor, properties, identity, storage_nbytes, device_type))
-        record_indices_by_identity.setdefault(identity, []).append(index)
-
-    storage_info_by_identity: Dict[Tuple[Any, ...], Tuple[str, int, int]] = {}
-    for storage_group, (identity, record_indices) in enumerate(
-        record_indices_by_identity.items()
-    ):
-        # AOTI's value can be a clone of a view. Pick the largest available
-        # backing storage in the alias group so every declared view can be
-        # reconstructed from the one serialized allocation.
-        candidate_index = max(record_indices, key=lambda item: records[item][4])
-        candidate_tensor = records[candidate_index][1]
-        storage_nbytes = records[candidate_index][4]
-        expected_storage_nbytes = max(
-            (
-                int(storage_size)
-                for item in record_indices
-                if (storage_size := getattr(records[item][2], "storage_size", None))
-                is not None
-            ),
-            default=0,
-        )
-        if storage_nbytes < expected_storage_nbytes:
-            raise RuntimeError(
-                "AOTI cloned storage is smaller than its TensorProperties "
-                f"({storage_nbytes} < {expected_storage_nbytes} bytes)"
-            )
-
-        fd, storage_path = tempfile.mkstemp(
-            prefix=".cuda_weight_", suffix=".storage", dir=directory
-        )
-        os.close(fd)
-        try:
-            digest = _write_tensor_storage(candidate_tensor, storage_path)
-            storage_key = digest.hex() + "_cuda_weight_storage"
-            data = FileBackedData.move_from(storage_path, sha256=digest)
-        except Exception:
-            try:
-                os.remove(storage_path)
-            except OSError:
-                pass
-            raise
-
-        existing = storages.get(storage_key)
-        if existing is None:
-            storages[storage_key] = data
-        else:
-            data.close()
-        storage_info_by_identity[identity] = (
-            storage_key,
-            storage_nbytes,
-            storage_group,
-        )
-
-    for fqn, tensor, properties, identity, _storage_nbytes, device_type in records:
-        storage_key, serialized_nbytes, storage_group = storage_info_by_identity[
-            identity
-        ]
-        sizes = getattr(properties, "shape", tensor.shape)
-        strides = getattr(properties, "stride", tensor.stride())
-        storage_offset = getattr(properties, "offset", tensor.storage_offset())
-        sizes = tuple(int(size) for size in sizes)
-        strides = tuple(int(stride) for stride in strides)
-        storage_offset = int(storage_offset)
-        if (
-            len(sizes) != len(strides)
-            or storage_offset < 0
-            or any(size < 0 for size in sizes)
-            or any(stride < 0 for stride in strides)
-        ):
-            raise RuntimeError(f"AOTI view {fqn!r} has invalid tensor metadata")
-        required_nbytes = 0
-        if all(size != 0 for size in sizes):
-            last_element = storage_offset + sum(
-                stride * (size - 1) for size, stride in zip(sizes, strides)
-            )
-            required_nbytes = (last_element + 1) * tensor.element_size()
-        if required_nbytes > serialized_nbytes:
-            raise RuntimeError(
-                f"AOTI view {fqn!r} requires {required_nbytes} bytes from a "
-                f"{serialized_nbytes}-byte cloned storage"
-            )
-        entries.append(
-            _FqnWeightEntry(
-                fqn=fqn,
-                storage_key=storage_key,
-                storage_group=storage_group,
-                storage_nbytes=serialized_nbytes,
-                dtype=int(scalar_type_enum(tensor.dtype)),
-                device_type=device_type,
-                storage_offset=storage_offset,
-                sizes=sizes,
-                strides=strides,
-                shareable=fqn not in mutated_fqns,
-            )
-        )
-
-    # A mutable view makes its complete physical storage stateful.  The runtime
-    # shares such storages by FQN (not by content hash), including aliases that
-    # share the same backing buffer.
-    local_storage_groups = {
-        entry.storage_group for entry in entries if not entry.shareable
-    }
-    for entry in entries:
-        if entry.storage_group in local_storage_groups:
-            entry.shareable = False
-
-    _trim_host_memory()
-    return _FqnWeightArtifact(entries=entries, storages=storages)
-
-
-def _encode_fqn_weight_manifest(
-    so_blob_key: str, entries: List[_FqnWeightEntry]
-) -> bytes:
-    """Encode the CUDA per-storage manifest consumed by the runtime."""
-    output = bytearray(_FQN_WEIGHTS_MAGIC)
-
-    def write_string(value: str) -> None:
-        encoded = value.encode("utf-8")
-        output.extend(struct.pack("<I", len(encoded)))
-        output.extend(encoded)
-
-    write_string(so_blob_key)
-    output.extend(struct.pack("<I", len(entries)))
-    for entry in entries:
-        write_string(entry.fqn)
-        write_string(entry.storage_key)
-        output.extend(
-            struct.pack(
-                "<IQiiqI",
-                entry.storage_group,
-                entry.storage_nbytes,
-                entry.dtype,
-                entry.device_type,
-                entry.storage_offset,
-                len(entry.sizes),
-            )
-        )
-        output.extend(struct.pack(f"<{len(entry.sizes)}q", *entry.sizes))
-        output.extend(struct.pack(f"<{len(entry.strides)}q", *entry.strides))
-        output.extend(struct.pack("<B", entry.shareable))
-    return bytes(output)
-
-
 @final
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
@@ -691,11 +422,6 @@ class CudaBackend(AotiBackend, BackendDetails):
     optimized CUDA kernels for the model's operators with libtorch-free. The compiled model can be executed on CUDA devices
     using the Executorch runtime.
     """
-
-    # AOTI calls materialize_weights_blob immediately before load_weights_blob
-    # for a given output path. A new materialization overwrites any digest left
-    # behind by an export that aborted before the consumer ran.
-    _materialized_blob_hashes: Dict[str, bytes] = {}
 
     @classmethod
     def get_device_name(cls) -> str:
@@ -802,76 +528,55 @@ class CudaBackend(AotiBackend, BackendDetails):
         return True
 
     @classmethod
-    def preprocess(  # noqa: C901
+    def _preprocess_with_weight_collector(
+        cls,
+        edge_program: Any,
+        compile_specs: List[CompileSpec],
+        collector: CudaWeightCollector,
+    ) -> PreprocessResult:
+        with collector.capture(_aoti_device_type_for_weight) as capture:
+            result = super().preprocess(edge_program, compile_specs)
+        if capture.artifact is None:
+            raise RuntimeError("CUDA AOTI did not return a structured Weights output")
+        collector.add_preprocess_result(result, capture.artifact, cls.get_device_name())
+        return result
+
+    @classmethod
+    def preprocess(
         cls, edge_program: Any, compile_specs: List[CompileSpec]
     ) -> PreprocessResult:
-        """Compile CUDA weights as independently addressable AOTI storages."""
-        # Keep every buffer model-instance-local while still sharing it by FQN
-        # across methods in that model instance.
-        mutated_fqns = _stateful_buffer_fqns(edge_program.graph_signature)
-        previous_capture = getattr(_FQN_WEIGHTS_CAPTURE, "current", None)
-        capture = _FqnWeightCapture(mutated_fqns=mutated_fqns)
-        # AotiBackend packages weights synchronously on this thread. TLS keeps
-        # nested or concurrent preprocess calls isolated while that callback
-        # passes the structured artifact back to this invocation.
-        _FQN_WEIGHTS_CAPTURE.current = capture
-        try:
-            result = super().preprocess(edge_program, compile_specs)
-        finally:
-            _FQN_WEIGHTS_CAPTURE.current = previous_capture
-
-        artifact = capture.artifact
-        if artifact is None:
-            raise RuntimeError("CUDA AOTI did not return a structured Weights output")
-        if result.data_store_output is None:
-            raise RuntimeError("CUDA AOTI preprocess returned no named data")
-
-        try:
-            parent_keys = result.processed_bytes.decode("utf-8").splitlines()
-        except UnicodeDecodeError as error:
-            raise RuntimeError("Malformed CUDA AOTI named-data payload") from error
-        if not parent_keys or not parent_keys[0]:
-            raise RuntimeError("CUDA AOTI payload is missing its shared-object key")
-        so_blob_key = parent_keys[0]
-        compatibility_blob_key = parent_keys[1] if len(parent_keys) > 1 else None
-
-        # Rebuild AotiBackend's store without the empty compatibility blob,
-        # then add each physical weight storage as separately named external
-        # data. This leaves a new PTD containing only real storages while the
-        # legacy runtime path remains able to consume old dense blobs.
-        parent_store = result.data_store_output
-        named_data_store = NamedDataStore()
-        keep_compatibility_blob = not artifact.storages
-        for key, entry in parent_store.pte_data.items():
-            if key != compatibility_blob_key or keep_compatibility_blob:
-                named_data_store.add_named_data(
-                    key,
-                    parent_store.buffers[entry.buffer_index],
-                    alignment=entry.alignment,
-                    tensor_layout=entry.tensor_layout,
-                )
-        for tag, entries in parent_store.external_data.items():
-            for key, entry in entries.items():
-                if key != compatibility_blob_key or keep_compatibility_blob:
-                    named_data_store.add_named_data(
-                        key,
-                        parent_store.buffers[entry.buffer_index],
-                        alignment=entry.alignment,
-                        external_tag=tag,
-                        tensor_layout=entry.tensor_layout,
-                    )
-
-        external_tag = f"aoti_{cls.get_device_name()}_blob"
-        for storage_key, data in artifact.storages.items():
-            named_data_store.add_named_data(
-                storage_key, data, alignment=1, external_tag=external_tag
-            )
-
-        result.processed_bytes = _encode_fqn_weight_manifest(
-            so_blob_key, artifact.entries
+        """Compile one CUDA method with its own weight collector."""
+        collector = CudaWeightCollector()
+        result = cls._preprocess_with_weight_collector(
+            edge_program, compile_specs, collector
         )
-        result.data_store_output = named_data_store.get_named_data_store_output()
+        collector.finish()
         return result
+
+    @classmethod
+    def preprocess_multimethod(
+        cls,
+        edge_programs: Dict[str, List[Any]],
+        compile_specs: Dict[str, List[List[CompileSpec]]],
+    ) -> Dict[str, List[PreprocessResult]]:
+        """Compile every method against one global ``(device, FQN)`` store."""
+        collector = CudaWeightCollector()
+        results: Dict[str, List[PreprocessResult]] = {}
+        for method_name, programs in edge_programs.items():
+            if method_name not in compile_specs:
+                raise ValueError(f"Missing CUDA compile specs for {method_name!r}")
+            method_specs = compile_specs[method_name]
+            if len(programs) != len(method_specs):
+                raise ValueError(
+                    f"Method {method_name!r} has {len(programs)} partitions but "
+                    f"{len(method_specs)} compile-spec lists"
+                )
+            results[method_name] = [
+                cls._preprocess_with_weight_collector(program, specs, collector)
+                for program, specs in zip(programs, method_specs)
+            ]
+        collector.finish()
+        return results
 
     @classmethod
     def load_weights_blob(
@@ -883,12 +588,10 @@ class CudaBackend(AotiBackend, BackendDetails):
         compatibility placeholder. Legacy binary-blob handling remains
         unchanged for callers that still provide a real blob.
         """
-        known_hash = cls._materialized_blob_hashes.pop(blob_path, None)
         if not cls._is_low_memory_mode(compile_specs):
             return super().load_weights_blob(blob_path, compile_specs)
-        blob_data = FileBackedData.move_from(blob_path, sha256=known_hash)
-        weights_blob_hash = known_hash or blob_data.sha256()
-        return blob_data, weights_blob_hash.hex()
+        blob_data = FileBackedData.move_from(blob_path)
+        return blob_data, blob_data.sha256().hex()
 
     @classmethod
     def materialize_weights_blob(
@@ -918,13 +621,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         if so_path is None:
             raise RuntimeError(f"Expected a CUDA AOTI .wrapper.so output, got {paths}")
         blob_path = os.path.splitext(so_path)[0] + "_weights.blob"
-        capture = getattr(_FQN_WEIGHTS_CAPTURE, "current", None)
-        if capture is None:
-            raise RuntimeError(
-                "CUDA structured weights must be materialized inside preprocess"
-            )
-        capture.artifact = _materialize_fqn_weights(
-            weights[0], os.path.dirname(blob_path), capture.mutated_fqns
+        capture = CudaWeightCollector.current_capture()
+        capture.artifact = capture.collector.materialize(
+            weights[0], os.path.dirname(blob_path), capture.device_type_for_weight
         )
 
         # Keep AotiBackend's existing path contract intact. The compatibility
@@ -932,7 +631,6 @@ class CudaBackend(AotiBackend, BackendDetails):
         # artifacts continue to carry and load their original dense blob.
         with open(blob_path, "wb"):
             pass
-        cls._materialized_blob_hashes[blob_path] = hashlib.sha256(b"").digest()
 
         # Replace the structured Weights output with the compatibility path
         # expected by AotiBackend's existing named-data packaging contract.
@@ -1076,8 +774,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             # Separate weight constants from the .so file
             "aot_inductor.package": True,
             "aot_inductor.package_constants_in_so": False,
-            # Ask AOTI for structured constants. CUDABackend converts these to
-            # independently named physical storages plus an FQN view manifest.
+            # Ask AOTI for structured constants. CUDABackend collects them by
+            # (device, FQN) and emits the tensor metadata needed at runtime.
             "aot_inductor.package_constants_on_disk_format": cls._weights_format(
                 compile_specs
             ),
@@ -1197,7 +895,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                     stack.enter_context(
                         _compile_time_cpu_clones(torch.device(cls.get_device_name()))
                     )
-                    _trim_host_memory()
+                    trim_host_memory()
                 yield
 
         return _combined()
@@ -1213,7 +911,7 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def _weights_format(cls, compile_specs: List[CompileSpec]) -> str:
         # CUDA consumes the structured AOTI output directly and emits a
-        # versioned per-storage manifest. This is backend-wide rather than a
+        # versioned per-FQN manifest. This is backend-wide rather than a
         # model/export-script option.
         return "pickle_weights"
 

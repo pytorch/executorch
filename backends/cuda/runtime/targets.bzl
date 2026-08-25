@@ -124,10 +124,12 @@ def define_common_targets(is_fbcode = False):
         srcs = [
             "cuda_backend.cpp",
             "cuda_mutable_state.cpp",
+            "cuda_weight_cache.cpp",
         ],
         headers = [
             "cuda_delegate_handle.h",
             "cuda_mutable_state.h",
+            "cuda_weight_cache.h",
             "cuda_weight_manifest.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

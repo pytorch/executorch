@@ -11,6 +11,7 @@
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/extension/cuda/runtime_api.h>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <vector>
@@ -218,7 +219,7 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
 
-  // Per-storage weight artifacts keep the CUDA allocations and the original
+  // Per-FQN weight artifacts keep the allocations and their
   // SlimTensor handles alive for as long as AOTI may reference their views.
   std::vector<std::shared_ptr<CudaWeightStorage>> fqn_weight_storages;
   std::vector<std::unique_ptr<aoti::slim::SlimTensor>> fqn_weight_tensors;
