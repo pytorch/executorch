@@ -275,4 +275,3 @@ def test_max_pool2d_nhwc_runs_on_fvp(cortex_m_target):
         exir_ops.edge.cortex_m.quantized_max_pool2d_nhwc.default,
         cortex_m_target,
     )
-

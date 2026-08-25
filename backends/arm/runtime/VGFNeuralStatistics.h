@@ -25,6 +25,23 @@ constexpr const char* kVgfNeuralStatisticsSchema =
     "executorch.vgf.neural_statistics";
 constexpr int kVgfNeuralStatisticsSchemaVersion = 1;
 
+constexpr const char* kVgfNeuralStatisticsEnableEnv =
+    "EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS";
+constexpr const char* kVgfNeuralStatisticsModeEnv =
+    "EXECUTORCH_VGF_NEURAL_STATISTICS_MODE";
+
+// Runtime neural-statistics configuration. The public mode is 0/1, while the
+// Vulkan enum values are STATISTICS0/STATISTICS1 (1/2 respectively).
+struct VgfNeuralStatisticsRuntimeConfig {
+  bool requested = false;
+
+  // ExecuTorch mode indices 0 and 1 select Vulkan modes STATISTICS0 and
+  // STATISTICS1, whose underlying enum values are 1 and 2, respectively.
+  int mode_index = 1;
+};
+
+VgfNeuralStatisticsRuntimeConfig get_vgf_neural_statistics_runtime_config();
+
 // One binary payload from neural statistics API
 struct VgfNeuralStatisticsBlob {
   // Whether we got it successfully

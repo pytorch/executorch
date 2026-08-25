@@ -658,7 +658,6 @@ def _count_ops(graph_module: torch.fx.GraphModule, targets: set) -> int:
     )
 
 
-
 def run_test(case: PermuteCountTestCase) -> None:
     case.module.eval()
     with torch.no_grad():
