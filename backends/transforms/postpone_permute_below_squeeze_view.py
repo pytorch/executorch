@@ -192,7 +192,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
                 permute_target,
                 args=(new_view_node, new_permute_dims),
             )
-            new_permute_node.meta = dict(view_node.meta)
+            new_permute_node.meta = view_node.meta
             view_node.replace_all_uses_with(new_permute_node)
 
         # view_node is user of permute_node, so must erase view_node first
