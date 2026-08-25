@@ -45,9 +45,9 @@ jobs:
       matrix:
         # BuildKit runs out of cluster on the OSDC BuildKit pool; this runner is
         # only an orchestrator that streams the (tiny) .ci/docker context and
-        # waits, so the smallest label of the right architecture is enough. The
-        # architecture still has to match, because the helper picks the
-        # per-architecture buildkitd address off `uname -m`.
+        # waits, so it can be small. The architecture still has to match, because
+        # the helper picks the per-architecture buildkitd address off `uname -m`,
+        # and on arm64 this is the smallest label that actually schedules.
         runner: [mt-l-x86iavx512-8-64]
         docker-image-name: [
           executorch-ubuntu-22.04-gcc11,
@@ -68,11 +68,11 @@ jobs:
         ]
         include:
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64
-            runner: mt-l-arm64g2-6-25
+            runner: mt-l-arm64g4-16-62
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64-android
-            runner: mt-l-arm64g2-6-25
+            runner: mt-l-arm64g4-16-62
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk
-            runner: mt-l-arm64g2-6-25
+            runner: mt-l-arm64g4-16-62
 
     runs-on: ${{ matrix.runner }}
     container:
@@ -106,7 +106,7 @@ jobs:
           DOCKER_TAG=$(git rev-parse HEAD:.ci/docker)
           echo "docker-image=${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ matrix.docker-image-name }}-${DOCKER_TAG}" >> "${GITHUB_OUTPUT}"
 
-      # No step timeout: the action retries a cold BuildKit pool for up to two
+      # No step timeout: the action retries a cold BuildKit pool for at least two
       # hours, and the job's timeout-minutes is what bounds that.
       - name: Build and push to ECR
         uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
