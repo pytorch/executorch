@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cuda/runtime/cuda_weight_manifest.h>
+#include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 
 #include <gtest/gtest.h>
 
@@ -36,12 +36,13 @@ void append_string(std::vector<uint8_t>& output, const std::string& value) {
   output.insert(output.end(), value.begin(), value.end());
 }
 
-std::vector<uint8_t> valid_manifest(
+std::vector<uint8_t> serialized_metadata(
     uint32_t dtype = 6,
     uint32_t device_type = 1) {
   std::vector<uint8_t> output(
-      cuda::kCudaFqnWeightsMagic,
-      cuda::kCudaFqnWeightsMagic + cuda::kCudaFqnWeightsMagicSize);
+      cuda::CudaWeightCache::kFormatMagic,
+      cuda::CudaWeightCache::kFormatMagic +
+          cuda::CudaWeightCache::kFormatMagicSize);
   append_string(output, "so-key");
   append_u32(output, 1); // entries
   append_string(output, "model.weight");
@@ -60,21 +61,21 @@ std::vector<uint8_t> valid_manifest(
 
 } // namespace
 
-TEST(CudaWeightManifestTest, LegacyPayloadIsNotMisdetected) {
+TEST(CudaWeightCacheTest, LegacyPayloadIsNotMisdetected) {
   const std::string legacy = "so-key\nweights-key";
-  EXPECT_FALSE(cuda::is_cuda_fqn_weight_manifest(legacy.data(), legacy.size()));
+  EXPECT_FALSE(
+      cuda::CudaWeightCache::is_serialized(legacy.data(), legacy.size()));
 }
 
-TEST(CudaWeightManifestTest, ParsesVersionedManifest) {
-  const std::vector<uint8_t> bytes = valid_manifest();
-  cuda::CudaFqnWeightManifest manifest;
+TEST(CudaWeightCacheTest, ParsesSerializedMetadata) {
+  const std::vector<uint8_t> bytes = serialized_metadata();
+  cuda::CudaWeightCache::Metadata metadata;
   ASSERT_EQ(
-      cuda::parse_cuda_fqn_weight_manifest(
-          bytes.data(), bytes.size(), manifest),
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),
       Error::Ok);
-  ASSERT_EQ(manifest.so_blob_key, "so-key");
-  ASSERT_EQ(manifest.entries.size(), 1u);
-  const auto& entry = manifest.entries[0];
+  ASSERT_EQ(metadata.so_blob_key, "so-key");
+  ASSERT_EQ(metadata.entries.size(), 1u);
+  const auto& entry = metadata.entries[0];
   EXPECT_EQ(entry.fqn, "model.weight");
   EXPECT_EQ(entry.storage_key, "storage-key");
   EXPECT_EQ(entry.storage_nbytes, 24u);
@@ -84,36 +85,32 @@ TEST(CudaWeightManifestTest, ParsesVersionedManifest) {
   EXPECT_EQ(entry.strides, (std::vector<int64_t>{3, 1}));
 }
 
-TEST(CudaWeightManifestTest, RejectsTruncationAndTrailingData) {
-  std::vector<uint8_t> bytes = valid_manifest();
-  cuda::CudaFqnWeightManifest manifest;
+TEST(CudaWeightCacheTest, RejectsTruncationAndTrailingData) {
+  std::vector<uint8_t> bytes = serialized_metadata();
+  cuda::CudaWeightCache::Metadata metadata;
   ASSERT_GT(bytes.size(), 1u);
   EXPECT_EQ(
-      cuda::parse_cuda_fqn_weight_manifest(
-          bytes.data(), bytes.size() - 1, manifest),
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size() - 1, metadata),
       Error::InvalidProgram);
   bytes.push_back(0);
   EXPECT_EQ(
-      cuda::parse_cuda_fqn_weight_manifest(
-          bytes.data(), bytes.size(), manifest),
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),
       Error::InvalidProgram);
 }
 
-TEST(CudaWeightManifestTest, RejectsUnsupportedDtype) {
+TEST(CudaWeightCacheTest, RejectsUnsupportedDtype) {
   const std::vector<uint8_t> bytes =
-      valid_manifest(7); // Double is unsupported.
-  cuda::CudaFqnWeightManifest manifest;
+      serialized_metadata(7); // Double is unsupported.
+  cuda::CudaWeightCache::Metadata metadata;
   EXPECT_EQ(
-      cuda::parse_cuda_fqn_weight_manifest(
-          bytes.data(), bytes.size(), manifest),
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),
       Error::InvalidProgram);
 }
 
-TEST(CudaWeightManifestTest, RejectsUnsupportedDeviceType) {
-  const std::vector<uint8_t> bytes = valid_manifest(6, 2);
-  cuda::CudaFqnWeightManifest manifest;
+TEST(CudaWeightCacheTest, RejectsUnsupportedDeviceType) {
+  const std::vector<uint8_t> bytes = serialized_metadata(6, 2);
+  cuda::CudaWeightCache::Metadata metadata;
   EXPECT_EQ(
-      cuda::parse_cuda_fqn_weight_manifest(
-          bytes.data(), bytes.size(), manifest),
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),
       Error::InvalidProgram);
 }

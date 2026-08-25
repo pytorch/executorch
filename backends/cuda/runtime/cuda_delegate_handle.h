@@ -195,7 +195,7 @@ struct CudaGraphState {
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
 // This consolidates CUDA stream management into a single location.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
-  // Extra AOTI metadata used to validate per-FQN manifests before binding.
+  // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 
   // CUDA stream for this handle, support both shared mode and single mode.

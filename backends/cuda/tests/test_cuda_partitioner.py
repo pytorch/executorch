@@ -21,9 +21,9 @@ from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.cuda_weight_collector import (
     AOTI_DEVICE_TYPE_CPU,
     AOTI_DEVICE_TYPE_CUDA,
-    CUDA_FQN_WEIGHTS_MAGIC,
+    CUDA_WEIGHT_CACHE_MAGIC,
     CudaWeightCollector,
-    encode_cuda_weight_manifest,
+    encode_cuda_weight_metadata,
 )
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
@@ -95,10 +95,10 @@ class TestCudaLowMemoryExport(unittest.TestCase):
                 artifact.storages[artifact.entries[1].storage_key].to_bytes(),
             )
 
-            manifest = encode_cuda_weight_manifest("so-key", artifact.entries)
-            self.assertTrue(manifest.startswith(CUDA_FQN_WEIGHTS_MAGIC))
-            self.assertIn(b"first", manifest)
-            self.assertIn(b"second", manifest)
+            metadata = encode_cuda_weight_metadata("so-key", artifact.entries)
+            self.assertTrue(metadata.startswith(CUDA_WEIGHT_CACHE_MAGIC))
+            self.assertIn(b"first", metadata)
+            self.assertIn(b"second", metadata)
             for storage in artifact.storages.values():
                 storage.close()
 

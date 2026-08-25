@@ -166,7 +166,7 @@ class ET_EXPERIMENTAL CudaBackend final
     return shared_cuda_stream_ != nullptr;
   }
 
-  // Enable the legacy dense-blob per-FQN cache. New manifest artifacts use
+  // Enable the legacy dense-blob per-FQN cache. New FQN artifacts use
   // their FQN-addressed data keys automatically.
   void set_weight_sharing_across_methods(bool enabled) {
     weight_sharing_across_methods_.store(enabled, std::memory_order_relaxed);
@@ -330,15 +330,15 @@ class ET_EXPERIMENTAL CudaBackend final
 
     std::string so_blob_key;
     std::string weights_blob_key;
-    CudaFqnWeightManifest fqn_weight_manifest;
+    CudaWeightCache::Metadata fqn_weights;
     const bool has_fqn_weights =
-        is_cuda_fqn_weight_manifest(processed->data(), processed->size());
+        CudaWeightCache::is_serialized(processed->data(), processed->size());
     if (has_fqn_weights) {
       ET_CHECK_OK_OR_RETURN_ERROR(
-          parse_cuda_fqn_weight_manifest(
-              processed->data(), processed->size(), fqn_weight_manifest),
-          "Malformed CUDA FQN weight manifest");
-      so_blob_key = fqn_weight_manifest.so_blob_key;
+          CudaWeightCache::parse(
+              processed->data(), processed->size(), fqn_weights),
+          "Malformed CUDA FQN weight metadata");
+      so_blob_key = fqn_weights.so_blob_key;
     } else {
       ET_CHECK_OK_OR_RETURN_ERROR(
           executorch::backends::aoti::resolve_blob_keys(
@@ -419,11 +419,11 @@ class ET_EXPERIMENTAL CudaBackend final
     handle->container_handle = container_handle;
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
-    // cross-method cache model used by the legacy path. The manifest only adds
+    // cross-method cache model used by the legacy path. The payload only adds
     // the tensor metadata needed to reconstruct independently named PTD blobs.
     if (has_fqn_weights) {
       ET_CHECK_OK_OR_RETURN_ERROR(
-          fqn_weight_cache_.load(handle, named_data_map, fqn_weight_manifest));
+          fqn_weight_cache_.load(handle, named_data_map, fqn_weights));
     } else if (is_weight_sharing_across_methods_enabled()) {
       ET_CHECK_OK_OR_RETURN_ERROR(load_constants_with_cache(
           handle, named_data_map, method_name, weights_blob_key));
@@ -908,7 +908,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
   // Whether to enable cross-method caching for legacy dense-blob artifacts.
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
-  // OFF; versioned manifest artifacts do not consult this option.
+  // OFF; versioned FQN artifacts do not consult this option.
   std::atomic<bool> weight_sharing_across_methods_{false};
 
   // ---------------------------------------------------------------

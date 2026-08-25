@@ -34,7 +34,175 @@ using aoti::slim::c10::Device;
 using runtime::Error;
 using runtime::NamedDataMap;
 
-Error CudaWeightCache::validate_view(const CudaFqnWeightEntry& entry) {
+namespace {
+
+class MetadataReader final {
+ public:
+  MetadataReader(const void* data, size_t size)
+      : cursor_(static_cast<const uint8_t*>(data)), end_(cursor_ + size) {}
+
+  bool skip(size_t size) {
+    if (remaining() < size) {
+      return false;
+    }
+    cursor_ += size;
+    return true;
+  }
+
+  bool read_u32(uint32_t& value) {
+    uint64_t wide = 0;
+    if (!read_unsigned(wide, 4)) {
+      return false;
+    }
+    value = static_cast<uint32_t>(wide);
+    return true;
+  }
+
+  bool read_i32(int32_t& value) {
+    uint32_t raw = 0;
+    if (!read_u32(raw)) {
+      return false;
+    }
+    std::memcpy(&value, &raw, sizeof(value));
+    return true;
+  }
+
+  bool read_u64(uint64_t& value) {
+    return read_unsigned(value, 8);
+  }
+
+  bool read_i64(int64_t& value) {
+    uint64_t raw = 0;
+    if (!read_u64(raw)) {
+      return false;
+    }
+    std::memcpy(&value, &raw, sizeof(value));
+    return true;
+  }
+
+  bool read_string(std::string& value) {
+    uint32_t size = 0;
+    if (!read_u32(size) || remaining() < size) {
+      return false;
+    }
+    value.assign(reinterpret_cast<const char*>(cursor_), size);
+    cursor_ += size;
+    return true;
+  }
+
+  bool empty() const {
+    return cursor_ == end_;
+  }
+
+ private:
+  size_t remaining() const {
+    return static_cast<size_t>(end_ - cursor_);
+  }
+
+  bool read_unsigned(uint64_t& value, size_t width) {
+    if (remaining() < width) {
+      return false;
+    }
+    value = 0;
+    for (size_t index = 0; index < width; ++index) {
+      value |= static_cast<uint64_t>(cursor_[index]) << (index * 8);
+    }
+    cursor_ += width;
+    return true;
+  }
+
+  const uint8_t* cursor_;
+  const uint8_t* end_;
+};
+
+bool is_supported_dtype(int32_t dtype) {
+  switch (dtype) {
+    case 0: // Byte
+    case 1: // Char
+    case 2: // Short
+    case 3: // Int
+    case 4: // Long
+    case 5: // Half
+    case 6: // Float
+    case 11: // Bool
+    case 15: // BFloat16
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool is_supported_device_type(int32_t device_type) {
+  return device_type == 0 || device_type == 1; // CPU or CUDA
+}
+
+} // namespace
+
+bool CudaWeightCache::is_serialized(const void* data, size_t size) {
+  return data != nullptr && size >= kFormatMagicSize &&
+      std::memcmp(data, kFormatMagic, kFormatMagicSize) == 0;
+}
+
+Error CudaWeightCache::parse(
+    const void* data,
+    size_t size,
+    Metadata& metadata) {
+  if (!is_serialized(data, size)) {
+    return Error::InvalidProgram;
+  }
+
+  MetadataReader reader(data, size);
+  if (!reader.skip(kFormatMagicSize) ||
+      !reader.read_string(metadata.so_blob_key) ||
+      metadata.so_blob_key.empty()) {
+    return Error::InvalidProgram;
+  }
+
+  uint32_t num_entries = 0;
+  constexpr uint32_t kMaxEntries = 1U << 20;
+  if (!reader.read_u32(num_entries) || num_entries > kMaxEntries) {
+    return Error::InvalidProgram;
+  }
+  metadata.entries.clear();
+  metadata.entries.reserve(num_entries);
+
+  constexpr uint32_t kMaxTensorDimensions = 64;
+  for (uint32_t index = 0; index < num_entries; ++index) {
+    Entry entry;
+    uint32_t ndim = 0;
+    if (!reader.read_string(entry.fqn) || entry.fqn.empty() ||
+        !reader.read_string(entry.storage_key) || entry.storage_key.empty() ||
+        !reader.read_u64(entry.storage_nbytes) ||
+        !reader.read_i32(entry.dtype) || !is_supported_dtype(entry.dtype) ||
+        !reader.read_i32(entry.device_type) ||
+        !is_supported_device_type(entry.device_type) ||
+        !reader.read_i64(entry.storage_offset) || !reader.read_u32(ndim) ||
+        ndim > kMaxTensorDimensions) {
+      return Error::InvalidProgram;
+    }
+
+    entry.sizes.resize(ndim);
+    entry.strides.resize(ndim);
+    for (uint32_t dim = 0; dim < ndim; ++dim) {
+      if (!reader.read_i64(entry.sizes[dim]) || entry.sizes[dim] < 0) {
+        return Error::InvalidProgram;
+      }
+    }
+    for (uint32_t dim = 0; dim < ndim; ++dim) {
+      if (!reader.read_i64(entry.strides[dim]) || entry.strides[dim] < 0) {
+        return Error::InvalidProgram;
+      }
+    }
+    if (entry.storage_offset < 0) {
+      return Error::InvalidProgram;
+    }
+    metadata.entries.push_back(std::move(entry));
+  }
+
+  return reader.empty() ? Error::Ok : Error::InvalidProgram;
+}
+
+Error CudaWeightCache::validate_view(const Entry& entry) {
   uint64_t item_size = 0;
   switch (static_cast<aoti::slim::c10::ScalarType>(entry.dtype)) {
     case aoti::slim::c10::ScalarType::Byte:
@@ -111,7 +279,7 @@ Error CudaWeightCache::validate_view(const CudaFqnWeightEntry& entry) {
 
 Error CudaWeightCache::acquire_storage(
     const NamedDataMap* named_data_map,
-    const CudaFqnWeightEntry& entry,
+    const Entry& entry,
     uintptr_t logical_scope,
     int device_index,
     std::shared_ptr<CudaWeightStorage>& storage,
@@ -238,7 +406,7 @@ Error CudaWeightCache::acquire_storage(
 Error CudaWeightCache::load(
     CudaDelegateHandle* handle,
     const NamedDataMap* named_data_map,
-    const CudaFqnWeightManifest& manifest) const {
+    const Metadata& metadata) const {
   ET_CHECK_OR_RETURN_ERROR(
       named_data_map != nullptr,
       InvalidArgument,
@@ -308,12 +476,12 @@ Error CudaWeightCache::load(
     key_scopes.emplace(key.get(), reinterpret_cast<uintptr_t>(key.get()));
   }
   std::vector<AOTInductorConstantMapEntry> pairs;
-  pairs.reserve(manifest.entries.size());
+  pairs.reserve(metadata.entries.size());
   std::unordered_set<std::string> bound_fqns;
   size_t reused_storages = 0;
-  handle->fqn_weight_tensors.reserve(manifest.entries.size());
+  handle->fqn_weight_tensors.reserve(metadata.entries.size());
 
-  for (const CudaFqnWeightEntry& entry : manifest.entries) {
+  for (const Entry& entry : metadata.entries) {
     ET_CHECK_OK_OR_RETURN_ERROR(
         validate_view(entry), "Invalid CUDA FQN view '%s'", entry.fqn.c_str());
     auto internal_names = fqn_to_internal_names.find(entry.fqn);
@@ -328,14 +496,14 @@ Error CudaWeightCache::load(
             aoti_dtype->second == entry.dtype,
         InvalidProgram,
         "CUDA FQN weight '%s' dtype does not match its AOTI library "
-        "(manifest=%d, AOTI=%d)",
+        "(serialized=%d, AOTI=%d)",
         entry.fqn.c_str(),
         entry.dtype,
         aoti_dtype == fqn_to_aoti_dtype.end() ? -1 : aoti_dtype->second);
     ET_CHECK_OR_RETURN_ERROR(
         bound_fqns.emplace(entry.fqn).second,
         InvalidProgram,
-        "CUDA FQN weight '%s' appears more than once in its manifest",
+        "CUDA FQN weight '%s' appears more than once in serialized metadata",
         entry.fqn.c_str());
 
     std::shared_ptr<CudaWeightStorage> storage;
@@ -390,7 +558,7 @@ Error CudaWeightCache::load(
   ET_LOG(
       Info,
       "Loaded %zu CUDA FQN weights (%zu reused across methods)",
-      manifest.entries.size(),
+      metadata.entries.size(),
       reused_storages);
   return Error::Ok;
 }

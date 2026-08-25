@@ -22,7 +22,7 @@ from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.tensor import scalar_type_enum
 
 
-CUDA_FQN_WEIGHTS_MAGIC = b"ETCUDAFQN3"
+CUDA_WEIGHT_CACHE_MAGIC = b"ETCUDAFQN3"
 
 AOTI_DEVICE_TYPE_CPU = 0
 AOTI_DEVICE_TYPE_CUDA = 1
@@ -103,11 +103,11 @@ def _storage_key(fqn: str, device_type: int) -> str:
     return f"cuda_fqn_weight:{device}:{fqn}"
 
 
-def encode_cuda_weight_manifest(
+def encode_cuda_weight_metadata(
     so_blob_key: str, entries: List[CudaWeightEntry]
 ) -> bytes:
     """Encode the per-method FQN-to-tensor metadata consumed by CUDA runtime."""
-    output = bytearray(CUDA_FQN_WEIGHTS_MAGIC)
+    output = bytearray(CUDA_WEIGHT_CACHE_MAGIC)
 
     def write_string(value: str) -> None:
         encoded = value.encode("utf-8")
@@ -310,7 +310,7 @@ class CudaWeightCollector:
                     data.close()
             self._entries.setdefault(entry.storage_key, entry)
 
-        result.processed_bytes = encode_cuda_weight_manifest(
+        result.processed_bytes = encode_cuda_weight_metadata(
             so_blob_key, artifact.entries
         )
         self._results.append(result)

@@ -72,7 +72,7 @@ def _is_cpu_clone_active() -> bool:
 def _aoti_device_type_for_weight(tensor: torch.Tensor) -> int:
     # Low-memory compilation clones lifted CUDA buffers onto CPU, while the
     # patched wrapper records them as CUDA constants. Mirror that target-device
-    # substitution in the manifest. Outside that scoped mode the serialized
+    # substitution in the metadata. Outside that scoped mode the serialized
     # tensor's actual device is the AOTI constant's device.
     if _is_cpu_clone_active() or tensor.device.type == "cuda":
         return AOTI_DEVICE_TYPE_CUDA
@@ -911,7 +911,7 @@ class CudaBackend(AotiBackend, BackendDetails):
     @classmethod
     def _weights_format(cls, compile_specs: List[CompileSpec]) -> str:
         # CUDA consumes the structured AOTI output directly and emits a
-        # versioned per-FQN manifest. This is backend-wide rather than a
+        # versioned per-FQN metadata payload. This is backend-wide rather than a
         # model/export-script option.
         return "pickle_weights"
 
