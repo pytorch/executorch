@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  * Copyright 2023-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -84,9 +86,19 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ET_LOG(Info, "data:%p", processed->data());
+#if defined(ET_EVENT_TRACER_ENABLED)
+    EventTracer* event_tracer = context.event_tracer();
+    EventTracerEntry event_tracer_local_scope;
+#endif
 
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+EthosUBackend::init()processed_data");
     const char* data = static_cast<const char*>(processed->data());
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+
+    ET_LOG(Info, "data:%p", data);
     size_t size = processed->size();
 
     // Verify format of vela_bin
@@ -101,7 +113,18 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       return Error::MemoryAllocationFailed;
     }
 
-    handle->processed = processed;
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+EthosUBackend::init()vela_bin_read()");
+    const Error read_status = vela_bin_read(
+        data, size, context.get_named_data_map(), &handle->handles);
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+    if (read_status != Error::Ok) {
+      delete handle;
+      return read_status;
+    }
+
     handle->platform_state = platform_init(compile_specs, allocator);
 
     // Return the same buffer we were passed - this data will be
@@ -134,30 +157,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
 
     ExecutionHandle* execution_handle =
         static_cast<ExecutionHandle*>(input_handle);
-    VelaHandles handles;
-
-    // Command stream - we know at this point it's aligned
-    EXECUTORCH_PROF_START(
-        event_tracer,
-        event_tracer_local_scope,
-        "+EthosUBackend::execute()processed_data");
-    const char* data =
-        static_cast<const char*>(execution_handle->processed->data());
-    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
-
-    ET_LOG(Debug, "data:%p", data);
-
-    EXECUTORCH_PROF_START(
-        event_tracer,
-        event_tracer_local_scope,
-        "+EthosUBackend::execute()vela_bin_read()");
-    // Read key sections from the vela_bin_stream
-    if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
-        false) {
-      ET_LOG(Error, "vela_read: error, invalid binary layout");
-      return Error::InvalidProgram;
-    }
-    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+    VelaHandles handles = execution_handle->handles;
 
     const int input_count = handles.inputs ? handles.inputs->count : 0;
     const int output_count = handles.outputs ? handles.outputs->count : 0;
@@ -300,6 +300,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   // No platform-specific members.
 };
 
+// cppcheck-suppress unusedFunction
 Error copy_with_layout_adjustment(
     const VelaIO& output_io,
     int output_index,

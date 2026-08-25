@@ -30,6 +30,7 @@
 using executorch::extension::Module;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
+using executorch::runtime::get_device_allocator;
 using executorch::runtime::register_device_allocator;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::testing::MockCudaAllocator;
@@ -40,10 +41,15 @@ class ModuleDeviceMemoryTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     executorch::runtime::runtime_init();
-    register_device_allocator(&g_mock_cuda);
+    // The registry is a process-wide static, so a second registration for the
+    // same device type aborts. Repeat runs re-enter this function.
+    if (get_device_allocator(DeviceType::CUDA) == nullptr) {
+      register_device_allocator(&g_mock_cuda);
+    }
   }
 
   void SetUp() override {
+    g_mock_cuda.fail_allocations_ = false;
     g_mock_cuda.allocate_count_ = 0;
     g_mock_cuda.deallocate_count_ = 0;
     g_mock_cuda.last_allocate_size_ = 0;
@@ -144,6 +150,27 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {
 
   auto err = module.load_method("forward");
   EXPECT_EQ(err, Error::NotSupported);
+}
+
+TEST_F(ModuleDeviceMemoryTest, DeviceAllocationFailureIsReportedNotFatal) {
+  const char* path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
+  ASSERT_NE(path, nullptr) << "ET_MODULE_ADD_WITH_DEVICE_PATH not set";
+
+  // Stand in for a device that is out of memory. The caller gets an error and
+  // the process survives to handle it.
+  g_mock_cuda.fail_allocations_ = true;
+
+  Module module(path);
+  EXPECT_EQ(module.load_method("forward"), Error::MemoryAllocationFailed);
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 0);
+  EXPECT_EQ(g_mock_cuda.deallocate_count_, 0);
+
+  // The failure must not leave the Module half-built: with the device back,
+  // the same call reaches the allocator again.
+  g_mock_cuda.fail_allocations_ = false;
+  (void)module.load_method("forward");
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 1);
 }
 
 TEST_F(

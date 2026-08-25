@@ -18,10 +18,15 @@ class FileBackedData:
 
     _COPY_CHUNK_SIZE = 8 * 1024 * 1024
 
-    def __init__(self, path: str, cleanup: bool = False) -> None:
+    def __init__(
+        self,
+        path: str,
+        cleanup: bool = False,
+        sha256: Optional[bytes] = None,
+    ) -> None:
         self._path = path
         self._size = os.path.getsize(path)
-        self._sha256: Optional[bytes] = None
+        self._sha256 = sha256
         self._finalizer = (
             weakref.finalize(self, self._remove, path) if cleanup else None
         )
@@ -34,7 +39,7 @@ class FileBackedData:
             pass
 
     @classmethod
-    def move_from(cls, path: str) -> "FileBackedData":
+    def move_from(cls, path: str, sha256: Optional[bytes] = None) -> "FileBackedData":
         """Take ownership of ``path`` without loading its contents."""
         directory = os.path.dirname(path) or "."
         fd, owned_path = tempfile.mkstemp(
@@ -46,7 +51,7 @@ class FileBackedData:
         except Exception:
             os.remove(owned_path)
             raise
-        return cls(owned_path, cleanup=True)
+        return cls(owned_path, cleanup=True, sha256=sha256)
 
     def __len__(self) -> int:
         return self._size
