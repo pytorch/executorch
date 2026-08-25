@@ -17,8 +17,14 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type:device",
             "//executorch/runtime/platform:platform",
         ],
+        # aten_device.h needs c10::Device and nothing else, and it only uses it
+        # from inline functions, so plain c10 is enough. Anything wider also
+        # brings in the ATen operator registry and the mobile interpreter. In
+        # build environments where those live in a separate library from c10,
+        # they collide at link time with the copies the application already
+        # links.
         exported_external_deps = [
-            "libtorch",
+            "c10",
         ],
     )
 

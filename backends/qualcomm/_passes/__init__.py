@@ -18,6 +18,7 @@ from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
 from .decompose_addmm import DecomposeAddmm
 from .decompose_any import DecomposeAny
+from .decompose_as_strided import DecomposeAsStrided
 from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -87,6 +88,7 @@ __all__ = [
     DecomposeAcos,
     DecomposeAddmm,
     DecomposeAny,
+    DecomposeAsStrided,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
