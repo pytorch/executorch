@@ -78,7 +78,7 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
                     ATEN_PERMUTE_COPY,
                     args=(input_of_parent, dims),
                 )
-                new_permute.meta = dict(node.meta)
+                new_permute.meta = node.meta
             node.replace_all_uses_with(new_permute)
 
         return True
