@@ -92,7 +92,7 @@ jobs:
       fail-fast: false
       matrix:
         preset: [linux, pybind, llm]
-        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g2-6-25]
+        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g4-16-62]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         # Excluding specific runner + docker image combinations that don't make sense:
         #   - Excluding the ARM64 gcc image on the x86 runner
@@ -100,7 +100,7 @@ jobs:
         exclude:
           - runner: mt-l-x86iavx512-8-64
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: mt-l-arm64g2-6-25
+          - runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-clang12
     with:
       job-name: build
