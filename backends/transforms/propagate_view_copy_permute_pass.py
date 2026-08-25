@@ -28,6 +28,7 @@ from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
+
 @dataclass(frozen=True)
 class _ForkBranchSplit:
     next_node: torch.fx.Node
@@ -408,9 +409,9 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
 
     def fuse_horizontal(self, graph_module):
         modified = False
-        result = FuseDuplicateUsersPass(
-            self.duplicate_user_fusion_exclusions()
-        ).call(graph_module)
+        result = FuseDuplicateUsersPass(self.duplicate_user_fusion_exclusions()).call(
+            graph_module
+        )
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
