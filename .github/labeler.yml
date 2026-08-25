@@ -13,3 +13,12 @@ ciflow/trunk:
   - any-glob-to-any-file:
     - 'backends/arm/**'
     - 'examples/arm/**'
+
+# Same paths docker-builds triggers on, so a PR that touches the images still
+# rebuilds them without the pull_request trigger it used to rely on.
+ciflow/docker:
+- changed-files:
+  - any-glob-to-any-file:
+    - '.ci/docker/**'
+    - '.github/workflows/docker-builds.yml'
+    - 'requirements-lintrunner.txt'
