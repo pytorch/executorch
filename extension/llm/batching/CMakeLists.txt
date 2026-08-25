@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Batched LLM serving: the step scheduler, and the runner that drives batches
-# through a model. Currently header-only and free of ExecuTorch runtime types,
-# so it is an INTERFACE target; this becomes a real library once the runner
+# Batched LLM serving: the scheduler that packs batches, and the executor seam
+# they run through. Both are header-only and free of ExecuTorch runtime types,
+# so this is an INTERFACE target; it becomes a real library once the runner
 # lands with a .cpp.
 
 if(NOT EXECUTORCH_ROOT)
