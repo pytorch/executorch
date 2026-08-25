@@ -17,19 +17,9 @@
 
 #include <gtest/gtest.h>
 
-#include <cstring>
-#include <vector>
-
 using namespace ::testing;
-using executorch::extension::BufferDataLoader;
-using executorch::extension::FileDataLoader;
-using executorch::extension::FlatTensorDataMap;
-using executorch::extension::FlatTensorHeader;
-using executorch::runtime::DataLoader;
-using executorch::runtime::Error;
-using executorch::runtime::FreeableBuffer;
-using executorch::runtime::Result;
-using executorch::runtime::TensorLayout;
+using namespace executorch::extension;
+using namespace executorch::runtime;
 
 class FlatTensorDataMapTest : public ::testing::Test {
  protected:
