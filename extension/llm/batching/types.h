@@ -8,14 +8,11 @@
 
 #pragma once
 
-// The vocabulary shared by the runner, the scheduler that orders work, and the
-// executor that runs it.
+// The vocabulary shared by the runner, the scheduler, and the executor.
 //
-// An Input is one slice of work for one session -- a decode token, or one
-// chunk of a prompt -- not a whole generation. A Task is an Input plus the
+// An Input is one slice of work for one session, either a decode token or one
+// chunk of a prompt, never a whole generation. A Task is an Input plus the
 // scheduling identity used to order and cancel it.
-//
-// No tensors, no cache, no model, no locks.
 
 #include <cstdint>
 #include <memory>
@@ -32,9 +29,7 @@ using SessionId = std::int64_t;
 using Position = std::int32_t;
 using TaskId = std::int32_t;
 
-
-
-struct SamplingParams {   // per step, all genuinely variable
+struct SamplingParams { // per step, not per generation
   float temperature = 0.0f;
   float top_p = 1.0f;
   std::int32_t top_k = 0;
@@ -46,7 +41,7 @@ struct Input {
 
   // The selected slice is tokens[offset : offset + size]. It starts at the
   // absolute logical position `position + offset`; `position` is the base of
-  // the complete backing vector, not of this individual slice.
+  // the complete backing vector, not of the slice.
   size_t offset;
   size_t size;
 
@@ -84,11 +79,11 @@ struct BatchInput {
   }
 };
 
-// The executor's view of a batch: the work, without the scheduling identity or
-// the completion callback, which are the caller's.
+// The executor's view of a batch: the Inputs, without the tid, cancelled flag,
+// and is_decode that only the runner and scheduler use.
 //
-// Moves each Input out of its Task. The returned inputs preserve task order,
-// so outputs[i] answers batch.inputs[i].
+// Moves each Input out of its Task, preserving task order, so outputs[i]
+// answers batch.inputs[i].
 inline BatchInput to_batch_input(std::vector<Task>& tasks) {
   BatchInput batch;
   batch.inputs.reserve(tasks.size());
@@ -101,7 +96,6 @@ inline BatchInput to_batch_input(std::vector<Task>& tasks) {
 struct BatchOutput {
   std::vector<std::optional<Output>> outputs;
 };
-
 
 } // namespace batching
 } // namespace llm
