@@ -14,7 +14,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 add_library(extension_llm_batching INTERFACE)
-# std::optional and std::variant in the public headers.
+# std::optional in the public headers.
 target_compile_features(extension_llm_batching INTERFACE cxx_std_17)
 target_include_directories(
   extension_llm_batching INTERFACE ${_common_include_directories}
@@ -35,6 +35,7 @@ install(
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/batching
   FILES_MATCHING
   PATTERN "*.h"
+  PATTERN "test" EXCLUDE
 )
 
 if(BUILD_TESTING)
