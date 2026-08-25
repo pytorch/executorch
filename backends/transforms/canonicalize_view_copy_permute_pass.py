@@ -8,8 +8,6 @@ from __future__ import annotations
 from typing import cast, Sequence, Set, Type
 
 import torch
-
-from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.backends.transforms.dim_maps import (
     _dim_equals,
     _is_permutation,
@@ -17,6 +15,8 @@ from executorch.backends.transforms.dim_maps import (
     _normalize_dims,
     ViewMap,
 )
+
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, Node

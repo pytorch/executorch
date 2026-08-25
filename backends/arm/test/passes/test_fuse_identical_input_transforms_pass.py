@@ -10,12 +10,12 @@ from typing import cast, Sequence
 import pytest
 import torch
 from executorch.backends.arm import process_node
+from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.backends.transforms.fuse_identical_input_transforms_pass import (
     FuseIdenticalInputTransformsPass,
     NormalizeTransformInputPlaceholdersPass,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
-from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult, ProxyValue
 from torch.export.exported_program import ExportedProgram

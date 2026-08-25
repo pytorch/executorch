@@ -6,8 +6,11 @@ def define_common_targets():
         srcs = ["VelaBinStream.cpp"],
         exported_headers = ["VelaBinStream.h"],
         visibility = ["PUBLIC"],
-        deps = [
+        exported_deps = [
             "//executorch/runtime/core:core",
+        ],
+        deps = [
+            "//executorch/runtime/core:named_data_map",
         ],
     )
     runtime.cxx_library(

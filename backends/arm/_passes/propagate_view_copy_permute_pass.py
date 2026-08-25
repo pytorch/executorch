@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-
 """TOSA configuration of the shared permute/view propagation passes."""
 
 from collections.abc import Sequence
@@ -14,6 +13,7 @@ from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass as _DownPass,
+    PropagateViewCopyPermutePass as _BasePass,
     PropagateViewCopyPermuteUpPass as _UpPass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -26,7 +26,7 @@ from .remove_permutes_around_elementwise_tosa_ops import (
 )
 
 
-class TosaPropagationOverrides:
+class TosaPropagationOverrides(_BasePass):
     """TOSA-specific answers to the propagation pass's extension points.
 
     Kept apart from the pass itself so the algorithm can be shared with backends
@@ -113,8 +113,6 @@ class TosaPropagationOverrides:
             return False
         scales = node.args[2]
         return not isinstance(scales, Sequence) or len(scales) == 1
-
-
 
 
 class PropagateViewCopyPermuteUpPass(TosaPropagationOverrides, _UpPass, ArmPass):
