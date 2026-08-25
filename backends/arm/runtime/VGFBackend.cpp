@@ -98,15 +98,14 @@ VkResult vkml_allocate_basics(
     VkDevice* device,
     VkQueue* queue,
     VkCommandPool* command_pool,
-    uint32_t* queue_family_index);
+    uint32_t* queue_family_index,
+    bool request_neural_statistics,
+    bool* neural_statistics_device_enabled);
 
 // Helper functions to dump VGF Delegate Boundary Inputs
 constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
 constexpr const char* kVgfDumpInputsAndExitEnv =
     "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
-constexpr const char* kVgfNeuralStatisticsEnv =
-    "EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS";
-
 std::atomic<uint64_t> g_vgf_dump_invocation{0};
 
 bool env_flag_enabled(const char* name) {
@@ -414,6 +413,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     VkResult result;
+    neural_statistics_config_ = get_vgf_neural_statistics_runtime_config();
 
     // Fetch basic vulkan objects once
     result = vkml_allocate_basics(
@@ -422,7 +422,9 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         &vk_device,
         &vk_queue,
         &vk_command_pool,
-        &vk_queue_family_index);
+        &vk_queue_family_index,
+        neural_statistics_config_.requested,
+        &neural_statistics_device_enabled_);
     if (result != VK_SUCCESS) {
       ET_LOG(
           Error, "Failed to initialize the Vulkan device error 0x%08X", result);
@@ -508,7 +510,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         vk_device,
         vk_queue,
         vk_command_pool,
-        vk_queue_family_index);
+        vk_queue_family_index,
+        neural_statistics_config_.requested,
+        neural_statistics_device_enabled_,
+        neural_statistics_config_.mode_index);
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, allocate_repr_event);
@@ -683,7 +688,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
 
-    if (event_tracer != nullptr && env_flag_enabled(kVgfNeuralStatisticsEnv)) {
+    if (event_tracer != nullptr && repr->neural_statistics_requested()) {
       // We attach the neural statistics JSON blob to ETDump as delegate
       // metadata, when event tracer is active.
 
@@ -787,6 +792,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   VkQueue vk_queue = VK_NULL_HANDLE;
   VkCommandPool vk_command_pool = VK_NULL_HANDLE;
   uint32_t vk_queue_family_index = UINT32_MAX;
+  VgfNeuralStatisticsRuntimeConfig neural_statistics_config_{};
+  bool neural_statistics_device_enabled_ = false;
   bool is_initialized_ = false;
 };
 
@@ -802,8 +809,14 @@ VkResult vkml_allocate_basics(
     VkDevice* device,
     VkQueue* queue,
     VkCommandPool* command_pool,
-    uint32_t* queue_family_index) {
+    uint32_t* queue_family_index,
+    bool request_neural_statistics,
+    bool* neural_statistics_device_enabled) {
   VkResult result;
+
+  if (neural_statistics_device_enabled != nullptr) {
+    *neural_statistics_device_enabled = false;
+  }
 
   if (VK_SUCCESS != volkInitialize()) {
     ET_LOG(Error, "Volk failed to initialize");
@@ -948,9 +961,21 @@ VkResult vkml_allocate_basics(
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
       .pNext = &available_12,
   };
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+  VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
+      available_neural_statistics{
+          .sType =
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_FEATURES_ARM,
+          .pNext = &available_11,
+          .dataGraphNeuralAcceleratorStatistics = VK_FALSE,
+      };
+  void* available_features_pnext = &available_neural_statistics;
+#else
+  void* available_features_pnext = &available_11;
+#endif
   VkPhysicalDeviceFeatures2 available_2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-      .pNext = &available_11,
+      .pNext = available_features_pnext,
   };
   vkGetPhysicalDeviceFeatures2(*physical_device, &available_2);
 
@@ -992,6 +1017,15 @@ VkResult vkml_allocate_basics(
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM, nullptr};
   features_graph.dataGraph = true;
   features_graph.pNext = &features_tensor;
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+  VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
+      features_neural_statistics{
+          .sType =
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_FEATURES_ARM,
+          .pNext = &features_tensor,
+          .dataGraphNeuralAcceleratorStatistics = VK_FALSE,
+      };
+#endif
 
   VkPhysicalDeviceFeatures device_features = {};
   device_features.shaderInt16 = VK_TRUE;
@@ -1014,6 +1048,54 @@ VkResult vkml_allocate_basics(
       *physical_device, nullptr, &exts, available.data());
 
   vector<const char*> requested_exts;
+
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+  const bool neural_statistics_extension_available = std::any_of(
+      available.begin(), available.end(), [](const auto& ext_avail) {
+        return std::strcmp(
+                   VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_EXTENSION_NAME,
+                   ext_avail.extensionName) == 0;
+      });
+  const bool neural_statistics_feature_available =
+      available_neural_statistics.dataGraphNeuralAcceleratorStatistics ==
+      VK_TRUE;
+  const bool enable_neural_statistics_device = request_neural_statistics &&
+      neural_statistics_extension_available &&
+      neural_statistics_feature_available;
+
+  if (request_neural_statistics && !neural_statistics_extension_available) {
+    ET_LOG(
+        Info,
+        "%s was requested but the Vulkan device does not expose %s",
+        kVgfNeuralStatisticsEnableEnv,
+        VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_EXTENSION_NAME);
+  } else if (
+      request_neural_statistics && !neural_statistics_feature_available) {
+    ET_LOG(
+        Info,
+        "%s was requested but dataGraphNeuralAcceleratorStatistics is not supported",
+        kVgfNeuralStatisticsEnableEnv);
+  }
+
+  if (enable_neural_statistics_device) {
+    requested_exts.push_back(
+        VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_EXTENSION_NAME);
+    features_neural_statistics.dataGraphNeuralAcceleratorStatistics = VK_TRUE;
+    features_graph.pNext = &features_neural_statistics;
+    if (neural_statistics_device_enabled != nullptr) {
+      *neural_statistics_device_enabled = true;
+    }
+  }
+#else
+  if (request_neural_statistics) {
+    ET_LOG(
+        Info,
+        "%s was requested but Vulkan headers do not expose "
+        "VK_ARM_data_graph_neural_accelerator_statistics",
+        kVgfNeuralStatisticsEnableEnv);
+  }
+#endif
+
   for (auto& ext : dev_exts) {
     bool found = false;
     for (auto const& ext_avail : available) {

@@ -251,7 +251,7 @@ class TestPublishedSets(unittest.TestCase):
 
     def test_published_python_versions(self):
         self.assertEqual(
-            FILTER.SUPPORTED_PYTHON_VERSIONS, ["3.10", "3.11", "3.12", "3.13"]
+            FILTER.SUPPORTED_PYTHON_VERSIONS, ["3.10", "3.11", "3.12", "3.13", "3.14"]
         )
 
     def test_the_workflows_offer_exactly_the_published_pythons(self):
