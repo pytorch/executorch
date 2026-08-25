@@ -7,8 +7,8 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    # Split out of :aten_bridge so that ATen-mode code can convert devices.
-    # :aten_bridge itself only compiles in portable mode.
+    # Split out of :aten_bridge, which compiles in portable mode only, so that
+    # ATen mode code can still convert devices.
     runtime.cxx_library(
         name = "aten_device",
         exported_headers = ["aten_device.h"],

@@ -12,13 +12,16 @@
 #include <executorch/runtime/platform/assert.h>
 
 #include <c10/core/Device.h> // @manual=//caffe2/c10:c10
+#include <c10/macros/Macros.h> // @manual=//caffe2/c10:c10
 
 #include <optional>
 
-// These live apart from aten_bridge.h so that a translation unit compiled with
-// USE_ATEN_LIB can convert devices. aten_bridge.h is usable only in portable
-// mode: it names torch::executor::ScalarType and torch::executor::Tensor,
-// aliases that exec_aten.h defines only when it is NOT building against ATen.
+// Kept out of aten_bridge.h, which compiles in portable mode only, so that a
+// translation unit built with USE_ATEN_LIB can still convert devices.
+
+// c10::DeviceType has over twenty values and -Wswitch-enum wants every one
+// listed even with a default. -Wswitch still covers the switch below.
+C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wswitch-enum")
 
 namespace executorch {
 namespace extension {
@@ -65,3 +68,5 @@ torch_to_executorch_device(c10::Device device) {
 
 } // namespace extension
 } // namespace executorch
+
+C10_DIAGNOSTIC_POP()

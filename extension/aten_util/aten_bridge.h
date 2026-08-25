@@ -8,10 +8,9 @@
 
 #pragma once
 
-// Portable mode only. The declarations below name torch::executor::ScalarType
+// Portable mode only: the declarations below name torch::executor::ScalarType
 // and torch::executor::Tensor, which exec_aten.h defines only when it is not
-// building against ATen. For the device conversions, which work either way,
-// include aten_device.h instead.
+// building against ATen. For device conversions either way, use aten_device.h.
 
 #include <executorch/extension/aten_util/aten_device.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -23,7 +22,6 @@
 #include <c10/core/ScalarTypeToTypeMeta.h> // @manual=//caffe2/c10:c10
 
 #include <memory>
-#include <optional>
 #include <vector>
 
 namespace executorch {

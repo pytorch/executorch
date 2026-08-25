@@ -46,9 +46,9 @@ def define_common_targets():
         ],
     )
 
-    # Device is the one portable type that ATen-mode code also needs, so it is
-    # its own library: depending on :portable_type from an ATen-mode target
-    # would drag in the portable Tensor alongside at::Tensor.
+    # device.h is standalone and is the one portable type header that ATen mode
+    # code also needs, so it is split out like :scalar_type below rather than
+    # making a caller that wants only Device depend on every portable type.
     runtime.cxx_library(
         name = "device",
         exported_headers = [
