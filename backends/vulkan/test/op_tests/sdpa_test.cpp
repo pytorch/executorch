@@ -351,6 +351,20 @@ void test_vulkan_sdpa(
     graph.set_kv_cache(offgraph_cache.get());
   }
 
+  // The off-graph op takes and returns [B, H, S, D]; every other mode below is
+  // [B, S, H, D]. The harness stays [B, S, H, D] and swaps at the boundary.
+  const bool bhsd_io = mode == SDPAMode::OFFGRAPH;
+  auto io_sizes = [bhsd_io](const at::Tensor& t) {
+    std::vector<int64_t> sizes = t.sizes().vec();
+    if (bhsd_io) {
+      std::swap(sizes.at(1), sizes.at(2));
+    }
+    return sizes;
+  };
+  auto io_tensor = [bhsd_io](const at::Tensor& t) {
+    return bhsd_io ? t.transpose(1, 2).contiguous() : t;
+  };
+
   // "Data" variant for vulkan initialization
 
   at::Tensor k_cache_data = at::zeros_like(k_cache);
@@ -367,7 +381,7 @@ void test_vulkan_sdpa(
 
 #define MAKE_INPUT_FOR(x)                    \
   IOValueRef r_##x = graph.add_input_tensor( \
-      x.sizes().vec(), from_at_scalartype(x.scalar_type()), storage_type);
+      io_sizes(x), from_at_scalartype(x.scalar_type()), storage_type);
 
   MAKE_INPUT_FOR(q);
   MAKE_INPUT_FOR(k);
@@ -376,7 +390,7 @@ void test_vulkan_sdpa(
 
   const ValueRef r_input_pos_symint = graph.add_symint(start_input_pos);
   const ValueRef r_out = graph.add_tensor(
-      out.sizes().vec(), from_at_scalartype(out.scalar_type()), storage_type);
+      io_sizes(out), from_at_scalartype(out.scalar_type()), storage_type);
 
   switch (mode) {
     case SDPAMode::OFFGRAPH:
@@ -484,20 +498,26 @@ void test_vulkan_sdpa(
   // Run model
   //
 
-#define COPY_INPUT(x)                     \
-  graph.maybe_cast_and_copy_into_staging( \
-      r_##x.staging,                      \
-      x.const_data_ptr(),                 \
-      x.numel(),                          \
-      from_at_scalartype(x.scalar_type()));
+#define COPY_INPUT(x)                              \
+  {                                                \
+    at::Tensor io_##x = io_tensor(x);              \
+    graph.maybe_cast_and_copy_into_staging(        \
+        r_##x.staging,                             \
+        io_##x.const_data_ptr(),                   \
+        io_##x.numel(),                            \
+        from_at_scalartype(io_##x.scalar_type())); \
+  }
 
-#define EXTRACT_TENSOR(x)                             \
-  at::Tensor vk_##x = at::zeros_like(x).contiguous(); \
-  graph.maybe_cast_and_copy_from_staging(             \
-      staging_##x,                                    \
-      vk_##x.mutable_data_ptr(),                      \
-      vk_##x.numel(),                                 \
-      from_at_scalartype(vk_##x.scalar_type()));
+#define EXTRACT_TENSOR(x)                                  \
+  at::Tensor vk_##x = at::zeros(io_sizes(x), x.options()); \
+  graph.maybe_cast_and_copy_from_staging(                  \
+      staging_##x,                                         \
+      vk_##x.mutable_data_ptr(),                           \
+      vk_##x.numel(),                                      \
+      from_at_scalartype(vk_##x.scalar_type()));           \
+  if (bhsd_io) {                                           \
+    vk_##x = vk_##x.transpose(1, 2).contiguous();          \
+  }
 
   torch::manual_seed(0);
 
@@ -515,9 +535,9 @@ void test_vulkan_sdpa(
         q, k, v, k_cache, v_cache, input_pos, seq_len, {}, 0.0, true, {}, mode);
 
     graph.set_symint(r_input_pos_symint, input_pos);
-    graph.resize_input(0, q.sizes().vec());
-    graph.resize_input(1, k.sizes().vec());
-    graph.resize_input(2, v.sizes().vec());
+    graph.resize_input(0, io_sizes(q));
+    graph.resize_input(1, io_sizes(k));
+    graph.resize_input(2, io_sizes(v));
     graph.propagate_resize();
 
     // Run Vulkan SDPA

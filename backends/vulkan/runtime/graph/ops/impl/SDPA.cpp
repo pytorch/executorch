@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Permute.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Softmax.h>
@@ -886,12 +887,52 @@ void update_and_attend_impl(
       utils::kWidthPacked,
       cache->v_buffer(layer));
 
-  update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
-  update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
+  // q/k/v/out are [B, H, S, D] while the pools and the SDPA shaders index
+  // [B, S, H, D], so each crossing swaps the head and sequence dims. The swap
+  // is its own inverse, so one permute_dims value serves both directions.
+  const ValueRef hs_swap = graph.add_scalar_list<int64_t>({0, 2, 1, 3});
+
+  auto swap_hs = [&graph](const ValueRef t) {
+    std::vector<int64_t> sizes = graph.sizes_of(t);
+    std::swap(sizes.at(1), sizes.at(2));
+    return sizes;
+  };
+
+  TmpTensor q_bshd(
+      &graph,
+      swap_hs(q_projected),
+      graph.dtype_of(q_projected),
+      graph.storage_type_of(q_projected),
+      utils::kWidthPacked);
+  TmpTensor k_bshd(
+      &graph,
+      swap_hs(k_projected),
+      graph.dtype_of(k_projected),
+      graph.storage_type_of(k_projected),
+      utils::kWidthPacked);
+  TmpTensor v_bshd(
+      &graph,
+      swap_hs(v_projected),
+      graph.dtype_of(v_projected),
+      graph.storage_type_of(v_projected),
+      utils::kWidthPacked);
+  TmpTensor out_bshd(
+      &graph,
+      swap_hs(out),
+      graph.dtype_of(out),
+      graph.storage_type_of(out),
+      utils::kWidthPacked);
+
+  add_permute_node(graph, q_projected, hs_swap, q_bshd);
+  add_permute_node(graph, k_projected, hs_swap, k_bshd);
+  add_permute_node(graph, v_projected, hs_swap, v_bshd);
+
+  update_cache_impl(graph, {k_bshd, k_cache, input_pos_symint, -1});
+  update_cache_impl(graph, {v_bshd, v_cache, input_pos_symint, -1});
 
   sdpa_impl(
       graph,
-      {q_projected,
+      {q_bshd,
        k_cache,
        v_cache,
        input_pos_symint,
@@ -899,7 +940,9 @@ void update_and_attend_impl(
        kDummyValueRef, // dropout_p
        kDummyValueRef, // is_causal
        scale,
-       out});
+       out_bshd});
+
+  add_permute_node(graph, out_bshd, hs_swap, out);
 }
 
 void compute_attn_weight_with_kv_cache_impl(
