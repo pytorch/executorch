@@ -11,6 +11,8 @@ import copy
 import unittest
 from typing import cast
 
+import executorch.backends.transforms.channels_last_ops  # noqa: F401
+
 import torch
 from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
@@ -124,6 +126,42 @@ class FuseCascadedTransposeOrPermuteOpsTest(unittest.TestCase):
             [torch.randn(3, 1, 3, 1, 4)],
             "FuseCascadedTransposeOrPermuteOps",
         )
+
+    def test_apply_inplace_preserves_identity_and_output_metadata(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4))
+        permute1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        permute2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(permute1, [2, 1, 0])
+        )
+        builder.output([permute2])
+        graph_module = builder.get_graph_module()
+        placeholder = next(
+            node for node in graph_module.graph.nodes if node.op == "placeholder"
+        )
+        placeholder.meta["apply_inplace_test"] = "preserved"
+        placeholder_meta = placeholder.meta
+        output_permute = graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )[1]
+        output_permute.meta["apply_inplace_test"] = "output"
+        output_meta = output_permute.meta
+
+        modified = FuseCascadedTransposeOrPermuteOps().apply_inplace(graph_module)
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+
+        self.assertTrue(modified)
+        self.assertIn(placeholder, graph_module.graph.nodes)
+        self.assertIs(placeholder.meta, placeholder_meta)
+        self.assertEqual(placeholder.meta["apply_inplace_test"], "preserved")
+        fused_permute = graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )[0]
+        self.assertIs(fused_permute.meta, output_meta)
+        self.assertEqual(fused_permute.meta["apply_inplace_test"], "output")
 
     def test_cascaded_permutes_multiple_users(self) -> None:
         builder = GraphBuilder()
@@ -2023,4 +2061,44 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
         self.assertFalse(result.modified)
         self.assertEqual(
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
+
+class LayoutPermuteVisibilityTest(unittest.TestCase):
+    """The data-movement passes must see both permute dialects.
+
+    Before the shared target set these passes matched only
+    ``aten.permute_copy``, so a ``channels_last.permute_copy`` pair inserted by
+    the layout replacement was invisible and survived untouched.
+    """
+
+    def test_inverse_layout_copy_pair_around_elementwise_is_removed(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 2, 3, 4))
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.hardtanh.default, args=(to_nhwc,)
+        )
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(relu, [0, 3, 1, 2]),
+        )
+        builder.output([to_nchw])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.channels_last.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before,
+            gm,
+            (torch.randn(1, 2, 3, 4),),
+            "RemovePermutesAroundElementwiseOps",
         )
