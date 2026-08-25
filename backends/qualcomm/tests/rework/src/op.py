@@ -460,6 +460,72 @@ class Arange(torch.nn.Module):
             )
 
 
+class AsStrided(torch.nn.Module):
+    def __init__(self, size, stride, storage_offset):
+        super().__init__()
+        self.size = size
+        self.stride = stride
+        self.storage_offset = storage_offset
+
+    def forward(self, x):
+        return torch.as_strided(x, self.size, self.stride, self.storage_offset)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        cases = [
+            # Contiguous sub-block from 4x4
+            {
+                "size": [2, 2],
+                "stride": [4, 1],
+                "storage_offset": 0,
+                "input": torch.randn(4, 4),
+            },
+            # Non-contiguous stride + non-zero offset
+            {
+                "size": [2, 3],
+                "stride": [6, 2],
+                "storage_offset": 1,
+                "input": torch.randn(4, 4),
+            },
+            # 1D strided slice
+            {"size": [4], "stride": [2], "storage_offset": 0, "input": torch.randn(8)},
+            # 3D output
+            {
+                "size": [2, 2, 2],
+                "stride": [8, 4, 1],
+                "storage_offset": 0,
+                "input": torch.randn(16),
+            },
+            # Transpose-like (column-major access)
+            {
+                "size": [3, 4],
+                "stride": [1, 3],
+                "storage_offset": 0,
+                "input": torch.randn(3, 4),
+            },
+        ]
+        for case in cases:
+            size, stride, offset, inp = (
+                case["size"],
+                case["stride"],
+                case["storage_offset"],
+                case["input"],
+            )
+            with subtests.test(msg=f"size:{size}, stride:{stride}, offset:{offset}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(
+                            size=size, stride=stride, storage_offset=offset
+                        ),
+                        inputs=(inp,),
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
 class ArgMax(torch.nn.Module):
     def __init__(self, dim, keepdim):
         super().__init__()
