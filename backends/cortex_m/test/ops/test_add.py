@@ -6,6 +6,7 @@
 
 import torch
 from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.cortex_m.quantizer.quantizer_support import BINARY_OP_PATTERNS
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -93,6 +94,18 @@ class CortexMAddReLU(torch.nn.Module):
 
     def forward(self, x, y):
         return self.relu(x + y)
+
+
+class CortexMInplaceAddReLU(CortexMAddReLU):
+    """`out += identity; relu(out)`, the residual block torchvision writes.
+
+    Functionalization maps this onto the same edge ops as the functional
+    spelling, so the inherited counts hold; only the quantizer sees add_.
+    """
+
+    def forward(self, x, y):
+        x += y
+        return torch.relu_(x)
 
 
 class CortexMAddHardtanh(torch.nn.Module):
@@ -207,6 +220,21 @@ test_cases = {
             ramp_tensor(-3, 3, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
+    # Fresh tensors per case: this model rewrites the input it is handed.
+    "inplace_add_relu": McuTestCase(
+        CortexMInplaceAddReLU(),
+        lambda: (
+            ramp_tensor(-5, 5, (2, 4)),
+            ramp_tensor(-3, 3, (2, 4)),
+        ),
+    ),
+    "inplace_add_relu_channels_last": McuTestCase(
+        CortexMInplaceAddReLU(),
+        lambda: (
+            ramp_tensor(-6, 6, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 6, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
     "add_hardtanh": McuTestCase(
         CortexMAddHardtanh(min_val=-0.5, max_val=0.5),
         (
@@ -235,6 +263,20 @@ xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
     "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
     "broadcast_channels_continous": "Broadcasting channels is not supported in continous memory_format in Cortex-M backend.",
 }
+
+
+def test_both_add_spellings_fuse_the_same_activations():
+    """The quantizer matches the in-place spelling separately, so it needs its
+    own entry for every activation the functional one fuses."""
+
+    def followers(op):
+        return {
+            pattern[1]
+            for pattern in BINARY_OP_PATTERNS
+            if len(pattern) == 2 and pattern[0] is op
+        }
+
+    assert followers(torch.ops.aten.add_.Tensor) == followers(torch.ops.aten.add.Tensor)
 
 
 @parametrize("test_case", test_cases, xfails=xfails_dialect)
