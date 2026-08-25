@@ -11,7 +11,7 @@ from typing import Any, Callable, cast, Set, Type
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
-from executorch.backends.arm._passes.dim_maps import (
+from executorch.backends.transforms.dim_maps import (
     _dim_equals,
     PermuteMap,
     same_numel,
