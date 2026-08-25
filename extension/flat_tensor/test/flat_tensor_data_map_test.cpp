@@ -266,3 +266,40 @@ TEST_F(FlatTensorDataMapTest, NewerSchemaVersionFailsToLoad) {
 
   EXPECT_EQ(data_map.error(), Error::InvalidExternalData);
 }
+
+TEST_F(FlatTensorDataMapTest, RejectsOutOfBoundsRootOffset) {
+  // A valid file loads.
+  Result<FreeableBuffer> valid = data_map_loader_->load(
+      0,
+      data_map_loader_->size().get(),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
+  ASSERT_EQ(valid.error(), Error::Ok);
+
+  // Copy it into a max-aligned buffer so we can corrupt the root table offset
+  // without tripping the earlier alignment check. std::vector<uint8_t> only
+  // guarantees 1-byte alignment, so over-allocate and offset to an aligned
+  // start. The first 4 bytes of a (non-size-prefixed) flatbuffer are the
+  // uoffset_t pointing at the root table; the next 4 are the file identifier.
+  constexpr size_t kAlignment = alignof(std::max_align_t);
+  const size_t size = valid->size();
+  std::unique_ptr<uint8_t[]> storage(new uint8_t[size + kAlignment]);
+  const size_t offset =
+      (kAlignment - (reinterpret_cast<uintptr_t>(storage.get()) % kAlignment)) %
+      kAlignment;
+  uint8_t* corrupt = storage.get() + offset;
+  std::memcpy(corrupt, valid->data(), size);
+
+  // Overwrite only the root offset with a value far past the end of the buffer,
+  // leaving the identifier and alignment intact so the corruption is caught by
+  // the root-offset bounds check rather than the identifier or size checks.
+  const uint32_t bad_offset = static_cast<uint32_t>(size) + 0x1000u;
+  std::memcpy(corrupt, &bad_offset, sizeof(bad_offset));
+
+  // Without the bounds check, GetFlatTensor() would return a pointer outside
+  // the buffer and the first field read would walk an out-of-bounds vtable
+  // (a use that ASan flags). With it, load() returns cleanly.
+  BufferDataLoader corrupt_loader(corrupt, size);
+  Result<FlatTensorDataMap> corrupt_map =
+      FlatTensorDataMap::load(&corrupt_loader);
+  ASSERT_EQ(corrupt_map.error(), Error::InvalidExternalData);
+}
