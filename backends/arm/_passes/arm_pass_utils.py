@@ -14,7 +14,7 @@ from typing import cast, Optional, Sequence
 import torch
 import torch.fx
 
-from executorch.backends.transforms.dim_maps import (
+from executorch.backends.arm._passes.dim_maps import (
     _normalize_dims,
     normalize_view_shape,
 )
