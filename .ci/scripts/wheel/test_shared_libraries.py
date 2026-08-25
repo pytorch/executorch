@@ -2343,6 +2343,41 @@ def test_shipped_library_names_are_expected() -> None:
     print(f"✓ {len(shipped)} shipped libraries have expected names and identities")
 
 
+def test_windows_import_library_tracks_the_cuda_delegate() -> None:
+    """The Windows import library ships exactly where the CUDA delegate does.
+
+    It is the link input the delegate uses when lowering for a Windows target, so a
+    wheel without the delegate has no use for it and a CUDA wheel cannot do that
+    lowering without it. Checked here rather than by the symbol tests above, because
+    it is an archive of import stubs rather than a shared object, so nothing that
+    scans shipped libraries sees it. It is also checked in rather than built, which
+    is how it came to ship in every wheel with nothing noticing.
+
+    Keyed on the shim library the wheel actually ships rather than on the version
+    label, because only a published wheel carries a +cuXXX local version and a
+    locally built CUDA wheel would otherwise be told to drop a file it needs. Both
+    files are packaged behind EXECUTORCH_BUILD_CUDA alone, so they arrive together.
+    """
+    package_dir = _installed_package_dir()
+    import_library = package_dir / "data" / "lib" / "aoti_cuda_shims.lib"
+    shim_library = _library_file_name("libaoti_cuda_shims")
+    present = import_library.is_file()
+    if any(
+        path.name.startswith(shim_library)
+        for path in _shipped_shared_objects(package_dir)
+    ):
+        assert present, (
+            f"this CUDA wheel ships no {import_library.name}, so lowering the "
+            "delegate for a Windows target has nothing to link against."
+        )
+    else:
+        assert not present, (
+            f"this wheel ships {import_library.name} but no CUDA delegate, so it "
+            "carries a link stub for a library it does not contain."
+        )
+    print(f"✓ {import_library.name} {'ships' if present else 'is absent'} as expected")
+
+
 _PARITY_MODEL = '''
 import json
 import sys
@@ -2559,6 +2594,7 @@ def run_tests(work_dir: Path) -> None:
     test_declared_dependencies_match_the_wheel_tag()
     test_extension_contains_no_component()
     test_shipped_library_names_are_expected()
+    test_windows_import_library_tracks_the_cuda_delegate()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
     test_custom_op_compiles(work_dir)

@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -66,8 +68,8 @@ namespace arm {
 struct PlatformState;
 
 struct ExecutionHandle {
-  executorch::runtime::FreeableBuffer* processed;
   PlatformState* platform_state;
+  VelaHandles handles{};
 };
 
 extern "C" {

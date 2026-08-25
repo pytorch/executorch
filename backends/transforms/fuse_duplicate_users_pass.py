@@ -7,7 +7,6 @@ from collections import deque
 from typing import Any, Deque, Dict, Hashable, List, Set, Tuple, Type
 
 import torch
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._ops import OpOverload

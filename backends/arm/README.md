@@ -21,7 +21,7 @@ In addition, the following deployment paths are supported by this backend:
   - Full testing is available in tree using Corstone&trade; Fixed Virtual Platforms (FVP).
 - Linux target support for VGF capable targets, using the executor_runner.
 
-More information on TOSA can be found here: https://www.mlplatform.org/tosa/tosa_spec.html.
+More information on TOSA can be found here: https://github.com/arm/tosa-specification.
 
 ## Public API Boundary
 
