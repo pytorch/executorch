@@ -2063,6 +2063,91 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
         )
 
+    def _assert_region_cancels(
+        self, module: torch.nn.Module, inputs: tuple[torch.Tensor, ...]
+    ) -> None:
+        """The region's boundary permutes go away and the values do not change."""
+        module = module.eval()
+        expected = module(*inputs)
+        with torch.no_grad():
+            exported = torch.export.export(module, inputs)
+            edge = to_edge(
+                exported,
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
+            )
+            before = count_node(
+                edge.exported_program().graph_module,
+                exir_ops.edge.aten.permute_copy.default,
+            )
+            transformed = edge.transform([RemovePermutesAroundElementwiseOps()])
+            actual = transformed.exported_program().module()(*inputs)
+
+        after = count_node(
+            transformed.exported_program().graph_module,
+            exir_ops.edge.aten.permute_copy.default,
+        )
+        self.assertLess(after, before, "the boundary permutes should have cancelled")
+        torch.testing.assert_close(actual, expected)
+
+    def test_lower_rank_constant_reorder_preserves_values(self) -> None:
+        """A broadcast constant is widened and permuted, never reinterpreted.
+
+        A view cannot express the reorder -- it reinterprets strides rather than
+        moving elements -- so each rank below the region's needs its own case.
+        """
+
+        class Rank3(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "bias",
+                    torch.arange(4 * 8 * 8, dtype=torch.float32).reshape(4, 8, 8),
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(0, 3, 1, 2) + self.bias).permute(0, 2, 3, 1)
+
+        class Rank2(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "bias", torch.arange(8, dtype=torch.float32).reshape(1, 8)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(2, 0, 1) + self.bias).permute(1, 2, 0)
+
+        class Rank1(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("scale", torch.arange(1.0, 9.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(0, 3, 1, 2) * self.scale).permute(0, 2, 3, 1)
+
+        class EqualExtents(torch.nn.Module):
+            """Two non-unit axes of the same size swap.
+
+            The extents read the same before and after, so only their order
+            distinguishes a reshape from a reorder.
+            """
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "bias", torch.arange(4, dtype=torch.float32).reshape(2, 2)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(0, 1, 3, 2) + self.bias).permute(0, 1, 3, 2)
+
+        self._assert_region_cancels(Rank3(), (torch.randn(1, 8, 8, 4),))
+        self._assert_region_cancels(Rank2(), (torch.randn(8, 8, 8),))
+        self._assert_region_cancels(Rank1(), (torch.randn(1, 8, 8, 8),))
+        self._assert_region_cancels(EqualExtents(), (torch.randn(1, 4, 2, 2),))
+
 
 class LayoutPermuteVisibilityTest(unittest.TestCase):
     """The data-movement passes must see both permute dialects.
