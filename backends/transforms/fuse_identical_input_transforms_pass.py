@@ -6,7 +6,7 @@
 
 import copy
 from collections.abc import Sequence
-from typing import Any, Callable, cast, Set, Type
+from typing import Any, Callable, cast, Iterable, Set, Type
 
 import torch
 from executorch.backends.transforms.dim_maps import (
@@ -26,9 +26,16 @@ from torch.fx import GraphModule, Node
 class NormalizeTransformInputPlaceholdersPass(ExportPass):
     """Normalize placeholder names for lifted transform inputs."""
 
-    def __init__(self, exported_program: ExportedProgram | None = None) -> None:
+    def __init__(
+        self,
+        exported_program: ExportedProgram | None = None,
+        permute_targets: Iterable[Any] | None = None,
+    ) -> None:
         super().__init__()
         self.exported_program = exported_program
+        self._targets = {FuseIdenticalInputTransformsPass._VIEW_TARGET} | frozenset(
+            permute_targets or (FuseIdenticalInputTransformsPass._PERMUTE_TARGET,)
+        )
 
     def call(self, graph_module: GraphModule) -> PassResult:
         return PassResult(
@@ -77,7 +84,7 @@ class NormalizeTransformInputPlaceholdersPass(ExportPass):
         return any(
             self._matches_transform_placeholder_name(node.name, target)
             or self._matches_transform_placeholder_name(str(node.target), target)
-            for target in FuseIdenticalInputTransformsPass._TARGETS
+            for target in self._targets
         )
 
     def _matches_transform_placeholder_name(
@@ -122,7 +129,6 @@ class FuseIdenticalInputTransformsPass(ExportPass):
 
     _VIEW_TARGET = exir_ops.edge.aten.view_copy.default
     _PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
-    _TARGETS = {_VIEW_TARGET, _PERMUTE_TARGET}
     _CONCAT_OPS = {
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.concatenate.default,
@@ -153,13 +159,26 @@ class FuseIdenticalInputTransformsPass(ExportPass):
 
     target_ops = _ELEMENTWISE_OPS | _CONCAT_OPS
 
-    def __init__(self, exported_program: ExportedProgram | None = None) -> None:
+    def __init__(
+        self,
+        exported_program: ExportedProgram | None = None,
+        permute_targets: Iterable[Any] | None = None,
+    ) -> None:
         super().__init__()
         self.exported_program = exported_program
+        # Which targets count as a permute. A backend carrying its own layout
+        # dialect passes them here.
+        self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
+        self._targets = {self._VIEW_TARGET} | self._permute_targets
+
+    def _is_permute(self, node: Node) -> bool:
+        return node.target in self._permute_targets
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = (
-            NormalizeTransformInputPlaceholdersPass(self.exported_program)
+            NormalizeTransformInputPlaceholdersPass(
+                self.exported_program, self._permute_targets
+            )
             .call(graph_module)
             .modified
         )
@@ -196,7 +215,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
         if node_val is None:
             return False
 
-        transforms = [n for n in input_nodes if n.target in self._TARGETS]
+        transforms = [n for n in input_nodes if n.target in self._targets]
         if not transforms:
             return False
         transform = transforms[0]
@@ -212,7 +231,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
 
         # Remove input transforms
         producers = [
-            n.all_input_nodes[0] if n.target in self._TARGETS else n
+            n.all_input_nodes[0] if n.target in self._targets else n
             for n in input_nodes
         ]
 
@@ -222,7 +241,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
             node.replace_input_with(input_transform, producer)
         for input_transform in dict.fromkeys(input_nodes):
             if (
-                input_transform.target in self._TARGETS
+                input_transform.target in self._targets
                 and len(input_transform.users) == 0
             ):
                 node.graph.erase_node(input_transform)
@@ -273,7 +292,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
     def _inputs_share_transform_or_are_layout_invariant(
         self, node: Node, transform: Node, input_nodes: list[Node]
     ) -> bool:
-        transforms = [n for n in input_nodes if n.target in self._TARGETS]
+        transforms = [n for n in input_nodes if n.target in self._targets]
         if not self._transforms_are_identical(transforms):
             return False
         if not self._transforms_only_used_by_node(node, transforms):
@@ -303,7 +322,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
 
     def _transforms_are_identical(self, input_transforms: list[Node]) -> bool:
         target = input_transforms[0].target
-        if target not in self._TARGETS:
+        if target not in self._targets:
             return False
         if not all(
             input_transform.target == target for input_transform in input_transforms
@@ -329,7 +348,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
             tuple(
                 (
                     input_node.all_input_nodes[0]
-                    if input_node.target in self._TARGETS
+                    if input_node.target in self._targets
                     else input_node
                 )
                 .meta["val"]
@@ -352,7 +371,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
             if node_output_shape not in producer_shapes:
                 return None
 
-        if transform.target == self._PERMUTE_TARGET:
+        if self._is_permute(transform):
             dims = cast(Sequence[int], transform.args[1])
             rank = len(node_output_shape)
             normalized_dims = tuple(dim if dim >= 0 else dim + rank for dim in dims)
@@ -394,7 +413,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
                 return None
             transform_args = (node, list(node_val.shape))
 
-        if transform.target == self._PERMUTE_TARGET:
+        if self._is_permute(transform):
             dims = cast(Sequence[int], transform.args[1])
             rank = len(node_output_shape)
             normalized_dims = tuple(dim if dim >= 0 else dim + rank for dim in dims)
@@ -428,7 +447,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
         return dim if isinstance(dim, int) else None
 
     def _mapped_concat_dim(self, transform: Node, concat_dim: int) -> int | None:
-        if transform.target == self._PERMUTE_TARGET:
+        if self._is_permute(transform):
             return PermuteMap(transform).map_dims_inverse(concat_dim)[0]
 
         view_map = ViewMap(transform)

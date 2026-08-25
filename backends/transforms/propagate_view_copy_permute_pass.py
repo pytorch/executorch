@@ -227,7 +227,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             graph_module = result.graph_module
             modified |= result.modified
 
-        result = CanonicalizeViewCopyPermutePass().call(graph_module)
+        result = CanonicalizeViewCopyPermutePass(self._permute_targets).call(
+            graph_module
+        )
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
@@ -697,7 +699,9 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
 
     def fuse_horizontal(self, graph_module):
         modified = False
-        result = FuseIdenticalInputTransformsPass().call(graph_module)
+        result = FuseIdenticalInputTransformsPass(
+            permute_targets=self._permute_targets
+        ).call(graph_module)
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
