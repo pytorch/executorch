@@ -8,9 +8,6 @@ from __future__ import annotations
 from typing import cast, Sequence, Set, Type
 
 import torch
-
-from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
 from executorch.backends.transforms.dim_maps import (
     _dim_equals,
     _is_permutation,
@@ -18,6 +15,8 @@ from executorch.backends.transforms.dim_maps import (
     _normalize_dims,
     ViewMap,
 )
+
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, Node
@@ -27,7 +26,7 @@ from torch.fx.passes.infra.pass_base import PassResult
 _Dim = int | torch.SymInt
 
 
-class CanonicalizeViewCopyPermutePass(ArmPass):
+class CanonicalizeViewCopyPermutePass(ExportPass):
     """Canonicalize view/permute chains.
 
     The pass repeatedly fuses adjacent compatible ops and swaps adjacent
@@ -172,7 +171,8 @@ class CanonicalizeViewCopyPermutePass(ArmPass):
                     input_shape = self._shape(input_node)
 
                     # Permute w/o data movement e.g. [1, 2] -> [2, 1] decomposes to view
-                    # Dynamic views are not supported by TOSA, so only check for static shapes
+                    # Dynamic views are not universally supported, so only
+                    # check static shapes
                     if not any(
                         isinstance(dim, torch.SymInt) for dim in input_shape
                     ) and self._is_singleton_permutation(input_shape, dims):

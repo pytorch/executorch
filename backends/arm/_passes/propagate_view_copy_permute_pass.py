@@ -14,13 +14,15 @@ from typing import Any, cast, Set, Type
 import torch
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_spec
+from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
+    CanonicalizeViewCopyPermutePass,
+)
 from executorch.backends.transforms.dim_maps import PermuteMap, ViewMap
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from .arm_pass import ArmPass
-from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass
 from .fuse_duplicate_users_pass import FuseDuplicateUsersPass
 from .fuse_identical_input_transforms_pass import FuseIdenticalInputTransformsPass
 from .remove_permutes_around_elementwise_tosa_ops import (
