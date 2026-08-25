@@ -14,18 +14,11 @@ from typing import cast, Optional, Sequence
 import torch
 import torch.fx
 
-from executorch.backends.transforms.dim_maps import (
-    _normalize_dims,
-    normalize_view_shape,
-)
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.backends.transforms.permute_view_meta import (  # noqa: F401
-    refresh_permute_view_meta,
-)
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import NodeMetadata
 from torch._export.utils import (
@@ -253,7 +246,6 @@ def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
     plain_meta_dict["input_qparams"] = {}
     plain_meta_dict["output_qparams"] = {}
     return NodeMetadata(plain_meta_dict)
-
 
 
 def insert_scalar(

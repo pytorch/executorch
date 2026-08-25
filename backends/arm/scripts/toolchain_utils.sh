@@ -81,6 +81,13 @@ function musl_select_toolchain() {
         toolchain_dir="aarch64-linux-musl-cross"
         toolchain_md5_checksum="a6bb806af217a91cf575e15163e8b12b"
         toolchain_archive="${toolchain_dir}.tgz"
+    elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
+        # musl.cc serves this fine to developers but has never answered the link
+        # check from a GitHub hosted runner.
+        toolchain_url="https://musl.cc/aarch64-linux-musl-native.tgz" # @lint-ignore
+        toolchain_dir="aarch64-linux-musl-native"
+        toolchain_md5_checksum="56d9325e5fad39ee495dfbba95df17a7"
+        toolchain_archive="${toolchain_dir}.tgz"
     else
         log_step "toolchain" "Error: Unsupported architecture ${ARCH} for musl toolchain"
         exit 1

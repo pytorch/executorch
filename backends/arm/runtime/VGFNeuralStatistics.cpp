@@ -8,6 +8,8 @@
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
@@ -22,6 +24,25 @@ namespace executorch {
 namespace backends {
 namespace vgf {
 namespace {
+
+std::string ascii_lower(const char* value) {
+  std::string normalized = value == nullptr ? "" : value;
+  std::transform(
+      normalized.begin(),
+      normalized.end(),
+      normalized.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return normalized;
+}
+
+bool env_flag_requested(const char* value) {
+  if (value == nullptr || value[0] == '\0') {
+    return false;
+  }
+  const std::string normalized = ascii_lower(value);
+  return normalized != "0" && normalized != "false" && normalized != "off" &&
+      normalized != "no";
+}
 
 // Converts a C++ string into a valid JSON string literal.
 std::string json_escape(const std::string& value) {
@@ -142,11 +163,7 @@ VgfNeuralStatisticsBlob query_pipeline_property(
     return make_unavailable_blob("VkPipeline is null");
   }
 
-#if defined(VK_ARM_data_graph) &&                                                 \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM) && \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM)
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
 
   if (!vkGetDataGraphPipelineAvailablePropertiesARM ||
       !vkGetDataGraphPipelinePropertiesARM) {
@@ -330,12 +347,34 @@ VgfNeuralStatisticsCollectorForTest& test_collector_storage() {
 
 } // namespace
 
+VgfNeuralStatisticsRuntimeConfig get_vgf_neural_statistics_runtime_config() {
+  VgfNeuralStatisticsRuntimeConfig config;
+  config.requested =
+      env_flag_requested(std::getenv(kVgfNeuralStatisticsEnableEnv));
+
+  const char* mode_value = std::getenv(kVgfNeuralStatisticsModeEnv);
+  if (mode_value == nullptr || mode_value[0] == '\0' ||
+      std::strcmp(mode_value, "1") == 0) {
+    config.mode_index = 1;
+    return config;
+  }
+
+  if (std::strcmp(mode_value, "0") == 0) {
+    config.mode_index = 0;
+    return config;
+  }
+
+  ET_LOG(
+      Info,
+      "Invalid %s=%s; expected 0 or 1. Falling back to mode 1.",
+      kVgfNeuralStatisticsModeEnv,
+      mode_value);
+  config.mode_index = 1;
+  return config;
+}
+
 bool vgf_neural_statistics_api_available() {
-#if defined(VK_ARM_data_graph) &&                                                 \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM) && \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM)
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   return vkGetDataGraphPipelineAvailablePropertiesARM != nullptr &&
       vkGetDataGraphPipelinePropertiesARM != nullptr;
 #else
@@ -348,11 +387,7 @@ VgfNeuralStatisticsCollection collect_vgf_neural_statistics(
     const std::vector<VgfNeuralStatisticsSegmentContext>& segments) {
   VgfNeuralStatisticsCollection collection;
 
-#if defined(VK_ARM_data_graph) &&                                                 \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_DEBUG_DATABASE_ARM) && \
-    defined(                                                                      \
-        VK_DATA_GRAPH_PIPELINE_PROPERTY_NEURAL_ACCELERATOR_STATISTICS_INFO_ARM)
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
 
   collection.api_available = vgf_neural_statistics_api_available();
 
