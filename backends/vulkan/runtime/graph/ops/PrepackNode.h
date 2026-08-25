@@ -51,7 +51,6 @@ class PrepackNode final {
  protected:
   uint32_t node_id_;
   const vkapi::ShaderInfo shader_;
-  vkapi::ShaderInfo noop_shader_;
   const utils::uvec3 global_workgroup_size_;
   const utils::WorkgroupSize local_workgroup_size_;
   const ValueRef tref_;
