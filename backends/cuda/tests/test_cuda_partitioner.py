@@ -192,7 +192,7 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             collector.add_preprocess_result(
                 self._parent_result("first_so"), first_artifact, "cuda"
             )
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "different data"):
                 collector.add_preprocess_result(
                     self._parent_result("second_so"), second_artifact, "cuda"
                 )
@@ -201,7 +201,7 @@ class TestCudaLowMemoryExport(unittest.TestCase):
                 for storage in artifact.storages.values():
                     storage.close()
 
-    def test_same_fqn_with_different_metadata_is_rejected(self) -> None:
+    def test_same_fqn_with_different_metadata_shares_storage(self) -> None:
         tensor = torch.arange(4)
         view = tensor.reshape(2, 2)
         with (
@@ -215,13 +215,23 @@ class TestCudaLowMemoryExport(unittest.TestCase):
                 Weights({"weight": (tensor, TensorProperties(view))}), second_dir
             )
             collector = CudaWeightCollector()
-            collector.add_preprocess_result(
-                self._parent_result("first_so"), first_artifact, "cuda"
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            self.assertIs(
+                first_result.data_store_output, second_result.data_store_output
             )
-            with self.assertRaisesRegex(ValueError, "different tensor metadata"):
-                collector.add_preprocess_result(
-                    self._parent_result("second_so"), second_artifact, "cuda"
-                )
+            self.assertNotEqual(
+                first_result.processed_bytes, second_result.processed_bytes
+            )
+            weight_key = first_artifact.entries[0].storage_key
+            self.assertIn(
+                weight_key,
+                first_result.data_store_output.external_data["aoti_cuda_blob"],
+            )
 
             for artifact in (first_artifact, second_artifact):
                 for storage in artifact.storages.values():

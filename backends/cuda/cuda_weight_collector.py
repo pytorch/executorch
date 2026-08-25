@@ -141,7 +141,6 @@ class CudaWeightCollector:
 
     def __init__(self) -> None:
         self._store = NamedDataStore()
-        self._entries: Dict[str, CudaWeightEntry] = {}
         self._results: List[PreprocessResult] = []
 
     @contextlib.contextmanager
@@ -282,23 +281,19 @@ class CudaWeightCollector:
         data: FileBackedData,
         external_tag: str,
     ) -> None:
-        previous = self._entries.get(entry.storage_key)
+        is_duplicate = entry.storage_key in self._store.key_to_buffer_idx
         try:
-            if previous is not None and previous != entry:
-                raise ValueError(
-                    f"Duplicate key {entry.storage_key} with different tensor "
-                    "metadata."
-                )
             self._store.add_named_data(
                 entry.storage_key,
                 data,
                 alignment=1,
                 external_tag=external_tag,
             )
-        finally:
-            if previous is not None:
-                data.close()
-        self._entries.setdefault(entry.storage_key, entry)
+        except Exception:
+            data.close()
+            raise
+        if is_duplicate:
+            data.close()
 
     def add_preprocess_result(
         self,
