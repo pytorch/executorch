@@ -17,12 +17,14 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type:device",
             "//executorch/runtime/platform:platform",
         ],
-        # aten_device.h needs c10::Device and nothing else. The full libtorch
-        # also registers every ATen operator, which duplicates the
-        # selective-build operator library in apps that reach this target
-        # through :aten_bridge, and :aten_bridge is portable mode.
+        # aten_device.h needs c10::Device and nothing else, and it only uses it
+        # from inline functions, so plain c10 is enough. Anything wider also
+        # brings in the ATen operator registry and the mobile interpreter. In
+        # build environments where those live in a separate library from c10,
+        # they collide at link time with the copies the application already
+        # links.
         exported_external_deps = [
-            "torch-core-cpp",
+            "c10",
         ],
     )
 
