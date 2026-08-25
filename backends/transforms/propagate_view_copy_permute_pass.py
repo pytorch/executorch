@@ -28,6 +28,7 @@ from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
+
 @dataclass(frozen=True)
 class _ForkBranchSplit:
     next_node: torch.fx.Node
@@ -346,9 +347,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 else next_node.kwargs.get("keepdim")
             )
             if keep_dim is not True:
-                raise RuntimeError(
-                    f"{self.__class__.__name__} expects keep_dim=True for reduction ops to simplify propagation logic, got {keep_dim} for node {next_node.name}."
-                )
+                # A reduction that drops the dimension changes rank, so the
+                # permutation cannot simply be remapped across it.
+                return False
         return True
 
     def _can_move_through_elementwise(
@@ -408,9 +409,9 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
 
     def fuse_horizontal(self, graph_module):
         modified = False
-        result = FuseDuplicateUsersPass(
-            self.duplicate_user_fusion_exclusions()
-        ).call(graph_module)
+        result = FuseDuplicateUsersPass(self.duplicate_user_fusion_exclusions()).call(
+            graph_module
+        )
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
@@ -746,12 +747,67 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
     ) -> bool:
         if frontier is not node and previous_frontier is None:
             return False
+        if self._fork_split_strands_a_copy(next_nodes):
+            return False
         plan = self._plan_fork_split(node, frontier, next_nodes)
         if plan is None:
             return False
         producer, branch_splits = plan
         self._apply_fork_split(node, frontier, producer, branch_splits)
         return True
+
+    @staticmethod
+    def _fork_split_strands_a_copy(
+        next_nodes: Sequence[torch.fx.Node], search_limit: int = 64
+    ) -> bool:
+        """Whether splitting this fork would leave a copy that cannot be merged.
+
+        After a split, each branch carries its own copy. Two things can merge
+        them again: branches that rejoin have their copies fused at the meeting
+        node, and branches that stay separate have their copies hoisted back to
+        the shared producer on the way up.
+
+        Both work when every branch does the same thing. A fork where some
+        branches rejoin and others do not ends with copies at two different
+        producers -- one below the rejoin, one at the source -- and neither
+        mechanism can bring those together. Upward propagation has no fork
+        split of its own, so it cannot hoist a copy above a rejoin.
+
+        The graph output is not a meeting point; returned values carry
+        independent copies.
+        """
+        if len(next_nodes) < 2:
+            return False
+
+        owner: dict[torch.fx.Node, int] = {}
+        group = list(range(len(next_nodes)))
+
+        def root(i: int) -> int:
+            while group[i] != i:
+                group[i] = group[group[i]]
+                i = group[i]
+            return i
+
+        for index, start in enumerate(next_nodes):
+            frontier = [start]
+            visited = 0
+            while frontier and visited < search_limit:
+                current = frontier.pop()
+                if current.op == "output":
+                    continue
+                visited += 1
+                previous = owner.get(current)
+                if previous is None:
+                    owner[current] = index
+                    frontier.extend(current.users)
+                elif root(previous) != root(index):
+                    group[root(previous)] = root(index)
+
+        sizes: dict[int, int] = {}
+        for index in range(len(next_nodes)):
+            sizes[root(index)] = sizes.get(root(index), 0) + 1
+        # Uniform is fine: one group (all rejoin) or all singletons (all diverge).
+        return len(sizes) > 1 and any(size > 1 for size in sizes.values())
 
     def _plan_fork_split(
         self,
