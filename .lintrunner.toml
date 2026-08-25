@@ -744,6 +744,11 @@ is_formatter = true
 [[linter]]
 code = 'CPP_BANNED_FUNCTIONS'
 include_patterns = [
+    'backends/arm/**/*.c',
+    'backends/arm/**/*.cc',
+    'backends/arm/**/*.cpp',
+    'backends/arm/**/*.h',
+    'backends/arm/**/*.hpp',
     'examples/arm/**/*.c',
     'examples/arm/**/*.cc',
     'examples/arm/**/*.cpp',
