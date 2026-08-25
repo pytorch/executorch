@@ -72,7 +72,7 @@ class QcomChipset(IntEnum):
     SW6100 = 96  # v81
     QCM6490 = 93  # v68
     SM8845 = 97  # v81
-    SA8540 = 62 # v68
+    SA8540 = 62  # v68
 
 
 @dataclass

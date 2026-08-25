@@ -24,6 +24,7 @@ from executorch.backends.qualcomm.utils.utils import dump_context_from_pte
 
 from graphviz import Digraph
 
+
 class DrawGraph:
     def __init__(
         self,
@@ -239,7 +240,6 @@ class QnnHtpProfileArtifacts:
         return reports
 
 
-
 #   Hextimate (compile-time perf estimation) requires SDK >= 2.41. Below that,
 #   qnn-context-binary-generator silently drops the hextimate parameters
 _MIN_SDK_FOR_HEXTIMATE = "2.41"
@@ -264,6 +264,7 @@ class QnnTool:
         - Hextimate: SDK 2.41+ (gate and raise error)
 
     """
+
     def __init__(
         self,
         artifact_dir,
@@ -304,7 +305,9 @@ class QnnTool:
             },
         }
 
-    def _write_config_files(self, backend_extensions: Optional[dict] = None) -> Tuple[str, str]:
+    def _write_config_files(
+        self, backend_extensions: Optional[dict] = None
+    ) -> Tuple[str, str]:
         """Write backend_extension_config.json and config.json in artifact_dir.
 
         Returns (backend_ext_path, config_path).
@@ -313,7 +316,9 @@ class QnnTool:
         if backend_extensions is None:
             backend_extensions = self._get_base_config()["backend_extensions"]
 
-        backend_ext_path = os.path.join(self.artifact_dir, "backend_extension_config.json")
+        backend_ext_path = os.path.join(
+            self.artifact_dir, "backend_extension_config.json"
+        )
         config_path = os.path.join(self.artifact_dir, "config.json")
         with open(backend_ext_path, "w") as f:
             json.dump({"backend_extensions": backend_extensions}, f, indent=4)
@@ -345,20 +350,28 @@ class QnnTool:
 
         cmd = [
             f"{self.qnn_sdk}/bin/{target}/qnn-context-binary-generator",
-            "--backend", f"{self.qnn_sdk}/lib/{target}/libQnnHtp.so",
-            "--model", f"{self.qnn_sdk}/lib/{target}/libQnnModelDlc.so",
-            "--dlc_path", os.path.join(self.artifact_dir, qnn_binary_file),
-            "--config_file", backend_ext_path,
-            "--binary_file", binary_name,
-            "--output_dir", self.artifact_dir,
-            "--profiling_level", "detailed",
-            "--profiling_option", "optrace",
+            "--backend",
+            f"{self.qnn_sdk}/lib/{target}/libQnnHtp.so",
+            "--model",
+            f"{self.qnn_sdk}/lib/{target}/libQnnModelDlc.so",
+            "--dlc_path",
+            os.path.join(self.artifact_dir, qnn_binary_file),
+            "--config_file",
+            backend_ext_path,
+            "--binary_file",
+            binary_name,
+            "--output_dir",
+            self.artifact_dir,
+            "--profiling_level",
+            "detailed",
+            "--profiling_option",
+            "optrace",
         ]
         self._run(cmd, "qnn-context-binary-generator")
         expected = os.path.join(self.artifact_dir, f"{binary_name}.bin")
-        assert os.path.isfile(expected), (
-            f"qnn-context-binary-generator ran but did not produce {expected}"
-        )
+        assert os.path.isfile(
+            expected
+        ), f"qnn-context-binary-generator ran but did not produce {expected}"
 
     def _qnn_net_run(self, graph_name: str) -> None:
         # backend-extensions library path is device-relative when running via adb
@@ -408,7 +421,6 @@ class QnnTool:
             f"{self.artifact_dir}/qnn-profiling-data_0.log"
         ), f"Error: qnn-profiling-data_0.log not found in {self.artifact_dir}"
 
-
     def _qnn_profile_viewer(self, schematic_stem: str, graph_idx: int) -> None:
         # profile-viewer takes its own config schema (`features`), not the
         # device profile schema. Written to the SAME file name because that's
@@ -432,12 +444,16 @@ class QnnTool:
 
         cmd = [
             f"{self.qnn_sdk}/bin/{target}/qnn-profile-viewer",
-            "--config", backend_ext_path,
-            "--schematic", schematic,
+            "--config",
+            backend_ext_path,
+            "--schematic",
+            schematic,
             "--reader",
             f"{self.qnn_sdk}/lib/{target}/libQnnHtpOptraceProfilingReader.so",
-            "--input_log", os.path.join(self.artifact_dir, "qnn-profiling-data_0.log"),
-            "--output", os.path.join(self.artifact_dir, f"optrace_{graph_idx}.json"),
+            "--input_log",
+            os.path.join(self.artifact_dir, "qnn-profiling-data_0.log"),
+            "--output",
+            os.path.join(self.artifact_dir, f"optrace_{graph_idx}.json"),
         ]
         self._run(cmd, "qnn-profile-viewer")
 
@@ -537,9 +553,9 @@ class QnnTool:
         htp_graph_before_json = f"{base}_htp_graph_before.json"
         runtrace_json = f"{base}_runtrace.json"
 
-        assert os.path.isfile(chrometrace_json), (
-            f"qnn-profile-viewer did not produce {chrometrace_json}"
-        )
+        assert os.path.isfile(
+            chrometrace_json
+        ), f"qnn-profile-viewer did not produce {chrometrace_json}"
 
         return QnnHtpProfileArtifacts(
             binary_path=os.path.join(self.artifact_dir, binary_file),
@@ -550,15 +566,12 @@ class QnnTool:
             qhas_html=qhas_html,
             htp_graph_json=htp_graph_json,
             htp_graph_before_json=htp_graph_before_json,
-            runtrace_json=(
-                runtrace_json if os.path.isfile(runtrace_json) else None
-            ),
+            runtrace_json=(runtrace_json if os.path.isfile(runtrace_json) else None),
         )
 
 
 def _validate_pte_profile_level(pte_path: str) -> None:
-    """Assert that any offline-prepare .pte was built with profile_level=3.
-    """
+    """Assert that any offline-prepare .pte was built with profile_level=3."""
     from executorch.exir._serialize._program import deserialize_pte_binary
 
     with open(pte_path, "rb") as f:
@@ -572,15 +585,14 @@ def _validate_pte_profile_level(pte_path: str) -> None:
             options = flatbuffer_to_option(bytes(spec.value))
             if options.online_prepare:
                 continue  # online-prepare: profile_level is set on-host later
-            assert (
-                options.profile_level == QnnExecuTorchProfileLevel.kProfileOptrace
-            ), (
+            assert options.profile_level == QnnExecuTorchProfileLevel.kProfileOptrace, (
                 f"{pte_path} was compiled with online_prepare=False and "
                 f"profile_level={options.profile_level.name}."
                 "HTP Profling (Optrace) feature requires profile_level=3 (kProfileOptrace) "
                 "at build_executorch_binary() time — \n"
                 "Please re-export with qnn_config.profile_level=3, or use online_prepare=True"
             )
+
 
 def _validate_hextimate_soc(soc_id: QcomChipset) -> None:
     if soc_id not in _HEXTIMATE_SUPPORTED_SOCS:
@@ -614,10 +626,7 @@ def _generate_htp_analysis_result(
         workspace=(adb.workspace if adb is not None else None),
     )
 
-    return [
-        qnn_tool.run(mode=mode, binary_file=os.path.basename(f))
-        for f in dumpfiles
-    ]
+    return [qnn_tool.run(mode=mode, binary_file=os.path.basename(f)) for f in dumpfiles]
 
 
 def generate_htp_profile_result(

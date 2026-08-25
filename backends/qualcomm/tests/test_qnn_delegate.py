@@ -7534,7 +7534,9 @@ class TestQNNFloatingPointUtils(TestQNN):
 
     def test_qnn_backend_generate_optrace(self):
         if self.enable_x86_64:
-            self.skipTest("Optrace requires on-device execution; not supported on x86_64 host.")
+            self.skipTest(
+                "Optrace requires on-device execution; not supported on x86_64 host."
+            )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -8621,7 +8623,9 @@ class TestQNNQuantizedUtils(TestQNN):
 
     def test_qnn_backend_generate_optrace(self):
         if self.enable_x86_64:
-            self.skipTest("Optrace requires on-device execution; not supported on x86_64 host.")
+            self.skipTest(
+                "Optrace requires on-device execution; not supported on x86_64 host."
+            )
         if get_backend_type(self.backend) == QnnExecuTorchBackendType.kLpaiBackend:
             self.skipTest("LPAI does not support optrace generation.")
         module = SimpleModel()  # noqa: F405
@@ -8678,7 +8682,9 @@ class TestQNNQuantizedUtils(TestQNN):
 
     def test_qnn_backend_generate_hextimate(self):
         if not self.enable_x86_64:
-            self.skipTest("Hextimate is host-side (compile-time); requires --enable_x86_64.")
+            self.skipTest(
+                "Hextimate is host-side (compile-time); requires --enable_x86_64."
+            )
         if get_backend_type(self.backend) == QnnExecuTorchBackendType.kLpaiBackend:
             self.skipTest("LPAI does not support hextimate generation.")
         module = SimpleModel()  # noqa: F405
@@ -8723,7 +8729,6 @@ class TestQNNQuantizedUtils(TestQNN):
                     "qhas_json=None.",
                 )
                 self.assertTrue(os.path.isfile(a.qhas_html))
-
 
     def test_qnn_backend_seq_mse(self):
         from executorch.backends.qualcomm._passes.seq_mse import SeqMSE

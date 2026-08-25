@@ -78,19 +78,23 @@ def main(args) -> None:
 
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
-            conn.send(json.dumps({
-                "artifacts": [
+            conn.send(
+                json.dumps(
                     {
-                        "binary_path": a.binary_path,
-                        "mode": a.mode,
-                        "prepare_mode": a.prepare_mode,
-                        "chrometrace_json": a.chrometrace_json,
-                        "qhas_json": a.qhas_json,
-                        "qhas_html": a.qhas_html,
+                        "artifacts": [
+                            {
+                                "binary_path": a.binary_path,
+                                "mode": a.mode,
+                                "prepare_mode": a.prepare_mode,
+                                "chrometrace_json": a.chrometrace_json,
+                                "qhas_json": a.qhas_json,
+                                "qhas_html": a.qhas_html,
+                            }
+                            for a in artifacts
+                        ],
                     }
-                    for a in artifacts
-                ],
-            }))
+                )
+            )
         return
 
     try:
