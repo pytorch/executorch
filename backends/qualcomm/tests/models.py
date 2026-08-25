@@ -268,6 +268,17 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class AsStrided(torch.nn.Module):
+    def __init__(self, size, stride, storage_offset=0):
+        super().__init__()
+        self.size = size
+        self.stride = stride
+        self.storage_offset = storage_offset
+
+    def forward(self, x):
+        return torch.as_strided(x, self.size, self.stride, self.storage_offset)
+
+
 class Asinh(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2411,6 +2422,25 @@ class ScaledDotProductAttention(torch.nn.Module):
             query_layer, key_layer, value_layer, attn_mask, scale=self.scale
         )
         return attn_output
+
+
+class ScatterAdd(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter_add(data, self.dim, index, src)
+
+
+class ScatterReduce(torch.nn.Module):
+    def __init__(self, dim=1, reduce="sum"):
+        super().__init__()
+        self.dim = dim
+        self.reduce = reduce
+
+    def forward(self, data, index, src):
+        return data.scatter_reduce(self.dim, index, src, reduce=self.reduce)
 
 
 class ScatterSrc(torch.nn.Module):
