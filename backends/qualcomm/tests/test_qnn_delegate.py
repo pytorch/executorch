@@ -331,6 +331,55 @@ class TestQNNFloatingPointOperator(TestQNN):
                     case[QCOM_MODULE], case[QCOM_SAMPLE_INPUTS]
                 )
 
+    def test_qnn_backend_as_strided(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2], stride=[4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 3], stride=[6, 2], storage_offset=1
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[3, 4], stride=[1, 3], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(3, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(size=[4], stride=[2], storage_offset=0),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(8),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2, 2], stride=[8, 4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(16),)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_asinh(self):
         module = Asinh()  # noqa: F405
         sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
@@ -3401,6 +3450,56 @@ class TestQNNQuantizedOperator(TestQNN):
                     case[QCOM_MODULE], case[QCOM_SAMPLE_INPUTS]
                 )
                 self.lower_module_and_test_output(module, case[QCOM_SAMPLE_INPUTS])
+
+    def test_qnn_backend_as_strided(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2], stride=[4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 3], stride=[6, 2], storage_offset=1
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[3, 4], stride=[1, 3], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(3, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(size=[4], stride=[2], storage_offset=0),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(8),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2, 2], stride=[8, 4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(16),)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_asin(self):
         module = Asin()  # noqa: F405
