@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+#include <executorch/runtime/platform/runtime.h>
 
 namespace vgf = executorch::backends::vgf;
 
@@ -32,6 +33,9 @@ void set_env(const char* name, const char* value) {
 class ScopedNeuralStatisticsEnv {
  public:
   ScopedNeuralStatisticsEnv() {
+    // Reading the runtime config can ET_LOG, which aborts unless the PAL is up.
+    executorch::runtime::runtime_init();
+
     const char* enable = std::getenv(vgf::kVgfNeuralStatisticsEnableEnv);
     const char* mode = std::getenv(vgf::kVgfNeuralStatisticsModeEnv);
     if (enable != nullptr) {
