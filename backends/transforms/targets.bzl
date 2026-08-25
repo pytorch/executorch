@@ -192,6 +192,20 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "dim_maps",
+        srcs = [
+            "dim_maps.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "channels_last_ops",
         srcs = [
             "channels_last_ops.py",
