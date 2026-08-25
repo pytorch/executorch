@@ -8,9 +8,14 @@
 
 #pragma once
 
+// Portable mode only. The declarations below name torch::executor::ScalarType
+// and torch::executor::Tensor, which exec_aten.h defines only when it is not
+// building against ATen. For the device conversions, which work either way,
+// include aten_device.h instead.
+
+#include <executorch/extension/aten_util/aten_device.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/portable_type/device.h>
 
 #include <ATen/Functions.h> // @manual=//caffe2/aten:ATen-cpu
 #include <ATen/Tensor.h> // @manual=//caffe2/aten:ATen-core
@@ -29,19 +34,6 @@ torch::executor::ScalarType torch_to_executorch_scalar_type(
 
 c10::ScalarType executorch_to_torch_scalar_type(
     torch::executor::ScalarType type);
-
-c10::Device executorch_to_torch_device(
-    executorch::runtime::etensor::Device device);
-
-/**
- * Maps a PyTorch device onto the ExecuTorch device naming the same location.
- *
- * Returns nothing for a device this runtime has no type for. That is a valid
- * thing for a caller to ask, so it is reported rather than fatal, and the
- * caller adds the context it has before failing.
- */
-std::optional<executorch::runtime::etensor::Device> torch_to_executorch_device(
-    c10::Device device);
 
 /*
  * @param[in] aten_tensor Input at::Tensor

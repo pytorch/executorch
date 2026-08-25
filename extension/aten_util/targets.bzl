@@ -7,6 +7,21 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Split out of :aten_bridge so that ATen-mode code can convert devices.
+    # :aten_bridge itself only compiles in portable mode.
+    runtime.cxx_library(
+        name = "aten_device",
+        exported_headers = ["aten_device.h"],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type:device",
+            "//executorch/runtime/platform:platform",
+        ],
+        exported_external_deps = [
+            "libtorch",
+        ],
+    )
+
     runtime.cxx_library(
         name = "aten_bridge",
         srcs = ["aten_bridge.cpp"],
@@ -23,6 +38,7 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
         exported_deps = [
+            ":aten_device",
             "//executorch/extension/kernel_util:kernel_util",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/core:core",
