@@ -13,8 +13,8 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
     dequantize_per_tensor_cmsis,
-    is_channels_last,
     is_channel_broadcast,
+    is_channels_last,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,

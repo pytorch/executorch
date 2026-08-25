@@ -58,6 +58,7 @@ def define_arm_tests():
     # Misc tests
     test_files += [
         "misc/test_compile_spec.py",
+        "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
@@ -151,6 +152,16 @@ def define_arm_tests():
                 "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
             ] if test_file == "misc/test_docgen_op_support.py" else []),
         )
+
+    runtime.cxx_test(
+        name = "vela_external_blocks_test",
+        srcs = ["vela_external_blocks_test.cpp"],
+        deps = [
+            "//executorch/backends/arm/runtime:vela_bin_stream",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+        ],
+    )
 
     if not runtime.is_oss and _ENABLE_VGF:
         runtime.cxx_test(
