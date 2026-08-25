@@ -8,10 +8,11 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.passes_utils import (
-    coerce_int_pair,
+    ceil_mode_is_redundant,
     is_channel_broadcast,
     is_channels_last,
     is_foldable_alpha,
+    max_pool2d_params,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
@@ -359,13 +360,19 @@ class CortexMMaxPool2DCheck(PatternCheck):
         return bool(raw)
 
     @classmethod
+    def _ceil_mode_is_redundant(cls, node: Node) -> bool:
+        shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+        return ceil_mode_is_redundant(shape[-2:], *max_pool2d_params(node))
+
+    @classmethod
     def check_pattern(cls, pattern):
         if not pattern:
             return False
         node = pattern[0]
-        raw_dilation = node.args[4] if len(node.args) > 4 else (1, 1)
-        dilation = coerce_int_pair(raw_dilation, (1, 1))
+        dilation = max_pool2d_params(node).dilation
         ceil_mode = cls._pool_arg_as_bool(node, 5, False)
+        if ceil_mode and cls._ceil_mode_is_redundant(node):
+            ceil_mode = False
         if dilation != (1, 1) or ceil_mode:
             meta_custom = node.meta.get("custom", {})
             cortex_m_meta = meta_custom.get("cortex_m", {})

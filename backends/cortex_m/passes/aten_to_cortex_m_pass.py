@@ -7,7 +7,7 @@
 
 import math
 import operator
-from typing import cast, Optional
+from typing import cast
 
 import executorch.backends.cortex_m.ops.operators  # noqa
 import executorch.exir as exir
@@ -18,7 +18,9 @@ from executorch.backends.cortex_m.library import cmsis_nn
 
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,
+    ceil_mode_is_redundant,
     is_foldable_alpha,
+    max_pool2d_params,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
@@ -67,9 +69,9 @@ class AtenToCortexMPass(AtenToDialectPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
-        # RemoveGetItemPass converts max_pool2d_with_indices to max_pool2d. Models
-        # such as GoogleNet and SqueezeNet use configurations unsupported by the
-        # Cortex-M kernel, so restore the portable with-indices fallback for them.
+        # RemoveGetItemPass converts max_pool2d_with_indices to max_pool2d, so
+        # any pool that did not lower has to be put back into the spelling the
+        # portable kernel is registered under.
         max_pool_modified = _restore_max_pool2d_with_indices_fallback(
             result.graph_module
         )
@@ -188,28 +190,8 @@ def _restore_max_pool2d_with_indices_fallback(
 _SOFTMAX_INPUT_INTEGER_BITS = 5
 
 
-def _to_int_pair(
-    value: Argument, default: Optional[tuple[int, int]]
-) -> tuple[int, int]:
-    if value is None:
-        assert default is not None, "Expected default sequence for normalization"
-        return (default[0], default[1])
-
-    try:
-        int_pair = cast(tuple[int, int], value)
-        return int_pair
-    except Exception as exc:
-        raise ValueError(f"Expected a tuple of two integers, got {value}") from exc
-
-
 def _to_bool(value: Argument, default: bool) -> bool:
-    if value is None:
-        return default
-    try:
-        bool_value = cast(bool, value)
-        return bool_value
-    except Exception as exc:
-        raise ValueError(f"Expected a boolean value, got {value}") from exc
+    return default if value is None else bool(value)
 
 
 def _is_quant_per_tensor_qualified(node: Node) -> bool:
@@ -1140,15 +1122,19 @@ def _get_max_pool2d_replacement(
         activation_min = torch.iinfo(torch.int8).min
         activation_max = torch.iinfo(torch.int8).max
 
-    kernel_size = _to_int_pair(node.args[1], None)
-    stride_arg = node.args[2] if len(node.args) > 2 else None
-    stride = _to_int_pair(stride_arg, kernel_size)
-    padding_arg = node.args[3] if len(node.args) > 3 else None
-    padding = _to_int_pair(padding_arg, (0, 0))
-    dilation_arg = node.args[4] if len(node.args) > 4 else None
-    dilation = _to_int_pair(dilation_arg, (1, 1))
+    kernel_size, stride, padding, dilation = max_pool2d_params(node)
     ceil_mode_arg = node.args[5] if len(node.args) > 5 else False
     ceil_mode = _to_bool(ceil_mode_arg, False)
+
+    if ceil_mode and ceil_mode_is_redundant(
+        get_first_fake_tensor(node.all_input_nodes[0]).shape[-2:],
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+    ):
+        # The kernel always floors, which here lands on the same output size.
+        ceil_mode = False
 
     if dilation != (1, 1) or ceil_mode:
         return None

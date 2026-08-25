@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Any, Callable, TypeGuard
+from typing import Any, Callable, NamedTuple, TypeGuard
 
 import torch
 
@@ -183,6 +183,53 @@ def is_foldable_alpha(alpha: Any) -> TypeGuard[int]:
     add before the lowering ever sees the node.
     """
     return isinstance(alpha, int)
+
+
+class MaxPool2dParams(NamedTuple):
+    kernel: tuple[int, int]
+    stride: tuple[int, int]
+    padding: tuple[int, int]
+    dilation: tuple[int, int]
+
+
+def max_pool2d_params(node: Node) -> MaxPool2dParams:
+    """The kernel, stride, padding and dilation of a max_pool2d node.
+
+    stride's schema default is the empty list, meaning "same as the kernel",
+    and export leaves it in place whenever a later argument is named -- which
+    ceil_mode always is. int[1] is a legal spelling of an int[2] argument too.
+    """
+    args = node.args
+    # kernel_size is the one required argument, so it is always present.
+    kernel = coerce_int_pair(args[1], (1, 1))
+    return MaxPool2dParams(
+        kernel,
+        coerce_int_pair(args[2] if len(args) > 2 else None, kernel),
+        coerce_int_pair(args[3] if len(args) > 3 else None, (0, 0)),
+        coerce_int_pair(args[4] if len(args) > 4 else None, (1, 1)),
+    )
+
+
+def ceil_mode_is_redundant(
+    input_hw: torch.Size,
+    kernel: tuple[int, int],
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+) -> bool:
+    """Whether ceil_mode picks the same output size that floor_mode would.
+
+    Rounding up adds a row or column whenever the stride does not divide the
+    span the windows have to cover. The converse does not hold -- aten drops a
+    last window that starts inside the right padding, which can bring the
+    ceiling back to the floor -- so this refuses some it could accept.
+    """
+    if any(not isinstance(n, int) for n in input_hw):
+        return False
+    return all(
+        (n + 2 * p - d * (k - 1) - 1) % s == 0
+        for n, k, s, p, d in zip(input_hw, kernel, stride, padding, dilation)
+    )
 
 
 def is_qualified_int8_node(args) -> bool:

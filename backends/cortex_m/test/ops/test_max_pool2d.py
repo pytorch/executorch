@@ -8,6 +8,7 @@
 
 import torch
 from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.cortex_m.passes.passes_utils import ceil_mode_is_redundant
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -64,6 +65,18 @@ class CortexMMaxPool2dPermutedView(torch.nn.Module):
         return self.pool(x.permute(0, 3, 1, 2))
 
 
+class CortexMMaxPool2dFunctional(torch.nn.Module):
+    ops_before_transforms = CortexMMaxPool2d.ops_before_transforms
+    ops_after_transforms = CortexMMaxPool2d.ops_after_transforms
+
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.kwargs = kwargs
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.max_pool2d(x, **self.kwargs)
+
+
 class CortexMMaxPool2dIndices(torch.nn.Module):
     ops_before_transforms = CortexMMaxPool2d.ops_before_transforms
     ops_after_transforms = CortexMMaxPool2d.ops_after_transforms
@@ -110,6 +123,26 @@ test_cases = {
         CortexMMaxPool2dPermutedView(kernel_size=2, stride=2),
         ((torch.randn(1, 24, 24, 1) * 30),),
     ),
+    # SqueezeNet's pool: ceil_mode is set but 11 - 3 divides by 2, so rounding
+    # up picks the same output size.
+    "maxpool_3x3_s2_ceil_redundant": McuTestCase(
+        CortexMMaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+        (ramp_tensor(-20, 20, (1, 1, 11, 11)),),
+    ),
+    # An odd stride, so the padding term decides the answer, over a 169-element
+    # plane -- past the 127 that aten's channels-last int8 pool accepts, so
+    # this one could not have been written as a fallback case.
+    "maxpool_3x3_s3_pad1_ceil_redundant": McuTestCase(
+        CortexMMaxPool2d(kernel_size=3, stride=3, padding=1, ceil_mode=True),
+        ((torch.randn(1, 8, 13, 13) * 30).to(memory_format=torch.channels_last),),
+    ),
+    # nn.MaxPool2d always fills in a stride; the functional spelling leaves the
+    # schema default of [] in the graph, which only appears once a later
+    # argument is named.
+    "maxpool_3x3_default_stride_ceil": McuTestCase(
+        CortexMMaxPool2dFunctional(kernel_size=3, ceil_mode=True),
+        (ramp_tensor(-20, 20, (1, 1, 12, 12)),),
+    ),
 }
 
 
@@ -117,6 +150,12 @@ fallback_test_cases = {
     "maxpool_3x3_s2_pad1_ceil": McuTestCase(
         CortexMMaxPool2d(kernel_size=3, stride=2, padding=1, ceil_mode=True),
         (ramp_tensor(-10, 10, (1, 1, 4, 4)),),
+    ),
+    # The height divides but the width does not, so the ceiling still adds a
+    # column and the whole pool has to decline.
+    "maxpool_3x3_s2_ceil_one_axis": McuTestCase(
+        CortexMMaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+        (ramp_tensor(-20, 20, (1, 1, 11, 12)),),
     ),
     "maxpool_dilation": McuTestCase(
         CortexMMaxPool2d(kernel_size=2, stride=1, padding=0, dilation=2),
@@ -130,6 +169,48 @@ xfails_max_pool2d: dict[str, xfail_type] = {
         Exception,
     ),
 }
+
+
+def test_ceil_mode_redundancy_reads_every_term():
+    """Each end-to-end case exercises one configuration, leaving every term it
+    does not vary unconstrained."""
+    square = torch.Size([11, 11])
+    assert ceil_mode_is_redundant(square, (3, 3), (2, 2), (0, 0), (1, 1))
+
+    # Height and width are read as themselves: with a per-axis stride, only one
+    # of the two orders divides.
+    assert not ceil_mode_is_redundant(
+        torch.Size([11, 9]), (3, 3), (2, 4), (0, 0), (1, 1)
+    )
+    assert ceil_mode_is_redundant(torch.Size([9, 11]), (3, 3), (2, 4), (0, 0), (1, 1))
+
+    # Padding and dilation both move the span, which only an odd stride notices.
+    ten = torch.Size([10, 10])
+    assert not ceil_mode_is_redundant(ten, (3, 3), (3, 3), (0, 0), (1, 1))
+    assert ceil_mode_is_redundant(ten, (3, 3), (3, 3), (1, 1), (1, 1))
+    assert not ceil_mode_is_redundant(ten, (3, 3), (3, 3), (1, 1), (2, 2))
+
+
+class Identity(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + x
+
+
+def test_ceil_mode_redundancy_declines_a_symbolic_shape():
+    """A symbolic dimension divides symbolically rather than raising, so
+    without the guard the predicate would answer for whichever size happened to
+    be traced and bake that into the kernel. A max pool cannot supply one --
+    export rejects a dynamic spatial dim on it -- so borrow a shape.
+    """
+    exported = torch.export.export(
+        Identity().eval(),
+        (torch.randn(1, 1, 11, 11),),
+        dynamic_shapes=({2: torch.export.Dim("height", min=4, max=32)},),
+    )
+    (placeholder,) = [n for n in exported.graph.nodes if n.op == "placeholder"]
+    shape = placeholder.meta["val"].shape[-2:]
+    assert not all(isinstance(n, int) for n in shape), shape
+    assert not ceil_mode_is_redundant(shape, (3, 3), (2, 2), (0, 0), (1, 1))
 
 
 @parametrize("test_case", test_cases, xfails=xfails_max_pool2d)
