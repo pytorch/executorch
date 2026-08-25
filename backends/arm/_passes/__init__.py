@@ -9,7 +9,9 @@ from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
-from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
+from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (  # noqa
+    CanonicalizeViewCopyPermutePass,
+)
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa

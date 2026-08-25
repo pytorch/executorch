@@ -192,6 +192,38 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "permute_view_meta",
+        srcs = [
+            "permute_view_meta.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":dim_maps",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "canonicalize_view_copy_permute_pass",
+        srcs = [
+            "canonicalize_view_copy_permute_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":dim_maps",
+            ":permute_view_meta",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "dim_maps",
         srcs = [
             "dim_maps.py",
