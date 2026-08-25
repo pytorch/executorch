@@ -663,6 +663,13 @@ lib.define(
     "pad.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
+lib.define(
+    "pad_contiguous(Tensor input, int[] pre_pad, int[] post_pad, int pad_value) -> Tensor"
+)
+lib.define(
+    "pad_contiguous.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
 
 
 _NHWC_INV_ORDER = [0, 3, 1, 2]
@@ -721,6 +728,58 @@ def pad_impl(
         padding.extend([logical_pre[offset + i], logical_post[offset + i]])
     return F.pad(input, padding, mode="constant", value=pad_value)
 
+
+@register_fake("cortex_m::pad_contiguous")  # type: ignore[misc]
+def pad_contiguous_meta(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    del pad_value
+    rank = input.dim()
+    if rank == 0 or rank > 4:
+        raise RuntimeError(
+            f"cortex_m.pad_contiguous expects a rank in [1, 4], got {rank}"
+        )
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError(
+            "cortex_m.pad_contiguous expects four padding values per side"
+        )
+    offset = 4 - rank
+    output_shape = [
+        input.shape[dim] + pre_pad[offset + dim] + post_pad[offset + dim]
+        for dim in range(rank)
+    ]
+    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
+
+
+@impl(lib, "pad_contiguous", "CompositeExplicitAutograd")  # type: ignore[misc]
+def pad_contiguous_impl(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    rank = input.dim()
+    if rank == 0 or rank > 4:
+        raise RuntimeError(
+            f"cortex_m.pad_contiguous expects a rank in [1, 4], got {rank}"
+        )
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError(
+            "cortex_m.pad_contiguous expects four padding values per side"
+        )
+    offset = 4 - rank
+    padding = []
+    for dim in reversed(range(rank)):
+        padding.extend([pre_pad[offset + dim], post_pad[offset + dim]])
+    return F.pad(input, padding, mode="constant", value=pad_value)
+
+
+# ===================================================================
+# QUANTIZED CONV2D OPERATION DEFINITION
+# ===================================================================
 
 lib.define(
     "quantized_conv2d("
