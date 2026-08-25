@@ -224,9 +224,10 @@ auto input = clone_tensor_ptr_to(host_input, DeviceType::CUDA);
 auto result = module.forward(input);
 ```
 
-The device argument defaults to `DeviceType::CPU`, so existing code that wraps host memory
-keeps working unchanged. Leaving it at the default while handing over a device pointer
-produces a CPU-tagged tensor that the delegate rejects.
+The device argument defaults to `DeviceType::CPU` in the overloads that do not take a custom
+deleter, so a plain `from_blob(host_ptr, sizes, type)` still means host memory. The deleter
+overloads require the device to be named. Leaving the device at CPU while handing over a
+device pointer produces a CPU-tagged tensor that the delegate rejects.
 
 **How the delegate decides a tensor is device resident.** Two checks, in this order. First
 the tensor's own `device_type` has to be `CUDA`, which is metadata set by whoever built the

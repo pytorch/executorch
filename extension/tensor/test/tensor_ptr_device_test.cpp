@@ -361,10 +361,12 @@ TEST_F(TensorPtrDeviceTest, LargeTensorRoundtrip) {
   }
 }
 
-// The `device` argument sits immediately after `type` in every factory that
-// takes a raw pointer, so tagging a buffer that already lives on an accelerator
-// never needs the trailing arguments spelled out. Tagging is metadata only: it
-// must not allocate or copy.
+// The `device` argument sits immediately after `type` in the `make_tensor_ptr`
+// and `from_blob` overloads that take a raw pointer, so tagging a buffer that
+// already lives on an accelerator never needs the trailing arguments spelled
+// out. `for_blob` is the exception: it carries no `device` parameter and takes
+// the device through its `.device()` builder method instead. Tagging is
+// metadata only: it must not allocate or copy.
 
 TEST_F(TensorPtrDeviceTest, MakeTensorPtrTagsDeviceAfterType) {
   std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
@@ -519,10 +521,89 @@ TEST_F(TensorPtrDeviceTest, ForBlobBuilderMatchesFromBlob) {
       executorch::aten::ScalarType::Float,
       DeviceType::CUDA);
 
+  // Assert the device absolutely, not just that the two agree. Comparing them
+  // to each other alone would still pass if both paths dropped the device.
+  EXPECT_EQ(built->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+  EXPECT_EQ(direct->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
   EXPECT_EQ(
       built->unsafeGetTensorImpl()->device_type(),
       direct->unsafeGetTensorImpl()->device_type());
   EXPECT_EQ(built->const_data_ptr(), direct->const_data_ptr());
+}
+
+// A tensor built as a view of another tensor has to inherit where that data
+// lives. Aliasing device memory and reporting it as CPU would hand the delegate
+// a pointer it refuses, or worse, one a host memcpy would try to touch.
+TEST_F(TensorPtrDeviceTest, ViewOfDeviceTensorInheritsDeviceAndIndex) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto source = make_tensor_ptr(
+      {2, 2},
+      raw.data(),
+      executorch::aten::ScalarType::Float,
+      Device(DeviceType::CUDA, 1));
+
+  auto view = make_tensor_ptr(*source);
+  auto reshaped = make_tensor_ptr(*source, {4});
+
+  EXPECT_EQ(view->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+  EXPECT_EQ(view->unsafeGetTensorImpl()->device_index(), 1);
+  EXPECT_EQ(reshaped->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+  EXPECT_EQ(reshaped->unsafeGetTensorImpl()->device_index(), 1);
+  EXPECT_EQ(view->const_data_ptr(), raw.data());
+  EXPECT_EQ(reshaped->const_data_ptr(), raw.data());
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 0);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 0);
+}
+
+// Every `from_blob` overload has to carry the device index through, not just
+// the device type. A delegate picks its stream from the index.
+TEST_F(TensorPtrDeviceTest, FromBlobPreservesNonZeroDeviceIndex) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  const auto device = Device(DeviceType::CUDA, 3);
+
+  auto plain = from_blob(
+      raw.data(), {2, 2}, executorch::aten::ScalarType::Float, device);
+  auto strided = from_blob(
+      raw.data(), {2, 2}, {2, 1}, executorch::aten::ScalarType::Float, device);
+
+  EXPECT_EQ(plain->unsafeGetTensorImpl()->device_index(), 3);
+  EXPECT_EQ(strided->unsafeGetTensorImpl()->device_index(), 3);
+
+  bool plain_deleted = false;
+  bool strided_deleted = false;
+  {
+    auto with_deleter = from_blob(
+        raw.data(),
+        {2, 2},
+        executorch::aten::ScalarType::Float,
+        device,
+        [&plain_deleted](void*) { plain_deleted = true; });
+    auto strided_with_deleter = from_blob(
+        raw.data(),
+        {2, 2},
+        {2, 1},
+        executorch::aten::ScalarType::Float,
+        device,
+        [&strided_deleted](void*) { strided_deleted = true; });
+
+    EXPECT_EQ(with_deleter->unsafeGetTensorImpl()->device_index(), 3);
+    EXPECT_EQ(strided_with_deleter->unsafeGetTensorImpl()->device_index(), 3);
+    EXPECT_FALSE(plain_deleted);
+    EXPECT_FALSE(strided_deleted);
+  }
+  EXPECT_TRUE(plain_deleted);
+  EXPECT_TRUE(strided_deleted);
+}
+
+// `FromBlobDefaultsToCpu` above covers the bare overload. The strided overload
+// has its own defaulted `device` parameter, and nothing else exercises it
+// without naming a device explicitly.
+TEST_F(TensorPtrDeviceTest, FromBlobWithStridesDefaultsToCpu) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto strided = from_blob(
+      raw.data(), {2, 2}, {2, 1}, executorch::aten::ScalarType::Float);
+
+  EXPECT_EQ(strided->unsafeGetTensorImpl()->device_type(), DeviceType::CPU);
 }
 
 #endif // USE_ATEN_LIB

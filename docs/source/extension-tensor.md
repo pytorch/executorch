@@ -296,9 +296,14 @@ The `TensorPtr` will call the custom deleter when it is destroyed.
 
 *Wrapping Data That Already Lives on an Accelerator*
 
-`from_blob()` and `make_tensor_ptr()` take the device right after the scalar type. It
-defaults to `DeviceType::CPU`, so host pointers need nothing extra. Pass a different device
-when the pointer you hand over is already accelerator memory, and no copy is made.
+`from_blob()` and `make_tensor_ptr()` take the device right after the scalar type. Pass a
+different device when the pointer you hand over is already accelerator memory, and no copy
+is made.
+
+The device defaults to `DeviceType::CPU` in the overloads that do not take a custom deleter,
+so a plain `from_blob(host_ptr, sizes, type)` keeps meaning host memory. In the deleter
+overloads the device has to be named, as shown in the example above, because a parameter
+with a default cannot come before one without.
 
 ```cpp
 void* device_data = /* allocated with cudaMalloc, or returned by another kernel */;
