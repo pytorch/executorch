@@ -126,6 +126,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers
                         portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
   )
+  executorch_target_link_shared_runtime(_llm_runner)
 
   set_target_properties(
     _llm_runner
@@ -143,6 +144,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
   set_target_properties(
     _llm_runner PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH "${RPATH}"
+  )
+  executorch_target_shared_runtime_path(
+    _llm_runner "extension/llm/runner" "executorch/extension/llm/runner"
   )
   # Add include directories
   target_include_directories(
