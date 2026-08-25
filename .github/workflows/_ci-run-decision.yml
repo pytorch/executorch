@@ -14,9 +14,23 @@ name: CI Run Decision
 #   - pull_request / pull_request_target (use path filter instead)
 #   - push events not matching any of the above (path-filtered runs)
 #
-# See ``viable-strict-gate.yml``: viable/strict only advances on
-# commits where this is true, so the path-filtered fast path doesn't
-# silently advance partial signal.
+# viable/strict eligibility is not decided here. It follows from the
+# ``ciflow/trunk`` tag that ``promote-to-viable-strict.yml`` pushes; see
+# ``viable-strict-gate.yml``.
+#
+# Do not assume promotion makes the depth sample redundant. Seven
+# workflows list ``ciflow/trunk/*`` under ``on.push.tags`` and so re-run
+# from a promotion tag: pull, trunk, apple, windows-msvc, riscv64,
+# qnn-windows-msvc and viable-strict-gate. Only four of those call this
+# workflow. The other seven callers (cuda, cuda-windows, cuda-perf,
+# metal, mlx, rocm, vulkan) do have ciflow tags, but none of them listens
+# for ``ciflow/trunk``, so a promotion tag never starts them, and they
+# hold 32 of the 48 jobs whose ``if:`` gates on ``is-full-run``. Most of
+# those 32 also have a changed-files branch and still run on main when
+# their own paths are touched; the 12 in mlx.yml do not, so for those the
+# depth sample below is the only thing that runs them automatically on a
+# push to main. (``workflow_dispatch`` and ``ciflow/mlx`` can still force
+# them by hand, which is not a substitute for running on main.)
 
 on:
   workflow_call:

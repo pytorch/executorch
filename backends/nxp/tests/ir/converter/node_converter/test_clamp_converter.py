@@ -18,7 +18,6 @@ from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_dir
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator as Ops,
 )
-from executorch.backends.nxp.ops_aliases import AddTensor, Clamp, ExecutorchDelegateCall
 from executorch.backends.nxp.tests.executorch_pipeline import (
     ModelInputSpec,
     to_quantized_edge_program,
@@ -26,6 +25,11 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    AddTensor,
+    Clamp,
+    ExecutorchDelegateCall,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa: F403 F401
 
 
@@ -218,3 +222,24 @@ class TestClamp:
             assert not all(
                 q == dq for q, dq in zip(quant_node.args[1:], dequant_node.args[1:])
             )
+
+    @pytest.mark.parametrize(
+        "bounds",
+        [
+            # The calibration data is in the range [-2, 2), and the quantization will allow the range ~ [-2.9, 3.4].
+            (-3, 3.5),
+            (-3, None),
+            (float("-inf"), 3.5),
+            (None, float("inf")),
+        ],
+    )
+    def test__bounds_looser_than_quantized_range(self, bounds: tuple[int, int]):
+        model = ClampModule(*bounds)
+
+        delegated_ep = to_quantized_edge_program(
+            model,
+            (123,),
+        ).exported_program()
+
+        # Make sure the `hardtanh` was NOT delegated.
+        assert graph_contains_any_of_ops(delegated_ep.graph, [Clamp])

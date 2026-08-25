@@ -13,12 +13,14 @@
  *
  * Some defines used to configure the code:
  *
- * ET_MODEL_PTE_ADDR  - Where in memory/flash your PTE model data is, if
- *                      not set the model is supposed to have been converted to
- *                      a c-array named model_pte and put into model_pte.h
- *                      this is placed in network_model_sec linker section
- *                      that is controlled by your memory mode via the
- *                      ETHOSU_MODEL cmake parameter. This is not used by the
+ * ET_MODEL_PTE_ADDR  - Where in memory/flash your PTE model data is.
+ * ET_MODEL_PTE_SIZE  - Size in bytes of the PTE at ET_MODEL_PTE_ADDR. CMake
+ *                      defaults to the legacy 0x10000000 upper bound.
+ *                      If the address is not set, the model is converted to a
+ *                      c-array named model_pte and put into model_pte.h in the
+ *                      network_model_sec linker section, controlled by your
+ *                      memory mode via the ETHOSU_MODEL cmake parameter. This
+ *                      is not used by the
  *                      semihosting path, which either loads the model from a
  *                      file or can reuse an embedded model with
  *                      ET_COMPILED_PTE.
@@ -172,6 +174,10 @@ unsigned char __attribute__((
 #error "ET_MODEL_PTE_ADDR and ET_COMPILED_PTE are mutually exclusive"
 #endif
 
+#if defined(ET_MODEL_PTE_ADDR) && !defined(ET_MODEL_PTE_SIZE)
+#error "ET_MODEL_PTE_ADDR requires ET_MODEL_PTE_SIZE"
+#endif
+
 #if !defined(ET_MODEL_PTE_ADDR) && !defined(ET_COMPILED_PTE) && \
     !defined(SEMIHOSTING)
 #error \
@@ -193,6 +199,7 @@ unsigned char __attribute__((
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
 using executorch::extension::BufferDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -499,12 +506,19 @@ Error prepare_input_tensors(
             tensor_size);
         err = Error::InvalidArgument;
       } else if (input_evalues[i].isTensor()) {
-        // Copy the data from the input buffer to the tensor
-        Tensor& tensor = input_evalues[i].toTensor();
-        std::memcpy( // NOLINT(memcpy) - Buffer size is checked
-            tensor.mutable_data_ptr<int8_t>(),
+        // set_input copies shape metadata into its method-owned input tensor.
+        // For unplanned inputs it aliases only buffer, which remains valid
+        // through execute(); this temporary TensorImpl is not retained.
+        TensorImpl impl = TensorImpl(
+            tensor_meta->scalar_type(),
+            static_cast<ssize_t>(tensor_meta->sizes().size()),
+            const_cast<TensorImpl::SizesType*>(tensor_meta->sizes().data()),
             buffer,
-            buffer_size);
+            const_cast<TensorImpl::DimOrderType*>(
+                tensor_meta->dim_order().data()));
+        Tensor tensor(&impl);
+        err = method.set_input(tensor, i);
+        ET_CHECK_OK_OR_RETURN_ERROR(err);
       }
     }
 
@@ -609,8 +623,33 @@ struct RunnerContext {
 #if defined(SEMIHOSTING)
   Box<ArmMemoryAllocator> input_file_allocator;
   const char* output_basename = nullptr;
+  bool server_mode = false;
+  std::vector<const char*> input_filenames;
 #endif
 };
+
+#if defined(SEMIHOSTING)
+Error read_input_files(
+    RunnerContext& ctx,
+    const std::vector<const char*>& input_filenames,
+    std::vector<std::pair<char*, size_t>>& input_buffers) {
+  input_buffers.clear();
+  for (size_t i = 0; i < input_filenames.size(); ++i) {
+    auto [buffer, buffer_size] =
+        read_binary_file(input_filenames[i], ctx.input_file_allocator.value());
+    if (buffer == nullptr) {
+      ET_LOG(
+          Error,
+          "Reading input tensor %zu from file %s failed.",
+          i + 1,
+          input_filenames[i]);
+      return Error::AccessFailed;
+    }
+    input_buffers.push_back(std::make_pair(buffer, buffer_size));
+  }
+  return Error::Ok;
+}
+#endif
 
 void runner_init(
     RunnerContext& ctx,
@@ -924,11 +963,11 @@ void log_mem_status(RunnerContext& ctx) {
 #if defined(ET_MODEL_PTE_ADDR)
   ET_LOG(
       Info,
-      "model_pte_program_size:     %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_program_size:     %lu bytes.",
       static_cast<unsigned long>(ctx.program_data_len));
   ET_LOG(
       Info,
-      "model_pte_loaded_size:      %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_loaded_size:      %lu bytes.",
       static_cast<unsigned long>(ctx.model_data_size));
 #else
   ET_LOG(
@@ -1324,6 +1363,48 @@ bool run_model(RunnerContext& ctx, const void* model_data) {
   return model_ok;
 }
 
+#if defined(SEMIHOSTING)
+bool run_model_server(
+    RunnerContext& ctx,
+    const void* model_data,
+    std::vector<std::pair<char*, size_t>>& input_buffers) {
+  ET_LOG(Info, "Running in semihosting server mode.");
+  char line[16];
+  int server_inference_count = 0;
+  while (fgets(line, sizeof(line), stdin) != nullptr) {
+    ctx.input_file_allocator.reset(
+        input_file_allocation_pool_size, input_file_allocation_pool);
+    Error status = read_input_files(ctx, ctx.input_filenames, input_buffers);
+    ET_CHECK_MSG(
+        status == Error::Ok, "Could not reload inputs: 0x%" PRIx32, status);
+
+    status = ::prepare_input_tensors(
+        *ctx.method.value(), ctx.temp_allocator.value(), input_buffers);
+    ET_CHECK_MSG(
+        status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, status);
+
+    StartMeasurements();
+    status = ctx.method.value()->execute();
+    StopMeasurements(1);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Execution of method %s failed with status 0x%" PRIx32,
+        ctx.method_name,
+        status);
+
+    print_outputs(ctx);
+    ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
+    ET_LOG(Info, "SERVER_INFERENCE_DONE %d", server_inference_count++);
+    fflush(stdout);
+    fflush(stderr);
+  }
+
+  bool model_ok = verify_result(ctx, model_data);
+  ET_LOG(Info, "Model run: %d", model_ok);
+  return model_ok;
+}
+#endif
+
 } // namespace
 
 int main(int argc, const char* argv[]) {
@@ -1362,10 +1443,9 @@ int main(int argc, const char* argv[]) {
 
 #if defined(ET_MODEL_PTE_ADDR)
   // Read the PTE from a fixed memory/flash address configured via
-  // -DET_MODEL_PTE_ADDR=<address>. Since the runner does not know the exact
-  // size up front, use a large upper bound for the buffer span.
+  // -DET_MODEL_PTE_ADDR=<address> and -DET_MODEL_PTE_SIZE=<bytes>.
   model_data = reinterpret_cast<const uint8_t*>(ET_MODEL_PTE_ADDR);
-  model_size = 0x10000000;
+  model_size = ET_MODEL_PTE_SIZE;
 #elif defined(ET_COMPILED_PTE)
   model_data = model_pte;
   model_size = sizeof(model_pte);
@@ -1399,6 +1479,7 @@ int main(int argc, const char* argv[]) {
         _exit(1);
       }
       input_buffers.push_back(std::make_pair(buffer, buffer_size));
+      ctx.input_filenames.push_back(input_tensor_filename);
     } else if (std::strcmp(argv[i], "-m") == 0) {
       const char* pte_filename = argv[++i];
       ET_LOG(Info, "Reading pte model from file %s", pte_filename);
@@ -1414,6 +1495,19 @@ int main(int argc, const char* argv[]) {
     } else if (std::strcmp(argv[i], "-o") == 0) {
       // store the base filename to write output to.
       ctx.output_basename = argv[++i];
+    } else if (std::strcmp(argv[i], "--server_mode") == 0) {
+      if (++i >= argc) {
+        ET_LOG(Fatal, "--server_mode requires true or false");
+        return 1;
+      }
+      if (std::strcmp(argv[i], "true") == 0) {
+        ctx.server_mode = true;
+      } else if (std::strcmp(argv[i], "false") == 0) {
+        ctx.server_mode = false;
+      } else {
+        ET_LOG(Fatal, "Invalid --server_mode value: %s", argv[i]);
+        return 1;
+      }
     }
   }
 #endif
@@ -1442,7 +1536,15 @@ int main(int argc, const char* argv[]) {
 
   runner_init(ctx, model_data, model_size, input_buffers);
   bool model_ok = true;
+#if defined(SEMIHOSTING)
+  if (ctx.server_mode) {
+    model_ok = run_model_server(ctx, model_data, input_buffers);
+  } else {
+    model_ok = run_model(ctx, model_data);
+  }
+#else
   model_ok = run_model(ctx, model_data);
+#endif
   ET_LOG(Info, "Model run: %d", model_ok);
 
   log_mem_status(ctx);
