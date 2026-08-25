@@ -251,25 +251,12 @@ class CudaWeightCollector:
         trim_host_memory()
         return CudaWeightArtifact(entries=entries, storages=storages)
 
-    def add_preprocess_result(
+    def _merge_aoti_data(
         self,
-        result: PreprocessResult,
-        artifact: CudaWeightArtifact,
-        device_name: str,
+        parent_store: Any,
+        compatibility_blob_key: Optional[str],
+        keep_compatibility_blob: bool,
     ) -> None:
-        if result.data_store_output is None:
-            raise RuntimeError("CUDA AOTI preprocess returned no named data")
-        try:
-            parent_keys = result.processed_bytes.decode("utf-8").splitlines()
-        except UnicodeDecodeError as error:
-            raise RuntimeError("Malformed CUDA AOTI named-data payload") from error
-        if not parent_keys or not parent_keys[0]:
-            raise RuntimeError("CUDA AOTI payload is missing its shared-object key")
-        so_blob_key = parent_keys[0]
-        compatibility_blob_key = parent_keys[1] if len(parent_keys) > 1 else None
-
-        parent_store = result.data_store_output
-        keep_compatibility_blob = not artifact.storages
         for key, entry in parent_store.pte_data.items():
             if key != compatibility_blob_key or keep_compatibility_blob:
                 self._store.add_named_data(
@@ -289,26 +276,57 @@ class CudaWeightCollector:
                         tensor_layout=entry.tensor_layout,
                     )
 
+    def _add_weight(
+        self,
+        entry: CudaWeightEntry,
+        data: FileBackedData,
+        external_tag: str,
+    ) -> None:
+        previous = self._entries.get(entry.storage_key)
+        try:
+            if previous is not None and previous != entry:
+                raise ValueError(
+                    f"Duplicate key {entry.storage_key} with different tensor "
+                    "metadata."
+                )
+            self._store.add_named_data(
+                entry.storage_key,
+                data,
+                alignment=1,
+                external_tag=external_tag,
+            )
+        finally:
+            if previous is not None:
+                data.close()
+        self._entries.setdefault(entry.storage_key, entry)
+
+    def add_preprocess_result(
+        self,
+        result: PreprocessResult,
+        artifact: CudaWeightArtifact,
+        device_name: str,
+    ) -> None:
+        if result.data_store_output is None:
+            raise RuntimeError("CUDA AOTI preprocess returned no named data")
+        try:
+            parent_keys = result.processed_bytes.decode("utf-8").splitlines()
+        except UnicodeDecodeError as error:
+            raise RuntimeError("Malformed CUDA AOTI named-data payload") from error
+        if not parent_keys or not parent_keys[0]:
+            raise RuntimeError("CUDA AOTI payload is missing its shared-object key")
+        so_blob_key = parent_keys[0]
+        compatibility_blob_key = parent_keys[1] if len(parent_keys) > 1 else None
+
+        parent_store = result.data_store_output
+        self._merge_aoti_data(
+            parent_store,
+            compatibility_blob_key,
+            keep_compatibility_blob=not artifact.storages,
+        )
+
         external_tag = f"aoti_{device_name}_blob"
         for entry in artifact.entries:
-            data = artifact.storages[entry.storage_key]
-            previous = self._entries.get(entry.storage_key)
-            try:
-                if previous is not None and previous != entry:
-                    raise ValueError(
-                        f"Duplicate key {entry.storage_key} with different tensor "
-                        "metadata."
-                    )
-                self._store.add_named_data(
-                    entry.storage_key,
-                    data,
-                    alignment=1,
-                    external_tag=external_tag,
-                )
-            finally:
-                if previous is not None:
-                    data.close()
-            self._entries.setdefault(entry.storage_key, entry)
+            self._add_weight(entry, artifact.storages[entry.storage_key], external_tag)
 
         result.processed_bytes = encode_cuda_weight_metadata(
             so_blob_key, artifact.entries
