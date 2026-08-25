@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import os
 from collections import defaultdict
 from typing import Dict, final, List
 
@@ -19,7 +18,6 @@ from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageInfo,
-    QnnExecuTorchProfileLevel,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,

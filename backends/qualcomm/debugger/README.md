@@ -16,10 +16,10 @@ This section shows how to produce HTP profiling results and inspect the output r
 
 - The most accurate profiling mode is **on device profiling** with `generate_htp_profile_result()`, this requires a connected android device through ADB, see details in section 2.1.
 
-- Another profiling mode is **on host estimiation** with `estimate_htp_profile_result()` this doesn't require a device and can be run on host machine. However the accuracy and soc support might be limited, see details in section 2.2. 
+- Another profiling mode is **on host estimiation** with `estimate_htp_profile_result()` this doesn't require a device and can be run on host machine. However, the accuracy and soc support might be limited, see details in section 2.2. 
 
 
-Different HTP profiling feature support different set of prepare mode, prepare mode is set in AOT config, and decides which format of QNN internal graph is packed in `.pte` file, 
+Different HTP profiling features support different prepare modes, prepare mode is set in AOT config, and decides which format of QNN internal graph is packed in `.pte` file, 
   * On device profiling support both `online_prepare` and `offline_prepare` 
   * On host profiling reqruires `online_prepare`
 
@@ -128,6 +128,9 @@ artifacts = generate_htp_profile_result(
 
 Use `estimate_htp_profile_result()` when you want host-only compile-time performance estimation. This path does not use sample inputs or `adb`.
 
+> [!WARNING]
+> `estimate_htp_profile_result()` hard-errors on SDKs below 2.41 and on unsupported SoCs.
+
 **Demo script**:
 ```bash
 python -m examples.qualcomm.util_scripts.htp_profiling_on_host_hextimate \
@@ -205,17 +208,6 @@ The example scripts already call QAIRT Visualizer after producing artifacts when
 </figure>
 
 For the viewer package, see [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
-
-## Technical Details
-
-### SDK compatibility
-
-| QAIRT SDK version | Optrace | Hextimate |
-|:------------------|:--------|:----------|
-| 2.37 – 2.40       | Supported | **Not supported**  |
-| 2.41 – 2.50       | Supported | Supported |
-
-`estimate_htp_profile_result()` hard-errors on SDKs below 2.41 and on unsupported SoCs.
 
 
 # ExecuTorch QNN Intermediate Output Debugger
