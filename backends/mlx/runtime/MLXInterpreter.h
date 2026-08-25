@@ -1546,6 +1546,11 @@ inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_trunc(const TruncNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, trunc(st.const_tensor_ref(n.x), s));
+}
+
+inline void
 exec_square(const SquareNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, square(st.const_tensor_ref(n.x), s));
 }
@@ -2235,6 +2240,9 @@ class Interpreter {
         break;
       case OpCode::CEIL:
         ops::exec_ceil(std::get<CeilNode>(instr.node), st, s);
+        break;
+      case OpCode::TRUNC:
+        ops::exec_trunc(std::get<TruncNode>(instr.node), st, s);
         break;
       case OpCode::SQUARE:
         ops::exec_square(std::get<SquareNode>(instr.node), st, s);
