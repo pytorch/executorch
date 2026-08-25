@@ -1,3 +1,5 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 # Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -114,6 +116,7 @@ from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass 
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
+from .fold_dyt_alpha_into_lut_pass import FoldDyTAlphaIntoLUTPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
