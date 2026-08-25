@@ -12,7 +12,6 @@ from typing import Any
 
 import torch
 
-from executorch.backends.transforms.channels_last_layout import is_layout_copy
 from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
     FuseCascadedTransposeOrPermuteOps,
 )
@@ -182,7 +181,6 @@ class ToContiguousChannelsLastPass(ExportPass):
             FuseCascadedViewOps(),
             FuseCascadedTransposeOrPermuteOps(can_propagate=self.can_propagate),
             RemovePermutesAroundElementwiseOps(
-                exported_program=self.exported_program,
                 can_propagate=self.can_propagate,
             ),
             FuseTransposeOrPermuteOpPairsPass(can_propagate=self.can_propagate),
@@ -194,7 +192,14 @@ class ToContiguousChannelsLastPass(ExportPass):
     def _layout_copy_nodes(
         graph_module: torch.fx.GraphModule,
     ) -> list[torch.fx.Node]:
-        return [node for node in graph_module.graph.nodes if is_layout_copy(node)]
+        # Diagnostic only: counts the copies formation inserted. Optimization
+        # decisions treat every permute identically.
+        target = exir_ops.edge.channels_last.permute_copy.default
+        return [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "call_function" and node.target == target
+        ]
 
     def _build_report(
         self,
