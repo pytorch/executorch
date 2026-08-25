@@ -11,7 +11,7 @@ import torch
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
-from executorch.backends.arm._passes.dim_maps import (
+from executorch.backends.transforms.dim_maps import (
     _dim_equals,
     _is_permutation,
     _normalize_dim,
