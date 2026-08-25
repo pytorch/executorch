@@ -22,7 +22,7 @@
 #include <executorch/runtime/platform/assert.h>
 
 #ifdef USE_ATEN_LIB
-#include <executorch/extension/aten_util/aten_bridge.h>
+#include <executorch/extension/aten_util/aten_device.h>
 #endif
 
 #include <flatcc/flatcc_types.h>
