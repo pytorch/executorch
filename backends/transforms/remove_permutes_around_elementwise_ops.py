@@ -627,7 +627,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return True
         return False
 
-
     def _get_node_rank(self, node: torch.fx.Node) -> int | None:
         """Return the tensor rank of a node's output, or None if unknown."""
         val = node.meta.get("val")

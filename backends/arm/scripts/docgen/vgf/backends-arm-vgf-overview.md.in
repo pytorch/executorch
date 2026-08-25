@@ -21,7 +21,7 @@ All requirements can be downloaded using `examples/arm/setup.sh --enable-mlsdk-d
 ```
 
 For the AOT flow, compilation of a model to `.pte` format using the VGF backend, the requirements are:
-- [TOSA Serialization Library](https://www.mlplatform.org/tosa/software.html) for serializing the Exir IR graph into TOSA IR.
+- [TOSA Serialization Library](https://gitlab.arm.com/tosa/tosa-tools) for serializing the Exir IR graph into TOSA IR.
 - [ML SDK Model Converter](https://github.com/arm/ai-ml-sdk-model-converter) for converting TOSA flatbuffers to VGF files.
 
 And for building and running your application using the generic executor_runner:

@@ -3179,10 +3179,32 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
 
         # Deepcopy before the pass
         gm_before = copy.deepcopy(gm)
+        original_graph_module = gm
+        original_nodes = list(gm.graph.nodes)
+        empty_slice = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )[0]
+        empty_slice.meta["replace_empty_test"] = "preserved"
+        empty_slice_meta = empty_slice.meta
+        unchanged_slice = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )[1]
+        unchanged_slice_meta = unchanged_slice.meta
 
         result = ReplaceEmptyTensorsWithFullPass().call(gm)
         self.assertTrue(result.modified)
         updated_gm = result.graph_module
+        self.assertIs(updated_gm, original_graph_module)
+        self.assertIs(unchanged_slice.meta, unchanged_slice_meta)
+        self.assertIn(unchanged_slice, updated_gm.graph.nodes)
+        self.assertNotIn(empty_slice, updated_gm.graph.nodes)
+        full = updated_gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.full.default
+        )[0]
+        self.assertIsNot(full.meta, empty_slice_meta)
+        self.assertEqual(full.meta, empty_slice_meta)
+        self.assertEqual(full.meta["replace_empty_test"], "preserved")
+        self.assertEqual(len(list(updated_gm.graph.nodes)), len(original_nodes))
 
         # Validate numerical accuracy
         inputs = [x_input]
