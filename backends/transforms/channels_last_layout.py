@@ -20,13 +20,3 @@ PERMUTE_COPY_TARGETS: frozenset[Target] = frozenset(
 
 def is_permute_copy(node: torch.fx.Node) -> bool:
     return node.op == "call_function" and node.target in PERMUTE_COPY_TARGETS
-
-
-def is_layout_copy(node: torch.fx.Node) -> bool:
-    return node.op == "call_function" and node.target == LAYOUT_PERMUTE_COPY
-
-
-def composed_permute_target(first: torch.fx.Node, second: torch.fx.Node) -> Target:
-    if is_layout_copy(first) and is_layout_copy(second):
-        return LAYOUT_PERMUTE_COPY
-    return ATEN_PERMUTE_COPY

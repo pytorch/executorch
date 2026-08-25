@@ -15,13 +15,10 @@ import torch
 import torch.fx
 from executorch.backends.transforms.channels_last_layout import (
     ATEN_PERMUTE_COPY,
-    is_layout_copy,
     is_permute_copy,
-    LAYOUT_PERMUTE_COPY,
     PERMUTE_COPY_TARGETS,
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
-from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -36,7 +33,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     recognised as a single rank-preserving unit; see _interleave_triple.
 
     ``extra_permutable_ops`` must be layout-equivariant without argument remapping.
-    Layout-boundary propagation applies only to layout-owned dialect copies.
     """
 
     @dataclass()
@@ -53,14 +49,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         constant_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
             default_factory=set
         )
-        # Open boundaries used only for structural layout-copy propagation.
-        input_boundaries: set[tuple[torch.fx.Node, torch.fx.Node, tuple[int, ...]]] = (
-            field(default_factory=set)
-        )
+        # Region values that are also returned. The permute cannot simply be
+        # dropped there, so it is re-inserted on the output edge instead.
         output_boundaries: set[tuple[torch.fx.Node, torch.fx.Node, tuple[int, ...]]] = (
             field(default_factory=set)
         )
-        layout_region: bool = False
         # Per-node expected end permutation (may differ from end_permute
         # when the subgraph contains rank-changing views).
         node_end_permute: dict[torch.fx.Node, list[int]] = field(default_factory=dict)
@@ -76,11 +69,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         self,
         extra_permutable_ops: set | None = None,
         *,
-        exported_program: ExportedProgram | None = None,
         can_propagate: Callable[[torch.fx.Node], bool] | None = None,
     ) -> None:
         super().__init__()
-        self.exported_program = exported_program
         self.can_propagate = can_propagate
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
@@ -360,29 +351,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             start_permute = self.get_permutation(node)
             if start_permute is None:
                 continue
-            layout_region = is_layout_copy(node)
             # Expected end permutation for the subgraph.
             end_permute = [start_permute.index(i) for i in range(len(start_permute))]
-
-            if layout_region:
-                users = list(node.users)
-                if users and all(
-                    self.is_node_permutable(user)
-                    or self._interleave_triple(user) is not None
-                    for user in users
-                ):
-                    subgraph = self.Subgraph(
-                        start_permute,
-                        end_permute,
-                        layout_region=True,
-                    )
-                    if all(
-                        self.visit(user, subgraph, processed_nodes) for user in users
-                    ):
-                        subgraphs_found.append(subgraph)
-                        processed_nodes.update(subgraph.nodes)
-                # Layout boundary movement is atomic across every direct user.
-                continue
 
             # Try direct users first (same-rank matching)
             for user in node.users:
@@ -391,11 +361,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     and self._interleave_triple(user) is None
                 ):
                     continue
-                subgraph = self.Subgraph(
-                    start_permute,
-                    end_permute,
-                    layout_region=layout_region,
-                )
+                subgraph = self.Subgraph(start_permute, end_permute)
                 if self.visit(user, subgraph, processed_nodes):
                     subgraphs_found.append(subgraph)
                     for n in subgraph.nodes:
@@ -425,11 +391,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                             and self._interleave_triple(view_user) is None
                         ):
                             continue
-                        subgraph = self.Subgraph(
-                            adapted_start,
-                            adapted_end,
-                            layout_region=layout_region,
-                        )
+                        subgraph = self.Subgraph(adapted_start, adapted_end)
                         # Include the view in the subgraph
                         subgraph.nodes.add(view_node)
                         subgraph.node_end_permute[view_node] = adapted_end
@@ -448,30 +410,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                             subgraphs_found.append(subgraph)
                             for n in subgraph.nodes:
                                 processed_nodes.add(n)
-
-        for node in permute_nodes:
-            end_permute = self.get_permutation(node)
-            if end_permute is None:
-                continue
-            if not is_layout_copy(node):
-                continue
-            producer = node.args[0] if node.args else None
-            if not isinstance(producer, torch.fx.Node):
-                continue
-            if (
-                not self.is_node_permutable(producer)
-                and self._interleave_triple(producer) is None
-            ):
-                continue
-            start_permute = [end_permute.index(i) for i in range(len(end_permute))]
-            subgraph = self.Subgraph(
-                start_permute,
-                end_permute,
-                layout_region=True,
-            )
-            if self.visit(producer, subgraph, processed_nodes):
-                subgraphs_found.append(subgraph)
-                processed_nodes.update(subgraph.nodes)
 
         modified = False
         for subgraph in subgraphs_found:
@@ -594,8 +532,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                                 continue
                     return False
             elif user.op == "output":
-                if not subgraph.layout_region:
-                    return False
                 subgraph.output_boundaries.add(
                     (users_source, user, tuple(downstream_start))
                 )
@@ -607,11 +543,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 # terminates cleanly, whereas crossing it would leave the region
                 # hunting for an end permute that layout-invariance made moot.
                 continue
-            elif (
-                subgraph.layout_region
-                and self.can_propagate is not None
-                and not self.can_propagate(user)
-            ):
+            elif self.can_propagate is not None and not self.can_propagate(user):
+                # A backend barrier. The region ends here rather than being
+                # abandoned: the permute is re-inserted on this edge so the
+                # barrier still sees the layout it expects.
                 subgraph.output_boundaries.add(
                     (users_source, user, tuple(downstream_start))
                 )
@@ -643,19 +578,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if const_rank < permute_rank and inp.meta.get("val") is None:
                     return False
                 subgraph.constant_edges_in.add((inp, node))
-            elif self._is_user_input(inp):
-                if not subgraph.layout_region or self._get_node_rank(inp) != len(
-                    current_end_permute
-                ):
-                    return False
-                subgraph.input_boundaries.add((inp, node, tuple(current_end_permute)))
-            elif (
-                subgraph.layout_region
-                and self.can_propagate is not None
-                and not self.can_propagate(inp)
-                and self._get_node_rank(inp) == len(current_end_permute)
-            ):
-                subgraph.input_boundaries.add((inp, node, tuple(current_end_permute)))
             elif not self.visit(
                 inp,
                 subgraph,
@@ -705,12 +627,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return True
         return False
 
-    def _is_user_input(self, node: torch.fx.Node) -> bool:
-        if node.op != "placeholder":
-            return False
-        if self.exported_program is not None:
-            return node.name in self.exported_program.graph_signature.user_inputs
-        return not self._is_constant(node)
 
     def _get_node_rank(self, node: torch.fx.Node) -> int | None:
         """Return the tensor rank of a node's output, or None if unknown."""
@@ -766,10 +682,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # Ensure that the subgraph's edges have not been modified by an earlier rewrite before applying changes.
         if not self._subgraph_edges_are_current(subgraph):
             return False
-        if subgraph.layout_region and (
-            not self._boundary_permutations_are_layout_copies(subgraph)
-            or not self._boundary_rewrite_is_cost_safe(subgraph)
-        ):
+        if not self._constant_edges_are_free(subgraph):
             return False
 
         # Nodes belonging to a repeat_interleave triple are rewritten as a unit
@@ -853,11 +766,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if const_rank is not None and const_rank == permute_rank:
                     new_node = graph.create_node(
                         "call_function",
-                        (
-                            LAYOUT_PERMUTE_COPY
-                            if subgraph.layout_region
-                            else ATEN_PERMUTE_COPY
-                        ),
+                        ATEN_PERMUTE_COPY,
                         args=(const_node, node_end_perm),
                     )
                     new_node.meta = {}
@@ -879,13 +788,12 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     continue
             user_node.replace_input_with(const_node, new_node)
 
+        self._insert_output_boundary_permutations(subgraph)
+
         # Skip outgoing permutes.
         for inp, out in subgraph.edges_out:
             assert out.target in PERMUTE_COPY_TARGETS
             out.replace_all_uses_with(inp)
-
-        self._insert_input_boundary_permutations(subgraph)
-        self._insert_output_boundary_permutations(subgraph)
 
         return True
 
@@ -901,20 +809,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         for const_node, user_node in subgraph.constant_edges_in:
             if const_node not in user_node.all_input_nodes:
-                return False
-
-        for input_node, user_node, _ in subgraph.input_boundaries:
-            if input_node not in user_node.all_input_nodes:
-                return False
-            future_occurrences = self._node_argument_count(user_node, input_node)
-            future_occurrences += sum(
-                self._node_argument_count(user_node, permute)
-                for permute, user in subgraph.edges_in
-                if user is user_node
-                and len(permute.args) >= 1
-                and permute.args[0] is input_node
-            )
-            if future_occurrences != 1:
                 return False
 
         for producer, output_node, _ in subgraph.output_boundaries:
@@ -940,6 +834,26 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         return True
 
+    def _insert_output_boundary_permutations(self, subgraph: Subgraph) -> None:
+        if not subgraph.output_boundaries:
+            return
+        groups: dict[tuple[torch.fx.Node, tuple[int, ...]], list[torch.fx.Node]] = {}
+        for producer, output_node, permutation in subgraph.output_boundaries:
+            groups.setdefault((producer, permutation), []).append(output_node)
+
+        graph = next(iter(subgraph.output_boundaries))[0].graph
+        node_order = {node: index for index, node in enumerate(graph.nodes)}
+        for (producer, permutation), outputs in groups.items():
+            first_output = min(outputs, key=node_order.__getitem__)
+            with producer.graph.inserting_before(first_output):
+                new_permute = producer.graph.call_function(
+                    ATEN_PERMUTE_COPY,
+                    args=(producer, list(permutation)),
+                )
+            new_permute.meta = dict(producer.meta)
+            for output in outputs:
+                output.replace_input_with(producer, new_permute)
+
     @staticmethod
     def _node_argument_count(node: torch.fx.Node, target: torch.fx.Node) -> int:
         count = 0
@@ -953,42 +867,15 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         torch.fx.map_arg((node.args, node.kwargs), visit)
         return count
 
-    def _boundary_permutations_are_layout_copies(self, subgraph: Subgraph) -> bool:
-        return all(is_layout_copy(permute) for permute, _ in subgraph.edges_in) and all(
-            is_layout_copy(permute) for _, permute in subgraph.edges_out
-        )
-
-    def _boundary_rewrite_is_cost_safe(self, subgraph: Subgraph) -> bool:
+    def _constant_edges_are_free(self, subgraph: Subgraph) -> bool:
+        """Reject a rewrite that would make a constant need a real permute."""
         for const_node, user_node in subgraph.constant_edges_in:
             node_end_perm = subgraph.node_end_permute.get(
                 user_node, subgraph.end_permute
             )
             if self._constant_transform_requires_data_copy(const_node, node_end_perm):
                 return False
-
-        removed_copies = {
-            permute
-            for permute, _ in subgraph.edges_in
-            if all(user in subgraph.nodes for user in permute.users)
-        } | {permute for _, permute in subgraph.edges_out}
-        new_copy_sources = {
-            (input_node, permutation)
-            for input_node, _, permutation in subgraph.input_boundaries
-        } | {
-            (producer, permutation)
-            for producer, _, permutation in subgraph.output_boundaries
-        }
-
-        if not new_copy_sources:
-            return True
-
-        removed_bytes = [self._static_tensor_bytes(node) for node in removed_copies]
-        new_bytes = [self._static_tensor_bytes(node) for node, _ in new_copy_sources]
-        if any(size is None for size in removed_bytes + new_bytes):
-            return False
-        return sum(cast(int, size) for size in new_bytes) <= sum(
-            cast(int, size) for size in removed_bytes
-        )
+        return True
 
     def _constant_transform_requires_data_copy(
         self, node: torch.fx.Node, permutation: list[int]
@@ -1009,57 +896,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         old_order = [dim for dim, size in enumerate(padded_shape) if size != 1]
         new_order = [dim for dim, size in zip(permutation, output_shape) if size != 1]
         return old_order != new_order
-
-    @staticmethod
-    def _static_tensor_bytes(node: torch.fx.Node) -> int | None:
-        val = node.meta.get("val")
-        if not isinstance(val, torch.Tensor) or not all(
-            isinstance(dim, int) for dim in val.shape
-        ):
-            return None
-        return val.numel() * val.element_size()
-
-    def _insert_input_boundary_permutations(self, subgraph: Subgraph) -> None:
-        if not subgraph.input_boundaries:
-            return
-        assert subgraph.layout_region
-        groups: dict[tuple[torch.fx.Node, tuple[int, ...]], list[torch.fx.Node]] = {}
-        for input_node, user_node, permutation in subgraph.input_boundaries:
-            groups.setdefault((input_node, permutation), []).append(user_node)
-
-        graph = next(iter(subgraph.input_boundaries))[0].graph
-        node_order = {node: index for index, node in enumerate(graph.nodes)}
-        for (input_node, permutation), users in groups.items():
-            first_user = min(users, key=node_order.__getitem__)
-            with input_node.graph.inserting_before(first_user):
-                new_permute = input_node.graph.call_function(
-                    LAYOUT_PERMUTE_COPY,
-                    args=(input_node, list(permutation)),
-                )
-            new_permute.meta = dict(input_node.meta)
-            for user in users:
-                user.replace_input_with(input_node, new_permute)
-
-    def _insert_output_boundary_permutations(self, subgraph: Subgraph) -> None:
-        if not subgraph.output_boundaries:
-            return
-        assert subgraph.layout_region
-        groups: dict[tuple[torch.fx.Node, tuple[int, ...]], list[torch.fx.Node]] = {}
-        for producer, output_node, permutation in subgraph.output_boundaries:
-            groups.setdefault((producer, permutation), []).append(output_node)
-
-        graph = next(iter(subgraph.output_boundaries))[0].graph
-        node_order = {node: index for index, node in enumerate(graph.nodes)}
-        for (producer, permutation), outputs in groups.items():
-            first_output = min(outputs, key=node_order.__getitem__)
-            with producer.graph.inserting_before(first_output):
-                new_permute = producer.graph.call_function(
-                    LAYOUT_PERMUTE_COPY,
-                    args=(producer, list(permutation)),
-                )
-            new_permute.meta = dict(producer.meta)
-            for output in outputs:
-                output.replace_input_with(producer, new_permute)
 
     def update_interleave(
         self,
