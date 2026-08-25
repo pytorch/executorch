@@ -157,8 +157,11 @@ class HierarchicalInplacePassInterface(ExportPass):
             modified |= self._apply_flat_inplace(module)
         return modified
 
+    def apply_inplace(self, graph_module: torch.fx.GraphModule) -> bool:
+        return self._apply_hierarchical_inplace(graph_module)
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        modified = self._apply_hierarchical_inplace(graph_module)
+        modified = self.apply_inplace(graph_module)
         if modified:
             graph_module.graph.eliminate_dead_code()
             graph_module.recompile()
