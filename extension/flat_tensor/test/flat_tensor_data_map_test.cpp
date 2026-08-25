@@ -18,14 +18,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::extension::BufferDataLoader;
-using executorch::extension::FileDataLoader;
-using executorch::extension::FlatTensorDataMap;
-using executorch::runtime::DataLoader;
-using executorch::runtime::Error;
-using executorch::runtime::FreeableBuffer;
-using executorch::runtime::Result;
-using executorch::runtime::TensorLayout;
+using namespace executorch::extension;
+using namespace executorch::runtime;
 
 class FlatTensorDataMapTest : public ::testing::Test {
  protected:
@@ -180,4 +174,95 @@ TEST_F(FlatTensorDataMapTest, LoadAndCheckSize) {
   Result<FlatTensorDataMap> truncated_program =
       FlatTensorDataMap::load(&truncated_loader);
   ASSERT_EQ(truncated_program.error(), Error::InvalidExternalData);
+}
+
+namespace {
+
+constexpr size_t kAlignment = 16;
+
+size_t aligned_up(size_t size) {
+  return (size + kAlignment - 1) & ~(kAlignment - 1);
+}
+
+// Builds the smallest PTD file that FlatTensorDataMap::load() accepts, stamped
+// with the given schema version and holding no data. Follows the layout written
+// by save_ptd(): the header is embedded in the flatbuffer region, so the offset
+// to the root table shifts by the size of the header.
+std::vector<uint8_t> CreateDataWithVersion(uint32_t version) {
+  flatbuffers::FlatBufferBuilder builder;
+  auto flat_tensor = flat_tensor_flatbuffer::CreateFlatTensor(
+      builder,
+      version,
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>{}));
+  builder.Finish(flat_tensor, flat_tensor_flatbuffer::FlatTensorIdentifier());
+
+  const uint8_t* flatbuffer = builder.GetBufferPointer();
+  const size_t flatbuffer_size = builder.GetSize();
+  const size_t header_size =
+      aligned_up(FlatTensorHeader::kHeaderExpectedLength);
+
+  std::vector<uint8_t> data;
+  auto append = [&data](const void* bytes, size_t size) {
+    const uint8_t* begin = static_cast<const uint8_t*>(bytes);
+    data.insert(data.end(), begin, begin + size);
+  };
+
+  uint32_t root_table_offset = *reinterpret_cast<const uint32_t*>(flatbuffer) +
+      static_cast<uint32_t>(header_size);
+  append(&root_table_offset, sizeof(root_table_offset));
+  append(flatbuffer + sizeof(root_table_offset), 4); // File identifier.
+
+  append(FlatTensorHeader::kMagic, sizeof(FlatTensorHeader::kMagic));
+  uint32_t header_length = FlatTensorHeader::kHeaderExpectedLength;
+  append(&header_length, sizeof(header_length));
+  uint64_t header_fields[] = {
+      header_size, // Offset to the flatbuffer.
+      flatbuffer_size,
+      header_size + aligned_up(flatbuffer_size), // Offset to the segments.
+      0, // Segment data size.
+  };
+  append(header_fields, sizeof(header_fields));
+  data.resize(sizeof(root_table_offset) + 4 + header_size, 0);
+
+  // The first eight bytes of the flatbuffer were written above, before the
+  // header.
+  append(flatbuffer + 8, flatbuffer_size - 8);
+  data.resize(header_size + aligned_up(flatbuffer_size), 0);
+
+  return data;
+}
+
+} // namespace
+
+TEST_F(FlatTensorDataMapTest, SupportedSchemaVersionLoads) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion);
+
+  alignas(16) uint8_t aligned_buffer[512];
+  ASSERT_LE(data.size(), sizeof(aligned_buffer));
+  memcpy(aligned_buffer, data.data(), data.size());
+
+  BufferDataLoader loader(aligned_buffer, data.size());
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+
+  EXPECT_EQ(data_map.error(), Error::Ok);
+}
+
+TEST_F(FlatTensorDataMapTest, NewerSchemaVersionFailsToLoad) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion + 1);
+
+  alignas(16) uint8_t aligned_buffer[512];
+  ASSERT_LE(data.size(), sizeof(aligned_buffer));
+  memcpy(aligned_buffer, data.data(), data.size());
+
+  BufferDataLoader loader(aligned_buffer, data.size());
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+
+  EXPECT_EQ(data_map.error(), Error::InvalidExternalData);
 }
