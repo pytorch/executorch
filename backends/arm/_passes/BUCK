@@ -3,15 +3,6 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 fbcode_target(
     _kind = runtime.python_library,
-    name = "dim_maps",
-    srcs = ["dim_maps.py"],
-    deps = [
-        "//executorch/backends/transforms:dim_maps",
-    ],
-)
-
-fbcode_target(
-    _kind = runtime.python_library,
     name = "core",
     srcs = [
         "arm_pass.py",
@@ -19,11 +10,11 @@ fbcode_target(
         "quant_args.py",
     ],
     deps = [
-        ":dim_maps",
         "//executorch/backends/arm:common",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/backends/transforms:dim_maps",
         "//executorch/backends/transforms:utils",
         "//executorch/exir:lib",
     ],
@@ -61,14 +52,13 @@ fbcode_target(
     srcs = glob(["*.py"], exclude = [
         "arm_pass.py",
         "arm_pass_utils.py",
-        "dim_maps.py",
         "quant_args.py",
     ]),
     deps = [
         ":core",
-        ":dim_maps",
         ":arm_pass_manager_base" if runtime.is_oss else ":arm_pass_manager_fb",
         "//executorch/backends/transforms:aten_to_dialect_pass",
+        "//executorch/backends/transforms:dim_maps",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/transforms:convert_conv1d_to_conv2d_pass",

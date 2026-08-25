@@ -390,7 +390,7 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         )
 
 
-class TosaPropagationOverrides:
+class TosaPropagationOverrides(PropagateViewCopyPermutePass):
     """TOSA-specific answers to the propagation pass's extension points.
 
     Kept apart from the pass itself so the algorithm can be shared with backends
