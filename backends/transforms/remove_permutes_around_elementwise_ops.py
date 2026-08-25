@@ -7,12 +7,14 @@
 
 # pyre-unsafe
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import cast
 
 import torch
 import torch.fx
 from executorch.backends.transforms.channels_last_layout import (
+    ATEN_PERMUTE_COPY,
     is_permute_copy,
     PERMUTE_COPY_TARGETS,
 )
@@ -29,6 +31,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     based on the permute's parameter such as mean, cat, and slice.
     The repeat_interleave idiom (unsqueeze -> expand_copy -> merging view_copy) is
     recognised as a single rank-preserving unit; see _interleave_triple.
+
+    ``extra_permutable_ops`` must be layout-equivariant without argument remapping.
     """
 
     @dataclass()
@@ -45,6 +49,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         constant_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
             default_factory=set
         )
+        # Region values that are also returned. The permute cannot simply be
+        # dropped there, so it is re-inserted on the output edge instead.
+        output_boundaries: set[tuple[torch.fx.Node, torch.fx.Node, tuple[int, ...]]] = (
+            field(default_factory=set)
+        )
         # Per-node expected end permutation (may differ from end_permute
         # when the subgraph contains rank-changing views).
         node_end_permute: dict[torch.fx.Node, list[int]] = field(default_factory=dict)
@@ -56,8 +65,14 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             torch.fx.Node, tuple[int, int, torch.fx.Node, torch.fx.Node]
         ] = field(default_factory=dict)
 
-    def __init__(self, extra_permutable_ops: set | None = None) -> None:
+    def __init__(
+        self,
+        extra_permutable_ops: set | None = None,
+        *,
+        can_propagate: Callable[[torch.fx.Node], bool] | None = None,
+    ) -> None:
         super().__init__()
+        self.can_propagate = can_propagate
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.mul.Tensor,
@@ -329,9 +344,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         self._interleave_cache.clear()
         subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
         processed_nodes: set[torch.fx.Node] = set()
-        for node in graph_module.graph.nodes:
-            if not is_permute_copy(node):
-                continue
+        permute_nodes = [
+            node for node in graph_module.graph.nodes if is_permute_copy(node)
+        ]
+        for node in permute_nodes:
             start_permute = self.get_permutation(node)
             if start_permute is None:
                 continue
@@ -516,7 +532,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                                 continue
                     return False
             elif user.op == "output":
-                return False
+                subgraph.output_boundaries.add(
+                    (users_source, user, tuple(downstream_start))
+                )
             elif self._is_permutation_sink_view(user):
                 # The permutation dies at this reshape (see
                 # _is_permutation_sink_view), so terminate the region here with
@@ -525,6 +543,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 # terminates cleanly, whereas crossing it would leave the region
                 # hunting for an end permute that layout-invariance made moot.
                 continue
+            elif self.can_propagate is not None and not self.can_propagate(user):
+                # A backend barrier. The region ends here rather than being
+                # abandoned: the permute is re-inserted on this edge so the
+                # barrier still sees the layout it expects.
+                subgraph.output_boundaries.add(
+                    (users_source, user, tuple(downstream_start))
+                )
             elif not self.visit(
                 user, subgraph, processed_nodes, downstream_end, downstream_start
             ):
@@ -618,6 +643,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return False
 
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
+        if self.can_propagate is not None and not self.can_propagate(node):
+            return False
         if node.target in self._PAD_OPS and not self._is_constant_pad(node):
             return False
         if node.target in self._permutable_ops:
@@ -653,6 +680,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def permute_subgraph(self, subgraph: Subgraph) -> bool:  # noqa: C901
         # Ensure that the subgraph's edges have not been modified by an earlier rewrite before applying changes.
         if not self._subgraph_edges_are_current(subgraph):
+            return False
+        if not self._constant_edges_are_free(subgraph):
             return False
 
         # Nodes belonging to a repeat_interleave triple are rewritten as a unit
@@ -736,9 +765,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if const_rank is not None and const_rank == permute_rank:
                     new_node = graph.create_node(
                         "call_function",
-                        exir_ops.edge.aten.permute_copy.default,
+                        ATEN_PERMUTE_COPY,
                         args=(const_node, node_end_perm),
                     )
+                    new_node.meta = {}
                 elif (
                     const_rank is not None
                     and const_rank < permute_rank
@@ -757,6 +787,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     continue
             user_node.replace_input_with(const_node, new_node)
 
+        self._insert_output_boundary_permutations(subgraph)
+
         # Skip outgoing permutes.
         for inp, out in subgraph.edges_out:
             assert out.target in PERMUTE_COPY_TARGETS
@@ -764,7 +796,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         return True
 
-    def _subgraph_edges_are_current(self, subgraph: Subgraph) -> bool:
+    def _subgraph_edges_are_current(self, subgraph: Subgraph) -> bool:  # noqa: C901
         """Return false if an earlier rewrite invalidated this candidate."""
         for inp, out in subgraph.edges_in:
             if inp.target not in PERMUTE_COPY_TARGETS or inp not in out.all_input_nodes:
@@ -778,6 +810,18 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             if const_node not in user_node.all_input_nodes:
                 return False
 
+        for producer, output_node, _ in subgraph.output_boundaries:
+            if producer not in output_node.all_input_nodes:
+                return False
+            future_occurrences = self._node_argument_count(output_node, producer)
+            future_occurrences += sum(
+                self._node_argument_count(output_node, permute)
+                for source, permute in subgraph.edges_out
+                if source is producer
+            )
+            if future_occurrences != 1:
+                return False
+
         for head, (_, _, expand_node, view_node) in subgraph.interleaves.items():
             if (
                 len(head.users) != 1
@@ -788,6 +832,69 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 return False
 
         return True
+
+    def _insert_output_boundary_permutations(self, subgraph: Subgraph) -> None:
+        if not subgraph.output_boundaries:
+            return
+        groups: dict[tuple[torch.fx.Node, tuple[int, ...]], list[torch.fx.Node]] = {}
+        for producer, output_node, permutation in subgraph.output_boundaries:
+            groups.setdefault((producer, permutation), []).append(output_node)
+
+        graph = next(iter(subgraph.output_boundaries))[0].graph
+        node_order = {node: index for index, node in enumerate(graph.nodes)}
+        for (producer, permutation), outputs in groups.items():
+            first_output = min(outputs, key=node_order.__getitem__)
+            with producer.graph.inserting_before(first_output):
+                new_permute = producer.graph.call_function(
+                    ATEN_PERMUTE_COPY,
+                    args=(producer, list(permutation)),
+                )
+            new_permute.meta = dict(producer.meta)
+            for output in outputs:
+                output.replace_input_with(producer, new_permute)
+
+    @staticmethod
+    def _node_argument_count(node: torch.fx.Node, target: torch.fx.Node) -> int:
+        count = 0
+
+        def visit(argument):
+            nonlocal count
+            if argument is target:
+                count += 1
+            return argument
+
+        torch.fx.map_arg((node.args, node.kwargs), visit)
+        return count
+
+    def _constant_edges_are_free(self, subgraph: Subgraph) -> bool:
+        """Reject a rewrite that would make a constant need a real permute."""
+        for const_node, user_node in subgraph.constant_edges_in:
+            node_end_perm = subgraph.node_end_permute.get(
+                user_node, subgraph.end_permute
+            )
+            if self._constant_transform_requires_data_copy(const_node, node_end_perm):
+                return False
+        return True
+
+    def _constant_transform_requires_data_copy(
+        self, node: torch.fx.Node, permutation: list[int]
+    ) -> bool:
+        val = node.meta.get("val")
+        if not isinstance(val, torch.Tensor):
+            return True
+        shape = list(val.shape)
+        if len(shape) > len(permutation) or not all(
+            isinstance(dim, int) for dim in shape
+        ):
+            return True
+        rank_difference = len(permutation) - len(shape)
+        padded_shape = [1] * rank_difference + shape
+        output_shape = [padded_shape[dim] for dim in permutation]
+        if any(size != 1 for size in output_shape[:rank_difference]):
+            return True
+        old_order = [dim for dim, size in enumerate(padded_shape) if size != 1]
+        new_order = [dim for dim, size in zip(permutation, output_shape) if size != 1]
+        return old_order != new_order
 
     def update_interleave(
         self,

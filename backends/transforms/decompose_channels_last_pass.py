@@ -27,6 +27,10 @@ _DECOMPOSITIONS = {
     exir_ops.edge.channels_last.grid_sampler_2d.default: exir_ops.edge.aten.grid_sampler_2d.default,
 }
 
+_DIRECT_DECOMPOSITIONS = {
+    exir_ops.edge.channels_last.permute_copy.default: exir_ops.edge.aten.permute_copy.default,
+}
+
 
 class DecomposeChannelsLastPass(ExportPass):
     """Decompose channels_last dialect ops into permute + aten op + permute.
@@ -39,6 +43,10 @@ class DecomposeChannelsLastPass(ExportPass):
     """
 
     def call_operator(self, op, args, kwargs, meta):
+        direct_op = _DIRECT_DECOMPOSITIONS.get(op)
+        if direct_op is not None:
+            return super().call_operator(direct_op, args, kwargs, meta)
+
         aten_op = _DECOMPOSITIONS.get(op)
         if aten_op is not None:
             nchw_in = super().call_operator(
@@ -90,8 +98,4 @@ class DecomposeChannelsLastPass(ExportPass):
                 meta,
             )
             return values, indices
-        if op == exir_ops.edge.channels_last.permute_copy.default:
-            return super().call_operator(
-                exir_ops.edge.aten.permute_copy.default, args, kwargs, meta
-            )
         return super().call_operator(op, args, kwargs, meta)

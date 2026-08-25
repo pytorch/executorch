@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+from collections import deque
 from typing import Any, Callable, cast
 
 import torch
@@ -40,6 +41,42 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     }
+
+    def __init__(
+        self,
+        can_propagate: Callable[[torch.fx.Node], bool] | None = None,
+    ) -> None:
+        super().__init__()
+        self.can_propagate = can_propagate
+
+    def get_fuse_candidates(
+        self,
+        producer: torch.fx.Node,
+        consumer_op_packets: set[EdgeOpOverloadPacket],
+        bypass_ops: set[EdgeOpOverload],
+    ) -> list[torch.fx.Node]:
+        if self.can_propagate is None:
+            return super().get_fuse_candidates(
+                producer, consumer_op_packets, bypass_ops
+            )
+
+        users = deque(producer.users)
+        visited: set[torch.fx.Node] = set()
+        removal_candidates = []
+        while users:
+            user = users.popleft()
+            if user in visited:
+                continue
+            visited.add(user)
+            if user.target in bypass_ops:
+                if not self.can_propagate(user):
+                    return []
+                users.extend(user.users)
+            elif self.can_fuse_for_chain(producer, user, consumer_op_packets):
+                removal_candidates.append(user)
+            else:
+                return []
+        return removal_candidates
 
     def can_fuse_for_chain(
         self,
