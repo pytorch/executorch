@@ -237,6 +237,57 @@ class TestCudaLowMemoryExport(unittest.TestCase):
                 for storage in artifact.storages.values():
                     storage.close()
 
+    def test_aoti_local_fqns_are_scoped_by_library(self) -> None:
+        first = torch.zeros(4)
+        second = torch.ones(5)
+
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(
+                Weights(
+                    {
+                        "_tensor_constant0": (
+                            first,
+                            TensorProperties(first),
+                        )
+                    }
+                ),
+                first_dir,
+            )
+            second_artifact = self._materialize(
+                Weights(
+                    {
+                        "_tensor_constant0": (
+                            second,
+                            TensorProperties(second),
+                        )
+                    }
+                ),
+                second_dir,
+            )
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector = CudaWeightCollector()
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            external_data = first_result.data_store_output.external_data[
+                "aoti_cuda_blob"
+            ]
+            first_key = "cuda_fqn_weight:cpu:first_so:_tensor_constant0"
+            second_key = "cuda_fqn_weight:cpu:second_so:_tensor_constant0"
+            self.assertIn(first_key, external_data)
+            self.assertIn(second_key, external_data)
+            self.assertIn(first_key.encode(), first_result.processed_bytes)
+            self.assertIn(second_key.encode(), second_result.processed_bytes)
+
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
     def test_methods_share_one_collected_named_data_store(self) -> None:
         tensor = torch.arange(4)
         weights = Weights({"weight": (tensor, TensorProperties(tensor))})

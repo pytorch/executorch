@@ -12,7 +12,7 @@ import os
 import struct
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import torch
@@ -93,14 +93,25 @@ def _write_tensor_storage(tensor: torch.Tensor, path: str) -> bytes:
     return digest.digest()
 
 
-def _storage_key(fqn: str, device_type: int) -> str:
+def _storage_key(
+    fqn: str, device_type: int, aoti_library_key: Optional[str] = None
+) -> str:
     if device_type == AOTI_DEVICE_TYPE_CPU:
         device = "cpu"
     elif device_type == AOTI_DEVICE_TYPE_CUDA:
         device = "cuda"
     else:
         raise RuntimeError(f"Unsupported AOTI device type: {device_type}")
+    if aoti_library_key is not None:
+        fqn = f"{aoti_library_key}:{fqn}"
     return f"cuda_fqn_weight:{device}:{fqn}"
+
+
+def _is_aoti_library_local_fqn(fqn: str) -> bool:
+    # PyTorch assigns this prefix to TensorConstant entries that do not have a
+    # model-level FQN. The numbering restarts in every independently compiled
+    # AOTI library, so the library key is part of their global identity.
+    return fqn.startswith("_tensor_constant")
 
 
 def encode_cuda_weight_metadata(
@@ -320,11 +331,21 @@ class CudaWeightCollector:
         )
 
         external_tag = f"aoti_{device_name}_blob"
+        serialized_entries = []
         for entry in artifact.entries:
-            self._add_weight(entry, artifact.storages[entry.storage_key], external_tag)
+            data = artifact.storages[entry.storage_key]
+            if _is_aoti_library_local_fqn(entry.fqn):
+                entry = replace(
+                    entry,
+                    storage_key=_storage_key(
+                        entry.fqn, entry.device_type, aoti_library_key=so_blob_key
+                    ),
+                )
+            self._add_weight(entry, data, external_tag)
+            serialized_entries.append(entry)
 
         result.processed_bytes = encode_cuda_weight_metadata(
-            so_blob_key, artifact.entries
+            so_blob_key, serialized_entries
         )
         self._results.append(result)
 
