@@ -14,11 +14,7 @@ from typing import Callable, cast, DefaultDict, Iterable, Optional, Sequence, Ty
 
 import torch
 import torch.fx
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    create_cadence_pass_filter,
-    register_cadence_pass,
-)
+from executorch.backends.cadence.aot.pass_utils import CompileMode
 from executorch.backends.cadence.aot.utils import get_shape, is_node_in_flattened_output
 from executorch.exir import memory
 from executorch.exir.pass_manager import PassManager
@@ -63,11 +59,11 @@ class MemConstraints:
 
     def __init__(
         self,
-        opt_level: int = 1,
+        mode: CompileMode = CompileMode.DEFAULT,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
     ) -> None:
-        self.opt_level = opt_level
+        self.mode = CompileMode(mode)
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
 
@@ -396,7 +392,6 @@ def get_relative_offset_of_slice(slice_node: torch.fx.Node) -> int:
     return offset
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class GenerateCatNopConstraints(PassBase):
     """
     For cat op where the concatenation is along the outermost dimension, generate
@@ -452,6 +447,45 @@ class GenerateCatNopConstraints(PassBase):
                 return False
         return True
 
+    def _has_duplicate_resolved_sources(
+        self, cat_tensors: Sequence[torch.fx.Node]
+    ) -> bool:
+        """Return True if two cat inputs resolve to the same underlying tensor."""
+        if len(cat_tensors) != len(set(cat_tensors)):
+            return True
+        resolved_sources = set()
+        for arg in cat_tensors:
+            resolved = arg
+            while (
+                info := self.constraint.get_relative_placement_source(resolved)
+            ) is not None:
+                if self.constraint.is_alias_of(info.source, resolved):
+                    resolved = info.source
+                else:
+                    break
+            if id(resolved) in resolved_sources:
+                return True
+            resolved_sources.add(id(resolved))
+        return False
+
+    def _has_unaligned_cat_tensors(
+        self,
+        graph: torch.fx.Graph,
+        node: torch.fx.Node,
+        cat_tensors: Sequence[torch.fx.Node],
+    ) -> bool:
+        """Return True if any non-placeholder cat tensor has misaligned offset."""
+        if is_node_in_flattened_output(graph, node):
+            return False
+        expected_alignment = 8
+        relative_offsets = get_relative_offsets_of_cat_tensors(cat_tensors)
+        for idx, arg in enumerate(cat_tensors):
+            if not (arg.op == "placeholder") and (
+                relative_offsets[idx] & (expected_alignment - 1) != 0
+            ):
+                return True
+        return False
+
     # If A = cat(B, C), and the concatenation is along the outermost dimension, then
     # we can optimize away this cat operation if (1) B and C are placed contiguously,
     # and (2) the absolute memory location of tensor A is the same as B. This function
@@ -486,21 +520,17 @@ class GenerateCatNopConstraints(PassBase):
             return False
         # If the same tensor appears multiple times in the cat inputs,
         # we cannot place it at multiple different offsets relative to the output.
-        if len(cat_tensors) != len(set(cat_tensors)):
+        # Also check resolved sources: two different alias nodes may resolve to
+        # the same underlying tensor, which can't be at two offsets.
+        if self._has_duplicate_resolved_sources(cat_tensors):
             return False
 
         # Many ops in HiFi require the input to be aligned to 8-byte boundary.
         # If the cat is not the graph's output, then ensure that the relative
         # offset of any concatenated non-placeholder tensor is a multiple of
         # 8 bytes,
-        if not is_node_in_flattened_output(graph_module.graph, node):
-            expected_alignment = 8
-            relative_offsets = get_relative_offsets_of_cat_tensors(cat_tensors)
-            for idx, arg in enumerate(cat_tensors):
-                if not (arg.op == "placeholder") and (
-                    relative_offsets[idx] & (expected_alignment - 1) != 0
-                ):
-                    return False
+        if self._has_unaligned_cat_tensors(graph_module.graph, node, cat_tensors):
+            return False
 
         return True
 
@@ -543,7 +573,6 @@ class GenerateCatNopConstraints(PassBase):
         graph_module.recompile()
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class GenerateMemoryViewConstraints(PassBase):
     """
     For memory.view ops, where input and output use the same underlying memory,
@@ -560,7 +589,6 @@ class GenerateMemoryViewConstraints(PassBase):
             self.constraint.add_relative_placement_constraint(node.args[0], node)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class GenerateSliceAndSelectNopConstraints(PassBase):
     """
     For slice ops, where the slice is along the outermost dimension, generate
@@ -662,7 +690,6 @@ ConstraintsGenPass: TypeAlias = Callable[
 ]
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class GenerateIdmaConstraints(PassBase):
     """Generate constraints for idma ops."""
 
@@ -707,25 +734,26 @@ class GenerateMemConstraints:
         )
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # Colocation constraints for cat/slice/select no-ops are optimizations;
+        # the idma and memory-view constraints are always required.
         constraint_gen_passes: Sequence[ConstraintsGenPass] = cast(
             list[ConstraintsGenPass],
-            [
-                GenerateIdmaConstraints,
-                GenerateMemoryViewConstraints,
-                GenerateSliceAndSelectNopConstraints,
-                GenerateCatNopConstraints,
-            ],
+            (
+                [
+                    GenerateIdmaConstraints,
+                    GenerateMemoryViewConstraints,
+                ]
+                if self.mem_constraints.mode is CompileMode.MINIMAL
+                else [
+                    GenerateIdmaConstraints,
+                    GenerateMemoryViewConstraints,
+                    GenerateSliceAndSelectNopConstraints,
+                    GenerateCatNopConstraints,
+                ]
+            ),
         ) + list(self.additional_constraint_gen_passes)
-        # Create a filter using the opt level in mem_constraints, and filter
-        # the relevant passes.
-        pass_filter = create_cadence_pass_filter(self.mem_constraints.opt_level)
-        filtered_passes = [
-            mcg_pass(self.mem_constraints)
-            for mcg_pass in cast(
-                list[ConstraintsGenPass],
-                # pyre-ignore[6]: Incompatible parameter type.
-                list(filter(pass_filter, constraint_gen_passes)),
-            )
-        ]
-        # Now run the pass manager on the filtered passes
-        return PassManager(passes=filtered_passes)(graph_module)
+        return PassManager(
+            passes=[
+                mcg_pass(self.mem_constraints) for mcg_pass in constraint_gen_passes
+            ]
+        )(graph_module)

@@ -13,6 +13,8 @@ fbcode_target(_kind = runtime.python_library,
     ]
 )
 
+# Test targets have transitive deps (caffe2, torchvision, torchaudio, etc.)
+# that are not available in OSS Buck builds.
 fbcode_target(_kind = runtime.python_library,
     name = "test_qnn_delegate",
     srcs = [
@@ -28,7 +30,6 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2/functorch:functorch_src",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/dialects:lib",
-        "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
         "//executorch/backends/qualcomm/partition:partition",
         "//executorch/backends/qualcomm/quantizer:quantizer",
@@ -36,11 +37,16 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/qualcomm/utils:utils",
         "//executorch/devtools:lib",
         "//executorch/examples/qualcomm:utils",
-        "//executorch/examples/models:models",
         "//executorch/backends/qualcomm:export_utils",
         "//executorch/backends/qualcomm/debugger:utils",
         "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
-    ],
+    ] + ([] if runtime.is_oss else [
+        # These deps have pre-existing issues in OSS Buck:
+        # portable_lib: shim//build_defs/cpp_python_extension.bzl missing
+        # models: examples/models/BUCK uses raw python_library (no dep patching)
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/examples/models:models",
+    ]),
 )
 
 fbcode_target(_kind = runtime.python_library,
@@ -58,6 +64,10 @@ fbcode_target(_kind = runtime.python_test,
     srcs = [
         "test_passes.py",
     ],
+    env = {} if runtime.is_oss else {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+    },
     deps = [
         ":models",
         "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
@@ -68,9 +78,38 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/backends/qualcomm/partition:partition",
         "//executorch/backends/qualcomm/serialization:serialization",
         "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/backends/qualcomm/builders:builders",
+    ] + ([] if runtime.is_oss else [
+        # These deps fail in OSS: keep_gpu_sections kwarg breaks TARGETS evaluation
+        "//executorch/devtools:lib",
         "//executorch/examples/models/llama:transformer_modules",
         "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
-        "//executorch/backends/qualcomm/builders:builders",
+    ]),
+)
+
+# Runs the QNN operator tests on the x86_64 host simulator under buck. Internal
+# only: the underlying :test_qnn_delegate library pulls in caffe2/torchvision/etc
+# that are unavailable in OSS Buck (see the comment on that target), and keeping
+# it out of the OSS graph preserves the `test-qnn-buck-build-linux` CI signal.
+# The host qnn_executor_runner binary and the QNN x86 SDK libs are supplied via
+# env; the test reads QNN_EXECUTOR_RUNNER/QNN_SDK_ROOT and runs the simulator.
+None if runtime.is_oss else fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_qnn_delegate_x86",
+    srcs = [
+        "test_qnn_delegate_x86.py",
+    ],
+    env = {
+        # Force CPU: quantization calibration, AOT compile, and the x86 HTP sim
+        # all run on CPU. Without this, parallel test shards each grab CUDA and
+        # exhaust GPU memory ("CUDA error: out of memory").
+        "CUDA_VISIBLE_DEVICES": "",
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_EXECUTOR_RUNNER": "$(location //executorch/examples/qualcomm/executor_runner:qnn_executor_runner)",
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+    },
+    deps = [
+        ":test_qnn_delegate",
     ],
 )

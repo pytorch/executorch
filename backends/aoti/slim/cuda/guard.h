@@ -8,9 +8,11 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
+#include <optional>
+
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 
@@ -42,6 +44,27 @@ Error setCurrentCUDAStream(cudaStream_t stream, DeviceIndex device_index = -1);
  * failure
  */
 Result<cudaStream_t> getCurrentCUDAStream(DeviceIndex device_index = -1);
+
+/**
+ * The CUDA stream registered for the specified device, or std::nullopt if none
+ * is set. Unlike getCurrentCUDAStream, it never creates one, so it can snapshot
+ * the current selection without side effects. Also returns std::nullopt if the
+ * current device cannot be queried (device_index -1), so nullopt does not
+ * distinguish "no stream set" from "device query failed".
+ *
+ * @param device_index The device index (-1 to use current device)
+ */
+std::optional<cudaStream_t> peekCurrentCUDAStream(
+    DeviceIndex device_index = -1);
+
+/**
+ * Clears any CUDA stream registered for the specified device, restoring the
+ * "no stream selected" state. Best-effort: if device_index is -1 and the
+ * current device cannot be queried, it silently does nothing.
+ *
+ * @param device_index The device index (-1 to use current device)
+ */
+void clearCurrentCUDAStream(DeviceIndex device_index = -1);
 
 /**
  * RAII guard that sets the current CUDA device and restores it on destruction.

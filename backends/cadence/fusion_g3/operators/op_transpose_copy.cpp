@@ -16,7 +16,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 using ::executorch::aten::ScalarType;
-using ::executorch::aten::SizesType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;

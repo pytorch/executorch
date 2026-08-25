@@ -265,19 +265,115 @@ def quantized_mul_impl(
 
 
 # ===================================================================
+# QUANTIZED DIV OPERATION DEFINITION
+# ===================================================================
+lib.define(
+    "quantized_div("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, float output_scale) -> Tensor"
+)
+lib.define(
+    "quantized_div.out("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, float output_scale, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_div")  # type: ignore[misc]
+def quantized_div_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_scale: float,
+) -> torch.Tensor:
+    # Division is not commutative, so broadcasting (handled via operand swaps in
+    # quantized_mul) is not supported: require identical shapes.
+    assert self.shape == other.shape, (
+        "Cortex-M quantized_div: broadcasting is not supported — "
+        f"got self.shape={self.shape}, other.shape={other.shape}"
+    )
+    return torch.empty_like(self)
+
+
+@impl(lib, "quantized_div", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_div_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_scale: float,
+) -> torch.Tensor:
+    # Mirror the kernel: the quotient of the zero-point-corrected int8/int16
+    # operands is evaluated in float and rescaled by the effective scale
+    # (scale_in1 / (scale_in2 * scale_out)) that the AoT pass carries directly.
+    assert self.shape == other.shape, (
+        "Cortex-M quantized_div: broadcasting is not supported — "
+        f"got self.shape={self.shape}, other.shape={other.shape}"
+    )
+    if self.dtype not in (torch.int8, torch.int16):
+        raise TypeError(
+            f"cortex_m.quantized_div: expected int8 or int16 inputs, got {self.dtype}"
+        )
+    self_fp = (self.to(torch.int32) - self_zero_point).to(torch.float32)
+    other_fp = (other.to(torch.int32) - other_zero_point).to(torch.float32)
+
+    quotient = torch.where(other_fp != 0, self_fp / other_fp, torch.zeros_like(self_fp))
+    result = torch.round(quotient * output_scale) + output_zero_point
+    dtype_info = torch.iinfo(self.dtype)
+    return torch.clamp(result, dtype_info.min, dtype_info.max).to(self.dtype)
+
+
+# ===================================================================
+# QUANTIZED ACTIVATION (LUT) OPERATION DEFINITION
+# ===================================================================
+# Generic table-lookup activation. The 256-entry int8 LUT is precomputed AoT
+# from the input/output qparams and the activation function (sigmoid, tanh,
+# silu, ...), so the kernel is identical regardless of which activation it
+# evaluates: out[i] = lut[input[i] + 128].
+lib.define("quantized_activation(Tensor input, Tensor lut) -> Tensor")
+lib.define(
+    "quantized_activation.out(Tensor input, Tensor lut, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_activation")  # type: ignore[misc]
+def quantized_activation_meta(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    assert input.dtype == torch.int8, "quantized_activation input must be int8"
+    assert lut.dtype == torch.int8 and lut.numel() == 256, (
+        "quantized_activation lut must be int8 with 256 entries; "
+        f"got dtype={lut.dtype}, numel={lut.numel()}"
+    )
+    return torch.empty_like(input)
+
+
+@impl(lib, "quantized_activation", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_activation_impl(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    indices = input.to(torch.int32) + 128
+    return lut[indices].to(torch.int8)
+
+
+# ===================================================================
 # QUANTIZED BATCH MATMUL OPERATION DEFINITION
 # ===================================================================
 lib.define(
     "quantized_batch_matmul("
     "Tensor lhs, int lhs_zero_point, "
     "Tensor rhs_transposed, int rhs_zero_point, "
-    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "Tensor scratch) -> Tensor"
 )
 lib.define(
     "quantized_batch_matmul.out("
     "Tensor lhs, int lhs_zero_point, "
     "Tensor rhs_transposed, int rhs_zero_point, "
     "int output_zero_point, int output_multiplier, int output_shift, "
+    "Tensor scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -291,6 +387,7 @@ def quantized_batch_matmul_meta(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     batch, lhs_rows, inner = lhs.shape
     batch_rhs, rhs_cols, inner_rhs = rhs_transposed.shape
@@ -307,6 +404,7 @@ def quantized_batch_matmul_impl(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     # Offsets are negated zero points (CMSIS-NN convention)
     lhs_fp = lhs.to(torch.float32) + float(lhs_zero_point)
@@ -434,8 +532,8 @@ def quantized_linear_meta(
 def quantized_linear_impl(
     input: torch.Tensor,
     weights: torch.Tensor,
-    bias: torch.Tensor,
-    kernel_sum: torch.Tensor,
+    bias: torch.Tensor | None,
+    kernel_sum: torch.Tensor | None,
     input_offset: int,
     filter_offset: int,
     output_offset: int,
@@ -448,10 +546,11 @@ def quantized_linear_impl(
     Functional variant - creates output tensor and calls out variant
     """
 
-    # Leaving both implementations for debugging purposes.
-    compute_using_kernel_sum = True
-
-    if compute_using_kernel_sum:
+    # Mirror CMSIS-NN's arm_fully_connected_s8 contract: the MVE path reads
+    # kernel_sum (ctx.buf) and ignores bias; the DSP and scalar paths read
+    # bias and ignore kernel_sum. The AOT pass populates exactly one of them
+    # based on the target ISA, so dispatch off which one is present.
+    if kernel_sum is not None:
         weights_int32 = weights.to(torch.int32)
 
         input_int32 = input.to(torch.int32)
@@ -638,7 +737,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -657,6 +757,7 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -733,6 +834,7 @@ def quantized_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -762,6 +864,7 @@ def quantized_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError("quantized_conv2d expects 4D input and weight tensors")
@@ -830,7 +933,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -850,6 +954,7 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -870,6 +975,7 @@ def quantized_depthwise_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -900,6 +1006,7 @@ def quantized_depthwise_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError(
@@ -973,7 +1080,9 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch"
     ") -> Tensor"
 )
 
@@ -992,6 +1101,8 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -1057,6 +1168,8 @@ def quantized_transpose_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -1095,6 +1208,8 @@ def quantized_transpose_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     """
     Reference implementation of quantized transposed convolution.
@@ -1165,9 +1280,11 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
+    "bool ceil_mode, "
     "int zero_point, "
     "int multiplier, "
-    "int shift"
+    "int shift, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 lib.define(
@@ -1176,9 +1293,11 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
+    "bool ceil_mode, "
     "int zero_point, "
     "int multiplier, "
     "int shift, "
+    "Tensor scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -1189,9 +1308,11 @@ def quantized_avg_pool2d_meta(
     kernel_size: Sequence[int],
     stride: Sequence[int],
     padding: Sequence[int],
+    ceil_mode: bool,
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
@@ -1201,7 +1322,7 @@ def quantized_avg_pool2d_meta(
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        ceil_mode=False,
+        ceil_mode=ceil_mode,
         count_include_pad=False,
     )
     return torch.empty(
@@ -1218,9 +1339,11 @@ def quantized_avg_pool2d_impl(
     kernel_size: Sequence[int],
     stride: Sequence[int],
     padding: Sequence[int],
+    ceil_mode: bool,
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
 
@@ -1234,7 +1357,7 @@ def quantized_avg_pool2d_impl(
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        ceil_mode=False,
+        ceil_mode=ceil_mode,
         count_include_pad=False,
     )
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
@@ -1372,8 +1495,23 @@ def quantized_max_pool2d_impl(
     if ceil_mode:
         raise RuntimeError("quantized_max_pool2d does not support ceil_mode=True")
 
+    # aten's channels-last max_pool2d caps how large an image it will take, so
+    # pool a contiguous copy instead. Pooling is layout-invariant, and the
+    # return below puts the result back in channels-last either way.
+    #
+    # The cap: cpu_max_pool_channels_last buffers each window index in
+    # vec::int_same_size_t<opmath_t> and guards it with
+    # TORCH_CHECK(input_depth * input_height * input_width <= max), so int8
+    # rejects any image with more than 127 spatial elements -- H*W, with
+    # channels not counted. int16 hits the same wall at 32767, which a future
+    # quantized_max_pool2d_s16 will need to handle the same way.
+    #
+    # .to(memory_format=...) rather than .contiguous(): for C == 1 the
+    # channels-last strides also satisfy plain contiguity, so .contiguous()
+    # returns the same tensor while aten still dispatches on the memory-format
+    # hint and raises anyway.
     result = F.max_pool2d(
-        input,
+        input.to(memory_format=torch.contiguous_format),
         kernel,
         stride=stride_vals,
         padding=padding_vals,

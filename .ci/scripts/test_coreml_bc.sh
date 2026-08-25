@@ -23,7 +23,7 @@ source "${REPO_ROOT}/.ci/scripts/utils.sh"
 # Create a conda environment with Python 3.10 for compatibility with old ET versions
 # ET 1.0.0 only supports Python >=3.10,<3.13
 CONDA_ENV_NAME="coreml_bc_test_env"
-conda create -y -n "${CONDA_ENV_NAME}" python=3.10
+conda create -y -n "${CONDA_ENV_NAME}" python=3.10 pip packaging
 
 # Use conda run to execute commands in the new environment
 CONDA_RUN="conda run --no-capture-output -n ${CONDA_ENV_NAME}"
@@ -69,7 +69,7 @@ git submodule sync --recursive
 git submodule update --init --recursive
 
 # Install executorch
-${CONDA_RUN} pip install --upgrade pip
+${CONDA_RUN} python -m pip install --upgrade pip
 ${CONDA_RUN} python install_executorch.py
 
 # Step 3: Export model
@@ -129,7 +129,7 @@ git submodule update --init --recursive
 
 # Step 5: Install current version
 echo "=== Step 5: Installing current ET version ==="
-${CONDA_RUN} pip install --upgrade pip
+${CONDA_RUN} python -m pip install --upgrade pip
 ${CONDA_RUN} python install_executorch.py
 
 # Step 6: Run the old pte file

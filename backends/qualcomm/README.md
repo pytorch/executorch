@@ -42,6 +42,7 @@ backends/qualcomm
 |   ├── wrappers # Wrapper of QNN data structures for ease of use.
 |   └── python # Python interface for using QNN libraries.
 ├── builders # Codes for lowering each operators (AoT Part).
+├── custom_op # APIs for using custom ops with QNN backend
 ├── partition # QNN Partitioner (AoT Part).
 ├── _passes # Various private passes helping lower models to QNN backend (AoT Part).
 ├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc (AoT Part).
@@ -61,7 +62,6 @@ backends/qualcomm
 examples/qualcomm
 ├── executor_runner # A general runner that is capable of running most of the basic models.
 ├── oss_scripts # Scripts for OSS(Open Source Software) models and customized runner for some specific models.
-├── qaihub_scripts # Scripts for Qaihub models and corresponding customized runner for these models.
 └── scripts # Scripts for models provided by executorch.
 ```
 
@@ -120,7 +120,7 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
     ```bash
     cd $PATH_TO_EXECUTORCH
     # example usage of performing unit test
-    python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_layer_norm -s $DEVICE_SERIAL -m SM8650 -b build-android/ -a $PATH_TO_TEST_ARTIFACTS
+    python backends/qualcomm/tests/test_qnn_delegate.py -k TestQNNQuantizedOperator.test_qnn_backend_layer_norm --device $DEVICE_SERIAL --soc_model SM8650 --build_folder build-android/ -a $PATH_TO_TEST_ARTIFACTS
     ```
     The test graph is expected to have 1 delegated node with only placeholders / output nodes being left. Check the execution report for more information.
 

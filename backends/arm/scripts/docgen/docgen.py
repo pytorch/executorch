@@ -9,7 +9,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
+from executorch.backends.arm.ethosu import (
+    EthosUCompileSpec,
+    EthosUPartitioner,
+    VelaExternalBlockPlacements,
+)
 from executorch.backends.arm.quantizer import EthosUQuantizer, VgfQuantizer
 from executorch.backends.arm.vgf.partitioner import VgfCompileSpec, VgfPartitioner
 
@@ -46,7 +50,9 @@ def get_docstring(obj) -> str:
 
     lines = docstring.split("\n")
     for line in lines:
-        if ":" in line and line.startswith(" "):
+        # Only first-level arg lines should become bullets.
+        is_arg_line = line.startswith("    ") and not line.startswith("        ")
+        if ":" in line and is_arg_line:
             new_line = line.strip()
             pos = new_line.index(":")
             new_line = f"- **{new_line[:pos]}**" + new_line[pos:]
@@ -137,6 +143,7 @@ def generate_ethos_u_docs():
         EthosUCompileSpec,
         ("DebugMode", "to_list", "from_list"),
     )
+    compilespec_string += get_class_docstring(VelaExternalBlockPlacements)
     partitioner_string = get_class_docstring(EthosUPartitioner)
     quantizer_string = get_class_docstring(
         EthosUQuantizer, ("prepare_obs_or_fq_callback", "annotate", "validate")

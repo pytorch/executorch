@@ -1,0 +1,263 @@
+# Test ExecuTorch AOTI ROCm support.
+# Use gfx950 for routine functional coverage and reserve scarce gfx1100 RDNA
+# runners for changes that directly affect the Voxtral ROCm path.
+
+name: Test ROCm AOTI
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/rocm/*
+  pull_request:
+    paths:
+      - .github/workflows/rocm.yml
+      - .github/workflows/_ci-run-decision.yml
+      - .github/workflows/_get-changed-files.yml
+      - .ci/scripts/test-rocm-aoti.sh
+      - .ci/scripts/test-rocm-voxtral.sh
+      - CMakeLists.txt
+      - CMakePresets.json
+      - Makefile
+      - install_requirements.py
+      - torch_pin.py
+      - backends/aoti/**
+      - '!backends/aoti/**.md'
+      - backends/cuda/**
+      - '!backends/cuda/**.md'
+      - extension/cuda/**
+      - examples/cuda/**
+      - '!examples/cuda/**.md'
+      - examples/models/voxtral_realtime/**
+      - '!examples/models/voxtral_realtime/**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
+  aoti-run-decision:
+    name: AOTI CI run decision
+    needs: [changed-files, run-decision]
+    runs-on: ubuntu-latest
+    outputs:
+      run-aoti: ${{ steps.decide.outputs.run-aoti }}
+    steps:
+      - name: Select AOTI runs
+        id: decide
+        env:
+          CHANGED_FILES: ${{ needs.changed-files.outputs.changed-files }}
+          FULL_RUN: ${{ needs.run-decision.outputs.is-full-run }}
+        run: |
+          set -efu
+          RUN_AOTI=false
+
+          if [[ "$CHANGED_FILES" == "*" || "$FULL_RUN" == "true" ]]; then
+            RUN_AOTI=true
+          fi
+
+          for path in $CHANGED_FILES; do
+            case "$path" in
+              backends/aoti/*.md | backends/cuda/*.md | examples/cuda/*.md)
+                continue
+                ;;
+              .github/workflows/rocm.yml | \
+              .github/workflows/_ci-run-decision.yml | \
+              .github/workflows/_get-changed-files.yml | \
+              .ci/scripts/test-rocm-aoti.sh | \
+              CMakeLists.txt | \
+              CMakePresets.json | \
+              install_requirements.py | \
+              torch_pin.py | \
+              backends/aoti/* | \
+              backends/cuda/* | \
+              extension/cuda/* | \
+              examples/cuda/*)
+                RUN_AOTI=true
+                break
+                ;;
+            esac
+          done
+
+          echo "run-aoti=$RUN_AOTI" >> "$GITHUB_OUTPUT"
+
+  voxtral-run-decision:
+    name: Voxtral CI run decision
+    needs: [changed-files, run-decision]
+    runs-on: ubuntu-latest
+    outputs:
+      run-voxtral: ${{ steps.decide.outputs.run-voxtral }}
+      run-gfx1100: ${{ steps.decide.outputs.run-gfx1100 }}
+    steps:
+      - name: Select Voxtral runs
+        id: decide
+        env:
+          CHANGED_FILES: ${{ needs.changed-files.outputs.changed-files }}
+          EVENT_NAME: ${{ github.event_name }}
+          FULL_RUN: ${{ needs.run-decision.outputs.is-full-run }}
+        run: |
+          set -efu
+          RUN_VOXTRAL=false
+          RUN_GFX1100=false
+
+          if [[ "$CHANGED_FILES" == "*" || "$FULL_RUN" == "true" ]]; then
+            RUN_VOXTRAL=true
+          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            RUN_GFX1100=true
+          fi
+
+          for path in $CHANGED_FILES; do
+            case "$path" in
+              examples/models/voxtral_realtime/*.md)
+                continue
+                ;;
+              examples/models/voxtral_realtime/* | \
+              backends/cuda/aoti_packed_int4_tensor.py | \
+              backends/cuda/triton/kernels/int4_matmul.py | \
+              backends/cuda/triton/replacement_pass.py | \
+              .ci/scripts/test-rocm-voxtral.sh | \
+              .github/workflows/rocm.yml)
+                RUN_GFX1100=true
+                RUN_VOXTRAL=true
+                ;;
+              Makefile | \
+              CMakeLists.txt | \
+              CMakePresets.json | \
+              backends/aoti/* | \
+              backends/cuda/* | \
+              extension/cuda/* | \
+              .github/workflows/_ci-run-decision.yml | \
+              .github/workflows/_get-changed-files.yml | \
+              install_requirements.py | \
+              torch_pin.py)
+                RUN_VOXTRAL=true
+                ;;
+            esac
+          done
+
+          echo "run-voxtral=$RUN_VOXTRAL" >> "$GITHUB_OUTPUT"
+          echo "run-gfx1100=$RUN_GFX1100" >> "$GITHUB_OUTPUT"
+
+  unittest-rocm-gfx950:
+    name: unittest-rocm-gfx950-rocm${{ matrix.rocm-version }}
+    needs: [aoti-run-decision]
+    if: needs.aoti-run-decision.outputs.run-aoti == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        rocm-version: ["7.1"]
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      no-sudo: true
+      runner: linux.rocm.gpu.gfx950.1
+      gpu-arch-type: rocm
+      gpu-arch-version: ${{ matrix.rocm-version }}
+      use-custom-docker-registry: false
+      docker-image: pytorch/manylinux2_28-builder:rocm${{ matrix.rocm-version }}
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        eval "$(conda shell.bash hook)"
+        conda create -n executorch-rocm-ci python=3.10 -y
+        conda activate executorch-rocm-ci
+        ROCM_VERSION=${{ matrix.rocm-version }} bash .ci/scripts/test-rocm-aoti.sh
+
+  test-voxtral-realtime-rocm-gfx950:
+    name: test-voxtral-realtime-rocm-gfx950-rocm${{ matrix.rocm-version }}
+    needs: [voxtral-run-decision]
+    if: |
+      needs.voxtral-run-decision.outputs.run-voxtral == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        rocm-version: ["7.1"]
+    with:
+      timeout: 180
+      no-sudo: true
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.rocm.gpu.gfx950.1
+      gpu-arch-type: rocm
+      gpu-arch-version: ${{ matrix.rocm-version }}
+      use-custom-docker-registry: false
+      docker-image: pytorch/manylinux2_28-builder:rocm${{ matrix.rocm-version }}
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        eval "$(conda shell.bash hook)"
+        conda create -n executorch-rocm-ci python=3.10 -y
+        conda activate executorch-rocm-ci
+        EXPECTED_ROCM_ARCH=gfx950 EXPECTED_WARP_SIZE=64 \
+          ROCM_VERSION=${{ matrix.rocm-version }} \
+          bash .ci/scripts/test-rocm-voxtral.sh
+
+  # This scarce RDNA runner is limited to manual runs and direct changes to the
+  # Voxtral ROCm execution path; it does not participate in broad sampling.
+  # Temporarily disabled while the self-hosted runner teardown is unstable.
+  test-voxtral-realtime-rocm-gfx1100:
+    name: test-voxtral-realtime-rocm-gfx1100-rocm${{ matrix.rocm-version }}
+    needs: [voxtral-run-decision]
+    if: |
+      false && needs.voxtral-run-decision.outputs.run-gfx1100 == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    concurrency:
+      group: rocm-gfx1100-${{ github.event.pull_request.number || github.ref_name }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        rocm-version: ["7.1"]
+    with:
+      timeout: 180
+      no-sudo: true
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: linux.rocm.gpu.gfx1100
+      gpu-arch-type: rocm
+      gpu-arch-version: ${{ matrix.rocm-version }}
+      use-custom-docker-registry: false
+      docker-image: pytorch/manylinux2_28-builder:rocm${{ matrix.rocm-version }}
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        eval "$(conda shell.bash hook)"
+        conda create -n executorch-rocm-ci python=3.10 -y
+        conda activate executorch-rocm-ci
+        EXPECTED_ROCM_ARCH=gfx1100 EXPECTED_WARP_SIZE=32 \
+          ROCM_VERSION=${{ matrix.rocm-version }} \
+          bash .ci/scripts/test-rocm-voxtral.sh

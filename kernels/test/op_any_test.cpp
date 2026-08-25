@@ -9,12 +9,15 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <gtest/gtest.h>
+
+#include <array>
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
@@ -99,9 +102,9 @@ class OpAnyOutTest : public OperatorTest {
 };
 
 TEST_F(OpAnyOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimensions");
   TensorFactory<ScalarType::Float> tff;
   const std::vector<int32_t> size{2, 2};
 
@@ -206,4 +209,33 @@ TEST_F(OpAnyOutTest, TestAnyDimsOutEmptyDimList) {
 
   op_any_dims_out(self, opt_dim_list, keepdim, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+// Reducing over more than one dim walks the shared dim-mask traversal in
+// reduce_util.h. Its carry-over used to assume
+// size(d) * stride(d) == stride(d - 1), which only holds for a contiguous
+// tensor, so on a channels-last input it skipped a block of elements and read
+// past the end of the buffer. See issue #16429.
+//
+// The single true value below sits at channels-last physical index 19, inside
+// the range the broken traversal never visited, so channel 1 was reported as
+// false while channel 0 picked up out-of-bounds memory and was reported true.
+TEST_F(OpAnyOutTest, ChannelsLastMultiDimReduction) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Bool> tf_bool;
+
+  std::vector<float> data(36, 0.0f);
+  data[27] = 1.0f; // logical (n=1, c=1, h=0, w=0)
+  Tensor in = tf.channels_last_like(tf.make({2, 2, 3, 3}, data));
+
+  Tensor out = tf_bool.zeros_channels_last({1, 2, 1, 1});
+  const std::array<int64_t, 3> dims{0, 2, 3};
+  op_any_dims_out(
+      in,
+      ArrayRef<int64_t>{dims.data(), dims.size()},
+      /*keepdim=*/true,
+      out);
+
+  Tensor expected = tf_bool.make_channels_last({1, 2, 1, 1}, {false, true});
+  EXPECT_TENSOR_EQ(out, expected);
 }

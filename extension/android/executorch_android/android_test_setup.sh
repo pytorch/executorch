@@ -29,7 +29,7 @@ prepare_tinyllama() {
 }
 
 prepare_golden() {
-  local url="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26022500.zip"
+  local url="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/test-backend-artifacts/golden-artifacts-xnnpack/golden_artifacts_26052718.zip"
   curl -sL -o /tmp/golden.zip "$url"
   unzip -o /tmp/golden.zip -d /tmp/golden/
   for model in mobilenet_v2 vit_b_16; do
@@ -39,6 +39,13 @@ prepare_golden() {
   done
 }
 
+prepare_add() {
+  pushd "${BASEDIR}/../../.."
+  "${PYTHON_EXECUTABLE}" -m test.models.export_program --modules "ModuleAdd" --outdir "${BASEDIR}/src/androidTest/resources/"
+  popd
+}
+
 prepare_xor
 prepare_tinyllama
 prepare_golden
+prepare_add

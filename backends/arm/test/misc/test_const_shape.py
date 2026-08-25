@@ -5,9 +5,11 @@
 
 from typing import Set, Type
 
+import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass

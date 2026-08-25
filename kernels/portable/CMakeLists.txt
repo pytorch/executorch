@@ -106,6 +106,19 @@ install(
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/portable/
 )
 
+if(EXECUTORCH_BUILD_SHARED)
+  executorch_add_shared_library(
+    executorch_portable_ops portable_ops_lib portable_kernels executorch_shared
+  )
+  # This library holds no symbol a consumer names, only registration
+  # constructors, so a link with --as-needed would drop it and register nothing.
+  executorch_target_link_options_shared_lib(executorch_portable_ops)
+  # Ships beside libexecutorch.so, so it resolves the runtime from there rather
+  # than from wherever it was built. Without this the installed library has an
+  # empty search path and a consumer that links it cannot start.
+  executorch_target_shipped_runtime_path(executorch_portable_ops)
+endif()
+
 # Build the portable custom ops AOT library for registering custom ops into
 # PyTorch. Requires find_package(Torch), which must be called at root scope
 # before this subdirectory is processed. Not targeting ARM_BAREMETAL as aot_lib
@@ -133,12 +146,12 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
   )
 
   if(APPLE)
-    set(RPATH "@loader_path/../../extensions/pybindings")
+    set(RPATH "@loader_path/../../extension/pybindings")
   else()
-    set(RPATH "\$ORIGIN/../../extensions/pybindings")
+    set(RPATH "\$ORIGIN/../../extension/pybindings")
   endif()
   set_target_properties(
-    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
-                                                                ${RPATH}
+    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                                  "${RPATH}"
   )
 endif()

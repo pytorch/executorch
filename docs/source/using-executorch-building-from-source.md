@@ -1,5 +1,12 @@
 # Building from Source
 
+On Linux and macOS you may not need to build at all. `pip install executorch` ships the
+runtime as prebuilt libraries with headers and a CMake package, so a C++ program can link
+it directly. See [Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package),
+including the CUDA packages for running on a GPU. Build from source when you need a
+platform the package does not cover, a build option it does not enable, or your own
+changes to the runtime.
+
 ExecuTorch uses [CMake](https://cmake.org/) as the primary build system.
 Even if you don't use CMake directly, CMake can emit scripts for other format
 like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
@@ -28,7 +35,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.13
+* `python` version 3.10-3.14
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
   - `Xcode Command Line Tools`
@@ -45,11 +52,11 @@ portability details.
    ```bash
    git clone -b viable/strict https://github.com/pytorch/executorch.git
    cd executorch
-   conda create -yn executorch python=3.10.0
+   conda create -yn executorch python=3.10
    conda activate executorch
    ```
 
-> **_NOTE:_** Addition Windows Setup
+> **_NOTE:_** Additional Windows Setup
 >
 > ExecuTorch requires symlinks to be enabled to build the Python components. To enable symlinks, run the following command before cloning the repository. Missing symlinks will manifest as an error related to `version.py` when running `pip install .`. See [src/README.md](https://github.com/pytorch/executorch/blob/main/src/README.md) for more information.
 > ```bash
@@ -129,7 +136,7 @@ When user code is not using CMake, the runtime can be built standalone and linke
 | Use Case                   | How to Build                                                                       |
 | :------------------------- | :--------------------------------------------------------------------------------- |
 | C++ with user CMake        | Use CMake `add_subdirectory`.                                                      |
-| C++ without user CMake     | Bulild ExecuTorch standalone with CMake. Link libraries with user build.           |
+| C++ without user CMake     | Build ExecuTorch standalone with CMake. Link libraries with user build.            |
 | Android with Java/Kotlin   | Use [scripts/build_android_libraries.sh](#cross-compiling-for-android).            |
 | Android with C++           | Follow C++ build steps, [cross-compile for Android](#cross-compiling-for-android). |
 | iOS                        | Use [scripts/build_ios_frameworks.sh](#cross-compiling-for-ios).                   |
@@ -142,9 +149,8 @@ When building as a submodule as part of a user CMake build, ExecuTorch CMake opt
 
 CMake configuration for standalone runtime build:
 ```bash
-mkdir cmake-out
 cmake -B cmake-out --preset [preset] [options]
-cmake --build cmake-out -j10
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 #### Build Presets
@@ -161,6 +167,7 @@ Preset values for common scenarios are listed below. Using a platform preset is 
  * `linux` - Build features and backends for Linux targets.
  * `llm` - Build Large Language Model-specific features.
  * `profiling` - Build the ExecuTorch runtime with profiling enabled.
+ * `windows` - Build features and backends for Windows targets.
  * `zephyr` - Build for Zephyr RTOS.
 
 User CMake:
@@ -171,7 +178,7 @@ set(EXECUTORCH_BUILD_PRESET_FILE ${CMAKE_SOURCE_DIR}/executorch/tools/cmake/pres
 Standalone build:
 ```bash
 # Configure the build with the ios preset.
-cmake .. --preset ios
+cmake -B cmake-out --preset ios
 ```
 
 #### Build Options
@@ -187,7 +194,7 @@ set(EXECUTORCH_BUILD_XNNPACK ON)
 
 Standalone build:
 ```bash
-cmake -DEXECUTORCH_BUILD_XNNPACK=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON
 ```
 
 ##### Build Type
@@ -196,7 +203,7 @@ The CMake build is typically set to `Debug` or `Release`. For production use or 
 
 ```bash
 # Specify build type during CMake configuration
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake -B cmake-out -DCMAKE_BUILD_TYPE=Release
 ```
 
 ##### Backends
@@ -216,7 +223,7 @@ Typically, each hardware backend exposes a CMake option to control whether the b
 
 ```bash
 # Build the XNNPACK and Vulkan backends.
-cmake .. -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
 ```
 
 ##### Extensions
@@ -237,7 +244,7 @@ ExecuTorch extensions provide optional functionality outside of the core runtime
 
  ```
 # Enable the data loader extension.
-cmake .. -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
  ```
 
 ##### Logging
@@ -249,7 +256,7 @@ Logging is enabled by default in debug builds and disabled in release. When enab
 
  ```
 # Enable logging at debug
-cmake .. -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
+cmake -B cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
  ```
 
 ### Building
@@ -265,11 +272,12 @@ cd executorch
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
 # building, and tends to speed up the build significantly. It's typical to use
-# "core count + 1" as the `-j` value.
-cmake --build cmake-out -j9
+# "core count + 1" as the `-j` value; the command below derives that
+# dynamically (`nproc` on Linux, `sysctl -n hw.ncpu` on macOS).
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
-> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
+> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
 
 <hr/>
 
@@ -298,8 +306,6 @@ To link against the runtime from outside of the CMake ecosystem, the runtime can
     `-Wl,-force_load` or `-Wl,--whole-archive`. It contains load-time functions
     that automatically register the kernels, but linkers will often prune those
     functions by default because there are no direct calls to them.
-  `libportable_kernels.a`, so the program may use any of the operators it
-  implements.
 
 Backends typically introduce additional targets. See backend-specific documentation for more details.
 
@@ -352,7 +358,9 @@ To use the ExecuTorch runtime from native Android C++ code, the runtime can be c
 For direct cross-compilation, the ExecuTorch runtime can be configured to build with the NDK toolchain:
 ```bash
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a ..
+cmake -B cmake-out \
+  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a
 ```
 
 <hr/>

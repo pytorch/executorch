@@ -6,12 +6,12 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeTOSAUnsupportedClampPass(ArmPass):
+class DecomposeTOSAUnsupportedClampPass(ArmOpTargetedPass):
     """Rewrite TOSA unsupported clamp into min/max chain since TOSA lacks int32
     clamp support and only supports scalar min/max values.
     """
@@ -23,6 +23,7 @@ class DecomposeTOSAUnsupportedClampPass(ArmPass):
         torch.ops.aten.clamp.default,
         torch.ops.aten.clamp.Tensor,
     }
+    target_ops = _supported_ops
 
     def _ensure_tensor(
         self,
@@ -54,7 +55,7 @@ class DecomposeTOSAUnsupportedClampPass(ArmPass):
             torch.ops.aten.clamp.Tensor,
         }
 
-        if op not in self._supported_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         # Only rewrite scalar clamp for int32

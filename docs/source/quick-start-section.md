@@ -52,7 +52,7 @@ Follow these guides in order to get started with ExecuTorch:
 
 ## Prerequisites
 
-- Python 3.10–3.13
+- Python 3.10–3.14
 - PyTorch 2.9+
 - Basic familiarity with PyTorch model development
 

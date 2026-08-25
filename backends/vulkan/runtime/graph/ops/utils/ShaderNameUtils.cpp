@@ -72,6 +72,22 @@ void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
   }
 }
 
+void add_zp_dtype_mode_suffix(
+    std::string& kernel_name,
+    const vkapi::ScalarType zp_dtype) {
+  switch (zp_dtype) {
+    case vkapi::kChar:
+      kernel_name += "_zpint8";
+      break;
+    case vkapi::kHalf:
+    case vkapi::kFloat:
+      kernel_name += "_zpinherit";
+      break;
+    default:
+      VK_THROW("Unsupported per-token zero-point dtype for dq8ca");
+  }
+}
+
 void add_packed_dim_suffix(std::string& kernel_name, const int32_t packed_dim) {
   switch (packed_dim) {
     case WHCN::kWidthDim:

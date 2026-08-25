@@ -7,7 +7,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-MLX-optimized attention for ExecutorTorch's Llama attention registry.
+MLX-optimized attention for ExecuTorch's Llama attention registry.
 
 Registers an "mlx" attention type that uses mlx::kv_cache_update and
 mlx::custom_sdpa for efficient execution on Apple Silicon.

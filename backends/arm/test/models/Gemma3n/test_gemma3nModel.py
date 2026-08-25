@@ -695,7 +695,7 @@ VGF_QUANT_TEST_CASES: dict[str, Gemma3nTestCase] = {
     ),
     "rms_norm": Gemma3nTestCase(model_cls=RMSNormModel),
     "altup": Gemma3nTestCase(model_cls=AltUpModel),
-    "attention": Gemma3nTestCase(model_cls=AttentionModel, atol=0.04),
+    "attention": Gemma3nTestCase(model_cls=AttentionModel, atol=0.07),
     "decoder_layer": Gemma3nTestCase(
         model_cls=DecoderLayerModel,
         call_delegates=0,

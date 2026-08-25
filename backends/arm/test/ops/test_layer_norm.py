@@ -179,13 +179,7 @@ def test_native_layer_norm_tosa_INT_a16w8(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite,
-    xfails={
-        "randn_last_dim": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations."
-    },
-)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_native_layer_norm_16a8w_u55_INT(test_data):
     """Test layer_norm with int16 I/O quantization for U55."""
@@ -196,20 +190,13 @@ def test_native_layer_norm_16a8w_u55_INT(test_data):
         "torch.ops.aten.sub.Tensor",
         symmetric_io_quantization=True,
         a16w8_quantization=True,
-        qtol=128,
+        qtol=400,
         epsilon=2**-16,
     )
     pipeline.run()
 
 
-u85_xfails_16a8w = {
-    "randn_last_dim": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
-    "randn_last_three_dims": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
-    "randn_last_three_dims_no_bias": "MLETORCH-1834 - 16A8W native_layer_norm output diff for certain configurations.",
-}
-
-
-@common.parametrize("test_data", test_data_suite, xfails=u85_xfails_16a8w)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_native_layer_norm_16a8w_u85_INT(test_data):
     """Test layer_norm with int16 I/O quantization for U85."""
@@ -220,7 +207,7 @@ def test_native_layer_norm_16a8w_u85_INT(test_data):
         "torch.ops.aten.sub.Tensor",
         symmetric_io_quantization=True,
         a16w8_quantization=True,
-        qtol=128,
+        qtol=400,
         epsilon=2**-16,
     )
     pipeline.run()

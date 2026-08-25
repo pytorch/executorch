@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  * Copyright 2023-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -25,6 +27,12 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+
+// Overridable memcpy used by the EthosU backend for input/output scratch
+// shuffling. Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
+// std::memcpy. Firmware targets can supply a strong override (e.g. routing
+// through a DMA engine) to reduce CPU memcpy load on the host MCU.
+extern "C" void arm_ethos_io_memcpy(void* dst, const void* src, size_t size);
 
 using namespace std;
 
@@ -78,9 +86,19 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ET_LOG(Info, "data:%p", processed->data());
+#if defined(ET_EVENT_TRACER_ENABLED)
+    EventTracer* event_tracer = context.event_tracer();
+    EventTracerEntry event_tracer_local_scope;
+#endif
 
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+EthosUBackend::init()processed_data");
     const char* data = static_cast<const char*>(processed->data());
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+
+    ET_LOG(Info, "data:%p", data);
     size_t size = processed->size();
 
     // Verify format of vela_bin
@@ -95,7 +113,18 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       return Error::MemoryAllocationFailed;
     }
 
-    handle->processed = processed;
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+EthosUBackend::init()vela_bin_read()");
+    const Error read_status = vela_bin_read(
+        data, size, context.get_named_data_map(), &handle->handles);
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+    if (read_status != Error::Ok) {
+      delete handle;
+      return read_status;
+    }
+
     handle->platform_state = platform_init(compile_specs, allocator);
 
     // Return the same buffer we were passed - this data will be
@@ -128,30 +157,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
 
     ExecutionHandle* execution_handle =
         static_cast<ExecutionHandle*>(input_handle);
-    VelaHandles handles;
-
-    // Command stream - we know at this point it's aligned
-    EXECUTORCH_PROF_START(
-        event_tracer,
-        event_tracer_local_scope,
-        "+EthosUBackend::execute()processed_data");
-    const char* data =
-        static_cast<const char*>(execution_handle->processed->data());
-    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
-
-    ET_LOG(Debug, "data:%p", data);
-
-    EXECUTORCH_PROF_START(
-        event_tracer,
-        event_tracer_local_scope,
-        "+EthosUBackend::execute()vela_bin_read()");
-    // Read key sections from the vela_bin_stream
-    if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
-        false) {
-      ET_LOG(Error, "vela_read: error, invalid binary layout");
-      return Error::InvalidProgram;
-    }
-    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+    VelaHandles handles = execution_handle->handles;
 
     const int input_count = handles.inputs ? handles.inputs->count : 0;
     const int output_count = handles.outputs ? handles.outputs->count : 0;
@@ -194,19 +200,23 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       bool supported = 0;
       // 32 bit int (simple non-quantised test cases)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Int and
+          (tensor_in.scalar_type() == ScalarType::Int &&
            handles.inputs->io[i].elem_size == 4);
       // 8 bit int (IOQDQ pass prepared networks)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Char and
+          (tensor_in.scalar_type() == ScalarType::Char &&
+           handles.inputs->io[i].elem_size == 1);
+      // 8 bit uint8 (IOQDQ pass prepared networks)
+      supported |=
+          (tensor_in.scalar_type() == ScalarType::Byte &&
            handles.inputs->io[i].elem_size == 1);
       // 16 bit int (IOQDQ pass prepared networks)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Short and
+          (tensor_in.scalar_type() == ScalarType::Short &&
            handles.inputs->io[i].elem_size == 2);
       // bool (IOQDQ pass prepared networks)
       supported |=
-          (tensor_in.scalar_type() == ScalarType::Bool and
+          (tensor_in.scalar_type() == ScalarType::Bool &&
            handles.inputs->io[i].elem_size == 1);
       if (!supported) {
         ET_LOG(
@@ -222,7 +232,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       // which require permutation.
       bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
           handles.inputs->io[i].elem_size == 4;
-      bool both_char = tensor_in.scalar_type() == ScalarType::Char &&
+      bool both_char = (tensor_in.scalar_type() == ScalarType::Char ||
+                        tensor_in.scalar_type() == ScalarType::Byte) &&
           handles.inputs->io[i].elem_size == 1;
       bool both_short = tensor_in.scalar_type() == ScalarType::Short &&
           handles.inputs->io[i].elem_size == 2;
@@ -232,8 +243,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       if (both_char || both_int || both_short || both_bool) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
-        // Sizes match and elt size matches so memcpy
-        memcpy(
+        // Sizes match and elt size matches so memcpy.
+        // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+        arm_ethos_io_memcpy(
             scratch_addr,
             tensor_in.mutable_data_ptr<char>(),
             tensor_in.nbytes());
@@ -288,6 +300,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   // No platform-specific members.
 };
 
+// cppcheck-suppress unusedFunction
 Error copy_with_layout_adjustment(
     const VelaIO& output_io,
     int output_index,
@@ -384,7 +397,8 @@ Error copy_with_layout_adjustment(
   }
   const char* src_bytes = src;
   for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
-    memcpy(dest, src_bytes, chunk_size);
+    // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+    arm_ethos_io_memcpy(dest, src_bytes, chunk_size);
     src_bytes += vela_chunk_size;
     dest += chunk_size;
   }

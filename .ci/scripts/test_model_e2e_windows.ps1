@@ -159,18 +159,47 @@ try {
         }
         Write-Host "CUDA version check passed: $actualCudaVersion"
     }
+    $cmakeCudaArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:CUDA_HOME)) {
+        $cudaNvcc = Join-Path -Path $env:CUDA_HOME -ChildPath "bin\nvcc.exe"
+        if (-not (Test-Path -Path $cudaNvcc -PathType Leaf)) {
+            throw "CUDA compiler not found at '$cudaNvcc'"
+        }
+        $env:CUDACXX = $cudaNvcc
+        $cmakeCudaArgs = @(
+            "-T", "cuda=$env:CUDA_HOME",
+            "-DCMAKE_CUDA_COMPILER=$cudaNvcc",
+            "-DCUDAToolkit_ROOT=$env:CUDA_HOME"
+        )
+    }
+    $cmakeCommonArgs = @("-DCMAKE_CXX_STANDARD=20")
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build ExecuTorch (CUDA)"
     $numCores = [Math]::Max([Environment]::ProcessorCount - 1, 1)
-    cmake --preset llm-release-cuda
-    cmake --build cmake-out --target install --config Release -j $numCores
+    $cmakeOut = Join-Path -Path $executorchRoot -ChildPath "cmake-out"
+    $executorchCmakeDir = Join-Path -Path $cmakeOut -ChildPath "lib\cmake\ExecuTorch"
+    $executorchConfig = Join-Path -Path $executorchCmakeDir -ChildPath "executorch-config.cmake"
+    # EXECUTORCH_BUILD_EXTENSION_IMAGE defaults OFF in the preset, so it must be
+    # enabled explicitly here (matching the Makefile CUDA target used on Linux).
+    # The dinov2 runner links the installed extension_image.lib; without this the
+    # main install never builds it and dinov2_runner fails to link (LNK1181).
+    cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON @cmakeCommonArgs @cmakeCudaArgs
+    cmake --build $cmakeOut --target install --config Release -j $numCores
+    if (-not (Test-Path -Path $executorchConfig -PathType Leaf)) {
+        throw "ExecuTorch CMake package config not found after install: $executorchConfig"
+    }
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build $runnerTarget"
+    $cmakePackageArgs = @(
+        "-DCMAKE_FIND_ROOT_PATH=$cmakeOut",
+        "-DCMAKE_PREFIX_PATH=$cmakeOut;$executorchCmakeDir",
+        "-Dexecutorch_DIR=$executorchCmakeDir"
+    )
     Push-Location (Join-Path -Path $executorchRoot -ChildPath "examples\models\$runnerPath")
     try {
-        cmake --preset $runnerPreset
+        cmake --preset $runnerPreset @cmakeCommonArgs @cmakePackageArgs @cmakeCudaArgs
         cmake --build (Join-Path -Path $executorchRoot -ChildPath "cmake-out\examples\models\$runnerPath") --target $runnerTarget --config Release -j $numCores
     }
     finally {

@@ -5,11 +5,13 @@
 - Conformer
 - Deep AutoEncoder
 - Deit Tiny
+- DeepSeek-R1-Distill-Qwen-1.5B
 - DeepLab v3 (DL3)
 - DS CNN
 - Inception v3 (IC3)
 - Llama
 - Gemma3n
+- Qwen3-VL
 - Long Short-Term Memory (LSTM)
 - MobileNet V1 0.25
 - MobileNet v2 (MV2)

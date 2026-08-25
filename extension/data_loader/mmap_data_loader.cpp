@@ -249,6 +249,11 @@ Result<FreeableBuffer> MmapDataLoader::load(
     // No need to keep track of this. munmap() will unlock as a side effect.
   }
 
+  if (mlock_config_ == MlockConfig::UseMadvise) {
+    madvise_pages_willneed_sequential(pages, map_size);
+    fcntl_rdadvise_apple(fd_, file_size_);
+  }
+
   // The requested data is at an offset into the mapped pages.
   const void* data = static_cast<const uint8_t*>(pages) + offset - range.start;
 

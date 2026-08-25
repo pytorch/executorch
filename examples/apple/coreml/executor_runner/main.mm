@@ -27,7 +27,6 @@ static inline id check_class(id obj, Class cls) {
 using executorch::backends::coreml::CoreMLBackendDelegate;
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
-using executorch::extension::FileDataLoader;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;

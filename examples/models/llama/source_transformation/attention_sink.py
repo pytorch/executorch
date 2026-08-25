@@ -29,13 +29,18 @@ class RopeWithAttentionSink(Rope):
     """
     Rope subclass for Attention Sink models.
 
-    For torch.export compatibility, this passes through the original position
-    unchanged - the sliding window is handled by the cache index management
-    (ring buffer), not by position shifting.
+    Remaps input positions using modular arithmetic so RoPE frequencies stay
+    within the cache size bounds, enabling generation beyond max_context_len.
 
-    Note: This class uses the model's max_context_len (params.max_context_len) for
-    RoPE frequency table size, which should be large enough to support generation
-    beyond the sliding window. The actual KV cache size is sink_size + window_size * 2.
+    Position mapping:
+      - Sink tokens (pos < sink_size): position preserved as-is
+      - Window tokens (pos >= sink_size): wrapped into ring buffer range
+        [sink_size, sink_size + ring_size) via modulo
+
+    The ring buffer is 2x window_size for write-ahead headroom, not to keep the
+    live window contiguous -- it can span a wrap. Across a wrap two positions
+    remap to a difference that is not their true distance, so RoPE preserves
+    relative distance only within a wrap.
     """
 
     def __init__(
@@ -47,19 +52,43 @@ class RopeWithAttentionSink(Rope):
         super().__init__(params)
         self.window_size = window_size
         self.sink_size = sink_size
-        # max_context_len from params is used for RoPE frequencies (should be large)
-        self.max_context_length = self.params.max_context_len
+        self.ring_size = window_size * 2
+
+    def _remap_input_pos(self, input_pos: torch.Tensor) -> torch.Tensor:
+        """Remap positions: sink tokens stay, window tokens wrap in ring buffer."""
+        return torch.where(
+            input_pos < self.sink_size,
+            input_pos,
+            self.sink_size + (input_pos - self.sink_size) % self.ring_size,
+        )
 
     def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
         """
-        Get rotary embedding frequencies.
-        For attention sink, we use the original position - the sliding window
-        is handled by the cache index management, not by position shifting.
+        Get rotary embedding frequencies with position remapping.
+
+        For dynamic shape mode input_pos is a single start position, expanded
+        here into the full chunk; for static shape mode it already is the full
+        position tensor. Either way every position is remapped and indexed.
+        Remapping only the start and slicing from there would branch on a
+        data-dependent value, which blocks export, and would read past the ring
+        on a chunk that wraps.
         """
         assert input_pos is not None
-        # Use torch._check for export compatibility (data-dependent guard)
-        torch._check(input_pos[0].item() + seq_len <= self.max_context_length)
-        return super().get_freqs(input_pos, seq_len)
+        if not self.params.use_kv_cache:
+            return self.freqs_cos[:seq_len], self.freqs_sin[:seq_len]
+
+        if self.params.enable_dynamic_shape:
+            # Dynamic shape: input_pos is [start_pos], expand to the whole chunk
+            input_pos = input_pos[-1] + torch.arange(
+                seq_len, device=input_pos.device, dtype=input_pos.dtype
+            )
+
+        # Remap the full position tensor and index
+        remapped = self._remap_input_pos(input_pos)
+        freqs_cos = self.freqs_cos[remapped]
+        freqs_sin = self.freqs_sin[remapped]
+
+        return freqs_cos, freqs_sin
 
 
 def _create_causal_mask_for_attention_sink(

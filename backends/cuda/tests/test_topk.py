@@ -24,10 +24,8 @@ import unittest
 import numpy as np
 import torch
 import torch.nn as nn
-
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-
 from executorch.backends.cuda.triton.kernels.topk import topk as triton_topk
 from executorch.exir import (
     EdgeCompileConfig,
@@ -38,7 +36,10 @@ from executorch.exir.passes import MemoryPlanningPass
 from torch.export import export
 
 EXECUTORCH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../../.."))
-RUNNER_PATH = os.path.join(EXECUTORCH_ROOT, "cmake-out", "executor_runner")
+RUNNER_PATH = os.environ.get(
+    "EXECUTORCH_EXECUTOR_RUNNER",
+    os.path.join(EXECUTORCH_ROOT, "cmake-out", "executor_runner"),
+)
 
 # Test configurations: (seed, rows, cols, k, dim, largest, description)
 TEST_CONFIGS = [
@@ -135,7 +136,16 @@ def _run_cpp_runner(runner_path, pte_path, ptd_path, input_files, output_base):
         f"--inputs={','.join(input_files)}",
         f"--output_file={output_base}",
     ]
-    return subprocess.run(cmd, capture_output=True, text=True)
+    env = None
+    if torch.version.hip is not None:
+        env = os.environ.copy()
+        env["LD_LIBRARY_PATH"] = os.pathsep.join(
+            filter(
+                None,
+                [os.path.join(sys.prefix, "lib"), env.get("LD_LIBRARY_PATH")],
+            )
+        )
+    return subprocess.run(cmd, capture_output=True, text=True, env=env)
 
 
 class TestTopK(unittest.TestCase):
@@ -268,10 +278,14 @@ class TestTopK(unittest.TestCase):
                     result = _run_cpp_runner(
                         RUNNER_PATH, pte_path, ptd_path, input_files, output_base
                     )
+                    failure = (
+                        f"seed={seed} executor_runner failed:\n"
+                        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+                    )
                     self.assertEqual(
                         result.returncode,
                         0,
-                        f"seed={seed}: executor_runner failed:\n{result.stderr}",
+                        failure,
                     )
 
                     cpp_vals = _load_output(

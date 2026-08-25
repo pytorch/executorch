@@ -63,6 +63,16 @@ class GatherVisitor(NodeVisitor):
                 ts.DType.FP16,
                 ts.DType.FP32,
                 ts.DType.BF16,
+                *(
+                    [ts.DType.FP8E4M3]
+                    if self.tosa_spec.support_extension("fp8e4m3")
+                    else []
+                ),
+                *(
+                    [ts.DType.FP8E5M2]
+                    if self.tosa_spec.support_extension("fp8e5m2")
+                    else []
+                ),
             ],
             self.tosa_spec,
         )

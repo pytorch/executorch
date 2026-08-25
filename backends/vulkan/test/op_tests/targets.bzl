@@ -181,6 +181,36 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
+        "adamw_step_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "linear_dW_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "fused_ce_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "quantized_linear_backward_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "q4gsw_requant_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
         "rms_norm_test",
         extra_deps = [
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
@@ -196,5 +226,12 @@ def define_common_targets(is_fbcode = False):
         "quantize_affine_test",
         extra_deps = [
             ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "conv2d_gemm_dynamic_test",
+        extra_deps = [
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "fbsource//xplat/third-party/XNNPACK:XNNPACK",
         ]
     )

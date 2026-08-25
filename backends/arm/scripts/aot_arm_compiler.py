@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2023-2026 Arm Limited and/or its affiliates.
@@ -31,12 +33,16 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.devtools import BundledProgram, generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -452,6 +458,8 @@ TARGETS = [
     "ethos-u55-64",
     "ethos-u55-128",
     "ethos-u55-256",
+    "ethos-u65-256",
+    "ethos-u65-512",
     "ethos-u85-128",
     "ethos-u85-256",
     "ethos-u85-512",
@@ -461,7 +469,16 @@ TARGETS = [
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
     "TOSA-1.0+INT+int16",
-    "cortex-m55+int8",
+    "cortex-m0",
+    "cortex-m0plus",
+    "cortex-m3",
+    "cortex-m4",
+    "cortex-m7",
+    "cortex-m23",
+    "cortex-m33",
+    "cortex-m35p",
+    "cortex-m55",
+    "cortex-m85",
 ]
 
 
@@ -517,6 +534,51 @@ def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
         )
         with open(delegation_file_path, "w") as file:
             file.write(delegation_info_string)
+    print_delegation_summary(delegation_info, intermediate_files_folder)
+
+
+def print_delegation_summary(
+    delegation_info,
+    intermediate_files_folder: Optional[str] = None,
+) -> None:
+    non_delegated_ops = sorted(
+        (
+            (breakdown.op_type, breakdown.non_delegated)
+            for breakdown in delegation_info.delegation_by_operator.values()
+            if breakdown.non_delegated > 0
+        ),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+    summary_lines = ["Delegation summary:"]
+    if delegation_info.num_delegated_nodes == 0:
+        summary_lines.append("  Model was not delegated.")
+    elif delegation_info.num_non_delegated_nodes == 0:
+        summary_lines.append("  Model was fully delegated.")
+    else:
+        summary_lines.append("  Model was partially delegated.")
+
+    summary_lines.append(
+        f"  Delegated partitions for silicon acceleration: {delegation_info.num_delegated_subgraphs}"
+    )
+    summary_lines.append(
+        f"  Non-delegated ops: {delegation_info.num_non_delegated_nodes}"
+    )
+
+    if non_delegated_ops:
+        summary_lines.append("  Non-delegated operators:")
+        for op_type, count in non_delegated_ops:
+            summary_lines.append(f"    - {op_type}: {count}")
+
+    if intermediate_files_folder is not None:
+        delegation_file_path = os.path.join(
+            intermediate_files_folder, "delegation_info.txt"
+        )
+        summary_lines.append("")
+        summary_lines.append("Full delegation report:")
+        summary_lines.append(f"  {delegation_file_path}")
+
+    print("\n".join(summary_lines))
 
 
 def _get_args():
@@ -562,7 +624,7 @@ def _get_args():
         required=False,
         default="ethos-u55-128",
         choices=TARGETS,
-        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m55+int8 (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
+        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m<variant> (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
     )
     # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
     # They are deprecated and no longer functional in this script.
@@ -628,13 +690,13 @@ def _get_args():
         "--system_config",
         required=False,
         default=None,
-        help="System configuration to select from the Vela configuration file (see vela.ini). This option must match the selected target, default is for an optimal system 'Ethos_U55_High_End_Embedded'/'Ethos_U85_SYS_DRAM_High'",
+        help="System configuration to select from the Vela configuration file (see vela.ini). This option must match the selected target, default is for an optimal system 'Ethos_U55_High_End_Embedded'/ 'Ethos_U65_High_End' / 'Ethos_U85_SYS_DRAM_Mid'",
     )
     parser.add_argument(
         "--memory_mode",
         required=False,
         default=None,
-        help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
+        help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U65 and Ethos-U85 targets",
     )
     parser.add_argument(
         "--config",
@@ -778,7 +840,8 @@ def _save_bpte_program(
 
     # Generate BundledProgram
     output_dir = os.path.dirname(output_name)
-    os.makedirs(output_dir, exist_ok=True)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     _save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
@@ -842,8 +905,8 @@ def _to_edge_TOSA_delegate(
     )
 
     # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
-    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
-    # delegated subgraph.
+    # with cortex_m:: equivalents for int8/int16 QDQ ops remaining outside
+    # the delegated subgraph.
     edge = _apply_replace_quant_nodes(edge, target, direct_drive)
 
     return model_quant, edge
@@ -855,18 +918,26 @@ def _to_edge_cortex_m(
     model: GraphModule,
     example_inputs: Tuple[torch.Tensor],
     calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
+    target_config: CortexMTargetConfig,
 ):
     """Cortex-M/CMSIS-NN compilation path with no delegation."""
-    logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
+    logging.info(
+        f"Using Cortex-M/CMSIS-NN compilation path for cpu={target_config.cpu.name} "
+        f"backend={target_config.backend.name}"
+    )
 
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
-            if x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
-                logging.warning(
-                    "Converting input tensor with shape %s to channels_last",
-                    list(x.shape),
-                )
-                return x.to(memory_format=torch.channels_last)
+            if x.dim() == 4:
+                # Singleton channels can satisfy both contiguity checks while
+                # retaining NCHW strides, so always request the target format.
+                channels_last = x.to(memory_format=torch.channels_last)
+                if channels_last.stride() != x.stride():
+                    logging.warning(
+                        "Converting input tensor with shape %s to channels_last",
+                        list(x.shape),
+                    )
+                return channels_last
             return x
         elif isinstance(x, tuple):
             return tuple(_to_channels_last(t) for t in x)
@@ -898,22 +969,15 @@ def _to_edge_cortex_m(
 
     edge = to_edge_transform_and_lower(
         exported_program,
-        compile_config=EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-            ],
-            _check_ir_validity=False,
-        ),
+        compile_config=cortex_m_edge_compile_config(),
     )
 
-    pass_manager = CortexMPassManager(edge.exported_program())
+    pass_manager = CortexMPassManager(
+        edge.exported_program(), target_config=target_config
+    )
     edge._edge_programs["forward"] = pass_manager.transform()
 
-    return model_quant, edge
+    return model_quant, edge, example_inputs
 
 
 def _to_edge_no_delegate(
@@ -950,8 +1014,8 @@ def _to_edge_no_delegate(
     )
 
     # Replace quantized_decomposed::{quantize,dequantize}_per_tensor nodes
-    # with cortex_m:: equivalents for int8 QDQ ops remaining outside the
-    # delegated subgraph.
+    # with cortex_m:: equivalents for int8/int16 QDQ ops remaining outside
+    # the delegated subgraph.
     edge = _apply_replace_quant_nodes(edge, args.target, args.direct_drive)
 
     return model_quant, edge
@@ -968,6 +1032,7 @@ def main() -> None:  # noqa: C901
         args.calibration_data, example_inputs
     )
     model = original_model.eval()
+    model.requires_grad_(False)
 
     # export under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
@@ -1002,20 +1067,22 @@ def main() -> None:  # noqa: C901
     else:
         quant_mode = None
 
-    if args.target == "cortex-m55+int8":
+    if args.target.startswith("cortex-m"):
         # Cortex-M path: CMSIS-NN portable kernels, no delegation
+        target_config = CortexMTargetConfig.from_target_string(args.target)
         if args.delegate:
             logging.warning(
-                "--delegate is ignored for target 'cortex-m55+int8' "
+                f"--delegate is ignored for target {args.target!r} "
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
-        model_quant, edge = _to_edge_cortex_m(
+        model_quant, edge, example_inputs = _to_edge_cortex_m(
             exported_program,
             args,
             model,
             example_inputs,
             calibration_samples,
+            target_config,
         )
     elif args.delegate:
         # As we can target multiple output encodings, one must
@@ -1046,8 +1113,6 @@ def main() -> None:  # noqa: C901
         )
 
     dump_delegation_info(edge, args.intermediates)
-
-    edge_program_manager_copy = copy.deepcopy(edge)
 
     try:
         exec_prog = edge.to_executorch(
@@ -1107,6 +1172,7 @@ def main() -> None:  # noqa: C901
     if args.bundleio or args.etrecord:
         etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
         try:
+            edge_program_manager_copy = copy.deepcopy(edge)
             generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
             print(f"ETRecord saved as {etrecord_file_name}")
         except Exception as e:

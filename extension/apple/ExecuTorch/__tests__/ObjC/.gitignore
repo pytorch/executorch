@@ -1,0 +1,6 @@
+# Resource copies created at build time by scripts/build_apple_frameworks.sh.
+# Mirrored from ../resources/*.pte so the ObjC test target's .copy(...) can
+# find them under its own path per SwiftPM rules.
+add.pte
+add_coreml.pte
+add_mul_coreml.pte

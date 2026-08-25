@@ -26,8 +26,10 @@ class QnnBackendCache {
     ONLINE_PREPARE = 3,
     MULTI_GRAPH = 4,
   };
-  explicit QnnBackendCache(const QnnExecuTorchContextBinary& qnn_context_blob)
-      : qnn_context_blob_(qnn_context_blob) {}
+  explicit QnnBackendCache(
+      const QnnExecuTorchContextBinary& qnn_context_blob,
+      QnnSystemImplementation* qnn_sys_impl)
+      : qnn_sys_impl_(qnn_sys_impl), qnn_context_blob_(qnn_context_blob) {}
   virtual ~QnnBackendCache();
   QnnBackendCache(const QnnBackendCache&) = delete;
   QnnBackendCache(QnnBackendCache&&) = delete;
@@ -66,6 +68,7 @@ class QnnBackendCache {
       __ET_UNUSED const QnnSystemContext_BinaryInfo_t* binaryinfo) {
     return executorch::runtime::Error::Ok;
   }
+  QnnSystemImplementation* qnn_sys_impl_;
 
  private:
   executorch::runtime::Error GetQnnGraphInfoFromBinary(
@@ -79,7 +82,6 @@ class QnnBackendCache {
 
   QnnExecuTorchContextBinary qnn_context_blob_;
   QnnSystemContext_Handle_t sys_context_handle_{nullptr};
-  QnnSystemImplementation qnn_sys_impl_{"libQnnSystem.so"};
   std::vector<std::string> graph_names_;
   std::unordered_map<std::string, std::vector<Qnn_Tensor_t>>
       input_tensor_structs_;

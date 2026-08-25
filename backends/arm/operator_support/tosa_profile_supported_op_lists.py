@@ -60,6 +60,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
     exir_ops.edge.aten.split_copy.Tensor,
+    exir_ops.edge.aten.flip.default,
     exir_ops.edge.aten.floor.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
@@ -69,6 +70,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.gt.Scalar,
     exir_ops.edge.aten.le.Tensor,
     exir_ops.edge.aten.le.Scalar,
+    exir_ops.edge.aten.leaky_relu.default,
     exir_ops.edge.aten.lt.Tensor,
     exir_ops.edge.aten.lt.Scalar,
     exir_ops.edge.aten.mul.Tensor,
@@ -87,8 +89,6 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.tanh.default,
-    exir_ops.edge.aten.upsample_bilinear2d.vec,
-    exir_ops.edge.aten.upsample_nearest2d.vec,
     exir_ops.edge.aten.view_copy.default,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.squeeze_copy.dims,
@@ -101,6 +101,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     exir_ops.edge.aten.pad.default,
     exir_ops.edge.aten.constant_pad_nd.default,
+    exir_ops.edge.aten.argmax.default,
     exir_ops.edge.aten.amax.default,
     exir_ops.edge.aten.amin.default,
     exir_ops.edge.aten.eye.default,
@@ -123,12 +124,32 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.cosh.default,
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
+    exir_ops.edge.aten.selu.default,
+    exir_ops.edge.aten.celu.default,
     exir_ops.edge.aten.bitwise_not.default,
     exir_ops.edge.aten.copy.default,
+    exir_ops.edge.aten.div.Tensor_mode,
     exir_ops.edge.aten.tan.default,
     exir_ops.edge.aten.silu.default,
     exir_ops.edge.aten.detach_copy.default,
+    exir_ops.edge.aten.round.default,
 }
+
+
+# Extra integer ops for the mixed INT+FP support list. These ops can be
+# supported by passes in the backend pipeline, but are intentionally kept out
+# of TOSA_PRO_INT_SupportList because INT-only partitioning expects them to be
+# decomposed before partitioning. Extend this list if the same mixed-profile
+# support gap is observed for other backend-decomposable ops.
+TOSA_PRO_MIXED_DECOMPOSABLE_INT_SupportList: Final[Set] = {
+    exir_ops.edge.aten.slice_scatter.default,
+}
+
+
+# INT-side support list used when partitioning under the mixed INT+FP profile.
+TOSA_PRO_MIXED_INT_SupportList: Final[Set] = (
+    TOSA_PRO_INT_SupportList | TOSA_PRO_MIXED_DECOMPOSABLE_INT_SupportList
+)
 
 
 # FP profile: ops supported via native TOSA ops, decompositions/transformations, precompute, etc.
@@ -168,6 +189,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
     exir_ops.edge.aten.split_copy.Tensor,
+    exir_ops.edge.aten.flip.default,
     exir_ops.edge.aten.floor.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
@@ -211,8 +233,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.tanh.default,
-    exir_ops.edge.aten.upsample_bilinear2d.vec,
-    exir_ops.edge.aten.upsample_nearest2d.vec,
     exir_ops.edge.aten.var.correction,
     exir_ops.edge.aten.var.dim,
     exir_ops.edge.aten.view_copy.default,
@@ -223,6 +243,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     operator.getitem,
     exir_ops.edge.aten.pad.default,
     exir_ops.edge.aten.constant_pad_nd.default,
+    exir_ops.edge.aten.argmax.default,
     exir_ops.edge.aten.amax.default,
     exir_ops.edge.aten.amin.default,
     exir_ops.edge.aten.eye.default,
@@ -248,6 +269,8 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.logit.default,
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
+    exir_ops.edge.aten.selu.default,
+    exir_ops.edge.aten.celu.default,
     exir_ops.edge.aten.copy.default,
     exir_ops.edge.aten.floor_divide.default,
     exir_ops.edge.aten.tan.default,
@@ -257,5 +280,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
 
 __all__ = [
     "TOSA_PRO_INT_SupportList",
+    "TOSA_PRO_MIXED_INT_SupportList",
     "TOSA_PRO_FP_SupportList",
 ]

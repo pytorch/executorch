@@ -52,6 +52,89 @@ TEST_F(MemoryAllocatorTest, MemoryAllocator) {
   ASSERT_NE(nullptr, allocator.allocate(16));
 }
 
+TEST_F(MemoryAllocatorTest, UsedAndFreeSize) {
+  constexpr size_t mem_size = 64;
+  std::array<uint8_t, mem_size> mem_pool{};
+  MemoryAllocator allocator(mem_size, mem_pool.data());
+
+  EXPECT_EQ(allocator.used_size(), 0u);
+  EXPECT_EQ(allocator.free_size(), mem_size);
+
+  void* p1 = allocator.allocate(8, /*alignment=*/8);
+  ASSERT_NE(p1, nullptr);
+  // Independently derive the expected bump offset from the returned block, so
+  // the free_size() check is a real comparison and not the identity
+  // free_size() == size() - used_size().
+  const size_t expected_used1 = static_cast<size_t>(
+      static_cast<uint8_t*>(p1) + 8 - allocator.base_address());
+  EXPECT_EQ(allocator.used_size(), expected_used1);
+  EXPECT_EQ(allocator.free_size(), mem_size - expected_used1);
+
+  void* p2 = allocator.allocate(8, /*alignment=*/8);
+  ASSERT_NE(p2, nullptr);
+  const size_t expected_used2 = static_cast<size_t>(
+      static_cast<uint8_t*>(p2) + 8 - allocator.base_address());
+  EXPECT_GT(expected_used2, expected_used1);
+  EXPECT_EQ(allocator.used_size(), expected_used2);
+  EXPECT_EQ(allocator.free_size(), mem_size - expected_used2);
+
+  allocator.reset();
+  EXPECT_EQ(allocator.used_size(), 0u);
+  EXPECT_EQ(allocator.free_size(), mem_size);
+}
+
+TEST_F(MemoryAllocatorTest, UsedAndFreeSizeZeroCapacity) {
+  MemoryAllocator allocator(0, nullptr);
+  EXPECT_EQ(allocator.used_size(), 0u);
+  EXPECT_EQ(allocator.free_size(), 0u);
+}
+
+namespace {
+// Overrides the accessors with sentinel values to prove base-reference calls
+// dispatch virtually to the override.
+class SentinelAccessorAllocator : public MemoryAllocator {
+ public:
+  using MemoryAllocator::MemoryAllocator;
+  size_t used_size() const override {
+    return 111;
+  }
+  size_t free_size() const override {
+    return 222;
+  }
+};
+} // namespace
+
+TEST_F(MemoryAllocatorTest, UsedAndFreeSizeDispatchVirtually) {
+  std::array<uint8_t, 16> mem_pool{};
+  SentinelAccessorAllocator derived(mem_pool.size(), mem_pool.data());
+  MemoryAllocator& base = derived;
+  EXPECT_EQ(base.used_size(), 111u);
+  EXPECT_EQ(base.free_size(), 222u);
+}
+
+// The base used_size()/free_size() report the true bump-cursor offset
+// (cur_ - begin_): the end of the last block relative to base_address(),
+// including the padding inserted before an aligned allocation. That matches the
+// deleted EspMemoryAllocator's formula (end_block - base_address) exactly. The
+// deleted ArmMemoryAllocator tracker used a different formula that skipped this
+// inter-allocation padding -- for the sequence below it would have reported 17,
+// not 32 -- so dropping it intentionally makes Arm report this corrected value.
+TEST_F(MemoryAllocatorTest, UsedAndFreeSizeAcrossAlignmentPadding) {
+  constexpr size_t mem_size = 128;
+  std::array<uint8_t, mem_size> mem_pool{};
+  MemoryAllocator allocator(mem_size, mem_pool.data());
+
+  // 1-byte block, then a 16-aligned block: 1 + 15 padding + 16 = 32 used.
+  ASSERT_NE(allocator.allocate(1, /*alignment=*/1), nullptr);
+  void* p2 = allocator.allocate(16, /*alignment=*/16);
+  ASSERT_NE(p2, nullptr);
+
+  const size_t expected_used = static_cast<size_t>(
+      static_cast<uint8_t*>(p2) + 16 - allocator.base_address());
+  EXPECT_EQ(allocator.used_size(), expected_used);
+  EXPECT_EQ(allocator.free_size(), allocator.size() - expected_used);
+}
+
 TEST_F(MemoryAllocatorTest, MemoryAllocatorAlignment) {
   constexpr size_t arr_size = 6;
   size_t allocation[arr_size] = {7, 6, 3, 76, 4, 1};

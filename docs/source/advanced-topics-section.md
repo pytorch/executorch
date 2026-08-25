@@ -29,6 +29,17 @@ Key topics:
 - Hardware Backend Selection & Optimization
 - Dynamic Shapes & Advanced Model Features
 
+## Computer Vision Models
+
+Patterns for image model preprocessing, tensor layout, and task-specific output decoding.
+
+**→ {doc}`working-with-cv-models` — Working with computer vision models**
+
+Key topics:
+
+- Resize, crop, dtype conversion, and normalization placement
+- Android and iOS image-to-tensor conversion
+- Classifier, segmentation, detection, and instance segmentation outputs
 
 ## Kernel Library
 
@@ -95,7 +106,7 @@ Key topics:
 
 After exploring advanced topics:
 
-- **{doc}`tools-sdk-section`** - Developer tools for debugging and profiling
+- **{doc}`tools-section`** - Developer tools for debugging and profiling
 - **{doc}`api-section`** - Complete API reference documentation
 
 ```{toctree}
@@ -105,8 +116,10 @@ After exploring advanced topics:
 
 quantization-optimization
 using-executorch-export
+working-with-cv-models
 kernel-library-advanced
 backend-delegate-advanced
 runtime-integration-advanced
 compiler-ir-advanced
 file-formats-advanced
+```

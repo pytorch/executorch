@@ -3,8 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import operator
 from abc import ABC, abstractmethod
+from math import prod
 from typing import Callable
 
 import torch
@@ -12,6 +14,12 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.edge_helper import (
+    input_quantization_parameters,
+    output_quantization_parameters,
+)
+from executorch.backends.nxp.backend.ir import logger as logger
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
@@ -48,6 +56,23 @@ def is_not_qdq_node(node: torch.fx.Node) -> bool:
     return not (_is_quant_node(node) or _is_dequant_node(node))
 
 
+def requires_channels_first_format(cls):
+    """Class decorator for NodeConverter subclasses.
+
+    Marks a converter as requiring that both the node's main input and output
+    use the channels-first data format (as inferred by NodeFormatInference).
+    The check is automatically enforced via `NodeConverter.is_supported()`.
+
+    Usage::
+
+        @requires_channels_first_format
+        class ConvConverter(NodeConverter):
+            ...
+    """
+    cls._requires_channels_first_format = True
+    return cls
+
+
 class NodeConverter(ABC):
     """
     Classes which implement conversion of torch.Node to TFLite should inherit from this class and overwrite the
@@ -55,6 +80,11 @@ class NodeConverter(ABC):
     """
 
     context: ConversionContext
+
+    # If `True`, the `is_supported()` method will disallow delegation if the node's main input/output doesn't have the
+    #  channels first node format.
+    # Subclasses decorated with @requires_channels_first_format will have this set to True.
+    _requires_channels_first_format: bool = False
 
     def __init__(self, context: ConversionContext):
         self.context = context
@@ -89,8 +119,9 @@ class NodeConverter(ABC):
         """
         pass
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
@@ -111,6 +142,36 @@ class NodeConverter(ABC):
         return True
 
     @classmethod
+    def _node_format_is_supported(cls, node: Node) -> bool:
+        """Check that the node's main input and output carry the channels-first data format, if the converter was
+             decorated with `@requires_channels_first_format`.
+
+        When the decorator is not present the check returns True.
+
+        :param node: The node to inspect.
+        :return: True when the format requirement is satisfied (or not applicable).
+        """
+        if not cls._requires_channels_first_format:
+            return True
+
+        def _is_channels_first(n: Node) -> bool:
+            return (
+                n.meta.get(NXP_NODE_FORMAT, DataFormat.NONE)
+                is DataFormat.CHANNELS_FIRST
+            )
+
+        format_requirement_satisfied = _is_channels_first(node) and _is_channels_first(
+            node.args[0]
+        )
+        if not format_requirement_satisfied:
+            logging.warning(
+                f"NXP backend: Node `{node}` requires channels-first format for its input and output, but the inferred "
+                "format does not satisfy this requirement. The node will not be delegated. Please report this issue."
+            )
+
+        return format_requirement_satisfied
+
+    @classmethod
     def is_supported(
         cls,
         node: Node,
@@ -128,10 +189,15 @@ class NodeConverter(ABC):
                                     be outdated.
         :param custom_delegation_options: Custom user options which affect node delegation.
         """
-        return cls._is_supported_in_IR(
-            node, parameters_mapping, custom_delegation_options
-        ) and cls._is_supported_on_target(
-            node, neutron_target_spec, parameters_mapping, custom_delegation_options
+
+        return (
+            cls._node_format_is_supported(node)
+            and cls._is_supported_in_IR(
+                node, parameters_mapping, custom_delegation_options
+            )
+            and cls._is_supported_on_target(
+                node, neutron_target_spec, parameters_mapping, custom_delegation_options
+            )
         )
 
     @classmethod
@@ -161,7 +227,12 @@ class NodeConverter(ABC):
 
     @staticmethod
     def _has_shared_q_params_if_quantized(node: Node) -> bool:
-        """Check if node has shared quantization parameters if it's quantized."""
+        """Check if node has shared quantization parameters for first input and output if it's quantized.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if first input and output parameters have the same quantization parameters.
+                 False otherwise.
+        """
         if len(node.users) < 1 or len(node.all_input_nodes) < 1:
             # Some exotic operator (only consumer or only produces)
             return True
@@ -171,17 +242,17 @@ class NodeConverter(ABC):
 
         if _is_dequant_node(pre_node) and _is_quant_node(post_node):
             # Node is quantized
-            pre_zp = pre_node.args[1]
-            pre_scale = pre_node.args[2]
+            pre_scale = pre_node.args[1]
+            pre_zp = pre_node.args[2]
             pre_type = pre_node.args[5]
 
-            post_zp = post_node.args[1]
-            post_scale = post_node.args[2]
+            post_scale = post_node.args[1]
+            post_zp = post_node.args[2]
             post_type = pre_node.args[5]
 
             # Q-params match?
             return (
-                pre_zp == post_zp and pre_scale == post_scale and pre_type == post_type
+                pre_scale == post_scale and pre_zp == post_zp and pre_type == post_type
             )
 
         # Node not quantized
@@ -189,7 +260,9 @@ class NodeConverter(ABC):
 
     @staticmethod
     def is_node_alone_in_partition(
-        node: Node, partition_list: list[Partition], filter_fn: Callable[[Node], bool]
+        node: Node,
+        partition_list: list[Partition],
+        filter_fn: Callable[[Node], bool] = is_not_qdq_node,
     ) -> bool:
         """Return True if `node` is the only node in its partition for which `filter_fn`
         returns True.
@@ -200,9 +273,8 @@ class NodeConverter(ABC):
 
         :param node: The torch.fx.Node to check.
         :param partition_list: List of proposed partitions.
-        :param filter_fn: Predicate applied to nodes in the partition.
-                        `node` is considered alone if it is the only node
-                        for which this predicate returns True.
+        :param filter_fn: Predicate applied to nodes in the partition. `node` is considered alone if it is the only node
+                           for which this predicate returns True. By default, Q/Dq nodes are ignored.
         """
         partitions = [p for p in partition_list if node in p.nodes]
         if len(partitions) != 1:
@@ -220,22 +292,16 @@ class NodeConverter(ABC):
         """Assert that the call `is_supported()` returns `True`. Otherwise, raise an exception and print an
         error message.
         """
-        supported_in_ir = self._is_supported_in_IR(
-            node,
-            self.context.parameters_mapping,
-            self.context.custom_delegation_options,
-        )
 
-        supported_on_target = self._is_supported_on_target(
+        is_supported = self.is_supported(
             node,
             self.neutron_target_spec,
             self.context.parameters_mapping,
             self.context.custom_delegation_options,
         )
-
-        assert supported_in_ir and supported_on_target, (
-            f"Node `{node}` was selected for delegation to Neutron, but it is not convertible to the intermediate "
-            "representation. There is an error in the Neutron partitioner. Please report this."
+        assert is_supported, (
+            f"NXP backend: Node `{node}` was selected for delegation to Neutron, but it is not convertible to the "
+            "intermediate representation. There is an error in the Neutron partitioner. Please report this."
         )
 
     @property
@@ -308,3 +374,165 @@ class NodeConverter(ABC):
                 t_operator.tmp_outputs.append(self.builder.tensor_for_name(tensor_name))
 
         return t_operator
+
+    @staticmethod
+    def uses_quantization_type_for_inputs(
+        node: Node,
+        supported_types: list[torch.dtype],
+        input_indices: list[int | tuple[int, int]],
+    ) -> bool:
+        """Check if `node` uses the QDQ quantization schema and inputs on the provided indices use a quantization type
+            that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no type checking is performed and `True` is returned.
+        :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
+        """
+        return all(
+            (params := input_quantization_parameters(node, input_index)) is not None
+            and params[2] in supported_types
+            for input_index in input_indices
+        )
+
+    @staticmethod
+    def uses_quantization_type_for_outputs(
+        node: Node,
+        supported_types: list[torch.dtype],
+        output_indices: list[int],
+    ):
+        """Check if `node` uses the QDQ quantization schema and outputs on the provided indices use a quantization type
+            that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no type checking is performed and `True` is returned.
+        :return: True, if the `node` is QDQ quantized and has quantization output types in `supported_types`.
+        """
+        return all(
+            (q_params := output_quantization_parameters(node, output_index)) is not None
+            and q_params[2] in supported_types
+            for output_index in output_indices
+        )
+
+    @staticmethod
+    def uses_quantization_type_for_io(
+        node: Node,
+        supported_types: list[torch.dtype],
+        input_indices: list[int | tuple[int, int]],
+        output_indices: list[int],
+    ):
+        """Check if `node` uses the QDQ quantization schema and inputs and outputs on the provided indices use a
+            quantization type that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no input type checking is performed.
+        :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no output type checking is performed.
+        :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
+        """
+        return NodeConverter.uses_quantization_type_for_inputs(
+            node, supported_types, input_indices
+        ) and NodeConverter.uses_quantization_type_for_outputs(
+            node, supported_types, output_indices
+        )
+
+    @staticmethod
+    def uses_shape_broadcasting(node: Node) -> bool:
+        """Determine if given PyTorch fx Node uses shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if the node uses shape broadcasting for it's input nodes.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): Operator has no inputs!",
+            )
+
+        first_input_shape = node.all_input_nodes[0].meta["val"].shape
+
+        return any(
+            input_tensor.meta["val"].shape != first_input_shape
+            for input_tensor in node.all_input_nodes[1:]
+        )
+
+    @staticmethod
+    def inputs_satisfy_broadcast_condition(node: Node) -> bool:
+        """Determine if given PyTorch fx Node has inputs that satisfy broadcasting conditions for Neutron or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if at least one input has the same number of elements as the output node.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.inputs_satisfy_broadcast_condition(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.inputs_satisfy_broadcast_condition(): Operator has no inputs!",
+            )
+
+        output_shape = node.meta["val"].shape
+        num_elements = prod(output_shape)
+
+        return any(
+            prod(input_tensor.meta["val"].shape) == num_elements
+            for input_tensor in node.all_input_nodes
+        )
+
+    @staticmethod
+    def _all_io_shares_quantization_parameters(node: Node) -> bool:
+        """Determine if given PyTorch fx Node has all inputs and output with same quantization parameters.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if all input and output parameters have the same quantization parameters.
+                 False otherwise.
+        """
+        post_node = list(node.users.keys())[0]
+        if not _is_quant_node(post_node):
+            return False
+        output_scale, output_zp, output_type = (
+            post_node.args[1],
+            post_node.args[2],
+            post_node.args[5],
+        )
+
+        for input_node in node.all_input_nodes:
+            if not _is_dequant_node(input_node):
+                return False
+
+            input_scale, input_zp, input_type = (
+                input_node.args[1],
+                input_node.args[2],
+                input_node.args[5],
+            )
+            if (input_scale, input_zp, input_type) != (
+                output_scale,
+                output_zp,
+                output_type,
+            ):
+                return False
+
+        return True

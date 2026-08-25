@@ -29,7 +29,6 @@ using namespace torch::executor::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
 
 class TrainingLoopTest : public ::testing::Test {
  protected:

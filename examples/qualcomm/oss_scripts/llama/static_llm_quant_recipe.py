@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import List, Optional
 
 import torch
 from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_kv_8bit
@@ -13,7 +13,7 @@ from executorch.backends.qualcomm.quantizer.quant_recipe import (
     QuantRecipe,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from torchao.quantization.pt2e import MinMaxObserver
+from torchao.quantization.pt2e import MinMaxObserver, MovingAverageMinMaxObserver
 
 
 class StaticLLMQuantRecipe:
@@ -44,6 +44,12 @@ class StaticLLMQuantRecipe:
     def get_logits_output_bit_width(self) -> int:
         # We use 16bit logits for all quant config
         return 32 if self.default_quant_dtype is None else 16
+
+
+class StaticLLMQATRecipe(StaticLLMQuantRecipe):
+    """Base class for QAT recipes. Adds frozen param patterns."""
+
+    frozen_param_patterns: List[str] = []
 
 
 class LlamaStories260KQuantRecipe(StaticLLMQuantRecipe):
@@ -103,7 +109,7 @@ class LlamaStories110MQuantRecipe(StaticLLMQuantRecipe):
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
-                {r"layers\..*\.attention\.wv.*"},
+                {r"layers\..*\.attention\..*wv.*"},
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
@@ -150,7 +156,7 @@ class Llama3_1BQuantRecipe(StaticLLMQuantRecipe):
             .add_regex(
                 {
                     r"output\.conv",
-                    r"layers\.[0-3]\.feed_forward\.w2_conv",
+                    r"layers\.[0-3]\.feed_forward\..*w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -189,7 +195,7 @@ class Llama3_3BQuantRecipe(StaticLLMQuantRecipe):
             .add_regex(
                 {
                     r"output\.conv",
-                    r"layers\.2[1-7]\.feed_forward\.w2_conv",
+                    r"layers\.2[1-7]\.feed_forward\..*w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -249,7 +255,7 @@ class Gemma_2BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                     r"output\.conv",
                 },
                 QuantDtype.use_16a8w,
@@ -287,7 +293,7 @@ class Gemma2QuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -324,7 +330,7 @@ class Gemma3QuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -333,6 +339,30 @@ class Gemma3QuantRecipe(StaticLLMQuantRecipe):
             )
         )
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
+class Gemma4QuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a8w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = QuantRecipe(
+            self.default_quant_dtype,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_TENSOR,
+            verbose=verbose,
+        ).add_node_target(
+            {
+                torch.ops.aten.conv2d.default,
+            },
+            QuantDtype.use_16a4w_block,
+            False,
+            act_observer=MinMaxObserver,
+            granularity=QuantGranularity.PER_BLOCK,
+            extra_kwargs={"block_size": (1, 64, 1, 1)},
+        )
 
 
 class GLM_1_5B_InstructQuantRecipe(StaticLLMQuantRecipe):
@@ -396,7 +426,7 @@ class Granite_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -405,6 +435,45 @@ class Granite_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
             )
         )
         self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
+class GraniteSpeech_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
+    default_quant_dtype = QuantDtype.use_16a4w
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w_block,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_BLOCK,
+                extra_kwargs={"block_size": (1, 64, 1, 1)},
+            )
+            .add_regex(
+                {
+                    r"layers\..*\.attention\..*wv.*",
+                    r"layers\..*\.feed_forward\..*w3_conv",
+                    r"layers\..*\.feed_forward\..*w2_conv",
+                    r"output\.conv",
+                },
+                QuantDtype.use_16a8w,
+                False,
+                act_observer=MinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
 
 
 class InternVL3_1B_QuantRecipe(StaticLLMQuantRecipe):
@@ -455,7 +524,7 @@ class Phi4MiniQuantRecipe(StaticLLMQuantRecipe):
                 extra_kwargs={"block_size": (1, 16, 1, 1)},
             )
             .add_regex(
-                {r"layers\..*\.attention\.wv.*"},
+                {r"layers\..*\.attention\..*wv.*"},
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
@@ -557,7 +626,7 @@ class Qwen3_0_6BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.feed_forward\.w2_conv",
+                    r"layers\..*\.feed_forward\..*w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -627,6 +696,51 @@ class Smollm2QuantRecipe(StaticLLMQuantRecipe):
         )
 
 
+class Smollm2QATQuantRecipe(StaticLLMQATRecipe):
+    default_quant_dtype = QuantDtype.use_16a8w
+    frozen_param_patterns: List[str] = [
+        r"tok_embedding",  # Freeze token embeddings to prevent drift in the token space.
+        r"output\.conv",  # Freeze lm head to prevent drift in the token space.
+    ]
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+            .add_regex(
+                {r"tok_embeddings"},
+                QuantDtype.use_16a8w,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+            )
+            .add_regex(
+                {r"output\.conv"},
+                QuantDtype.use_16a8w,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
+
+
 class Smollm3QuantRecipe(StaticLLMQuantRecipe):
 
     default_quant_dtype = QuantDtype.use_16a4w
@@ -654,9 +768,9 @@ class Smollm3QuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wq.*",
-                    r"layers\..*\.attention\.wk.*",
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wq.*",
+                    r"layers\..*\.attention\..*wk.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,

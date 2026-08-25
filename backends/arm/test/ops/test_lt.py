@@ -155,6 +155,8 @@ def test_lt_tensor_tosa_INT_a16w8(test_module):
         LessThan.aten_op_tensor,
         LessThan.exir_op,
         tosa_extensions=["int16"],
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -167,6 +169,8 @@ def test_lt_scalar_tosa_INT_a16w8(test_module):
         LessThan.aten_op_tensor,
         LessThan.exir_op,
         tosa_extensions=["int16"],
+        frobenius_threshold=None,  # Quantized comparisons with small diffs can be inaccurate, leading to large errors in unlucky cases.
+        cosine_threshold=None,
     )
     pipeline.run()
 

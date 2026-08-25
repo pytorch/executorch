@@ -31,6 +31,24 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
+fbcode_target(_kind = runtime.python_library,
+    name = "run_static_llm",
+    srcs = [
+        "run_static_llm.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.apple.coreml.llama",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/models/llama/runner:eager_runner_library",
+        "//executorch/examples/models/llama:static_attention",
+        "//executorch/runtime:runtime",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
+    ],
+)
+
 fbcode_target(_kind = runtime.python_binary,
     name = "export",
     srcs = [

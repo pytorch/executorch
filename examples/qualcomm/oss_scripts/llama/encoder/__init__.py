@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
+    AudioModalityConfig,
     InternVL3Encoder,
     MultiModalityConfig,
     SmolVLMEncoder,
@@ -12,16 +13,19 @@ from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config impor
 )
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_quant_recipe import (
     EncoderQuantRecipe,
-    InternVL3_Encoder_QuantRecipe,
-    SmolVLM_Encoder_QuantRecipe,
+    GraniteSpeechEncoderQuantRecipe,
+    InternVL3EncoderQuantRecipe,
+    SmolVLMEncoderQuantRecipe,
 )
 
 __all__ = [
     "EncoderQuantRecipe",
     "InternVL3Encoder",
-    "InternVL3_Encoder_QuantRecipe",
+    "InternVL3EncoderQuantRecipe",
     "MultiModalityConfig",
     "SmolVLMEncoder",
-    "SmolVLM_Encoder_QuantRecipe",
+    "SmolVLMEncoderQuantRecipe",
     "VisionModalityConfig",
+    "AudioModalityConfig",
+    "GraniteSpeechEncoderQuantRecipe",
 ]

@@ -16,8 +16,7 @@ namespace example {
  * @class MultimodalPromptProcessor
  * @brief Extended PromptProcessor with multimodal embedding support
  */
-template <typename T>
-class MultimodalPromptProcessor : public example::PromptProcessor<T> {
+class MultimodalPromptProcessor : public example::PromptProcessor {
  public:
   struct Metadata {
     int32_t context_len;
@@ -33,9 +32,10 @@ class MultimodalPromptProcessor : public example::PromptProcessor<T> {
 
   MultimodalPromptProcessor(
       DecoderRunner* decoder_runner,
-      KVManager<T>* kv_manager,
+      KVManager* kv_manager,
       const std::string& method_name,
-      Metadata metadata);
+      Metadata metadata,
+      std::unique_ptr<executorch::extension::MethodMeta> method_meta);
 
   int64_t get_num_heads() const {
     return metadata_.num_heads;
@@ -74,34 +74,29 @@ class MultimodalPromptProcessor : public example::PromptProcessor<T> {
    * @return Total I/O size in bytes.
    */
   inline const size_t total_prompt_processor_io_size_in_bytes() const {
-    if (metadata_.cache_mode == CacheMode::HybridCache) {
-      return input_toks_.size + input_pos_.size + attention_mask_.size +
-          window_attention_mask_.size + logits_.size + input_embedding_.size;
-    } else {
-      return input_toks_.size + input_pos_.size + attention_mask_.size +
-          logits_.size + input_embedding_.size;
-    }
+    return input_toks_.size + input_pos_.size + attention_mask_.size +
+        window_attention_mask_.size + logits_.size + input_embedding_.size;
   }
 
  private:
   // Reuse members from token_generator
-  using PromptProcessor<T>::decoder_runner_;
-  using PromptProcessor<T>::kv_manager_;
-  using PromptProcessor<T>::method_name_;
-  using PromptProcessor<T>::k_cache_in_;
-  using PromptProcessor<T>::v_cache_in_;
-  using PromptProcessor<T>::k_cache_out_;
-  using PromptProcessor<T>::v_cache_out_;
-  using PromptProcessor<T>::input_toks_;
-  using PromptProcessor<T>::input_pos_;
-  using PromptProcessor<T>::attention_mask_;
-  using PromptProcessor<T>::window_attention_mask_;
-  using PromptProcessor<T>::logits_;
-  using PromptProcessor<T>::inputs_;
-  using PromptProcessor<T>::input_tensors_;
-  using PromptProcessor<T>::output_tensors_;
-  using PromptProcessor<T>::prompt_all_logits_;
-  using PromptProcessor<T>::is_bert;
+  using PromptProcessor::attention_mask_;
+  using PromptProcessor::decoder_runner_;
+  using PromptProcessor::input_pos_;
+  using PromptProcessor::input_tensors_;
+  using PromptProcessor::input_toks_;
+  using PromptProcessor::inputs_;
+  using PromptProcessor::is_bert;
+  using PromptProcessor::k_cache_in_;
+  using PromptProcessor::k_cache_out_;
+  using PromptProcessor::kv_manager_;
+  using PromptProcessor::logits_;
+  using PromptProcessor::method_name_;
+  using PromptProcessor::output_tensors_;
+  using PromptProcessor::prompt_all_logits_;
+  using PromptProcessor::v_cache_in_;
+  using PromptProcessor::v_cache_out_;
+  using PromptProcessor::window_attention_mask_;
 
   /**
    * @brief Fill in I/O buffers with embedding data and position.

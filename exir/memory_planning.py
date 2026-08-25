@@ -30,8 +30,13 @@ from executorch.exir import memory
 from executorch.exir.control_flow import while_loop as exir_while
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.error import internal_assert, InternalError
-from executorch.exir.operator.convert import is_inplace_variant, is_out_variant
-from executorch.exir.schema import TensorShapeDynamism
+from executorch.exir.operator.convert import (
+    is_inplace_variant,
+    is_out_variant,
+    output_to_aliased_input_map,
+    unwrap_op_overload,
+)
+from executorch.exir.schema import DeviceType, NonConstBufferDevice, TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch import fx
 from torch.export.exported_program import (
@@ -186,9 +191,16 @@ class Verifier:
                 if not allow_lifetime_and_storage_overlap and self.lifetime_overlap(
                     lhs_spec, rhs_spec
                 ):
-                    raise InternalError(
-                        f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
+                    # In-place element-wise ops intentionally share storage
+                    # between input and output despite overlapping lifetimes.
+                    is_inplace_pair = (
+                        lhs_spec.inplace_base is rhs_spec
+                        or rhs_spec.inplace_base is lhs_spec
                     )
+                    if not is_inplace_pair:
+                        raise InternalError(
+                            f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
+                        )
 
                 # Check that each mem_obj_id is consistent with whether the tensors have
                 # storage overlap
@@ -302,13 +314,137 @@ def _is_out_var_node(node: torch.fx.Node) -> bool:
 
 
 def _is_inplace_node(node: torch.fx.Node) -> bool:
-    return (
-        node.op == "call_function"
-        and isinstance(node.target, torch._ops.OpOverload)
-        and is_inplace_variant(
-            node.target._schema.name, node.target._schema.overload_name
+    if node.op != "call_function":
+        return False
+    target = node.target
+    if not isinstance(target, torch._ops.OpOverload) and not isinstance(
+        getattr(target, "_op", None), torch._ops.OpOverload
+    ):
+        return False
+    op = unwrap_op_overload(target)
+    return is_inplace_variant(op._schema.name, op._schema.overload_name)
+
+
+def _alias_inplace_result_specs(node: torch.fx.Node) -> None:  # noqa: C901
+    """Alias an in-place op's result TensorSpec(s) onto the corresponding
+    input's spec.
+
+    In-place ops (schema kind == inplace) mutate one or more of their
+    inputs and return tensors that alias them, declared via the
+    ``Tensor(a!)`` schema annotation. To make the memory planner treat
+    result and aliased input as one storage, we copy the input's spec
+    object onto the output's ``node.meta["spec"]`` slot.
+
+    Output→input correspondence is computed via
+    ``output_to_aliased_input_map``, which matches each return's
+    write-alias set against the inputs that share it.
+
+    Gating:
+
+    - Only runs for in-place nodes (caller checks ``_is_inplace_node``).
+    - Multi-output in-place ops are supported when each return's alias
+      set matches exactly one input's alias set.
+    - Falls through silently when alias info is absent or unparseable,
+      preserving the original spec. ``logging.debug`` records each
+      early-return reason so silent regressions are observable.
+    """
+    target = node.target
+    op = unwrap_op_overload(target)
+
+    schema = op._schema
+    out_to_in = output_to_aliased_input_map(schema)
+    if not out_to_in:
+        logging.debug(
+            f"_alias_inplace_result_specs: schema for {op} declares no "
+            f"write-aliased outputs matching an input; skipping."
         )
-    )
+        return
+
+    # Normalize the current spec container into a list for uniform
+    # handling. Caller guarantees this node was identified as an
+    # in-place op with a meta spec (see `_is_inplace_node`), so an
+    # unrecognized container shape is a real bug — assert loudly so it
+    # surfaces in tests rather than silently disabling aliasing.
+    current = node.meta.get("spec")
+    if isinstance(current, TensorSpec):
+        out_specs_list: List[Optional[TensorSpec]] = [current]
+        return_container_kind = "scalar"
+    elif isinstance(current, (list, tuple)):
+        out_specs_list = list(current)
+        return_container_kind = type(current).__name__
+    else:
+        raise InternalError(
+            f"_alias_inplace_result_specs: in-place node {node.name} "
+            f"({op}) has unrecognized spec container of type "
+            f"{type(current).__name__!r}; expected TensorSpec, list, "
+            f"or tuple."
+        )
+
+    # Compute new spec for each return; None means "keep original".
+    # Mutated inputs are usually positional (the `Tensor(a!)` `self`
+    # arg), but custom ops may pass them via kwargs — fall back to
+    # `node.kwargs[arg_name]` in that case.
+    replacements: List[Optional[TensorSpec]] = [None] * len(out_specs_list)
+
+    for out_idx, in_idx in out_to_in.items():
+        if out_idx >= len(out_specs_list):
+            logging.debug(
+                f"_alias_inplace_result_specs: schema for {op} declares "
+                f"return {out_idx} but spec container has only "
+                f"{len(out_specs_list)} entries; skipping this return."
+            )
+            continue
+        # Resolve the mutated input. Prefer positional args, fall back
+        # to kwargs by argument name (custom ops may pass `Tensor(a!)`
+        # args via kwargs).
+        in_node: object
+        if in_idx < len(node.args):
+            in_node = node.args[in_idx]
+        else:
+            arg_name = (
+                schema.arguments[in_idx].name
+                if in_idx < len(schema.arguments)
+                else None
+            )
+            if arg_name is None or arg_name not in node.kwargs:
+                logging.debug(
+                    f"_alias_inplace_result_specs: schema for {op} "
+                    f"expects mutated input at position {in_idx} "
+                    f"(name={arg_name!r}) but it is supplied neither "
+                    f"positionally nor via kwargs; skipping."
+                )
+                continue
+            in_node = node.kwargs[arg_name]
+        if not isinstance(in_node, torch.fx.Node):
+            continue
+        # NOTE: alias unconditionally — including when the input is a
+        # placeholder (named buffer / mutable input). Skipping
+        # placeholders would leave a dangling out-arg on in-place op
+        # instructions whose self is a buffer; the runtime kernel
+        # writes to that out-arg's storage rather than mutating the
+        # buffer, producing incorrect results. The companion change in
+        # `_emit_spec` (emit/_emitter.py) deduplicates by spec identity
+        # so this aliasing doesn't produce two Values for the same FQN.
+        in_spec = in_node.meta.get("spec")
+        if not isinstance(in_spec, TensorSpec):
+            continue
+        replacements[out_idx] = in_spec
+
+    if not any(r is not None for r in replacements):
+        return
+
+    # Assemble the new spec container, preserving the original shape.
+    new_list = [
+        replacements[i] if replacements[i] is not None else out_specs_list[i]
+        for i in range(len(out_specs_list))
+    ]
+    if return_container_kind == "scalar":
+        if isinstance(new_list[0], TensorSpec):
+            node.meta["spec"] = new_list[0]
+    elif return_container_kind == "list":
+        node.meta["spec"] = list(new_list)
+    elif return_container_kind == "tuple":
+        node.meta["spec"] = tuple(new_list)
 
 
 def update_tensor_lifetime(
@@ -474,6 +610,11 @@ def collect_specs_from_nodes(  # noqa: C901
             continue
 
         if _is_inplace_node(node):
+            # Schema-driven: alias the in-place op's result spec(s) onto
+            # the corresponding mutated input's spec so the planner gives
+            # them the same allocation slot. See `_alias_inplace_result_specs`
+            # for the full rationale and gating rules.
+            _alias_inplace_result_specs(node)
             continue
 
         if _is_mutable_buffer(node, graph_signature) and ignore_mutable_buffers:
@@ -798,6 +939,86 @@ def _contains_xnnpack_delegate(graph_module: torch.fx.GraphModule) -> bool:
     return False
 
 
+def _resolve_inplace_specs(
+    deferred_inplace: List[TensorSpec],
+    spec2obj: Dict[TensorSpec, SharedObject],
+    greedy_result: MemoryAlgoResult,
+) -> None:
+    remaining = list(deferred_inplace)
+    while remaining:
+        progress = False
+        next_remaining = []
+        for spec in remaining:
+            base = spec.inplace_base
+            if base not in spec2obj:
+                next_remaining.append(spec)
+                continue
+            progress = True
+            sobj = spec2obj[base]
+
+            base_alloc_result = greedy_result.spec_dict[base]
+            spec_alloc_result = greedy_result.spec_dict[spec]
+            spec_alloc_result.mem_id = base_alloc_result.mem_id
+
+            base_alloc_offset = None
+            for alloc_entry in sobj.allocations:
+                if alloc_entry.spec is base:
+                    base_alloc_offset = alloc_entry.offset
+                    break
+            assert base_alloc_offset is not None, (
+                f"Base allocation entry not found in shared object for spec "
+                f"with allocated_memory={spec.allocated_memory}"
+            )
+            sobj.first_used_index = min(sobj.first_used_index, spec.lifetime[0])
+            sobj.last_used_index = max(sobj.last_used_index, spec.lifetime[1])
+            sobj.allocations.append(AllocationSpec(base_alloc_offset, spec))
+            spec2obj[spec] = sobj
+        if not progress:
+            unresolved = ", ".join(
+                f"allocated_memory={s.allocated_memory}" for s in next_remaining
+            )
+            raise InternalError(
+                f"Circular or unresolvable in-place dependency chain: {unresolved}"
+            )
+        remaining = next_remaining
+
+
+def _compute_total_sizes(
+    shared_objects: Dict[int, List[SharedObject]],
+    graph_module: torch.fx.GraphModule,
+    extra_padding: int,
+    greedy_result: MemoryAlgoResult,
+    num_specs_expected: int,
+) -> List[int]:
+    if len(shared_objects) == 0:
+        return [0, 0]
+
+    total_sizes = [0] * (max(shared_objects.keys()) + 1)
+    num_specs_processed = 0
+    for mem_id in shared_objects:
+        input_total_size = 0
+        if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
+            assert isinstance(bufsizes, list)
+            if len(bufsizes) > mem_id:
+                input_total_size = bufsizes[mem_id]
+        total_sizes[mem_id] = materialize_buffer(
+            shared_objects[mem_id], input_total_size
+        )
+        total_sizes[mem_id] += extra_padding
+
+        for sobj in shared_objects[mem_id]:
+            for alloc in sobj.allocations:
+                spec_alloc_result = greedy_result.spec_dict.get(alloc.spec, None)
+                assert spec_alloc_result is not None, f"Spec {alloc.spec} not found."
+                spec_alloc_result.mem_obj_id = sobj.idx
+                spec_alloc_result.mem_offset = sobj.offset + alloc.offset
+                num_specs_processed += 1
+    assert (
+        num_specs_expected == num_specs_processed
+    ), f"All specs should be processed but there were {num_specs_expected} specs and processed {num_specs_processed} specs"
+    return total_sizes
+
+
 def greedy(
     alignment: int,
     specs: Set[TensorSpec],
@@ -824,12 +1045,9 @@ def greedy(
         MemoryAlgoResult containing the allocation decisions
     """
     greedy_result = MemoryAlgoResult({}, [])
-    spec2obj = {}
-    shared_objects = defaultdict(list)
+    spec2obj: Dict[TensorSpec, SharedObject] = {}
+    shared_objects: Dict[int, List[SharedObject]] = defaultdict(list)
 
-    # For each tensor, pick the available shared object with closest size to
-    # the tensor. If there are no available shared object left, create a new
-    # one.
     import bisect
 
     sorted_specs = []
@@ -838,9 +1056,9 @@ def greedy(
 
     sorted_specs.reverse()
 
+    deferred_inplace: List[TensorSpec] = []
+
     for spec in sorted_specs:
-        # Create an entry for this TensorSpec in the result object that we'll be
-        # returning from this algorithm.
         spec_alloc_result = greedy_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         if spec.mem_id is None:
             spec_alloc_result.mem_id = 1
@@ -848,46 +1066,22 @@ def greedy(
             spec_alloc_result.mem_id = spec.mem_id
         greedy_result.spec_dict[spec] = spec_alloc_result
         spec.realign(alignment)
+
+        if spec.inplace_base is not None:
+            deferred_inplace.append(spec)
+            continue
+
         spec2obj[spec] = pick_shared_obj(
             shared_objects[spec_alloc_result.mem_id],
             spec,
             allow_overlapping_allocations,
         )
 
-    if len(shared_objects) == 0:
-        # Cannot find any tensor in the graph that needs to be allocated.
-        # Return [0, 0] to be consistent with default behavior of naive.
-        total_sizes = [0, 0]
-    else:
-        total_sizes = [0] * (max(shared_objects.keys()) + 1)
-        num_specs_processed = 0
-        for mem_id in shared_objects:
-            input_total_size = 0
-            if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
-                assert isinstance(bufsizes, list)
-                if len(bufsizes) > mem_id:
-                    input_total_size = bufsizes[mem_id]
-            total_sizes[mem_id] = materialize_buffer(
-                shared_objects[mem_id], input_total_size
-            )
-            total_sizes[mem_id] += extra_padding
+    _resolve_inplace_specs(deferred_inplace, spec2obj, greedy_result)
 
-            # Since we now know the number of shared objects we need and the size of
-            # each shared object, we can assign offset in the memory buffer for each
-            # shared object.
-            for sobj in shared_objects[mem_id]:
-                for alloc in sobj.allocations:
-                    spec = alloc.spec
-                    # Get the spec_alloc_result for this spec and update it with the
-                    # mem_obj_id and mem_offset generated by this algorithm.
-                    spec_alloc_result = greedy_result.spec_dict.get(spec, None)
-                    assert spec_alloc_result is not None, f"Spec {spec} not found."
-                    spec_alloc_result.mem_obj_id = sobj.idx
-                    spec_alloc_result.mem_offset = sobj.offset + alloc.offset
-                    num_specs_processed += 1
-        assert (
-            len(spec2obj) == num_specs_processed
-        ), f"All specs should be processed but there were {len(spec2obj)} specs and processed {num_specs_processed} specs"
+    total_sizes = _compute_total_sizes(
+        shared_objects, graph_module, extra_padding, greedy_result, len(spec2obj)
+    )
 
     logging.debug(f"greedy algorithm returns bufsizes: {total_sizes}")
     greedy_result.bufsizes = total_sizes
@@ -1012,6 +1206,12 @@ def naive(
     bufsizes = cast(List[int], bufsizes)
 
     for spec in specs:
+        if spec.inplace_base is not None:
+            raise InternalError(
+                "The naive memory planning algorithm does not support in-place "
+                "element-wise ops (inplace_base). Use the greedy algorithm instead."
+            )
+
         spec_alloc_result = naive_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         # assume a single memory layer which has mem_id 1
         if spec.mem_id is None:
@@ -1203,6 +1403,77 @@ def _apply_algo_to_submodules(
     return bufsizes
 
 
+_CPU_KEY: tuple[DeviceType, int] = (DeviceType.CPU, 0)
+
+
+def _partition_specs_by_device(
+    all_specs: list[TensorSpec],
+    enable_non_cpu_memory_planning: bool,
+) -> dict[tuple[DeviceType, int], list[TensorSpec]]:
+    """Partition specs by (device_type, device_index).
+
+    Different device indices on the same device type (e.g. CUDA:0 vs CUDA:1)
+    get separate memory buffers.
+
+    When ``enable_non_cpu_memory_planning`` is False (legacy), all specs are
+    placed into a single CPU:0 bucket regardless of their device attribute.
+
+    Insertion order is preserved within each partition because order-sensitive
+    algorithms (e.g. greedy with bisect.insort) rely on it for stable tie-breaking.
+    """
+    specs_by_device: dict[tuple[DeviceType, int], list[TensorSpec]] = defaultdict(list)
+    if not enable_non_cpu_memory_planning:
+        specs_by_device[_CPU_KEY] = all_specs
+        return specs_by_device
+
+    has_non_cpu_specs = False
+    has_pre_assigned_mem_id = False
+    for spec in all_specs:
+        device_key = (spec.device, spec.device_index)
+        specs_by_device[device_key].append(spec)
+        if spec.device != DeviceType.CPU:
+            has_non_cpu_specs = True
+        if spec.mem_id is not None:
+            has_pre_assigned_mem_id = True
+
+    # Custom pool passes pre-assign mem_ids (e.g. mem_id=2, 3, …) to place
+    # tensors into specific memory arenas.  Per-device partitioning appends
+    # device buffers after the CPU buffers, and the remap formula
+    #   global_mem_id = (local_mem_id - 1) + base_mem_id
+    # assumes the algo-local numbering starts at 1.  If a custom pass has
+    # already set mem_ids > 1 on the CPU side, the device-buffer slots may
+    # collide with those custom pool slots.
+    # TODO(gasoonjia): support custom pools + per-device planning by reserving
+    # device slots after the highest custom pool id.
+    if has_non_cpu_specs and has_pre_assigned_mem_id:
+        raise NotImplementedError(
+            "enable_non_cpu_memory_planning is not yet compatible with "
+            "custom memory pool passes that pre-assign spec.mem_id. "
+            "The per-device buffer slots may collide with custom pool "
+            "mem_ids. Please disable enable_non_cpu_memory_planning or "
+            "remove the custom mem_id assignments."
+        )
+
+    return specs_by_device
+
+
+def _build_non_const_buffer_device(
+    buffer_devices: list[tuple[DeviceType, int]],
+) -> Optional[list[NonConstBufferDevice]]:
+    """Build the non-CPU buffer device list for serialization.
+
+    Returns ``None`` when all buffers are CPU (the default), so that no
+    redundant device metadata is emitted.
+    """
+    if not any(dk[0] != DeviceType.CPU for dk in buffer_devices):
+        return None
+    return [
+        NonConstBufferDevice(buffer_idx=i, device_type=dt, device_index=di)
+        for i, (dt, di) in enumerate(buffer_devices)
+        if (dt, di) != _CPU_KEY
+    ]
+
+
 def apply_algo(
     algo: Callable[..., list[int]],
     graph_module: torch.fx.GraphModule,
@@ -1211,9 +1482,18 @@ def apply_algo(
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
     alloc_mutable_buffers: bool = True,
+    enable_non_cpu_memory_planning: bool = False,
 ) -> list[int]:
     """
     Recursively apply algo to graph_module and its submodules for control flow.
+
+    Partitions specs by device type and device idx, and runs the memory planning
+    algorithm independently per device, then merges results into separate buffers.
+    This ensures device memory and CPU memory are never mixed.
+
+    When enable_non_cpu_memory_planning is False (default), all specs are planned
+    into a single CPU memory pool regardless of their device attribute. This
+    preserves the legacy behavior. Set to True to enable per-device partitioning.
 
     Algo implementation should handle one of two meta entries for submodules:
     1. input_mem_buffer_sizes: List of int offset bytes. Memory allocated by
@@ -1229,49 +1509,102 @@ def apply_algo(
     `operand` arg. The memory for operands is unused.
     """
     # Extract the nodes and their lifespans from the graph_module
-    # Difficult to just filter the list of specs returned by this due to
-    # how we flag trainable weights.
     _ = update_all_tensors_lifetime(graph_module, graph_signature)
 
-    # Filter specs based on alloc_graph_input and alloc_graph_output
-    specs = collect_specs_from_nodes(
-        graph_module.graph.nodes,
-        graph_signature,
-        do_assertion=False,
-        ignore_graph_input=not alloc_graph_input,
-        ignore_graph_output=not alloc_graph_output,
-        ignore_mutable_buffers=not alloc_mutable_buffers,
+    # Collect specs into an ordered list so we can iterate multiple times and
+    # partition by device.  Order matters: order-sensitive algorithms (e.g.
+    # greedy with bisect.insort) rely on insertion order for stable tie-breaking,
+    # and `collect_specs_from_nodes` already deduplicates via its `dedup` flag.
+    all_specs: list[TensorSpec] = list(
+        collect_specs_from_nodes(
+            graph_module.graph.nodes,
+            graph_signature,
+            do_assertion=False,
+            ignore_graph_input=not alloc_graph_input,
+            ignore_graph_output=not alloc_graph_output,
+            ignore_mutable_buffers=not alloc_mutable_buffers,
+        )
     )
 
     # Get temporary specs for submodules to set aside space during execution
     # of submodules.
+    # NOTE: submodule_bufsizes are currently applied only to the CPU partition.
+    # This assumes all control-flow submodule tensors (cond/while/map) live in
+    # CPU memory.  Today this is safe because on-device tensors only appear as
+    # delegate blob I/O, which never lives inside control-flow submodules.
+    # If device tensors ever appear in submodules, _apply_algo_to_submodules
+    # will need per-device partitioning as well.
     submodule_bufsizes = _apply_algo_to_submodules(
         algo, graph_module, alignment, graph_signature
     )
-
-    # Update `input_mem_buffer_sizes` in graph_module. This will allow existing
-    # algos to work using `input_mem_buffer_sizes` or use
-    # `non_const_buffer_sizes` directly.
-    # pyre-ignore[16]: `torch.fx.GraphModule` has no attribute `input_mem_buffer_sizes`.
-    graph_module.input_mem_buffer_sizes = submodule_bufsizes
 
     # Get extra padding for XNNPACK if needed
     extra_padding = 0
     if _contains_xnnpack_delegate(graph_module):
         extra_padding = 64
 
-    # Pass the filtered specs to the algorithm
-    bufsizes: list[int] = algo(
-        alignment,
-        specs,
-        graph_module,
-        graph_signature,
-        extra_padding,
+    specs_by_device = _partition_specs_by_device(
+        all_specs, enable_non_cpu_memory_planning
     )
 
-    # pyre-ignore[6]: Incompatible parameter type [6]
-    # In call `insert_calls_to_free`, for 2nd positional argument, expected `Set[TensorSpec]` but got `Iterable[TensorSpec]`
-    insert_calls_to_free(graph_module, specs)
+    # Plan each device independently
+    global_bufsizes: list[int] = [0]  # index 0 reserved for constants
+    buffer_devices: list[tuple[DeviceType, int]] = [_CPU_KEY]
 
-    graph_module.meta.update({"non_const_buffer_sizes": bufsizes})
-    return bufsizes
+    # Process CPU:0 first (if present), then other devices sorted by
+    # (type.value, index) so the ordering is deterministic.
+    device_order = sorted(
+        specs_by_device.keys(),
+        key=lambda dk: (dk != _CPU_KEY, dk[0].value, dk[1]),
+    )
+
+    for device_key in device_order:
+        device_specs = specs_by_device[device_key]
+
+        # Only apply submodule pre-allocation for CPU specs; device buffers
+        # do not share memory space with CPU submodule arenas.
+        # pyre-ignore[16]: `torch.fx.GraphModule` has no attribute `input_mem_buffer_sizes`.
+        graph_module.input_mem_buffer_sizes = (
+            submodule_bufsizes if device_key == _CPU_KEY else []
+        )
+
+        # Run algorithm independently on this device's specs
+        device_bufsizes = algo(
+            alignment, device_specs, graph_module, graph_signature, extra_padding
+        )
+
+        # Calculate base mem_id in global space
+        base_mem_id = len(global_bufsizes)
+
+        # Append buffer sizes (skip index 0 which is constants placeholder)
+        global_bufsizes.extend(device_bufsizes[1:])
+
+        # Track device key for each new buffer slot
+        for _ in device_bufsizes[1:]:
+            buffer_devices.append(device_key)
+
+        # Remap spec mem_ids from algo-local to global.
+        # At this point spec.mem_id has been set by MemoryPlanningAlgorithmSuite:
+        # the suite runs each algorithm (e.g. greedy), picks the best result,
+        # and writes the winning mem_id/mem_offset/mem_obj_id back onto each
+        # spec.  For specs with no pre-assigned mem_id the algorithm defaults
+        # to mem_id=1; custom-pool passes may pre-assign other values (e.g. 3).
+        # We remap from the algo-local numbering (1-based) to the global
+        # position: global_mem_id = (local_mem_id - 1) + base_mem_id.
+        for spec in device_specs:
+            if spec.mem_id is not None:
+                spec.mem_id = (spec.mem_id - 1) + base_mem_id
+
+    # Ensure backward compatibility: at least [0, 0] when no specs exist
+    if len(global_bufsizes) < 2:
+        global_bufsizes.append(0)
+        buffer_devices.append(_CPU_KEY)
+
+    # Insert free calls and build device buffer mapping
+    insert_calls_to_free(graph_module, all_specs)
+
+    non_const_buffer_device = _build_non_const_buffer_device(buffer_devices)
+    graph_module.meta["non_const_buffer_sizes"] = global_bufsizes
+    if non_const_buffer_device is not None:
+        graph_module.meta["non_const_buffer_device"] = non_const_buffer_device
+    return global_bufsizes

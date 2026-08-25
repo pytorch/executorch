@@ -4,22 +4,169 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
+import operator
+import os
+import tempfile
 import unittest
 from typing import Tuple
+from unittest.mock import patch
 
 import torch
+from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.exir._serialize._cord import FileBackedData
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import PartitionResult
+from executorch.exir.delegate import executorch_call_delegate
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import export
+from torch.export.pt2_archive._package_weights import TensorProperties, Weights
+from torch.fx.passes.utils.fuser_utils import validate_partition
+
+
+class TestCudaLowMemoryExport(unittest.TestCase):
+    @patch.object(CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True)
+    def test_low_memory_streaming_keeps_external_weights_abi(self, _) -> None:
+        from torch._inductor import codecache
+
+        options = CudaBackend.get_aoti_compile_options(
+            [CompileSpec("low_memory_mode", b"ON")]
+        )
+        self.assertEqual(
+            options["aot_inductor.package_constants_on_disk_format"],
+            "pickle_weights",
+        )
+
+        original = codecache.determine_aoti_mmap_flags
+        with CudaBackend.get_extra_aoti_compile_context_manager(
+            [CompileSpec("low_memory_mode", b"ON")]
+        ):
+            self.assertEqual(codecache.determine_aoti_mmap_flags(0), (True, False))
+        self.assertIs(codecache.determine_aoti_mmap_flags, original)
+
+    def test_low_memory_weights_are_streamed_in_binary_blob_format(self) -> None:
+        first = torch.tensor([1, 2, 3], dtype=torch.int16)
+        second = torch.tensor([4, 5], dtype=torch.int32)
+        weights = Weights(
+            {
+                "first": (first, TensorProperties(first)),
+                "second": (second, TensorProperties(second)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            so_path = os.path.join(directory, "model.wrapper.so")
+            blob_path = os.path.join(directory, "model.wrapper_weights.blob")
+            # AOTI emits this empty placeholder when the wrapper is compiled
+            # with the external-weights ABI and the tensor values are pickled.
+            with open(blob_path, "wb"):
+                pass
+
+            paths = CudaBackend.materialize_weights_blob(
+                [so_path, blob_path, weights],
+                [CompileSpec("low_memory_mode", b"ON")],
+            )
+
+            self.assertEqual([so_path, blob_path], paths)
+            with open(blob_path, "rb") as blob:
+                data = blob.read()
+            expected = (
+                bytes(first.untyped_storage())
+                + bytes(58)
+                + bytes(second.untyped_storage())
+                + bytes(56)
+            )
+            self.assertEqual(expected, data)
+
+            # The streaming write computes the digest in the same pass. Loading
+            # the file-backed blob must not reread it solely for hashing.
+            with patch.object(
+                FileBackedData,
+                "sha256",
+                side_effect=AssertionError("unexpected blob reread"),
+            ):
+                blob, digest = CudaBackend.load_weights_blob(
+                    blob_path, [CompileSpec("low_memory_mode", b"ON")]
+                )
+            self.assertEqual(hashlib.sha256(expected).hexdigest(), digest)
+            self.assertEqual(expected, blob.to_bytes())
+
+    def test_low_memory_weights_require_wrapper_so(self) -> None:
+        tensor = torch.tensor([1], dtype=torch.int16)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+
+        with self.assertRaisesRegex(
+            RuntimeError, r"Expected a CUDA AOTI \.wrapper\.so output"
+        ):
+            CudaBackend.materialize_weights_blob(
+                [weights], [CompileSpec("low_memory_mode", b"ON")]
+            )
+
+    def test_low_memory_blob_stays_file_backed(self) -> None:
+        data = b"cuda weights"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.blob")
+            with open(path, "wb") as output:
+                output.write(data)
+
+            blob, digest = CudaBackend.load_weights_blob(
+                path, [CompileSpec("low_memory_mode", b"ON")]
+            )
+
+            self.assertIsInstance(blob, FileBackedData)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+            self.assertEqual(data, blob.to_bytes())
+            self.assertFalse(os.path.exists(path))
+
+    def test_default_blob_behavior_is_unchanged(self) -> None:
+        data = b"cuda weights"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.blob")
+            with open(path, "wb") as output:
+                output.write(data)
+
+            blob, digest = CudaBackend.load_weights_blob(path, [])
+
+            self.assertIsInstance(blob, bytes)
+            self.assertEqual(data, blob)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+            self.assertFalse(os.path.exists(path))
+
+    def test_low_memory_program_copy_shares_tensor_storage(self) -> None:
+        module = torch.nn.Linear(4, 3)
+        program = export(module, (torch.randn(2, 4),), strict=True)
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(
+            program, [CompileSpec("low_memory_mode", b"ON")]
+        )
+
+        self.assertIsNot(program, copied)
+        self.assertIsNot(program.graph_module, copied.graph_module)
+        self.assertIs(program.state_dict["weight"], copied.state_dict["weight"])
+        copied._state_dict["weight"] = torch.nn.Parameter(torch.zeros(3, 4))
+        self.assertFalse(torch.count_nonzero(program.state_dict["weight"]) == 0)
+
+    def test_default_program_copy_has_independent_tensor_storage(self) -> None:
+        module = torch.nn.Linear(4, 3)
+        program = export(module, (torch.randn(2, 4),), strict=True)
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(program, [])
+
+        self.assertIsNot(program.state_dict["weight"], copied.state_dict["weight"])
+        self.assertNotEqual(
+            program.state_dict["weight"].data_ptr(),
+            copied.state_dict["weight"].data_ptr(),
+        )
 
 
 class TestCudaPartitioner(unittest.TestCase):
     """
     Test CUDA partitioner functionality.
 
-    After CUDA partitioning, there should be exactly one partitioned graph that contains
-    all operators from the input graph. This means all operators should be tagged with
-    the same delegation tag, indicating they will all be executed by the CUDA backend.
+    A fully delegatable graph collapses to a single partition. When a
+    non-delegated node splits the delegatable ops, the partitioner emits one
+    convex partition per island.
     """
 
     def _get_partition_result(
@@ -175,12 +322,6 @@ class TestCudaPartitioner(unittest.TestCase):
         for node in partition_result.tagged_exported_program.graph.nodes:
             if node.op == "placeholder":
                 # Check if this is a constant (param, buffer, or lifted tensor constant)
-                from torch._export.utils import (
-                    is_buffer,
-                    is_lifted_tensor_constant,
-                    is_param,
-                )
-
                 is_constant = (
                     is_param(partition_result.tagged_exported_program, node)
                     or is_buffer(partition_result.tagged_exported_program, node)
@@ -213,8 +354,9 @@ class TestCudaPartitioner(unittest.TestCase):
             f"All constant placeholders should be tagged. Found untagged constants: {untagged_constants}",
         )
 
-        # Verify all tagged constants have the expected tag
-        expected_tag = "tag0"
+        # Verify all tagged constants share the (single) partition's tag.
+        self.assertEqual(len(partition_result.partition_tags), 1)
+        expected_tag = next(iter(partition_result.partition_tags))
         for node in constant_placeholders:
             actual_tag = node.meta.get("delegation_tag")
             self.assertEqual(
@@ -222,3 +364,238 @@ class TestCudaPartitioner(unittest.TestCase):
                 expected_tag,
                 f"Constant placeholder {node.name} has tag '{actual_tag}' but expected '{expected_tag}'",
             )
+
+    def test_does_not_retag_already_lowered_delegate(self) -> None:
+        """
+        A node already lowered by a previous partitioner appears as an
+        executorch_call_delegate call plus its output getitem. The CUDA
+        partitioner must not re-tag those, so it can run after another backend
+        (e.g. TensorRT) and only claim the remaining ops.
+        """
+
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        exported_program = export(AddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        placeholder = next(n for n in graph.nodes if n.op == "placeholder")
+        aten_node = next(
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        )
+
+        # Splice in a fake, already-lowered delegate (call + output getitem), as a
+        # preceding partitioner (e.g. TensorRT) would have produced.
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(aten_node):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, placeholder)
+            )
+            delegate_output = graph.call_function(operator.getitem, (delegate, 0))
+        graph.lint()
+
+        CudaPartitioner([]).partition(exported_program)
+
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertNotIn("delegation_tag", delegate_output.meta)
+        self.assertIn("delegation_tag", aten_node.meta)
+
+    def test_does_not_tag_constant_used_only_by_prior_delegate(self) -> None:
+        """
+        A constant whose only consumer is a previously lowered delegate must stay
+        untagged. Tagging it would give it this partition's tag while its user
+        keeps the prior delegate's, which backend lowering rejects. Only ops this
+        partitioner claims and genuinely unused constants may be tagged.
+        """
+
+        class AddModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("w", torch.randn(3, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.w
+
+        exported_program = export(AddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        buffer_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and is_buffer(exported_program, n)
+        )
+        input_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and not is_buffer(exported_program, n)
+        )
+        aten_node = next(
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        )
+
+        # Make the buffer feed only a fake, already-lowered delegate (as a
+        # preceding TensorRT partition would): rewire the aten op off the buffer,
+        # then splice the delegate consuming it.
+        aten_node.replace_input_with(buffer_placeholder, input_placeholder)
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(aten_node):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, buffer_placeholder)
+            )
+            graph.call_function(operator.getitem, (delegate, 0))
+        graph.lint()
+
+        CudaPartitioner([]).partition(exported_program)
+
+        self.assertNotIn("delegation_tag", buffer_placeholder.meta)
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertIn("delegation_tag", aten_node.meta)
+
+    def test_multiple_partitions_for_split_graph(self) -> None:
+        """Ops split by a non-delegated node must land in separate partitions.
+
+        One tag over the disconnected islands would be non-convex and fail fusion.
+        """
+
+        class TwoAddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                a = x + 1.0
+                return a + 2.0
+
+        exported_program = export(TwoAddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        add_nodes = [
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        ]
+        first_add, second_add = add_nodes[0], add_nodes[1]
+
+        # Splice an already-lowered region between the two adds so the second add
+        # depends on the first only through that non-delegated node.
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(second_add):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, first_add)
+            )
+            delegate_output = graph.call_function(operator.getitem, (delegate, 0))
+        second_add.replace_input_with(first_add, delegate_output)
+        graph.lint()
+
+        result = CudaPartitioner([]).partition(exported_program)
+
+        # Separated by the delegate, the adds must land in different partitions.
+        self.assertEqual(len(result.partition_tags), 2)
+        self.assertIn("delegation_tag", first_add.meta)
+        self.assertIn("delegation_tag", second_add.meta)
+        self.assertNotEqual(
+            first_add.meta["delegation_tag"], second_add.meta["delegation_tag"]
+        )
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertNotIn("delegation_tag", delegate_output.meta)
+
+        # Each partition must be convex on its own so fusion does not cycle.
+        for tag in result.partition_tags:
+            tagged = [
+                n
+                for n in exported_program.graph.nodes
+                if n.meta.get("delegation_tag") == tag
+            ]
+            self.assertTrue(validate_partition(tagged))
+
+    def test_control_flow_get_attr_shares_op_tag(self) -> None:
+        """A control-flow op's branch get_attrs must share the op's partition tag.
+
+        They are not call_function nodes, so the capability partitioner does not
+        claim them; they must be lowered into the same submodule as the op.
+        """
+
+        class CondModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.cond(x.sum() > 0, torch.sin, torch.cos, (x,))
+
+        exported_program = export(CondModule(), (torch.randn(3, 4),), strict=True)
+        result = CudaPartitioner([]).partition(exported_program)
+
+        cond_node = next(
+            n
+            for n in exported_program.graph.nodes
+            if n.op == "call_function" and n.target is torch.ops.higher_order.cond
+        )
+        branch_get_attrs = [
+            arg
+            for arg in cond_node.args
+            if isinstance(arg, torch.fx.Node) and arg.op == "get_attr"
+        ]
+
+        self.assertEqual(len(branch_get_attrs), 2)
+        self.assertIn(cond_node.meta["delegation_tag"], result.partition_tags)
+        for get_attr in branch_get_attrs:
+            self.assertEqual(
+                get_attr.meta.get("delegation_tag"),
+                cond_node.meta["delegation_tag"],
+            )
+
+    def test_shared_constant_across_partitions(self) -> None:
+        """A constant read by two partitions is claimed, not dropped.
+
+        tag_constant_data assigns it one partition's tag; backend lowering later
+        duplicates it per consumer, so partitioning must not crash or drop it.
+        """
+
+        class SharedWeightModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("w", torch.randn(3, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x + self.w) + self.w
+
+        exported_program = export(
+            SharedWeightModule(), (torch.randn(3, 4),), strict=True
+        )
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        add_nodes = [
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        ]
+        first_add, second_add = add_nodes[0], add_nodes[1]
+
+        # Split the two adds (both reading w) with an already-lowered region.
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(second_add):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, first_add)
+            )
+            delegate_output = graph.call_function(operator.getitem, (delegate, 0))
+        second_add.replace_input_with(first_add, delegate_output)
+        graph.lint()
+
+        result = CudaPartitioner([]).partition(exported_program)
+
+        # Two islands, and the shared buffer is claimed by one of them, not dropped.
+        self.assertEqual(len(result.partition_tags), 2)
+        buffer_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and is_buffer(exported_program, n)
+        )
+        self.assertIn(
+            buffer_placeholder.meta.get("delegation_tag"), result.partition_tags
+        )

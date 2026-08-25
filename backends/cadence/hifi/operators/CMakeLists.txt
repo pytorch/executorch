@@ -134,6 +134,8 @@ add_library(
   "op_quantized_conv2d_nchw_out.cpp"
   "op_quantized_conv1d_ncl.cpp"
   "op_quantized_conv1d_nlc.cpp"
+  "op_quantized_depthwise_conv1d_ncl.cpp"
+  "op_quantized_depthwise_conv1d_nlc.cpp"
   "op_quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_out.cpp"
   "op_quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_out.cpp"
   "op_quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_out.cpp"

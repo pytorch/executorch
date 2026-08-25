@@ -19,6 +19,7 @@ constexpr size_t kMaxSupportedDims = 4;
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& pad_out(
     KernelRuntimeContext& context,
     const Tensor& input,

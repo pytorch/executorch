@@ -8,9 +8,12 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/core/storage.h>
 #include <executorch/backends/aoti/slim/factory/empty.h>
+#include <executorch/runtime/platform/platform.h>
 
 namespace executorch::backends::aoti::slim {
 
@@ -212,6 +215,42 @@ TEST(SlimTensorCopyTest, CopyNonContiguousDst) {
   EXPECT_FLOAT_EQ(dst_data[3], 4.0f);
   EXPECT_FLOAT_EQ(dst_data[4], 2.0f);
   EXPECT_FLOAT_EQ(dst_data[5], 5.0f);
+}
+
+// =============================================================================
+// Overflow Validation Tests
+// =============================================================================
+
+TEST(SlimTensorCopyTest, CopyFailsWhenDataPointerOverflows) {
+  std::vector<int64_t> sizes = {2};
+  std::vector<int64_t> src_strides = {1};
+  // For Short, INT64_MAX elements becomes UINTPTR_MAX - 1 bytes. That
+  // passes byte-offset validation and only fails at checked pointer addition.
+  std::vector<int64_t> dst_strides = {std::numeric_limits<int64_t>::max()};
+
+  Storage src_storage = make_cpu_storage(2 * sizeof(int16_t));
+  int16_t* src_data = static_cast<int16_t*>(src_storage->data());
+  src_data[0] = 1;
+  src_data[1] = 2;
+  SlimTensor src(
+      std::move(src_storage),
+      makeArrayRef(sizes),
+      makeArrayRef(src_strides),
+      c10::ScalarType::Short);
+
+  Storage dst_storage = make_cpu_storage(sizeof(int16_t));
+  SlimTensor dst(
+      std::move(dst_storage),
+      makeArrayRef(sizes),
+      makeArrayRef(dst_strides),
+      c10::ScalarType::Short);
+
+  EXPECT_DEATH(
+      {
+        et_pal_init();
+        dst.copy_(src);
+      },
+      "copy_: data pointer overflow");
 }
 
 // =============================================================================

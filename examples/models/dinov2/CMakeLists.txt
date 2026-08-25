@@ -7,7 +7,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(dinov2_runner)
 
-set(CMAKE_CXX_STANDARD 17)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -41,11 +43,18 @@ if(TARGET optimized_native_cpu_ops_lib)
 endif()
 
 # Add the required ExecuTorch extensions
-list(APPEND link_libraries extension_module extension_data_loader
-     extension_tensor extension_flat_tensor
+list(
+  APPEND
+  link_libraries
+  extension_module
+  extension_data_loader
+  extension_tensor
+  extension_flat_tensor
+  extension_image
 )
 
-# stb_image: lightweight library to load and resize images
+# stb_image: lightweight header-only library used to decode the input image
+# (ImageProcessor handles resize and normalization).
 include(FetchContent)
 FetchContent_Declare(
   stb

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,6 +50,9 @@ list(TRANSFORM _size_test__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # TODO(larryliu0820): Add EXECUTORCH_BUILD_EXECUTABLES to not build executable
 # when we cross compile to ios
 add_executable(size_test ${_size_test__srcs})
+if(EXECUTORCH_SIZE_TEST_NO_OS_LINK)
+  target_compile_definitions(size_test PRIVATE EXECUTORCH_SIZE_TEST_NO_OS_LINK)
+endif()
 target_link_libraries(size_test executorch extension_data_loader)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(size_test)
@@ -58,6 +62,11 @@ endif()
 # size_test_all_ops: binary with portable ops and no delegate backend
 #
 add_executable(size_test_all_ops ${_size_test__srcs})
+if(EXECUTORCH_SIZE_TEST_NO_OS_LINK)
+  target_compile_definitions(
+    size_test_all_ops PRIVATE EXECUTORCH_SIZE_TEST_NO_OS_LINK
+  )
+endif()
 target_link_libraries(
   size_test_all_ops executorch extension_data_loader portable_ops_lib
   portable_kernels
@@ -71,6 +80,11 @@ endif()
 #
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_executable(size_test_all_optimized_ops ${_size_test__srcs})
+  if(EXECUTORCH_SIZE_TEST_NO_OS_LINK)
+    target_compile_definitions(
+      size_test_all_optimized_ops PRIVATE EXECUTORCH_SIZE_TEST_NO_OS_LINK
+    )
+  endif()
   target_link_libraries(
     size_test_all_optimized_ops executorch extension_data_loader
     optimized_native_cpu_ops_lib

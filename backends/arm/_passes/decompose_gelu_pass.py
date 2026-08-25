@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
@@ -42,7 +42,7 @@ def _get_gelu_ops(op) -> tuple:
     raise RuntimeError(f"Can't get GeLU decomposition ops for op {op}")
 
 
-class DecomposeGeluPass(ArmPass):
+class DecomposeGeluPass(ArmOpTargetedPass):
     """This pass decomposes the GELU operator into primitive ops. Aiming to
     adhere closely to the reference implementations built into ExecuTorch.
     Including using the same pre-calculated constants.
@@ -88,9 +88,10 @@ class DecomposeGeluPass(ArmPass):
         MatchArgDtypePass,
         MatchArgRanksPass,
     }
+    target_ops = torch_gelu + edge_gelu
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in torch_gelu + edge_gelu:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
         if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op

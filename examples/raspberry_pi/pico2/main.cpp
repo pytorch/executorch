@@ -11,6 +11,7 @@
 // Pico includes
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
+#include "pico/time.h"
 
 // Executorch includes
 #include <executorch/extension/data_loader/buffer_data_loader.h>
@@ -244,6 +245,8 @@ bool run_inference(Method& method) {
 
   printf("🧪 Testing all supported digits:\n\n");
 
+  uint32_t latencies_us[4] = {0};
+
   for (int test = 0; test < 4; test++) {
     const char** ascii_digit = test_cases[test].pattern;
     const char* digit_name = test_cases[test].name;
@@ -294,11 +297,17 @@ bool run_inference(Method& method) {
       return false;
     }
 
+    uint32_t start_us = time_us_32();
     result = method.execute();
+    uint32_t elapsed_us = time_us_32() - start_us;
+    latencies_us[test] = elapsed_us;
+
     if (result != Error::Ok) {
       printf("❌ Failed to execute: error %d\n", (int)result);
       return false;
     }
+
+    printf("⏱️  Inference time: %lu us\n", (unsigned long)elapsed_us);
 
     auto output_evalue = method.get_output(0);
     if (!output_evalue.isTensor()) {
@@ -340,6 +349,16 @@ bool run_inference(Method& method) {
     printf("\n==================================================\n\n");
   }
 
+  // Print latency summary
+  uint32_t total_us = 0;
+  printf("📊 Inference latency summary:\n");
+  for (int i = 0; i < 4; i++) {
+    printf(
+        "  %s: %lu us\n", test_cases[i].name, (unsigned long)latencies_us[i]);
+    total_us += latencies_us[i];
+  }
+  printf("  Average: %lu us\n\n", (unsigned long)(total_us / 4));
+
   printf(
       "🎉 All tests complete! ExecuTorch inference of neural network works on Pico2!\n");
   return true;
@@ -373,6 +392,21 @@ int executor_runner() {
     printf("Failed to load and prepare model\n");
     return 1;
   }
+
+  // Probe method allocator usage: try allocating 1 byte to find cur_ position
+  void* probe = method_allocator.allocate(1, 1);
+  uint32_t method_used = probe
+      ? (uint32_t)((uint8_t*)probe - method_allocator_pool)
+      : sizeof(method_allocator_pool);
+  printf("📊 Memory usage after method load:\n");
+  printf(
+      "   Method allocator: %lu / %lu bytes used\n",
+      (unsigned long)method_used,
+      (unsigned long)sizeof(method_allocator_pool));
+  printf(
+      "   Activation pool: %lu bytes allocated\n",
+      (unsigned long)sizeof(activation_pool));
+
   if (!run_inference(*method_ptr)) {
     printf("Failed to run inference\n");
     return 1;

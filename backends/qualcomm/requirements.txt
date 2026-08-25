@@ -3,3 +3,5 @@ pydot
 py-cpuinfo
 requests
 tabulate
+openpyxl
+pytest-subtests

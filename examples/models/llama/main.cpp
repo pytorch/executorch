@@ -199,8 +199,8 @@ int32_t main(int32_t argc, char** argv) {
     }
   }
   // generate
-  executorch::extension::llm::GenerationConfig config{
-      .temperature = temperature};
+  executorch::extension::llm::GenerationConfig config{};
+  config.temperature = temperature;
 
   config.ignore_eos = FLAGS_ignore_eos;
   config.num_bos = FLAGS_num_bos;

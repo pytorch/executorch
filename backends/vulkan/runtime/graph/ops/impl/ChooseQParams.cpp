@@ -41,10 +41,12 @@ vkapi::ShaderInfo pick_choose_qparams_per_row_shader(
   (void)resize_args;
 
   const ValueRef input = args.at(1).refs.at(0);
+  const ValueRef input_zps = args.at(0).refs.at(1);
 
   std::string kernel_name = "choose_qparams_per_row";
   add_storage_type_suffix(kernel_name, graph->storage_type_of(input));
   add_dtype_suffix(kernel_name, graph->dtype_of(input));
+  add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zps));
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }

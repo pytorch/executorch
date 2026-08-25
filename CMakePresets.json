@@ -162,6 +162,25 @@
       }
     },
     {
+      "name": "llm-release-rocm",
+      "displayName": "LLM release build with ROCm",
+      "inherits": [
+        "llm-release"
+      ],
+      "binaryDir": "${sourceDir}/cmake-out-rocm-llm",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out-rocm-llm",
+        "CMAKE_PREFIX_PATH": "$penv{ROCM_PATH};/opt/rocm;$penv{CMAKE_PREFIX_PATH}",
+        "EXECUTORCH_BUILD_CUDA": "OFF",
+        "EXECUTORCH_BUILD_ROCM": "ON"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
       "name": "llm-release-metal",
       "displayName": "LLM release build with Metal",
       "inherits": [
@@ -185,7 +204,9 @@
       ],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
+        "EXECUTORCH_ENABLE_LOGGING": "ON",
+        "EXECUTORCH_LOG_LEVEL": "Debug"
       }
     },
     {
@@ -312,6 +333,28 @@
       }
     },
     {
+      "name": "esp-baremetal",
+      "displayName": "Build ExecuTorch for ESP baremetal",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/esp_baremetal.cmake"
+      }
+    },
+    {
+      "name": "riscv64-linux",
+      "displayName": "Build ExecuTorch for riscv64 Linux (cross-compile)",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/riscv64_linux.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/riscv/riscv64-linux-gnu-toolchain.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
       "name": "mlx",
       "displayName": "Build MLX delegate",
       "inherits": ["common"],
@@ -334,7 +377,10 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/cmake-out",
         "ET_MLX_ENABLE_OP_LOGGING": "OFF",
-        "ET_MIN_LOG_LEVEL": "Error"
+        "ET_MIN_LOG_LEVEL": "Error",
+        "EXECUTORCH_BUILD_KERNELS_LLM": "ON",
+        "EXECUTORCH_BUILD_KERNELS_QUANTIZED": "ON",
+        "EXECUTORCH_BUILD_KERNELS_OPTIMIZED": "ON"
       }
     },
     {
@@ -364,6 +410,16 @@
       "name": "llm-release-cuda-install",
       "displayName": "Build and install LLM extension release artifacts (CUDA)",
       "configurePreset": "llm-release-cuda",
+      "configuration": "Release",
+      "targets": [
+        "install"
+      ],
+      "jobs": 0
+    },
+    {
+      "name": "llm-release-rocm-install",
+      "displayName": "Build and install LLM extension release artifacts (ROCm)",
+      "configurePreset": "llm-release-rocm",
       "configuration": "Release",
       "targets": [
         "install"
@@ -470,6 +526,20 @@
         {
           "type": "build",
           "name": "llm-release-cuda-install"
+        }
+      ]
+    },
+    {
+      "name": "llm-release-rocm",
+      "displayName": "Configure, build and install ExecuTorch LLM extension with ROCm enabled",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "llm-release-rocm"
+        },
+        {
+          "type": "build",
+          "name": "llm-release-rocm-install"
         }
       ]
     },

@@ -19,6 +19,9 @@
 #define QNN_TENSOR_VER_PTR(x) (&((x).v2))
 #define QNN_OP_VER_PTR(x) (&((x).v1))
 
+// This is for direct mode, especially LPAI
+#define QNN_TENSOR_ALIGNMENT 64
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -36,9 +39,7 @@ class TensorWrapper {
       const void* data = nullptr,
       bool copy_data = false);
 
-  executorch::runtime::Error FillDataBuffer(
-      const void* data,
-      bool copy_data = false);
+  executorch::runtime::Error FillDataBuffer(const void* data);
 
   executorch::runtime::Error AllocateDataBuffer();
 
@@ -129,9 +130,12 @@ class TensorWrapper {
   std::unique_ptr<char[]> owned_data_;
   bool created_{false};
 
-  Qnn_Tensor_t tensor_ = {
-      .version = QNN_TENSOR_VERSION_2,
-      .v2 = QNN_TENSOR_V2_INIT};
+  Qnn_Tensor_t tensor_ = []() noexcept {
+    Qnn_Tensor_t t{};
+    t.version = QNN_TENSOR_VERSION_2;
+    t.v2 = QNN_TENSOR_V2_INIT;
+    return t;
+  }();
 };
 // base function for Create TensorWrapper
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(

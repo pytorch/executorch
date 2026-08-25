@@ -27,6 +27,7 @@ Start here for C++ development with ExecuTorch runtime APIs and essential tutori
 - {doc}`backends/arm-ethos-u/tutorials/ethos-u-getting-started` — Export a simple PyTorch model for the ExecuTorch Ethos-U backend
 - {doc}`raspberry_pi_llama_tutorial` — Deploy a LLaMA model on a Raspberry Pi
 - {doc}`pico2_tutorial` — Deploy a demo MNIST model on the Raspberry Pi Pico 2
+- {doc}`zephyr_alif_tutorial` — Deploy MobileNetV2 with Ethos-U NPU on Corstone FVP and Alif E8 using Zephyr
 
 
 ```{toctree}
@@ -41,3 +42,4 @@ embedded-backends
 backends/arm-ethos-u/tutorials/ethos-u-getting-started
 raspberry_pi_llama_tutorial
 pico2_tutorial
+zephyr_alif_tutorial

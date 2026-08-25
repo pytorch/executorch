@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "MLXCache.h"
 #include "MLXExecutor.h"
 
 #include <mlx/array.h>
@@ -242,6 +243,11 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     freqs_arr = st.const_tensor_ref(*n.freqs);
   }
 
+  // MLX requires exactly one of base or freqs — when freqs is provided,
+  // base must be nullopt.
+  std::optional<float> base =
+      freqs_arr ? std::nullopt : std::optional<float>(n.base);
+
   // MLX has two overloads: rope(..., int offset, ...) and rope(..., const
   // array& offset, ...) Call the appropriate one based on is_vid
   if (n.offset.is_vid) {
@@ -250,14 +256,14 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   } else {
     // Tensor offset from Tid
     const array& offset = st.const_tensor_ref(n.offset.tid);
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   }
 }
 
@@ -285,6 +291,86 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
 
   array out = fast::scaled_dot_product_attention(
       Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_update_and_attend(
+    const UpdateAndAttendNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  if (!st.cache) {
+    throw std::runtime_error("update_and_attend: no cache installed");
+  }
+  if (!n.layer_id) {
+    throw std::runtime_error("update_and_attend: layer_id is not set");
+  }
+  if (!n.scale) {
+    throw std::runtime_error("update_and_attend: scale is not set");
+  }
+  // The cache does the KV write + read and declares the mask; the handler owns
+  // the query side (q, scale) and calls SDPA.
+  const array& q = st.const_tensor_ref(n.q);
+  // The run's start is position[0], read host-side so the cache stays pure
+  // graph + integer bookkeeping. Every layer of a step reads the same position
+  // tensor, so evaluating it in place costs one sync for the first layer and
+  // nothing for the rest -- casting first would instead build a fresh array per
+  // layer and sync on each one.
+  auto pos = st.const_tensor_ref(n.position);
+  eval(pos);
+  int position;
+  switch (pos.dtype()) {
+    case ::mlx::core::int32:
+      position = pos.data<int32_t>()[0];
+      break;
+    case ::mlx::core::int64:
+      position = static_cast<int>(pos.data<int64_t>()[0]);
+      break;
+    default:
+      throw std::runtime_error(
+          std::string("update_and_attend: position must be int32 or int64, ") +
+          "got " + ExecutionState::dtype_str(pos.dtype()));
+  }
+  AttendSpec spec = st.cache->update_and_fetch(
+      *n.layer_id,
+      position,
+      st.const_tensor_ref(n.k),
+      st.const_tensor_ref(n.v),
+      s);
+  // Match stored K/V to the query dtype before SDPA (no-op when equal; the
+  // storage precision may differ from the compute dtype).
+  array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
+  array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
+  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
+  // than test for Causal: None and Explicit both map to "" and are told apart
+  // only by spec.mask, so an Explicit with no mask would silently attend
+  // unmasked.
+  std::string mask_mode;
+  switch (spec.kind) {
+    case AttendSpec::Mask::None:
+      break;
+    case AttendSpec::Mask::Causal:
+      mask_mode = "causal";
+      break;
+    case AttendSpec::Mask::Explicit:
+      if (!spec.mask) {
+        throw std::runtime_error(
+            "update_and_attend: Explicit mask kind with no mask tensor");
+      }
+      break;
+  }
+  array out = fast::scaled_dot_product_attention(
+      q,
+      K,
+      V,
+      static_cast<float>(*n.scale),
+      mask_mode,
+      spec.mask,
+      std::nullopt,
+      s);
+  // Honor the op's output-dtype contract (unset -> SDPA's native output).
+  if (n.out_dtype) {
+    out = astype(out, resolve_dtype(*n.out_dtype), s);
+  }
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -867,7 +953,10 @@ exec_gather_mm(const GatherMmNode& n, ExecutionState& st, StreamOrDevice s) {
     rhs_idx = st.const_tensor_ref(*n.rhs_indices);
   }
 
-  array Y = gather_mm(A, B, lhs_idx, rhs_idx, n.sorted_indices, s);
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
+  array Y = gather_mm(A, B, lhs_idx, rhs_idx, sorted, s);
   st.set_tensor(n.out, std::move(Y));
 }
 
@@ -890,6 +979,9 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
     rhs_idx = st.const_tensor_ref(*n.rhs_indices);
   }
 
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
   array Y = gather_qmm(
       X,
       Wq,
@@ -901,7 +993,7 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
       n.group_size,
       n.bits,
       n.mode,
-      n.sorted_indices,
+      sorted,
       s);
   st.set_tensor(n.out, std::move(Y));
 }
@@ -985,8 +1077,8 @@ inline void exec_metal_kernel(
       n.name,
       n.input_names,
       n.output_names,
-      n.source,
-      n.header,
+      n.source ? *n.source : std::string{},
+      n.header ? *n.header : std::string{},
       n.ensure_row_contiguous,
       n.atomic_outputs);
 
@@ -1380,6 +1472,13 @@ inline void exec_logical_not(
   st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.x), s));
 }
 
+inline void exec_bitwise_invert(
+    const BitwiseInvertNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(n.out, bitwise_invert(st.const_tensor_ref(n.x), s));
+}
+
 inline void exec_logical_and(
     const LogicalAndNode& n,
     ExecutionState& st,
@@ -1393,6 +1492,30 @@ inline void
 exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_and(
+    const BitwiseAndNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_bitwise_or(const BitwiseOrNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, bitwise_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_xor(
+    const BitwiseXorNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_xor(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -1659,6 +1782,26 @@ exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, argmax(x, n.axis, n.keepdims, s));
 }
 
+inline void exec_random_bits(
+    const RandomBitsNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  // random::bits supports width (bytes/element) in {1, 2, 4} ->
+  // uint8/uint16/uint32.
+  if (n.width != 1 && n.width != 2 && n.width != 4) {
+    throw std::runtime_error("random_bits: width must be 1, 2, or 4");
+  }
+  auto shape = to_shape(n.shape, st);
+  // uint32 (4 bytes, the widest supported) is a safe upper bound for the guard.
+  check_allocation_bounded(shape, uint32, "random_bits");
+  std::optional<array> key = std::nullopt;
+  if (n.seed.has_value()) {
+    key = random::key(
+        static_cast<uint64_t>(st.const_value_ref<int32_t>(n.seed.value())));
+  }
+  st.set_tensor(n.out, random::bits(shape, n.width, key, s));
+}
+
 inline void
 exec_argmin(const ArgminNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -1724,6 +1867,13 @@ inline void exec_all(const AllNode& n, ExecutionState& st, StreamOrDevice s) {
   } else {
     st.set_tensor(n.out, all(x, axes, n.keepdims, s));
   }
+}
+
+inline void exec_roll(const RollNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto shifts = to_shape(n.shift, st);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, roll(x, shifts, axes, s));
 }
 
 inline void
@@ -1794,6 +1944,8 @@ class Interpreter {
       st.begin_op(idx, op_name(instr.op));
       if (instr.op == OpCode::SCAN) {
         exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+      } else if (instr.op == OpCode::IF) {
+        exec_if(prog, std::get<IfNode>(instr.node), st, stream);
       } else {
         dispatch(instr, st, stream);
       }
@@ -1803,6 +1955,20 @@ class Interpreter {
   }
 
  private:
+  void exec_if(
+      const MLXProgram& prog,
+      const IfNode& n,
+      ExecutionState& st,
+      StreamOrDevice s) const {
+    // Select one branch at runtime based on the integer condition.
+    // Nonzero -> then_chain, zero -> else_chain. The selected chain's
+    // instructions write the output slot(s) directly.
+    const int64_t cond = resolve_int(n.cond, st);
+    const uint32_t chain_idx =
+        (cond != 0) ? n.then_chain_idx : n.else_chain_idx;
+    run_chain(prog, chain_idx, st, s);
+  }
+
   void exec_scan(
       const MLXProgram& prog,
       const ScanNode& n,
@@ -1879,6 +2045,10 @@ class Interpreter {
         break;
       case OpCode::SDPA:
         ops::exec_sdpa(std::get<SdpaNode>(instr.node), st, s);
+        break;
+      case OpCode::UPDATE_AND_ATTEND:
+        ops::exec_update_and_attend(
+            std::get<UpdateAndAttendNode>(instr.node), st, s);
         break;
       case OpCode::ADD:
         ops::exec_add(std::get<AddNode>(instr.node), st, s);
@@ -1998,6 +2168,9 @@ class Interpreter {
       case OpCode::ARGMAX:
         ops::exec_argmax(std::get<ArgmaxNode>(instr.node), st, s);
         break;
+      case OpCode::RANDOM_BITS:
+        ops::exec_random_bits(std::get<RandomBitsNode>(instr.node), st, s);
+        break;
       case OpCode::SLICE_UPDATE:
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);
         break;
@@ -2028,11 +2201,24 @@ class Interpreter {
       case OpCode::LOGICAL_NOT:
         ops::exec_logical_not(std::get<LogicalNotNode>(instr.node), st, s);
         break;
+      case OpCode::BITWISE_INVERT:
+        ops::exec_bitwise_invert(
+            std::get<BitwiseInvertNode>(instr.node), st, s);
+        break;
       case OpCode::LOGICAL_AND:
         ops::exec_logical_and(std::get<LogicalAndNode>(instr.node), st, s);
         break;
       case OpCode::LOGICAL_OR:
         ops::exec_logical_or(std::get<LogicalOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_AND:
+        ops::exec_bitwise_and(std::get<BitwiseAndNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_OR:
+        ops::exec_bitwise_or(std::get<BitwiseOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_XOR:
+        ops::exec_bitwise_xor(std::get<BitwiseXorNode>(instr.node), st, s);
         break;
       case OpCode::TRI:
         ops::exec_tri(std::get<TriNode>(instr.node), st, s);
@@ -2198,6 +2384,9 @@ class Interpreter {
         break;
       case OpCode::REPEAT:
         ops::exec_repeat(std::get<RepeatNode>(instr.node), st, s);
+        break;
+      case OpCode::ROLL:
+        ops::exec_roll(std::get<RollNode>(instr.node), st, s);
         break;
       case OpCode::SORT:
         ops::exec_sort(std::get<SortNode>(instr.node), st, s);

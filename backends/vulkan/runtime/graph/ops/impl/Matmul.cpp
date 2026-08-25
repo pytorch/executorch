@@ -9,7 +9,10 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCoopmat.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Linear.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
@@ -18,26 +21,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
-
-void resize_matmul_tiled_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef mat1 = args.at(1).refs.at(0);
-  const ValueRef mat2 = args.at(1).refs.at(1);
-
-  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
-  const std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2);
-
-  std::vector<int64_t> new_out_sizes(mat1_sizes);
-  new_out_sizes.at(new_out_sizes.size() - 1) = mat2_sizes.back();
-  new_out_sizes.at(new_out_sizes.size() - 2) =
-      mat1_sizes.at(mat1_sizes.size() - 2);
-
-  graph->virtual_resize(out, new_out_sizes);
-}
 
 // Minimum number of thread groups to target for good GPU occupancy. When the
 // default 4-row tiling produces fewer threads than this, a smaller tile is
@@ -186,19 +169,45 @@ void matmul_tiled(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef mat2 = args[1];
   ValueRef out = args[2];
 
+  // Coopmat path requires M%TILE_M==0, N%TILE_N==0, K%TILE_K==0 — the shader
+  // has no partial-tile or K-tail handling.
+  auto mat1_sizes = graph.sizes_of(mat1);
+  int64_t M = mat1_sizes.at(mat1_sizes.size() - 2);
+  int64_t K = mat1_sizes.back();
+  int64_t N = graph.sizes_of(out).back();
+  const bool coopmat_eligible = is_coopmat_eligible(graph, out, M, N, K);
+
   if (graph.val_is_tref(mat2)) {
     auto mat2_sizes = graph.sizes_of(mat2);
     int64_t B = mat2_sizes.size() >= 3 ? mat2_sizes.at(0) : 1;
-    ValueRef packed =
-        prepack_fp_linear_weight(graph, mat2, /*is_transposed=*/false, B);
-    add_linear_tiled_node(
+    bool use_coopmat = coopmat_eligible;
+    ValueRef packed = prepack_fp_linear_weight(
         graph,
-        mat1,
-        packed,
-        kDummyValueRef,
-        false,
-        out,
-        utils::safe_downcast<int32_t>(B));
+        mat2,
+        /*is_transposed=*/false,
+        B,
+        /*force_buffer=*/use_coopmat);
+    if (use_coopmat) {
+      add_linear_coopmat_node(
+          graph,
+          mat1,
+          packed,
+          kDummyValueRef,
+          false,
+          out,
+          utils::safe_downcast<int32_t>(B));
+    } else {
+      add_linear_tiled_node(
+          graph,
+          mat1,
+          packed,
+          kDummyValueRef,
+          false,
+          out,
+          utils::safe_downcast<int32_t>(B));
+    }
+  } else if (coopmat_eligible) {
+    add_matmul_coopmat_node(graph, mat1, mat2, out);
   } else {
     add_matmul_tiled_node(graph, mat1, mat2, out);
   }

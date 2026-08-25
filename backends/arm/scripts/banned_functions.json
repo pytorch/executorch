@@ -1,0 +1,53 @@
+{
+  "banned_functions": [
+    {
+      "names": ["alloca"],
+      "replacements": ["malloc", "new"]
+    },
+    {
+      "names": ["gets"],
+      "replacements": ["fgets"]
+    },
+    {
+      "names": ["atof"],
+      "replacements": ["strtod"]
+    },
+    {
+      "names": ["atoi", "atol", "atoll"],
+      "replacements": ["strtol", "strtoll", "strtoul", "strtoull"]
+    },
+    {
+      "names": ["rewind"],
+      "replacements": ["See SEI CERT MSC24-C: https://cmu-sei.github.io/secure-coding-standards/sei-cert-c-coding-standard/recommendations/miscellaneous-msc/msc24-c/"]
+    },
+    {
+      "names": ["setbuf"],
+      "replacements": ["setvbuf"]
+    },
+    {
+      "names": ["readdir_r"],
+      "replacements": ["readdir"]
+    },
+    {
+      "names": [
+        "strcat",
+        "wcscat"
+      ],
+      "replacements": ["See SEI CERT STR31-C: https://cmu-sei.github.io/secure-coding-standards/sei-cert-c-coding-standard/rules/characters-and-strings-str/str31-c/"]
+    },
+    {
+      "names": [
+        "strcpy",
+        "wcscpy"
+      ],
+      "replacements": ["See SEI CERT STR31-C: https://cmu-sei.github.io/secure-coding-standards/sei-cert-c-coding-standard/rules/characters-and-strings-str/str31-c/"]
+    },
+    {
+      "names": [
+        "sprintf",
+        "vsprintf"
+      ],
+      "replacements": ["snprintf", "vsnprintf"]
+    }
+  ]
+}

@@ -8,6 +8,7 @@ from typing import Any, Deque, Dict, Hashable, List, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._ops import OpOverload
@@ -30,10 +31,19 @@ class FuseDuplicateUsersPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    # A fused RESCALE feeds its single output tensor to every original consumer.
+    # Later passes and the Vela compiler assume each integer RESCALE feeds one
+    # consumer, so collapsing duplicate RESCALE users onto a shared node corrupts
+    # integer outputs (observed as all-zero results on Ethos-U). Exclude RESCALE
+    # from fusion; the op-count wins this pass targets are on FP graphs, which
+    # carry no rescales.
+    _excluded_targets = frozenset({exir_ops.backend.tosa.RESCALE.default})
+
     def call(self, graph_module: GraphModule) -> PassResult:
         graph = graph_module.graph
         modified = False
 
+        node_order = {node: index for index, node in enumerate(graph.nodes)}
         producers: Deque[Node] = deque(node for node in graph.nodes)
 
         while producers:
@@ -48,7 +58,7 @@ class FuseDuplicateUsersPass(ArmPass):
             if len(user_nodes) < 2:
                 continue
 
-            candidate_groups = self._get_candidate_groups(user_nodes)
+            candidate_groups = self._get_candidate_groups(node_order, user_nodes)
 
             signature_to_user: Dict[Tuple[Hashable, ...], Node] = {}
             for group in candidate_groups:
@@ -84,7 +94,7 @@ class FuseDuplicateUsersPass(ArmPass):
 
         return PassResult(graph_module, modified)
 
-    def _get_candidate_groups(self, user_nodes):
+    def _get_candidate_groups(self, node_order, user_nodes):
         users_by_target: Dict[Tuple[str, Hashable], List[Node]] = {}
         for user in user_nodes:
             if user.graph is None:
@@ -94,13 +104,19 @@ class FuseDuplicateUsersPass(ArmPass):
             if user.op != "call_function":
                 continue
 
+            if user.target in self._excluded_targets:
+                continue
+
             target_key = self._get_target_key(user.target)
             target_signature = (user.op, target_key)
             users_by_target.setdefault(target_signature, []).append(user)
 
-        candidate_groups = [
-            group for group in users_by_target.values() if len(group) > 1
-        ]
+        candidate_groups = []
+        for group in users_by_target.values():
+            if len(group) > 1:
+                candidate_groups.append(
+                    sorted(group, key=lambda node: node_order[node])
+                )
 
         return candidate_groups
 

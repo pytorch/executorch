@@ -224,7 +224,9 @@ def test_min_dim_tosa_FP_not_delegated():
     pipeline.run()
 
 
-@common.parametrize("test_data", Amin.test_data | Amin.test_data_fp16)
+@common.parametrize(
+    "test_data", Amin.test_data | Amin.test_data_fp16 | Amin.test_data_bf16
+)
 @common.SkipIfNoModelConverter
 def test_amin_vgf_no_quant(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
@@ -250,7 +252,9 @@ def test_amin_vgf_quant(test_data: Amin.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Min.test_data | Min.test_data_fp16)
+@common.parametrize(
+    "test_data", Min.test_data | Min.test_data_fp16 | Min.test_data_bf16
+)
 @common.SkipIfNoModelConverter
 def test_min_dim_vgf_no_quant_to_amin(test_data: Min.input_t):
     data, dim = test_data()

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,6 +25,21 @@ class Int64Model(torch.nn.Module):
         return x + 3
 
 
+class NonPersistentInt64BufferModel(torch.nn.Module):
+    test_data = {
+        "rand": (torch.rand(4),),
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer(
+            "position_ids", torch.arange(4, dtype=torch.int64), persistent=False
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.get_buffer("position_ids").to(torch.float32)
+
+
 @common.parametrize("test_data", Int64Model.test_data)
 def test_cast_int64_buffers_to_int32_tosa_FP(test_data: input_t):
     module = Int64Model()
@@ -47,3 +62,20 @@ def test_cast_int64_buffers_to_int32_tosa_FP(test_data: input_t):
     ).exported_program()
     for state in exported_program.state_dict:
         assert exported_program.state_dict[state].dtype == torch.int32
+
+
+@common.parametrize("test_data", NonPersistentInt64BufferModel.test_data)
+def test_cast_non_persistent_int64_buffers_to_int32_tosa_FP(test_data: input_t):
+    module = NonPersistentInt64BufferModel()
+    pipeline = PassPipeline[input_t](
+        module,
+        test_data,
+        quantize=False,
+        passes_with_exported_program=[CastInt64BuffersToInt32Pass],
+    )
+    pipeline.run()
+
+    exported_program = pipeline.tester.get_artifact(
+        StageType.RUN_PASSES
+    ).exported_program()
+    assert exported_program.constants["position_ids"].dtype == torch.int32

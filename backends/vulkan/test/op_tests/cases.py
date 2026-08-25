@@ -834,6 +834,29 @@ def get_upsample_bilinear2d_inputs():
     return VkTestSuite(inputs_list)
 
 
+@register_test_suite("aten.pixel_shuffle.default")
+def get_pixel_shuffle_inputs():
+    test_suite = VkTestSuite(
+        [
+            # (input tensor shape (N, C*r*r, H, W), upscale_factor r)
+            ((1, 4, 2, 2), 2),
+            ((1, 9, 3, 3), 3),
+            ((1, 16, 2, 2), 4),
+            ((2, 4, 3, 5), 2),
+            ((1, 8, 4, 4), 2),
+            ((1, 12, 3, 4), 2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+    ]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    return test_suite
+
+
 @register_test_suite(["aten.full.default", "aten.full_like.default"])
 def get_full_inputs():
     test_suite = VkTestSuite(
@@ -1208,6 +1231,74 @@ def get_gather_inputs():
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
     test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+
+    return test_suite
+
+
+@register_test_suite("aten.grid_sampler_2d.default")
+def get_grid_sampler_2d_inputs():
+    # Schema: aten::grid_sampler_2d(Tensor input, Tensor grid,
+    #   int interpolation_mode, int padding_mode, bool align_corners) -> Tensor
+    # The Vulkan implementation only supports the configuration used by RIFE's
+    # WarpModule: bilinear (mode=0), border padding (mode=1), align_corners=True.
+    # input layout: [N, C, Hin, Win] - channels-packed texture3d
+    # grid  layout: [N, Hout, Wout, 2] - contiguous (width-packed) buffer
+    Test = namedtuple(
+        "GridSampler2dTest",
+        ["input", "grid", "interpolation_mode", "padding_mode", "align_corners"],
+    )
+
+    test_cases = [
+        # Same Hout/Wout as input - identity-ish warp
+        Test(
+            input=[1, 4, 8, 8],
+            grid=[1, 8, 8, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Downsample
+        Test(
+            input=[1, 8, 16, 16],
+            grid=[1, 8, 8, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Upsample
+        Test(
+            input=[1, 4, 8, 8],
+            grid=[1, 16, 16, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Non-square + multiple channel slices (C=12 -> 3 slices)
+        Test(
+            input=[1, 12, 11, 13],
+            grid=[1, 7, 17, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Batched
+        Test(
+            input=[2, 4, 9, 9],
+            grid=[2, 6, 6, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    test_suite.layouts = ["utils::kChannelsPacked"]
+    test_suite.storage_types = ["utils::kTexture3D"]
+    # input/out are channels-packed texture3d; grid is a contiguous buffer.
+    test_suite.arg_storage_types = {"grid": "utils::kBuffer"}
+    test_suite.arg_memory_layouts = {"grid": "utils::kWidthPacked"}
 
     return test_suite
 
@@ -1722,6 +1813,7 @@ def get_var_inputs():
         "aten.hardswish.default",
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
+        "aten.log10.default",
         "aten.round.default",
         "aten.tan.default",
         "aten.relu6.default",
@@ -1740,6 +1832,54 @@ def get_unary_ops_inputs():
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
     return test_suite
+
+
+@register_test_suite("aten.unfold_copy.default")
+def get_unfold_copy_inputs():
+    Test = namedtuple("UnfoldCopy", ["self", "dimension", "size", "step"])
+
+    test_suite = VkTestSuite(
+        [
+            Test(self=(11,), dimension=0, size=5, step=2),
+            Test(self=(3, 11), dimension=-1, size=5, step=2),
+            Test(self=(3, 7, 11), dimension=1, size=3, step=2),
+            Test(self=(5, 3, 7, 11), dimension=0, size=3, step=2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.test_name_suffix = "buffer"
+
+    highdim_test_suite = VkTestSuite(
+        [
+            Test(
+                self=(2, 2, 2, 3, 2, 2, 2),
+                dimension=-4,
+                size=2,
+                step=1,
+            ),
+        ]
+    )
+    highdim_test_suite.storage_types = ["utils::kBuffer"]
+    highdim_test_suite.layouts = ["utils::kChannelsPacked"]
+    highdim_test_suite.data_gen = "make_seq_tensor"
+    highdim_test_suite.test_name_suffix = "highdim_buffer"
+
+    scenex_test_suite = VkTestSuite(
+        [
+            Test(self=(30, 15760), dimension=-1, size=400, step=160),
+        ]
+    )
+    scenex_test_suite.storage_types = ["utils::kBuffer"]
+    scenex_test_suite.layouts = ["utils::kWidthPacked"]
+    scenex_test_suite.dtypes = ["at::kFloat"]
+    scenex_test_suite.test_name_suffix = "scenex_buffer"
+
+    return [test_suite, highdim_test_suite, scenex_test_suite]
 
 
 # separate test suite from unary_ops for learning purposes
@@ -2050,14 +2190,18 @@ def get_where_inputs():
     return test_suite
 
 
-@register_test_suite("aten.bitwise_and.Tensor")
-def get_bitwise_and_inputs():
+@register_test_suite(
+    ["aten.bitwise_and.Tensor", "aten.bitwise_or.Tensor", "aten.logical_or.default"]
+)
+def get_bitwise_binary_inputs():
     test_suite = VkTestSuite(
         [
             ((M1, M2), (M1, M2)),
             ((S, S1, S2), (S, S1, S2)),
             ((XS, S, S1, S2), (XS, S, S1, S2)),
             ((1, M1), (1, M1)),
+            ((1, M2), (M1, M2)),
+            ((XS, 1, S1, 1), (1, S, 1, S2)),
         ]
     )
     test_suite.layouts = [
@@ -2069,7 +2213,6 @@ def get_bitwise_and_inputs():
         "utils::kTexture3D",
     ]
     test_suite.dtypes = ["at::kBool"]
-    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 
@@ -2123,3 +2266,75 @@ def get_pow_tensor_scalar_inputs():
     ]
     test_suite.dtypes = ["at::kFloat"]
     return test_suite
+
+
+@register_test_suite("aten.eq.Scalar")
+def get_eq_scalar_inputs():
+    # Scalars are chosen to fall within the make_seq_tensor range (1..numel),
+    # so each case exercises a genuine mix of equal / not-equal elements rather
+    # than a trivially all-false comparison.
+    test_suite = VkTestSuite(
+        [
+            ((M1,), 5),
+            ((M2, M1), 100),
+            ((S1, M1, M2), 1000),
+            ((S1, S2, S2, M2), 2000),
+            ((S, S1, S2), 50),
+            ((M1, M2), 700),
+            ((S1, S2), 20),
+            # Int tensor (dtype below) vs non-integer float scalar exercises the
+            # mixed int32/float shader variant: comparing in the promoted float
+            # type yields all-false (no integer equals 3.5).
+            ((M1,), 3.5),
+        ]
+    )
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = ["at::kInt", "at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def _get_compare_scalar_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M2, M1), 2.5),
+            ((S1, M1, M2), 1000),
+        ]
+    )
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+@register_test_suite("aten.ne.Scalar")
+def get_ne_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.lt.Scalar")
+def get_lt_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.le.Scalar")
+def get_le_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.gt.Scalar")
+def get_gt_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.ge.Scalar")
+def get_ge_scalar_inputs():
+    return _get_compare_scalar_inputs()

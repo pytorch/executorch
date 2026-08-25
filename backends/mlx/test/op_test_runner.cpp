@@ -19,7 +19,8 @@
  *   ./cmake-out-mlx/backends/mlx/test/op_test_runner \
  *       --pte <model.pte> \
  *       --input <input.bin> \
- *       --output <output.bin>
+ *       --output <output.bin> \
+ *       [--kv-cache <capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]>]
  *
  * Binary file format:
  *   - 4 bytes: number of tensors (uint32_t)
@@ -40,11 +41,17 @@
 #include <executorch/extension/tensor/tensor.h>
 #pragma clang diagnostic pop
 
+#include <executorch/backends/mlx/runtime/backend_options.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
+
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -58,6 +65,7 @@ enum class DType : uint32_t {
   Int64 = 3,
   BFloat16 = 4,
   Bool = 5,
+  UInt8 = 6,
 };
 
 size_t dtype_size(DType dtype) {
@@ -73,6 +81,8 @@ size_t dtype_size(DType dtype) {
     case DType::BFloat16:
       return 2;
     case DType::Bool:
+      return 1;
+    case DType::UInt8:
       return 1;
     default:
       return 4;
@@ -93,6 +103,8 @@ exec_aten::ScalarType dtype_to_scalar_type(DType dtype) {
       return exec_aten::ScalarType::BFloat16;
     case DType::Bool:
       return exec_aten::ScalarType::Bool;
+    case DType::UInt8:
+      return exec_aten::ScalarType::Byte;
     default:
       return exec_aten::ScalarType::Float;
   }
@@ -112,6 +124,8 @@ DType scalar_type_to_dtype(exec_aten::ScalarType stype) {
       return DType::BFloat16;
     case exec_aten::ScalarType::Bool:
       return DType::Bool;
+    case exec_aten::ScalarType::Byte:
+      return DType::UInt8;
     default:
       return DType::Float32;
   }
@@ -193,19 +207,62 @@ void write_tensors_to_bin(
 }
 
 void print_usage(const char* prog_name) {
-  std::cerr << "Usage: " << prog_name << " [options]\n"
-            << "Options:\n"
-            << "  --pte <path>     Path to .pte model file (required)\n"
-            << "  --input <path>   Path to input .bin file (required)\n"
-            << "  --output <path>  Path to output .bin file (required)\n"
-            << "  --verbose        Print verbose output\n"
-            << std::endl;
+  std::cerr
+      << "Usage: " << prog_name << " [options]\n"
+      << "Options:\n"
+      << "  --pte <path>     Path to .pte model file (required)\n"
+      << "  --input <path>   Path to input .bin file (required)\n"
+      << "  --output <path>  Path to output .bin file (required)\n"
+      << "  --kv-cache <capacity,n_layers,n_kv_heads,head_dim[,dtype]>\n"
+      << "                   Install an off-graph KV cache for the run;\n"
+      << "                   dtype is an ET ScalarType (default 6/Float)\n"
+      << "  --verbose        Print verbose output\n"
+      << std::endl;
+}
+
+// Parse "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]" into a uniform-layer
+// CacheConfig. Sizing is on the command line because the architecture facts are
+// not yet published in .pte metadata; a runner that reads them lands with the
+// metadata writer.
+bool parse_kv_cache_spec(
+    const std::string& spec,
+    executorch::extension::llm::cache::CacheConfig& cfg) {
+  std::vector<int> fields;
+  size_t pos = 0;
+  while (pos <= spec.size()) {
+    const size_t comma = spec.find(',', pos);
+    const std::string field = spec.substr(
+        pos, comma == std::string::npos ? std::string::npos : comma - pos);
+    if (field.empty()) {
+      return false;
+    }
+    try {
+      fields.push_back(std::stoi(field));
+    } catch (const std::exception&) {
+      return false;
+    }
+    if (comma == std::string::npos) {
+      break;
+    }
+    pos = comma + 1;
+  }
+  if (fields.size() < 4 || fields.size() > 5) {
+    return false;
+  }
+  cfg.capacity = fields[0];
+  cfg.n_layers = fields[1];
+  cfg.layers = {{{}, /*n_kv_heads=*/fields[2], /*head_dim=*/fields[3]}};
+  cfg.kv_dtype = fields.size() == 5
+      ? fields[4]
+      : static_cast<int>(executorch::runtime::etensor::ScalarType::Float);
+  return executorch::extension::llm::cache::valid(cfg);
 }
 
 int main(int argc, char* argv[]) {
   std::string pte_path;
   std::string input_path;
   std::string output_path;
+  std::string kv_cache_spec;
   bool verbose = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -216,6 +273,8 @@ int main(int argc, char* argv[]) {
       input_path = argv[++i];
     } else if (arg == "--output" && i + 1 < argc) {
       output_path = argv[++i];
+    } else if (arg == "--kv-cache" && i + 1 < argc) {
+      kv_cache_spec = argv[++i];
     } else if (arg == "--verbose") {
       verbose = true;
     } else if (arg == "--help" || arg == "-h") {
@@ -239,8 +298,50 @@ int main(int argc, char* argv[]) {
       std::cout << "Loading model from: " << pte_path << std::endl;
     }
 
+    namespace cache = ::executorch::extension::llm::cache;
+
+    // Build and install the off-graph KV cache before the Module, so the
+    // registry entry exists by the time the delegate's init() looks it up.
+    // Declared here so the session outlives the module.
+    std::optional<cache::CacheSession> cache_session;
+    if (!kv_cache_spec.empty()) {
+      cache::CacheConfig cfg{};
+      if (!parse_kv_cache_spec(kv_cache_spec, cfg)) {
+        std::cerr << "Invalid --kv-cache spec: " << kv_cache_spec << std::endl;
+        return 1;
+      }
+      auto built = cache::CacheBuilderRegistry::global().build(
+          ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
+      if (!built.ok()) {
+        std::cerr << "Failed to build KV cache: "
+                  << static_cast<int>(built.error()) << std::endl;
+        return 1;
+      }
+      cache_session.emplace(cache::make_unique_key(), built.get());
+      if (verbose) {
+        std::cout << "Installed KV cache under key " << cache_session->key()
+                  << std::endl;
+      }
+    }
+
     Module module(pte_path);
-    auto load_error = module.load();
+    Error load_error = Error::Ok;
+    if (cache_session) {
+      ::executorch::runtime::BackendOptions<1> mlx_opts;
+      ::executorch::runtime::LoadBackendOptionsMap options_map;
+      if (mlx_opts.set_option(
+              ::executorch::backends::mlx::kCacheKeyKey,
+              cache_session->key().c_str()) != Error::Ok ||
+          options_map.set_options(
+              ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
+              Error::Ok) {
+        std::cerr << "Failed to set cache_key backend option" << std::endl;
+        return 1;
+      }
+      load_error = module.load(options_map);
+    } else {
+      load_error = module.load();
+    }
     if (load_error != Error::Ok) {
       std::cerr << "Failed to load model: " << static_cast<int>(load_error)
                 << std::endl;
@@ -316,6 +417,11 @@ int main(int argc, char* argv[]) {
         std::memcpy(data.data(), t.data.data(), t.data.size());
         tensor_ptr = make_tensor_ptr(
             sizes, std::move(data), {}, {}, exec_aten::ScalarType::Bool);
+      } else if (t.dtype == DType::UInt8) {
+        std::vector<uint8_t> data(t.data.size());
+        std::memcpy(data.data(), t.data.data(), t.data.size());
+        tensor_ptr = make_tensor_ptr(
+            sizes, std::move(data), {}, {}, exec_aten::ScalarType::Byte);
       } else {
         std::cerr << "Unsupported dtype: " << static_cast<int>(t.dtype)
                   << std::endl;

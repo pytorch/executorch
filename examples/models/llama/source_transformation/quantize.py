@@ -190,7 +190,6 @@ def quantize(  # noqa C901
             ),
         )
         quantize_(model, q_config)
-        model = unwrap_tensor_subclass(model)
 
         return model
     else:
@@ -689,8 +688,11 @@ class QuantizedGroupEmbedding(torch.nn.Module):
         dtype=torch.half,
         packed=False,
         bitwidth: int = 8,
+        scales_precision: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+        if scales_precision is None:
+            scales_precision = torch.float16
         if group_size is None or group_size == 0:
             group_size = embedding_dim
         self.group_size = group_size
@@ -729,12 +731,15 @@ class QuantizedGroupEmbedding(torch.nn.Module):
             self.register_buffer(
                 "scales",
                 torch.ones(
-                    (vocab_size, groups_per_row), dtype=torch.float16, device=device
+                    (vocab_size, groups_per_row),
+                    dtype=scales_precision,
+                    device=device,
                 ),
             )
         else:
             self.register_buffer(
-                "scales", torch.ones((vocab_size,), dtype=torch.float16, device=device)
+                "scales",
+                torch.ones((vocab_size,), dtype=scales_precision, device=device),
             )
 
     @torch.no_grad()
@@ -786,13 +791,14 @@ def get_quant_embedding_transform(
             is_asymmetric = True
         else:
             bitwidth, group_size, is_asymmetric = quant_args
+            # bool("false") is True, so the third field has to be parsed as text.
+            is_asymmetric = is_asymmetric.strip().lower() not in ("false", "0", "no")
 
         if group_size in ["none", "None", "0"]:
             group_size = 0
 
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        is_asymmetric = bool(is_asymmetric)
         weight_dtype = getattr(torch, f"int{bitwidth}")
         granularity = PerAxis(0) if group_size == 0 else PerGroup(group_size)
         mapping_type = (

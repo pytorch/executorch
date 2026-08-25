@@ -41,6 +41,7 @@ class I64toI32(ExportPass):
     I64_IN_OPS = {
         exir_ops.edge.aten.gather.default: [2],
         exir_ops.edge.aten.scatter.src: [2],
+        exir_ops.edge.aten.scatter.value: [2],
     }
     copy_op = exir_ops.edge.aten._to_copy.default
 
@@ -135,7 +136,9 @@ class I64toI32(ExportPass):
                 if param.dtype == torch.int64:
                     # QNN does not support int64
                     self._update_meta(n)
-            elif n.op == "placeholder":
+            elif n.op == "placeholder" or n.op == "get_attr":
+                # A `get_attr` node may be introduced after the `LiftConstantScalarOperands` pass.
+                # If the scalar operand has an int64 data type, it should be explicitly cast to int32.
                 node_val = n.meta["val"]
                 if self._is_tensor_of_dtype(node_val, torch.int64):
                     with graph_module.graph.inserting_after(n):

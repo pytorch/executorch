@@ -288,8 +288,8 @@ TEST_F(OpReluTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpReluTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Unbound dynamic shape not supported";
+// DISABLED: Unbound dynamic shape not supported
+TEST_F(OpReluTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

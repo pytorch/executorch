@@ -96,16 +96,48 @@ target_include_directories(
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 
-set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
+if(EXECUTORCH_BUILD_SHARED)
+  # extension_threadpool is a shared library here and already provides
+  # pthreadpool and cpuinfo. Naming the static archives as well would give this
+  # delegate its own second copy of both, so a process would end up with two
+  # thread pools rather than the one the shared library exists to provide.
+  set(xnnpack_third_party extension_threadpool)
+else()
+  set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
+endif()
 
 include(cmake/Dependencies.cmake)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(xnnpack_backend ${_xnnpack_backend__srcs})
+# Build the delegate as a shared library for the wheel so a process has one copy
+# of it, and keep it static everywhere else so no other build changes.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_xnnpack_backend_library_type SHARED)
+else()
+  set(_xnnpack_backend_library_type STATIC)
+endif()
+add_library(
+  xnnpack_backend ${_xnnpack_backend_library_type} ${_xnnpack_backend__srcs}
+)
 target_link_libraries(
-  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema
+  xnnpack_backend PUBLIC ${xnnpack_third_party} xnnpack_schema
                          extension_threadpool
 )
+if(EXECUTORCH_BUILD_SHARED)
+  set_target_properties(
+    xnnpack_backend PROPERTIES OUTPUT_NAME executorch_backend_xnnpack
+  )
+  executorch_target_soname_policy(xnnpack_backend)
+  # XNNPACK and its microkernels are forced static, so bundle them inside this
+  # library instead of making every consumer supply them.
+  executorch_target_whole_archive(xnnpack_backend XNNPACK)
+  executorch_target_whole_archive(xnnpack_backend xnnpack-microkernels-prod)
+  target_link_libraries(xnnpack_backend PUBLIC executorch_shared)
+  # Ships beside the runtime in the wheel's lib/ directory.
+  executorch_target_shipped_runtime_path(xnnpack_backend)
+else()
+  target_link_libraries(xnnpack_backend PUBLIC executorch_core)
+endif()
 target_include_directories(
   xnnpack_backend PUBLIC ${_common_include_directories}
 )
@@ -169,6 +201,12 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+if(DEFINED EXECUTORCH_XNNPACK_LOG_LEVEL)
+  target_compile_definitions(
+    xnnpack-logging PUBLIC XNN_LOG_LEVEL=${EXECUTORCH_XNNPACK_LOG_LEVEL}
+  )
+endif()
+
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

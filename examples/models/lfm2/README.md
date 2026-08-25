@@ -3,6 +3,10 @@
 
 [LFM2.5](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) is an updated version with improved training (28T tokens vs 10T) and extended context length support (32K tokens).
 
+Pre-exported ExecuTorch MLX artifacts for LFM2.5 350M and 1.2B are available
+on the Hugging Face Hub at
+[younghan-meta/LFM2.5-ExecuTorch-MLX](https://huggingface.co/younghan-meta/LFM2.5-ExecuTorch-MLX).
+
 ## Instructions
 
 LFM2 uses the same example code as optimized Llama model, while the checkpoint, model params, and tokenizer are different. Please see the [Llama README page](../llama/README.md) for details.
@@ -47,6 +51,24 @@ python -m extension.llm.export.export_llm \
   +export.output_name="lfm2_5_1_2b_8da4w.pte"
 ```
 
+Export LFM2.5 350M to MLX on Apple Silicon, quantized with 4-bit weights:
+```
+python -m extension.llm.export.export_llm \
+  --config examples/models/lfm2/config/lfm2_mlx_4w.yaml \
+  +base.model_class="lfm2_5_350m" \
+  +base.params="examples/models/lfm2/config/lfm2_5_350m_config.json" \
+  +export.output_name="lfm2_5_350m_mlx_4w.pte"
+```
+
+Export LFM2.5 1.2B to MLX on Apple Silicon, quantized with 4-bit weights:
+```
+python -m extension.llm.export.export_llm \
+  --config examples/models/lfm2/config/lfm2_mlx_4w.yaml \
+  +base.model_class="lfm2_5_1_2b" \
+  +base.params="examples/models/lfm2/config/lfm2_5_1_2b_config.json" \
+  +export.output_name="lfm2_5_1_2b_mlx_4w.pte"
+```
+
 To export with extended context (e.g., 2048 tokens):
 ```
 python -m extension.llm.export.export_llm \
@@ -58,6 +80,17 @@ python -m extension.llm.export.export_llm \
   +export.output_name="lfm2_5_1_2b_8da4w.pte"
 ```
 ### Example run
+For MLX on Apple Silicon, build or install ExecuTorch with MLX enabled. The
+easiest local path is:
+```
+conda activate et-mlx
+python install_executorch.py
+xcrun -sdk macosx --find metal
+```
+
+The `metal` command must resolve to an Xcode path, not fail under standalone
+Command Line Tools.
+
 With ExecuTorch pybindings:
 ```
 python -m examples.models.llama.runner.native \
@@ -72,11 +105,49 @@ python -m examples.models.llama.runner.native \
   --temperature 0.3
 ```
 
-With ExecuTorch's sample c++ runner (see the Llama README's [Step 3: Run on your computer to validate](../llama/README.md#step-3-run-on-your-computer-to-validate) to build the runner):
+With ExecuTorch pybindings and an LFM2.5 MLX export:
+```
+python -m examples.models.llama.runner.native \
+  --model lfm2_5_350m \
+  --pte lfm2_5_350m_mlx_4w.pte \
+  --tokenizer ~/.cache/huggingface/hub/models--LiquidAI--LFM2.5-350M/snapshots/<snapshot>/tokenizer.json \
+  --tokenizer_config ~/.cache/huggingface/hub/models--LiquidAI--LFM2.5-350M/snapshots/<snapshot>/tokenizer_config.json \
+  --prompt "<|startoftext|><|im_start|>user\nWho are you?<|im_end|>\n<|im_start|>assistant\n" \
+  --params examples/models/lfm2/config/lfm2_5_350m_config.json \
+  --max_len 128 \
+  -kv \
+  --temperature 0.3
+```
+
+Find the Hugging Face cache snapshot directory with:
+```
+python - <<'PY'
+from pathlib import Path
+root = Path.home() / ".cache/huggingface/hub/models--LiquidAI--LFM2.5-350M/snapshots"
+for path in root.glob("*/tokenizer.json"):
+    print(path.parent)
+PY
+```
+
+With ExecuTorch's sample c++ runner (see the Llama README's [Step 3: Run on your computer to validate](../llama/README.md#step-3-run-on-your-computer-to-validate) for general runner details):
 ```
 cmake-out/examples/models/llama/llama_main \
   --model_path lfm2_700m_8da4w.pte \
   --tokenizer_path ~/.cache/huggingface/hub/models--LiquidAI--LFM2-700M/snapshots/ab260293733f05dd4ce22399bea1cae2cf9b272d/tokenizer.json \
+  --prompt="<|startoftext|><|im_start|>user\nWho are you?<|im_end|>\n<|im_start|>assistant\n" \
+  --temperature 0.3
+```
+
+Build the C++ runner with MLX support for LFM2.5:
+```
+make lfm_2_5-mlx
+```
+
+Then run an LFM2.5 MLX export with the C++ runner:
+```
+cmake-out/examples/models/llama/llama_main \
+  --model_path lfm2_5_350m_mlx_4w.pte \
+  --tokenizer_path ~/.cache/huggingface/hub/models--LiquidAI--LFM2.5-350M/snapshots/<snapshot>/tokenizer.json \
   --prompt="<|startoftext|><|im_start|>user\nWho are you?<|im_end|>\n<|im_start|>assistant\n" \
   --temperature 0.3
 ```
