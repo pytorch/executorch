@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/tensor/tensor_ptr.h>
+#include <executorch/extension/tensor/tensor_ptr_maker.h>
 
 #include <gtest/gtest.h>
 
@@ -358,6 +359,170 @@ TEST_F(TensorPtrDeviceTest, LargeTensorRoundtrip) {
   for (size_t i = 0; i < n; ++i) {
     EXPECT_FLOAT_EQ(result[i], data[i]);
   }
+}
+
+// The `device` argument sits immediately after `type` in every factory that
+// takes a raw pointer, so tagging a buffer that already lives on an accelerator
+// never needs the trailing arguments spelled out. Tagging is metadata only: it
+// must not allocate or copy.
+
+TEST_F(TensorPtrDeviceTest, MakeTensorPtrTagsDeviceAfterType) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto tensor = make_tensor_ptr(
+      {2, 2},
+      raw.data(),
+      executorch::aten::ScalarType::Float,
+      DeviceType::CUDA);
+
+  EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+  EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_index(), 0);
+  EXPECT_EQ(tensor->const_data_ptr(), raw.data());
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 0);
+  EXPECT_EQ(g_mock_cuda.h2d_count_, 0);
+}
+
+TEST_F(TensorPtrDeviceTest, MakeTensorPtrDefaultsToCpu) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto bare = make_tensor_ptr({2, 2}, raw.data());
+  auto typed =
+      make_tensor_ptr({2, 2}, raw.data(), executorch::aten::ScalarType::Float);
+
+  EXPECT_EQ(bare->unsafeGetTensorImpl()->device_type(), DeviceType::CPU);
+  EXPECT_EQ(typed->unsafeGetTensorImpl()->device_type(), DeviceType::CPU);
+}
+
+TEST_F(TensorPtrDeviceTest, MakeTensorPtrKeepsDynamismAndDeleterAfterDevice) {
+  auto* raw = new float[4]{1.0f, 2.0f, 3.0f, 4.0f};
+  bool deleted = false;
+  {
+    auto tensor = make_tensor_ptr(
+        {2, 2},
+        raw,
+        executorch::aten::ScalarType::Float,
+        Device(DeviceType::CUDA, 1),
+        executorch::aten::TensorShapeDynamism::STATIC,
+        [&deleted](void* p) {
+          deleted = true;
+          delete[] static_cast<float*>(p);
+        });
+
+    EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+    EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_index(), 1);
+    EXPECT_EQ(
+        tensor->shape_dynamism(),
+        executorch::aten::TensorShapeDynamism::STATIC);
+    EXPECT_FALSE(deleted);
+  }
+  EXPECT_TRUE(deleted);
+}
+
+TEST_F(TensorPtrDeviceTest, MakeTensorPtrPrimaryTagsDeviceAfterType) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto tensor = make_tensor_ptr(
+      {2, 2},
+      raw.data(),
+      {0, 1},
+      {2, 1},
+      executorch::aten::ScalarType::Float,
+      DeviceType::CUDA);
+
+  EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+  EXPECT_EQ(tensor->const_data_ptr(), raw.data());
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 0);
+}
+
+TEST_F(TensorPtrDeviceTest, FromBlobTagsDeviceAfterType) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto tensor = from_blob(
+      raw.data(),
+      {2, 2},
+      executorch::aten::ScalarType::Float,
+      DeviceType::CUDA);
+
+  EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+  EXPECT_EQ(tensor->const_data_ptr(), raw.data());
+  EXPECT_EQ(g_mock_cuda.allocate_count_, 0);
+}
+
+TEST_F(TensorPtrDeviceTest, FromBlobDefaultsToCpu) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto tensor = from_blob(raw.data(), {2, 2});
+
+  EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CPU);
+}
+
+TEST_F(TensorPtrDeviceTest, FromBlobWithStridesTagsDevice) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto tensor = from_blob(
+      raw.data(),
+      {2, 2},
+      {2, 1},
+      executorch::aten::ScalarType::Float,
+      DeviceType::CUDA);
+
+  EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+  EXPECT_EQ(tensor->strides()[0], 2);
+  EXPECT_EQ(tensor->strides()[1], 1);
+}
+
+TEST_F(TensorPtrDeviceTest, FromBlobRunsDeleterAfterDevice) {
+  auto* raw = new float[4]{1.0f, 2.0f, 3.0f, 4.0f};
+  bool deleted = false;
+  {
+    auto tensor = from_blob(
+        raw,
+        {2, 2},
+        executorch::aten::ScalarType::Float,
+        DeviceType::CUDA,
+        [&deleted](void* p) {
+          deleted = true;
+          delete[] static_cast<float*>(p);
+        });
+
+    EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+    EXPECT_FALSE(deleted);
+  }
+  EXPECT_TRUE(deleted);
+}
+
+TEST_F(TensorPtrDeviceTest, FromBlobWithStridesRunsDeleterAfterDevice) {
+  auto* raw = new float[4]{1.0f, 2.0f, 3.0f, 4.0f};
+  bool deleted = false;
+  {
+    auto tensor = from_blob(
+        raw,
+        {2, 2},
+        {2, 1},
+        executorch::aten::ScalarType::Float,
+        DeviceType::CUDA,
+        [&deleted](void* p) {
+          deleted = true;
+          delete[] static_cast<float*>(p);
+        },
+        executorch::aten::TensorShapeDynamism::STATIC);
+
+    EXPECT_EQ(tensor->unsafeGetTensorImpl()->device_type(), DeviceType::CUDA);
+    EXPECT_EQ(
+        tensor->shape_dynamism(),
+        executorch::aten::TensorShapeDynamism::STATIC);
+  }
+  EXPECT_TRUE(deleted);
+}
+
+TEST_F(TensorPtrDeviceTest, ForBlobBuilderMatchesFromBlob) {
+  std::array<float, 4> raw{1.0f, 2.0f, 3.0f, 4.0f};
+  auto built =
+      for_blob(raw.data(), {2, 2}).device(DeviceType::CUDA).make_tensor_ptr();
+  auto direct = from_blob(
+      raw.data(),
+      {2, 2},
+      executorch::aten::ScalarType::Float,
+      DeviceType::CUDA);
+
+  EXPECT_EQ(
+      built->unsafeGetTensorImpl()->device_type(),
+      direct->unsafeGetTensorImpl()->device_type());
+  EXPECT_EQ(built->const_data_ptr(), direct->const_data_ptr());
 }
 
 #endif // USE_ATEN_LIB
