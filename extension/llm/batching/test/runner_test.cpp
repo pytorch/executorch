@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
+#include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
 
 #include <algorithm>
@@ -21,29 +21,52 @@
 #include <optional>
 #include <random>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-using executorch::extension::llm::batching::Runner;
 using executorch::extension::llm::batching::DecodeFirstScheduler;
+using executorch::extension::llm::batching::Executor;
 using executorch::extension::llm::batching::FinishReason;
 using executorch::extension::llm::batching::GenConfig;
 using executorch::extension::llm::batching::GenerationHandle;
 using executorch::extension::llm::batching::Position;
-using executorch::extension::llm::batching::RunnerConfig;
+using executorch::extension::llm::batching::Runner;
+using executorch::extension::llm::batching::SamplingParams;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::Session;
 using executorch::extension::llm::batching::SessionId;
 using executorch::extension::llm::batching::Task;
 using executorch::extension::llm::batching::Token;
-using executorch::extension::llm::batching::testing::FakeDFlashExecutor;
 using executorch::extension::llm::batching::testing::FakeExecutor;
 
 namespace {
 
 constexpr std::chrono::seconds kTimeout{5};
+
+static_assert(std::is_move_constructible<Session>::value);
+static_assert(std::is_move_assignable<Session>::value);
+static_assert(!std::is_copy_constructible<Session>::value);
+static_assert(!std::is_copy_assignable<Session>::value);
+
+class ExecutorWithoutSampling : public Executor {
+ public:
+  std::optional<SessionId> open_session() override {
+    return std::nullopt;
+  }
+
+  void close_session(SessionId) override {}
+
+  bool execute(
+      const executorch::extension::llm::batching::BatchInput&,
+      executorch::extension::llm::batching::BatchOutput&) override {
+    return false;
+  }
+};
+
+static_assert(std::is_abstract<ExecutorWithoutSampling>::value);
 
 class Updates {
  public:
@@ -93,13 +116,12 @@ struct Fixture {
   explicit Fixture(
       FakeExecutor& executor,
       std::int32_t max_decode_sequences = 4,
-      std::int32_t max_prefill_chunk_size = 8,
-      RunnerConfig runner_config = RunnerConfig{})
+      std::int32_t max_prefill_chunk_size = 8)
       : scheduler(DecodeFirstScheduler::create(
             2 * max_prefill_chunk_size + max_decode_sequences,
             max_decode_sequences,
             static_cast<std::size_t>(max_prefill_chunk_size))),
-        runner(executor, *scheduler, runner_config) {}
+        runner(executor, *scheduler) {}
 
   std::unique_ptr<DecodeFirstScheduler> scheduler;
   Runner runner;
@@ -107,10 +129,33 @@ struct Fixture {
 
 Session open(Runner& runner) {
   auto future = runner.open_session();
-  EXPECT_EQ(future.wait_for(kTimeout), std::future_status::ready);
+  // Not ASSERT_: this helper returns a value, so a fatal assertion cannot
+  // early-return from it. Bail explicitly, or the get() below would block
+  // forever on exactly the bug the timeout is here to catch.
+  if (future.wait_for(kTimeout) != std::future_status::ready) {
+    ADD_FAILURE() << "open_session did not settle within the timeout";
+    return Session{};
+  }
   auto session = future.get();
   EXPECT_TRUE(session.has_value());
-  return session.value_or(Session{});
+  return session ? std::move(*session) : Session{};
+}
+
+SessionId last_opened(const FakeExecutor& executor) {
+  const std::vector<SessionId> opened = executor.opened();
+  EXPECT_FALSE(opened.empty());
+  return opened.empty() ? SessionId{} : opened.back();
+}
+
+bool wait_for_open_count(const FakeExecutor& executor, int expected) {
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (executor.open_count() == expected) {
+      return true;
+    }
+    std::this_thread::yield();
+  }
+  return executor.open_count() == expected;
 }
 
 std::vector<Token> tokens(int n, Token first = 100) {
@@ -155,6 +200,9 @@ class RejectingScheduler : public Scheduler {
   std::vector<Task> cancel(SessionId) override {
     return {};
   }
+  std::size_t max_prefill_chunk_size() const override {
+    return 8;
+  }
   std::vector<Task> clear() override {
     return {};
   }
@@ -162,123 +210,109 @@ class RejectingScheduler : public Scheduler {
 
 } // namespace
 
-TEST(SessionTest, OpenAndCloseRoundTripThroughTheEngineThread) {
+TEST(SessionTest, DefaultSessionRejectsGenerationSynchronously) {
+  Session session;
+  EXPECT_FALSE(session.valid());
+  auto updates = std::make_shared<Updates>();
+  const std::thread::id caller_thread = std::this_thread::get_id();
+  std::thread::id callback_thread;
+
+  GenerationHandle handle = session.generate_async(
+      tokens(1),
+      config(1),
+      [&](const std::vector<Token>& emitted,
+          std::optional<FinishReason> finish) {
+        callback_thread = std::this_thread::get_id();
+        (*updates)(emitted, finish);
+      });
+
+  EXPECT_EQ(callback_thread, caller_thread);
+  EXPECT_TRUE(handle.done());
+  EXPECT_EQ(handle.finish_reason(), FinishReason::Failed);
+  ASSERT_TRUE(updates->wait());
+  EXPECT_TRUE(updates->tokens().empty());
+  EXPECT_EQ(updates->finish(), FinishReason::Failed);
+  EXPECT_EQ(updates->terminal_calls(), 1);
+}
+
+TEST(SessionTest, DestructionClosesThroughTheEngineThread) {
   FakeExecutor executor;
   Fixture fixture(executor);
+  {
+    Session session = open(fixture.runner);
+    EXPECT_TRUE(session.valid());
+    EXPECT_EQ(executor.open_count(), 1);
+  }
 
-  Session first = open(fixture.runner);
-  Session second = open(fixture.runner);
-  EXPECT_NE(first.id(), second.id());
-  EXPECT_EQ(executor.open_count(), 2);
+  ASSERT_TRUE(wait_for_open_count(executor, 0));
+  EXPECT_EQ(executor.closed().size(), 1u);
+}
 
-  auto closed = first.close();
-  ASSERT_EQ(closed.wait_for(kTimeout), std::future_status::ready);
-  closed.get();
+TEST(SessionTest, MoveTransfersOwnershipAndRejectsTheSource) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session original = open(fixture.runner);
+  Session owner = std::move(original);
+
+  EXPECT_FALSE(original.valid());
+  EXPECT_TRUE(owner.valid());
   EXPECT_EQ(executor.open_count(), 1);
-  EXPECT_EQ(executor.closed(), (std::vector<SessionId>{first.id()}));
+
+  auto rejected_updates = std::make_shared<Updates>();
+  GenerationHandle rejected =
+      generate(original, tokens(1), config(1), rejected_updates);
+  EXPECT_TRUE(rejected.done());
+  EXPECT_EQ(rejected.finish_reason(), FinishReason::Failed);
+  ASSERT_TRUE(rejected_updates->wait());
+  EXPECT_EQ(rejected_updates->finish(), FinishReason::Failed);
+  EXPECT_EQ(rejected_updates->terminal_calls(), 1);
+  EXPECT_TRUE(executor.seen().empty());
+
+  auto owner_updates = std::make_shared<Updates>();
+  GenerationHandle accepted =
+      generate(owner, tokens(1), config(1), owner_updates);
+  ASSERT_TRUE(owner_updates->wait());
+  EXPECT_EQ(owner_updates->finish(), FinishReason::NewTokenLimit);
+
+  owner = Session{};
+  ASSERT_TRUE(wait_for_open_count(executor, 0));
+  EXPECT_EQ(executor.closed().size(), 1u);
 }
 
 TEST(SessionTest, CapacityRefusalIsReported) {
   FakeExecutor executor;
   executor.capacity = 1;
   Fixture fixture(executor);
+  Session first = open(fixture.runner);
 
-  EXPECT_TRUE(open(fixture.runner).valid());
   auto refused = fixture.runner.open_session();
   ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
   EXPECT_FALSE(refused.get().has_value());
 }
 
-TEST(SessionTest, ClosingCopiedSessionTwiceClosesExecutorOnce) {
-  FakeExecutor executor;
-  Fixture fixture(executor);
-  Session session = open(fixture.runner);
-  Session copy = session;
-
-  session.close().get();
-  copy.close().get();
-
-  EXPECT_EQ(executor.open_count(), 0);
-  EXPECT_EQ(executor.closed(), (std::vector<SessionId>{session.id()}));
-}
-
-TEST(SessionTest, ClosingUnknownSessionIsANoOp) {
-  FakeExecutor executor;
-  Fixture fixture(executor);
-
-  fixture.runner.close_session(999).get();
-
-  EXPECT_TRUE(executor.closed().empty());
-}
-
-TEST(SessionTest, CopiedSessionCannotGenerateAfterClose) {
-  FakeExecutor executor;
-  Fixture fixture(executor);
-  Session session = open(fixture.runner);
-  Session stale = session;
-  session.close().get();
-  auto updates = std::make_shared<Updates>();
-
-  GenerationHandle handle = generate(stale, tokens(2), config(1), updates);
-
-  ASSERT_TRUE(updates->wait());
-  EXPECT_EQ(updates->finish(), FinishReason::Failed);
-  EXPECT_EQ(updates->terminal_calls(), 1);
-  EXPECT_FALSE(executor.has_sampling_state(session.id()));
-  EXPECT_TRUE(executor.seen().empty());
-}
-
-TEST(SessionTest, FabricatedSessionCannotGenerate) {
-  FakeExecutor executor;
-  Fixture fixture(executor);
-  constexpr SessionId kUnknownSession = 999;
-  auto updates = std::make_shared<Updates>();
-
-  GenerationHandle handle = fixture.runner.generate_async(
-      kUnknownSession,
-      tokens(2),
-      config(1),
-      [updates](
-          const std::vector<Token>& emitted,
-          std::optional<FinishReason> finish) { (*updates)(emitted, finish); });
-
-  ASSERT_TRUE(updates->wait());
-  EXPECT_EQ(updates->finish(), FinishReason::Failed);
-  EXPECT_EQ(updates->terminal_calls(), 1);
-  EXPECT_FALSE(executor.has_sampling_state(kUnknownSession));
-  EXPECT_TRUE(executor.seen().empty());
-}
-
-TEST(SessionTest, CloseQueuedBeforeStartRejectsStart) {
+TEST(SessionTest, DestructionCancelsActiveGenerationWithoutWaiting) {
   FakeExecutor executor;
   executor.hold();
   Fixture fixture(executor);
-  Session blocker = open(fixture.runner);
-  Session target = open(fixture.runner);
-  auto blocker_updates = std::make_shared<Updates>();
-  GenerationHandle blocker_handle =
-      generate(blocker, tokens(2), config(100000), blocker_updates);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  GenerationHandle handle = generate(session, tokens(2), config(1), updates);
   while (!executor.in_execute()) {
     std::this_thread::yield();
   }
 
-  auto closed = target.close();
-  auto target_updates = std::make_shared<Updates>();
-  GenerationHandle target_handle =
-      generate(target, tokens(2), config(1), target_updates);
+  auto destroyed = std::async(
+      std::launch::async,
+      [session = std::move(session)]() mutable { session = Session{}; });
+  ASSERT_EQ(destroyed.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(updates->finish().has_value());
   executor.release();
 
-  ASSERT_EQ(closed.wait_for(kTimeout), std::future_status::ready);
-  closed.get();
-  ASSERT_TRUE(target_updates->wait());
-  EXPECT_EQ(target_updates->finish(), FinishReason::Failed);
-  EXPECT_FALSE(executor.has_sampling_state(target.id()));
-  for (const FakeExecutor::Seen& seen : executor.seen()) {
-    EXPECT_NE(seen.session, target.id());
-  }
-
-  blocker_handle.cancel();
-  ASSERT_TRUE(blocker_updates->wait());
+  ASSERT_TRUE(updates->wait());
+  EXPECT_EQ(updates->finish(), FinishReason::Cancelled);
+  EXPECT_EQ(updates->terminal_calls(), 1);
+  ASSERT_TRUE(wait_for_open_count(executor, 0));
+  EXPECT_EQ(executor.closed().size(), 1u);
 }
 
 TEST(GenerationTest, SeedIsSetBeforeTasksExecute) {
@@ -289,13 +323,40 @@ TEST(GenerationTest, SeedIsSetBeforeTasksExecute) {
   generation_config.seed = 1234;
 
   Session session = open(fixture.runner);
+  const SessionId session_id = last_opened(executor);
   GenerationHandle handle =
       generate(session, tokens(2), generation_config, updates);
   ASSERT_TRUE(updates->wait());
 
-  EXPECT_TRUE(executor.has_sampling_state(session.id()));
-  EXPECT_EQ(executor.sampling_seed(session.id()), 1234u);
+  EXPECT_TRUE(executor.has_sampling_state(session_id));
+  EXPECT_EQ(executor.sampling_seed(session_id), 1234u);
   EXPECT_FALSE(executor.seen().empty());
+  EXPECT_FALSE(executor.executed_without_sampling_state());
+}
+
+// The policy is installed on the session rather than copied onto every Input,
+// so this is the only place it can be observed reaching the executor.
+TEST(GenerationTest, SamplingPolicyIsInstalledOnTheSession) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  auto updates = std::make_shared<Updates>();
+  GenConfig generation_config = config(1);
+  generation_config.sampling.temperature = 0.7f;
+  generation_config.sampling.top_p = 0.8f;
+  generation_config.sampling.top_k = 9;
+
+  Session session = open(fixture.runner);
+  const SessionId session_id = last_opened(executor);
+  GenerationHandle handle =
+      generate(session, tokens(2), generation_config, updates);
+  ASSERT_TRUE(updates->wait());
+
+  const std::optional<SamplingParams> installed =
+      executor.sampling_params(session_id);
+  ASSERT_TRUE(installed.has_value());
+  EXPECT_FLOAT_EQ(installed->temperature, 0.7f);
+  EXPECT_FLOAT_EQ(installed->top_p, 0.8f);
+  EXPECT_EQ(installed->top_k, 9);
   EXPECT_FALSE(executor.executed_without_sampling_state());
 }
 
@@ -332,14 +393,14 @@ TEST(GenerationTest, NullSeedInitializesNondeterministicSamplingState) {
   FakeExecutor executor;
   Fixture fixture(executor);
   Session session = open(fixture.runner);
+  const SessionId session_id = last_opened(executor);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle =
-      generate(session, tokens(2), config(1), updates);
+  GenerationHandle handle = generate(session, tokens(2), config(1), updates);
   ASSERT_TRUE(updates->wait());
 
-  EXPECT_TRUE(executor.has_sampling_state(session.id()));
-  EXPECT_FALSE(executor.sampling_seed(session.id()).has_value());
+  EXPECT_TRUE(executor.has_sampling_state(session_id));
+  EXPECT_FALSE(executor.sampling_seed(session_id).has_value());
   EXPECT_FALSE(executor.executed_without_sampling_state());
 }
 
@@ -348,6 +409,7 @@ TEST(GenerationTest, ActiveGenerationRejectsDuplicateWithoutReseeding) {
   executor.hold();
   Fixture fixture(executor);
   Session session = open(fixture.runner);
+  const SessionId session_id = last_opened(executor);
 
   auto active_updates = std::make_shared<Updates>();
   GenConfig active_config = config(2);
@@ -369,7 +431,7 @@ TEST(GenerationTest, ActiveGenerationRejectsDuplicateWithoutReseeding) {
   ASSERT_TRUE(active_updates->wait());
   EXPECT_EQ(duplicate_updates->finish(), FinishReason::Failed);
   EXPECT_EQ(active_updates->finish(), FinishReason::NewTokenLimit);
-  EXPECT_EQ(executor.sampling_seed(session.id()), 12u);
+  EXPECT_EQ(executor.sampling_seed(session_id), 12u);
   for (const FakeExecutor::Seen& seen : executor.seen()) {
     EXPECT_EQ(seen.sampling_seed, 12u);
   }
@@ -379,6 +441,7 @@ TEST(GenerationTest, ANewGenerationReseedsTheExistingSession) {
   FakeExecutor executor;
   Fixture fixture(executor);
   Session session = open(fixture.runner);
+  const SessionId session_id = last_opened(executor);
 
   auto first_updates = std::make_shared<Updates>();
   GenConfig first_config = config(1);
@@ -386,11 +449,11 @@ TEST(GenerationTest, ANewGenerationReseedsTheExistingSession) {
   GenerationHandle first =
       generate(session, tokens(2), first_config, first_updates);
   ASSERT_TRUE(first_updates->wait());
-  ASSERT_EQ(executor.sampling_seed(session.id()), 11u);
+  ASSERT_EQ(executor.sampling_seed(session_id), 11u);
   const std::vector<Token> first_tokens = first_updates->tokens();
   ASSERT_EQ(first_tokens.size(), 1u);
   std::mt19937_64 first_rng(11);
-  EXPECT_EQ(first_tokens[0], session.id() * 1000 + first_rng() % 1000);
+  EXPECT_EQ(first_tokens[0], session_id * 1000 + first_rng() % 1000);
 
   auto second_updates = std::make_shared<Updates>();
   GenConfig second_config = config(1);
@@ -398,11 +461,11 @@ TEST(GenerationTest, ANewGenerationReseedsTheExistingSession) {
   GenerationHandle second =
       generate(session, tokens(1), second_config, second_updates);
   ASSERT_TRUE(second_updates->wait());
-  EXPECT_EQ(executor.sampling_seed(session.id()), 22u);
+  EXPECT_EQ(executor.sampling_seed(session_id), 22u);
   const std::vector<Token> second_tokens = second_updates->tokens();
   ASSERT_EQ(second_tokens.size(), 1u);
   std::mt19937_64 second_rng(22);
-  EXPECT_EQ(second_tokens[0], session.id() * 1000 + second_rng() % 1000);
+  EXPECT_EQ(second_tokens[0], session_id * 1000 + second_rng() % 1000);
 }
 
 // A session opens at position 0 and the caller never names a position, so the
@@ -426,13 +489,12 @@ TEST(DeltaTest, FreshSessionStartsAtZero) {
 
 TEST(DeltaTest, ChunksUseDeltaBasePlusOffset) {
   FakeExecutor executor;
-  RunnerConfig runner_config;
-  runner_config.max_prefill_chunk_size = 4;
-  Fixture fixture(executor, 2, 4, runner_config);
+  // The scheduler's chunk size is what splits the prompt.
+  Fixture fixture(executor, 2, 4);
+  Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle =
-      generate(open(fixture.runner), tokens(10), config(1), updates);
+  GenerationHandle handle = generate(session, tokens(10), config(1), updates);
   ASSERT_TRUE(updates->wait());
   handle.wait();
 
@@ -465,8 +527,7 @@ TEST(DeltaTest, SecondTurnContinuesWhereTheFirstEnded) {
   ASSERT_TRUE(first_updates->wait());
   ASSERT_EQ(first_updates->finish(), FinishReason::NewTokenLimit);
 
-  const Position after_first = executor.seen().back().effective_position() +
-      static_cast<Position>(executor.seen().back().size);
+  const Position after_first = session.position();
 
   auto second_updates = std::make_shared<Updates>();
   GenerationHandle second =
@@ -476,10 +537,11 @@ TEST(DeltaTest, SecondTurnContinuesWhereTheFirstEnded) {
 
   const std::vector<FakeExecutor::Seen> seen = executor.seen();
   ASSERT_GE(seen.size(), 3u);
-  EXPECT_EQ(seen.back().size, 1u);
-  EXPECT_GE(seen.back().effective_position(), after_first - 1)
+  EXPECT_EQ(seen.back().effective_position(), after_first)
       << "the second turn must append, not restart at 0";
   EXPECT_GT(seen.back().effective_position(), 0);
+  EXPECT_EQ(seen.back().size, 2u)
+      << "the delta carries the token the first turn emitted but never fed";
 }
 
 // Each open_session() gets its own position, so one session's progress does
@@ -489,6 +551,7 @@ TEST(DeltaTest, PositionIsPerSession) {
   Fixture fixture(executor);
   Session first = open(fixture.runner);
   Session second = open(fixture.runner);
+  const SessionId second_id = last_opened(executor);
 
   auto first_updates = std::make_shared<Updates>();
   generate(first, tokens(4), config(1), first_updates);
@@ -501,27 +564,29 @@ TEST(DeltaTest, PositionIsPerSession) {
   ASSERT_EQ(second_updates->finish(), FinishReason::NewTokenLimit);
 
   for (const FakeExecutor::Seen& slice : executor.seen()) {
-    if (slice.session == second.id() && slice.size == 2u) {
+    if (slice.session == second_id && slice.size == 2u) {
       EXPECT_EQ(slice.effective_position(), 0)
           << "the second session must open at 0";
     }
   }
 }
 
-TEST(DeltaTest, GeneratedTokenUsesExecutorContinuationPosition) {
+// The executor no longer names a position, so the continuation lands where the
+// runner puts it: right after the delta, since the single produced token is
+// not committed until it is fed back.
+TEST(DeltaTest, GeneratedTokenFollowsTheDelta) {
   FakeExecutor executor;
-  executor.continuation_position = 101;
   Fixture fixture(executor);
+  Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle =
-      generate(open(fixture.runner), tokens(2), config(2), updates);
+  GenerationHandle handle = generate(session, tokens(2), config(2), updates);
   ASSERT_TRUE(updates->wait());
 
   const std::vector<FakeExecutor::Seen> seen = executor.seen();
   ASSERT_EQ(seen.size(), 2u);
   EXPECT_EQ(seen[0].effective_position(), 0);
-  EXPECT_EQ(seen[1].effective_position(), 101);
+  EXPECT_EQ(seen[1].effective_position(), 2);
 }
 
 // The caller no longer names a position, so the only rejectable input left is
@@ -530,6 +595,7 @@ TEST(DeltaTest, InvalidInitialRangesFailBeforeBeginning) {
   FakeExecutor executor;
   Fixture fixture(executor);
   Session session = open(fixture.runner);
+  const SessionId session_id = last_opened(executor);
 
   auto empty_delta = std::make_shared<Updates>();
   generate(session, {}, config(1), empty_delta);
@@ -543,32 +609,89 @@ TEST(DeltaTest, InvalidInitialRangesFailBeforeBeginning) {
   EXPECT_EQ(bad_budget->finish(), FinishReason::Failed);
   EXPECT_EQ(bad_budget->terminal_calls(), 1);
 
-  EXPECT_FALSE(executor.has_sampling_state(session.id()));
+  EXPECT_FALSE(executor.has_sampling_state(session_id));
   EXPECT_TRUE(executor.seen().empty());
 }
 
-TEST(DeltaTest, MalformedContinuationFailsWithoutAnotherTask) {
-  for (int malformed = 0; malformed < 4; ++malformed) {
+// A malformed answer is a contract violation whether or not the runner needed
+// the part that is broken. Here the token budget ends the generation on the
+// same step that answers badly, and the result is still Failed rather than
+// NewTokenLimit.
+TEST(DeltaTest, MalformedOutputFailsEvenWhenTheGenerationEnds) {
+  FakeExecutor executor;
+  executor.empty_tokens = true;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  GenerationHandle handle = generate(session, tokens(2), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+
+  EXPECT_EQ(updates->finish(), FinishReason::Failed);
+  EXPECT_EQ(updates->terminal_calls(), 1);
+  EXPECT_EQ(executor.seen().size(), 1u) << "nothing further is scheduled";
+}
+
+TEST(DeltaTest, MalformedOutputFailsWithoutAnotherTask) {
+  for (int malformed = 0; malformed < 2; ++malformed) {
     FakeExecutor executor;
     if (malformed == 0) {
-      executor.omit_continuation = true;
-    } else if (malformed == 1) {
-      executor.null_continuation_tokens = true;
-    } else if (malformed == 2) {
-      executor.empty_continuation = true;
+      executor.empty_tokens = true;
     } else {
-      executor.continuation_position = -1;
+      executor.wrong_sid = true;
     }
     Fixture fixture(executor);
+    Session session = open(fixture.runner);
     auto updates = std::make_shared<Updates>();
 
-    GenerationHandle handle =
-        generate(open(fixture.runner), tokens(2), config(2), updates);
+    GenerationHandle handle = generate(session, tokens(2), config(2), updates);
     ASSERT_TRUE(updates->wait());
     EXPECT_EQ(updates->finish(), FinishReason::Failed);
     EXPECT_EQ(updates->terminal_calls(), 1);
     EXPECT_EQ(executor.seen().size(), 1u);
   }
+}
+
+// A malformed answer means the forward ran but said nothing the runner can
+// trust, so the session is retired rather than left at a position built on it.
+TEST(FailureTest, MalformedOutputRetiresTheSession) {
+  FakeExecutor executor;
+  executor.empty_tokens = true;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+
+  auto first = std::make_shared<Updates>();
+  generate(session, tokens(2), config(2), first);
+  ASSERT_TRUE(first->wait());
+  ASSERT_EQ(first->finish(), FinishReason::Failed);
+
+  auto second = std::make_shared<Updates>();
+  generate(session, tokens(1), config(1), second);
+  ASSERT_TRUE(second->wait());
+  EXPECT_EQ(second->finish(), FinishReason::Failed)
+      << "a poisoned session must not accept further generations";
+}
+
+// Stopping is the runner's decision alone. The executor has no way to end a
+// generation, so all that happens is the runner schedules nothing further.
+TEST(DeltaTest, StopTokenSchedulesNothingFurther) {
+  FakeExecutor executor;
+  executor.stop_token = 999;
+  executor.emit_before_stop = 1;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  GenConfig generation_config = config(50);
+  generation_config.stop_tokens = {999};
+  auto updates = std::make_shared<Updates>();
+
+  GenerationHandle handle =
+      generate(session, tokens(2), generation_config, updates);
+  ASSERT_TRUE(updates->wait());
+
+  EXPECT_EQ(updates->finish(), FinishReason::StopToken);
+  EXPECT_EQ(updates->terminal_calls(), 1);
+  EXPECT_EQ(executor.seen().size(), 2u)
+      << "the prompt and one decode, then nothing further is scheduled";
 }
 
 TEST(GenerationTest, StopTokenAndBudgetAreAppliedToUpdates) {
@@ -578,10 +701,11 @@ TEST(GenerationTest, StopTokenAndBudgetAreAppliedToUpdates) {
   Fixture fixture(executor);
   GenConfig generation_config = config(50);
   generation_config.stop_tokens = {999};
+  Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle = generate(
-      open(fixture.runner), tokens(2), generation_config, updates);
+  GenerationHandle handle =
+      generate(session, tokens(2), generation_config, updates);
   ASSERT_TRUE(updates->wait());
   EXPECT_EQ(updates->finish(), FinishReason::StopToken);
   const std::vector<Token> emitted = updates->tokens();
@@ -589,14 +713,46 @@ TEST(GenerationTest, StopTokenAndBudgetAreAppliedToUpdates) {
   EXPECT_EQ(std::find(emitted.begin(), emitted.end(), 999), emitted.end());
 }
 
-TEST(SpeculativeTest, AcceptedRunUsesExecutorPosition) {
-  FakeDFlashExecutor executor;
-  executor.n_draft = 2;
+// Regression: the runner counts a step's produced tokens as far as the
+// executor committed them, so the next turn resumes past them rather than on
+// top of them. The last token of a run is not committed until it is fed back,
+// which is what `pending` carries across the turn boundary.
+TEST(SpeculativeTest, TerminalStepPositionCarriesToTheNextTurn) {
+  FakeExecutor executor;
+  executor.tokens_per_decode = 3;
   Fixture fixture(executor);
+  Session session = open(fixture.runner);
+
+  auto first = std::make_shared<Updates>();
+  generate(session, tokens(2), config(4), first);
+  ASSERT_TRUE(first->wait());
+  ASSERT_EQ(first->finish(), FinishReason::NewTokenLimit);
+  const std::size_t emitted = first->tokens().size();
+  const Position after_first = session.position();
+
+  // The prompt plus every token the callback delivered, less the last one,
+  // which is emitted but not fed until the next turn carries it.
+  EXPECT_EQ(after_first, static_cast<Position>(2 + emitted - 1));
+
+  auto second = std::make_shared<Updates>();
+  generate(session, tokens(1), config(1), second);
+  ASSERT_TRUE(second->wait());
+  ASSERT_EQ(second->finish(), FinishReason::NewTokenLimit);
+
+  EXPECT_EQ(executor.seen().back().effective_position(), after_first)
+      << "the second turn must resume at the carried token, not past it";
+  EXPECT_EQ(executor.seen().back().size, 2u)
+      << "the delta carries the token the first turn emitted but never fed";
+}
+
+TEST(SpeculativeTest, AcceptedRunUsesExecutorPosition) {
+  FakeExecutor executor;
+  executor.tokens_per_decode = 3;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle =
-      generate(open(fixture.runner), tokens(2), config(7), updates);
+  GenerationHandle handle = generate(session, tokens(2), config(7), updates);
   ASSERT_TRUE(updates->wait());
   EXPECT_EQ(updates->finish(), FinishReason::NewTokenLimit);
   EXPECT_EQ(updates->tokens().size(), 7u);
@@ -611,11 +767,11 @@ TEST(SpeculativeTest, AcceptedRunUsesExecutorPosition) {
 TEST(FailureTest, SchedulerRejectionEndsTheGeneration) {
   FakeExecutor executor;
   RejectingScheduler scheduler;
-  Runner runner(executor, scheduler, RunnerConfig{});
+  Runner runner(executor, scheduler);
+  Session session = open(runner);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle =
-      generate(open(runner), tokens(2), config(2), updates);
+  GenerationHandle handle = generate(session, tokens(2), config(2), updates);
   ASSERT_TRUE(updates->wait());
   handle.wait();
   EXPECT_EQ(updates->finish(), FinishReason::Failed);
@@ -626,13 +782,11 @@ TEST(FailureTest, SchedulerRejectionEndsTheGeneration) {
 TEST(FailureTest, FailureOnLeadingPrefillChunksEndsGeneration) {
   FakeExecutor executor;
   executor.fail_batches_from = 0;
-  RunnerConfig runner_config;
-  runner_config.max_prefill_chunk_size = 4;
-  Fixture fixture(executor, 1, 4, runner_config);
+  Fixture fixture(executor, 1, 4);
+  Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle =
-      generate(open(fixture.runner), tokens(10), config(1), updates);
+  GenerationHandle handle = generate(session, tokens(10), config(1), updates);
 
   ASSERT_TRUE(updates->wait());
   EXPECT_EQ(updates->finish(), FinishReason::Failed);
@@ -666,9 +820,10 @@ TEST(FailureTest, ExecutorFailurePoisonsTheSession) {
 TEST(CancelTest, ExplicitCancellationEndsTheGeneration) {
   FakeExecutor executor;
   Fixture fixture(executor);
+  Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
   GenerationHandle handle =
-      generate(open(fixture.runner), tokens(2), config(100000), updates);
+      generate(session, tokens(2), config(100000), updates);
 
   handle.cancel();
   ASSERT_TRUE(updates->wait());
@@ -676,9 +831,38 @@ TEST(CancelTest, ExplicitCancellationEndsTheGeneration) {
   EXPECT_EQ(updates->terminal_calls(), 1);
 }
 
+// The callback runs on the engine thread while handle_output_ still holds a
+// reference into sessions_. Retiring the session from inside it must be safe:
+// the close is queued, not applied, so the record survives the call and the
+// generation ends Cancelled on the next pass.
+TEST(CancelTest, CallbackMayRetireItsOwnSession) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  auto updates = std::make_shared<Updates>();
+  std::optional<Session> session = open(fixture.runner);
+  bool dropped = false;
+
+  GenerationHandle handle = session->generate_async(
+      tokens(2),
+      config(100000),
+      [&](const std::vector<Token>& emitted,
+          std::optional<FinishReason> finish) {
+        (*updates)(emitted, finish);
+        if (!finish && !dropped) {
+          dropped = true;
+          session.reset();
+        }
+      });
+
+  ASSERT_TRUE(updates->wait());
+  EXPECT_TRUE(dropped) << "the test never exercised the reentrant drop";
+  EXPECT_EQ(updates->finish(), FinishReason::Cancelled);
+  EXPECT_EQ(updates->terminal_calls(), 1);
+}
+
 // The session tracks what the executor consumed, not what the runner asked
 // for, so a cancelled generation leaves it where the executor actually stopped
-// rather than back at the position its first chunk started from.
+// rather than back where its first chunk started.
 TEST(CancelTest, PositionSurvivesACancelledGeneration) {
   FakeExecutor executor;
   Fixture fixture(executor);
@@ -710,7 +894,61 @@ TEST(CancelTest, PositionSurvivesACancelledGeneration) {
          "not back at 0";
 }
 
-TEST(SessionTest, ClosingASessionEndsItsGeneration) {
+// Cancelling during decode leaves the session holding exactly the delta plus
+// the tokens the callback delivered: every position the runner advanced was
+// paid for by a token the caller was told about.
+//
+// The cancel lands while the executor is held, so the continuation carrying the
+// last delivered token is dropped before it can run. That is the case that
+// loses a token unless something carries it across the turn.
+TEST(CancelTest, DecodeCancelAdvancesOnlyForDeliveredTokens) {
+  FakeExecutor executor;
+  executor.tokens_per_decode = 3;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  ASSERT_EQ(session.position(), 0);
+
+  const std::vector<Token> delta = tokens(4);
+  auto updates = std::make_shared<Updates>();
+  GenerationHandle handle = generate(session, delta, config(100000), updates);
+
+  // Let the prompt finish prefilling and a run land, so the cancel falls during
+  // decode rather than part way through the delta.
+  while (updates->tokens().empty()) {
+    std::this_thread::yield();
+  }
+  // Freeze the engine inside execute, then cancel, so the queued continuation
+  // is dropped rather than executed.
+  executor.hold();
+  handle.cancel();
+  executor.release();
+  ASSERT_TRUE(updates->wait());
+  ASSERT_EQ(updates->finish(), FinishReason::Cancelled);
+
+  const std::size_t delivered = updates->tokens().size();
+  ASSERT_GT(delivered, 0u);
+
+  // Never more than the delta plus what the caller received. It sits one short
+  // while a delivered token is still waiting to be fed.
+  const auto grown = static_cast<std::size_t>(session.position());
+  EXPECT_LE(grown, delta.size() + delivered);
+  EXPECT_GE(grown, delta.size() + delivered - 1);
+
+  // The shortfall is a carry, not a loss: the next turn feeds it ahead of its
+  // own delta, so the executor sees every delivered token.
+  const std::size_t carried = delta.size() + delivered - grown;
+  auto resumed = std::make_shared<Updates>();
+  generate(session, tokens(1), config(1), resumed);
+  ASSERT_TRUE(resumed->wait());
+  ASSERT_EQ(resumed->finish(), FinishReason::NewTokenLimit);
+
+  const FakeExecutor::Seen last_delta = executor.seen().back();
+  EXPECT_EQ(last_delta.effective_position(), static_cast<Position>(grown));
+  EXPECT_EQ(last_delta.size, 1u + carried)
+      << "a token delivered but not yet fed must ride with the next delta";
+}
+
+TEST(SessionTest, DestroyingASessionEndsItsGeneration) {
   FakeExecutor executor;
   Fixture fixture(executor);
   Session session = open(fixture.runner);
@@ -718,31 +956,61 @@ TEST(SessionTest, ClosingASessionEndsItsGeneration) {
   GenerationHandle handle =
       generate(session, tokens(2), config(100000), updates);
 
-  session.close().get();
+  session = Session{};
   ASSERT_TRUE(updates->wait());
   EXPECT_EQ(updates->finish(), FinishReason::Cancelled);
 }
 
 TEST(ShutdownTest, EndsLiveAndRejectsNewWork) {
   FakeExecutor executor;
+  executor.hold();
   Fixture fixture(executor);
   Session session = open(fixture.runner);
+  const std::vector<SessionId> opened = executor.opened();
   auto live_updates = std::make_shared<Updates>();
-  GenerationHandle live =
-      generate(session, tokens(2), config(100000), live_updates);
+  std::atomic<bool> invalid_in_terminal_callback{false};
+  GenerationHandle live = session.generate_async(
+      tokens(2),
+      config(100000),
+      [&](const std::vector<Token>& emitted,
+          std::optional<FinishReason> finish) {
+        if (finish) {
+          invalid_in_terminal_callback.store(!session.valid());
+        }
+        (*live_updates)(emitted, finish);
+      });
+  while (!executor.in_execute()) {
+    std::this_thread::yield();
+  }
 
-  fixture.runner.shutdown();
+  auto stopping =
+      std::async(std::launch::async, [&] { fixture.runner.shutdown(); });
+  std::vector<std::future<std::optional<Session>>> admitted_opens;
+  while (true) {
+    auto opened_session = fixture.runner.open_session();
+    if (opened_session.wait_for(std::chrono::milliseconds(1)) ==
+        std::future_status::ready) {
+      EXPECT_FALSE(opened_session.get().has_value());
+      break;
+    }
+    admitted_opens.push_back(std::move(opened_session));
+  }
+  executor.release();
+  ASSERT_EQ(stopping.wait_for(kTimeout), std::future_status::ready);
+  for (auto& opened_session : admitted_opens) {
+    ASSERT_EQ(opened_session.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(opened_session.get().has_value());
+  }
   ASSERT_TRUE(live_updates->wait());
   EXPECT_EQ(live_updates->finish(), FinishReason::Cancelled);
+  EXPECT_TRUE(invalid_in_terminal_callback.load());
+  EXPECT_FALSE(session.valid());
   EXPECT_EQ(executor.open_count(), 0);
-  EXPECT_EQ(executor.closed(), (std::vector<SessionId>{session.id()}));
+  EXPECT_EQ(executor.closed(), opened);
 
-  auto opened = fixture.runner.open_session();
-  ASSERT_EQ(opened.wait_for(kTimeout), std::future_status::ready);
-  EXPECT_FALSE(opened.get().has_value());
-
-  auto closed = fixture.runner.close_session(session.id());
-  ASSERT_EQ(closed.wait_for(kTimeout), std::future_status::ready);
+  auto rejected_open = fixture.runner.open_session();
+  ASSERT_EQ(rejected_open.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(rejected_open.get().has_value());
 
   auto rejected_updates = std::make_shared<Updates>();
   const std::thread::id caller_thread = std::this_thread::get_id();
@@ -771,8 +1039,7 @@ TEST(ShutdownTest, DiscardsInFlightOutputAndCancelsGeneration) {
   Fixture fixture(executor);
   Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
-  GenerationHandle handle =
-      generate(session, tokens(2), config(1), updates);
+  GenerationHandle handle = generate(session, tokens(2), config(1), updates);
   while (!executor.in_execute()) {
     std::this_thread::yield();
   }
@@ -809,13 +1076,13 @@ TEST(ShutdownTest, ConcurrentCallersWaitForFullStop) {
   Fixture fixture(executor);
   Session session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
-  GenerationHandle handle =
-      generate(session, tokens(2), config(2), updates);
+  GenerationHandle handle = generate(session, tokens(2), config(2), updates);
   while (!executor.in_execute()) {
     std::this_thread::yield();
   }
 
-  auto owner = std::async(std::launch::async, [&] { fixture.runner.shutdown(); });
+  auto owner =
+      std::async(std::launch::async, [&] { fixture.runner.shutdown(); });
   while (true) {
     auto opened = fixture.runner.open_session();
     if (opened.wait_for(std::chrono::milliseconds(1)) ==
@@ -831,8 +1098,9 @@ TEST(ShutdownTest, ConcurrentCallersWaitForFullStop) {
     waiters.push_back(
         std::async(std::launch::async, [&] { fixture.runner.shutdown(); }));
   }
-  EXPECT_EQ(owner.wait_for(std::chrono::milliseconds(20)),
-            std::future_status::timeout);
+  EXPECT_EQ(
+      owner.wait_for(std::chrono::milliseconds(20)),
+      std::future_status::timeout);
   for (auto& waiter : waiters) {
     EXPECT_EQ(
         waiter.wait_for(std::chrono::milliseconds(20)),
@@ -848,7 +1116,7 @@ TEST(ShutdownTest, ConcurrentCallersWaitForFullStop) {
   ASSERT_TRUE(updates->wait());
   EXPECT_EQ(updates->finish(), FinishReason::Cancelled);
   EXPECT_EQ(executor.open_count(), 0);
-  EXPECT_EQ(executor.closed(), (std::vector<SessionId>{session.id()}));
+  EXPECT_EQ(executor.closed(), executor.opened());
 }
 
 TEST(ShutdownTest, CallbackShutdownStopsLaterOutputsInTheSameBatch) {
@@ -936,16 +1204,17 @@ TEST(ShutdownTest, ClosesRemainingSessionsExactlyOnce) {
   Session first = open(fixture.runner);
   Session second = open(fixture.runner);
   Session third = open(fixture.runner);
-  second.close().get();
+  std::vector<SessionId> opened = executor.opened();
+  second = Session{};
+  ASSERT_TRUE(wait_for_open_count(executor, 2));
 
   fixture.runner.shutdown();
 
   EXPECT_EQ(executor.open_count(), 0);
   std::vector<SessionId> closed = executor.closed();
+  std::sort(opened.begin(), opened.end());
   std::sort(closed.begin(), closed.end());
-  EXPECT_EQ(
-      closed,
-      (std::vector<SessionId>{first.id(), second.id(), third.id()}));
+  EXPECT_EQ(closed, opened);
 }
 
 TEST(ShutdownTest, ConcurrentAdmissionDoesNotStrandCallers) {

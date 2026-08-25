@@ -17,9 +17,9 @@
 // flag that needs no round trip.
 //
 // Generation is completion-driven. When a batch settles, the engine thread
-// emits what each output-producing task produced and submits its continuation,
-// so no thread is parked per conversation and batch occupancy does not depend
-// on callers happening to be blocked at the same moment.
+// emits what each output-producing task produced and submits its continuation.
+// No thread is parked per conversation, so batch occupancy does not depend on
+// callers being blocked at the same moment.
 //
 // Output is pushed: an admitted generation's callbacks run on the engine
 // thread as its steps settle. They must not block, because every other
@@ -51,7 +51,7 @@ namespace batching {
 enum class FinishReason {
   StopToken, // a token in GenConfig::stop_tokens was produced
   NewTokenLimit, // GenConfig::max_new_tokens reached
-  Cancelled, // cancelled, the handle was dropped, or the session closed
+  Cancelled, // cancelled explicitly, by Session closure, or by shutdown
   Failed, // rejected at start, or a step failed
 };
 
@@ -60,7 +60,18 @@ enum class FinishReason {
 // only then, so the final tokens and the reason arrive together and cannot be
 // reordered.
 //
-// Runs on the engine thread; must not block.
+// Every token reported here is in the session. However a generation ends, the
+// session holds what it held before, plus the delta, plus exactly the tokens
+// delivered through this callback: nothing produced but undelivered, nothing
+// delivered but dropped. That is what lets the next delta simply append.
+//
+// The one gap is a delta cancelled before it finished prefilling, which leaves
+// the session holding part of it. Session::position() reports how much
+// survived.
+//
+// Admitted generations run callbacks on the engine thread. A request rejected
+// before admission completes synchronously on the calling thread, potentially
+// before generate_async() returns. Callbacks must not block.
 using GenerationCallback =
     std::function<void(const std::vector<Token>&, std::optional<FinishReason>)>;
 
@@ -75,14 +86,10 @@ struct GenConfig {
   std::optional<std::uint64_t> seed;
 };
 
-struct RunnerConfig {
-  // How finely a prompt is split. Must not exceed what the scheduler admits.
-  std::int32_t max_prefill_chunk_size = 256;
-};
-
-// Shared between the runner and every handle to one generation. Defined in
-// runner.cpp so its lock and flags stay out of the public header.
+// Both defined in runner.cpp: callers see neither the lock and flags the first
+// holds nor the runner reference the second keeps alive.
 struct GenerationHandleState;
+struct SessionState;
 
 class RunnerImpl;
 
@@ -109,93 +116,81 @@ class GenerationHandle {
 
  private:
   friend class RunnerImpl;
+  friend class Session;
   explicit GenerationHandle(std::shared_ptr<GenerationHandleState> state)
       : state_(std::move(state)) {}
 
   std::shared_ptr<GenerationHandleState> state_;
 };
 
-// A handle to one open session: the runner's internals plus an id. Copy it
-// freely.
+// Sole owner of one open executor session. Move it to transfer ownership.
+// Destruction requests an asynchronous close and cancels any active
+// generation, so retain it for as long as that generation should run.
 //
-// Does not own the session, since closing is explicit, but does keep the
-// runner's internals alive, so outliving the Runner is safe. Closing any copy
-// makes all copies stale; later generation requests fail without reaching the
-// executor.
+// The close request never waits for the engine thread. Runner::shutdown()
+// remains the deterministic boundary for executor cleanup.
 class Session {
  public:
-  Session() = default;
+  Session();
+  ~Session();
 
-  SessionId id() const {
-    return sid_;
-  }
-  bool valid() const {
-    return impl_ != nullptr;
-  }
+  Session(Session&&) noexcept;
+  Session& operator=(Session&&) noexcept;
+  Session(const Session&) = delete;
+  Session& operator=(const Session&) = delete;
 
-  // Equivalent to Runner::generate_async with this session's id.
+  // A snapshot of whether this object denotes a logically open session.
+  // Returns false for default, moved-from, destructing, and shutdown-closed
+  // sessions. A concurrent close may begin immediately after a true result.
+  bool valid() const noexcept;
+
+  // How many tokens the session holds. Safe from any thread.
+  //
+  // Read as a difference across a generation: take it before starting and
+  // again once the handle reports done(). A turn that completed contributes
+  // its delta plus every token the callback delivered, so the number tells the
+  // caller nothing new. It matters after a cancellation, which can land part
+  // way through a delta and leave only some of it in the session.
+  //
+  // 0 for a default or moved-from Session.
+  Position position() const noexcept;
+
+  // `delta` is the caller-resolved suffix to append. The session tracks its
+  // logical position and consecutive generations continue where prior executor
+  // work left it. Retain this Session until the asynchronous generation ends;
+  // destroying it requests close and completes active work as Cancelled.
+  //
+  // The delta must be non-empty and its exclusive end must fit in Position.
+  // Invalid input and a second concurrent generation end as Failed. A default
+  // or moved-from Session also completes synchronously as Failed; a retained
+  // shutdown-closed Session completes synchronously as Cancelled.
   GenerationHandle generate_async(
       std::vector<Token> delta,
       GenConfig config,
       GenerationCallback on_update) const;
 
-  // Releases the session and anything it holds. Any live generation on it ends
-  // Cancelled. Repeated closes are no-ops; this handle stays valid but stale.
-  std::future<void> close() const;
-
  private:
   friend class RunnerImpl;
-  Session(std::shared_ptr<RunnerImpl> impl, SessionId sid)
-      : impl_(std::move(impl)), sid_(sid) {}
+  explicit Session(std::unique_ptr<SessionState> state);
 
-  std::shared_ptr<RunnerImpl> impl_;
-  SessionId sid_ = 0;
+  std::unique_ptr<SessionState> state_;
 };
 
 class Runner {
  public:
-  // Neither reference is owned; both must outlive completion of shutdown or
-  // destruction on an external thread. One scheduler per runner.
-  Runner(Executor& executor, Scheduler& scheduler, RunnerConfig config);
+  // Neither reference is owned; both must outlive shutdown or destruction on
+  // an external thread. One scheduler per runner, which also supplies the
+  // prefill chunk size prompts are split to.
+  Runner(Executor& executor, Scheduler& scheduler);
   ~Runner();
 
   Runner(const Runner&) = delete;
   Runner& operator=(const Runner&) = delete;
 
-  // -- sessions. Any thread; queued to the engine thread and acked. ---------
-
+  // Any thread; queued to the engine thread and acked.
+  //
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session();
-  // Unknown, stale, and already closed ids are idempotent no-ops.
-  std::future<void> close_session(SessionId session);
-
-  // -- generations. Any thread; returns immediately. ------------------------
-
-  // `delta` is the caller-resolved suffix to append. The session owns its
-  // logical position: it opens at 0 and advances by what the executor
-  // consumes, so consecutive generations continue where the previous one
-  // ended. The runner does not compare the delta against resident session
-  // history or recover an evicted prefix; those policies belong to the layer
-  // that resolves the delta.
-  //
-  // The delta must be non-empty and its exclusive end must fit in Position.
-  // Invalid input is reported by ending the generation with
-  // FinishReason::Failed.
-  //
-  // Returns as soon as the start is queued; the callbacks report everything
-  // after that. Every generation ends exactly once, including rejected starts.
-  //
-  // The session must be currently open in this Runner. Unknown, fabricated,
-  // and stale ids end Failed without reaching the executor.
-  //
-  // A failed step poisons its session: what the executor holds may no longer
-  // match what was asked for. Further generations on it end Failed until it is
-  // closed and a new one opened.
-  GenerationHandle generate_async(
-      SessionId session,
-      std::vector<Token> delta,
-      GenConfig config,
-      GenerationCallback on_update);
 
   // Idempotent. External callers block until the engine is joined, every live
   // generation has ended Cancelled, and every owned session is closed.

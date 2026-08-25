@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -28,8 +27,15 @@ namespace llm {
 namespace batching {
 namespace testing {
 
-// Scriptable executor for runner tests. It records positioned slices and
-// returns deterministic tokens plus an explicitly positioned continuation.
+// Scriptable executor for runner tests. It records the slices it was handed
+// and answers with deterministic tokens.
+//
+// The locking here is not the Executor contract's. executor.h promises every
+// call arrives on the runner's engine thread, so a real implementation needs
+// none. It guards the test-facing surface instead, which the test thread
+// touches while the engine thread is driving the fake: the seen(), opened(),
+// and open_count() observers, and the hold()/release() gate that parks the
+// engine inside execute() so a test can land a race deterministically.
 class FakeExecutor : public Executor {
  public:
   struct Seen {
@@ -51,6 +57,7 @@ class FakeExecutor : public Executor {
     }
     const SessionId sid = next_session_++;
     open_.insert(sid);
+    opened_.push_back(sid);
     return sid;
   }
 
@@ -61,11 +68,12 @@ class FakeExecutor : public Executor {
     closed_.push_back(session);
   }
 
-  void set_sampling_seed(
+  void set_sampling(
       SessionId session,
+      const SamplingParams& params,
       std::optional<std::uint64_t> seed) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    sampling_.insert_or_assign(session, SamplingState(seed));
+    sampling_.insert_or_assign(session, SamplingState(params, seed));
   }
 
   bool execute(const BatchInput& batch, BatchOutput& out) override {
@@ -102,24 +110,11 @@ class FakeExecutor : public Executor {
         continue;
       }
 
-      std::vector<Token> produced = produce(input);
       Output output;
-      output.sid = input.sid;
-      output.tokens =
-          std::make_shared<const std::vector<Token>>(std::move(produced));
-      if (!omit_continuation && !output.tokens->empty()) {
-        const Position next_position =
-            input.position + static_cast<Position>(input.offset) +
-            static_cast<Position>(input.size) +
-            static_cast<Position>(output.tokens->size()) - 1;
-        auto next_tokens = std::make_shared<const std::vector<Token>>(
-            std::vector<Token>{output.tokens->back()});
-        if (empty_continuation) {
-          next_tokens = std::make_shared<const std::vector<Token>>();
-        }
-        output.next = Output::Continuation{
-            null_continuation_tokens ? nullptr : std::move(next_tokens),
-            continuation_position.value_or(next_position)};
+      output.sid = wrong_sid ? input.sid + 1000 : input.sid;
+      output.tokens = produce(input);
+      if (empty_tokens) {
+        output.tokens.clear();
       }
       out.outputs.emplace_back(std::move(output));
     }
@@ -127,13 +122,23 @@ class FakeExecutor : public Executor {
   }
 
   int capacity = 8;
+  // Batch index from which execute() starts failing. Negative never fails.
   int fail_batches_from = -1;
+  // Once a session has produced emit_before_stop tokens, every later one is
+  // stop_token. Counted per session across the whole run, so a stop can be
+  // placed part way into a multi-token decode. A negative stop_token disables
+  // this.
   Token stop_token = -1;
   int emit_before_stop = 0;
-  bool omit_continuation = false;
-  bool null_continuation_tokens = false;
-  bool empty_continuation = false;
-  std::optional<Position> continuation_position;
+  // Tokens a decode step produces. 1 is a plain executor; more simulates a
+  // speculative one answering with the run it accepted plus the model's own
+  // next token. Prefill always produces one whatever this is.
+  std::size_t tokens_per_decode = 1;
+  // Malformed answers. An Output carries only the tokens an input produced, so
+  // the only ways to break the contract are to produce none, or to answer for
+  // a session the input did not name.
+  bool empty_tokens = false;
+  bool wrong_sid = false;
 
   void hold() {
     std::lock_guard<std::mutex> lock(gate_mutex_);
@@ -162,6 +167,11 @@ class FakeExecutor : public Executor {
     return batch_sizes_;
   }
 
+  std::vector<SessionId> opened() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return opened_;
+  }
+
   std::vector<SessionId> closed() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return closed_;
@@ -178,6 +188,15 @@ class FakeExecutor : public Executor {
     return it == sampling_.end() ? std::nullopt : it->second.seed;
   }
 
+  // The policy installed for the session, so tests can check it arrived.
+  std::optional<SamplingParams> sampling_params(SessionId session) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sampling_.find(session);
+    return it == sampling_.end()
+        ? std::nullopt
+        : std::optional<SamplingParams>(it->second.params);
+  }
+
   bool executed_without_sampling_state() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return executed_without_sampling_state_;
@@ -188,9 +207,18 @@ class FakeExecutor : public Executor {
     return static_cast<int>(open_.size());
   }
 
- protected:
-  virtual std::vector<Token> produce(const Input& input) {
-    return {next_token(input.sid)};
+ private:
+  // Decode is inferred from a single-token input, since Input does not carry
+  // Task::is_decode. Good enough for a fake: the runner only ever feeds one
+  // token to continue.
+  std::vector<Token> produce(const Input& input) {
+    const std::size_t n = input.size == 1 ? tokens_per_decode : 1;
+    std::vector<Token> produced;
+    produced.reserve(n);
+    for (std::size_t i = 0; i < n; ++i) {
+      produced.push_back(next_token(input.sid));
+    }
+    return produced;
   }
 
   Token next_token(SessionId session) {
@@ -207,16 +235,20 @@ class FakeExecutor : public Executor {
 
   mutable std::mutex mutex_;
 
- private:
   struct SamplingState {
-    explicit SamplingState(std::optional<std::uint64_t> requested_seed)
-        : seed(requested_seed), rng(requested_seed.value_or(random_seed())) {}
+    SamplingState(
+        const SamplingParams& requested_params,
+        std::optional<std::uint64_t> requested_seed)
+        : params(requested_params),
+          seed(requested_seed),
+          rng(requested_seed.value_or(random_seed())) {}
 
     static std::uint64_t random_seed() {
       std::random_device random;
       return (static_cast<std::uint64_t>(random()) << 32) ^ random();
     }
 
+    SamplingParams params;
     std::optional<std::uint64_t> seed;
     std::mt19937_64 rng;
   };
@@ -227,6 +259,7 @@ class FakeExecutor : public Executor {
   std::atomic<bool> in_execute_{false};
   SessionId next_session_ = 1;
   std::set<SessionId> open_;
+  std::vector<SessionId> opened_;
   std::vector<SessionId> closed_;
   std::map<SessionId, SamplingState> sampling_;
   bool executed_without_sampling_state_ = false;
@@ -234,38 +267,6 @@ class FakeExecutor : public Executor {
   std::vector<int> batch_sizes_;
   std::map<SessionId, int> produced_;
   int batches_ = 0;
-};
-
-class FakeDFlashExecutor : public FakeExecutor {
- public:
-  std::int32_t n_draft = 4;
-  std::vector<std::int32_t> acceptance;
-
- protected:
-  std::vector<Token> produce(const Input& input) override {
-    if (input.size != 1) {
-      return {next_token(input.sid)};
-    }
-    const std::int32_t accepted = accepted_for(input.sid);
-    std::vector<Token> tokens;
-    tokens.reserve(static_cast<std::size_t>(accepted) + 1);
-    for (std::int32_t i = 0; i <= accepted; ++i) {
-      tokens.push_back(next_token(input.sid));
-    }
-    return tokens;
-  }
-
- private:
-  std::int32_t accepted_for(SessionId session) {
-    if (acceptance.empty()) {
-      return n_draft;
-    }
-    const std::size_t round =
-        static_cast<std::size_t>(rounds_[session]++) % acceptance.size();
-    return std::min(acceptance[round], n_draft);
-  }
-
-  std::map<SessionId, int> rounds_;
 };
 
 } // namespace testing
