@@ -226,11 +226,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
-  // The file identifier above ("ET12") changes only on a backward-incompatible
-  // schema change, so it selects a schema family. The version is the finer gate
-  // within that family: a file written by a newer exporter is refused here
-  // instead of being misread field by field. Older files stay loadable because
-  // the schema only grows by appending optional fields.
+  // The file identifier above ("ET12") is bumped by convention only on a
+  // backward-incompatible schema change, so it selects a schema family. The
+  // version is the finer gate within that family: a file written by a newer
+  // exporter is refused here instead of being misread field by field. Older
+  // files stay loadable because the schema only grows by appending optional
+  // fields.
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_program->version() <= kMaxSupportedSchemaVersion,
       InvalidProgram,
