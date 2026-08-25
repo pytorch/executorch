@@ -127,6 +127,42 @@ class FuseCascadedTransposeOrPermuteOpsTest(unittest.TestCase):
             "FuseCascadedTransposeOrPermuteOps",
         )
 
+    def test_apply_inplace_preserves_identity_and_output_metadata(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4))
+        permute1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        permute2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(permute1, [2, 1, 0])
+        )
+        builder.output([permute2])
+        graph_module = builder.get_graph_module()
+        placeholder = next(
+            node for node in graph_module.graph.nodes if node.op == "placeholder"
+        )
+        placeholder.meta["apply_inplace_test"] = "preserved"
+        placeholder_meta = placeholder.meta
+        output_permute = graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )[1]
+        output_permute.meta["apply_inplace_test"] = "output"
+        output_meta = output_permute.meta
+
+        modified = FuseCascadedTransposeOrPermuteOps().apply_inplace(graph_module)
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+
+        self.assertTrue(modified)
+        self.assertIn(placeholder, graph_module.graph.nodes)
+        self.assertIs(placeholder.meta, placeholder_meta)
+        self.assertEqual(placeholder.meta["apply_inplace_test"], "preserved")
+        fused_permute = graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )[0]
+        self.assertIs(fused_permute.meta, output_meta)
+        self.assertEqual(fused_permute.meta["apply_inplace_test"], "output")
+
     def test_cascaded_permutes_multiple_users(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
