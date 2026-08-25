@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes.dim_maps import PermuteMap, ViewMap
+from executorch.backends.transforms.dim_maps import PermuteMap, ViewMap
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir import ExportedProgram
