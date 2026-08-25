@@ -104,6 +104,28 @@ def _run_max_pool2d(op, x):
     )
 
 
+def _run_add(op, x, bias):
+    return op(
+        x,
+        0,
+        1 << 30,
+        -1,
+        bias,
+        0,
+        1 << 30,
+        -1,
+        0,
+        1 << 30,
+        -1,
+        -128,
+        127,
+    )
+
+
+def _run_mul(op, x, bias):
+    return op(x, 0, bias, 0, 0, 1 << 30, -1)
+
+
 def test_nhwc_conv2d_matches_legacy_layout():
     torch.manual_seed(0)
     x = torch.randint(-8, 8, (1, 3, 8, 8), dtype=torch.int8)
@@ -195,6 +217,42 @@ def test_nhwc_max_pool2d_matches_legacy_layout():
     explicit = _run_max_pool2d(
         torch.ops.cortex_m.quantized_max_pool2d_nhwc,
         x.permute(0, 2, 3, 1).contiguous(),
+    )
+
+    torch.testing.assert_close(explicit, legacy.permute(0, 2, 3, 1))
+
+
+def test_nhwc_channel_broadcast_add_matches_legacy_layout():
+    x = torch.randint(-8, 8, (1, 4, 5, 7), dtype=torch.int8)
+    bias = torch.randint(-4, 4, (1, 4, 1, 1), dtype=torch.int8)
+
+    legacy = _run_add(
+        torch.ops.cortex_m.quantized_add,
+        x.to(memory_format=torch.channels_last),
+        bias.to(memory_format=torch.channels_last),
+    )
+    explicit = _run_add(
+        torch.ops.cortex_m.quantized_add,
+        x.permute(0, 2, 3, 1).contiguous(),
+        bias.permute(0, 2, 3, 1).contiguous(),
+    )
+
+    torch.testing.assert_close(explicit, legacy.permute(0, 2, 3, 1))
+
+
+def test_nhwc_channel_broadcast_mul_matches_legacy_layout():
+    x = torch.randint(-8, 8, (1, 4, 5, 7), dtype=torch.int8)
+    bias = torch.randint(-4, 4, (1, 4, 1, 1), dtype=torch.int8)
+
+    legacy = _run_mul(
+        torch.ops.cortex_m.quantized_mul,
+        x.to(memory_format=torch.channels_last),
+        bias.to(memory_format=torch.channels_last),
+    )
+    explicit = _run_mul(
+        torch.ops.cortex_m.quantized_mul,
+        x.permute(0, 2, 3, 1).contiguous(),
+        bias.permute(0, 2, 3, 1).contiguous(),
     )
 
     torch.testing.assert_close(explicit, legacy.permute(0, 2, 3, 1))
@@ -382,3 +440,27 @@ def test_nhwc_and_legacy_scratch_sizes_match():
             assert required_cmsis_nn_buffer_sizes(
                 legacy, backend
             ) == required_cmsis_nn_buffer_sizes(explicit, backend)
+
+
+def test_single_channel_broadcast_add_matches_legacy_layout():
+    """A single-channel broadcast is the case a dim-order derivation gets wrong.
+
+    A channels-last tensor with one channel serializes its dim order as
+    (0, 2, 1, 3), which names no channel axis at all, so the repeat length has
+    to come from the broadcast operand's element count instead.
+    """
+    x = torch.randint(-8, 8, (1, 1, 5, 7), dtype=torch.int8)
+    bias = torch.randint(-4, 4, (1, 1, 1, 1), dtype=torch.int8)
+
+    legacy = _run_add(
+        torch.ops.cortex_m.quantized_add,
+        x.to(memory_format=torch.channels_last),
+        bias.to(memory_format=torch.channels_last),
+    )
+    explicit = _run_add(
+        torch.ops.cortex_m.quantized_add,
+        x.permute(0, 2, 3, 1).contiguous(),
+        bias.permute(0, 2, 3, 1).contiguous(),
+    )
+
+    torch.testing.assert_close(explicit, legacy.permute(0, 2, 3, 1))

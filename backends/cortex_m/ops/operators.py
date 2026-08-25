@@ -13,8 +13,8 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
     dequantize_per_tensor_cmsis,
-    is_channel_broadcast,
     is_channels_last,
+    is_flat_channel_broadcast,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
@@ -154,7 +154,7 @@ def quantized_add_meta(
     activation_min: int,
     activation_max: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
@@ -181,7 +181,7 @@ def quantized_add_impl(
     activation_min: int,
     activation_max: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
@@ -225,7 +225,7 @@ def quantized_mul_meta(
     output_shift: int,
 ) -> torch.Tensor:
     # Broadcast to output shape
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
@@ -249,7 +249,7 @@ def quantized_mul_impl(
     # CMSIS-NN kernel multiplies raw int8 tensors (after zero-point offset) and
     # only uses the output multiplier/shift for rescaling. Mirror that here to
     # keep the composite implementation numerically aligned with the backend.
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
