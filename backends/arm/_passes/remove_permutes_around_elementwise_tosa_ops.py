@@ -15,9 +15,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class RemovePermutesAroundElementwiseTosaOps(RemovePermutesAroundElementwiseOps):
-    # The base takes an optional program; this pass always has one.
-    exported_program: ExportedProgram
-
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__(
             extra_permutable_ops={

@@ -10,9 +10,6 @@ from typing import Any, Tuple
 import pytest
 
 import torch
-from executorch.backends.transforms.absorb_boundary_layout_copies import (
-    AbsorbBoundaryLayoutCopies,
-)
 from executorch.backends.transforms.to_contiguous_channels_last_pass import (
     ToContiguousChannelsLastPass,
 )
@@ -357,10 +354,10 @@ cases = {
     ),
     "conv1d_rank3": PermuteCountTestCase(Conv1dModule(), (torch.randn(1, 2, 8),), 0),
     "conv2d_rank3": PermuteCountTestCase(
-        Conv2dModule(), (torch.randn(2, 8, 8),), 0, 2, 1, 2
+        Conv2dModule(), (torch.randn(2, 8, 8),), 0, 2, 2, 2
     ),
     "conv2d_rank4": PermuteCountTestCase(
-        Conv2dModule(), (torch.randn(1, 2, 8, 8),), 0, 0, 0, 0
+        Conv2dModule(), (torch.randn(1, 2, 8, 8),), 0, 0, 2, 0
     ),
     "conv3d_rank4": PermuteCountTestCase(
         Conv3dModule(), (torch.randn(2, 6, 6, 6),), 0, 2, 0, 2
@@ -421,7 +418,7 @@ cases = {
         (torch.randn(1, 4, 8, 8),),
         0,
         0,
-        0,
+        2,
         0,
     ),
     "transpose_conv": PermuteCountTestCase(
@@ -429,10 +426,10 @@ cases = {
         (torch.randn(1, 2, 8, 8),),
         0,
         0,
-        0,
+        2,
         0,
     ),
-    "views": PermuteCountTestCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 0, 2, 2, 2),
+    "views": PermuteCountTestCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 0, 2, 4, 2),
     "transposes": PermuteCountTestCase(
         TransposesModule(),
         (torch.randn(1, 2, 3, 4),),
@@ -446,7 +443,7 @@ cases = {
         (torch.randn(1, 2, 8, 8),),
         0,
         0,
-        0,
+        2,
         0,
     ),
     "lstm": PermuteCountTestCase(
@@ -489,7 +486,7 @@ cases = {
         0,
     ),
     "model_1_conv_maxpool_residual_linear": PermuteCountTestCase(
-        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 2, 7, 6, 7
+        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 2, 7, 3, 7
     ),
     "model_2_conv_mha_linear_layernorm": PermuteCountTestCase(
         Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 14, 23, 11, 21
@@ -514,7 +511,7 @@ cases = {
         (torch.randn(1, 8, 16, 16),),
         0,
         0,
-        2,
+        5,
         0,
     ),
     "model_9_dilated_conv_batchnorm_avgpool_residual": PermuteCountTestCase(
@@ -522,7 +519,7 @@ cases = {
         (torch.randn(1, 8, 16, 16),),
         0,
         0,
-        2,
+        5,
         0,
     ),
     "model_10_dwconv_batchnorm_linear_cat": PermuteCountTestCase(
@@ -661,17 +658,6 @@ def _count_ops(graph_module: torch.fx.GraphModule, targets: set) -> int:
     )
 
 
-def _run_under_contract(exported_program, contract, inputs):
-    """Call the method the way its (possibly rewritten) layout contract asks."""
-    args = list(inputs)
-    for index, dims in contract.inputs.items():
-        args[index] = args[index].permute(list(dims)).contiguous()
-    result = exported_program.module()(*args)
-    results = list(result) if isinstance(result, (tuple, list)) else [result]
-    for index, dims in contract.outputs.items():
-        results[index] = results[index].permute(list(dims))
-    return results[0] if len(results) == 1 else results
-
 
 def run_test(case: PermuteCountTestCase) -> None:
     case.module.eval()
@@ -691,13 +677,6 @@ def run_test(case: PermuteCountTestCase) -> None:
         layout_pass = ToContiguousChannelsLastPass(edge_program.exported_program())
         transformed = edge_program.transform([layout_pass])
 
-        # Region formation leaves the copies that bracket the method boundary;
-        # absorbing them is the other half of the pipeline, so the counts below
-        # are measured after both.
-        absorb_pass = AbsorbBoundaryLayoutCopies(transformed.exported_program())
-        transformed = transformed.transform([absorb_pass])
-        contract = absorb_pass.contract
-
         final_graph = transformed.exported_program().graph_module
         final_permutes = _count_ops(final_graph, _PERMUTE_TARGETS)
         final_views = _count_ops(final_graph, _VIEW_TARGETS)
@@ -708,9 +687,7 @@ def run_test(case: PermuteCountTestCase) -> None:
         assert final_views == case.expected_final_views
 
         ref_result = exported_program.module()(*case.inputs)
-        edge_result = _run_under_contract(
-            transformed.exported_program(), contract, case.inputs
-        )
+        edge_result = transformed.exported_program().module()(*case.inputs)
         assert torch.allclose(ref_result, edge_result, atol=1e-6)
 
 
@@ -1007,10 +984,18 @@ def test_backend_barrier_blocks_view_reordering() -> None:
     torch.testing.assert_close(actual, expected)
 
 
-@pytest.mark.parametrize("module", [ConvChannelBias(), PadConv()])
-def test_one_sided_propagation_reaches_graph_boundary(
-    module: torch.nn.Module,
+@pytest.mark.parametrize(
+    "module, expected_internal", [(ConvChannelBias(), 0), (PadConv(), 1)]
+)
+def test_one_sided_region_reaches_the_output_boundary(
+    module: torch.nn.Module, expected_internal: int
 ) -> None:
+    """A region whose value is returned still forms.
+
+    Regions no longer cross a user input, but a value that is also a graph
+    output gets a compensating permute on the output edge instead of the whole
+    region being rejected.
+    """
     torch.manual_seed(0)
     module.eval()
     inputs = (torch.randn(1, 4, 8, 8),)
@@ -1020,8 +1005,8 @@ def test_one_sided_propagation_reaches_graph_boundary(
 
     transformed = edge.transform([layout_pass])
 
-    assert layout_pass.report.boundary_copy_count == 2
-    assert layout_pass.report.internal_copy_count == 0
+    assert layout_pass.report.boundary_copy_count == 1
+    assert layout_pass.report.internal_copy_count == expected_internal
     assert layout_pass.report.unknown_copy_count == 0
     actual = transformed.exported_program().module()(*inputs)
     assert torch.allclose(actual, expected, atol=1e-6)
