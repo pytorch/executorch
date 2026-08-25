@@ -134,7 +134,9 @@ def define_common_targets():
             deps = [
                 "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/platform:platform",
-            ],
+            ] + ([
+                "//executorch/extension/aten_util:aten_bridge",
+            ] if aten_mode else []),
             exported_deps = [
                 ":etdump_schema_flatcc",
                 ":utils",

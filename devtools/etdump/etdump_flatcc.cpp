@@ -21,6 +21,10 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/assert.h>
 
+#ifdef USE_ATEN_LIB
+#include <executorch/extension/aten_util/aten_bridge.h>
+#endif
+
 #include <flatcc/flatcc_types.h>
 
 using ::executorch::aten::Tensor;
@@ -112,17 +116,67 @@ Result<etdump_Tensor_ref_t> add_tensor_entry(
 Result<::executorch::runtime::etensor::DeviceType> to_runtime_device_type(
     ::executorch::aten::DeviceType type) {
 #ifdef USE_ATEN_LIB
-  switch (type) {
-    case c10::DeviceType::CPU:
-      return ::executorch::runtime::etensor::DeviceType::CPU;
-    case c10::DeviceType::CUDA:
-      return ::executorch::runtime::etensor::DeviceType::CUDA;
-    default:
-      return Error::NotSupported;
+  std::optional<::executorch::runtime::etensor::Device> device =
+      ::executorch::extension::torch_to_executorch_device(c10::Device(type));
+  if (!device.has_value()) {
+    return Error::NotSupported;
   }
+  return device->type();
 #else
   return type;
 #endif
+}
+
+// Stages a tensor that lives on an accelerator through host memory before
+// handing it to the data sink, which can only read host pointers. A data sink
+// stores the bytes with a plain host read, so handing it the accelerator
+// pointer straight would crash the process.
+Result<long> write_device_tensor(DataSinkBase* data_sink, Tensor tensor) {
+  Result<::executorch::runtime::etensor::DeviceType> device_type =
+      to_runtime_device_type(tensor.device().type());
+  if (!device_type.ok()) {
+    ET_LOG(
+        Error,
+        "ETDump cannot read a tensor on device type %d",
+        static_cast<int>(tensor.device().type()));
+    return device_type.error();
+  }
+
+  ::executorch::runtime::DeviceAllocator* allocator =
+      ::executorch::runtime::get_device_allocator(device_type.get());
+  if (allocator == nullptr) {
+    ET_LOG(
+        Error,
+        "No device allocator registered for device type %d, so a tensor on that device cannot be copied back to host memory",
+        static_cast<int>(device_type.get()));
+    return Error::NotFound;
+  }
+
+  const size_t nbytes = tensor.nbytes();
+  void* staging = malloc(nbytes);
+  if (staging == nullptr) {
+    ET_LOG(
+        Error, "Failed to allocate %zu bytes to stage a device tensor", nbytes);
+    return Error::MemoryAllocationFailed;
+  }
+
+  Error copy_error = allocator->copy_device_to_host(
+      staging,
+      tensor.const_data_ptr(),
+      nbytes,
+      static_cast<::executorch::runtime::etensor::DeviceIndex>(
+          tensor.device().index()));
+  if (copy_error != Error::Ok) {
+    free(staging);
+    return copy_error;
+  }
+
+  Result<size_t> ret = data_sink->write(staging, nbytes);
+  free(staging);
+  if (!ret.ok()) {
+    return ret.error();
+  }
+  return static_cast<long>(ret.get());
 }
 
 } // namespace
@@ -747,63 +801,11 @@ Result<long> ETDumpGen::write_tensor_or_return_error(Tensor tensor) {
   }
 
   if (!tensor.device().is_cpu()) {
-    return write_device_tensor_or_return_error(tensor);
+    return write_device_tensor(data_sink_, tensor);
   }
 
   Result<size_t> ret =
       data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
-  if (!ret.ok()) {
-    return ret.error();
-  }
-  return static_cast<long>(ret.get());
-}
-
-Result<long> ETDumpGen::write_device_tensor_or_return_error(Tensor tensor) {
-  // A data sink stores the bytes with a plain host read, so the data of a
-  // tensor that lives on an accelerator has to be brought back to host memory
-  // first. Handing the accelerator pointer straight to the sink crashes the
-  // process.
-  Result<::executorch::runtime::etensor::DeviceType> device_type =
-      to_runtime_device_type(tensor.device().type());
-  if (!device_type.ok()) {
-    ET_LOG(
-        Error,
-        "ETDump cannot read a tensor on device type %d",
-        static_cast<int>(tensor.device().type()));
-    return device_type.error();
-  }
-
-  ::executorch::runtime::DeviceAllocator* allocator =
-      ::executorch::runtime::get_device_allocator(device_type.get());
-  if (allocator == nullptr) {
-    ET_LOG(
-        Error,
-        "No device allocator registered for device type %d, so a tensor on that device cannot be copied back to host memory",
-        static_cast<int>(device_type.get()));
-    return Error::NotFound;
-  }
-
-  const size_t nbytes = tensor.nbytes();
-  void* staging = malloc(nbytes);
-  if (staging == nullptr) {
-    ET_LOG(
-        Error, "Failed to allocate %zu bytes to stage a device tensor", nbytes);
-    return Error::MemoryAllocationFailed;
-  }
-
-  Error copy_error = allocator->copy_device_to_host(
-      staging,
-      tensor.const_data_ptr(),
-      nbytes,
-      static_cast<::executorch::runtime::etensor::DeviceIndex>(
-          tensor.device().index()));
-  if (copy_error != Error::Ok) {
-    free(staging);
-    return copy_error;
-  }
-
-  Result<size_t> ret = data_sink_->write(staging, nbytes);
-  free(staging);
   if (!ret.ok()) {
     return ret.error();
   }
