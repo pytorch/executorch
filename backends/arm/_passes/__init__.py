@@ -119,6 +119,7 @@ from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass 
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
+from .fold_dyt_affine_into_conv_pass import FoldDyTAffineIntoConvPass  # noqa
 from .fold_dyt_alpha_into_lut_pass import FoldDyTAlphaIntoLUTPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,

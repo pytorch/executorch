@@ -7,6 +7,27 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Split out of :aten_bridge, which compiles in portable mode only, so that
+    # ATen mode code can still convert devices.
+    runtime.cxx_library(
+        name = "aten_device",
+        exported_headers = ["aten_device.h"],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type:device",
+            "//executorch/runtime/platform:platform",
+        ],
+        # aten_device.h needs c10::Device and nothing else, and it only uses it
+        # from inline functions, so plain c10 is enough. Anything wider also
+        # brings in the ATen operator registry and the mobile interpreter. In
+        # build environments where those live in a separate library from c10,
+        # they collide at link time with the copies the application already
+        # links.
+        exported_external_deps = [
+            "c10",
+        ],
+    )
+
     runtime.cxx_library(
         name = "aten_bridge",
         srcs = ["aten_bridge.cpp"],
@@ -23,6 +44,7 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
         exported_deps = [
+            ":aten_device",
             "//executorch/extension/kernel_util:kernel_util",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/core:core",

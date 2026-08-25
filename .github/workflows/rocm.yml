@@ -222,11 +222,12 @@ jobs:
 
   # This scarce RDNA runner is limited to manual runs and direct changes to the
   # Voxtral ROCm execution path; it does not participate in broad sampling.
+  # Temporarily disabled while the self-hosted runner teardown is unstable.
   test-voxtral-realtime-rocm-gfx1100:
     name: test-voxtral-realtime-rocm-gfx1100-rocm${{ matrix.rocm-version }}
     needs: [voxtral-run-decision]
     if: |
-      needs.voxtral-run-decision.outputs.run-gfx1100 == 'true' &&
+      false && needs.voxtral-run-decision.outputs.run-gfx1100 == 'true' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     concurrency:
