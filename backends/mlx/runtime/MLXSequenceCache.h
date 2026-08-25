@@ -81,8 +81,7 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
 
   AttendSpec update_and_fetch(
       int layer,
-      const int32_t* positions,
-      int length,
+      const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
       StreamOrDevice s) override {
@@ -92,7 +91,7 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     const int T = static_cast<int>(k.shape(2)); // BHSD: seq axis is 2
 
     std::optional<cache::SeqStepPlan> p =
-        this->plan(layer, run_start(positions, length, T), T);
+        this->plan(layer, run_start(positions, T), T);
     if (!p) {
       throw std::runtime_error(
           "update_and_fetch: step exceeds capacity or invalid layer");
@@ -131,12 +130,12 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
   // where it starts; the remaining positions carry no information beyond
   // confirming that. A step this cache cannot represent is refused rather than
   // silently stored at the wrong positions.
-  static int run_start(const int32_t* positions, int length, int T) {
-    if (length != T) {
+  static int run_start(const std::vector<int32_t>& positions, int T) {
+    if (static_cast<int>(positions.size()) != T) {
       throw std::runtime_error(
-          "update_and_fetch: one position per query token expected");
+          "update_and_fetch: one position per key/value token expected");
     }
-    for (int i = 1; i < length; ++i) {
+    for (int i = 1; i < T; ++i) {
       if (positions[i] != positions[0] + i) {
         throw std::runtime_error(
             "update_and_fetch: sequence cache needs a contiguous run");

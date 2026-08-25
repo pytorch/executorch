@@ -316,30 +316,31 @@ inline void exec_update_and_attend(
   // One position per query token, read host-side so the cache stays pure graph
   // + integer bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
-  // nothing for the rest -- casting first would instead build a fresh array per
-  // layer and sync on each one.
+  // nothing for the rest.
   auto pos = st.const_tensor_ref(n.position);
   eval(pos);
+  // The entries are read in order off the buffer, which a strided view would
+  // walk with the wrong stride.
+  if (!pos.flags().row_contiguous) {
+    throw std::runtime_error("update_and_attend: position must be contiguous");
+  }
   const int length = static_cast<int>(pos.size());
-  if (length != static_cast<int>(st.const_tensor_ref(n.k).shape(2))) {
+  if (length != static_cast<int>(q.shape(2))) {
     throw std::runtime_error(
         "update_and_attend: position must hold one entry per query token");
   }
-  // int32 is passed straight through; only an int64 input needs narrowing.
-  std::vector<int32_t> int32_positions;
-  const int32_t* positions = nullptr;
+  std::vector<int32_t> positions(static_cast<size_t>(length));
   switch (pos.dtype()) {
     case ::mlx::core::int32:
-      positions = pos.data<int32_t>();
+      std::copy(
+          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
       break;
     case ::mlx::core::int64:
-      int32_positions.resize(static_cast<size_t>(length));
       std::transform(
           pos.data<int64_t>(),
           pos.data<int64_t>() + length,
-          int32_positions.begin(),
+          positions.begin(),
           [](int64_t p) { return static_cast<int32_t>(p); });
-      positions = int32_positions.data();
       break;
     default:
       throw std::runtime_error(
@@ -349,7 +350,6 @@ inline void exec_update_and_attend(
   AttendSpec spec = st.cache->update_and_fetch(
       *n.layer_id,
       positions,
-      length,
       st.const_tensor_ref(n.k),
       st.const_tensor_ref(n.v),
       s);
@@ -357,10 +357,9 @@ inline void exec_update_and_attend(
   // storage precision may differ from the compute dtype).
   array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
   array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
-  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
-  // than test for Causal: None and Explicit both map to "" and are told apart
-  // only by spec.mask, so an Explicit with no mask would silently attend
-  // unmasked.
+  // MLX takes the mask as a mode string plus an optional tensor. Switch: None
+  // and Explicit both map to "" and are told apart only by spec.mask, so an
+  // Explicit with no mask would silently attend unmasked.
   std::string mask_mode;
   switch (spec.kind) {
     case AttendSpec::Mask::None:

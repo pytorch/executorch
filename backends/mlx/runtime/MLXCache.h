@@ -8,7 +8,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "MLXExecutor.h" // Tensor, StreamOrDevice
 
@@ -40,8 +42,7 @@ class MLXCache {
   // token, and return the window plus the mask kind. k/v are BHSD.
   virtual AttendSpec update_and_fetch(
       int layer,
-      const int32_t* positions,
-      int length,
+      const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
       StreamOrDevice s) = 0;

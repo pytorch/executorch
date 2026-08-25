@@ -45,7 +45,7 @@ AttendSpec step(
   const int T = static_cast<int>(k.shape(2));
   std::vector<int32_t> positions(static_cast<size_t>(T));
   std::iota(positions.begin(), positions.end(), start);
-  return c.update_and_fetch(layer, positions.data(), T, k, v, s);
+  return c.update_and_fetch(layer, positions, k, v, s);
 }
 
 // Max absolute difference within tolerance. Computed in float32: item<float>()
@@ -177,13 +177,13 @@ TEST_F(MLXSequenceCacheTest, NonContiguousOrMiscountedPositionsThrow) {
   array k = randn(3, float16);
 
   const std::vector<int32_t> gap{0, 1, 3};
-  EXPECT_ANY_THROW(c.update_and_fetch(0, gap.data(), 3, k, k, s));
+  EXPECT_ANY_THROW(c.update_and_fetch(0, gap, k, k, s));
 
   const std::vector<int32_t> two_seqs{0, 0, 1};
-  EXPECT_ANY_THROW(c.update_and_fetch(0, two_seqs.data(), 3, k, k, s));
+  EXPECT_ANY_THROW(c.update_and_fetch(0, two_seqs, k, k, s));
 
   const std::vector<int32_t> short_run{0, 1};
-  EXPECT_ANY_THROW(c.update_and_fetch(0, short_run.data(), 2, k, k, s));
+  EXPECT_ANY_THROW(c.update_and_fetch(0, short_run, k, k, s));
 
   EXPECT_NO_THROW(step(c, 0, /*position=*/0, k, k, s));
 }
