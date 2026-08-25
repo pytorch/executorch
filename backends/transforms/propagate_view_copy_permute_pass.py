@@ -68,6 +68,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         self,
         compile_spec: Any | None = None,
         exported_program: ExportedProgram | None = None,
+        permute_targets: Iterable[Any] | None = None,
     ) -> None:
         super().__init__()
         if isinstance(compile_spec, ExportedProgram) and exported_program is None:
@@ -75,6 +76,14 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             compile_spec = None
         self.exported_program = exported_program
         self.compile_spec = compile_spec
+        # Which targets count as a permute. A backend carrying its own layout
+        # dialect passes them here; the pass still emits self._PERMUTE_TARGET
+        # when it has to create one.
+        self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
+        self._targets = {
+            self._VIEW_TARGET,
+            self._VIEW_DEFAULT_TARGET,
+        } | self._permute_targets
 
     @staticmethod
     def _dim_arg(arg: Any) -> int | Sequence[int] | None:
@@ -99,7 +108,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         while self.should_propagate():
             iteration_modified = False
             for node in list(graph_module.graph.nodes):
-                if node.target in self._TARGETS:
+                if node.target in self._targets:
                     if len(node.users) == 0:
                         continue
                     if self._propagate(node):
@@ -281,7 +290,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """If the node can be swapped with its next_node, return the new args
         for the next_node and new shape, otherwise return None.
         """
-        if node.target == self._PERMUTE_TARGET:
+        if node.target in self._permute_targets:
             return self._maybe_swap_permute_args(node, next_node)
         elif node.target in {self._VIEW_TARGET, self._VIEW_DEFAULT_TARGET}:
             return self._maybe_swap_view_args(node, next_node)
@@ -384,7 +393,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             ):
                 return False
 
-        if moving_node.target != self._PERMUTE_TARGET:
+        if moving_node.target not in self._permute_targets:
             return True
 
         dims = self._dim_arg(moving_node.args[1])
@@ -440,7 +449,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     ) -> bool:
         if super()._can_move_through_elementwise(moving_node, frontier, next_node):
             return True
-        if moving_node.target != self._PERMUTE_TARGET or not self.is_elementwise(
+        if moving_node.target not in self._permute_targets or not self.is_elementwise(
             next_node
         ):
             return False
@@ -614,7 +623,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         """Swap cat([x1,x2]).permute(p) -> cat([x1.permute(p'), x2.permute(p')])
         if permutes before the concat are noops.
         """
-        if node.target != self._PERMUTE_TARGET:
+        if node.target not in self._permute_targets:
             return False
         if next_node.target != exir_ops.edge.aten.cat.default:
             return False
@@ -622,7 +631,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         cat_users = list(next_node.users)
         if len(cat_users) == 0:
             return False
-        if not all(n.target == self._PERMUTE_TARGET for n in cat_users):
+        if not all(n.target in self._permute_targets for n in cat_users):
             return False
 
         permute_args = [self._dim_arg(n.args[1]) for n in cat_users]
@@ -827,7 +836,7 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         needed when crossing reductions or slices.
 
         """
-        if node.target != self._PERMUTE_TARGET or len(node.all_input_nodes) != 1:
+        if node.target not in self._permute_targets or len(node.all_input_nodes) != 1:
             return None
         producer = node.all_input_nodes[0]
         if not isinstance(producer.meta.get("val"), torch.Tensor):
