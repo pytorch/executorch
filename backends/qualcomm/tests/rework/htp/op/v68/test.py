@@ -193,6 +193,12 @@ def test_argmin(request, kwargs):
     ArgMin.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_activation_dtype([Tolerance(), Tolerance(), pytest.raises(AssertionError)])
+@with_htp_context
+def test_as_strided(request, kwargs):
+    AsStrided.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype(
     [
         Tolerance(),
@@ -1269,6 +1275,46 @@ def test_rsqrt(request, kwargs):
 @with_htp_context
 def test_sdpa(request, kwargs):
     ScaledDotProductAttention.test(request, kwargs)  # noqa: F405
+
+
+# QNN HTP ScatterElements with reduction != NONE is only supported in quantized
+# mode; the fp16 backend validator rejects it, so the fp case falls back to CPU.
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        Tolerance(),
+        pytest.raises(Exception, check=check_exception(EXCEPTION_EXIR_PROGRAM)),
+    ]
+)
+@with_htp_context
+def test_scatter_add(request, kwargs):
+    ScatterAdd.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        Tolerance(),
+        pytest.raises(Exception, check=check_exception(EXCEPTION_EXIR_PROGRAM)),
+    ]
+)
+@with_htp_context
+def test_scatter_reduce_sum(request, kwargs):
+    ScatterReduce.test_sum(request, kwargs)  # noqa: F405
+
+
+# "prod" multiplies up to 3 values per output element, so the relative error
+# compounds multiplicatively and needs a looser bound than "sum".
+@enumerate_activation_dtype(
+    [
+        CosineSimilarity(0.95),
+        CosineSimilarity(0.95),
+        pytest.raises(Exception, check=check_exception(EXCEPTION_EXIR_PROGRAM)),
+    ]
+)
+@with_htp_context
+def test_scatter_reduce_prod(request, kwargs):
+    ScatterReduce.test_prod(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
