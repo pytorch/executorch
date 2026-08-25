@@ -13,14 +13,14 @@ from typing import cast, Optional, Sequence
 
 import torch
 import torch.fx
-
-from executorch.backends.arm._passes.dim_maps import (
-    _normalize_dims,
-    normalize_view_shape,
-)
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+
+from executorch.backends.transforms.dim_maps import (
+    _normalize_dims,
+    normalize_view_shape,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload

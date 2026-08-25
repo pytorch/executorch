@@ -9,7 +9,7 @@ from typing import cast, Sequence, TypeVar
 import sympy  # type: ignore[import-untyped]
 import torch
 
-from executorch.backends.arm._passes.dim_maps import (
+from executorch.backends.transforms.dim_maps import (
     normalize_view_shape,
     PermuteMap,
     ViewMap,
