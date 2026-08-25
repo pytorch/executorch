@@ -14,22 +14,23 @@ from typing import Any, cast, Set, Type
 import torch
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_spec
-from executorch.backends.transforms.dim_maps import PermuteMap, ViewMap
-from executorch.exir import ExportedProgram
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
-
-from .arm_pass import ArmPass
 from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
     CanonicalizeViewCopyPermutePass,
 )
-from .fuse_duplicate_users_pass import TOSA_EXCLUDED_TARGETS
+from executorch.backends.transforms.dim_maps import PermuteMap, ViewMap
 from executorch.backends.transforms.fuse_duplicate_users_pass import (
     FuseDuplicateUsersPass,
 )
 from executorch.backends.transforms.fuse_identical_input_transforms_pass import (
     FuseIdenticalInputTransformsPass,
 )
+from executorch.exir import ExportedProgram
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
+
+from .arm_pass import ArmPass
+
+from .fuse_duplicate_users_pass import TOSA_EXCLUDED_TARGETS
 from .remove_permutes_around_elementwise_tosa_ops import (
     RemovePermutesAroundElementwiseTosaOps,
 )
@@ -203,6 +204,7 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
 
         Fusing them is unsound wherever a later stage assumes each consumer
         keeps its own producer.
+
         """
         return frozenset()
 
@@ -405,7 +407,7 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         )
 
 
-class TosaPropagationOverrides:
+class TosaPropagationOverrides(PropagateViewCopyPermutePass):
     """TOSA-specific answers to the propagation pass's extension points.
 
     Kept apart from the pass itself so the algorithm can be shared with backends
@@ -490,9 +492,9 @@ class PropagateViewCopyPermuteUpPass(
 
     def fuse_horizontal(self, graph_module):
         modified = False
-        result = FuseDuplicateUsersPass(
-            self.duplicate_user_fusion_exclusions()
-        ).call(graph_module)
+        result = FuseDuplicateUsersPass(self.duplicate_user_fusion_exclusions()).call(
+            graph_module
+        )
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
