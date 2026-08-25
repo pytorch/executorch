@@ -268,6 +268,17 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class AsStrided(torch.nn.Module):
+    def __init__(self, size, stride, storage_offset=0):
+        super().__init__()
+        self.size = size
+        self.stride = stride
+        self.storage_offset = storage_offset
+
+    def forward(self, x):
+        return torch.as_strided(x, self.size, self.stride, self.storage_offset)
+
+
 class Asinh(torch.nn.Module):
     def __init__(self):
         super().__init__()
