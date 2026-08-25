@@ -31,7 +31,6 @@ using executorch::extension::llm::batching::BatchInput;
 using executorch::extension::llm::batching::DecodeFirstScheduler;
 using executorch::extension::llm::batching::Input;
 using executorch::extension::llm::batching::Position;
-using executorch::extension::llm::batching::SamplingParams;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::SessionId;
 using executorch::extension::llm::batching::Task;
@@ -70,14 +69,8 @@ Task make_task(
   task.tid = task_id;
   task.cancelled = false;
   task.is_decode = is_decode;
-  task.input = Input{
-      session,
-      produce_output,
-      0,
-      n_tokens,
-      std::move(tokens),
-      position,
-      SamplingParams{}};
+  task.input =
+      Input{session, produce_output, 0, n_tokens, std::move(tokens), position};
   return task;
 }
 
@@ -336,9 +329,6 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   Task task = prefill(1, 40, 4, 90, /*produce_output=*/false);
   task.input.tokens = tokens;
   task.input.offset = 1;
-  task.input.sampling_params.temperature = 0.7f;
-  task.input.sampling_params.top_p = 0.8f;
-  task.input.sampling_params.top_k = 9;
   EXPECT_TRUE(submit(*scheduler, std::move(task)));
 
   std::vector<Task> work = scheduler->get_work();
@@ -349,9 +339,6 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   EXPECT_EQ(work[0].input.size, 4u);
   EXPECT_EQ(work[0].input.tokens.get(), tokens.get());
   EXPECT_EQ(work[0].input.position, 90);
-  EXPECT_FLOAT_EQ(work[0].input.sampling_params.temperature, 0.7f);
-  EXPECT_FLOAT_EQ(work[0].input.sampling_params.top_p, 0.8f);
-  EXPECT_EQ(work[0].input.sampling_params.top_k, 9);
 }
 
 TEST(PayloadTest, BatchInputKeepsTaskOrderAndSlices) {

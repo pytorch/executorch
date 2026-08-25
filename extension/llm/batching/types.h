@@ -27,9 +27,13 @@ namespace batching {
 using Token = std::int64_t;
 using SessionId = std::int64_t;
 using Position = std::int32_t;
-using TaskId = std::int32_t;
+// Wide enough that a monotonically issued id cannot wrap in any realistic
+// lifetime, so ids never have to be recycled.
+using TaskId = std::int64_t;
 
-struct SamplingParams { // per step, not per generation
+// Sampling policy for a generation. Installed on the session before its tasks
+// are submitted, so it does not ride on every Input.
+struct SamplingParams {
   float temperature = 0.0f;
   float top_p = 1.0f;
   std::int32_t top_k = 0;
@@ -47,18 +51,14 @@ struct Input {
 
   std::shared_ptr<const std::vector<Token>> tokens;
   Position position;
-
-  SamplingParams sampling_params;
 };
 
 struct Output {
   SessionId sid;
-  std::shared_ptr<const std::vector<Token>> tokens;
-  struct Continuation {
-    std::shared_ptr<const std::vector<Token>> tokens;
-    Position position;
-  };
-  std::optional<Continuation> next;
+
+  // What this input produced: usually one token, can be more than one for
+  // speculative decoding
+  std::vector<Token> tokens;
 };
 
 struct Task {

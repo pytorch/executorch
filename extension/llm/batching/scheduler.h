@@ -16,6 +16,7 @@
 // Implementations must be thread safe, and cheap enough for an async context:
 // bounded work, no I/O, no blocking on caller code.
 
+#include <cstddef>
 #include <vector>
 
 #include <executorch/extension/llm/batching/types.h>
@@ -56,7 +57,13 @@ class Scheduler {
   virtual std::vector<Task> cancel(SessionId sid) = 0;
 
   // Drops every queued task and returns them all, for shutdown.
+  // For shutdown.
   virtual std::vector<Task> clear() = 0;
+
+  // Largest prefill chunk this scheduler will admit. Callers split a prompt to
+  // fit; a wider chunk is rejected, not split. Non-zero, so it is safe to
+  // divide by.
+  virtual std::size_t max_prefill_chunk_size() const = 0;
 };
 
 } // namespace batching

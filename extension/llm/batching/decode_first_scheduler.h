@@ -169,7 +169,7 @@ class DecodeFirstScheduler : public Scheduler {
     return max_decode_sequences_;
   }
   // Largest chunk accepted. A larger submit is rejected, not split.
-  std::size_t max_prefill_chunk_size() const {
+  std::size_t max_prefill_chunk_size() const override {
     return max_prefill_chunk_size_;
   }
 
