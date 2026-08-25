@@ -95,6 +95,28 @@ jobs:
         with:
           registries: "308535385114"
 
+      # sccache cannot source S3 credentials from instance metadata inside a
+      # BuildKit pod, so hand the assumed-role ones to the build as a secret. An
+      # empty file is a valid outcome: install_pytorch.sh then caches locally.
+      - name: Stage sccache credentials
+        id: sccache-credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          creds="${RUNNER_TEMP}/aws-credentials"
+          install -m 600 /dev/null "${creds}"
+          if [[ -n "${AWS_ACCESS_KEY_ID:-}" ]]; then
+            {
+              echo "[default]"
+              echo "aws_access_key_id=${AWS_ACCESS_KEY_ID}"
+              echo "aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}"
+              echo "aws_session_token=${AWS_SESSION_TOKEN}"
+            } > "${creds}"
+          else
+            echo "::warning::No AWS credentials; the image build will not use the sccache S3 cache"
+          fi
+          echo "path=${creds}" >> "${GITHUB_OUTPUT}"
+
       - name: Compute the image tag
         id: tag
         shell: bash
@@ -111,4 +133,4 @@ jobs:
       - name: Build and push to ECR
         uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
         with:
-          command: cd .ci/docker && REMOTE_BUILDKIT=1 ./build.sh ${{ matrix.docker-image-name }} -t ${{ steps.tag.outputs.docker-image }}
+          command: cd .ci/docker && REMOTE_BUILDKIT=1 ./build.sh ${{ matrix.docker-image-name }} -t ${{ steps.tag.outputs.docker-image }} --secret id=aws-credentials,src=${{ steps.sccache-credentials.outputs.path }}
