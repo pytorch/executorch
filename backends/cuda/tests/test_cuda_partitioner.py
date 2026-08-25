@@ -79,6 +79,19 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             )
             self.assertEqual(expected, data)
 
+            # The streaming write computes the digest in the same pass. Loading
+            # the file-backed blob must not reread it solely for hashing.
+            with patch.object(
+                FileBackedData,
+                "sha256",
+                side_effect=AssertionError("unexpected blob reread"),
+            ):
+                blob, digest = CudaBackend.load_weights_blob(
+                    blob_path, [CompileSpec("low_memory_mode", b"ON")]
+                )
+            self.assertEqual(hashlib.sha256(expected).hexdigest(), digest)
+            self.assertEqual(expected, blob.to_bytes())
+
     def test_low_memory_weights_require_wrapper_so(self) -> None:
         tensor = torch.tensor([1], dtype=torch.int16)
         weights = Weights({"weight": (tensor, TensorProperties(tensor))})
