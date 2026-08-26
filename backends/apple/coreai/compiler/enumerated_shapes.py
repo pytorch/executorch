@@ -13,11 +13,16 @@ into each delegate subgraph's boundary symbolic shapes and attached via
 :func:`apply_enumerated_shapes`).
 """
 
+import logging
 from itertools import product
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Set
+
+import sympy
 
 from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
 from torch.export.exported_program import ExportedProgram
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_input_enumerations(
@@ -27,8 +32,8 @@ def resolve_input_enumerations(
     """Map ET-input ``(index, dim)`` enumerations to ``{symbol_name: [values]}``.
 
     Reads the export symbol backing each enumerated ET-input dim from the
-    exported program; raises if the dim is static (no symbol) or maps to a
-    non-single-symbol expression.
+    exported program; raises if the dim is static (no symbol) or is anything
+    other than a bare symbol.
     """
     if not input_enumerations:
         return None
@@ -72,13 +77,18 @@ def resolve_input_enumerations(
                     f"input {i} dim {dim_index} is static ({dim}); export it "
                     "with dynamic_shapes to enumerate it"
                 )
-            symbols = dim.node.expr.free_symbols
-            if len(symbols) != 1:
+            # Only a bare symbol can be enumerated: apply_enumerated_shapes
+            # substitutes these values for the symbol itself, so a derived dim
+            # (2*batch) would pin 2*value rather than value, and the range
+            # check below would bound the wrong quantity.
+            expr = dim.node.expr
+            if not isinstance(expr, sympy.Symbol):
                 raise ValueError(
-                    f"input {i} dim {dim_index} shape {dim.node.expr} is not a "
-                    "single symbol; cannot enumerate"
+                    f"input {i} dim {dim_index} shape {expr} is a derived or "
+                    "compound expression, not a plain Dim; enumerate the dim(s) "
+                    "it is derived from instead"
                 )
-            symbol = next(iter(symbols))
+            symbol = expr
             _check_within_range(exported_program, symbol, values, i, dim_index)
             name = str(symbol)
             if name in resolved and resolved[name] != values:
@@ -115,6 +125,15 @@ def _check_within_range(exported_program, symbol, values, input_index, dim_index
             f"input {input_index} dim {dim_index} enumerates {outside}, "
             f"outside the exported range [{low}, {high}]"
         )
+
+
+def _shape_symbols(shape) -> Set[str]:
+    """Names of the export symbols appearing in a (possibly symbolic) shape."""
+    symbols = set()
+    for dim in shape:
+        if not isinstance(dim, int):
+            symbols |= {str(s) for s in dim.node.expr.free_symbols}
+    return symbols
 
 
 def graph_input_names(program, entrypoint: str = MAIN_ENTRYPOINT) -> List[str]:
@@ -173,12 +192,11 @@ def apply_enumerated_shapes(
     user_inputs = list(edge_program.graph_signature.user_inputs)
     coreai_names = set(graph_input_names(program))
 
-    # Collect the inputs to specialize first: one entry per combination has to
-    # name every one of them, since set_static_shape_config treats a key as a
-    # whole-graph shape. Enumerating each input separately would leave the
-    # others unconstrained in every entry, and inputs sharing a symbol (a batch
-    # dim, say) would not be held equal.
-    enumerated_inputs = []
+    # Every entry has to name every boundary input, since
+    # set_static_shape_config treats a key as a whole-graph shape: an input left
+    # out is unconstrained in that specialization, and inputs sharing a symbol
+    # (a batch dim, say) would not be held equal.
+    boundary_inputs = []
     active_symbols = set()
     for uname in user_inputs:
         # Match edge user inputs to coreai graph inputs by name; skip anything
@@ -190,20 +208,18 @@ def apply_enumerated_shapes(
         if not hasattr(val, "shape"):
             continue
         dims = list(val.shape)
-        symbols = set()
-        for d in dims:
-            if not isinstance(d, int):
-                symbols |= {str(s) for s in d.node.expr.free_symbols}
-        enumerated = symbols & set(enumerations)
-        if not enumerated:
-            continue
-        enumerated_inputs.append((uname, dims))
-        active_symbols |= enumerated
+        boundary_inputs.append((uname, dims))
+        active_symbols |= _shape_symbols(dims) & set(enumerations)
 
-    if not enumerated_inputs:
+    if not active_symbols:
+        # Nothing here is enumerated, so there is nothing to specialize. Routine
+        # under multi-partition lowering, and legitimate when the enumerated
+        # input is not delegated at all.
         return
 
     # One axis per enumerated symbol, shared across every input that uses it.
+    # _eval_dim rejects any boundary dim left symbolic, so a specialization
+    # cannot be attached while some other input stays dynamic.
     active = [s for s in enumerations if s in active_symbols]
     shapes_config: Dict[str, Dict[str, tuple]] = {}
     for combo in product(*[enumerations[s] for s in active]):
@@ -214,8 +230,15 @@ def apply_enumerated_shapes(
         key = "_".join(f"{s}_{v}" for s, v in subs.items())
         shapes_config[key] = {
             uname: tuple(_eval_dim(d, subs, uname, axis) for axis, d in enumerate(dims))
-            for uname, dims in enumerated_inputs
+            for uname, dims in boundary_inputs
         }
 
     if shapes_config:
+        # Every combination is a separate compile, so the cartesian product can
+        # make a build much slower than the enumeration lists suggest.
+        logger.info(
+            "attaching %d shape specialization(s) over symbol(s) %s",
+            len(shapes_config),
+            active,
+        )
         program.set_static_shape_config(MAIN_ENTRYPOINT, shapes_config)

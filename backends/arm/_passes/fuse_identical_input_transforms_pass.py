@@ -10,13 +10,13 @@ from typing import Any, Callable, cast, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
-from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
-from executorch.backends.arm._passes.dim_maps import (
+from executorch.backends.transforms.dim_maps import (
     _dim_equals,
     PermuteMap,
     same_numel,
     ViewMap,
 )
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.exported_program import ExportedProgram

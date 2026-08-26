@@ -14,7 +14,9 @@ on:
       - extension/llm/export/**
       - extension/audio/**
       - examples/models/gemma4_31b/**
+      - examples/models/muse-glimmer/**
       - examples/models/parakeet/**
+      - examples/models/supertonic/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
   workflow_dispatch:
@@ -90,6 +92,7 @@ jobs:
           backends/mlx/test/test_slot_recycling.py \
           backends/mlx/test/test_sample.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
+          examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
 
@@ -111,6 +114,93 @@ jobs:
           echo "--- ${mod} ---"
           ${CONDA_RUN} python -m "${mod}" run -v
         done
+        echo "::endgroup::"
+
+  test-mlx-supertonic:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-supertonic
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and Supertonic requirements"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} pip install -r examples/models/supertonic/requirements.txt
+        echo "::endgroup::"
+
+        echo "::group::Run asset-independent Supertonic Python tests"
+        ${CONDA_RUN} python -m pytest examples/models/supertonic/tests -v
+        echo "::endgroup::"
+
+        echo "::group::Download pinned Supertonic assets"
+        SUPERTONIC_ASSETS=/tmp/supertonic-3
+        ${CONDA_RUN} python - <<'PY'
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(
+            "Supertone/supertonic-3",
+            revision="3cadd1ee6394adea1bd021217a0e650ede09a323",
+            allow_patterns=(
+                "onnx/tts.json",
+                "onnx/duration_predictor.onnx",
+                "onnx/text_encoder.onnx",
+                "onnx/vector_estimator.onnx",
+                "onnx/vocoder.onnx",
+                "onnx/unicode_indexer.json",
+                "voice_styles/F1.json",
+                "LICENSE",
+            ),
+            local_dir="/tmp/supertonic-3",
+        )
+        PY
+        echo "::endgroup::"
+
+        echo "::group::Run published-model parity tests"
+        SUPERTONIC_MODEL_DIR="${SUPERTONIC_ASSETS}" \
+          ${CONDA_RUN} python -m pytest \
+            examples/models/supertonic/tests/test_checkpoint_loader.py \
+            examples/models/supertonic/tests/test_stage_parity.py \
+            -v
+        echo "::endgroup::"
+
+        echo "::group::Export the Supertonic PTE"
+        SUPERTONIC_PTE="${SUPERTONIC_ASSETS}/supertonic_fp16_mlx.pte"
+        ${CONDA_RUN} python -m examples.models.supertonic.export.export_supertonic \
+          --asset-dir "${SUPERTONIC_ASSETS}" \
+          --output "${SUPERTONIC_PTE}" \
+          --max-text-length 512 \
+          --max-latent-length 512 \
+          --flow-steps 5
+        echo "::endgroup::"
+
+        echo "::group::Build ExecuTorch and Supertonic with MLX"
+        ${CONDA_RUN} make supertonic-mlx
+        echo "::endgroup::"
+
+        echo "::group::Run Supertonic native tests"
+        pushd examples/models/supertonic
+        ${CONDA_RUN} cmake --preset supertonic-mlx \
+          -DSUPERTONIC_INTEGRATION_PTE="${SUPERTONIC_PTE}" \
+          -DSUPERTONIC_INTEGRATION_ASSET_DIR="${SUPERTONIC_ASSETS}" \
+          -DSUPERTONIC_INTEGRATION_STYLE="${SUPERTONIC_ASSETS}/voice_styles/F1.json"
+        ${CONDA_RUN} ctest --preset supertonic-mlx
+        popd
+        echo "::endgroup::"
+
+        echo "::group::Verify the Supertonic runner and MLX metallib"
+        RUNNER=cmake-out/examples/models/supertonic/supertonic_runner
+        test -x "${RUNNER}"
+        test -f "$(dirname "${RUNNER}")/mlx.metallib"
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:
@@ -190,6 +280,52 @@ jobs:
           exit 1
         fi
         echo "Success: built $RUNNER"
+        echo "::endgroup::"
+
+  # Build-only: the Muse Glimmer GGUF checkpoints are far too large to export in
+  # CI, so this covers the compile / link / metallib wiring of the runners --
+  # which is what MLX backend changes are most likely to break.
+  test-mlx-muse-glimmer-build:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-muse-glimmer-build
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Build Muse Glimmer runners and worker with MLX"
+        ${CONDA_RUN} make muse-glimmer-mlx
+        BIN_DIR=cmake-out/examples/models/muse-glimmer
+        for bin in solo_runner dflash_runner muse_glimmer_worker; do
+          if [ ! -x "${BIN_DIR}/${bin}" ]; then
+            echo "Failed: ${bin} not found at ${BIN_DIR}/${bin}"
+            exit 1
+          fi
+        done
+        # Runtime kernel load falls back to an absolute build-tree path, so a
+        # missing colocated metallib only breaks a relocated binary. Assert the
+        # copy so the runners stay self-contained (needs EXECUTORCH_BUILD_MLX=ON
+        # in the preset, which drives executorch_target_copy_mlx_metallib).
+        if [ ! -f "${BIN_DIR}/mlx.metallib" ]; then
+          echo "Failed: mlx.metallib not copied next to the runners"
+          exit 1
+        fi
+        echo "Success: built solo_runner, dflash_runner and muse_glimmer_worker"
         echo "::endgroup::"
 
   backend-tester:
@@ -668,6 +804,241 @@ jobs:
         OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.run_llm_hf \
           --pte /tmp/${MODEL_NAME}.pte \
           --model-id "${MODEL_ID}" \
+          --prompt "What is the capital of France?" \
+          --max-new-tokens 50 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Paris"; then
+          echo "Success: 'Paris' found in output"
+        else
+          echo "Failed: Expected 'Paris' not found in output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+  # DFlash speculative decoding: target and draft exported as two methods of one
+  # .pte. Also the only coverage that the constants the export publishes
+  # (get_max_ctx_len / get_prefill_chunk_size / get_max_block_len /
+  # get_mask_token_id) match what
+  # the runner derives from them -- the runner takes no capacity or block flags.
+  test-mlx-dflash:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-dflash
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      # The 4B target is the smallest checkpoint DFlash drafts are published
+      # for, so this job downloads and quantizes far more than the 1B LLM jobs.
+      timeout: 120
+      script: |
+        set -eux
+        export HF_HUB_DISABLE_XET=1
+
+        MAX_CTX_LEN=1024
+        PREFILL_CHUNK_SIZE=128
+        N_DRAFT=3
+        DRAFT_MODEL=z-lab/Qwen3-4B-DFlash-b16
+        TOKENIZER_MODEL=Qwen/Qwen3-4B
+        PTE=/tmp/qwen3_4b_dflash.pte
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        echo "::group::Install DFlash requirements"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Qwen3-4B DFlash (target + draft)"
+        # No --block-size: it must come from the draft checkpoint's config.
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.export \
+          --output ${PTE} \
+          --draft-model ${DRAFT_MODEL} \
+          --target-model ${TOKENIZER_MODEL} \
+          --max-ctx-len ${MAX_CTX_LEN} \
+          --prefill-chunk-size ${PREFILL_CHUNK_SIZE}
+        echo "::endgroup::"
+
+        echo "::group::Cache the tokenizer"
+        # The runner loads the tokenizer with local_files_only, so fetch it here
+        # rather than letting an unauthenticated request happen mid-run. Also
+        # confirms the chat template is present -- a template that fails to load
+        # renders to nothing and the prompt tokenizes to zero tokens.
+        TOKENIZER_MODEL=${TOKENIZER_MODEL} ${CONDA_RUN} python -c "import os; from transformers import AutoTokenizer; m = os.environ['TOKENIZER_MODEL']; t = AutoTokenizer.from_pretrained(m); assert t.chat_template, f'{m} has no chat_template'; ids = t.apply_chat_template([{'role': 'user', 'content': 'hi'}], add_generation_prompt=True, tokenize=True, return_tensors='pt'); ids = getattr(ids, 'input_ids', ids); assert ids.numel() > 0, 'chat template rendered no tokens'; print(f'tokenizer cached, chat template renders {ids.numel()} tokens')"
+        echo "::endgroup::"
+
+        echo "::group::Check published constant methods"
+        # The runner reads these instead of taking flags, so a mismatch here is
+        # a silently broken runner rather than a failed export. Kept on one line:
+        # a YAML block scalar indents every line, which python -c would reject.
+        BLOCK_SIZE=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).block_size)")
+        MASK_TOKEN_ID=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).mask_token_id)")
+        echo "draft checkpoint block_size: ${BLOCK_SIZE} mask_token_id: ${MASK_TOKEN_ID}"
+        ${CONDA_RUN} python -c "from executorch.runtime import Runtime, Verification; from executorch.backends.mlx.examples.llm.runtime_meta import read_const_int as r; p = Runtime.get().load_program('${PTE}', verification=Verification.Minimal); got = {n: r(p, n) for n in ['get_max_ctx_len', 'get_prefill_chunk_size', 'get_max_block_len', 'get_mask_token_id']}; want = {'get_max_ctx_len': ${MAX_CTX_LEN}, 'get_prefill_chunk_size': ${PREFILL_CHUNK_SIZE}, 'get_max_block_len': ${BLOCK_SIZE}, 'get_mask_token_id': ${MASK_TOKEN_ID}}; print('published:', got); assert got == want, f'mismatch: {got} != {want}'; assert {'draft', 'target'} <= set(p.method_names), p.method_names; print('Success: constants match and both methods present')"
+        echo "::endgroup::"
+
+        echo "::group::Run DFlash speculative decoding"
+        # --n-draft below the exported maximum, so a regression that silently
+        # pins the block to BLOCK_SIZE gets caught.
+        OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.run \
+          --pte ${PTE} \
+          --tokenizer ${TOKENIZER_MODEL} \
+          --n-draft ${N_DRAFT} \
+          --prompt "What is the capital of France?" \
+          --max-new-tokens 32 \
+          --verbose 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -iq "Paris"; then
+          echo "Success: 'Paris' found in output"
+        else
+          echo "Failed: Expected 'Paris' not found in output"
+          exit 1
+        fi
+        # A special token in the decoded text means skip_special_tokens regressed.
+        if echo "$OUTPUT" | grep -q "<|im_end|>"; then
+          echo "Failed: special tokens leaked into the decoded output"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Check speculation actually happened"
+        # tau <= 1.0 means every round fell back to a target-only step, i.e. the
+        # draft was never accepted and DFlash degenerated to plain decoding.
+        # tau also cannot exceed n_draft + 1, the emitted tokens per round.
+        TAU=$(echo "$OUTPUT" | grep "avg emitted/round" | grep -oE "[0-9]+\.[0-9]+")
+        echo "avg emitted/round (tau): ${TAU}"
+        awk "BEGIN { exit !(${TAU} > 1.0 && ${TAU} <= ${N_DRAFT} + 1) }" || {
+          echo "Failed: tau ${TAU} outside (1.0, $((N_DRAFT + 1))]"
+          exit 1
+        }
+        echo "Success: tau ${TAU} in (1.0, $((N_DRAFT + 1))]"
+        echo "::endgroup::"
+
+        echo "::group::Reject an out-of-range --n-draft"
+        # block_len is n_draft + 1 and the graph traced block_len <= BLOCK_SIZE,
+        # so BLOCK_SIZE itself must be refused before reaching the runtime.
+        if ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.run \
+          --pte ${PTE} \
+          --tokenizer ${TOKENIZER_MODEL} \
+          --n-draft ${BLOCK_SIZE} \
+          --max-new-tokens 1 > /tmp/n_draft_err.txt 2>&1; then
+          echo "Failed: --n-draft ${BLOCK_SIZE} should have been rejected"
+          cat /tmp/n_draft_err.txt
+          exit 1
+        fi
+        cat /tmp/n_draft_err.txt
+        grep -q "must be in \[1, $((BLOCK_SIZE - 1))\]" /tmp/n_draft_err.txt
+        echo "Success: out-of-range --n-draft rejected"
+        echo "::endgroup::"
+
+  # Off-graph KV cache: the cache is a runtime object, so this path can only be
+  # exercised by the C++ runner (pybindings cannot bind a cache_key). Also the
+  # only coverage that the layout the export publishes is actually consumable.
+  test-mlx-llm-offgraph:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - id: "unsloth/Llama-3.2-1B-Instruct"
+            name: "llama-1b"
+            chat: "llama3"
+            runner: "macos-14-xlarge"
+          - id: "unsloth/gemma-3-1b-it"
+            name: "gemma3-1b"
+            chat: "gemma"
+            runner: "macos-14-xlarge"
+          # Only model with KV sharing: 15 caches for 35 layers, and sliding and
+          # full-attention caches with different head shapes.
+          - id: "google/gemma-4-E2B-it"
+            name: "gemma4-e2b"
+            chat: "gemma4"
+            runner: "macos-15-xlarge"
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
+    with:
+      default-packages: ""
+      job-name: test-mlx-llm-offgraph-${{ matrix.model.name }}
+      runner: ${{ matrix.model.runner }}
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      secrets-env: EXECUTORCH_HF_TOKEN
+      # Higher than the sibling LLM job: this one also builds and installs
+      # ExecuTorch so the standalone runner project can link against it.
+      timeout: 120
+      script: |
+        set -eux
+        export HF_HUB_DISABLE_XET=1
+
+        MODEL_ID="${{ matrix.model.id }}"
+        MODEL_NAME="${{ matrix.model.name }}"
+        CHAT="${{ matrix.model.chat }}"
+
+        echo "::group::Install ExecuTorch and build the MLX runtime"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} cmake --preset mlx-release
+        ${CONDA_RUN} cmake --build cmake-out --target install -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        echo "::endgroup::"
+
+        echo "::group::Build the C++ runner"
+        # Standalone find_package(executorch) project, so it needs the install above.
+        ${CONDA_RUN} cmake -S backends/mlx/examples/llm \
+          -B cmake-out/backends/mlx/examples/llm -DCMAKE_BUILD_TYPE=Release
+        ${CONDA_RUN} cmake --build cmake-out/backends/mlx/examples/llm \
+          -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        RUNNER=cmake-out/backends/mlx/examples/llm/mlx_run_llm_hf
+        if [ ! -x "${RUNNER}" ]; then
+          echo "Failed: runner not found at ${RUNNER}"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Install LLM requirements"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0"
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          # Gemma 4 needs a newer Transformers than the CI-wide pin. Keep this
+          # on the same commit test-mlx-llm validated against.
+          GEMMA4_TRANSFORMERS_COMMIT=61461a7bcb458db7cf6eeea49678b9ab776a7821
+          ${CONDA_RUN} pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@${GEMMA4_TRANSFORMERS_COMMIT}"
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Export ${MODEL_NAME} off-graph"
+        ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.export_llm_hf \
+          --model-id "${MODEL_ID}" \
+          --output /tmp/${MODEL_NAME}_offgraph.pte \
+          --use-offgraph-cache \
+          --max-ctx-len 1024 \
+          --dtype bf16 \
+          --qlinear 4w
+        echo "::endgroup::"
+
+        echo "::group::Run ${MODEL_NAME} off-graph inference"
+        # The cache geometry comes from the .pte; only capacity is given here.
+        TOKENIZER=$(${CONDA_RUN} python -c \
+          "from huggingface_hub import hf_hub_download; print(hf_hub_download('${MODEL_ID}', 'tokenizer.json'))")
+        OUTPUT=$(${RUNNER} \
+          --pte /tmp/${MODEL_NAME}_offgraph.pte \
+          --tokenizer "${TOKENIZER}" \
+          --chat "${CHAT}" \
+          --kv-max-capacity 1024 \
           --prompt "What is the capital of France?" \
           --max-new-tokens 50 2>&1)
         echo "$OUTPUT"

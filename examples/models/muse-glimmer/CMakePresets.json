@@ -28,7 +28,9 @@
             "name": "muse-glimmer-mlx",
             "displayName": "Muse Glimmer runner (MLX)",
             "inherits": ["muse-glimmer-base"],
-            "cacheVariables": {},
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",

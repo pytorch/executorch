@@ -1,0 +1,69 @@
+name: Test Cortex-M Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  # Emits PR diff file list; non-PR events emit '*' so the per-job
+  # `if:` short-circuits via `event_name != 'pull_request'`.
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+
+  test-cortex-m:
+    needs: changed-files
+    # Every case in this flow serializes a .pte and runs it on the Corstone-300
+    # FVP, on top of an Arm toolchain install and a runner build. The Arm
+    # workflow keeps that off unrelated PRs by running only its TOSA and VGF
+    # flows there; Cortex-M has no non-FVP flow to fall back to, so it is
+    # path-gated instead and still runs in full on the nightly schedule.
+    #
+    # backends/arm is gated whole rather than by subdirectory. The flow borrows
+    # Arm's test harness, and importing it pulls in around 350 arm modules --
+    # the passes, the TOSA operators, the quantizer -- so a break almost
+    # anywhere in that tree reaches this job. It costs little to be broad:
+    # over the last 300 commits, 66 touched backends/arm and 61 of those
+    # touched backends/arm/test or backends/arm/scripts anyway.
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/cortex_m') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arm') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/harness') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-arm-baremetal-tools.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-cortex-m.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: cortex_m
+      flows: '["cortex_m"]'
+      # The operator suite is a scoreboard for how much of the operator set the
+      # backend lowers, not a gate: most of its cases reach an operator cortex_m
+      # does not implement and abort on a kernel the runner does not carry. It
+      # earns a scheduled run, not a place on every PR and every merge to main.
+      # Growing ops_list to make those cases run is not the fix -- a case that
+      # only passes on a portable fallback says nothing about coverage.
+      exclude: >-
+        ${{ (github.event_name == 'schedule'
+             || github.event_name == 'workflow_dispatch')
+            && '[]'
+            || '[{"flow": "cortex_m", "suite": "operators"}]' }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      run-linux: true
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk

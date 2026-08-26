@@ -6,11 +6,15 @@
 
 import inspect
 import itertools
+import math
 import random
 from functools import partial, reduce
 from operator import mul
 
 import torch
+
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 from executorch.backends.qualcomm.tests.rework.conftest import (
     export_and_verify,
@@ -454,6 +458,72 @@ class Arange(torch.nn.Module):
                 compile_specs=compile_spec,
                 metrics=metrics,
             )
+
+
+class AsStrided(torch.nn.Module):
+    def __init__(self, size, stride, storage_offset):
+        super().__init__()
+        self.size = size
+        self.stride = stride
+        self.storage_offset = storage_offset
+
+    def forward(self, x):
+        return torch.as_strided(x, self.size, self.stride, self.storage_offset)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        cases = [
+            # Contiguous sub-block from 4x4
+            {
+                "size": [2, 2],
+                "stride": [4, 1],
+                "storage_offset": 0,
+                "input": torch.randn(4, 4),
+            },
+            # Non-contiguous stride + non-zero offset
+            {
+                "size": [2, 3],
+                "stride": [6, 2],
+                "storage_offset": 1,
+                "input": torch.randn(4, 4),
+            },
+            # 1D strided slice
+            {"size": [4], "stride": [2], "storage_offset": 0, "input": torch.randn(8)},
+            # 3D output
+            {
+                "size": [2, 2, 2],
+                "stride": [8, 4, 1],
+                "storage_offset": 0,
+                "input": torch.randn(16),
+            },
+            # Transpose-like (column-major access)
+            {
+                "size": [3, 4],
+                "stride": [1, 3],
+                "storage_offset": 0,
+                "input": torch.randn(3, 4),
+            },
+        ]
+        for case in cases:
+            size, stride, offset, inp = (
+                case["size"],
+                case["stride"],
+                case["storage_offset"],
+                case["input"],
+            )
+            with subtests.test(msg=f"size:{size}, stride:{stride}, offset:{offset}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(
+                            size=size, stride=stride, storage_offset=offset
+                        ),
+                        inputs=(inp,),
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
 
 
 class ArgMax(torch.nn.Module):
@@ -2210,6 +2280,49 @@ class GroupNorm(torch.nn.Module):
                     )
 
 
+class Hadamard(torch.nn.Module):
+    # linear / matmul / 1x1-conv with an orthonormal Hadamard weight; the QNN backend
+    # rewrites each into a single qnn_custom.hadamard_transform during annotation.
+    def __init__(self, variant, dim):
+        super().__init__()
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        if variant == "linear":
+            self.op = torch.nn.Linear(dim, dim, bias=False).eval()
+            self.op.weight.data.copy_(H)  # symmetric H -> x@H^T == x@H
+        elif variant == "conv":
+            self.op = torch.nn.Conv2d(dim, dim, 1, bias=False).eval()
+            self.op.weight.data.copy_(H.reshape(dim, dim, 1, 1))
+        else:  # matmul
+            self.register_buffer("weight", H)
+        self.variant = variant
+
+    def forward(self, x):
+        if self.variant == "matmul":
+            return torch.matmul(x, self.weight)
+        return self.op(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        dim = 128
+        cases = {
+            "linear": (torch.randn(1, dim),),
+            "matmul": (torch.randn(1, dim),),
+            "conv": (torch.randn(1, dim, 4, 4),),
+        }
+        for variant, inputs in cases.items():
+            with subtests.test(msg=f"variant:{variant}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(variant=variant, dim=dim),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
 class HardSigmoid(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2853,19 +2966,20 @@ class Linear(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
-        inputs = (torch.randn(3, 512),)
+        input_shapes = [(3, 512), (3, 3, 512), (3, 3, 3, 512)]
         biases = [True, False]
-        for use_bias in biases:
-            with subtests.test(msg=f"use_bias:{use_bias}"):
-                with expected as metrics:
-                    export_and_verify(
-                        module=__class__(use_bias=use_bias),
-                        inputs=inputs,
-                        qnn_config=qnn_config,
-                        quantizer=quantizer,
-                        compile_specs=compile_spec,
-                        metrics=metrics,
-                    )
+        for input_shape in input_shapes:
+            for use_bias in biases:
+                with subtests.test(msg=f"rank:{len(input_shape)}, use_bias:{use_bias}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(use_bias=use_bias),
+                            inputs=(torch.randn(input_shape),),
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
 
 
 class LinearNonConstantWeight(torch.nn.Module):
@@ -2893,19 +3007,48 @@ class LinearNonConstantWeight(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
-        inputs = (torch.randn(3, 512),)
+        input_shapes = [(3, 512), (3, 3, 512), (3, 3, 3, 512)]
         biases = [True, False]
-        for use_bias in biases:
-            with subtests.test(msg=f"use_bias:{use_bias}"):
-                with expected as metrics:
-                    export_and_verify(
-                        module=__class__(use_bias=use_bias),
-                        inputs=inputs,
-                        qnn_config=qnn_config,
-                        quantizer=quantizer,
-                        compile_specs=compile_spec,
-                        metrics=metrics,
-                    )
+        for input_shape in input_shapes:
+            for use_bias in biases:
+                with subtests.test(msg=f"rank:{len(input_shape)}, use_bias:{use_bias}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(use_bias=use_bias),
+                            inputs=(torch.randn(input_shape),),
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
+
+
+class LinearSharedWeight(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.shared_weight_0 = torch.nn.Parameter(torch.randn(32, 512))
+        self.shared_weight_1 = torch.nn.Parameter(torch.randn(32, 512))
+
+    def forward(self, x, y):
+        x_0 = torch.nn.functional.linear(x, self.shared_weight_0)
+        y_0 = torch.nn.functional.linear(y, self.shared_weight_0)
+        x_1 = torch.nn.functional.linear(x, self.shared_weight_1)
+        y_1 = torch.nn.functional.linear(y, self.shared_weight_1)
+        return (x_0 + y_0) + (x_1 + y_1)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        inputs = (torch.randn(3, 512), torch.randn(3, 512))
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(),
+                inputs=inputs,
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
 
 
 class Log(torch.nn.Module):
@@ -4129,6 +4272,163 @@ class Rsqrt(torch.nn.Module):
                         compile_specs=compile_spec,
                         metrics=metrics,
                     )
+
+
+class ScatterAdd(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter_add(data, self.dim, index, src)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # duplicate indices are intentional: they are what distinguishes
+        # scatter_add (accumulate) from scatter (overwrite)
+        cases = [
+            (
+                1,
+                (
+                    torch.ones(3, 5),
+                    torch.tensor(
+                        [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]],
+                        dtype=torch.int64,
+                    ),
+                    torch.rand(3, 5),
+                ),
+            ),
+            (
+                0,
+                (
+                    torch.ones(3, 5),
+                    torch.tensor(
+                        [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                        dtype=torch.int64,
+                    ),
+                    torch.rand(3, 5),
+                ),
+            ),
+            # negative dim exercises the "dim % rank" normalization
+            (
+                -1,
+                (
+                    torch.ones(3, 5),
+                    torch.tensor(
+                        [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]],
+                        dtype=torch.int64,
+                    ),
+                    torch.rand(3, 5),
+                ),
+            ),
+            # 4D exercises the QCOM_AXIS_ORDER remap in the builder
+            (
+                1,
+                (
+                    torch.ones(1, 4, 2, 3),
+                    torch.randint(0, 4, (1, 4, 2, 3), dtype=torch.int64),
+                    torch.rand(1, 4, 2, 3),
+                ),
+            ),
+        ]
+        for dim, inputs in cases:
+            with subtests.test(msg=f"dim:{dim}, shape:{tuple(inputs[0].shape)}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class ScatterReduce(torch.nn.Module):
+    def __init__(self, dim, reduce):
+        super().__init__()
+        self.dim = dim
+        self.reduce = reduce
+
+    def forward(self, data, index, src):
+        return data.scatter_reduce(self.dim, index, src, reduce=self.reduce)
+
+    # index containing duplicates, so the reduction actually combines values
+    _INDEX_DIM1 = torch.tensor(
+        [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+    )
+    _INDEX_DIM0 = torch.tensor(
+        [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]], dtype=torch.int64
+    )
+
+    @staticmethod
+    def _run(subtests, qnn_config, quantizer, compile_spec, expected, cases):
+        for module, inputs in cases:
+            with subtests.test(
+                msg=f"reduce:{module.reduce}, dim:{module.dim}, "
+                f"shape:{tuple(inputs[0].shape)}"
+            ):
+                with expected as metrics:
+                    export_and_verify(
+                        module=module,
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+    @staticmethod
+    @unpack_fixtures
+    def test_sum(subtests, qnn_config, quantizer, compile_spec, expected):
+        cls = ScatterReduce
+        cases = [
+            (
+                cls(dim=1, reduce="sum"),
+                (torch.ones(3, 5), cls._INDEX_DIM1, torch.rand(3, 5)),
+            ),
+            (
+                cls(dim=0, reduce="sum"),
+                (torch.ones(3, 5), cls._INDEX_DIM0, torch.rand(3, 5)),
+            ),
+            # negative dim exercises the "dim % rank" normalization
+            (
+                cls(dim=-1, reduce="sum"),
+                (torch.ones(3, 5), cls._INDEX_DIM1, torch.rand(3, 5)),
+            ),
+            # 4D exercises the QCOM_AXIS_ORDER remap in the builder
+            (
+                cls(dim=1, reduce="sum"),
+                (
+                    torch.ones(1, 4, 2, 3),
+                    torch.randint(0, 4, (1, 4, 2, 3), dtype=torch.int64),
+                    torch.rand(1, 4, 2, 3),
+                ),
+            ),
+        ]
+        cls._run(subtests, qnn_config, quantizer, compile_spec, expected, cases)
+
+    @staticmethod
+    @unpack_fixtures
+    def test_prod(subtests, qnn_config, quantizer, compile_spec, expected):
+        cls = ScatterReduce
+        # keep src bounded away from 0 so the running product does not
+        # collapse toward the bottom of the quantization range.
+        # Only dim=0/1 here: neg-dim normalization and the 4-D axis-order
+        # remap are builder-level paths already covered by test_sum, and
+        # "prod" adds no new coverage there (only more error compounding).
+        cases = [
+            (
+                cls(dim=1, reduce="prod"),
+                (torch.ones(3, 5), cls._INDEX_DIM1, torch.rand(3, 5) + 0.5),
+            ),
+            (
+                cls(dim=0, reduce="prod"),
+                (torch.ones(3, 5), cls._INDEX_DIM0, torch.rand(3, 5) + 0.5),
+            ),
+        ]
+        cls._run(subtests, qnn_config, quantizer, compile_spec, expected, cases)
 
 
 class ScatterSrc(torch.nn.Module):

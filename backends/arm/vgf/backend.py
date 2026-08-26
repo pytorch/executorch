@@ -21,7 +21,11 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any, final, List
 
-from executorch.backends.arm._passes import DecomposeQuantNodesPass, RewriteConvPass
+from executorch.backends.arm._passes import (
+    DecomposeQuantNodesPass,
+    InsertRescaleInt32Pass,
+    RewriteConvPass,
+)
 from executorch.backends.arm._passes.arm_pass_manager import (
     _registered_pass_insertions,
     PassInsertions,
@@ -32,6 +36,7 @@ from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-fo
     TOSABackend,
 )
 from executorch.backends.arm.vgf._passes import (  # type: ignore[import-not-found]
+    FuseGridSamplerFlowOffsetPass,
     InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
@@ -159,6 +164,10 @@ def _register_pass_before(target_pass_type: type, pass_: ExportPass) -> None:
 def _register_vgf_rewrite_passes() -> None:
     """Register VGF-only custom shader lowering passes."""
     _register_pass_before(DecomposeQuantNodesPass, InsertGridSamplerGridDequantPass())
+    _register_pass_before(
+        InsertRescaleInt32Pass,
+        FuseGridSamplerFlowOffsetPass(),
+    )
     _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
 
 
@@ -324,7 +333,6 @@ def vgf_compile(
 
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-
         # We currently write out a flatbuffer as input to the converter
         tosaname = f"output_{tag_name}.tosa"
         tosa_path = os.path.join(tmpdir, tosaname)

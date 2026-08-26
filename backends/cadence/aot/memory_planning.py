@@ -19,11 +19,7 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
     MemoryPlanningAlgo,
     MemoryPlanningState,
 )
-from executorch.backends.cadence.aot.pass_utils import (
-    CompileMode,
-    normalize_compile_mode,
-    resolve_opt_level,
-)
+from executorch.backends.cadence.aot.pass_utils import CompileMode
 from executorch.backends.cadence.aot.utils import (
     MemoryConfig,
     MemoryPlanningAlgoFailure,
@@ -292,16 +288,14 @@ def find_peak_memory_usage(
 def print_memory_planning_info(
     executorch_prog: ExecutorchProgramManager,
     memory_config: MemoryConfig,
-    mode: CompileMode | int | None = None,
-    alloc_graph_input: bool = True,
-    alloc_graph_output: bool = True,
+    mode: CompileMode,
+    alloc_graph_input: bool,
+    alloc_graph_output: bool,
     log_level=logging.INFO,
-    opt_level: Optional[int] = None,
 ) -> None:
     # Get the peak memory usages per memory space
     mem_constraints = MemConstraints(
         mode=mode,
-        opt_level=opt_level,
         alloc_graph_input=alloc_graph_input,
         alloc_graph_output=alloc_graph_output,
     )
@@ -404,25 +398,19 @@ class CadenceMemoryPlanning:
     def __init__(
         self,
         memory_config: MemoryConfig,
-        mode: CompileMode | int | None = None,
-        mem_algo: int = 0,
+        mode: CompileMode,
+        mem_algo: int,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
         additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
-        opt_level: Optional[int] = None,
     ) -> None:
         self.memory_config = memory_config
-        normalized_mode = normalize_compile_mode(mode, opt_level)
-        self.opt_level = resolve_opt_level(normalized_mode)
-        self.mode: Optional[CompileMode] = (
-            normalized_mode if isinstance(normalized_mode, CompileMode) else None
-        )
+        self.mode = mode
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
-
         self.algo: MemoryPlanningAlgo = self.get_mem_algos(
             memory_config,
-            normalized_mode,
+            mode,
             alloc_graph_input,
             alloc_graph_output,
             additional_constraint_gen_passes,
@@ -431,24 +419,22 @@ class CadenceMemoryPlanning:
     @staticmethod
     def get_mem_algos(
         memory_config: MemoryConfig,
-        mode: CompileMode | int | None = None,
-        alloc_graph_input: bool = True,
-        alloc_graph_output: bool = True,
-        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
-        opt_level: Optional[int] = None,
+        mode: CompileMode,
+        alloc_graph_input: bool,
+        alloc_graph_output: bool,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]],
     ) -> list[MemoryPlanningAlgo]:
-        normalized_mode = normalize_compile_mode(mode, opt_level)
         return [
             PositionBasedGreedyWithHierarchy(
                 memory_config=memory_config,
-                mode=normalized_mode,
+                mode=mode,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
                 additional_constraint_gen_passes=additional_constraint_gen_passes,
             ),
             GreedyWithHeuristic(
                 memory_config=memory_config,
-                mode=normalized_mode,
+                mode=mode,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
                 additional_constraint_gen_passes=additional_constraint_gen_passes,

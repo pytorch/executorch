@@ -8,9 +8,10 @@
 
 #include <gtest/gtest.h>
 
-#include <cuda_runtime.h>
+#include <executorch/extension/cuda/runtime_api.h>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
@@ -20,18 +21,35 @@
 
 using executorch::backends::cuda::CudaAllocator;
 using executorch::runtime::Error;
+using executorch::runtime::etensor::DeviceIndex;
 
 class CudaAllocatorTest : public testing::Test {
  protected:
   void SetUp() override {
     et_pal_init();
 
-    int device_count = 0;
-    cudaError_t err = cudaGetDeviceCount(&device_count);
-    if (err != cudaSuccess || device_count == 0) {
+    cudaError_t err = cudaGetDeviceCount(&device_count_);
+    if (err != cudaSuccess || device_count_ == 0) {
       GTEST_SKIP() << "CUDA not available";
     }
   }
+
+  // One past the last valid device ordinal, so switching to it always fails.
+  // Only the tests that need such an ordinal call this, so the fit check lives
+  // here rather than in SetUp, where it would also skip the device-0 tests.
+  DeviceIndex missing_device() const {
+    return static_cast<DeviceIndex>(device_count_);
+  }
+
+  // missing_device() has to stay a valid-but-absent ordinal. DeviceIndex is
+  // int8_t, so on a host with more than 127 visible GPUs the count wraps to a
+  // negative index (which the >= -1 argument check rejects for a different
+  // reason) or, at 256, back onto real device 0.
+  bool missing_device_fits() const {
+    return device_count_ <= std::numeric_limits<DeviceIndex>::max();
+  }
+
+  int device_count_ = 0;
 };
 
 TEST_F(CudaAllocatorTest, CopyRoundtrip) {
@@ -111,4 +129,55 @@ TEST_F(CudaAllocatorTest, CopyDeviceToHostNullSrcReturnsInvalidArgument) {
   EXPECT_EQ(e, Error::InvalidArgument)
       << "expected InvalidArgument for null src, got "
       << static_cast<uint32_t>(e);
+}
+
+TEST_F(CudaAllocatorTest, AllocateOnMissingDeviceFails) {
+  if (!missing_device_fits()) {
+    GTEST_SKIP() << "device count " << device_count_
+                 << " leaves no absent ordinal in DeviceIndex";
+  }
+  CudaAllocator& a = CudaAllocator::instance();
+  auto res = a.allocate(1024, missing_device());
+  ASSERT_FALSE(res.ok()) << "allocate must not report success for device "
+                         << static_cast<int>(missing_device())
+                         << ", which does not exist";
+  EXPECT_EQ(res.error(), Error::Internal);
+}
+
+TEST_F(CudaAllocatorTest, CopyHostToDeviceOnMissingDeviceFails) {
+  if (!missing_device_fits()) {
+    GTEST_SKIP() << "device count " << device_count_
+                 << " leaves no absent ordinal in DeviceIndex";
+  }
+  CudaAllocator& a = CudaAllocator::instance();
+  constexpr size_t N = 64;
+  auto res = a.allocate(N, 0);
+  ASSERT_TRUE(res.ok());
+  void* dptr = res.get();
+
+  std::vector<uint8_t> h(N, 7);
+  EXPECT_EQ(
+      a.copy_host_to_device(dptr, h.data(), N, missing_device()),
+      Error::Internal);
+
+  a.deallocate(dptr, 0);
+}
+
+TEST_F(CudaAllocatorTest, CopyDeviceToHostOnMissingDeviceFails) {
+  if (!missing_device_fits()) {
+    GTEST_SKIP() << "device count " << device_count_
+                 << " leaves no absent ordinal in DeviceIndex";
+  }
+  CudaAllocator& a = CudaAllocator::instance();
+  constexpr size_t N = 64;
+  auto res = a.allocate(N, 0);
+  ASSERT_TRUE(res.ok());
+  void* dptr = res.get();
+
+  std::vector<uint8_t> h(N, 0);
+  EXPECT_EQ(
+      a.copy_device_to_host(h.data(), dptr, N, missing_device()),
+      Error::Internal);
+
+  a.deallocate(dptr, 0);
 }

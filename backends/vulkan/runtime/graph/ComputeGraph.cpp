@@ -554,6 +554,45 @@ ValueRef ComputeGraph::add_tensor(
       axis_map_layout);
 }
 
+ValueRef ComputeGraph::add_tensor(
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout,
+    const vkapi::VulkanImage& image) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(api::vTensor(
+      context(),
+      sizes,
+      dtype,
+      utils::kTexture3D,
+      memory_layout,
+      /*allocate_memory=*/false,
+      utils::kDefaultAxisMap,
+      &image));
+  return idx;
+}
+
+ValueRef ComputeGraph::add_tensor(
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout,
+    const vkapi::VulkanBuffer& buffer) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(api::vTensor(
+      context(),
+      sizes,
+      dtype,
+      utils::kBuffer,
+      memory_layout,
+      /*allocate_memory=*/false,
+      utils::kDefaultAxisMap,
+      /*external_image=*/nullptr,
+      &buffer));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensor(const vkapi::VulkanImage& image) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();

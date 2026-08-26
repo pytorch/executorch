@@ -15,11 +15,7 @@ from executorch.backends.cadence.aot.memory_constraints import (
     GenerateMemConstraints,
     MemConstraints,
 )
-from executorch.backends.cadence.aot.pass_utils import (
-    CompileMode,
-    normalize_compile_mode,
-    resolve_opt_level,
-)
+from executorch.backends.cadence.aot.pass_utils import CompileMode
 from executorch.backends.cadence.aot.utils import MemoryConfig
 from executorch.exir.memory_planning import Verifier
 from executorch.exir.tensor import TensorSpec
@@ -90,21 +86,16 @@ class MemoryPlanningAlgo(ABC):
     def __init__(
         self,
         memory_config: MemoryConfig,
-        mode: CompileMode | int | None = None,
+        mode: CompileMode = CompileMode.DEFAULT,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
         additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
-        opt_level: Optional[int] = None,
     ) -> None:
         self.memory_config: MemoryConfig = memory_config
         self.additional_constraint_gen_passes: Optional[
             Sequence[ConstraintsGenPass]
         ] = additional_constraint_gen_passes
-        normalized_mode = normalize_compile_mode(mode, opt_level)
-        self.opt_level: int = resolve_opt_level(normalized_mode)
-        self.mode: Optional[CompileMode] = (
-            normalized_mode if isinstance(normalized_mode, CompileMode) else None
-        )
+        self.mode: CompileMode = mode
         self.alloc_graph_input: bool = alloc_graph_input
         self.alloc_graph_output: bool = alloc_graph_output
         self.memory_id_is_valid: list[bool] = [True] * self.get_num_memories()
@@ -128,7 +119,7 @@ class MemoryPlanningAlgo(ABC):
         """Populate the constraints for the memory planning algorithm."""
         state = MemoryPlanningState(self.memory_config)
         placement_constraints = MemConstraints(
-            self.opt_level, self.alloc_graph_input, self.alloc_graph_output
+            self.mode, self.alloc_graph_input, self.alloc_graph_output
         )
         GenerateMemConstraints(
             mem_constraints=placement_constraints,
