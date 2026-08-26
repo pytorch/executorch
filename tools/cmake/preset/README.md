@@ -32,7 +32,7 @@ $ cmake --list-presets
 $ cmake --preset llm
 
 # Build a preset with one-off configuration change
-$ cmake -DEXECUTORCH_BUILD_MPS=OFF --preset llm
+$ cmake -DEXECUTORCH_BUILD_COREML=OFF --preset llm
 ```
 
 The cmake presets roughly map to the ExecuTorch presets and are explicitly listed in [CMakePresets.json](../../../CMakePresets.json). Note that you are encouraged to rely on presets when build locally and adding build/tests in CI — CI should do what a developer would do and nothing more!
@@ -118,8 +118,8 @@ Even when using a preset, you can explicitly override specific preset configurat
 ```cmake
 set(EXECUTORCH_BUILD_PRESET_FILE executorch/tools/cmake/preset/llm.cmake)
 
-# Although llm.cmake might have turned on `EXECUTORCH_BUILD_MPS`, you can turn if off
-set(EXECUTORCH_BUILD_MPS OFF)
+# Although llm.cmake might have turned on `EXECUTORCH_BUILD_COREML`, you can turn if off
+set(EXECUTORCH_BUILD_COREML OFF)
 
 add_subdirectory(executorch)
 ```

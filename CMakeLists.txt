@@ -850,11 +850,6 @@ if(EXECUTORCH_BUILD_COREML)
   list(APPEND _executorch_backends coremldelegate)
 endif()
 
-if(EXECUTORCH_BUILD_MPS)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
-  list(APPEND _executorch_backends mpsdelegate)
-endif()
-
 if(EXECUTORCH_BUILD_MLX)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
   list(APPEND _executorch_backends mlxdelegate)
@@ -1303,10 +1298,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_VGF)
     list(APPEND _dep_libs vgf_backend)
-  endif()
-
-  if(EXECUTORCH_BUILD_MPS)
-    list(APPEND _dep_libs mpsdelegate)
   endif()
 
   if(EXECUTORCH_BUILD_MLX)
