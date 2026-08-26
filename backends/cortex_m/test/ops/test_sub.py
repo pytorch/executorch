@@ -40,11 +40,23 @@ class CortexMInplaceSub(CortexMTensorSub):
         return x.sub_(y)
 
 
-class CortexMAlphaSub(torch.nn.Module):
-    """alpha has nowhere to go in quantized_add, so this must stay in fp32.
+class CortexMAlphaSub(CortexMTensorSub):
+    """alpha scales the second operand, which is the one place it appears in the
+    arithmetic, so it folds into that operand's multiplier."""
 
-    An integer alpha is the case that matters: a float one is rejected earlier
-    by the dtype cast, so it would fail even without the quantizer declining.
+    def forward(self, x, y):
+        return torch.sub(x, y, alpha=2)
+
+
+class CortexMNegativeAlphaSub(CortexMTensorSub):
+    def forward(self, x, y):
+        return torch.sub(x, y, alpha=-2)
+
+
+class CortexMFloatAlphaSub(torch.nn.Module):
+    """A float alpha never reaches the lowering: FoldAndAnnotateQParamsPass
+    re-traces with the dequantize nodes gone and aten refuses it on an int8
+    sub, so the quantizer has to decline it and leave the op in fp32.
 
     The boundary quant/dequant pairs are pinned so that a quantizer which
     stopped annotating anything at all would not read as a successful decline.
@@ -63,7 +75,7 @@ class CortexMAlphaSub(torch.nn.Module):
     }
 
     def forward(self, x, y):
-        return torch.sub(x, y, alpha=2)
+        return torch.sub(x, y, alpha=0.5)
 
 
 test_cases = {
@@ -119,6 +131,22 @@ test_cases = {
     ),
     "alpha_int": McuTestCase(
         model=CortexMAlphaSub(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (4, 5)),
+            ramp_tensor(-2, 8, (4, 5)),
+        ),
+    ),
+    # A negative alpha turns the subtraction back into an addition, so the
+    # folded coefficient has to carry the sign rather than the op.
+    "alpha_negative": McuTestCase(
+        model=CortexMNegativeAlphaSub(),
+        example_inputs=(
+            ramp_tensor(-7, 13, (4, 5)),
+            ramp_tensor(-1, 5, (4, 5)),
+        ),
+    ),
+    "alpha_float": McuTestCase(
+        model=CortexMFloatAlphaSub(),
         example_inputs=(
             ramp_tensor(-10, 10, (4, 5)),
             ramp_tensor(-2, 8, (4, 5)),
