@@ -791,6 +791,16 @@ class ComputeGraph final {
       const vkapi::VulkanImage& image);
 
   /*
+   * Wrap an externally owned buffer as a tensor with the given logical sizes.
+   * The buffer must be large enough for them.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      const vkapi::VulkanBuffer& buffer);
+
+  /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`.
    */
   ValueRef add_tensor_like(

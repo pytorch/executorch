@@ -681,6 +681,8 @@ class ArmPassManager(ExportedProgramPassManager):
                 # permute pairs they expose.
                 RemoveNoopPass(),
                 CanonicalizeViewCopyPermutePass(),
+                # Fuse views again after permutes may have been replaced by views.
+                FuseViewCopyTransformPass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]

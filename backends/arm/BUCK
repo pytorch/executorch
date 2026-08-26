@@ -1,3 +1,5 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 # Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -87,6 +89,7 @@ fbcode_target(
         ":arm_vela",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm/tosa:partitioner",
+        "//executorch/exir/_serialize:lib",
     ],
 )
 
@@ -162,6 +165,7 @@ fbcode_target(
     ],
     deps = [
         "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
+        "//executorch/exir/_serialize:lib",
     ],
 )
 fbcode_target(
