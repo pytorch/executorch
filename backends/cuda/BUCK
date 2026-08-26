@@ -5,20 +5,6 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
-    name = "target_arch",
-    srcs = [
-        "target_arch.py",
-    ],
-    visibility = [
-        "//executorch/backends/cuda/...",
-    ],
-    deps = [
-        "//caffe2:torch",
-    ],
-)
-
-fbcode_target(
-    _kind = runtime.python_library,
     name = "optimization_config",
     srcs = [
         "optimization_config.py",
@@ -40,6 +26,20 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "target_arch",
+    srcs = [
+        "target_arch.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 
@@ -91,6 +91,8 @@ fbcode_target(
         ":coalesced_int4_tensor",
         ":dp4a_planar_int5_tensor",
         ":dp4a_planar_int6_tensor",
+        ":target_arch",
+        ":triton_kernels",
         "//caffe2:torch",
         "//pytorch/ao:torchao",
     ],
@@ -156,6 +158,7 @@ fbcode_target(
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/int4_matmul.py",
+        "triton/kernels/q4k_fp8_linear.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",

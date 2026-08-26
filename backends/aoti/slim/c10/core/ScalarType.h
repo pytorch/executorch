@@ -39,6 +39,7 @@ enum class ScalarType : int8_t {
   // QUInt8 = 13,
   // QInt32 = 14,
   BFloat16 = 15, // bfloat16
+  Float8_e4m3fn = 24, // float8 E4M3, finite values with NaN
   Undefined = -1,
 };
 
@@ -52,6 +53,7 @@ constexpr ScalarType kHalf = ScalarType::Half;
 constexpr ScalarType kFloat = ScalarType::Float;
 constexpr ScalarType kBool = ScalarType::Bool;
 constexpr ScalarType kBFloat16 = ScalarType::BFloat16;
+constexpr ScalarType kFloat8_e4m3fn = ScalarType::Float8_e4m3fn;
 
 /// Returns the size in bytes of a single element of the given scalar type.
 /// @param t The scalar type.
@@ -76,6 +78,8 @@ inline size_t elementSize(ScalarType t) {
       return sizeof(bool);
     case ScalarType::BFloat16:
       return sizeof(BFloat16);
+    case ScalarType::Float8_e4m3fn:
+      return 1;
     default:
       ET_CHECK_MSG(false, "Unknown ScalarType: %d", static_cast<int>(t));
   }
@@ -104,6 +108,8 @@ inline const char* toString(ScalarType t) {
       return "Bool";
     case ScalarType::BFloat16:
       return "BFloat16";
+    case ScalarType::Float8_e4m3fn:
+      return "Float8_e4m3fn";
     case ScalarType::Undefined:
       return "Undefined";
     default:
@@ -116,7 +122,7 @@ inline const char* toString(ScalarType t) {
 /// @return true if the scalar type is floating point, false otherwise.
 inline bool isFloatingType(ScalarType t) {
   return t == ScalarType::Half || t == ScalarType::Float ||
-      t == ScalarType::BFloat16;
+      t == ScalarType::BFloat16 || t == ScalarType::Float8_e4m3fn;
 }
 
 /// Checks if the scalar type is an integral type (including bool optionally).
@@ -159,6 +165,7 @@ inline bool isValidScalarType(ScalarType t) {
     case ScalarType::Float:
     case ScalarType::Bool:
     case ScalarType::BFloat16:
+    case ScalarType::Float8_e4m3fn:
       return true;
     default:
       return false;

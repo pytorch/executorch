@@ -25,6 +25,7 @@ Usage:
 """
 
 import contextlib
+import os
 import unittest
 from unittest import mock
 
@@ -34,6 +35,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
 from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
+from executorch.backends.cuda.target_arch import cuda_targets_are_sm90_or_newer
 from executorch.examples.models.gemma4_31b.cuda_packers import pack_linear_for_cuda
 from executorch.extension.llm.export.int4 import ExportableInt4Tensor
 from executorch.extension.llm.export.quant.quantize import (
@@ -110,6 +112,25 @@ class TestFLinearDispatch(unittest.TestCase):
         module, w_ref = _make_int4_linear(128, 256, group_size=32)
         x = torch.randn(1, 256, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_ref))
+
+    def test_prefill_group_size_32(self):
+        module, _ = _make_int4_linear(256, 512, group_size=32)
+        x = torch.randn(64, 512, dtype=torch.bfloat16, device="cuda")
+        out = module(x)
+        weight = module.weight
+        ref = _dequant_matmul(
+            x,
+            weight.qdata,
+            weight.scale,
+            weight.scale_step,
+            weight.zero_point,
+            weight.zero_point_step,
+            weight.block_size[-1],
+        )
+        normalized_max_error = (
+            out.float() - ref.float()
+        ).abs().max() / ref.float().abs().max()
+        self.assertLess(normalized_max_error.item(), 0.05)
 
     def test_symmetric(self):
         module, w_ref = _make_int4_linear(256, 512, symmetric=True)
@@ -309,6 +330,74 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertEqual(calls, [])
         ref = F.linear(x, dequantize_weight(t, torch.bfloat16))
         self.assertLess(self._rel_err(out, ref), 0.02)
+
+    def test_sm90_prefill_export_captures_fp8_linear(self):
+        """CPU example tensors must still capture the CUDA-target FP8 op."""
+        if not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 9:
+            self.skipTest("SM90+ CUDA target required")
+
+        class LinearModule(nn.Module):
+            def __init__(self):
+                super().__init__()
+                t, _ = _make_exportable_int4_tensor(64, 256, group_size=32)
+                packed = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
+                self.weight = nn.Parameter(packed, requires_grad=False)
+
+            def forward(self, x):
+                return F.linear(x, self.weight)
+
+        exported = torch.export.export(
+            LinearModule(),
+            (torch.randn(8, 256, dtype=torch.bfloat16),),
+            strict=True,
+        )
+        self.assertIn("triton.q4k_fp8_linear", exported.graph_module.code)
+
+    def test_target_arch_override_controls_fp8_gate(self):
+        with mock.patch.dict(
+            os.environ, {"TORCH_CUDA_ARCH_LIST": "8.0"}
+        ), mock.patch.object(torch.cuda, "get_device_capability") as capability:
+            self.assertFalse(cuda_targets_are_sm90_or_newer())
+            capability.assert_not_called()
+        with mock.patch.dict(os.environ, {"TORCH_CUDA_ARCH_LIST": "9.0;12.0+PTX"}):
+            self.assertTrue(cuda_targets_are_sm90_or_newer())
+        with mock.patch.object(torch.version, "hip", "6.3"), mock.patch.dict(
+            os.environ, {"TORCH_CUDA_ARCH_LIST": "9.0"}
+        ):
+            self.assertFalse(cuda_targets_are_sm90_or_newer())
+
+    def test_noncontiguous_prefill_falls_back(self):
+        t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
+        weight = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
+        x = torch.randn(1, 16, 256, dtype=torch.bfloat16)[:, ::2, :]
+        self.assertFalse(x.reshape(-1, 256).is_contiguous())
+        with mock.patch(
+            "executorch.backends.cuda.quantize_op_dispatch.int4_dispatch.cuda_targets_are_sm90_or_newer",
+            return_value=True,
+        ), mock.patch(
+            "executorch.backends.cuda.quantize_op_dispatch.int4_dispatch.q4k_fp8_linear"
+        ) as fp8_linear, mock.patch.object(
+            torch.compiler, "is_compiling", return_value=True
+        ):
+            out = F.linear(x, weight)
+        fp8_linear.assert_not_called()
+        self.assertEqual(out.shape, (1, 8, 16))
+
+    def test_non_bfloat16_prefill_falls_back(self):
+        t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
+        weight = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
+        x = torch.randn(8, 256, dtype=torch.float32)
+        with mock.patch(
+            "executorch.backends.cuda.quantize_op_dispatch.int4_dispatch.cuda_targets_are_sm90_or_newer",
+            return_value=True,
+        ), mock.patch(
+            "executorch.backends.cuda.quantize_op_dispatch.int4_dispatch.q4k_fp8_linear"
+        ) as fp8_linear, mock.patch.object(
+            torch.compiler, "is_compiling", return_value=True
+        ):
+            out = F.linear(x, weight)
+        fp8_linear.assert_not_called()
+        self.assertEqual(out.dtype, torch.float32)
 
     def test_square_shape_not_misrouted(self):
         """N == n_groups (square scale) stock tensor is still not routed.
