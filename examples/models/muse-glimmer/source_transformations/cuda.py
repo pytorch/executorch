@@ -504,6 +504,9 @@ def _lenaware_attention_forward(
     routes L_q==1 decode through the length-aware split-K flash-decoding kernel.
     Sliding-window layers are not patched (they already use a bounded ring
     buffer).
+
+    The global mask is standard causal, so reconstruct it analytically inside
+    SDPA from ``kv_len`` and avoid materializing/reading the dense mask.
     """
     B, T, _ = x.shape
 
@@ -536,14 +539,15 @@ def _lenaware_attention_forward(
 
     # scale=self.attn_scale absorbs the muP query scaling and 1/sqrt(D).
     # enable_gqa=True lets the kernel handle the 16:1 head ratio without
-    # materializing expanded K/V.
+    # materializing expanded K/V. With kv_len, is_causal uses bottom-right
+    # alignment for chunked prefill and decode.
     y = torch.ops.triton.sdpa(
         xq,
         k,
         v,
-        attn_mask,
+        None,
         0.0,  # dropout_p
-        False,  # is_causal: attn_mask already encodes causal masking
+        True,
         self.attn_scale,
         True,  # enable_gqa
         kv_len,
@@ -595,7 +599,8 @@ def cuda_source_transformations(
             n_bounded += 1
         print(
             f"[muse_glimmer cuda] length-aware SDPA: bounded {n_bounded} global-attention "
-            f"layers to runtime kv_len (O(context) attention)"
+            "layers to runtime kv_len (O(context) attention); "
+            "in-kernel causal mask (dense mask dropped)"
         )
         return
 
