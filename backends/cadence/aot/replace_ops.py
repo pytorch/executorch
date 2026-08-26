@@ -37,7 +37,8 @@ from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
+from torch.fx.passes.infra.pass_base import PassBase
 
 # A map to represent ops that:
 # (a) are functionally equivalent; and
@@ -1981,47 +1982,37 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
         return True
 
 
-class ReplaceEmptyTensorsWithFullPass(ExportPass):
+class ReplaceEmptyTensorsWithFullPass(PassBase):
     """Replaces nodes that produce empty tensors with full nodes."""
-
-    def call_operator(self, op, args, kwargs, meta):
-        val = meta.data.get("val", None)
-        if isinstance(val, torch.Tensor) and val.numel() == 0:
-            return super().call_operator(
-                exir_ops.edge.aten.full.default,
-                args=(val.shape, 0),
-                kwargs={"dtype": val.dtype},
-                meta=meta,
-            )
-        return super().call_operator(op, args, kwargs, meta)
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         changed = False
         for module in filter(
             lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
         ):
-            module = cast(torch.fx.GraphModule, module)
-            for node in module.graph.nodes:
+            graph_module_to_update = cast(torch.fx.GraphModule, module)
+            module_changed = False
+            for node in graph_module_to_update.graph.nodes:
                 if node.op != "call_function":
                     continue
                 val = node.meta.get("val", None)
                 if isinstance(val, torch.Tensor) and val.numel() == 0:
-                    with module.graph.inserting_before(node):
-                        new_node = module.graph.call_function(
+                    with graph_module_to_update.graph.inserting_before(node):
+                        new_node = graph_module_to_update.graph.call_function(
                             exir_ops.edge.aten.full.default,
                             args=(val.shape, 0),
                             kwargs={"dtype": val.dtype},
                         )
-                        new_node.meta = node.meta
+                        new_node.meta = node.meta.copy()
                     node.replace_all_uses_with(new_node)
-                    changed = True
+                    module_changed = True
 
-        if changed:
-            graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
-            return super().call(graph_module)
+            if module_changed:
+                graph_module_to_update.graph.eliminate_dead_code()
+                graph_module_to_update.recompile()
+                changed = True
 
-        return PassResult(graph_module, False)
+        return PassResult(graph_module, changed)
 
 
 class ReplaceWhereWithFullArgsWithWhereScalar(RemoveOrReplacePassInterface):
