@@ -31,6 +31,7 @@ into the M (sequence) dimension of a single tile. This avoids redundant K/V read
 and improves tile utilization, especially during decode (seqlen_q=1).
 """
 
+import functools
 import math
 from typing import Optional
 
@@ -54,6 +55,19 @@ _SPLITK_LKV_THRESHOLD = 256
 def _decode_splitk_config(L_kv: int) -> tuple[int, int]:
     num_splits = min(max(triton.cdiv(L_kv, _SPLITK_LKV_THRESHOLD), 1), 128)
     return num_splits, triton.cdiv(L_kv, num_splits)
+
+
+@functools.lru_cache(maxsize=None)
+def _device_sm_count(device_index: int) -> int:
+    return torch.cuda.get_device_properties(device_index).multi_processor_count
+
+
+def _decode_num_splits(grid_y: int, device: torch.device) -> int:
+    """Launch two persistent split-K CTA waves on the target GPU."""
+    device_index = (
+        device.index if device.index is not None else torch.cuda.current_device()
+    )
+    return max(triton.cdiv(2 * _device_sm_count(device_index), max(grid_y, 1)), 1)
 
 
 def _next_power_of_2(x: int) -> int:
@@ -1248,7 +1262,7 @@ def _sdpa_decode_splitk_kernel(
     stride_mq,
     stride_mk,
     sm_scale: tl.float32,
-    chunk_size,
+    num_splits,
     HAS_MASK: tl.constexpr,
     HAS_KV_LEN: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -1261,15 +1275,13 @@ def _sdpa_decode_splitk_kernel(
     b = pid_bh // H_kv
     h_kv = pid_bh % H_kv
 
-    start_n = split_id * chunk_size
-    # Bound the decode KV sweep to the valid (filled) positions. Empty splits
-    # store m = -inf and l = acc = 0, which the reduce weights to zero. kv_len is
-    # read on-device (CUDA-graph safe); falls back to Lk when not provided.
+    # Sweep KV tiles persistently across splits. kv_len is read on-device
+    # (CUDA-graph safe); falls back to Lk when not provided.
     if HAS_KV_LEN:
         kv_len = tl.load(KV_LEN_ptr)
     else:
         kv_len = Lk
-    end_n = tl.minimum(start_n + chunk_size, kv_len)
+    stride_n = num_splits * BLOCK_N
 
     offs_d = tl.arange(0, HEAD_DIM)
     offs_g = tl.arange(0, BLOCK_G)
@@ -1291,9 +1303,9 @@ def _sdpa_decode_splitk_kernel(
 
     offs_n_init = tl.arange(0, BLOCK_N)
 
-    for tile_start in tl.range(start_n, end_n, BLOCK_N):
+    for tile_start in tl.range(split_id * BLOCK_N, kv_len, stride_n):
         offs_n = tile_start + offs_n_init
-        n_valid = offs_n < end_n
+        n_valid = offs_n < kv_len
 
         k_ptrs = K_ptr + (
             b * stride_kb
@@ -1437,7 +1449,7 @@ def _launch_decode_splitk(
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
 ) -> None:
-    num_splits, chunk_size = _decode_splitk_config(L_kv)
+    num_splits = _decode_num_splits(B * H_kv, query.device)
 
     # Each valid (split, batch, query head) slot belongs to exactly one program,
     # and empty KV ranges still reach the stores with m=-inf and l=acc=0.
@@ -1498,7 +1510,7 @@ def _launch_decode_splitk(
         stride_mq,
         stride_mk,
         sm_scale,
-        chunk_size,
+        num_splits,
         HAS_MASK=HAS_MASK,
         HAS_KV_LEN=HAS_KV_LEN,
         HEAD_DIM=D,
