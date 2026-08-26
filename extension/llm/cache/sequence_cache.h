@@ -14,6 +14,7 @@
 // flat/ring model (gemma4) stays coherent. Tensor-free / ET-independent.
 
 #include <algorithm>
+#include <cassert>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -97,6 +98,7 @@ class SequenceCache : public CacheBase,
  public:
   explicit SequenceCache(const CacheConfig& cfg)
       : capacity_(cfg.capacity), max_write_(cfg.max_write) {
+    assert(valid(cfg));
     layer_to_policy_.reserve(cfg.n_layers);
     for (int l = 0; l < cfg.n_layers; ++l) {
       // layers size 1 = one config broadcast to every layer, else per-layer.
