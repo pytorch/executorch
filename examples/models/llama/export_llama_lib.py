@@ -1381,6 +1381,7 @@ def _to_edge_and_lower_llama_arm(
             get_vgf_partitioner(
                 llm_config.backend.vgf.compile_spec,
                 llm_config.backend.vgf.compiler_flags,
+                llm_config.backend.vgf.alias_buffer_mutations,
             )
         )
         modelname = f"vgf_{modelname}"
@@ -1388,9 +1389,27 @@ def _to_edge_and_lower_llama_arm(
         partitioners.append(get_tosa_partitioner(llm_config.backend.tosa.version))
         modelname = f"tosa_{modelname}"
 
-    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
-        partitioners
-    )
+    builder = builder_exported.pt2e_quantize(quantizers)
+    if (
+        llm_config.backend.vgf.enabled
+        and llm_config.backend.vgf.alias_buffer_mutations
+        and llm_config.model.static_quantize_kv_cache
+    ):
+        assert builder.pre_autograd_graph_module is not None
+        exported_program = builder._export(builder.pre_autograd_graph_module)
+        mutated_buffers = set(
+            exported_program.graph_signature.buffers_to_mutate.values()
+        )
+        for name in mutated_buffers:
+            buffer = exported_program.state_dict[name]
+            if buffer.dtype != torch.int8:
+                raise ValueError(
+                    f"VGF mutable buffer {name!r} must use torch.int8, "
+                    f"got {buffer.dtype}."
+                )
+            buffer.zero_()
+        builder.pre_autograd_graph_module = exported_program.module()
+    builder = builder.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
