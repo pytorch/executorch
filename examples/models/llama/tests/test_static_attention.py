@@ -569,6 +569,17 @@ class StaticAttentionTest(unittest.TestCase):
                 f"Unexpected RoPE setting for layer {layer_id}",
             )
 
+    def test_invalid_no_rope_layer_interval(self):
+        with self.assertRaisesRegex(
+            ValueError, "no_rope_layer_interval must be a positive integer"
+        ):
+            ModelArgs(no_rope_layer_interval=0)
+
+        with self.assertRaisesRegex(
+            ValueError, "no_rope_layer_interval must be a positive integer"
+        ):
+            ModelArgs(no_rope_layer_interval=-1)
+
     def test_no_rope_layer_interval_preserved_in_static_attention(self):
         config = ModelArgs(
             dim=64,
@@ -722,6 +733,42 @@ class StaticAttentionTest(unittest.TestCase):
 
         self.assertEqual(y.shape, (1, config.max_seq_len, config.dim))
         self.assertIsNone(update["out_cache_state"])
+
+    def test_yoco_shared_layer_skips_rope(self):
+        config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
+        config.no_rope_layer_interval = 3
+        rope = Rope(config)
+
+        attn_mha = AttentionMHA(config, layer_id=2, rope=rope).eval()
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        q = attn_mha.wq(x).view(1, config.max_seq_len, config.n_heads, config.head_dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+
+        shared_kv = (
+            torch.randn(
+                1,
+                config.n_kv_heads,
+                config.max_seq_len,
+                config.head_dim,
+            ),
+            torch.randn(
+                1,
+                config.n_kv_heads,
+                config.max_seq_len,
+                config.head_dim,
+            ),
+        )
+
+        prepared_q, prepared_k, prepared_v = attn_mha._prepare_qkv_shared(
+            q, shared_kv, freqs_cos, freqs_sin
+        )
+
+        expected_q = q.transpose(1, 2)
+
+        self.assertTrue(torch.equal(prepared_q, expected_q))
+        self.assertTrue(torch.equal(prepared_k, shared_kv[0]))
+        self.assertTrue(torch.equal(prepared_v, shared_kv[1]))
 
     def test_yoco_lora_with_shared_layer(self):
         config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)

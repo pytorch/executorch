@@ -539,7 +539,8 @@ class AttentionMHA(Attention):
                 q = q * self.scale_query_by
 
         # Apply RoPE to Q only (K already has RoPE from donor layer)
-        q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
+        if self.use_rope:
+            q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
         q = q.transpose(1, 2)
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
