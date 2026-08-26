@@ -52,22 +52,66 @@ def _is_power_of_2(n: int) -> bool:
 _SPLITK_LKV_THRESHOLD = 256
 
 
-def _decode_splitk_config(L_kv: int) -> tuple[int, int]:
-    num_splits = min(max(triton.cdiv(L_kv, _SPLITK_LKV_THRESHOLD), 1), 128)
-    return num_splits, triton.cdiv(L_kv, num_splits)
+# Decode split-K occupancy target. A sweep across both production attention
+# families showed that targeting 16/9 waves gives a better balance between split
+# kernel occupancy and reduction/empty-CTA overhead than the previous two-wave
+# target. Keep the ratio integral so the launch policy is deterministic and does
+# not depend on floating-point rounding.
+_SPLITK_TARGET_WAVES_NUMERATOR = 16
+_SPLITK_TARGET_WAVES_DENOMINATOR = 9
+
+# Do not create more static split CTAs than one per 128 elements in the KV
+# buffer. This permits 16 splits for the 2048-element sliding-window family.
+# A 40-state, >L2 working-set A/B showed gains at the production prompt lengths;
+# single-state measurements are cache-hot and are not representative here.
+# The occupancy cap independently lowers the 128K global family from 85 to 76
+# splits on a 170-SM device.
+_SPLITK_BUFFER_ELEMENTS_PER_SPLIT = 128
 
 
 @functools.lru_cache(maxsize=None)
 def _device_sm_count(device_index: int) -> int:
+    """SM (multiprocessor) count of a CUDA device.
+
+    Read once per device from torch device properties. This is a fixed
+    hardware property, so it is safe to bake into the split count at
+    export/init and reuse under cuda-graph capture. Works for any GPU
+    (A100=108, H100=132, RTX 5090~170, ...) with no per-arch special casing.
+    """
     return torch.cuda.get_device_properties(device_index).multi_processor_count
 
 
-def _decode_num_splits(grid_y: int, device: torch.device) -> int:
-    """Launch two persistent split-K CTA waves on the target GPU."""
+def _decode_splitk_config(
+    L_kv: int, grid_y: int, device: torch.device
+) -> tuple[int, int]:
+    """Hardware-derived split count for the flash-decoding decode path.
+
+    The split kernel launches a (num_splits, grid_y) grid where
+    grid_y = B * H_kv. We size num_splits so the total launched CTAs
+    (num_splits * grid_y) target 16/9 waves of this device's SM array, capped by
+    cdiv(L_kv, 128) so a short KV buffer is not needlessly over-split and
+    clamped to >= 1.
+
+    num_splits depends only on host-side constants (L_kv buffer size, the
+    static grid_y, and the device SM count), so it is fixed before cuda-graph
+    capture and identical on every replay.
+    """
     device_index = (
         device.index if device.index is not None else torch.cuda.current_device()
     )
-    return max(triton.cdiv(2 * _device_sm_count(device_index), max(grid_y, 1)), 1)
+    n_sm = _device_sm_count(device_index)
+    # Cap so num_splits * grid_y ~= 16/9 * n_sm (>= 1). Use ceil division: a
+    # partial final wave is preferable to leaving an SM idle.
+    sm_cap = max(
+        triton.cdiv(
+            _SPLITK_TARGET_WAVES_NUMERATOR * n_sm,
+            _SPLITK_TARGET_WAVES_DENOMINATOR * max(grid_y, 1),
+        ),
+        1,
+    )
+    buffer_cap = max(triton.cdiv(L_kv, _SPLITK_BUFFER_ELEMENTS_PER_SPLIT), 1)
+    num_splits = min(buffer_cap, sm_cap)
+    return num_splits, triton.cdiv(L_kv, num_splits)
 
 
 def _next_power_of_2(x: int) -> int:
@@ -1262,7 +1306,7 @@ def _sdpa_decode_splitk_kernel(
     stride_mq,
     stride_mk,
     sm_scale: tl.float32,
-    num_splits,
+    chunk_size,
     HAS_MASK: tl.constexpr,
     HAS_KV_LEN: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -1270,18 +1314,21 @@ def _sdpa_decode_splitk_kernel(
     NUM_GROUPS: tl.constexpr,
     BLOCK_G: tl.constexpr,
 ):
+    sm_scale = sm_scale.to(tl.float32)
     split_id = tl.program_id(axis=0)
     pid_bh = tl.program_id(axis=1)
     b = pid_bh // H_kv
     h_kv = pid_bh % H_kv
 
-    # Sweep KV tiles persistently across splits. kv_len is read on-device
-    # (CUDA-graph safe); falls back to Lk when not provided.
+    start_n = split_id * chunk_size
+    # Bound the decode KV sweep to the valid (filled) positions. Empty splits
+    # store m = -inf and l = acc = 0, which the reduce weights to zero. kv_len is
+    # read on-device (CUDA-graph safe); falls back to Lk when not provided.
     if HAS_KV_LEN:
         kv_len = tl.load(KV_LEN_ptr)
     else:
         kv_len = Lk
-    stride_n = num_splits * BLOCK_N
+    end_n = tl.minimum(start_n + chunk_size, kv_len)
 
     offs_d = tl.arange(0, HEAD_DIM)
     offs_g = tl.arange(0, BLOCK_G)
@@ -1303,9 +1350,9 @@ def _sdpa_decode_splitk_kernel(
 
     offs_n_init = tl.arange(0, BLOCK_N)
 
-    for tile_start in tl.range(split_id * BLOCK_N, kv_len, stride_n):
+    for tile_start in tl.range(start_n, end_n, BLOCK_N):
         offs_n = tile_start + offs_n_init
-        n_valid = offs_n < kv_len
+        n_valid = offs_n < end_n
 
         k_ptrs = K_ptr + (
             b * stride_kb
@@ -1449,7 +1496,9 @@ def _launch_decode_splitk(
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
 ) -> None:
-    num_splits = _decode_num_splits(B * H_kv, query.device)
+    num_splits, chunk_size = _decode_splitk_config(
+        L_kv, B * H_kv, query.device
+    )
 
     # Each valid (split, batch, query head) slot belongs to exactly one program,
     # and empty KV ranges still reach the stores with m=-inf and l=acc=0.
@@ -1510,7 +1559,7 @@ def _launch_decode_splitk(
         stride_mq,
         stride_mk,
         sm_scale,
-        num_splits,
+        chunk_size,
         HAS_MASK=HAS_MASK,
         HAS_KV_LEN=HAS_KV_LEN,
         HEAD_DIM=D,
@@ -1728,6 +1777,7 @@ def _sdpa_small_query_splitk_kernel(
     BLOCK_G: tl.constexpr,
     BLOCK_M: tl.constexpr,
 ):
+    sm_scale = sm_scale.to(tl.float32)
     split_id = tl.program_id(axis=0)
     pid_bh = tl.program_id(axis=1)
     b = pid_bh // H_kv
@@ -1958,7 +2008,9 @@ def _launch_small_query_splitk(
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
 ) -> None:
-    num_splits, chunk_size = _decode_splitk_config(L_kv)
+    num_splits, chunk_size = _decode_splitk_config(
+        L_kv, B * H_kv, query.device
+    )
 
     # Each valid (split, batch, query head, query row) slot belongs to exactly
     # one program, and empty KV ranges still store m=-inf and l=acc=0.

@@ -314,7 +314,9 @@ class TestTritonSdpaSplitK(unittest.TestCase):
     def test_large_positive_logits_stable(self):
         """Large logits stay finite in both split-K kernel families."""
         B, H_q, H_kv, Lk, D = 1, 32, 8, 512, 128
-        num_splits, chunk_size = self.splitk_config(Lk)
+        num_splits, chunk_size = self.splitk_config(
+            Lk, B * H_kv, torch.device("cuda")
+        )
         self.assertGreater(num_splits, 1)
         self.assertNotEqual(0 // chunk_size, 300 // chunk_size)
 
@@ -391,8 +393,8 @@ class TestTritonSdpaSplitK(unittest.TestCase):
     def test_non_power_of_two_split_count(self):
         """Reduction masks lanes beyond the runtime split count."""
         B, H_q, H_kv, Lk, D = 1, 8, 2, 768, 128
-        num_splits, _ = self.splitk_config(Lk)
-        self.assertEqual(num_splits, 3)
+        num_splits, _ = self.splitk_config(Lk, B * H_kv, torch.device("cuda"))
+        self.assertEqual(num_splits, 6)
 
         torch.manual_seed(42)
         k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
