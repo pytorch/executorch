@@ -191,9 +191,31 @@ class TestExportRecipeCombine(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "edge_compile_configs") as cm:
                 ExportRecipe.combine(ordering)
             # The message has to say which recipes disagree, and how.
-            self.assertIn("a ", str(cm.exception))
-            self.assertIn("b ", str(cm.exception))
+            self.assertIn("preserve_ops", str(cm.exception))
+            self.assertIn("a=", str(cm.exception))
+            self.assertIn("b=", str(cm.exception))
             self.assertIn("aten.linear.default", str(cm.exception))
+
+    def test_combine_names_the_field_that_conflicts(self) -> None:
+        # A summary of hand-picked fields prints identically for two configs
+        # that differ elsewhere, so the error names no cause at all.
+        from executorch.exir import EdgeCompileConfig
+
+        with self.assertRaises(ValueError) as cm:
+            ExportRecipe.combine(
+                [
+                    ExportRecipe(
+                        name=name,
+                        lowering_recipe=self._lowering(
+                            edge_compile_config=EdgeCompileConfig(_skip_dim_order=skip)
+                        ),
+                    )
+                    for name, skip in (("a", True), ("b", False))
+                ]
+            )
+        self.assertIn("_skip_dim_order (a=True, b=False)", str(cm.exception))
+        # Fields they agree on are noise that hides the one that matters.
+        self.assertNotIn("preserve_ops", str(cm.exception))
 
     def test_combine_accepts_distinct_but_equal_configs(self) -> None:
         # Every provider builds a fresh config object, so this -- not the

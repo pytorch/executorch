@@ -54,12 +54,22 @@ def _edge_compile_configs_agree(
     return left is right or _edge_config_key(left) == _edge_config_key(right)
 
 
-def _edge_compile_config_summary(config: EdgeCompileConfig) -> str:
-    """The fields a backend is most likely to disagree on."""
-    preserved = sorted(str(op) for op in config.preserve_ops or [])
-    return (
-        f"(_check_ir_validity={config._check_ir_validity}, "
-        f"preserve_ops={preserved})"
+def _edge_compile_config_conflict(configs: List[tuple[str, EdgeCompileConfig]]) -> str:
+    """Report only the fields the configs actually disagree on."""
+
+    def render(config: EdgeCompileConfig, name: str) -> str:
+        value = getattr(config, name)
+        if name in _UNORDERED_EDGE_CONFIG_FIELDS:
+            return str(sorted(str(op) for op in value or []))
+        return str(value)
+
+    keys = [_edge_config_key(config) for _, config in configs]
+    return "; ".join(
+        f"{field.name} ("
+        + ", ".join(f"{name}={render(config, field.name)}" for name, config in configs)
+        + ")"
+        for i, field in enumerate(dataclasses.fields(configs[0][1]))
+        if any(key[i] != keys[0][i] for key in keys[1:])
     )
 
 
@@ -342,11 +352,8 @@ class ExportRecipe:
                 ),
             )
 
-        # Create combined lowering recipe. Two backends asking for different
-        # to_edge configurations cannot both be honoured, and picking one by
-        # position would decide the graph by argument order. Compare by value:
-        # every provider builds a fresh config object, so asking the same thing
-        # twice is not a conflict.
+        # By value, not identity: every provider builds a fresh config object,
+        # so asking for the same thing twice is not a conflict.
         distinct: List[tuple[str, EdgeCompileConfig]] = []
         for i, recipe in enumerate(backend_recipes):
             config = (
@@ -362,11 +369,8 @@ class ExportRecipe:
 
         if len(distinct) > 1:
             raise ValueError(
-                "Cannot combine recipes whose edge_compile_configs disagree: "
-                + "; ".join(
-                    f"{name} {_edge_compile_config_summary(config)}"
-                    for name, config in distinct
-                )
+                "Cannot combine recipes whose edge_compile_configs disagree on "
+                + _edge_compile_config_conflict(distinct)
             )
         edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
 

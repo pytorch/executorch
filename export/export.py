@@ -440,9 +440,8 @@ class ExportSession:
             stages=self._pipeline_stages,
         )
 
-        # Only once the run is committed to: a pipeline rejected above never
-        # executes, so it must not destroy an earlier run's results. Cleared
-        # in place, since get_stage_artifacts() hands out this dict.
+        # After validation: a rejected pipeline must not destroy the previous
+        # run. In place, since get_stage_artifacts() hands out this dict.
         self._stage_to_artifacts.clear()
 
         current_artifact = PipelineArtifact(data=self._model, context=self._run_context)

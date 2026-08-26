@@ -248,10 +248,8 @@ class EdgeTransformAndLowerStage(Stage):
             if pass_manager:
                 break
 
-        # An empty pass dict is not the same as no passes: EdgeProgramManager
-        # deep-copies the graph and weights of every method the dict does not
-        # name, so passing one applies nothing at the cost of a copy. Methods
-        # whose callables resolved to nothing are dropped for the same reason.
+        # An empty dict is not no passes: EdgeProgramManager deep-copies every
+        # method the dict does not name, so it would copy to apply nothing.
         final_passes = pass_manager or _drop_empty(transform_passes) or None
 
         with validation_disabled():
