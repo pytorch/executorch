@@ -289,6 +289,19 @@ class QnnExecuTorchOpPackageOptions:
 
 
 @dataclass
+class QnnExecuTorchFcbTarget:
+    soc_info: SocInfo
+    htp_options: QnnExecuTorchHtpBackendOptions
+
+
+@dataclass
+class QnnExecuTorchFcbOptions:
+    targets: List[QnnExecuTorchFcbTarget] = field(default_factory=list)
+    # Applies only while appending host-AOT contexts to an FCB DLC.
+    fcb_reference_weight_sharing: bool = True
+
+
+@dataclass
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
@@ -305,3 +318,4 @@ class QnnExecuTorchOptions:
         default_factory=QnnExecuTorchOpPackageOptions
     )
     use_mha2sha: bool = False
+    fcb_options: Optional[QnnExecuTorchFcbOptions] = None

@@ -79,6 +79,47 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
 
   return Error::Ok;
 }
+Error QnnBackendCache::GetQnnGraphInfoFromDlc() {
+  const QnnSystemInterface& qnn_sys_interface =
+      qnn_sys_impl_->GetQnnSystemInterface();
+  QnnSystemDlc_RecordHandle_t* records = nullptr;
+  uint32_t count = 0;
+  auto error = qnn_sys_interface.qnn_system_dlc_create_from_binary(
+      nullptr,
+      static_cast<const uint8_t*>(qnn_context_blob_.buffer),
+      qnn_context_blob_.nbytes,
+      &fcb_dlc_handle_);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "[FCB] class=MalformedDlc error=%d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  error = qnn_sys_interface.qnn_system_dlc_get_records_by_type(
+      fcb_dlc_handle_,
+      QNN_SYSTEM_DLC_RECORD_PREFIX_HTP_CACHE_RECORD,
+      1,
+      &records,
+      &count);
+  if (error != QNN_SUCCESS || count != 1) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "[FCB] class=OffListSoc records=%u error=%d",
+        count,
+        QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  const uint8_t* context_binary = nullptr;
+  uint64_t context_binary_size = 0;
+  error = qnn_sys_interface.qnn_system_dlc_read_record_data_memory_mapped(
+      records[0], &context_binary, &context_binary_size);
+  if (error != QNN_SUCCESS || context_binary_size > UINT32_MAX) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "[FCB] class=MetadataIncompat error=%d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  return GetQnnGraphInfoFromBinary(
+      const_cast<uint8_t*>(context_binary),
+      static_cast<uint32_t>(context_binary_size));
+}
 
 Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
   if (qnn_context_blob_.buffer == nullptr) {
@@ -115,24 +156,34 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
     qnn_context_blob_.nbytes = context_size;
   }
 
-  status = GetQnnGraphInfoFromBinary(
-      static_cast<uint8_t*>(qnn_context_blob_.buffer),
-      qnn_context_blob_.nbytes);
+  status = is_fcb_ ? GetQnnGraphInfoFromDlc()
+                   : GetQnnGraphInfoFromBinary(
+                         static_cast<uint8_t*>(qnn_context_blob_.buffer),
+                         qnn_context_blob_.nbytes);
+
+  if (status == Error::Internal && is_fcb_) {
+    QNN_EXECUTORCH_LOG_ERROR("Failed to get Graph Info from input FCB DLC");
+    return Error::Internal;
+  }
 
   if (status == Error::Internal) {
-    // online prepare
     state_ = ONLINE_PREPARE;
   }
   return Error::Ok;
 }
 
 QnnBackendCache::~QnnBackendCache() {
-  Qnn_ErrorHandle_t error = QNN_SUCCESS;
+  const QnnSystemInterface& qnn_sys_interface =
+      qnn_sys_impl_->GetQnnSystemInterface();
+  if (fcb_dlc_handle_ != nullptr) {
+    if (qnn_sys_interface.qnn_system_dlc_free(fcb_dlc_handle_) != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_WARN("[FCB] Failed to free DLC handle.");
+    }
+    fcb_dlc_handle_ = nullptr;
+  }
   if (sys_context_handle_ != nullptr) {
-    const QnnSystemInterface& qnn_sys_interface =
-        qnn_sys_impl_->GetQnnSystemInterface();
-    error = qnn_sys_interface.qnn_system_context_free(sys_context_handle_);
-    if (error != QNN_SUCCESS) {
+    if (qnn_sys_interface.qnn_system_context_free(sys_context_handle_) !=
+        QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_WARN("Failed to free QNN system context.");
     }
     sys_context_handle_ = nullptr;
