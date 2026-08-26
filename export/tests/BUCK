@@ -31,6 +31,8 @@ fbcode_target(
     deps = [
         "//executorch/export:lib",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:op_backend",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/runtime:runtime",
     ]

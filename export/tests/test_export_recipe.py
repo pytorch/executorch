@@ -12,6 +12,7 @@ from unittest.mock import Mock
 
 import torch
 
+from executorch.exir.backend.op_backend import OpBackend
 from executorch.export.recipe import ExportRecipe, RecipeType
 from executorch.export.recipe_provider import BackendRecipeProvider
 from executorch.export.recipe_registry import recipe_registry
@@ -132,6 +133,11 @@ class TestExportRecipeGetRecipe(unittest.TestCase):
         # Verify that the kwargs were passed to the backend provider's create_recipe method
         self.assertIsNotNone(self.provider.last_kwargs)
         self.assertEqual(self.provider.last_kwargs, kwargs)
+
+
+class _StubOpBackend(OpBackend):
+    def lower(self, exported_program, method_name):
+        return exported_program
 
 
 class TestExportRecipeCombine(unittest.TestCase):
@@ -334,3 +340,18 @@ class TestExportRecipeCombine(unittest.TestCase):
         self.assertEqual(
             combined.lowering_recipe.edge_transform_passes, [first, second]
         )
+
+    def test_combine_keeps_every_op_backend(self) -> None:
+        # One contributor may supply several; all of them have to survive.
+        first, second = _StubOpBackend(), _StubOpBackend()
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(
+                    name="a",
+                    lowering_recipe=self._lowering(op_backends=[first, second]),
+                ),
+                ExportRecipe(name="b"),
+            ]
+        )
+        assert combined.lowering_recipe is not None
+        self.assertEqual(combined.lowering_recipe.op_backends, [first, second])
