@@ -133,7 +133,7 @@ def is_mutable_buffer_output(
     return (
         any(
             user.op == "output"
-            or user.target.__name__ == "getitem"
+            or getattr(user.target, "__name__", "") == "getitem"
             and is_graph_output(user)
             for user in tensor.users.keys()
         )

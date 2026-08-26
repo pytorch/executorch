@@ -534,7 +534,14 @@ class NodeVisitor:
         tensor_name = self.get_tensor_name(tensor_source_node, wrapper_idx)
         dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
         dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
-        tensor_type = self.get_tensor_type(tensor_source_node, tensor_type, wrapper_idx)
+        # wrapper_idx indexes a node's own outputs only when the tensor being
+        # defined belongs to that node. Builders also use it to key scratch
+        # tensors built from some other node (op_scatter_elements), where it
+        # carries no output meaning.
+        output_index = wrapper_idx if tensor_source_node is target_build_node else None
+        tensor_type = self.get_tensor_type(
+            tensor_source_node, tensor_type, output_index
+        )
         quant_encoding, quant_configs = self.get_quant_encoding_conf(
             tensor_source_node, target_build_node
         )
