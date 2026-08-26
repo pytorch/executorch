@@ -13,6 +13,10 @@ import torch
 from executorch.backends.apple.coreai.compiler.enumerated_shapes import (
     resolve_input_enumerations,
 )
+from executorch.backends.apple.coreai.compiler.fx_targets import (
+    target_name,
+    target_namespace,
+)
 
 from executorch.backends.apple.coreai.compiler.preprocess import (
     AOTCompileConfig,
@@ -27,7 +31,6 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -62,37 +65,14 @@ def _resolvers() -> Tuple[dict, dict]:
     return _aten_to_core_resolver, _higher_order_resolver
 
 
-def _underlying_target(target):
-    """Unwrap an ExecuTorch ``EdgeOpOverload`` to its plain ATen overload.
-
-    ExecuTorch edge ops wrap the ATen overload in an ``EdgeOpOverload`` whose
-    ``__name__`` is prefixed (``"aten.view.default"``); the overload at
-    ``target._op`` has the bare name (``"view.default"``) that the converter
-    keys on.  Plain ``OpOverload``s also expose a ``_op`` attribute, but its
-    ``__name__`` is empty, so we must only unwrap genuine edge ops.
-    """
-    if isinstance(target, EdgeOpOverload):
-        return target._op
-    return target
-
-
-def _coreai_op_name(target) -> Optional[str]:
-    """Return the ``coreai-torch`` resolver key for an fx call_function target."""
-    return getattr(_underlying_target(target), "__name__", None)
-
-
-def _coreai_namespace(target) -> Optional[str]:
-    return getattr(_underlying_target(target), "namespace", None)
-
-
 def is_coreai_supported_target(target) -> bool:
     """Whether ``coreai-torch`` has a lowering for this fx target."""
-    name = _coreai_op_name(target)
+    name = target_name(target)
     if name is None:
         return False
 
     aten_resolver, higher_order_resolver = _resolvers()
-    namespace = _coreai_namespace(target)
+    namespace = target_namespace(target)
 
     if namespace in ("coreai", "coreaix"):
         return True
@@ -127,10 +107,11 @@ def _node_tensor_vals(node: torch.fx.Node):
 
 
 class _OperatorsSupportedForCoreAIBackend(OperatorSupportBase):
-    def __init__(self, log: bool = False) -> None:
+    def __init__(self, log: bool = False, externalized=None) -> None:
         super().__init__()
         self._log = log
         self._logged_msgs = set()
+        self._externalized = externalized
 
     def log_once(self, msg: str) -> None:
         if self._log and msg not in self._logged_msgs:
@@ -152,7 +133,30 @@ class _OperatorsSupportedForCoreAIBackend(OperatorSupportBase):
             )
             return False
 
-        name = _coreai_op_name(node.target) or ""
+        name = target_name(node.target) or ""
+
+        # Externalized submodules are lowered from their prepared
+        # ExportedProgram, not from the aten resolver.
+        from executorch.backends.apple.coreai.externalize import (
+            is_externalize_target,
+            is_supported_target,
+        )
+
+        if is_externalize_target(node.target):
+            # Externalized ops are temporary: only coreai knows how to lower
+            # them, and they have no out variant, so one left outside the
+            # delegate fails later with "Missing out variants". There is no
+            # useful fallback, so say so here instead. Their 64-bit operands
+            # are cast at the boundary by NarrowToCoreAIDtypesPass.
+            if not is_supported_target(node.target, self._externalized):
+                raise RuntimeError(
+                    f"Externalized op {name} has no prepared submodule, and it "
+                    f"cannot be lowered outside the Core AI delegate. Pass the "
+                    f"result of externalize_modules to CoreAIPartitioner via "
+                    f"externalized_modules=."
+                )
+            return True
+
         if not is_coreai_supported_target(node.target):
             self.log_once(f"Core AI cannot lower op, leaving out of delegate: {name}")
             return False
@@ -205,6 +209,7 @@ class CoreAIPartitioner(Partitioner):
         ] = None,
         take_over_constant_data: bool = True,
         take_over_mutable_buffer: bool = True,
+        externalized_modules=None,
     ) -> None:
         # uses_sidecar selects sidecar delivery (vs inline). It is embedded as a
         # compile spec because the runtime needs to know how to load the asset,
@@ -241,6 +246,16 @@ class CoreAIPartitioner(Partitioner):
                     aot_compile_config.to_json().encode(),
                 )
             )
+
+        # Submodules prepared by coreai_torch.externalize_modules before export.
+        # Registered rather than serialized: they hold live ExportedProgram
+        # objects, the runtime has no use for them, and a key in the .pte would
+        # make the artifact non-reproducible. Lowering must stay in-process.
+        self._externalized_modules = list(externalized_modules or [])
+        if self._externalized_modules:
+            from executorch.backends.apple.coreai.externalize import register
+
+            register(self._externalized_modules)
 
         self.delegation_spec = DelegationSpec(
             backend_id=CoreAIBackend.__name__,
@@ -296,7 +311,9 @@ class CoreAIPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            _OperatorsSupportedForCoreAIBackend(log=True),
+            _OperatorsSupportedForCoreAIBackend(
+                log=True, externalized=self._externalized_modules
+            ),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()

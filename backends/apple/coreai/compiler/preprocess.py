@@ -324,8 +324,52 @@ def _convert_to_aiprogram(edge_program: ExportedProgram):
 
     aten_program = _prepare_program_for_conversion(edge_program)
     converter = TorchConverter()
-    converter.add_exported_program(aten_program)
+    converter.add_exported_program(
+        aten_program,
+        _externalized_exported_programs=_externalized_modules(aten_program),
+    )
     return converter.to_coreai()
+
+
+def _externalized_modules(aten_program: ExportedProgram):
+    """Prepared submodules for the externalized ops this subgraph calls.
+
+    Looked up from the graph rather than a compile spec: the submodules are
+    build-time-only state that the runtime has no use for, and a key in the
+    .pte would make the artifact non-reproducible.
+
+    An externalized submodule may call another one, whose call site is in that
+    submodule's own program rather than in this subgraph, so the search follows
+    each lookup into the programs it returns.
+    """
+    from executorch.backends.apple.coreai.externalize import (
+        externalized_op_name,
+        is_externalize_target,
+        lookup,
+    )
+
+    def op_names_in(program: ExportedProgram) -> set:
+        return {
+            externalized_op_name(node.target)
+            for node in program.graph.nodes
+            if node.op == "call_function" and is_externalize_target(node.target)
+        }
+
+    frontier = op_names_in(aten_program)
+    if not frontier:
+        return None
+
+    modules = []
+    seen = set()
+    while frontier:
+        found = lookup(sorted(frontier))
+        modules.extend(found)
+        seen |= frontier
+        frontier = set().union(
+            *(op_names_in(module.exported_program) for module in found)
+        )
+        frontier -= seen
+    return modules
 
 
 # Asset embedding helpers.

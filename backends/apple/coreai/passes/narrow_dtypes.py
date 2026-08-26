@@ -39,7 +39,9 @@ class NarrowToCoreAIDtypesPass:
     def __call__(self, graph_module: GraphModule) -> PassResult:
         graph = graph_module.graph
         placeholders = [n for n in graph.nodes if n.op == "placeholder"]
-        if not any(_is_64bit(p.meta.get("val")) for p in placeholders):
+        wide_inputs = [p for p in placeholders if _is_64bit(p.meta.get("val"))]
+        externalized = _externalized_nodes(graph)
+        if not wide_inputs and not externalized:
             return PassResult(graph_module, False)
 
         uses_edge = any(
@@ -62,10 +64,8 @@ class NarrowToCoreAIDtypesPass:
         ]
 
         # 1. Narrow 64-bit inputs right after the placeholder.
-        for placeholder in placeholders:
+        for placeholder in wide_inputs:
             val = placeholder.meta.get("val")
-            if not _is_64bit(val):
-                continue
             narrow_dtype = _NARROW[val.dtype]
             with graph.inserting_after(placeholder):
                 cast = graph.call_function(
@@ -76,6 +76,22 @@ class NarrowToCoreAIDtypesPass:
 
         # 2. Re-propagate dtypes through the (now-32-bit) interior.
         FakeTensorProp(graph_module).propagate(*[p.meta["val"] for p in placeholders])
+
+        # 2b. Narrow 64-bit operands of externalized ops. These are always
+        # claimed by the delegate (only coreai can lower them), so their
+        # operands always cross the boundary, but a 64-bit value produced
+        # inside the graph -- indices from an argmax, say -- is not covered by
+        # the input narrowing above.
+        for node in externalized:
+            for operand in _wide_tensor_operands(node):
+                narrow_dtype = _NARROW[operand.meta["val"].dtype]
+                with graph.inserting_before(node):
+                    cast = graph.call_function(
+                        to_copy, (operand,), {"dtype": narrow_dtype}
+                    )
+                # Set by hand: this runs after the propagate above.
+                cast.meta["val"] = operand.meta["val"].to(narrow_dtype)
+                node.replace_input_with(operand, cast)
 
         # 3. Widen 32-bit values feeding originally-64-bit outputs back.
         out_args = list(output_node.args[0])
@@ -95,6 +111,34 @@ class NarrowToCoreAIDtypesPass:
 
         graph_module.recompile()
         return PassResult(graph_module, True)
+
+
+def _externalized_nodes(graph):
+    """Call sites of coreai's temporary externalized ops, if any.
+
+    Imported lazily and defensively: this pass otherwise needs only torch and
+    exir, while ``externalize`` pulls in coreai-torch. Without that package no
+    externalized op can exist, so an empty list is the right answer.
+    """
+    try:
+        from executorch.backends.apple.coreai.externalize import is_externalize_target
+    except ImportError:
+        return []
+
+    return [
+        n
+        for n in graph.nodes
+        if n.op == "call_function" and is_externalize_target(n.target)
+    ]
+
+
+def _wide_tensor_operands(node):
+    """Node operands whose value is a 64-bit tensor."""
+    return [
+        arg
+        for arg in node.args
+        if isinstance(arg, torch.fx.Node) and _is_64bit(arg.meta.get("val"))
+    ]
 
 
 def _node_val(arg):
