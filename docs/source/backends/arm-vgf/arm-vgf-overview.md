@@ -40,8 +40,13 @@ The main configuration point for the lowering is the `VgfCompileSpec` consumed b
 To extract the VGF file for integration into applications without the ExecuTorch runtime, use `VgfCompileSpec.dump_intermediate_artifacts_to()`.  
 The full user-facing API is documented below.
 
+For static mutable buffers such as KV caches, set `alias_buffer_mutations=True`.
+Eligible buffers must be zero-initialized `int8` tensors whose reads and mutation
+are contained in one delegated partition. The backend aliases each buffer's
+input and mutation output to persistent VGF storage across invocations.
+
 ```python
-class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None, emit_debug_info: bool = False)
+class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None, emit_debug_info: bool = False, alias_buffer_mutations: bool = False)
 ```
 Normalise inputs and populate the underlying Arm compile spec.
 
@@ -52,6 +57,8 @@ Args:
 - **compiler_flags (list[str] | None)**: Optional converter-backend flags.
 - **emit_debug_info (bool)**: Preserve Model Converter debug information in
         the generated VGF. Defaults to ``False``.
+- **alias_buffer_mutations (bool)**: Whether eligible mutable buffers should
+        be delegated as persistent VGF state. Defaults to ``False``.
 
 ```python
 def VgfCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):

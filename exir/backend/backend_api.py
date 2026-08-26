@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -114,15 +114,16 @@ def _(
             copied_edge_program = cls.copy_exported_program_for_preprocess(
                 edge_program, compile_specs
             )
+            lowered_compile_specs = list(compile_specs)
             preprocess_result: PreprocessResult = cls.preprocess(
                 copied_edge_program,
-                compile_specs,
+                lowered_compile_specs,
             )
             lowered_module = LoweredBackendModule(
                 edge_program=edge_program,
                 backend_id=backend_id,
                 processed_bytes=preprocess_result.processed_bytes,
-                compile_specs=compile_specs,
+                compile_specs=lowered_compile_specs,
                 named_data_store_output=preprocess_result.data_store_output,
             )
             lowered_module.meta = {
