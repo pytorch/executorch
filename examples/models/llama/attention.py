@@ -438,6 +438,10 @@ class AttentionMHA(Attention):
 
         self.layer_id = layer_id
         self.rope = rope
+        self.use_rope = (
+            args.no_rope_layer_interval is None
+            or (layer_id + 1) % args.no_rope_layer_interval != 0
+        )
 
         causal_mask = torch.tril(
             torch.ones(
@@ -569,7 +573,8 @@ class AttentionMHA(Attention):
                 q = q * self.scale_query_by
             k = self.k_norm_fn(k)
 
-        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
+        if self.use_rope:
+            q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)

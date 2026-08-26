@@ -936,6 +936,10 @@ class StaticAttention(Attention):
         self._init_wo(config)
         self.rope = _Rope(rope.params)
         self.layer_id = layer_id
+        self.use_rope = (
+            config.no_rope_layer_interval is None
+            or (layer_id + 1) % config.no_rope_layer_interval != 0
+        )
         self._init_qk_norms(config, is_kv_shared_layer)
 
     def _init_wo(self, config: ModelArgs) -> None:
@@ -1036,6 +1040,8 @@ class StaticAttention(Attention):
             is_kv_shared_layer=is_kv_shared,
             **kwargs,
         )
+
+        instance.use_rope = other.use_rope
 
         # Replace nn.Linear with LoRALinear where the source uses LoRA.
         if has_lora:
@@ -1185,6 +1191,9 @@ class StaticAttention(Attention):
             freqs_cos (list): List of cosine frequencies.
             freqs_sin (list): List of sine frequencies.
         """
+        if not self.use_rope:
+            return qs, ks
+
         qs = [self.rope(q, freqs_cos, freqs_sin) for q in qs]
         if ks is not None:
             ks = [self.rope(k, freqs_cos, freqs_sin) for k in ks]
@@ -1401,7 +1410,8 @@ class StaticAttention(Attention):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
 
-            q = self.rope(q, freqs_cos, freqs_sin)
+            if self.use_rope:
+                q = self.rope(q, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
@@ -1416,8 +1426,9 @@ class StaticAttention(Attention):
                 q = self.q_norm(q) * self.scale_query_by
                 k = self.k_norm(k)
 
-            q = self.rope(q, freqs_cos, freqs_sin)
-            k = self.rope(k, freqs_cos, freqs_sin)
+            if self.use_rope:
+                q = self.rope(q, freqs_cos, freqs_sin)
+                k = self.rope(k, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
