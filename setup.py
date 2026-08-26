@@ -614,6 +614,32 @@ def _package_relative_depth(library: Path) -> int:
     return max(len(parts) - index - 2, 0)
 
 
+def _torchao_requirement() -> str:
+    """The torchao dependency, pinned to the series install_requirements.py installs.
+
+    Derived from that module rather than written out, so a nightly bump cannot move the
+    pin without moving this bound with it. A bump into the next series would otherwise
+    silently stop satisfying the lower bound, and installing this package over a
+    development checkout would replace the torchao that was just installed.
+
+    Loaded by path, the way install_utils is above, because setuptools executes this
+    file without the project directory on sys.path, so a plain import does not resolve.
+    """
+    path = Path(__file__).parent / "install_requirements.py"
+    spec = importlib.util.spec_from_file_location("install_requirements", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    # The module imports install_utils by name at import time, which only resolves
+    # because that name is registered below.
+    sys.modules.setdefault("install_utils", install_utils)
+    spec.loader.exec_module(module)
+
+    version = module.TORCHAO_NIGHTLY_VERSION
+    major, minor = (int(part) for part in version.split(".")[:2])
+    return f"torchao>={version},<{major}.{minor + 1}"
+
+
 def _base_dependencies() -> List[str]:
     """Runtime dependencies for the full wheel.
 
@@ -639,6 +665,21 @@ def _base_dependencies() -> List[str]:
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
+        # Shipped code imports torchao at module scope in many places, so a plain install cannot
+        # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
+        # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
+        # The MLX backend needs it too, though indirectly: it registers a torchao operator that
+        # only exists once torchao has been imported.
+        #
+        # The lower bound is the nightly install_requirements.py pins, so that installing this
+        # package over a development checkout leaves that pin in place. A bound at the stable
+        # release instead would evict it, because a dev release sorts below its own final.
+        #
+        # The upper bound is what makes naming a pre-release safe. A specifier that names one
+        # accepts pre-releases for this requirement, so without the bound pip would resolve a
+        # pre-release of the next series wherever one is published, such as an index carrying
+        # nightlies. Keep both bounds in the same series.
+        _torchao_requirement(),
         "pyyaml",
         "ruamel.yaml",
         "sympy",
