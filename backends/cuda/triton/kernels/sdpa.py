@@ -38,6 +38,7 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
+from executorch.backends.cuda.target_arch import cuda_targets_are_sm90_or_newer
 from torch.library import triton_op, wrap_triton
 
 
@@ -50,6 +51,23 @@ def _is_power_of_2(n: int) -> bool:
 # kernel. The replacement pass still routes only L_q == 1 directly to
 # triton.sdpa_decode_splitk.
 _SPLITK_LKV_THRESHOLD = 256
+
+
+_TMA_PREFILL_LKV_THRESHOLD = 16384
+
+
+def _tma_prefill_config(
+    head_dim: int, query_len: int
+) -> Optional[tuple[int, int, int, int]]:
+    """Return a validated TMA config for common transformer head dimensions."""
+    if head_dim == 64:
+        return 64, 64, 3, 4
+    if head_dim == 128:
+        if query_len >= 1024:
+            return 128, 64, 3, 8
+        if query_len >= 512:
+            return 64, 64, 3, 4
+    return None
 
 
 # Decode split-K occupancy target. A sweep across both production attention
@@ -389,7 +407,8 @@ def _sdpa_fwd_kernel_non_pow2(
         l_i = (l_i * alpha + l_ij).to(tl.float32)
         m_i = m_ij
 
-    out = acc / l_i[:, None]
+    inv_l = tl.where(l_i > 0, 1.0 / l_i, 0.0)
+    out = acc * inv_l[:, None]
 
     if PACK_GQA:
         o_ptrs = (
@@ -780,6 +799,102 @@ def _sdpa_fwd_kernel(
     )
 
 
+@triton.jit
+def _sdpa_prefill_tma_kernel(
+    Q_ptr,
+    K_ptr,
+    V_ptr,
+    O_ptr,
+    KV_LEN_ptr,
+    H_grid,
+    Lq,
+    Lk,
+    stride_qb,
+    stride_qh,
+    stride_qm,
+    stride_kb,
+    stride_kh,
+    stride_kn,
+    stride_vb,
+    stride_vh,
+    stride_vn,
+    stride_ob,
+    stride_oh,
+    stride_om,
+    stride_od,
+    sm_scale,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    NUM_GROUPS: tl.constexpr,
+    NUM_STAGES: tl.constexpr,
+):
+    """TMA global-causal prefill for SM90+ and a device-resident KV bound."""
+    pid_m = tl.program_id(0)
+    pid_bh = tl.program_id(1)
+    b = pid_bh // H_grid
+    h_q = pid_bh % H_grid
+    h_kv = h_q // NUM_GROUPS
+
+    q_desc = tl.make_tensor_descriptor(
+        Q_ptr + b * stride_qb + h_q * stride_qh,
+        shape=[Lq, HEAD_DIM],
+        strides=[stride_qm, 1],
+        block_shape=[BLOCK_M, HEAD_DIM],
+    )
+    k_desc = tl.make_tensor_descriptor(
+        K_ptr + b * stride_kb + h_kv * stride_kh,
+        shape=[Lk, HEAD_DIM],
+        strides=[stride_kn, 1],
+        block_shape=[BLOCK_N, HEAD_DIM],
+    )
+    v_desc = tl.make_tensor_descriptor(
+        V_ptr + b * stride_vb + h_kv * stride_vh,
+        shape=[Lk, HEAD_DIM],
+        strides=[stride_vn, 1],
+        block_shape=[BLOCK_N, HEAD_DIM],
+    )
+
+    q_start = pid_m * BLOCK_M
+    offs_m = q_start + tl.arange(0, BLOCK_M)
+    offs_n_base = tl.arange(0, BLOCK_N)
+    offs_d = tl.arange(0, HEAD_DIM)
+    q = tl.load_tensor_descriptor(q_desc, [q_start, 0])
+    kv_len = tl.minimum(tl.load(KV_LEN_ptr), Lk)
+    absolute_q = (kv_len - Lq) + offs_m
+    m_i = tl.full([BLOCK_M], -float("inf"), tl.float32)
+    l_i = tl.zeros([BLOCK_M], tl.float32)
+    acc = tl.zeros([BLOCK_M, HEAD_DIM], tl.float32)
+    scale = sm_scale.to(tl.float32)
+
+    for start_n in tl.range(0, kv_len, BLOCK_N, num_stages=NUM_STAGES):
+        offs_n = start_n + offs_n_base
+        k = tl.load_tensor_descriptor(k_desc, [start_n, 0])
+        qk = tl.dot(q, tl.trans(k)).to(tl.float32) * scale
+        valid = (offs_n[None, :] < kv_len) & (offs_n[None, :] <= absolute_q[:, None])
+        qk = tl.where(valid, qk, -float("inf"))
+        m_ij = tl.maximum(m_i, tl.max(qk, axis=1))
+        safe_m = tl.where(m_ij == -float("inf"), 0.0, m_ij)
+        alpha = tl.exp(m_i - safe_m)
+        p = tl.exp(qk - safe_m[:, None])
+        l_i = l_i * alpha + tl.sum(p, axis=1)
+        acc = acc * alpha[:, None]
+        v = tl.load_tensor_descriptor(v_desc, [start_n, 0])
+        acc = tl.dot(p.to(tl.bfloat16), v, acc).to(tl.float32)
+        m_i = m_ij
+
+    inv_l = tl.where(l_i > 0, 1.0 / l_i, 0.0)
+    out = acc * inv_l[:, None]
+    o_ptrs = (
+        O_ptr
+        + b * stride_ob
+        + h_q * stride_oh
+        + offs_m[:, None] * stride_om
+        + offs_d[None, :] * stride_od
+    )
+    tl.store(o_ptrs, out.to(tl.bfloat16), mask=offs_m[:, None] < Lq)
+
+
 def _validate_sdpa_inputs(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -874,6 +989,57 @@ def _launch_pow2_kernel(
     stride_kb, stride_kh, stride_kn, stride_kd = key.stride()
     stride_vb, stride_vh, stride_vn, stride_vd = value.stride()
     stride_ob, stride_oh, stride_om, stride_od = out.stride()
+
+    # Hopper/Blackwell: TMA materially improves the long-context global
+    # causal path. Sliding-window attention keeps the existing kernel, as do
+    # pre-SM90 GPUs. The same TMA kernel is safe for short chunks and avoids a
+    # host sync on the device-resident kv_len scalar.
+    tma_config = _tma_prefill_config(D, L_q)
+    if (
+        cuda_targets_are_sm90_or_newer()
+        and HAS_KV_LEN
+        and mask_is_causal
+        and not HAS_MASK
+        and query.stride(-1) == 1
+        and key.stride(-1) == 1
+        and value.stride(-1) == 1
+        and tma_config is not None
+        and L_kv >= _TMA_PREFILL_LKV_THRESHOLD
+        and L_q > 4
+    ):
+        block_m, block_n, tma_num_stages, tma_num_warps = tma_config
+        wrap_triton(_sdpa_prefill_tma_kernel)[(triton.cdiv(L_q, block_m), B * H_q)](
+            query,
+            key,
+            value,
+            out,
+            kv_len_ptr,
+            H_q,
+            L_q,
+            L_kv,
+            stride_qb,
+            stride_qh,
+            stride_qm,
+            stride_kb,
+            stride_kh,
+            stride_kn,
+            stride_vb,
+            stride_vh,
+            stride_vn,
+            stride_ob,
+            stride_oh,
+            stride_om,
+            stride_od,
+            sm_scale,
+            BLOCK_M=block_m,
+            BLOCK_N=block_n,
+            HEAD_DIM=D,
+            NUM_GROUPS=num_groups,
+            NUM_STAGES=tma_num_stages,
+            num_warps=tma_num_warps,
+            num_stages=tma_num_stages,
+        )
+        return
 
     if pack_gqa:
         H_grid = H_kv
