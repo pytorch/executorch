@@ -7,16 +7,12 @@
 import operator
 import unittest
 from copy import deepcopy
-from typing import Dict, final, List, NamedTuple
+from typing import List, NamedTuple, Optional
 
 # Import to register et_copy ops
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
-
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
-from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
-    generate_pattern_op_partitions,
-)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -26,83 +22,23 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.device_util import (
+    CpuOnlyPartitioner,
+    DeviceAwarePartitioner,
+)
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
+    PropagateDeviceConfig,
     TARGET_DEVICE_COMPILE_SPEC_KEY,
 )
 from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import TensorSpec
 from torch.export import export
-from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
-
-
-class AddOperatorSupport(OperatorSupportBase):
-    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        return node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.add.Tensor,
-        ]
-
-
-@final
-class DeviceAwarePartitioner(Partitioner):
-    def __init__(self, target_device: str = "cuda:0") -> None:
-        super().__init__()
-        self.op_support = any_chain(AddOperatorSupport())
-        self.delegation_spec = DelegationSpec(
-            BackendWithCompilerDemo.__name__,
-            [
-                CompileSpec("max_value", bytes([4])),
-                CompileSpec(
-                    TARGET_DEVICE_COMPILE_SPEC_KEY,
-                    target_device.encode("utf-8"),
-                ),
-            ],
-        )
-
-    def partition(self, exported_program) -> PartitionResult:
-        partition_tags: Dict[str, DelegationSpec] = {}
-        partition_list = generate_pattern_op_partitions(
-            exported_program.graph_module, op_support=self.op_support
-        )
-        for partition in partition_list:
-            for node in partition.nodes:
-                delegation_tag = f"tag{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
-                partition_tags[delegation_tag] = self.delegation_spec
-        return PartitionResult(
-            tagged_exported_program=exported_program,
-            partition_tags=partition_tags,
-        )
-
-
-@final
-class CpuOnlyPartitioner(Partitioner):
-    def __init__(self) -> None:
-        super().__init__()
-        self.op_support = any_chain(AddOperatorSupport())
-        self.delegation_spec = DelegationSpec(
-            BackendWithCompilerDemo.__name__,
-            [CompileSpec("max_value", bytes([4]))],
-        )
-
-    def partition(self, exported_program) -> PartitionResult:
-        partition_tags: Dict[str, DelegationSpec] = {}
-        partition_list = generate_pattern_op_partitions(
-            exported_program.graph_module, op_support=self.op_support
-        )
-        for partition in partition_list:
-            for node in partition.nodes:
-                delegation_tag = f"tag{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
-                partition_tags[delegation_tag] = self.delegation_spec
-        return PartitionResult(
-            tagged_exported_program=exported_program,
-            partition_tags=partition_tags,
-        )
 
 
 class DeviceCopyNodes(NamedTuple):
@@ -116,18 +52,22 @@ def _lower_model_to_executorch(
     model: torch.nn.Module,
     inputs: tuple,
     partitioner: Partitioner,
+    et_config: Optional[ExecutorchBackendConfig] = None,
 ) -> List:
     """Lower model all the way through to_executorch for E2E tests."""
+    if et_config is None:
+        et_config = ExecutorchBackendConfig(emit_stacktrace=False)
+
     ep = export(model, inputs)
     ep_copied = deepcopy(ep)
 
     edge_1 = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=False))
     lowered_1 = edge_1.to_backend(partitioner)
-    et_1 = lowered_1.to_executorch(ExecutorchBackendConfig(emit_stacktrace=False))
+    et_1 = lowered_1.to_executorch(deepcopy(et_config))
     gm_1 = et_1.exported_program().graph_module
 
     edge_2 = to_edge_transform_and_lower(ep_copied, partitioner=[partitioner])
-    et_2 = edge_2.to_executorch(ExecutorchBackendConfig(emit_stacktrace=False))
+    et_2 = edge_2.to_executorch(deepcopy(et_config))
     gm_2 = et_2.exported_program().graph_module
 
     return [
@@ -160,6 +100,46 @@ def _collect_device_copy_nodes(gm: torch.fx.GraphModule) -> DeviceCopyNodes:
         delegate_nodes=delegate_nodes,
         getitem_nodes=getitem_nodes,
     )
+
+
+class PerAddDeviceDelegatePartitioner(Partitioner):
+    """Delegates each ``aten.add.Tensor`` as its OWN delegate, each with a
+    per-op ``target_device``.
+
+    Unlike ``DeviceAwarePartitioner`` (which merges connected add ops into a
+    single delegate), this keeps every add in a separate delegate, so two
+    directly-connected adds become two directly-connected delegates -- the shape
+    that leaves a redundant ``device -> host -> device`` round-trip between them.
+    ``devices[i]`` is the target device for the i-th add in graph order (the last
+    entry is reused if there are more adds than devices).
+    """
+
+    def __init__(self, devices: List[str]) -> None:
+        super().__init__()
+        self._devices = list(devices)
+
+    def partition(self, exported_program) -> PartitionResult:
+        partition_tags = {}
+        add_nodes = [
+            n
+            for n in exported_program.graph_module.graph.nodes
+            if n.op == "call_function" and n.target == exir_ops.edge.aten.add.Tensor
+        ]
+        for i, node in enumerate(add_nodes):
+            device = self._devices[min(i, len(self._devices) - 1)]
+            tag = f"tag{i}"
+            node.meta["delegation_tag"] = tag
+            partition_tags[tag] = DelegationSpec(
+                BackendWithCompilerDemo.__name__,
+                [
+                    CompileSpec("max_value", bytes([4])),
+                    CompileSpec(TARGET_DEVICE_COMPILE_SPEC_KEY, device.encode("utf-8")),
+                ],
+            )
+        return PartitionResult(
+            tagged_exported_program=exported_program,
+            partition_tags=partition_tags,
+        )
 
 
 class TestPropagateDevicePass(unittest.TestCase):
@@ -200,6 +180,102 @@ class TestPropagateDevicePass(unittest.TestCase):
             if expected_index is not None:
                 self.assertEqual(s.device_index, expected_index)
 
+    def _assert_buffer_device(
+        self,
+        spec: TensorSpec,
+        program,
+        expected_device: DeviceType,
+        msg: str,
+    ) -> None:
+        """Assert the emitted program maps the spec's buffer to the expected device.
+
+        The memory planner assigns each TensorSpec a ``mem_id`` (buffer index).
+        When ``enable_non_cpu_memory_planning`` is True, non-CPU buffers get an
+        entry in ``execution_plan[0].non_const_buffer_device``.  CPU buffers have
+        no explicit entry (CPU is the default).
+        """
+        plan = program.execution_plan[0]
+        mem_id = spec.mem_id
+        self.assertIsNotNone(mem_id, f"{msg}: spec.mem_id should not be None")
+
+        if expected_device == DeviceType.CPU:
+            # CPU buffers have no explicit entry in non_const_buffer_device.
+            if plan.non_const_buffer_device is not None:
+                for entry in plan.non_const_buffer_device:
+                    self.assertNotEqual(
+                        entry.buffer_idx,
+                        mem_id,
+                        f"{msg}: buffer {mem_id} should be CPU but found "
+                        f"in non_const_buffer_device as {entry.device_type.name}",
+                    )
+        else:
+            self.assertIsNotNone(
+                plan.non_const_buffer_device,
+                f"{msg}: non_const_buffer_device should exist for non-CPU buffers",
+            )
+            matching = [
+                e for e in plan.non_const_buffer_device if e.buffer_idx == mem_id
+            ]
+            self.assertEqual(
+                len(matching),
+                1,
+                f"{msg}: expected exactly one entry for buffer {mem_id} "
+                f"in non_const_buffer_device, got {len(matching)}",
+            )
+            self.assertEqual(
+                matching[0].device_type,
+                expected_device,
+                f"{msg}: buffer {mem_id} device type mismatch",
+            )
+
+    @staticmethod
+    def _collect_placeholders_by_device(gm):
+        """Partition placeholder nodes by device type. Returns (cuda_list, cpu_list)."""
+        cuda, cpu = [], []
+        for node in gm.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            spec = node.meta.get("spec")
+            if isinstance(spec, TensorSpec) and spec.device == DeviceType.CUDA:
+                cuda.append(node)
+            elif isinstance(spec, TensorSpec):
+                cpu.append(node)
+        return cuda, cpu
+
+    def _collect_delegate_getitems(self, gm):
+        """Return list of getitem nodes extracting from delegate calls."""
+        return [n for n in gm.graph.nodes if self._is_delegate_getitem(n)]
+
+    def _assert_nodes_device(
+        self, nodes, expected_device, pipeline, label, expected_index=None
+    ):
+        """Assert every node's TensorSpec has the expected device."""
+        for node in nodes:
+            spec = node.meta.get("spec")
+            if isinstance(spec, TensorSpec):
+                self.assertEqual(
+                    spec.device,
+                    expected_device,
+                    f"[{pipeline}] {label} '{node.name}' should have "
+                    f"{expected_device.name} device spec",
+                )
+                if expected_index is not None:
+                    self.assertEqual(spec.device_index, expected_index)
+
+    def _assert_nodes_buffer_device(
+        self, nodes, program, expected_device, pipeline, label
+    ):
+        """Assert each node's buffer is mapped to the expected device."""
+        for node in nodes:
+            spec = node.meta.get("spec")
+            if isinstance(spec, TensorSpec):
+                self._assert_buffer_device(
+                    spec,
+                    program,
+                    expected_device,
+                    f"[{pipeline}] {label} '{node.name}' buffer",
+                )
+
     # ---- Integration tests: copy nodes after to_executorch ----
 
     def test_h2d_d2h_nodes_inserted(self):
@@ -215,14 +291,17 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
-                device_copy_nodes = _collect_device_copy_nodes(gm)
-                h2d_nodes = device_copy_nodes.h2d_nodes
-                d2h_nodes = device_copy_nodes.d2h_nodes
-                delegate_nodes = device_copy_nodes.delegate_nodes
-                getitem_nodes = device_copy_nodes.getitem_nodes
+                nodes = _collect_device_copy_nodes(gm)
+                h2d_nodes = nodes.h2d_nodes
+                d2h_nodes = nodes.d2h_nodes
+                delegate_nodes = nodes.delegate_nodes
+                getitem_nodes = nodes.getitem_nodes
 
                 # Model has 2 inputs, 1 output → 2 H2D, 1 D2H
                 self.assertEqual(
@@ -272,12 +351,15 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
-                device_copy_nodes = _collect_device_copy_nodes(gm)
-                h2d_nodes = device_copy_nodes.h2d_nodes
-                d2h_nodes = device_copy_nodes.d2h_nodes
+                nodes = _collect_device_copy_nodes(gm)
+                h2d_nodes = nodes.h2d_nodes
+                d2h_nodes = nodes.d2h_nodes
 
                 self.assertGreater(
                     len(h2d_nodes),
@@ -344,6 +426,300 @@ class TestPropagateDevicePass(unittest.TestCase):
                     len(device_copy_nodes.d2h_nodes),
                     0,
                     f"[{pipeline}] Unexpected D2H copy nodes when no target_device is set",
+                )
+
+    def test_copy_nodes_require_non_cpu_memory_planning(self):
+        """With enable_non_cpu_memory_planning disabled, lowering keeps legacy
+        device tags without inserting runtime copy ops."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=False),
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(device_copy_nodes.h2d_nodes), 0)
+                self.assertEqual(len(device_copy_nodes.d2h_nodes), 0)
+
+    def test_redundant_same_device_copies_elided(self):
+        """Two directly-connected delegates on the *same* device must not leave a
+        redundant device->host->device round-trip between them. The
+        inter-delegate _d2h_copy/_h2d_copy pair is elided; only the true
+        graph-boundary copies (H2D per input, D2H for the final output) remain."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b, c):
+                return (a + b) + c
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    2,
+                    f"[{pipeline}] expected two separate delegates",
+                )
+                # Boundary copies only: an H2D for each of the 3 graph inputs
+                # (a, b, c) and a single D2H for the final output. The first
+                # delegate's output feeds the second directly on cuda:0, so the
+                # inter-delegate round-trip is elided.
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    3,
+                    f"[{pipeline}] expected 3 boundary H2D copies, got "
+                    f"{len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    1,
+                    f"[{pipeline}] expected the inter-delegate D2H to be elided "
+                    f"(1 boundary D2H), got {len(nodes.d2h_nodes)}",
+                )
+
+    def test_cross_device_copies_preserved(self):
+        """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two
+        directly-connected delegates must be preserved -- the round-trip is a
+        real cuda:0->host->cuda:1 move, not a redundant same-device bounce."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b, c):
+                return (a + b) + c
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:1"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(nodes.delegate_nodes), 2)
+                # The inter-delegate D2H (cuda:0->host) and H2D (host->cuda:1)
+                # are kept: 4 H2D (a, b on cuda:0; first-add output + c on
+                # cuda:1) and 2 D2H (first delegate output, final output).
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    4,
+                    f"[{pipeline}] cross-device H2D copies should be preserved, "
+                    f"got {len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    2,
+                    f"[{pipeline}] cross-device D2H copies should be preserved, "
+                    f"got {len(nodes.d2h_nodes)}",
+                )
+
+    def test_output_feeding_multiple_same_device_delegates_elided(self):
+        """A delegate output consumed by *multiple* same-device delegates must not
+        leave a redundant round-trip on any of those edges.
+
+        The first add's output feeds two separate cuda:0 delegates.
+        PropagateDevicePass inserts a single D2H after it whose result is wrapped
+        by one H2D per consuming delegate; every such same-device round-trip must
+        be elided, and the shared D2H dropped once all its consumers are rewired.
+        Only the graph-input H2D copies and the single graph-output D2H remain."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                t = a + b  # delegate 0
+                u = t + a  # delegate 1 -- consumes delegate 0's output
+                w = t + b  # delegate 2 -- also consumes delegate 0's output
+                return u + w  # delegate 3
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0", "cuda:0", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    4,
+                    f"[{pipeline}] expected four delegates",
+                )
+                # a -> {D0, D1} and b -> {D0, D2} give 4 graph-input H2D copies;
+                # the single graph output gives 1 D2H. All inter-delegate
+                # round-trips (including delegate 0's output feeding D1 and D2)
+                # are elided.
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    4,
+                    f"[{pipeline}] expected 4 boundary H2D copies, got "
+                    f"{len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    1,
+                    f"[{pipeline}] expected 1 boundary D2H copy, got "
+                    f"{len(nodes.d2h_nodes)}",
+                )
+                # No H2D may still wrap a D2H (a device->host->device round-trip
+                # on the same device), including the shared D2H.
+                for h2d in nodes.h2d_nodes:
+                    src = h2d.args[0]
+                    self.assertFalse(
+                        isinstance(src, torch.fx.Node)
+                        and src.target == torch.ops.et_copy._d2h_copy.out,
+                        f"[{pipeline}] residual same-device round-trip via "
+                        f"{h2d.name}",
+                    )
+
+    def test_output_feeding_gpu_and_cpu_consumers(self):
+        """A delegate output feeding one same-device delegate AND one
+        non-delegated (CPU) consumer.
+
+        The GPU->GPU edge is elided -- the second delegate takes the first
+        delegate's output directly -- while the D2H that feeds the CPU consumer is
+        kept (its shared D2H is still live, so eliminate_dead_code preserves it)."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                t = a + b  # delegate 0 (cuda:0)
+                u = t + a  # delegate 1 (cuda:0) -- GPU consumer of t
+                w = torch.relu(t)  # non-delegated CPU consumer of t
+                return u, w
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        d2h_out = torch.ops.et_copy._d2h_copy.out
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    2,
+                    f"[{pipeline}] expected two delegates (relu stays on CPU)",
+                )
+                # GPU->GPU edge elided: no H2D still wraps a D2H.
+                for h2d in nodes.h2d_nodes:
+                    src = h2d.args[0]
+                    self.assertFalse(
+                        isinstance(src, torch.fx.Node) and src.target == d2h_out,
+                        f"[{pipeline}] GPU->GPU round-trip not elided via {h2d.name}",
+                    )
+                # The second delegate consumes the first delegate's output
+                # directly (a delegate getitem is a direct delegate input).
+                direct = any(
+                    self._is_delegate_getitem(arg)
+                    for d in nodes.delegate_nodes
+                    for arg in d.args[1:]
+                    if isinstance(arg, torch.fx.Node)
+                )
+                self.assertTrue(
+                    direct,
+                    f"[{pipeline}] a delegate should consume another delegate's "
+                    f"output directly on device",
+                )
+                # The D2H feeding the CPU (relu) consumer must be kept.
+                relu_fed_by_d2h = any(
+                    "relu" in str(user.target)
+                    for dn in nodes.d2h_nodes
+                    for user in dn.users
+                )
+                self.assertTrue(
+                    relu_fed_by_d2h,
+                    f"[{pipeline}] the D2H feeding the CPU consumer must be kept",
+                )
+
+    def test_output_feeding_same_and_cross_device_delegates(self):
+        """A delegate output feeding two delegates -- one on the SAME device and
+        one on a DIFFERENT device.
+
+        The same-device edge is elided (that delegate takes the output directly),
+        while the cross-device edge keeps its device->host->device round-trip. The
+        shared D2H stays live for the cross-device consumer, so it is not dropped;
+        only the genuinely-redundant same-device H2D is removed."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                t = a + b  # delegate 0 (cuda:0)
+                u = t + a  # delegate 1 (cuda:0) -- same-device consumer, elided
+                w = t + b  # delegate 2 (cuda:1) -- cross-device consumer, kept
+                return u, w
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        d2h_out = torch.ops.et_copy._d2h_copy.out
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0", "cuda:1"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    3,
+                    f"[{pipeline}] expected three delegates",
+                )
+                # Exactly the cross-device edge keeps its round-trip: one H2D
+                # still wraps a D2H, and it targets the other device (cuda:1).
+                residual = [
+                    h2d
+                    for h2d in nodes.h2d_nodes
+                    if isinstance(h2d.args[0], torch.fx.Node)
+                    and h2d.args[0].target == d2h_out
+                ]
+                self.assertEqual(
+                    len(residual),
+                    1,
+                    f"[{pipeline}] expected exactly one preserved cross-device "
+                    f"round-trip, got {len(residual)}",
+                )
+                spec = residual[0].meta.get("spec")
+                self.assertIsInstance(spec, TensorSpec)
+                self.assertEqual(spec.device, DeviceType.CUDA)
+                self.assertEqual(
+                    spec.device_index,
+                    1,
+                    f"[{pipeline}] preserved round-trip should target cuda:1",
+                )
+                # The same-device consumer takes the first delegate's output
+                # directly on device.
+                direct = any(
+                    self._is_delegate_getitem(arg)
+                    for d in nodes.delegate_nodes
+                    for arg in d.args[1:]
+                    if isinstance(arg, torch.fx.Node)
+                )
+                self.assertTrue(
+                    direct,
+                    f"[{pipeline}] the same-device delegate should consume the "
+                    f"first delegate's output directly",
                 )
 
         # ---- Integration tests: device consistency after to_executorch ----
@@ -424,7 +800,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 for node in gm.graph.nodes:
@@ -520,10 +899,11 @@ class TestPropagateDevicePass(unittest.TestCase):
 
     # ---- End-to-end tests: verify device info survives to_executorch ----
 
-    def _get_executorch_program(self, model, inputs, partitioner):
+    def _get_executorch_program(self, model, inputs, partitioner, et_config=None):
         """Run the full pipeline and return (emitted_program, graph_module) pairs
         for both export pipelines."""
-        from executorch.exir.capture._config import ExecutorchBackendConfig
+        if et_config is None:
+            et_config = ExecutorchBackendConfig(emit_stacktrace=False)
 
         ep = export(model, inputs)
         ep_copied = deepcopy(ep)
@@ -531,13 +911,13 @@ class TestPropagateDevicePass(unittest.TestCase):
         # Pipeline 1: to_edge → to_backend → to_executorch
         edge_1 = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=False))
         lowered_1 = edge_1.to_backend(partitioner)
-        et_1 = lowered_1.to_executorch(ExecutorchBackendConfig(emit_stacktrace=False))
+        et_1 = lowered_1.to_executorch(deepcopy(et_config))
         program_1 = et_1._emitter_output.program
         gm_1 = et_1.exported_program().graph_module
 
         # Pipeline 2: to_edge_transform_and_lower → to_executorch
         edge_2 = to_edge_transform_and_lower(ep_copied, partitioner=[partitioner])
-        et_2 = edge_2.to_executorch(ExecutorchBackendConfig(emit_stacktrace=False))
+        et_2 = edge_2.to_executorch(deepcopy(et_config))
         program_2 = et_2._emitter_output.program
         gm_2 = et_2.exported_program().graph_module
 
@@ -624,11 +1004,341 @@ class TestPropagateDevicePass(unittest.TestCase):
                         ):
                             continue
 
+    # ---- Skip-copy optimization tests ----
+
+    def test_skip_h2d_for_method_inputs(self):
+        """When skip_h2d_for_method_inputs=True, placeholder inputs feeding
+        directly into a device delegate should NOT get _h2d_copy nodes."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+
+        for pipeline, program, gm in self._get_executorch_program(
+            model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    0,
+                    f"[{pipeline}] Expected no H2D copy nodes when "
+                    f"skip_h2d_for_method_inputs=True, got {len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    1,
+                    f"[{pipeline}] Expected 1 D2H copy node for the single "
+                    f"output, got {len(nodes.d2h_nodes)}",
+                )
+
+                # Placeholder inputs should be tagged as CUDA since H2D was
+                # skipped and the pass sets their spec to the target device.
+                cuda_ph, cpu_ph = self._collect_placeholders_by_device(gm)
+                self.assertEqual(len(cpu_ph), 0)
+                self._assert_nodes_device(
+                    cuda_ph,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Placeholder",
+                    expected_index=0,
+                )
+
+                # Verify buffer device mapping: CUDA placeholders should
+                # have their memory planned on a CUDA buffer.
+                self._assert_nodes_buffer_device(
+                    cuda_ph,
+                    program,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Placeholder",
+                )
+
+    def test_skip_d2h_for_method_outputs(self):
+        """When skip_d2h_for_method_outputs=True, delegate outputs that feed
+        directly to the graph output should NOT get _d2h_copy nodes."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_d2h_for_method_outputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+
+        for pipeline, program, gm in self._get_executorch_program(
+            model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    0,
+                    f"[{pipeline}] Expected no D2H copy nodes when "
+                    f"skip_d2h_for_method_outputs=True, got {len(nodes.d2h_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    2,
+                    f"[{pipeline}] Expected 2 H2D copy nodes for the two "
+                    f"inputs, got {len(nodes.h2d_nodes)}",
+                )
+
+                # Delegate getitem nodes feeding to output should stay on
+                # CUDA since D2H was skipped.
+                getitems = self._collect_delegate_getitems(gm)
+                self._assert_nodes_device(
+                    getitems,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Delegate getitem",
+                )
+
+                # Verify buffer device mapping: CUDA getitem outputs should
+                # have their memory planned on a CUDA buffer.
+                self._assert_nodes_buffer_device(
+                    getitems,
+                    program,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Getitem",
+                )
+
+    def test_skip_both_h2d_and_d2h(self):
+        """When both skip flags are True, neither H2D nor D2H copy nodes
+        should be inserted for a direct input->delegate->output flow."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True,
+                skip_d2h_for_method_outputs=True,
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+
+        for pipeline, program, gm in self._get_executorch_program(
+            model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    0,
+                    f"[{pipeline}] Expected no H2D copy nodes when "
+                    f"skip_h2d_for_method_inputs=True, got {len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    0,
+                    f"[{pipeline}] Expected no D2H copy nodes when "
+                    f"skip_d2h_for_method_outputs=True, got {len(nodes.d2h_nodes)}",
+                )
+
+                # Placeholder inputs should be tagged as CUDA since H2D
+                # was skipped.
+                cuda_ph, cpu_ph = self._collect_placeholders_by_device(gm)
+                self.assertEqual(len(cpu_ph), 0)
+                self._assert_nodes_device(
+                    cuda_ph,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Placeholder",
+                    expected_index=0,
+                )
+
+                # Delegate getitem outputs should stay on CUDA since D2H
+                # was skipped.
+                getitems = self._collect_delegate_getitems(gm)
+                self._assert_nodes_device(
+                    getitems,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Delegate getitem",
+                )
+
+                # Verify buffer device mapping: both input and output
+                # buffers should be on CUDA.
+                self._assert_nodes_buffer_device(
+                    cuda_ph,
+                    program,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Placeholder",
+                )
+                self._assert_nodes_buffer_device(
+                    getitems,
+                    program,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "Getitem",
+                )
+
+    def test_skip_h2d_partial_with_intermediate_input(self):
+        """When skip_h2d_for_method_inputs=True, only placeholder inputs
+        skip H2D copies. An intermediate (non-placeholder) input feeding
+        into the delegate should still get an _h2d_copy node."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                c = torch.sin(a)
+                return torch.add(c, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        et_config = ExecutorchBackendConfig(
+            emit_stacktrace=False,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
+        )
+
+        for pipeline, program, gm in self._get_executorch_program(
+            model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
+        ):
+            with self.subTest(pipeline=pipeline):
+                # sin(a) is intermediate (not a placeholder), so it still
+                # gets an H2D copy. Placeholder b is skipped.
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    1,
+                    f"[{pipeline}] Expected 1 H2D copy node for the "
+                    f"intermediate input, got {len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    1,
+                    f"[{pipeline}] Expected 1 D2H copy node for the single "
+                    f"output, got {len(nodes.d2h_nodes)}",
+                )
+
+                # Exactly 1 placeholder should be on CUDA (b, which feeds
+                # directly into the delegate and skips H2D). The other
+                # placeholder (a) feeds through sin() so it stays CPU.
+                cuda_ph, cpu_ph = self._collect_placeholders_by_device(gm)
+                self.assertEqual(
+                    len(cuda_ph),
+                    1,
+                    f"[{pipeline}] Expected exactly 1 placeholder with CUDA "
+                    f"device spec, got {len(cuda_ph)}",
+                )
+
+                # Verify buffer device mapping: the CUDA placeholder's
+                # buffer should be on CUDA, the CPU placeholder's buffer
+                # should be on CPU.
+                self._assert_nodes_buffer_device(
+                    cuda_ph,
+                    program,
+                    DeviceType.CUDA,
+                    pipeline,
+                    "CUDA placeholder",
+                )
+                self._assert_nodes_buffer_device(
+                    cpu_ph,
+                    program,
+                    DeviceType.CPU,
+                    pipeline,
+                    "CPU placeholder",
+                )
+
     def test_tensorspec_repr_includes_device(self):
         spec = TensorSpec(dtype=torch.float32, shape=torch.Size([2, 3]))
         repr_str = repr(spec)
         self.assertIn("device=", repr_str)
         self.assertIn("CPU", repr_str)
+
+    def test_skipping_copies_requires_unallocated_graph_io(self):
+        """Skipping a boundary copy is only complete when the runtime also stops reserving its own
+        buffer for that tensor.
+
+        Memory planning allocates graph inputs and outputs by default. A planned input carries
+        allocation info, and the runtime fills a planned input by copying the caller's memory into the
+        buffer it reserved, so the copy the export asked to skip comes back at run time. For device
+        memory that copy is also a host memcpy into a device pointer, which crashes.
+
+        This pins the pairing the configuration needs, because the two settings live in different
+        places and nothing else connects them.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        skip_copies = PropagateDeviceConfig(
+            skip_h2d_for_method_inputs=True,
+            skip_d2h_for_method_outputs=True,
+        )
+
+        def planned_io(config: ExecutorchBackendConfig):
+            """Whether the program reserves its own buffer for each graph input and output."""
+            lowered = to_edge_transform_and_lower(
+                torch.export.export(model, inputs),
+                partitioner=[DeviceAwarePartitioner("cuda:0")],
+            ).to_executorch(config)
+            plan = lowered.executorch_program.execution_plan[0]
+            planned = lambda indices: [  # noqa: E731
+                getattr(plan.values[index].val, "allocation_info", None) is not None
+                for index in indices
+            ]
+            return planned(plan.inputs), planned(plan.outputs)
+
+        # Default planning reserves buffers, so the runtime copies into them despite the skip flags.
+        planned_inputs, planned_outputs = planned_io(
+            ExecutorchBackendConfig(
+                propagate_device_config=skip_copies,
+                enable_non_cpu_memory_planning=True,
+            )
+        )
+        self.assertTrue(
+            all(planned_inputs),
+            "graph inputs are expected to be planned by default, which is why the pairing below "
+            f"is needed, but got {planned_inputs}",
+        )
+
+        # Asking planning to leave them alone is what actually removes the copy.
+        planned_inputs, planned_outputs = planned_io(
+            ExecutorchBackendConfig(
+                propagate_device_config=skip_copies,
+                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                ),
+            )
+        )
+        self.assertFalse(
+            any(planned_inputs),
+            f"no graph input should be planned when the caller provides it, got {planned_inputs}",
+        )
+        self.assertFalse(
+            any(planned_outputs),
+            f"no graph output should be planned when it stays on the device, got {planned_outputs}",
+        )
 
 
 if __name__ == "__main__":

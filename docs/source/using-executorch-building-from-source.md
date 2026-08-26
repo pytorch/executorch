@@ -1,5 +1,12 @@
 # Building from Source
 
+On Linux and macOS you may not need to build at all. `pip install executorch` ships the
+runtime as prebuilt libraries with headers and a CMake package, so a C++ program can link
+it directly. See [Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package),
+including the CUDA packages for running on a GPU. Build from source when you need a
+platform the package does not cover, a build option it does not enable, or your own
+changes to the runtime.
+
 ExecuTorch uses [CMake](https://cmake.org/) as the primary build system.
 Even if you don't use CMake directly, CMake can emit scripts for other format
 like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
@@ -28,7 +35,7 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.13
+* `python` version 3.10-3.14
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
   - `Xcode Command Line Tools`
@@ -143,7 +150,7 @@ When building as a submodule as part of a user CMake build, ExecuTorch CMake opt
 CMake configuration for standalone runtime build:
 ```bash
 cmake -B cmake-out --preset [preset] [options]
-cmake --build cmake-out -j10
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 #### Build Presets
@@ -265,8 +272,9 @@ cd executorch
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
 # building, and tends to speed up the build significantly. It's typical to use
-# "core count + 1" as the `-j` value.
-cmake --build cmake-out -j9
+# "core count + 1" as the `-j` value; the command below derives that
+# dynamically (`nproc` on Linux, `sysctl -n hw.ncpu` on macOS).
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 > **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.

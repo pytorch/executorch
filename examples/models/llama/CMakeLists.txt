@@ -63,7 +63,11 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(MSVC)
+  set(_common_compile_options /wd4996)
+else()
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -186,7 +190,9 @@ endif()
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  executorch_target_link_options_shared_lib(qnn_executorch_backend)
+  if(NOT MSVC)
+    executorch_target_link_options_shared_lib(qnn_executorch_backend)
+  endif()
 endif()
 
 # MPS backend
@@ -235,7 +241,20 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
+# ETDump profiling support (OSS build). The llama runner does not link etdump or
+# define ET_EVENT_TRACER_ENABLED by default. When the core libs are built with
+# EXECUTORCH_BUILD_DEVTOOLS=ON + EXECUTORCH_ENABLE_EVENT_TRACER=ON, find_package
+# imports the etdump target; linking it and defining the macro enables ETDump
+# collection and makes the Vulkan delegate emit per-dispatch GPU timestamps.
+if(TARGET etdump)
+  list(APPEND link_libraries etdump)
+endif()
+
 add_executable(llama_main ${_srcs})
+
+if(TARGET etdump)
+  target_compile_definitions(llama_main PRIVATE ET_EVENT_TRACER_ENABLED)
+endif()
 
 # Copy MLX metallib for runtime if MLX delegate is enabled
 if(TARGET mlxdelegate)

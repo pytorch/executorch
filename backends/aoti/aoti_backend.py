@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+import hashlib
 import os
 import typing
 from abc import ABC, abstractmethod
@@ -19,6 +20,7 @@ from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import ExportedProgram, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.graph_module import contains_any_call_fn_target_op
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
 
@@ -112,6 +114,38 @@ class AotiBackend(ABC):
         return
 
     @classmethod
+    def load_weights_blob(
+        cls, blob_path: str, compile_specs: List[CompileSpec]
+    ) -> tuple[Any, str]:
+        """Load an AOTI weights blob and return its data and SHA-256 digest."""
+        with open(blob_path, "rb") as f:
+            blob_data = f.read()
+        os.remove(blob_path)
+        return blob_data, hashlib.sha256(blob_data).hexdigest()
+
+    @classmethod
+    def materialize_weights_blob(
+        cls, paths: Any, compile_specs: List[CompileSpec]
+    ) -> Any:
+        """Materialize backend-specific weight outputs into an AOTI blob."""
+        return paths
+
+    @classmethod
+    def move_program_to_device(
+        cls,
+        edge_program: ExportedProgram,
+        device: str,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Move the exported program to the target device for compilation.
+
+        Default implementation moves everything (params, buffers, constants) via
+        ``move_to_device_pass``. Concrete backends may override to keep large
+        non-parameter tensors off the device during a low-memory export.
+        """
+        return move_to_device_pass(edge_program, device)
+
+    @classmethod
     def release_moved_tensors(
         cls,
         device_edge_program: ExportedProgram,
@@ -195,9 +229,13 @@ class AotiBackend(ABC):
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
 
-        # Move the edge_program to the target device
-        device_edge_program = move_to_device_pass(
-            edge_program, device_name if device_name != "metal" else "mps"
+        # Move the edge_program to the target device. Routed through a hook so
+        # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
+        # off the device during a low-memory export.
+        device_edge_program = cls.move_program_to_device(
+            edge_program,
+            device_name if device_name != "metal" else "mps",
+            compile_specs,
         )
 
         # Replace view_copy with view
@@ -211,8 +249,13 @@ class AotiBackend(ABC):
             else:
                 custom_pass(device_edge_program.graph_module)
 
-        # Run decompositions if any
-        if decomposition_table:
+        # ``run_decompositions`` retraces the complete ExportedProgram even
+        # when none of the table's operators occur in the graph. The in-place
+        # passes above preserve graph inputs and outputs, so the existing graph
+        # signature remains valid when the decomposition table cannot apply.
+        if contains_any_call_fn_target_op(
+            device_edge_program.graph_module, decomposition_table
+        ):
             device_edge_program = device_edge_program.run_decompositions(
                 decomposition_table
             )
@@ -236,6 +279,8 @@ class AotiBackend(ABC):
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )
+
+            paths = cls.materialize_weights_blob(paths, compile_specs)
 
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
@@ -270,28 +315,28 @@ class AotiBackend(ABC):
         with open(so_path, "rb") as f:
             so_data = f.read()
 
-        # Read weights blob
-        with open(blob_path, "rb") as f:
-            blob_data = f.read()
+        blob_data, weights_blob_hash = cls.load_weights_blob(blob_path, compile_specs)
 
         # Create named data store
         named_data_store = NamedDataStore()
-        method_name = cls.method_name_from_compile_specs(compile_specs)
 
-        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
+        # Key each blob by a content hash so partitions in one method get distinct
+        # keys (a method-name-only key collides). Runtime recovers them from
+        # processed_bytes below.
+        so_blob_key = hashlib.sha256(so_data).hexdigest() + "_so_blob"
+        weights_blob_key = weights_blob_hash + "_weights_blob"
+
+        named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
         external_tag = (
             f"aoti_{device_name}_blob" if cls.save_data_externally() else None
         )
 
-        named_data_store.add_named_data(
-            method_name + "_weights_blob", blob_data, 1, external_tag
-        )
+        named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
 
         # Clean up the generated files
         os.remove(so_path)
-        os.remove(blob_path)
 
         # Release device memory held by tensors that ``move_to_device_pass``
         # placed on the target device. Default impl is a no-op; concrete
@@ -299,8 +344,11 @@ class AotiBackend(ABC):
         # the next preprocess call (e.g. for the next method).
         cls.release_moved_tensors(device_edge_program, compile_specs)
 
+        # The runtime cannot recompute these hash keys, so carry them (one per line).
+        processed_bytes = (so_blob_key + "\n" + weights_blob_key).encode("utf-8")
+
         return PreprocessResult(
-            processed_bytes=b"",
+            processed_bytes=processed_bytes,
             debug_handle_map={},
             data_store_output=named_data_store.get_named_data_store_output(),
         )

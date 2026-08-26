@@ -17,7 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 aten_op = "torch.ops.aten.sign.default"
-exir_op = "executorch_exir_dialects_edge__ops_aten__sign_default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_sign_default"
 
 input_t1 = Tuple[torch.Tensor]
 

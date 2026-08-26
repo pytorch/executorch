@@ -11,6 +11,11 @@ on:
         description: 'JSON array of flows to test'
         required: true
         type: string
+      exclude:
+        description: 'JSON array of {flow, suite} pairs to drop from the matrix'
+        required: false
+        type: string
+        default: '[]'
       ref:
         description: 'Git ref to checkout'
         required: false
@@ -50,6 +55,7 @@ jobs:
       matrix:
         flow: ${{ fromJSON(inputs.flows) }}
         suite: [models, operators]
+        exclude: ${{ fromJSON(inputs.exclude) }}
 
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
@@ -58,7 +64,7 @@ jobs:
       docker-image: ${{ inputs.docker-image }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
-      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
 
@@ -72,7 +78,7 @@ jobs:
       - name: Download model test artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: test-report-*-models
+          pattern: test-report-${{ inputs.backend }}-*-models
           path: downloaded/
 
       - name: Package golden artifacts
@@ -126,6 +132,7 @@ jobs:
       matrix:
         flow: ${{ fromJSON(inputs.flows) }}
         suite: [models, operators]
+        exclude: ${{ fromJSON(inputs.exclude) }}
 
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
@@ -135,7 +142,7 @@ jobs:
       python-version: "3.12"
       submodules: recursive
       timeout: ${{ inputs.timeout }}
-      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
 

@@ -307,6 +307,35 @@ class OpSumOutTest : public OperatorTest {
   }
 };
 
+TEST_F(OpSumOutTest, BFloat16GenericPathAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Reducing dim=0 of {512, 1} is not the last dim, so the generic path is
+  // taken. Without fp32 accumulation the sum saturates at ~256 instead of
+  // 512. 512 = 2^9 is exactly representable in BFloat16.
+  constexpr int N = 512;
+  Tensor x = tf.ones({N, 1});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 0;
+  op_sum_intlist_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, static_cast<float>(N));
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpSumOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // N=512, all-ones input: without fp32 accumulation the sum saturates at
+  // ~256 in BFloat16 instead of 512.
+  constexpr int N = 512;
+  Tensor x = tf.ones({1, N});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 1;
+  op_sum_intlist_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, static_cast<float>(N));
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 TEST_F(OpSumOutTest, InvalidDimensionListDies) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,

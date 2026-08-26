@@ -53,6 +53,8 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * @param stats Statistics tracking object for performance monitoring
    * @param temperature Temperature parameter for controlling randomness in
    * generation (deprecated). Please use GenerationConfig.temperature instead.
+   * @param decode_text_decoder_runner Decoder runner for the decode stage of a
+   * two-method PTE. When null, text_decoder_runner drives both stages.
    */
   explicit TextLLMRunner(
       std::unordered_map<std::string, int64_t> metadata,
@@ -63,7 +65,8 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::unique_ptr<IOManager> io_manager,
       std::unique_ptr<TextTokenGenerator> text_token_generator,
       std::unique_ptr<Stats> stats,
-      float temperature = -1.0f);
+      float temperature = -1.0f,
+      std::unique_ptr<TextDecoderRunner> decode_text_decoder_runner = nullptr);
 
   /**
    * @brief Checks if the model is loaded and ready for inference
@@ -171,6 +174,10 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       text_decoder_runner_; // Manage text_decoder_runner_'s lifecycle, make
                             // sure it outlives text_prefiller_ &
                             // text_token_generator_.
+  std::unique_ptr<TextDecoderRunner>
+      decode_text_decoder_runner_; // Null unless the PTE exports a separate
+                                   // decode method, in which case
+                                   // text_decoder_runner_ drives prefill only.
   std::unique_ptr<TextPrefiller> text_prefiller_;
   std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;

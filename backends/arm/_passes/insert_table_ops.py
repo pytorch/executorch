@@ -58,6 +58,7 @@ class TableOps:
         exir_ops.edge.aten.acos.default: torch.acos,
         exir_ops.edge.aten.tan.default: torch.tan,
         exir_ops.edge.aten.silu.default: torch.nn.functional.silu,
+        exir_ops.edge.aten.round.default: torch.round,
     }
 
     # Targets that must be treated explicitly
@@ -65,6 +66,7 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.leaky_relu.default,
         exir_ops.edge.aten.remainder.Scalar,
     }
 
@@ -105,6 +107,18 @@ class TableOps:
                     scale = cast(float, node.meta.get("float_scale", 1.0))
                     return lambda x: torch.ops.aten.elu.default(
                         x, input_alpha, scale, input_scale
+                    ).flatten()
+                case exir_ops.edge.aten.leaky_relu.default:
+                    negative_slope = cast(
+                        float,
+                        (
+                            node.args[1]
+                            if len(node.args) > 1
+                            else node.kwargs.get("negative_slope", 0.01)
+                        ),
+                    )
+                    return lambda x: torch.nn.functional.leaky_relu(
+                        x, negative_slope=negative_slope
                     ).flatten()
                 case exir_ops.edge.aten.remainder.Scalar:
                     divisor = cast(float | int, node.args[1])
@@ -175,15 +189,15 @@ class InsertTableOpsPass(ArmPass):
         )
         return (f(effective_codes).to(dtype=torch.int8), 0)
 
+    @staticmethod
     def generate_16_bit_table_values(
-        self,
         torch_op: Callable[[torch.Tensor], torch.Tensor],
         in_quantargs: QuantArgs,
         out_quantargs: QuantArgs,
     ) -> tuple[torch.Tensor, int]:
         """Compute LUT values for a INT16 TOSA.TABLE with 32 bit output.
         In practice the output is 23 bits that should be interpreted as 16 'whole' bits and 7 fractional bits, see
-        the specification: https://www.mlplatform.org/tosa/tosa_spec.html#_table. This means that the output
+        the specification: https://github.com/arm/tosa-specification/blob/main/chapters/ewise_binary.adoc#table. This means that the output
         will interpreted as 2**7=128 times too large unless accounted for by rescaling down the table output.
 
         Quantization can be either int16 or int32 which means that the op output could be larger than the 23 bits from
@@ -197,11 +211,22 @@ class InsertTableOpsPass(ArmPass):
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:
+            int16_max = torch.iinfo(torch.int16).max
+            has_full_int16_upper_range = (
+                in_quantargs.dtype == torch.int16 and in_quantargs.qmax == int16_max
+            )
             x = x.clamp(in_quantargs.qmin, in_quantargs.qmax).to(
                 dtype=in_quantargs.dtype
             )
             # Dont use the 7 LSBs.
             x = in_quantargs.dequantize_value((x & ~0x7F))
+            if has_full_int16_upper_range:
+                # TOSA uses table[512] as the virtual right endpoint when
+                # interpolating raw INT16 input codes [32640, 32767]. Evaluate
+                # its real value at affine code 32768 without casting to int16.
+                x[-1] = (
+                    int16_max + 1 - in_quantargs.get_zp_per_tensor()
+                ) * in_quantargs.get_scale_per_tensor()
             x = torch_op(x)
             return out_quantargs.quantize_value(x)
 
@@ -223,6 +248,15 @@ class InsertTableOpsPass(ArmPass):
         #       but due to signedness this is a negative number! So we need to shift it one more bit.
         # Note: for out_quantargs.dtype=torch.int16, rshift == 0 and rescale_lshift = -7.
         rshift = int(torch.ceil(torch.log2(lut_values.abs().max()))) + 1 - 16
+        # When the table values use fewer than 16 bits (e.g. a sigmoid output
+        # quantized with a small scale, so the max table value is well below
+        # 2**15), the formula above yields a negative rshift. The values already
+        # fit in signed int16, and a negative right-shift is undefined (on host it
+        # masks the shift count and zeroes the table, giving a degenerate
+        # step-function LUT on device). Clamp to 0 so no shift is applied; this is
+        # the documented int16 case (rshift == 0, rescale_lshift == -7) and keeps
+        # rescale_lshift consistent with the shift actually performed below.
+        rshift = max(rshift, 0)
         # The 7 fractional bits are equivalent to a lshift of 7, so subtract 7 from the lshift we do.
         rescale_lshift = rshift - 7
         lut_values = lut_values >> rshift

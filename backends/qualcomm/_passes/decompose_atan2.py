@@ -9,7 +9,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import copy_meta, create_node, get_const_node
+from .utils import copy_meta, create_const_node, create_node
 
 
 class DecomposeAtan2(ExportPass):
@@ -68,7 +68,7 @@ class DecomposeAtan2(ExportPass):
 
             def make_const(name, val):
                 if name not in const_cache:
-                    const_cache[name] = get_const_node(
+                    const_cache[name] = create_const_node(
                         graph, graph_module, name, val, node
                     )
                 return const_cache[name]

@@ -13,12 +13,17 @@ from typing import Optional
 
 # Import to register the et_copy ops so torch.ops.et_copy is available.
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
-
 import executorch.exir.schema as schema
-
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+
+# Re-exported for backward compatibility; the dataclass lives in a lightweight
+# module so that ExecutorchBackendConfig can reference it without importing the
+# et_copy op registry above.
+from executorch.exir.passes.propagate_device_config import (  # noqa: F401
+    PropagateDeviceConfig,
+)
 from executorch.exir.tensor import TensorSpec
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
@@ -163,8 +168,25 @@ class PropagateDevicePass(PassBase):
 
     def __init__(
         self,
+        skip_h2d_for_method_inputs: bool = False,
+        skip_d2h_for_method_outputs: bool = False,
+        enable_non_cpu_memory_planning: bool = False,
     ) -> None:
         super().__init__()
+        self.skip_h2d_for_method_inputs = skip_h2d_for_method_inputs
+        self.skip_d2h_for_method_outputs = skip_d2h_for_method_outputs
+        self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
+
+        if (
+            skip_h2d_for_method_inputs or skip_d2h_for_method_outputs
+        ) and not enable_non_cpu_memory_planning:
+            raise ValueError(
+                "skip_h2d_for_method_inputs and skip_d2h_for_method_outputs are "
+                "only meaningful when enable_non_cpu_memory_planning=True, since "
+                "they control host/device copy insertion which only happens during "
+                "device-aware memory planning. Set enable_non_cpu_memory_planning="
+                "True, or leave the skip options disabled."
+            )
 
     def _is_placeholder(self, node: torch.fx.Node) -> bool:
         """Check if a node is a graph-level input (placeholder)."""
@@ -189,6 +211,23 @@ class PropagateDevicePass(PassBase):
                 continue
             arg_spec = arg.meta.get("spec")
             if not isinstance(arg_spec, TensorSpec):
+                continue
+
+            if self.skip_h2d_for_method_inputs and self._is_placeholder(arg):
+                # TODO(gasoonjia): support skip_h2d_for_method_inputs for
+                # multiple-user placeholder inputs.
+                if len(arg.users) != 1:
+                    raise RuntimeError(
+                        f"skip_h2d_for_method_inputs=True requires placeholder "
+                        f"'{arg.name}' to have exactly one user, but it has "
+                        f"{len(arg.users)} users. The placeholder is shared by "
+                        f"multiple consumers, so its TensorSpec cannot be safely "
+                        f"mutated in-place to the delegate's device. Either disable "
+                        f"skip_h2d_for_method_inputs, or ensure the placeholder is "
+                        f"used exclusively by this delegate."
+                    )
+                _set_device_on_spec(arg_spec, target_device_type, device_index)
+                changed = True
                 continue
 
             with graph_module.graph.inserting_before(node):
@@ -241,6 +280,9 @@ class PropagateDevicePass(PassBase):
 
         _set_device_on_spec(spec, source_spec.device, source_spec.device_index)
 
+        if self.skip_d2h_for_method_outputs and self._feeds_directly_to_output(node):
+            return True
+
         with graph_module.graph.inserting_after(node):
             d2h_node = graph_module.graph.call_function(
                 torch.ops.et_copy._d2h_copy.default,
@@ -258,8 +300,67 @@ class PropagateDevicePass(PassBase):
             )
         return True
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        # Two-pass approach:
+    def _elide_redundant_same_device_copies(
+        self,
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        """Remove ``_h2d_copy(_d2h_copy(x))`` round-trips that never leave a device.
+
+        H2D and D2H copies are inserted per delegate boundary independently (an
+        H2D before every device delegate input, a D2H after every device delegate
+        output), so two consecutive delegates on the *same* device leave a
+        redundant ``device -> host -> device`` bounce: the first delegate's output
+        is copied to host by a ``_d2h_copy`` and immediately copied back to the
+        same device by a ``_h2d_copy`` feeding the second delegate.
+
+        This walks each ``_h2d_copy`` whose input is a ``_d2h_copy`` and, when the
+        tensor before the D2H already lives on the device the H2D copies back to,
+        rewires the consumer straight to that device tensor and drops both copies.
+        The device comparison is the correctness guard: a genuine cross-device
+        move (e.g. ``cuda:0 -> host -> cuda:1``) has differing devices and is left
+        intact. A D2H feeding other (host) consumers keeps those users and is
+        removed only once it becomes dead.
+        """
+        h2d = torch.ops.et_copy._h2d_copy.default
+        d2h = torch.ops.et_copy._d2h_copy.default
+        changed = False
+        for node in list(graph_module.graph.nodes):
+            if node.op != "call_function" or node.target != h2d:
+                continue
+            src = node.args[0]
+            if not (
+                isinstance(src, torch.fx.Node)
+                and src.op == "call_function"
+                and src.target == d2h
+            ):
+                continue
+
+            x = src.args[0]  # the tensor before the d2h (the device delegate output)
+            x_spec = x.meta.get("spec") if isinstance(x, torch.fx.Node) else None
+            h2d_spec = node.meta.get("spec")
+            if not (
+                isinstance(x_spec, TensorSpec) and isinstance(h2d_spec, TensorSpec)
+            ):
+                continue
+
+            # Only elide a proven same-device round-trip.
+            if (
+                x_spec.device != h2d_spec.device
+                or x_spec.device_index != h2d_spec.device_index
+            ):
+                continue
+
+            node.replace_all_uses_with(x)
+            graph_module.graph.erase_node(node)
+            changed = True
+
+        if changed:
+            # Drop the d2h copies that are now dead (kept if they still feed a
+            # host consumer).
+            graph_module.graph.eliminate_dead_code()
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
+        # Three-pass approach:
         #   Pass 1 – For each delegate with a target_device CompileSpec, insert
         #            H2D copy nodes before delegate inputs and tag the delegate
         #            output specs with the target device.  Delegates without a
@@ -268,6 +369,8 @@ class PropagateDevicePass(PassBase):
         #            (tracked in device_delegates), propagate the device onto the
         #            getitem spec and insert a D2H copy after it so downstream
         #            non-delegated ops receive CPU tensors.
+        #   Pass 3 – Elide the redundant device->host->device round-trips left
+        #            between consecutive same-device delegates by passes 1 and 2.
         changed = False
         device_delegates: set[torch.fx.Node] = set()
 
@@ -289,9 +392,18 @@ class PropagateDevicePass(PassBase):
                 target_device_type, device_index = result
                 device_delegates.add(node)
 
-                changed |= self._insert_h2d_copies(
-                    graph_module, node, target_device_type, device_index
-                )
+                if self.enable_non_cpu_memory_planning:
+                    changed |= self._insert_h2d_copies(
+                        graph_module, node, target_device_type, device_index
+                    )
+                else:
+                    for arg in node.args[1:]:
+                        if isinstance(arg, torch.fx.Node):
+                            changed |= _tag_specs_with_device(
+                                arg.meta.get("spec"),
+                                target_device_type,
+                                device_index,
+                            )
 
                 changed |= _tag_specs_with_device(
                     node.meta.get("spec"),
@@ -313,7 +425,34 @@ class PropagateDevicePass(PassBase):
             if node.op == "call_function" and node.target == operator.getitem:
                 source = node.args[0]
                 if isinstance(source, torch.fx.Node) and source in device_delegates:
-                    changed |= self._insert_d2h_for_getitem(graph_module, node)
+                    if self.enable_non_cpu_memory_planning:
+                        changed |= self._insert_d2h_for_getitem(graph_module, node)
+                    else:
+                        spec = node.meta.get("spec")
+                        source_specs = source.meta.get("spec")
+                        idx = node.args[1]
+                        if (
+                            isinstance(spec, TensorSpec)
+                            and isinstance(source_specs, (tuple, list))
+                            and isinstance(idx, int)
+                            and idx < len(source_specs)
+                        ):
+                            source_spec = source_specs[idx]
+                            if isinstance(source_spec, TensorSpec):
+                                _set_device_on_spec(
+                                    spec,
+                                    source_spec.device,
+                                    source_spec.device_index,
+                                )
+                                changed = True
+
+        # Third pass: elide the redundant device->host->device round-trips left
+        # between consecutive same-device delegates by the per-boundary H2D/D2H
+        # insertion above. Only meaningful when passes 1/2 modified the graph
+        # (there was a device delegate); when nothing changed there are no copies
+        # to elide, so skip the scan entirely.
+        if changed:
+            self._elide_redundant_same_device_copies(graph_module)
 
         graph_module.recompile()
         return PassResult(graph_module, changed)

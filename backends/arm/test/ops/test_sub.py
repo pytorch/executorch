@@ -22,6 +22,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 aten_op = "torch.ops.aten.sub.Tensor"
 exir_op = "executorch_exir_dialects_edge__ops_aten_sub_Tensor"
+aten_op_scalar = "torch.ops.aten.sub.Scalar"
+exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_sub_Scalar"
 
 # Single-input subtraction (x - x)
 sub_test_data = {
@@ -32,6 +34,11 @@ sub_test_data = {
     "rand_3D_5x5x5": lambda: (torch.rand(5, 5, 5),),
     "rand_4D_2x3x4x5": lambda: (torch.rand(2, 3, 4, 5),),
     "zeros": lambda: (torch.zeros(10),),
+}
+
+sub_scalar_test_data = {
+    "rand_1d_scalar": lambda: (torch.rand(8),),
+    "rand_4d_scalar": lambda: (torch.rand(1, 3, 4, 4),),
 }
 
 sub_test_data_fp16 = {
@@ -95,6 +102,11 @@ class Sub(torch.nn.Module):
 class Sub2(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return x - y
+
+
+class SubScalar(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return torch.ops.aten.sub.Scalar(x, 1.5)
 
 
 class SubAlpha(torch.nn.Module):
@@ -257,7 +269,9 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_test_data | sub_test_data_fp16)
+@common.parametrize(
+    "test_data", sub_test_data | sub_test_data_bf16 | sub_test_data_fp16
+)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF FP)"""
@@ -271,7 +285,9 @@ def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data | sub2_test_data_fp16)
+@common.parametrize(
+    "test_data", sub2_test_data | sub2_test_data_bf16 | sub2_test_data_fp16
+)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (VGF FP)"""
@@ -495,5 +511,37 @@ def test_sub_tensor_16a8w_u85_INT(test_data: input_t1):
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
         a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_scalar_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_scalar_vgf_no_quant(test_data: Tuple[torch.Tensor]):
+    """Test Tensor - Scalar subtraction (VGF FP)."""
+    pipeline = VgfPipeline[input_t1](
+        SubScalar(),
+        test_data(),
+        aten_op_scalar,
+        exir_op_scalar,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_scalar_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_scalar_vgf_quant(test_data: Tuple[torch.Tensor]):
+    """Test Tensor - Scalar subtraction (VGF INT).
+
+    The quantized scalar path is lowered through the Tensor
+    overload, so we use sub.Tensor rather than sub.Scalar.
+    """
+    pipeline = VgfPipeline[input_t1](
+        SubScalar(),
+        test_data(),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()

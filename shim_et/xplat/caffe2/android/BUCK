@@ -8,7 +8,8 @@
 # that is not applicable to ExecuTorch. This empty target allows the build
 # to succeed without running PyTorch-specific tests against ExecuTorch.
 
-load("@prelude//java:java_library.bzl", "java_library")
+load("@fbcode_macros//build_defs:java_library.bzl", "java_library")
+oncall("executorch")
 
 java_library(
     name = "test_host",

@@ -8,7 +8,7 @@ This section is intended to describe the necessary steps to take a PyTorch model
 ## System Requirements
 The following are required to install the ExecuTorch host libraries, needed to export models and run from Python. Requirements for target end-user devices are backend dependent. See the appropriate backend documentation for more information.
 
-- Python 3.10 - 3.13
+- Python 3.10 - 3.14
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
 - Linux (x86_64 or ARM64), macOS (ARM64), or Windows (x86_64).
     - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
@@ -171,6 +171,23 @@ For more information on iOS integration, including an API reference, logging set
 ExecuTorch provides C++ APIs, which can be used to target embedded or mobile devices. The C++ APIs provide a greater level of control compared to other language bindings, allowing for advanced memory management, data loading, and platform integration.
 
 #### Installation
+On Linux and macOS the quickest route is the pip package, which ships the runtime as prebuilt
+libraries with headers and a CMake package, so there is nothing to build:
+
+```
+pip install executorch
+```
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized)
+target_link_libraries(my_target PRIVATE executorch::runtime executorch::kernels_optimized)
+```
+
+See [Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package)
+for a complete walkthrough, and [Running on a GPU with the CUDA package](using-executorch-cpp.md#running-on-a-gpu-with-the-cuda-package)
+for GPU support.
+
+For a platform the package does not cover, or to change build options, build from source instead.
 CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](using-executorch-cpp.md) and [Building from Source](using-executorch-building-from-source.md) for a detailed description of build integration, targets, and cross compilation.
 
 ```

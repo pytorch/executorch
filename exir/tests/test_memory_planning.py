@@ -29,6 +29,7 @@ from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
+    _is_inplace_node,
     apply_algo,
     collect_specs_from_nodes,
     filter_nodes,
@@ -1650,3 +1651,117 @@ class TestDeviceAwareMemoryPlanning(unittest.TestCase):
         self.assertEqual(bufsizes[0], 0)
         self.assertGreater(bufsizes[1], 0)
         self.assertNotIn("non_const_buffer_device", gm.meta)
+
+
+class TestInPlaceElemWise(unittest.TestCase):
+    def _run_inplace_pipeline(
+        self,
+        model: torch.nn.Module,
+        inputs: Tuple[torch.Tensor, ...],
+        eligible_ops: set,  # pyre-ignore[2]
+        algo: Callable[..., MemoryAlgoResult] = greedy,
+    ) -> torch.fx.GraphModule:
+        edge = to_edge(export(model.eval(), inputs, strict=True))
+        ep = edge.exported_program()
+        reinplace_pass(ep, ops_to_inplace=eligible_ops)
+        graph_module = ep.graph_module
+        mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[algo])
+        return PassManager(
+            passes=[
+                SpecPropPass(),
+                ToOutVarPass(),
+                MemoryPlanningPass(
+                    memory_planning_algo=mem_algo,
+                    alignment=1,
+                ),
+            ],
+        )(graph_module).graph_module
+
+    def test_basic_inplace_sharing(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {exir_ops.edge.aten.mul.Tensor},
+        )
+
+        add_spec = None
+        inplace_node_found = False
+        for node in gm.graph.nodes:
+            if node.op != "call_function":
+                continue
+            if node.target == torch.ops.aten.add.out:
+                add_spec = node.meta["spec"]
+            if _is_inplace_node(node):
+                inplace_node_found = True
+                self.assertIs(node.meta["spec"], add_spec)
+
+        self.assertIsNotNone(add_spec)
+        self.assertTrue(inplace_node_found)
+
+    def test_verifier_allows_inplace_overlap(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {exir_ops.edge.aten.mul.Tensor},
+        )
+
+        verifier = Verifier(
+            gm,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_storage_reuse()
+
+    def test_multi_user_blocks_inplace(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                e = c + d
+                return e
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {exir_ops.edge.aten.mul.Tensor},
+        )
+
+        has_mul_out = any(
+            node.target == torch.ops.aten.mul.out
+            for node in gm.graph.nodes
+            if node.op == "call_function"
+        )
+        self.assertTrue(has_mul_out)
+
+    def test_no_inplace_when_ops_not_eligible(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            set(),
+        )
+
+        has_inplace = any(
+            _is_inplace_node(node)
+            for node in gm.graph.nodes
+            if node.op == "call_function"
+        )
+        self.assertFalse(has_inplace)

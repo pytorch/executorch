@@ -320,6 +320,19 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "tensor_parser_aten_test",
+            srcs = [
+                "tensor_parser_aten_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program_aten",
+                "//executorch/runtime/core/exec_aten:lib_aten",
+                "//executorch/schema:program",
+            ],
+        )
+
+        runtime.cxx_test(
             name = "tensor_parser_device_test",
             srcs = [
                 "tensor_parser_device_test.cpp",
@@ -329,6 +342,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core:device_memory_buffer",
+                "//executorch/runtime/core/test:mock_cuda_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
             ],

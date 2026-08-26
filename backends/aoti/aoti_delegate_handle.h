@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/freeable_buffer.h>
 #include <string>
 
 namespace executorch {
@@ -17,6 +18,7 @@ namespace backends {
 namespace aoti {
 
 using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
 using executorch::runtime::etensor::Tensor;
 
 extern "C" {
@@ -147,6 +149,30 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc
       update_user_managed_constant_buffer_pairs;
 };
+
+// New-format payload is "<so_key>\n<weights_key>"; an empty payload is a
+// pre-this-change artifact, so fall back to the legacy method-name keys.
+inline Error resolve_blob_keys(
+    const FreeableBuffer* processed,
+    const std::string& method_name,
+    std::string& so_blob_key,
+    std::string& weights_blob_key) {
+  if (processed != nullptr && processed->size() > 0) {
+    const std::string keys(
+        static_cast<const char*>(processed->data()), processed->size());
+    const size_t newline = keys.find('\n');
+    if (newline == std::string::npos) {
+      return Error::Internal;
+    }
+    so_blob_key = keys.substr(0, newline);
+    weights_blob_key = keys.substr(newline + 1);
+  } else {
+    so_blob_key = method_name.empty() ? "so_blob" : method_name + "_so_blob";
+    weights_blob_key =
+        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+  }
+  return Error::Ok;
+}
 
 } // namespace aoti
 } // namespace backends

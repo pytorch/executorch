@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from enum import auto, Enum
 from typing import Optional
 
-import cmsis_nn  # type: ignore[import-not-found, import-untyped]
+from executorch.backends.cortex_m.library import cmsis_nn
 
 
 class CortexM(Enum):
@@ -79,6 +80,12 @@ class CortexMTargetConfig:
             )
 
     @property
+    def target_string(self) -> str:
+        """Canonical ``cortex-m<variant>`` string; inverse of
+        ``from_target_string``."""
+        return "cortex-m" + self.cpu.name[1:].lower()
+
+    @property
     def backend(self) -> cmsis_nn.Backend:
         if self.isa is not None:
             return self.isa
@@ -105,6 +112,6 @@ class CortexMTargetConfig:
         except KeyError as e:
             raise ValueError(
                 f"Unsupported Cortex-M target string: {target!r}. "
-                f"Supported: {sorted('cortex-m' + m.name[1:].lower() for m in CortexM)}"
+                f"Supported: {sorted(cls(cpu=m).target_string for m in CortexM)}"
             ) from e
         return cls(cpu=cpu)

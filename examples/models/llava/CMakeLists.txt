@@ -60,7 +60,11 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(MSVC)
+  set(_common_compile_options /wd4996)
+else()
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)

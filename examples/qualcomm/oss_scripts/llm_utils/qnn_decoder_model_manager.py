@@ -12,7 +12,7 @@ import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
 from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
@@ -44,9 +44,13 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 HUGGING_FACE_REPO_IDS = {
-    "qwen2.5_0.5B": "Qwen/Qwen2.5-0.5B",
-    "qwen2.5_1.5B_instruct": "Qwen/Qwen2.5-1.5B-Instruct",
-    "qwen2.5_0.5B_instruct": "Qwen/Qwen2.5-0.5B-Instruct",
+    "llama3_2-1b": "NousResearch/Llama-3.2-1B",
+    "qwen2_5-0_5b": "Qwen/Qwen2.5-0.5B",
+    "qwen2_5-1_5b_instruct": "Qwen/Qwen2.5-1.5B-Instruct",
+    "qwen2_5-0_5b_instruct": "Qwen/Qwen2.5-0.5B-Instruct",
+    "qwen3-0_6b": "Qwen/Qwen3-0.6B",
+    "smollm2_135m": "HuggingFaceTB/SmolLM2-135M",
+    "granite-3_3-2b": "ibm-granite/granite-3.3-2b-instruct",
 }
 
 
@@ -64,6 +68,7 @@ def get_qnn_llm_edge_manager(model_name, max_seq_len=128, enable_spinquant_r3=Tr
     config.ar_len = 1  # kv mode
     config.max_batch_size = batch_size
     config.enable_spinquant_r3 = enable_spinquant_r3
+    config.use_cache = True
 
     # Some config has head_dim provided that is different from equation below(e.g., qwen3)
     if not hasattr(config, "head_dim"):
@@ -98,7 +103,7 @@ class QnnLLMEdgeManager:
         self.config = config
         self.verbose = verbose
         self.use_fp16 = True
-        self.passes_job = get_capture_program_passes()
+        self.passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
         self.edge_prog_mgr = None
         self.logits_quant_attrs = None
 
@@ -171,16 +176,6 @@ class QnnLLMEdgeManager:
         calibration_data,
         tokenizer_path,
     ):
-        try:
-            from executorch.examples.qualcomm.oss_scripts.llm_utils.eval_decoder_model_qnn import (
-                GraphModuleCalibrationWrapper,
-            )
-            from lm_eval.evaluator import simple_evaluate
-        except ImportError:
-            raise ImportError(
-                "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
-            )
-
         tokenizer = get_tokenizer(tokenizer_path)
         logging.info(
             f"Calibrating with tasks: {calibration_tasks}, limit: {calibration_limit}, calibration_data: {calibration_data}, tokenizer_path: {tokenizer_path}, seq_length: {self.config.max_seq_len}"
@@ -211,6 +206,17 @@ class QnnLLMEdgeManager:
             max_len=calibration_seq_length,
         )
         if calibration_tasks is not None and calibration_limit is not None:
+            # Import lazily so only import lm_eval when user use it.
+            try:
+                from executorch.examples.qualcomm.oss_scripts.llm_utils.eval_decoder_model_qnn import (
+                    GraphModuleCalibrationWrapper,
+                )
+                from lm_eval.evaluator import simple_evaluate
+            except ImportError:
+                raise ImportError(
+                    "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
+                )
+
             eval_wrapper = GraphModuleCalibrationWrapper(
                 model=self.graph_module,
                 tokenizer=tokenizer,

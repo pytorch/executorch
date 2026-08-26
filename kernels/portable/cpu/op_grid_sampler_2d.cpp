@@ -16,10 +16,6 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using executorch::aten::ArrayRef;
-using executorch::aten::SizesType;
-using std::optional;
-
 namespace {
 
 // For half-precision inputs, all internal math (source-index computation,

@@ -23,7 +23,7 @@ import numpy as np
 import torch
 
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.export_utils import (
     get_backend_type,
@@ -166,6 +166,8 @@ def quantize(args):
             quant_dtype=quant_dtype,
             per_channel_conv=args.per_channel,
             per_channel_linear=args.per_row,
+            per_channel_embedding=args.per_channel_embedding,
+            act_symmetric=args.act_symmetric,
             act_observer=act_observer,
             backend=get_backend_type(args.backend),
             soc_model=args.soc_model,
@@ -254,7 +256,10 @@ def compile(args):
         sample_inputs = ep.example_inputs[0]
         # step 1: start lowering to QnnBackend
         logger.info(f"start lowering program for {args.artifact}")
-        passes, user_passes = get_capture_program_passes(), []
+        passes, user_passes = (
+            get_qnn_pass_manager_cls(backend_type).get_capture_program_passes(),
+            [],
+        )
         if args.pass_job is not None:
             for job in args.pass_job:
                 try:
@@ -349,14 +354,7 @@ def execute(args):
     io_info = get_io_info(args.artifact, compiler_specs)
     logger.info("preparing ADB connection")
 
-    qnn_config = QnnConfig(
-        build_folder=args.build_folder,
-        device=args.device,
-        soc_model=args.soc_model,
-        host=args.host,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
-    )
+    qnn_config = QnnConfig.load_config(args)
     # leverage SimpleADB for e2e inference
     adb = SimpleADB(
         qnn_config=qnn_config,
@@ -497,6 +495,16 @@ def main():
         help="Use per_row encoding for operator linear.",
     )
     sub_quantize.add_argument(
+        "--per_channel_embedding",
+        action="store_true",
+        help="Use per_channel encoding for operator embedding.",
+    )
+    sub_quantize.add_argument(
+        "--act_symmetric",
+        action="store_true",
+        help="Use symmetric quantization for activations.",
+    )
+    sub_quantize.add_argument(
         "--activation_observer",
         type=str,
         default="MovingAverageMinMaxObserver",
@@ -625,6 +633,12 @@ def main():
         help="Path to cmake binary directory for android, e.g., /path/to/build-android",
         type=str,
         required=True,
+    )
+    sub_execute.add_argument(
+        "--direct_build_folder",
+        help="Path to cmake binary directory for direct_mode. E.g., path/to/build-direct."
+        "If enabled, run self-defined protocol to control fastrpc communication.",
+        type=str,
     )
     sub_execute.add_argument(
         "-H",

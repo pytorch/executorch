@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -46,7 +46,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.0
+          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao
           pip install pytest numpy parameterized huggingface_hub transformers timm expecttest types-requests
@@ -54,7 +54,7 @@ jobs:
 
       - name: Generate mypy stubs for C++ bindings
         run: |
-          cp extension/pybindings/pybindings.pyi extension/pybindings/_portable_lib.pyi
+          cp extension/pybindings/pybindings.pyi extension/pybindings/_C.pyi
 
       - name: Run mypy
         run: |
@@ -93,7 +93,7 @@ jobs:
 
       - name: Install lintrunner and linters
         run: |
-          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.0
+          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           lintrunner init
 
@@ -125,3 +125,4 @@ jobs:
     uses: ./.github/workflows/_link_check.yml
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      base_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}

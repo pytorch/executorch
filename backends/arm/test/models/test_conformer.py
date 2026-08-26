@@ -62,6 +62,10 @@ def test_conformer_tosa_FP():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
+    pipeline.change_args("check_not.exir", [])
+    pipeline.change_args(
+        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
+    )
     pipeline.run()
 
 

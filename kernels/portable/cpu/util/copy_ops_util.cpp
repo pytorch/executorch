@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -241,7 +242,7 @@ bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
     size_t dim = dims[i] >= 0 ? dims[i] : in.dim() + dims[i];
 
     // Internal check, since we have already validated this
-    ET_LOG_AND_RETURN_IF_FALSE(dim < kTensorDimensionLimit && dim >= 0);
+    ET_LOG_AND_RETURN_IF_FALSE(dim < kTensorDimensionLimit);
 
     // Check that the dimension hasn't been seen previously.
     ET_CHECK_OR_RETURN_FALSE(

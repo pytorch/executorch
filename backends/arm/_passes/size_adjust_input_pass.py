@@ -62,6 +62,41 @@ def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
         return input > other
 
 
+def _get_slice_adjustment(
+    remainder: SymIntLike,
+    pad: int,
+    stride: int,
+) -> SymIntLike | None:
+    """Return the amount to slice from the end of a conv dimension.
+
+    The required trim is ``max(remainder - pad, 0)``. For symbolic shapes we
+    encode that clamp using only integer arithmetic that the TOSA shape
+    materializer already supports: a sum of floor-div terms over the possible
+    residue classes.
+
+    """
+    if not isinstance(remainder, torch.SymInt):
+        return remainder - pad if remainder > pad else None
+
+    shape_env = get_context_shape_env()
+    exact_values = evaluate_symbolic_expr_values(remainder.node.expr, shape_env)
+    if exact_values is not None:
+        adjustments = {max(value - pad, 0) for value in exact_values}
+        if len(adjustments) == 1:
+            exact_adjustment = next(iter(adjustments))
+            return exact_adjustment if exact_adjustment > 0 else None
+
+    if pad >= stride - 1:
+        return None
+
+    adjustment: SymIntLike | None = None
+    for threshold in range(pad + 1, stride):
+        term = (remainder + stride - threshold) // stride
+        adjustment = term if adjustment is None else adjustment + term
+
+    return adjustment
+
+
 def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
     slices: Slices = []
 
@@ -85,8 +120,12 @@ def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
         remainder = conv_remainder(
             input_shape[dim], pad, dilation, weight_shape[dim], stride
         )
-        if _greater_than(remainder, pad):
-            adjustment = remainder - pad
+        adjustment = _get_slice_adjustment(
+            remainder,
+            pad,
+            stride,
+        )
+        if adjustment is not None:
             args = (dim, 0, input_shape[dim] - adjustment)
             slices.append(args)
 
@@ -218,7 +257,7 @@ class SizeAdjustInputPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
-        modified_graph = False
+        modified = False
         for node in graph.nodes:
             if node.op != "call_function":
                 continue
@@ -233,18 +272,35 @@ class SizeAdjustInputPass(ArmPass):
 
             parent_node = node.args[0]
             with graph_module.graph.inserting_before(node):
+                # ``Graph.create_node`` rejects raw SymInts in
+                # call_function args. Aggregate every slice arg across
+                # all entries and lift via a single ``materialize_symints``
+                # call -- the helper walks the graph once for producer
+                # discovery, so a single call amortises that cost and lets
+                # symints with shared sub-expressions get hash-consed into
+                # one subgraph. Plain ints pass through unchanged.
+                flat = [a for args in slice_args for a in args]
+                materialized = iter(graph.materialize_symints(flat))
+                # Pop exactly len(args) values from the materialized iterator
+                # and pack them back into a tuple -- regroups the flat list
+                # of lifted values into the original (dim, start, end) shape.
+                lifted_slice_args = [
+                    tuple(next(materialized) for _ in args) for args in slice_args
+                ]
+
                 last_node = cast(torch.fx.Node, parent_node)
-                for args in slice_args:
+                for args in lifted_slice_args:
                     slice_node = create_node(
-                        graph, slice_op, (last_node,) + args, from_node=node
+                        graph,
+                        slice_op,
+                        (last_node,) + args,
+                        from_node=node,
                     )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
-                modified_graph = True
+                modified = True
 
-        if modified_graph:
+        if modified:
             graph_module = super().call(graph_module).graph_module
-            graph.eliminate_dead_code()
-            graph_module.recompile()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

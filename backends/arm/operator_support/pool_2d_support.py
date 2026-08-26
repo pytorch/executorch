@@ -150,6 +150,12 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
 
         # If count_include_pad is True or divior_override is given, padding is applied
         # by concating zero-elements rather than setting it in the avg_pool op.
+        tosa_padding: tuple[
+            int | torch.SymInt,
+            int | torch.SymInt,
+            int | torch.SymInt,
+            int | torch.SymInt,
+        ]
         if count_include_pad or divisor_override is not None:
             tosa_padding = (0, 0, 0, 0)
         # Otherwise, calculate the padding as done in the node visitor

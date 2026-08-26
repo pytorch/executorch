@@ -1,16 +1,17 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
 
-import copy
 from typing import cast, List
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import PERMUTE_COPY_TARGETS
 from executorch.backends.transforms.permute_pass_utils import (
     get_shape,
     RemoveOrReplacePassInterface,
@@ -36,7 +37,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.aten.permute_copy.default]
+        return list(PERMUTE_COPY_TARGETS)
 
     # If list1 and list2 are same (same values and in same order) except
     # list1 has one more element with value of 1. Return index of the extra 1.
@@ -108,7 +109,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
                 # view_node_shape is almost same as permute_node_shape
                 # except it has one more dim somewhere
                 # and the extra dim has value of 1.
-                new_view_shape = copy.deepcopy(pred_shape)
+                new_view_shape = list(pred_shape)
                 new_view_shape.insert(index, 1)
                 new_permute_dims = [x + 1 if x >= index else x for x in permute_dims]
                 new_permute_dims.insert(index, index)
@@ -132,7 +133,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
                 # and the extra dim has value of 1.
                 # Convert permute_dims to list of ints
                 index_to_remove = permute_dims[index]
-                new_view_shape = copy.deepcopy(pred_shape)
+                new_view_shape = list(pred_shape)
                 del new_view_shape[index_to_remove]
                 new_permute_dims = [
                     x - 1 if x > index_to_remove else x for x in permute_dims

@@ -18,7 +18,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -249,6 +248,19 @@ TEST_F(OpSoftmaxOutTest, SimpleGeneratedCase) {
   Tensor out = tf.zeros({10, 10});
   Tensor ret = op_softmax_out(x, 1, false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpSoftmaxOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // N=512: without fp32 accumulation the exp-sum saturates at BFloat16's
+  // precision limit (~256), so the output is ~1/256 instead of 1/512.
+  // 1e-3 is tight enough to catch pre-fix error: |1/256 - 1/512| ≈ 0.00195
+  constexpr int N = 512;
+  Tensor x = tf.zeros({1, N});
+  Tensor out = tf.zeros({1, N});
+  op_softmax_out(x, /*dim=*/1, /*half_to_float=*/false, out);
+  Tensor expected = tf.full({1, N}, 1.0f / N);
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, /*rtol=*/1e-5, /*atol=*/1e-3);
 }
 
 TEST_F(OpSoftmaxOutTest, DynamicShapeUpperBoundSameAsExpected) {

@@ -7,8 +7,6 @@
 
 import unittest
 
-import torch
-
 from executorch.devtools.backend_debug import get_delegation_info
 
 try:
@@ -117,8 +115,6 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertIsNone(quant_dtype)
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], VgfQuantizer)
-        self.assertIsNotNone(quantizers[0].global_config)
-        self.assertEqual(quantizers[0].module_type_config, {})
 
     @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
     def test_get_quantizer_and_quant_params_returns_vgf_linear_quantizer(self):
@@ -134,8 +130,6 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], VgfQuantizer)
-        self.assertIsNone(quantizers[0].global_config)
-        self.assertIn(torch.nn.Linear, quantizers[0].module_type_config)
 
     @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
     def test_vgf_16a8w_requires_int16_compile_spec_extension(self):
@@ -162,4 +156,3 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], VgfQuantizer)
-        self.assertIn(torch.nn.Linear, quantizers[0].module_type_config)

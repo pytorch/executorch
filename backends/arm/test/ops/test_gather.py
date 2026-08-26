@@ -186,7 +186,7 @@ def test_gather_tosa_FP_fp8(test_data: tuple[input_params, str]):
         transform_passes=[
             InsertInt32CastsAfterInt64PlaceholdersPass(),
         ],  # int64 index are not currently supported and need to be cast to int32
-        run_on_tosa_ref_model=False,  # torch.gather() has no eager CPU FP8 implementation here, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
         tosa_extensions=[tosa_extension],
     )
     pipeline.run()
@@ -230,7 +230,7 @@ def test_gather_u85_INT(test_data: input_params):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_fp | test_data_int)
+@common.parametrize("test_data", test_data_fp | test_data_fp_bf16 | test_data_int)
 @common.SkipIfNoModelConverter
 def test_gather_vgf_no_quant(test_data: input_params):
     pipeline = VgfPipeline[input_params](

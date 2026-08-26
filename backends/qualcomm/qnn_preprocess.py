@@ -9,11 +9,14 @@ from collections import defaultdict
 from typing import Dict, final, List
 
 import torch  # noqa: F401
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageInfo,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
@@ -33,6 +36,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from executorch.exir.operator.convert import unwrap_op_overload
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -50,15 +54,16 @@ class QnnBackend(BackendDetails):
         enable_tensor_dump: bool,
         op_package_infos: List[QnnExecuTorchOpPackageInfo],
         use_mha2sha: bool,
+        backend_type: QnnExecuTorchBackendType,
     ):
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation
                 node.meta.pop(QCOM_AXIS_ORDER, "")
         # QNN Delegate Specific Passes
-        graph_module = QnnPassManager().transform_for_preprocess_pipeline(
-            edge_program, use_mha2sha=use_mha2sha
-        )
+        graph_module = get_qnn_pass_manager_cls(
+            backend_type
+        )().transform_for_preprocess_pipeline(edge_program, use_mha2sha=use_mha2sha)
         assert graph_module is not None
 
         nodes_to_wrappers = defaultdict(dict)
@@ -86,11 +91,12 @@ class QnnBackend(BackendDetails):
                         "is not supported in Qnn Delegate"
                     )
                     try:
+                        op = unwrap_op_overload(node.target)
                         context_loader_target = eval(
-                            f"torch.ops.{OpContextLoader.namespace}.{node.target.__name__}",
+                            f"torch.ops.{OpContextLoader.namespace}.{op.__name__}",
                             globals().update(torch.__dict__),
                         )
-                        assert node.target == context_loader_target, err_msg
+                        assert op == context_loader_target, err_msg
                         # if graph has context binary loader node, return directly
                         return node.meta[OpContextLoader.meta_ctx_bin]
                     except:
@@ -123,6 +129,7 @@ class QnnBackend(BackendDetails):
             qnn_manager.IsTensorDump(),
             obj_options.op_package_options.op_package_infos,
             obj_options.use_mha2sha,
+            obj_options.backend_options.backend_type,
         )
 
         qnn_context_binary = qnn_manager.Compile(
@@ -181,6 +188,7 @@ class QnnBackend(BackendDetails):
                     qnn_manager.IsTensorDump(),
                     option.op_package_options.op_package_infos,
                     option.use_mha2sha,
+                    option.backend_options.backend_type,
                 )
                 if qnn_manager.IsTensorDump():
                     for node in programs[i].graph.nodes:

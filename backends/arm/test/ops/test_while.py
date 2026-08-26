@@ -8,6 +8,8 @@ from typing import Callable, Tuple
 import torch
 import torch.fx
 
+from executorch.backends.arm.quantizer import get_symmetric_quantization_config
+from executorch.backends.arm.quantizer.arm_quantizer import _TOSAQuantizerV2
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -219,6 +221,28 @@ def test_while_loop_tosa_INT(case: Callable[[], Tuple[torch.nn.Module, Tuple]]):
         "torch.ops.higher_order.while_loop",
         tosa_extensions=["cf"],
     )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        ArmTester.check_not,
+        pipeline.tester,
+        ["torch.ops.higher_order.while_loop"],
+    )
+    pipeline.run()
+
+
+def test_while_loop_tosa_INT_composable_large_threshold():
+    module, example_inputs = test_cases["large_threshold"]()
+    pipeline = TosaPipelineINT[tuple](
+        module,
+        example_inputs,
+        "torch.ops.higher_order.while_loop",
+        tosa_extensions=["cf"],
+    )
+
+    composable_quantizer = _TOSAQuantizerV2(pipeline.tester.compile_spec)
+    composable_quantizer.set_global(get_symmetric_quantization_config())
+    pipeline.quantizer.quantizer = composable_quantizer
+
     pipeline.add_stage_after(
         "to_edge_transform_and_lower",
         ArmTester.check_not,

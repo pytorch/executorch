@@ -39,6 +39,13 @@ prepare_golden() {
   done
 }
 
+prepare_add() {
+  pushd "${BASEDIR}/../../.."
+  "${PYTHON_EXECUTABLE}" -m test.models.export_program --modules "ModuleAdd" --outdir "${BASEDIR}/src/androidTest/resources/"
+  popd
+}
+
 prepare_xor
 prepare_tinyllama
 prepare_golden
+prepare_add

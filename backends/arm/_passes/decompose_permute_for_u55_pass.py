@@ -18,6 +18,7 @@ from executorch.backends.arm.tosa.mapping import map_dtype
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from torch.fx import GraphModule
 
 
 class DecomposePermuteForU55Pass(ArmOpTargetedPass):
@@ -41,6 +42,11 @@ class DecomposePermuteForU55Pass(ArmOpTargetedPass):
     _CAT_OP = exir_ops.edge.aten.cat.default
     _MAX_PRODUCT = 2**16
     _VELA_TARGET = "ethos-u55-128"
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if not get_context_spec().is_U55_subset:
+            return False
+        return super().should_run_pass(graph_module)
 
     @classmethod
     def _violates_u55_worst_case_constraint(cls, shape: Sequence[int]) -> bool:

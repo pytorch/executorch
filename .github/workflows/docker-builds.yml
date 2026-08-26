@@ -19,7 +19,7 @@ on:
     - cron: 1 3 * * 3
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 env:
@@ -38,12 +38,13 @@ jobs:
           executorch-ubuntu-22.04-clang12,
           executorch-ubuntu-22.04-linter,
           executorch-ubuntu-22.04-arm-sdk,
+          executorch-ubuntu-24.04-arm-sdk,
           executorch-ubuntu-22.04-zephyr-sdk,
           executorch-ubuntu-22.04-qnn-sdk,
           executorch-ubuntu-22.04-mediatek-sdk,
           executorch-ubuntu-22.04-clang12-android,
           executorch-ubuntu-24.04-gcc14,
-          executorch-ubuntu-26.04-gcc15,
+          executorch-ubuntu-26.04-gcc14,
         ]
         include:
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64

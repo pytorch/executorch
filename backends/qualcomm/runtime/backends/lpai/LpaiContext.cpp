@@ -16,12 +16,14 @@ using executorch::runtime::Error;
 
 LpaiContext::LpaiContext(
     QnnImplementation* implementation,
+    QnnSystemImplementation* system_implementation,
     QnnBackend* backend,
     QnnDevice* device,
     QnnBackendCache* cache,
     QnnDlcManager* qnn_dlc_manager)
     : QnnContext(
           implementation,
+          system_implementation,
           backend,
           device,
           cache,

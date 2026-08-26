@@ -19,6 +19,7 @@ class LpaiContext : public QnnContext {
  public:
   LpaiContext(
       QnnImplementation* implementation,
+      QnnSystemImplementation* system_implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,

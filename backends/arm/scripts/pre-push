@@ -32,6 +32,9 @@ DOCGEN_OUTPUTS=(
     "docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md"
 )
 
+VGF_OP_SUPPORT_SCRIPT="backends/arm/scripts/docgen/generate_vgf_op_support.py"
+VGF_OP_SUPPORT_OUTPUT="docs/source/backends/arm-vgf/VGF_op_support.md"
+
 RUN_DOCGEN=0
 
 is_docgen_trigger_file() {
@@ -67,6 +70,38 @@ run_docgen_check() {
         FAILED=1
     else
         echo -e "${SUCCESS} Arm docgen OK"
+    fi
+}
+
+run_vgf_op_support_checks() {
+    echo -e "${INFO} Generating VGF operator support documentation"
+
+    if ! python "$VGF_OP_SUPPORT_SCRIPT"; then
+        echo -e "${ERROR} Failed to generate VGF operator support documentation"
+        FAILED=1
+    elif ! git diff --quiet HEAD -- "$VGF_OP_SUPPORT_OUTPUT"; then
+        echo -e "${ERROR} VGF operator support documentation is out of date." >&2
+        echo -e "${INFO} Review and commit the regenerated operator support list before pushing."
+        git diff HEAD -- "$VGF_OP_SUPPORT_OUTPUT"
+        FAILED=1
+    else
+        echo -e "${SUCCESS} VGF operator support documentation OK"
+    fi
+
+    echo -e "${INFO} Checking VGF operator support coverage"
+
+    if ! python "$VGF_OP_SUPPORT_SCRIPT" --check; then
+        echo -e "${ERROR} VGF operator support coverage check failed" >&2
+        FAILED=1
+    else
+        echo -e "${SUCCESS} VGF operator support coverage OK"
+    fi
+}
+
+run_public_api_validator() {
+    if ! backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh; then
+        echo -e "${ERROR} Arm public API manifest validation failed"
+        FAILED=1
     fi
 }
 
@@ -149,7 +184,6 @@ for COMMIT in ${COMMITS}; do
             fi
         done
     fi
-
     # Check license headers
     # We do a simple check of if all committed headers contain
     # "$current_year Arm". This does not guarantee OK in ci but should be ok
@@ -177,14 +211,15 @@ for COMMIT in ${COMMITS}; do
     for committed_file in "${license_files[@]}"; do
         # Skip files with certain extensions
         case "$committed_file" in
-            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore|*.bzl|BUCK|*/BUCK|TARGETS|*/TARGETS)
+            *.md|*.md.in|*.json|*.yml|*.yaml|*.cmake|*.patch|.gitignore|*.bzl|BUCK|*/BUCK|TARGETS|*/TARGETS|*/generated/*)
                 echo -e "${INFO} Skipping license check for ${committed_file} (excluded extension)"
                 continue
                 ;;
         esac
 
         file_header=$(head "$committed_file")
-        if ! echo "$file_header" | grep -qi "Arm"; then
+        arm_copyright_regex="Copyright .*Arm Limited and/or its affiliates"
+        if ! echo "$file_header" | grep -Eqi "$arm_copyright_regex"; then
             echo -e "${WARNING} No Arm copyright header in ${committed_file}"\
             " (skipping license year check)"
             continue
@@ -310,6 +345,9 @@ if [[ $RUN_DOCGEN -eq 1 ]]; then
 else
     echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
 fi
+
+run_vgf_op_support_checks
+run_public_api_validator
 
 if [[ $FAILED ]]; then
     echo -e "${INFO} Fix your commit message errors with"\

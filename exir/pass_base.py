@@ -29,6 +29,7 @@ from typing import (
 import torch
 from executorch.exir import memory
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
@@ -95,6 +96,54 @@ def _unstack_pytree(xs) -> List[PyTree]:  # pyre-ignore
     for tuple in a:
         pytrees.append(pytree.tree_unflatten(tuple, inspec))
     return pytrees
+
+
+@dataclass(frozen=True)
+class _SymbolicTensorSnapshot:
+    shape: Tuple[Optional[str], ...]
+
+
+def _symbolic_scalar_snapshot(
+    value: Argument,
+) -> Optional[Tuple[str, str]]:
+    if isinstance(value, torch.SymInt):
+        return ("SymInt", str(value))
+    if isinstance(value, torch.SymFloat):
+        return ("SymFloat", str(value))
+    if isinstance(value, torch.SymBool):
+        return ("SymBool", str(value))
+    return None
+
+
+def _leaf_symbolic_snapshot(value: Argument) -> Any:
+    scalar_snapshot = _symbolic_scalar_snapshot(value)
+    if scalar_snapshot is not None:
+        return scalar_snapshot
+
+    if isinstance(value, FakeTensor):
+        if value.constant is not None:
+            return None
+        dims = []
+        has_symbolic_dim = False
+        for dim in value.shape:
+            dim_snapshot = _symbolic_scalar_snapshot(dim)
+            if dim_snapshot is None:
+                dims.append(None)
+            else:
+                has_symbolic_dim = True
+                dims.append(dim_snapshot[1])
+        if has_symbolic_dim:
+            return _SymbolicTensorSnapshot(tuple(dims))
+
+    return None
+
+
+def _extract_symbolic_snapshot(value: Argument) -> Any:
+    snapshot = pytree.tree_map(_leaf_symbolic_snapshot, value)
+    leaves = pytree.tree_leaves(snapshot)
+    if any(leaf is not None for leaf in leaves):
+        return snapshot
+    return None
 
 
 class NodeMetadata:
@@ -480,6 +529,50 @@ class _ExportPassBase(PassBase):
         self._initialized = True
         self.node_debug_str: Optional[str] = None
 
+    def should_preserve_symbolic_input_metadata(self) -> bool:
+        """Returns whether replay should validate symbolic input preservation.
+
+        Override to ``False`` for passes that intentionally change symbolic
+        input metadata during replay.
+        """
+        return True
+
+    def _capture_symbolic_input_snapshots(
+        self, graph_module: fx.GraphModule
+    ) -> List[Any]:
+        return [
+            _extract_symbolic_snapshot(node.meta.get("val"))
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder"
+        ]
+
+    def _validate_symbolic_input_snapshots(
+        self,
+        graph_module: fx.GraphModule,
+        new_graph_module: fx.GraphModule,
+    ) -> None:
+        if not self.should_preserve_symbolic_input_metadata():
+            return
+
+        symbolic_inputs = self._capture_symbolic_input_snapshots(graph_module)
+        if all(snapshot is None for snapshot in symbolic_inputs):
+            return
+
+        new_symbolic_inputs = self._capture_symbolic_input_snapshots(new_graph_module)
+        for input_index, snapshot in enumerate(symbolic_inputs):
+            if snapshot is None:
+                continue
+            if input_index >= len(new_symbolic_inputs):
+                raise ExportPassBaseError(
+                    f"Input at position {input_index} did not preserve symbolic metadata across pass replay."
+                )
+
+            current_snapshot = new_symbolic_inputs[input_index]
+            if current_snapshot != snapshot:
+                raise ExportPassBaseError(
+                    f"Input at position {input_index} did not preserve symbolic metadata across pass replay."
+                )
+
     def _fx(
         self,
         kind: str,
@@ -561,6 +654,58 @@ class _ExportPassBase(PassBase):
         meta: NodeMetadata,
     ) -> ProxyValue:
         return self._fx("call_function", op, args, kwargs, meta)
+
+    def call_size_operator(
+        self,
+        tensor_proxy: ProxyValue,
+        dim: int,
+        meta: NodeMetadata,
+        *,
+        edge_dialect: bool = False,
+    ) -> Union[ProxyValue, int]:
+        """Read ``tensor_proxy.size(dim)`` as a value usable in graph args.
+        Returns a plain ``int`` for static dims; emits and returns a
+        ``sym_size.int`` ``ProxyValue`` for SymInt dims (since
+        ``Graph.create_node`` rejects raw SymInts in call_function args).
+
+        When ``edge_dialect`` is True, emits ``exir_ops.edge.aten.sym_size.int``
+        so the node fits an edge-lowered graph; otherwise emits the raw
+        ``torch.ops.aten.sym_size.int``.
+        """
+        size = tensor_proxy.data.shape[dim]
+        if isinstance(size, torch.SymInt):
+            sym_size_op = (
+                exir_ops.edge.aten.sym_size.int
+                if edge_dialect
+                else torch.ops.aten.sym_size.int
+            )
+            new_proxy = self.call_operator(sym_size_op, (tensor_proxy, dim), {}, meta)
+            # Mirror source's "example_value" if present, so the new node
+            # matches the surrounding graph's meta-key convention. "val"
+            # is already set by call_operator → _fx → set_metadata.
+            if "example_value" in tensor_proxy.node.meta:
+                new_proxy.node.meta["example_value"] = new_proxy.node.meta["val"]
+            return new_proxy
+        return int(size)
+
+    def call_size_operator_all(
+        self,
+        tensor_proxy: ProxyValue,
+        meta: NodeMetadata,
+        *,
+        edge_dialect: bool = False,
+    ) -> list[Union[ProxyValue, int]]:
+        """Return all dims of ``tensor_proxy.shape`` as a list of values
+        usable in graph args. Each entry is an ``int`` (static dim) or a
+        ``sym_size.int`` ``ProxyValue`` (dynamic dim) — see
+        ``call_size_operator``.
+
+        ``edge_dialect`` selects the edge vs raw ATen ``sym_size.int`` op.
+        """
+        return [
+            self.call_size_operator(tensor_proxy, d, meta, edge_dialect=edge_dialect)
+            for d in range(len(tensor_proxy.data.shape))
+        ]
 
     def call_sym(
         self,
@@ -691,6 +836,10 @@ class _ExportPassBase(PassBase):
             interpreter.run(*inputs_data)
 
         new_graph_module = torch.fx.GraphModule(self.tracer.root, self.tracer.graph)
+        self._validate_symbolic_input_snapshots(graph_module, new_graph_module)
+
+        # Preserve GraphModule-level metadata from the input module.
+        new_graph_module.meta = graph_module.meta.copy()
 
         self.tracer = prev_tracer
         self.interpreter = prev_interpreter

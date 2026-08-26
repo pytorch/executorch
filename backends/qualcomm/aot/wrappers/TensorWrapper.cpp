@@ -12,6 +12,7 @@
 #include <executorch/runtime/platform/assert.h>
 
 #include <atomic>
+#include <cinttypes>
 #include <cstring>
 #include <limits>
 #include <numeric>
@@ -188,7 +189,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
     for (std::uint32_t i = 0; i < rank; ++i) {
       ET_CHECK_MSG(
           !c10::mul_overflows(computed_bytes, dims[i], &computed_bytes),
-          "Overflow computing tensor byte size for tensor of rank %u",
+          "Overflow computing tensor byte size for tensor of rank %" PRIu32,
           rank);
     }
     bytes = computed_bytes;

@@ -28,28 +28,23 @@ class LeakyReluConverter(NodeConverter):
     ) -> bool:
         return True
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
-            if not NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            ):
-                return False
-
-            return True
-        else:
-
-            return True
+        return True
 
     def convert(self, node: Node):
         """Convert the `aten.leaky_relu.default` operator to Neutron IR `LeakyRelu`.

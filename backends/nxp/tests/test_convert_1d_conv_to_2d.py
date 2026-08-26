@@ -253,7 +253,7 @@ def test_convert_conv_1d_transp_to_conv2d_transp(
     [
         pytest.param(3, 1, 1, 1, 1, True, id="All default, except for padding = 1."),
         pytest.param(1, 1, 0, 1, 1, True, id="kernel_size = 1"),
-        pytest.param(3, 2, 5, 1, 1, True, id="stride = 2"),
+        pytest.param(3, 2, 2, 1, 1, True, id="stride = 2"),
         pytest.param(3, 1, 2, 2, 1, True, id="dilation = 2"),
         pytest.param(3, 1, 1, 1, 1, False, id="bias = False, padding = 1"),
     ],
@@ -323,17 +323,7 @@ def test_convert_conv_1d_to_conv2d_full_pipeline(
     [
         pytest.param(2, 2, 0, 0, 1, True, 1, id="All default."),
         pytest.param(4, 2, 1, 0, 1, True, 1, id="kernel_size = 4 (and padding = 1)"),
-        pytest.param(4, 4, 0, 0, 1, True, 1, id="stride = 4 (and kernel_size = 4)"),
-        pytest.param(
-            4,
-            4,
-            1,
-            2,
-            1,
-            True,
-            1,
-            id="output_padding = 2 (and kernel_size = 4, stride = 4, padding = 1)",
-        ),
+        pytest.param(2, 2, 0, 1, 1, True, 1, id="output_padding = 1"),
         pytest.param(2, 2, 0, 0, 1, False, 1, id="bias=False"),
     ],
 )

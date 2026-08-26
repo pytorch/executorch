@@ -16,6 +16,8 @@ from executorch.backends.arm.tosa import TosaSpecification
 
 from executorch.backends.test.harness.tester import Quantize
 from torch import nn
+from torch.fx import Node
+from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
 
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -122,3 +124,52 @@ def test_bn_relu_folding_qat_tosa_INT(test_data):
         ),
     )
     pipeline.run()
+
+
+def test_qat_batch_norm_updates_registered_running_stats():
+    class ConvBatchNorm(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = nn.Conv1d(2, 2, 1, bias=False)
+            self.bn = nn.BatchNorm1d(2)
+            with torch.no_grad():
+                self.conv.weight.copy_(torch.eye(2).unsqueeze(-1))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.bn(self.conv(x))
+
+    sample = torch.stack((torch.full((4, 8), 3.0), torch.full((4, 8), -2.0)), dim=1)
+    model = torch.export.export(
+        ConvBatchNorm().train(), (sample,), strict=True
+    ).module()
+    quantizer = TOSAQuantizer(
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        use_composable_quantizer=True,
+    ).set_global(get_symmetric_quantization_config(is_qat=True, is_per_channel=False))
+
+    prepared = prepare_qat_pt2e(model, quantizer)
+    batch_norm_nodes = [
+        node
+        for node in prepared.graph.nodes
+        if node.target == torch.ops.aten.batch_norm.default
+    ]
+    assert len(batch_norm_nodes) == 1
+    batch_norm_node = batch_norm_nodes[0]
+
+    for state_node in batch_norm_node.args[1:5]:
+        assert isinstance(state_node, Node)
+        assert state_node.op == "get_attr"
+
+    running_mean_node = batch_norm_node.args[3]
+    running_var_node = batch_norm_node.args[4]
+    assert isinstance(running_mean_node, Node)
+    assert isinstance(running_var_node, Node)
+    running_mean = prepared.get_buffer(str(running_mean_node.target))
+    running_var = prepared.get_buffer(str(running_var_node.target))
+    initial_running_mean = running_mean.clone()
+    initial_running_var = running_var.clone()
+
+    prepared(sample)
+
+    assert not torch.equal(running_mean, initial_running_mean)
+    assert not torch.equal(running_var, initial_running_var)

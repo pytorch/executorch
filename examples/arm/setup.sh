@@ -6,6 +6,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer setup helper. This command-line interface is not a public API and
+# may change without deprecation.
 
 set -u
 
@@ -20,9 +23,9 @@ root_dir="${script_dir}/arm-scratch"
 eula_acceptance=0
 enable_baremetal_toolchain=1
 target_toolchain=""
+target_toolchains=()
 enable_fvps=1
 enable_vela=1
-enable_cortex_m=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
@@ -46,10 +49,9 @@ OPTION_LIST=(
   "--i-agree-to-the-contained-eula (required) Agree to the EULA"
   "--root-dir Path to scratch directory"
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
-  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl"
+  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl. Repeat the option to install multiple toolchains."
   "--enable-fvps Enable FVP setup"
   "--enable-vela Enable VELA setup"
-  "--disable-cortex-m-deps Do not setup what is needed for Cortex-M"
   "--enable-model-converter Enable MLSDK model converter setup"
   "--enable-vgf-lib Enable MLSDK vgf library setup"
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
@@ -69,6 +71,7 @@ OPTION_LIST=(
 
 function print_usage() {
     echo "Usage: $(basename "$0") [OPTIONS]"
+    echo "Note: this developer setup script is not a stable public API."
     echo
     echo "Available options:"
     for entry in "${OPTION_LIST[@]}"; do
@@ -105,17 +108,17 @@ function check_options() {
                 shift
                 ;;
             --target-toolchain)
-                # Only change default root dir if the script is being executed and not sourced.
-                if [[ $is_script_sourced -eq 0 ]]; then
-                    target_toolchain=${2:-"${target_toolchain}"}
-                fi
-
-                if [[ $# -ge 2 ]]; then
-                    shift 2
-                else
+                if [[ $# -lt 2 ]]; then
                     print_usage "$@"
                     exit 1
                 fi
+
+                # Only change target toolchains if the script is being executed and not sourced.
+                if [[ $is_script_sourced -eq 0 ]]; then
+                    add_target_toolchain "$2"
+                fi
+
+                shift 2
                 ;;
             --enable-fvps)
                 enable_fvps=1
@@ -123,10 +126,6 @@ function check_options() {
                 ;;
             --enable-vela)
                 enable_vela=1
-                shift
-                ;;
-            --disable-cortex-m-deps)
-                enable_cortex_m=0
                 shift
                 ;;
             --enable-model-converter)
@@ -200,6 +199,24 @@ function check_options() {
     done
 }
 
+function add_target_toolchain() {
+    local toolchain=$1
+    if [[ "${toolchain}" == "" ]]; then
+        toolchain="gnu"
+    elif [[ "${toolchain}" != "gnu" && "${toolchain}" != "zephyr" && "${toolchain}" != "linux-musl" ]]; then
+        echo "Error: Unsupported target toolchain '${toolchain}'. Valid options are gnu, zephyr, linux-musl." >&2
+        exit 1
+    fi
+
+    local selected_toolchain
+    for selected_toolchain in "${target_toolchains[@]}"; do
+        if [[ "${selected_toolchain}" == "${toolchain}" ]]; then
+            return
+        fi
+    done
+    target_toolchains+=("${toolchain}")
+}
+
 function setup_root_dir() {
     mkdir -p "${root_dir}"
     root_dir=$(realpath "${root_dir}")
@@ -209,7 +226,7 @@ function setup_root_dir() {
 
 function setup_ethos_u_tools() {
     log_step "ethos-u-tools" "Installing Ethos-U Python tooling"
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-ethos-u.txt"
 }
 
 function setup_cortex_m_tools() {
@@ -219,7 +236,13 @@ function setup_cortex_m_tools() {
 
 function setup_mlsdk_dependencies() {
     log_step "mlsdk" "Installing MLSDK dependencies"
-    pip install -r $et_dir/backends/arm/requirements-arm-vgf.txt
+    if [[ "${enable_model_converter}" -eq 1 || "${enable_emulation_layer}" -eq 1 ]]; then
+        pip install -r "$et_dir/backends/arm/requirements-arm-vgf.txt"
+    fi
+
+    if [[ "${enable_vgf_lib}" -eq 1 ]]; then
+        pip install -r "$et_dir/backends/arm/requirements-arm-vgf-runtime.txt"
+    fi
 }
 
 function validate_mlsdk_pip_compatibility() {
@@ -260,7 +283,12 @@ function create_setup_path(){
     fi
 
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        setup_path_toolchain
+        local selected_toolchain
+        for selected_toolchain in "${target_toolchains[@]}"; do
+            target_toolchain="${selected_toolchain}"
+            select_toolchain
+            setup_path_toolchain
+        done
     fi
 
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
@@ -283,7 +311,17 @@ function create_setup_path(){
 if [[ $is_script_sourced -eq 0 ]]; then
     set -e
 
+    if [[ -n "$("${et_dir}/.ci/scripts/detect_ci.sh" --and-not-debug)" ]]; then
+        ARM_SETUP_CURL_PROGRESS_ARGS=(--no-progress-meter)
+        export PIP_PROGRESS_BAR=off
+    fi
+
     check_options "$@"
+
+    if [[ "${#target_toolchains[@]}" -eq 0 ]]; then
+        target_toolchains=("gnu")
+    fi
+    target_toolchains_display="$(IFS=,; echo "${target_toolchains[*]}")"
 
     # Import utils
     source $et_dir/backends/arm/scripts/fvp_utils.sh
@@ -302,19 +340,20 @@ if [[ $is_script_sourced -eq 0 ]]; then
     cd "${root_dir}"
 
     log_step "options" \
-             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}"
+             "root=${root_dir}, target-toolchain=${target_toolchains_display}"
     log_step "options" \
              "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
-             "cortex-m: deps=${enable_cortex_m} | " \
              "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
                     "emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        log_step "toolchain" "Configuring baremetal toolchain (${target_toolchain:-gnu})"
-        # Select appropriate toolchain
-        select_toolchain
-        setup_toolchain
+        log_step "toolchain" "Configuring baremetal toolchain(s): ${target_toolchains_display}"
+        for selected_toolchain in "${target_toolchains[@]}"; do
+            target_toolchain="${selected_toolchain}"
+            select_toolchain
+            setup_toolchain
+        done
     fi
 
     # Setup FVP
@@ -354,11 +393,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     if [[ "${enable_vela}" -eq 1 ]]; then
         log_step "deps" "Installing Ethos-U Vela compiler"
         setup_ethos_u_tools
-    fi
-
-    if [[ "${enable_cortex_m}" -eq 1 ]]; then
-        log_step "deps" "Installing Cortex-M CMSIS-NN tooling"
-        setup_cortex_m_tools
     fi
 
     log_step "main" "Setup complete"

@@ -38,7 +38,6 @@ using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;

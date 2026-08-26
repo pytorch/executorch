@@ -208,10 +208,23 @@ void Context::register_shader_dispatch(
   cmd_.dispatch(effective_global_wg);
 }
 
+void Context::register_barrier(vkapi::PipelineBarrier& pipeline_barrier) {
+  cmd_.insert_barrier_only(pipeline_barrier);
+}
+
 void Context::register_blit(
     vkapi::PipelineBarrier& pipeline_barrier,
     vkapi::VulkanImage& src,
     vkapi::VulkanImage& dst) {
+  // vkCmdBlitImage requires a queue with graphics capability; transfer- or
+  // compute-only queues cannot perform blits. The queue is selected by compute
+  // capability only, so on desktop GPUs that expose compute-only queue families
+  // this could otherwise be invalid usage. On mobile the single universal queue
+  // always has this bit set.
+  VK_CHECK_COND(
+      queue_.capabilities & VK_QUEUE_GRAPHICS_BIT,
+      "The Vulkan queue selected for compute does not support blit operations "
+      "(VK_QUEUE_GRAPHICS_BIT is not set).");
   cmd_.insert_barrier(pipeline_barrier);
   cmd_.blit(src, dst);
 }

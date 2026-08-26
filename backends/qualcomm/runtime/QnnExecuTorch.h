@@ -27,6 +27,16 @@
 #define QNN_RUNTIME_LPAI_CORE_SELECTION "qnn_runtime_lpai_core_selection"
 #define QNN_RUNTIME_HEAP_PROFILING_PATH "qnn_runtime_heap_profiling_path"
 
+#if defined(_MSC_VER)
+#if defined(QNN_EXECUTORCH_BUILDING_DLL)
+#define QNN_EXECUTORCH_EXPORT __declspec(dllexport)
+#else
+#define QNN_EXECUTORCH_EXPORT __declspec(dllimport)
+#endif
+#else
+#define QNN_EXECUTORCH_EXPORT __attribute__((__visibility__("default")))
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -69,18 +79,34 @@ struct CustomMemTensorInfo {
 /// alignment as MemoryAllocator::kDefaultAlignment.
 /// See runtime/core/memory_allocator.h. The function returns a valid pointer
 /// if allocation is successful.
-__attribute__((__visibility__("default"))) void* QnnExecuTorchAllocCustomMem(
+QNN_EXECUTORCH_EXPORT void* QnnExecuTorchAllocCustomMem(
     size_t bytes,
     size_t alignment);
 
 /// Add tensor to custom memory with custom type descriptor. Create memory
 /// handle to tensor wrapper during execution
-__attribute__((__visibility__("default"))) void
-QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem);
+QNN_EXECUTORCH_EXPORT void QnnExecuTorchAddCustomMemTensorAddr(
+    void* tensor_addr,
+    void* custom_mem);
 
 /// Free the allocated shared memory.
-__attribute__((__visibility__("default"))) void QnnExecuTorchFreeCustomMem(
-    void* buffer_ptr);
+QNN_EXECUTORCH_EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
+
+/// Register the QNN backend with the ExecuTorch runtime living in the caller's
+/// module. On Windows the backend DLL and the runner exe each carry a private
+/// copy of executorch_core's backend registry, so the DLL's own static
+/// initializer cannot register into the exe's registry. The runner must call
+/// this from main() and pass a pointer to its own register_backend so that
+/// registration lands in the exe's address space.
+///
+/// @param[in] register_fn Pointer to executorch::runtime::register_backend.
+///     Its required signature is:
+///         executorch::runtime::Error (*)(
+///             const executorch::runtime::Backend&)
+///     The pointer crosses the DLL boundary as void* (C ABI) and is cast back
+///     to that signature inside the DLL. On non-Windows builds this is a no-op
+///     because ELF symbol interposition already shares a single registry.
+QNN_EXECUTORCH_EXPORT void QnnExecuTorchBackendRegister(void* register_fn);
 
 #ifdef __cplusplus
 }

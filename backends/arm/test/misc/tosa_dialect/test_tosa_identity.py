@@ -13,7 +13,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 
-def test_identity_tosa_FP() -> None:
+def test_identity_tosa_FP_fake() -> None:
     sample_input = torch.randn((1, 2, 3, 4), dtype=torch.float32)
 
     with TosaLoweringContext(
@@ -23,3 +23,12 @@ def test_identity_tosa_FP() -> None:
 
         assert output.dtype == sample_input.dtype
         assert tuple(output.shape) == tuple(sample_input.shape)
+
+
+def test_identity_tosa_FP_real() -> None:
+    sample_input = torch.randn((1, 2, 3, 4), dtype=torch.float32)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        output = exir_ops.backend.tosa.IDENTITY.default(sample_input)
+
+    torch.testing.assert_close(output, sample_input)

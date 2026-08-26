@@ -24,9 +24,9 @@ Usage:
 See README.md in this directory for full documentation.
 """
 
-import os
 from typing import Callable, Dict, List, Optional, Tuple
 
+import executorch.exir as exir
 import torch
 import torch.nn as nn
 
@@ -35,6 +35,8 @@ from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa:
     custom_ops,
     ops,
 )
+from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
+from executorch.backends.mlx.llm.sampling import SamplingHead
 from torch.export import Dim
 
 from .test_utils import OpTestCase, register_test
@@ -110,6 +112,62 @@ class AddTest(OpTestCase):
         else:
             y = torch.randn(self.shape)
             return (x, y)
+
+
+class ReinplaceChainModel(nn.Module):
+    """Elementwise chain the reinplace pass converts to in-place ops.
+
+    Mixes a pure unary op (exp), activations (sigmoid/relu/clamp/gelu), and
+    binary ops (add/mul/sub) so the chain exercises the unary, activation, and
+    binary in-place handlers. Every op after the first sigmoid consumes a
+    single-use temp, so all become in-place (sigmoid_/add_/relu_/mul_/clamp_/
+    exp_/gelu_/sub_) and run on one rolling buffer; the terminal neg writes the
+    graph output. Inputs are kept NaN/Inf-free: sigmoid -> bounded, clamp to
+    [-2, 2] before exp so exp stays in [e^-2, e^2].
+    """
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        s = torch.sigmoid(x)  # reads input -> fresh temp
+        s = s + y  # add_
+        s = torch.relu(s)  # relu_ (activation)
+        s = s * y  # mul_
+        s = torch.clamp(s, -2.0, 2.0)  # clamp_ (activation), bounds exp below
+        s = torch.exp(s)  # exp_ (pure unary)
+        s = torch.nn.functional.gelu(s)  # gelu_ (activation)
+        s = s - y  # sub_
+        return torch.neg(s)  # terminal output (not in-place)
+
+
+@register_test
+class ReinplaceChainTest(OpTestCase):
+    """On-device numeric check that reinplaced (out==in) ops are correct.
+
+    Lowers with get_default_passes() so the MLXReinplacePass + in-place handlers
+    (out == in buffer donation) run through the actual MLX runtime. The
+    build-level aliasing is unit-tested in test_passes.py; only on-device
+    execution catches a read-after-overwrite bug from buffer reuse.
+    """
+
+    name = "reinplace_chain"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def create_model(self) -> nn.Module:
+        return ReinplaceChainModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(2, 16, 64), torch.randn(2, 16, 64))
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # Reinplace introduces non-core-ATen in-place ops (add_, sigmoid_, ...),
+        # so disable the strict edge verifier — matching the production export
+        # path (which also runs get_default_passes with this config).
+        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
 
 class SubModel(nn.Module):
@@ -402,6 +460,60 @@ class HardtanhTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         # Values span well beyond the bounds so clamping is actually exercised
         x = torch.randn(self.shape) * 4
+        return (x,)
+
+
+class LeakyReLUModel(nn.Module):
+    """Model that applies leaky_relu with an optional negative slope."""
+
+    def __init__(self, negative_slope: Optional[float] = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.negative_slope is None:
+            return torch.nn.functional.leaky_relu(x)
+        return torch.nn.functional.leaky_relu(x, negative_slope=self.negative_slope)
+
+
+@register_test
+class LeakyReLUTest(OpTestCase):
+    """Test case for leaky_relu activation with various negative slopes."""
+
+    name = "leaky_relu"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        negative_slope: Optional[float] = 0.01,
+    ):
+        self.shape = shape
+        self.negative_slope = negative_slope
+        shape_str = "x".join(str(s) for s in shape)
+        slope_str = "default" if negative_slope is None else f"slope{negative_slope}"
+        self.name = f"leaky_relu_{slope_str}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["LeakyReLUTest"]:
+        return [
+            cls(shape=(2, 3, 4), negative_slope=0.01),
+            cls(shape=(2, 3, 4), negative_slope=None),
+            cls(shape=(4, 8), negative_slope=0.1),
+            cls(shape=(10,), negative_slope=0.2),
+            cls(shape=(10,), negative_slope=1.5),
+            cls(shape=(2, 8, 16), negative_slope=0.01),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return LeakyReLUModel(self.negative_slope)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        numel = 1
+        for size in self.shape:
+            numel *= size
+        x = torch.linspace(-4.0, 4.0, steps=numel).reshape(self.shape)
         return (x,)
 
 
@@ -2704,6 +2816,7 @@ class RingBufferKVCacheModel(nn.Module):
         max_context_length: int,
         n_heads: int,
         head_dim: int,
+        max_write_len: Optional[int] = None,
     ):
         super().__init__()
         from executorch.backends.mlx.llm.cache import RingBufferKVCache
@@ -2713,6 +2826,7 @@ class RingBufferKVCacheModel(nn.Module):
             max_context_length=max_context_length,
             n_heads=n_heads,
             head_dim=head_dim,
+            max_write_len=max_write_len,
         )
 
     def forward(
@@ -2749,18 +2863,31 @@ class RingBufferKVCacheTest(OpTestCase):
         head_dim: int = 64,
         max_context_length: int = 64,
         seq_step: int = 4,
+        max_write_len: Optional[int] = None,
     ):
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
         self.head_dim = head_dim
         self.max_context_length = max_context_length
         self.seq_step = seq_step
+        self.max_write_len = max_write_len
 
     @classmethod
     def get_test_configs(cls) -> List["RingBufferKVCacheTest"]:
         return [
             cls(),
             cls(n_heads=8, head_dim=32, max_context_length=32, seq_step=2),
+            # Reduced buffer (max_write_len < window) with a wrapping write:
+            # window=8, max_write_len=4 -> buffer_size=11. The test write of 4
+            # tokens at start_pos=8 wraps the ring (slots 8,9,10 then 0),
+            # exercising the tighter buffer
+            cls(
+                n_heads=8,
+                head_dim=32,
+                max_context_length=8,
+                seq_step=2,
+                max_write_len=4,
+            ),
         ]
 
     def create_model(self) -> nn.Module:
@@ -2769,6 +2896,7 @@ class RingBufferKVCacheTest(OpTestCase):
             max_context_length=self.max_context_length,
             n_heads=self.n_heads,
             head_dim=self.head_dim,
+            max_write_len=self.max_write_len,
         )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
@@ -2793,7 +2921,13 @@ class RingBufferKVCacheTest(OpTestCase):
         return (input_pos, k_val, v_val)
 
     def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
-        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        # A single write can't exceed max_write_len (defaults to the window).
+        seq_max = (
+            self.max_write_len
+            if self.max_write_len is not None
+            else self.max_context_length
+        )
+        seq_dim = Dim("seq_step", min=1, max=seq_max)
         return {
             "input_pos": None,
             "k_val": {2: seq_dim},
@@ -4603,6 +4737,21 @@ def _nan_input_fn(nan_frac: float = 0.3):
     return fn
 
 
+def _inf_input_fn():
+    """Return a callable(shape, dtype) that generates inputs with some inf values."""
+
+    def fn(shape, dtype):
+        x = torch.randn(shape, dtype=dtype)
+        # Insert ~20% +inf and ~10% -inf using non-overlapping masks
+        mask_pos = torch.rand(shape) > 0.8  # ~20% -> +inf
+        mask_neg = (~mask_pos) & (torch.rand(shape) > 0.9)  # ~10% of remaining -> -inf
+        x[mask_pos] = float("inf")
+        x[mask_neg] = float("-inf")
+        return (x,)
+
+    return fn
+
+
 # Standard shape and dtype configs used by unary tests.
 _SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
 _SHAPES_2 = [(16,), (4, 4)]
@@ -4696,6 +4845,7 @@ _UNARY_OP_TESTS = [
     {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
     {"op_name": "bitwise_not_int", "op_fn": torch.bitwise_not, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn": _int_input_fn()},
     {"op_name": "isnan",      "op_fn": torch.isnan,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _nan_input_fn()},
+    {"op_name": "isinf",      "op_fn": torch.isinf,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _inf_input_fn()},
     # activations
     {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
@@ -4806,6 +4956,10 @@ _BINARY_OP_TESTS = [
     # logical
     {"op_name": "bitwise_and_bool", "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
     {"op_name": "bitwise_and_int",  "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
+    {"op_name": "bitwise_or_bool",  "op_fn": torch.bitwise_or,  "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "bitwise_or_int",   "op_fn": torch.bitwise_or,  "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
+    {"op_name": "bitwise_xor_bool", "op_fn": torch.bitwise_xor, "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "bitwise_xor_int",  "op_fn": torch.bitwise_xor, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
     {"op_name": "logical_and",   "op_fn": torch.logical_and, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
     {"op_name": "logical_or",    "op_fn": torch.logical_or,  "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
 ]
@@ -4861,6 +5015,96 @@ class BitwiseAndScalarTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return BitwiseAndScalarModel(self.scalar)
+
+
+class BitwiseOrScalarModel(nn.Module):
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        return torch.bitwise_or(a, self.scalar)
+
+
+@register_test
+class BitwiseOrScalarTest(OpTestCase):
+    """Test case for aten.bitwise_or op (Tensor_Scalar variant)."""
+
+    name = "bitwise_or_scalar"
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype,
+        scalar,
+    ):
+        self.shape = shape
+        self.dtype = dtype
+        self.scalar = scalar
+        shape_str = "x".join(str(s) for s in shape)
+        dtype_str = str(dtype).replace("torch.", "")
+        self.name = f"bitwise_or_scalar_{shape_str}_{dtype_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["BitwiseOrScalarTest"]:
+        return [
+            cls(shape=(16,), dtype=torch.bool, scalar=True),
+            cls(shape=(4, 4), dtype=torch.int32, scalar=7),
+            cls(shape=(2, 3, 4), dtype=torch.int64, scalar=13),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dtype == torch.bool:
+            return _bool_input_fn()(self.shape, self.dtype)
+        return _int_input_fn(0, 256)(self.shape, self.dtype)
+
+    def create_model(self) -> nn.Module:
+        return BitwiseOrScalarModel(self.scalar)
+
+
+class BitwiseXorScalarModel(nn.Module):
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        return torch.bitwise_xor(a, self.scalar)
+
+
+@register_test
+class BitwiseXorScalarTest(OpTestCase):
+    """Test case for aten.bitwise_xor op (Tensor_Scalar variant)."""
+
+    name = "bitwise_xor_scalar"
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype,
+        scalar,
+    ):
+        self.shape = shape
+        self.dtype = dtype
+        self.scalar = scalar
+        shape_str = "x".join(str(s) for s in shape)
+        dtype_str = str(dtype).replace("torch.", "")
+        self.name = f"bitwise_xor_scalar_{shape_str}_{dtype_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["BitwiseXorScalarTest"]:
+        return [
+            cls(shape=(16,), dtype=torch.bool, scalar=True),
+            cls(shape=(4, 4), dtype=torch.int32, scalar=7),
+            cls(shape=(2, 3, 4), dtype=torch.int64, scalar=13),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dtype == torch.bool:
+            return _bool_input_fn()(self.shape, self.dtype)
+        return _int_input_fn(0, 256)(self.shape, self.dtype)
+
+    def create_model(self) -> nn.Module:
+        return BitwiseXorScalarModel(self.scalar)
 
 
 @register_test
@@ -6075,20 +6319,9 @@ class QuantizedLinearTest(OpTestCase):
             cls(group_size=128),
             cls(qdtype=torch.int2),
             cls(qdtype=torch.int8),
-            # group_size=16: exercises the non-fused dequantize+matmul path
-            # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
-            cls(qdtype=torch.int8, group_size=16),
-            cls(qdtype=torch.int4, group_size=16),
-            cls(qdtype=torch.int8, group_size=16, bias=False),
+            cls(qdtype=torch.int6),
+            cls(qdtype=torch.int6, group_size=128),
         ]
-
-    def generate_test_files(self, verbose=False):
-        if self.group_size < 32:
-            os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
-        try:
-            return super().generate_test_files(verbose=verbose)
-        finally:
-            os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
 
     def create_model(self) -> nn.Module:
         model = LinearModel(self.in_features, self.out_features, bias=self.bias)
@@ -6371,12 +6604,28 @@ class QuantizedSwitchLinearTest(OpTestCase):
 class GatherMmModel(nn.Module):
     """Model using mlx::gather_mm for expert selection + matmul."""
 
-    def __init__(self, num_experts: int, in_features: int, out_features: int):
+    def __init__(
+        self,
+        num_experts: int,
+        in_features: int,
+        out_features: int,
+        sorted_indices: bool = False,
+    ):
         super().__init__()
         self.register_buffer(
             "weight",
             torch.randn(num_experts, out_features, in_features),
         )
+        # sorted_indices is Optional[Tensor] (0-d int32) rather than a bool.
+        # Store as buffer so it is part of the exported graph and exercises
+        # the IntOrVid runtime path in the handler.
+        if sorted_indices:
+            self.register_buffer(
+                "sorted_flag",
+                torch.ones((), dtype=torch.int32),
+            )
+        else:
+            self.sorted_flag = None
 
     def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
         import executorch.backends.mlx.custom_ops as _  # noqa
@@ -6385,13 +6634,20 @@ class GatherMmModel(nn.Module):
         # Transpose weight from [E, out, in] to [E, in, out]
         # gather_mm returns [N, 1, out], squeeze dim -2
         return torch.ops.mlx.gather_mm(
-            x.unsqueeze(-2), self.weight.transpose(-1, -2), rhs_indices=indices
+            x.unsqueeze(-2),
+            self.weight.transpose(-1, -2),
+            rhs_indices=indices,
+            sorted_indices=self.sorted_flag,
         ).squeeze(-2)
 
 
 @register_test
 class GatherMmTest(OpTestCase):
-    """Test case for mlx::gather_mm."""
+    """Test case for mlx::gather_mm.
+
+    Includes a sorted=True config to exercise the Optional[Tensor] ->
+    IntOrVid runtime path in _gather_mm_handler.
+    """
 
     name = "gather_mm"
     rtol = 1e-4
@@ -6404,16 +6660,20 @@ class GatherMmTest(OpTestCase):
         out_features: int = 128,
         batch_size: int = 2,
         dtype: torch.dtype = torch.float32,
+        sorted_indices: bool = False,
     ):
         self.num_experts = num_experts
         self.in_features = in_features
         self.out_features = out_features
         self.batch_size = batch_size
         self.dtype = dtype
+        self.sorted_indices = sorted_indices
 
         parts = ["gather_mm", f"e{num_experts}", f"i{in_features}", f"o{out_features}"]
         if dtype != torch.float32:
             parts.append(str(dtype).split(".")[-1])
+        if sorted_indices:
+            parts.append("sorted")
         self.name = "_".join(parts)
 
     @classmethod
@@ -6423,15 +6683,28 @@ class GatherMmTest(OpTestCase):
             cls(num_experts=8, in_features=128, out_features=256),
             cls(dtype=torch.bfloat16),
             cls(batch_size=1),
+            # Exercise sorted_indices=Tensor (IntOrVid runtime path)
+            cls(sorted_indices=True),
+            cls(sorted_indices=True, dtype=torch.bfloat16),
         ]
 
     def create_model(self) -> nn.Module:
-        model = GatherMmModel(self.num_experts, self.in_features, self.out_features)
+        model = GatherMmModel(
+            self.num_experts,
+            self.in_features,
+            self.out_features,
+            sorted_indices=self.sorted_indices,
+        )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.in_features, dtype=self.dtype)
         indices = torch.randint(0, self.num_experts, (self.batch_size,))
+        # sorted_indices=True is a contract with the MLX kernel: indices must
+        # actually be sorted. Eager ignores the flag; unsorted + sorted=True
+        # yields large localized numeric errors (max_diff ~ tens).
+        if self.sorted_indices:
+            indices, _ = torch.sort(indices)
         return (x, indices)
 
 
@@ -6448,10 +6721,17 @@ class GatherQmmModel(nn.Module):
         in_features: int,
         out_features: int,
         group_size: int = 32,
+        packed: bool = False,
+        sorted_indices: bool = False,
     ):
         super().__init__()
         self.out_features = out_features
         self.group_size = group_size
+        # Same pattern as GatherMmModel
+        if sorted_indices:
+            self.register_buffer("sorted_flag", torch.ones((), dtype=torch.int32))
+        else:
+            self.sorted_flag = None
 
         # Create per-expert nn.Linear, quantize, extract inner tensors
         from executorch.backends.mlx.llm.quantization import quantize_model_
@@ -6467,10 +6747,14 @@ class GatherQmmModel(nn.Module):
         quantize_model_(wrapper, qlinear_config="4w", qlinear_group_size=group_size)
 
         # Extract and stack quantized inner tensors
-        self.register_buffer(
-            "qdata",
-            torch.stack([e.weight.qdata for e in experts]),
-        )
+        qdata = torch.stack([e.weight.qdata for e in experts])  # int8 [E, out, in]
+        if packed:
+            # Nibble-pack to uint8 [E, out, in//2] (value = signed q + 8), the
+            # end-to-end packed layout produced by SwitchLinear.pack().
+            qu = (qdata.to(torch.int16) + 8).to(torch.uint8)
+            qu = qu.reshape(num_experts, out_features, in_features // 2, 2)
+            qdata = (qu[..., 0] | (qu[..., 1] << 4)).contiguous()
+        self.register_buffer("qdata", qdata)
         self.register_buffer(
             "scale",
             torch.stack([e.weight.scale for e in experts]),
@@ -6492,12 +6776,17 @@ class GatherQmmModel(nn.Module):
             biases=self.zero_point,
             rhs_indices=indices,
             group_size=self.group_size,
+            sorted_indices=self.sorted_flag,
         ).squeeze(-2)
 
 
 @register_test
 class GatherQmmTest(OpTestCase):
-    """Test case for mlx::gather_qmm."""
+    """Test case for mlx::gather_qmm.
+
+    Includes a sorted=True config to exercise the Optional[Tensor] ->
+    IntOrVid runtime path in _gather_qmm_handler.
+    """
 
     name = "gather_qmm"
     rtol = 0.1
@@ -6511,6 +6800,8 @@ class GatherQmmTest(OpTestCase):
         batch_size: int = 2,
         group_size: int = 32,
         dtype: torch.dtype = torch.float32,
+        packed: bool = False,
+        sorted_indices: bool = False,
     ):
         self.num_experts = num_experts
         self.in_features = in_features
@@ -6518,6 +6809,8 @@ class GatherQmmTest(OpTestCase):
         self.batch_size = batch_size
         self.group_size = group_size
         self.dtype = dtype
+        self.packed = packed
+        self.sorted_indices = sorted_indices
 
         parts = [
             "gather_qmm",
@@ -6526,8 +6819,12 @@ class GatherQmmTest(OpTestCase):
             f"o{out_features}",
             f"g{group_size}",
         ]
+        if packed:
+            parts.append("packed")
         if dtype != torch.float32:
             parts.append(str(dtype).split(".")[-1])
+        if sorted_indices:
+            parts.append("sorted")
         self.name = "_".join(parts)
 
     @classmethod
@@ -6537,6 +6834,13 @@ class GatherQmmTest(OpTestCase):
             cls(num_experts=8, in_features=128, out_features=256),
             cls(dtype=torch.bfloat16),
             cls(batch_size=1),
+            # Packed int4 experts (uint8 nibble-packed) — exercises the
+            # to_mlx_qparams prepacked (view -> uint32) lowering path.
+            cls(packed=True),
+            cls(packed=True, dtype=torch.bfloat16),
+            # Exercise sorted_indices=Tensor (IntOrVid runtime path)
+            cls(sorted_indices=True),
+            cls(sorted_indices=True, dtype=torch.bfloat16),
         ]
 
     def get_edge_compile_config(self):
@@ -6550,12 +6854,16 @@ class GatherQmmTest(OpTestCase):
             self.in_features,
             self.out_features,
             self.group_size,
+            packed=self.packed,
+            sorted_indices=self.sorted_indices,
         )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.in_features, dtype=self.dtype)
         indices = torch.randint(0, self.num_experts, (self.batch_size,))
+        if self.sorted_indices:
+            indices, _ = torch.sort(indices)
         return (x, indices)
 
 
@@ -7308,3 +7616,843 @@ class NVFP4QuantizedLinearTest(OpTestCase):
             self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
         )
         return (x,)
+
+
+class MXFP8QuantizedLinearModel(nn.Module):
+    """Simple linear layer that will be quantized with MXFP8."""
+
+    def __init__(
+        self, in_features: int = 64, out_features: int = 128, bias: bool = True
+    ):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
+
+
+@register_test
+class MXFP8QuantizedLinearTest(OpTestCase):
+    """Test case for MXFP8 quantized nn.Linear (mode="mxfp8", group_size 32)."""
+
+    name = "mxfp8_quantized_linear"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        in_features: int = 64,
+        out_features: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        bias: bool = True,
+        dtype: torch.dtype = torch.float32,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.bias = bias
+        self.dtype = dtype
+
+        parts = ["mxfp8_quantized_linear"]
+        if not bias:
+            parts.append("no_bias")
+        if dtype != torch.float32:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["MXFP8QuantizedLinearTest"]:
+        return [
+            cls(),
+            cls(bias=False),
+            cls(dtype=torch.bfloat16),
+            cls(bias=False, dtype=torch.bfloat16),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = MXFP8QuantizedLinearModel(
+            self.in_features, self.out_features, bias=self.bias
+        )
+        model = model.to(self.dtype)
+
+        from executorch.extension.llm.export.mx import ExportableMXConfig
+        from torchao.quantization import quantize_
+
+        quantize_(model, ExportableMXConfig())
+
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
+        )
+        return (x,)
+
+
+def _make_int4_quantized_weight(weight: torch.Tensor, group_size: int) -> torch.Tensor:
+    """Groupwise affine 4-bit quantize a ``(N, K)`` weight into an
+    ``ExportableInt4Tensor`` (torchao ``Int4Tensor`` packed layout)."""
+    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+    N, K = weight.shape
+    dtype = weight.dtype
+    w = weight.float().reshape(N, K // group_size, group_size)
+    wmin = w.amin(dim=-1)
+    wmax = w.amax(dim=-1)
+    scale = ((wmax - wmin) / 15.0).clamp(min=1e-8)
+    # Fractional zero-point (HQQ-style), exercises the float zero_point repack path.
+    zero = (-wmin / scale).clamp(0, 15)
+    q = torch.round(w / scale.unsqueeze(-1) + zero.unsqueeze(-1)).clamp(0, 15)
+    q = q.reshape(N, K).to(torch.uint8)
+    # Two nibbles/byte: even index -> low nibble.
+    packed = (q[:, 0::2] | (q[:, 1::2] << 4)).to(torch.uint8)
+    it = Int4Tensor(
+        qdata=packed,
+        scale=scale.t().contiguous().to(dtype),
+        zero_point=zero.t().contiguous().to(dtype),
+        block_size=[1, group_size],
+        shape=torch.Size([N, K]),
+    )
+    return ExportableInt4Tensor.from_int4_tensor(it)
+
+
+class Int4QuantizedLinearModel(nn.Module):
+    """Linear layer whose weight is an ``ExportableInt4Tensor``."""
+
+    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
+
+
+@register_test
+class Int4QuantizedLinearTest(OpTestCase):
+    """ExportableInt4Tensor nn.Linear -> MLX 4-bit affine quantized matmul."""
+
+    name = "int4_quantized_linear"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        in_features: int = 64,
+        out_features: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        bias: bool = True,
+        group_size: int = 32,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.bias = bias
+        self.group_size = group_size
+        self.dtype = dtype
+
+        parts = ["int4_quantized_linear", f"g{group_size}"]
+        if not bias:
+            parts.append("no_bias")
+        if dtype != torch.bfloat16:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["Int4QuantizedLinearTest"]:
+        return [
+            cls(),
+            cls(bias=False),
+            cls(group_size=64),
+            cls(dtype=torch.float32),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = Int4QuantizedLinearModel(
+            self.in_features, self.out_features, bias=self.bias
+        ).to(self.dtype)
+        model.linear.weight = nn.Parameter(
+            _make_int4_quantized_weight(model.linear.weight.data, self.group_size),
+            requires_grad=False,
+        )
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
+        )
+        return (x,)
+
+
+@register_test
+class Int4QuantizedEmbeddingTest(OpTestCase):
+    """ExportableInt4Tensor nn.Embedding -> MLX 4-bit affine quantized gather."""
+
+    name = "int4_quantized_embedding"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        num_embeddings: int = 1000,
+        embedding_dim: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        group_size: int = 32,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.group_size = group_size
+        self.dtype = dtype
+        self.name = f"int4_quantized_embedding_g{group_size}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["Int4QuantizedEmbeddingTest"]:
+        return [
+            cls(),
+            cls(group_size=64),
+            cls(group_size=128),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = EmbeddingModel(self.num_embeddings, self.embedding_dim)
+        model = model.to(self.dtype)
+        model.embedding.weight = nn.Parameter(
+            _make_int4_quantized_weight(model.embedding.weight.data, self.group_size),
+            requires_grad=False,
+        )
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
+        return (x,)
+
+
+class _LogitsPassthrough(nn.Module):
+    """Stand-in for a model returning logits [B, vocab]."""
+
+    def forward(self, logits: torch.Tensor) -> torch.Tensor:
+        return logits
+
+
+# Baked constants for sampling params a fixture does not expose as a runtime
+# input: keep-all top_k and top_p=off.
+_KEEP_ALL_TOP_K = torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64)
+_TOP_P_OFF = torch.tensor(1.0)
+
+
+class SeededSampleModel(nn.Module):
+    """SamplingHead with temperature AND seed as runtime forward inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, seed)
+
+
+class UnseededSampleModel(nn.Module):
+    """SamplingHead with temperature as a runtime input and no seed."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, None)
+
+
+class TopPSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_p as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_p):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, top_p, seed)
+
+
+class TopKSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_k as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_k):
+        return self.head(logits, temperature, top_k, _TOP_P_OFF, seed)
+
+
+@register_test
+class SampleSeededTest(OpTestCase):
+    """Seeded sample lowers to one MLX segment; seed threads in via ItemIntNode."""
+
+    name = "sample_seeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,  # temperature==0 greedy branch
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,  # sampling branch + greedy branch
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,  # top-p nucleus chain
+        "SortNode": 2,  # top-k threshold + top-p nucleus chain
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return SeededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+        )
+
+
+@register_test
+class SampleUnseededTest(OpTestCase):
+    """Unseeded sample lowers without a seed field (only the cond ItemIntNode)."""
+
+    name = "sample_unseeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 2,  # top_k + temperature>0 condition only (no seed)
+        "SoftmaxNode": 1,  # top-p nucleus chain (top_p defaults to 1.0)
+    }
+
+    def create_model(self) -> nn.Module:
+        return UnseededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(1, 256), torch.tensor(0.8))
+
+
+@register_test
+class SampleTopPTest(OpTestCase):
+    """Top-p sample emits the nucleus chain (softmax/sort/cumsum/min/where)."""
+
+    name = "sample_top_p"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,
+        "SoftmaxNode": 1,
+        "SortNode": 2,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopPSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(0.9),
+        )
+
+
+@register_test
+class SampleTopKTest(OpTestCase):
+    """Top-k sample emits the threshold before the top-p nucleus chain."""
+
+    name = "sample_top_k"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,
+        "SortNode": 2,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "LogicalOrNode": 0,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopKSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(2, dtype=torch.int64),
+        )
+
+
+@register_test
+class SampleGreedyTest(OpTestCase):
+    """Greedy argmax(logits) is bit-exact host/device, so verify the token with the
+    normal compare. Covers temperature=0, tiny temperature, bf16 logits, and a
+    batch (per-row argmax -> [B] on device)."""
+
+    name = "sample_greedy"
+
+    def __init__(
+        self,
+        temperature: float = 0.0,
+        dtype: torch.dtype = torch.float32,
+        batch: int = 1,
+        tag: str = "",
+    ):
+        self.temperature = temperature
+        self.dtype = dtype
+        self.batch = batch
+        self.name = f"sample_greedy_{tag}" if tag else "sample_greedy"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SampleGreedyTest"]:
+        return [
+            cls(temperature=0.0),
+            cls(temperature=1e-4, tag="eps"),
+            cls(temperature=-1.0, tag="neg"),  # negative -> greedy on both paths
+            cls(temperature=1e-4, dtype=torch.bfloat16, tag="bf16"),
+            cls(temperature=0.0, batch=4, tag="batch"),  # per-row argmax over a batch
+        ]
+
+    def create_model(self) -> nn.Module:
+        return SeededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        logits = torch.randn(self.batch, 1024, dtype=self.dtype)
+        if self.dtype == torch.bfloat16:
+            logits[0, 512] = 50.0  # dominant -> unambiguous bf16 argmax
+        return (
+            logits,
+            torch.tensor(self.temperature),
+            torch.tensor(0, dtype=torch.int64),
+        )
+
+
+# ---------------------------------------------------------------------------
+# MoE runtime expert-sort for decode: moe_gather_inputs / moe_scatter_outputs
+# ---------------------------------------------------------------------------
+
+
+class MoeGatherInputsModel(nn.Module):
+    """Wraps moe_gather_inputs to make it exportable as a single-output model.
+    Returns only x_input (the first of the four outputs) so OpTestCase can
+    compare it against the eager reference using its standard allclose check.
+    The remaining outputs (idx, sort_experts, inv_order) are validated in
+    MoeScatterOutputsModel below via the round-trip prefill test.
+    """
+
+    def __init__(self, top_k: int = 2, sort_cutoff: int = 1):
+        super().__init__()
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+
+    def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
+        import executorch.backends.mlx.custom_ops as _  # noqa: F401
+
+        x_input = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, self.top_k, self.sort_cutoff
+        )[0]
+        return x_input
+
+
+@register_test
+class MoeGatherInputsTest(OpTestCase):
+    """Test case for mlx::moe_gather_inputs.
+
+    Static configs cover the N=1 (decode, unsorted) and N>sort_cutoff
+    (prefill, sorted) folded paths; the dynamic config keeps N symbolic so
+    both branches and the runtime IfNode selection are exercised from a
+    single exported artifact (the actual point of the runtime sort).
+    """
+
+    name = "moe_gather_inputs"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        batch_size: int = 4,
+        hidden_size: int = 32,
+        num_experts: int = 8,
+        top_k: int = 2,
+        sort_cutoff: int = 1,
+        dynamic_batch: bool = False,
+        tag: str = "",
+    ):
+        self.batch_size = batch_size
+        self.hidden_size = hidden_size
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+        self.dynamic_batch = dynamic_batch
+
+        parts = ["moe_gather_inputs", f"N{batch_size}", f"E{num_experts}", f"k{top_k}"]
+        if tag:
+            parts.append(tag)
+        self.name = "_".join(parts)
+        self.expected_node_counts = self.get_expected_node_counts()
+
+    @classmethod
+    def get_test_configs(cls) -> List["MoeGatherInputsTest"]:
+        return [
+            cls(batch_size=4, tag="prefill"),  # N > sort_cutoff -> sorted path
+            cls(batch_size=1, tag="decode"),  # N <= sort_cutoff -> unsorted path
+            cls(batch_size=4, num_experts=16, top_k=4, tag="top4"),
+            # Symbolic N: emits both branches behind an IfNode; exported at
+            # N=4 (sorted at runtime), re-run at N=1 (unsorted at runtime).
+            cls(batch_size=4, dynamic_batch=True, tag="dyn"),
+        ]
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        if self.dynamic_batch:
+            # Both branches are present behind an IfNode; per-branch node
+            # counts depend on how the counter treats branch chains, so only
+            # the runtime-selection structure is asserted elsewhere.
+            return None
+        if self.batch_size > self.sort_cutoff:
+            # sorted path only (condition folds at export time)
+            return {
+                "ArgsortNode": 2,
+                "TakeNode": 2,
+                "FloorDivideNode": 1,
+                "RepeatNode": 0,
+                "ARangeNode": 0,
+                "IfNode": 0,
+            }
+        # unsorted path only
+        return {
+            "ArgsortNode": 0,
+            "TakeNode": 0,
+            "RepeatNode": 1,
+            "ARangeNode": 1,
+            "IfNode": 0,
+        }
+
+    def create_model(self) -> nn.Module:
+        return MoeGatherInputsModel(top_k=self.top_k, sort_cutoff=self.sort_cutoff)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.hidden_size)
+        expert_indices = torch.randint(
+            0, self.num_experts, (self.batch_size, self.top_k)
+        )
+        return (x, expert_indices)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic_batch:
+            return self.create_inputs()
+        # Decode-shaped inputs: forces the runtime IfNode onto the unsorted
+        # branch of the artifact exported at batch_size.
+        x = torch.randn(1, self.hidden_size)
+        expert_indices = torch.randint(0, self.num_experts, (1, self.top_k))
+        return (x, expert_indices)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if not self.dynamic_batch:
+            return None
+        batch_dim = Dim("moe_batch", min=1, max=16)
+        return {
+            "x": {0: batch_dim},
+            "expert_indices": {0: batch_dim},
+        }
+
+
+class MoeScatterOutputsModel(nn.Module):
+    """Round-trip: moe_gather_inputs -> identity down_proj -> moe_scatter_outputs.
+    Returns the final [N, top_k, hidden] tensor so OpTestCase can verify
+    the full gather/sort/scatter pipeline end-to-end.
+    """
+
+    def __init__(self, top_k: int = 2, sort_cutoff: int = 1, hidden_out: int = 16):
+        super().__init__()
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+        self.hidden_out = hidden_out
+
+    def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
+        import executorch.backends.mlx.custom_ops as _  # noqa: F401
+
+        x_input, idx, sort_experts, inv_order = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, self.top_k, self.sort_cutoff
+        )
+        # Simulate a down_proj output: [N*top_k, 1, hidden_out]. A plain
+        # slice keeps the per-row values distinct, so a wrong or missing
+        # inverse permutation in the lowering shows up as a mismatch.
+        down = x_input[..., : self.hidden_out].contiguous()
+        return torch.ops.mlx.moe_scatter_outputs(
+            down, sort_experts, inv_order, self.top_k
+        )
+
+
+@register_test
+class MoeScatterOutputsTest(OpTestCase):
+    """Test case for mlx::moe_scatter_outputs.
+
+    Validates the round-trip shape and that the unsorted (decode) path
+    produces a result consistent with the sorted (prefill) path. The dynamic
+    config runs both runtime branches from one artifact.
+    """
+
+    name = "moe_scatter_outputs"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        batch_size: int = 4,
+        hidden_size: int = 32,
+        hidden_out: int = 16,
+        num_experts: int = 8,
+        top_k: int = 2,
+        sort_cutoff: int = 1,
+        dynamic_batch: bool = False,
+        tag: str = "",
+    ):
+        self.batch_size = batch_size
+        self.hidden_size = hidden_size
+        self.hidden_out = hidden_out
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+        self.dynamic_batch = dynamic_batch
+
+        parts = [
+            "moe_scatter_outputs",
+            f"N{batch_size}",
+            f"E{num_experts}",
+            f"k{top_k}",
+        ]
+        if tag:
+            parts.append(tag)
+        self.name = "_".join(parts)
+        self.expected_node_counts = self.get_expected_node_counts()
+
+    @classmethod
+    def get_test_configs(cls) -> List["MoeScatterOutputsTest"]:
+        return [
+            cls(batch_size=4, tag="prefill"),
+            cls(batch_size=1, tag="decode"),
+            cls(batch_size=4, num_experts=16, top_k=4, hidden_out=32, tag="top4"),
+            cls(batch_size=4, dynamic_batch=True, tag="dyn"),
+        ]
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        if self.dynamic_batch:
+            return None
+        # With a static batch the sort condition folds at export time, and
+        # the scatter reuses the same folded condition (via the builder's
+        # sorted_indices_flag memo) — so no IfNode survives in either op.
+        return {"IfNode": 0}
+
+    def create_model(self) -> nn.Module:
+        return MoeScatterOutputsModel(
+            top_k=self.top_k,
+            sort_cutoff=self.sort_cutoff,
+            hidden_out=self.hidden_out,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.hidden_size)
+        expert_indices = torch.randint(
+            0, self.num_experts, (self.batch_size, self.top_k)
+        )
+        return (x, expert_indices)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic_batch:
+            return self.create_inputs()
+        x = torch.randn(1, self.hidden_size)
+        expert_indices = torch.randint(0, self.num_experts, (1, self.top_k))
+        return (x, expert_indices)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if not self.dynamic_batch:
+            return None
+        batch_dim = Dim("moe_batch", min=1, max=16)
+        return {
+            "x": {0: batch_dim},
+            "expert_indices": {0: batch_dim},
+        }
+
+
+# Off-graph KV cache (kvcache::update_and_attend)
+class UpdateAndAttendModel(nn.Module):
+    """Multi-layer attention over the off-graph cache, one op call per layer."""
+
+    def __init__(self, n_layers: int, head_dim: int, out_dtype: torch.dtype):
+        super().__init__()
+        self.n_layers = n_layers
+        self.out_dtype = out_dtype
+        self.scale = head_dim**-0.5
+
+    def forward(self, q, k, v, position):
+        # Layers are summed, not chained: a chained query would arrive in
+        # out_dtype, and the two implementations disagree on compute precision
+        # for a half-precision query -- the MLX handler attends in the query's
+        # dtype, the eager reference always promotes to fp32. Keeping q as the
+        # graph input holds both at fp32. Distinct K/V per layer keeps each
+        # layer's cells apart.
+        total = None
+        for layer in range(self.n_layers):
+            kv_scale = layer + 1
+            out = torch.ops.kvcache.update_and_attend(
+                q,
+                k * kv_scale,
+                v * kv_scale,
+                position,
+                layer,
+                self.scale,
+                self.out_dtype,
+            )
+            total = out if total is None else total + out
+        return total
+
+
+@register_test
+class UpdateAndAttendTest(OpTestCase):
+    """Eager reference cache vs MLX runtime, through the delegate."""
+
+    name = "update_and_attend"
+    rtol = 1e-3
+    atol = 1e-3
+    expected_node_counts = {"UpdateAndAttendNode": 2}
+
+    n_layers = 2
+    n_heads = 4
+    n_kv_heads = 2
+    head_dim = 8
+    export_seq_len = 3
+    capacity = 16
+
+    def __init__(
+        self,
+        test_seq_len: int = 3,
+        out_dtype: torch.dtype = torch.float32,
+        kv_dtype: torch.dtype = torch.float32,
+    ):
+        self.test_seq_len = test_seq_len
+        self.out_dtype = out_dtype
+        self.kv_dtype = kv_dtype  # KV *storage* precision, not the op's output
+
+        parts = [] if test_seq_len == self.export_seq_len else ["decode"]
+        if out_dtype != torch.float32:
+            parts.append(f"{str(out_dtype).split('.')[-1]}_out")
+        if kv_dtype != torch.float32:
+            parts.append(f"{str(kv_dtype).split('.')[-1]}_kv")
+        self.name = "_".join(["update_and_attend", *parts])
+
+        self.kv_cache = ",".join(
+            str(x)
+            for x in [
+                self.capacity,
+                self.n_layers,
+                self.n_kv_heads,
+                self.head_dim,
+                torch_dtype_to_scalar_type(kv_dtype),
+            ]
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["UpdateAndAttendTest"]:
+        return [
+            cls(),  # prefill: T=3, Causal
+            cls(test_seq_len=1),  # decode-shaped: T=1, Mask::None
+            cls(out_dtype=torch.float16),  # output contract != operand dtype
+            cls(kv_dtype=torch.float16),  # KV stored as Half, computed in fp32
+        ]
+
+    def create_model(self) -> nn.Module:
+        return UpdateAndAttendModel(self.n_layers, self.head_dim, self.out_dtype)
+
+    def _inputs(self, seq_len: int) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, self.n_heads, seq_len, self.head_dim),
+            torch.randn(1, self.n_kv_heads, seq_len, self.head_dim),
+            torch.randn(1, self.n_kv_heads, seq_len, self.head_dim),
+            torch.arange(seq_len, dtype=torch.int32).reshape(seq_len, 1),
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.export_seq_len)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.test_seq_len)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        # Prefill and decode run the same graph, so no length may be baked in.
+        seq = Dim("kv_seq", min=1, max=self.capacity)
+        return {
+            "q": {2: seq},
+            "k": {2: seq},
+            "v": {2: seq},
+            "position": {0: seq},
+        }
+
+    def compute_expected_outputs(self, model, test_inputs):
+        # The op dispatches to whichever cache is active, so the eager run needs
+        # an oracle cache installed for its duration.
+        from executorch.extension.llm.cache.reference_cache import (
+            CacheConfig,
+            ContiguousReferenceCache,
+        )
+        from executorch.extension.llm.cache.update_and_attend import REGISTRY
+
+        key = f"{self.name}-oracle"
+        REGISTRY.install(
+            key,
+            ContiguousReferenceCache(
+                CacheConfig(
+                    n_layers=self.n_layers,
+                    n_kv_heads=self.n_kv_heads,
+                    head_dim=self.head_dim,
+                    capacity=self.capacity,
+                    dtype=self.kv_dtype,  # must match the runtime pool's storage
+                )
+            ),
+        )
+        try:
+            with REGISTRY.active(key):
+                return model(*test_inputs)
+        finally:
+            REGISTRY.uninstall(key)

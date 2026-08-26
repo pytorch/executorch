@@ -66,6 +66,7 @@ vkapi::ShaderInfo pick_quantize_and_pack_4h4w_with_group_sums_shader(
     const std::vector<ValueRef>& resize_args) {
   const ValueRef packed_int_input = args.at(0).refs.at(0);
   const ValueRef fp_input = args.at(1).refs.at(0);
+  const ValueRef packed_input_zps = args.at(1).refs.at(2);
   const ValueRef group_size = resize_args.at(0);
 
   const int64_t group_size_val = graph->extract_scalar<int64_t>(group_size);
@@ -81,6 +82,7 @@ vkapi::ShaderInfo pick_quantize_and_pack_4h4w_with_group_sums_shader(
       shader_name, graph->storage_type_of(packed_int_input));
   add_storage_type_suffix(shader_name, graph->storage_type_of(fp_input));
   add_dtype_suffix(shader_name, graph->dtype_of(fp_input));
+  add_zp_dtype_mode_suffix(shader_name, graph->dtype_of(packed_input_zps));
 
   return VK_KERNEL_FROM_STR(shader_name);
 }

@@ -84,6 +84,11 @@ _preserve_in_tfa = {
     exir_ops.edge.aten.remainder.Scalar,
 }
 
+_preserve_quantized_leaky_relu_ops = {
+    exir_ops.edge.aten.leaky_relu.default,
+    torch.ops.aten.leaky_relu.default,
+}
+
 
 class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPass):
     """Profile-aware scalar-to-tensor replacement pass for binary ops."""
@@ -97,6 +102,16 @@ class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPa
         # superset which will make the superclass handle ops in _all_ops.
         # Actual selection is done per-call in call_operator.
         super().__init__(tfa_pass, _all_ops, *args, **kwargs)
+
+    def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target in _all_ops:
+                return True
+
+        return any(
+            isinstance(child, torch.fx.GraphModule) and self.should_run_pass(child)
+            for child in graph_module.children()
+        )
 
     def call_operator(self, op, args, kwargs, meta):
         if self.is_tfa_pass and op in _preserve_in_tfa:
@@ -118,6 +133,12 @@ class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPa
             input_qparams = meta.data.get("input_qparams", {})
             output_qparams = meta.data.get("output_qparams", {})
             if len(input_qparams) > 0 and len(output_qparams) > 0:
+                if op in _preserve_quantized_leaky_relu_ops:
+                    # Route through ArmPass to avoid PyTorch fake/meta
+                    # execution rejecting int-like inputs with float
+                    # negative_slope for quantized leaky_relu.
+                    # Do not handle; forward unchanged.
+                    return ArmPass.call_operator(self, op, args, kwargs, meta)
                 # Do not handle; forward unchanged.
                 return ExportPass.call_operator(self, op, args, kwargs, meta)
 

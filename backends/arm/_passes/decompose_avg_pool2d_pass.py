@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any, Set, Type
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
@@ -38,23 +38,23 @@ def get_decomposition(op) -> tuple:
 
 
 def _compute_post_pad(
-    size: int,
+    size: int | torch.SymInt,
     kernel: int,
     stride: int,
-    pad: int,
+    pad: int | torch.SymInt,
     ceil_mode: bool,
     divisor_override,
-) -> int:
+) -> int | torch.SymInt:
 
     if pad == 0:
         return pad
-    if ceil_mode and divisor_override is None:
-        return pad
-
     pad_adjust = adjust_pooling_pad_if_needed(size, kernel, stride, pad, ceil_mode)
 
-    # Padding must always be above 0, the above adjustment may return -1
-    if pad_adjust > 0:
+    if ceil_mode and divisor_override is None and pad_adjust > pad:
+        return pad
+
+    # Padding must never be below 0; the above adjustment may return -1.
+    if pad_adjust >= 0:
         return pad_adjust
     return pad
 
@@ -70,7 +70,7 @@ def _get_avgpool_post_pad(
     ceil_mode,
     count_include_pad,
     divisor_override,
-) -> tuple[list[Any], list[int]]:
+) -> tuple[list[int | torch.SymInt], list[int | torch.SymInt]]:
     """Compute the post-padding configuration for avg_pool2d when pre-
     materializing explicit zero padding ahead of the pooling operation.
 

@@ -49,5 +49,4 @@ Returns:
 ```python
 def EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
 ```
-Register a custom op to be considered supported by this
-partitioner.
+Register a custom op to be considered supported.

@@ -14,6 +14,7 @@
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/llm/sampler/logit_processor.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -145,6 +146,10 @@ class CallbackCounter {
 // Test fixture for Runner tests - minimal setup
 class RunnerTest : public Test {
  protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+  }
+
   // Helper functions to create and set up mock objects
   std::unique_ptr<MockTokenizer> createMockTokenizer() {
     auto tokenizer = std::make_unique<MockTokenizer>();
@@ -707,6 +712,26 @@ TEST_F(RunnerTest, TextTokenGeneratorProcessorChainMasksMultipleTokens) {
   EXPECT_TRUE(result.ok());
   const std::vector<uint64_t> expected(3, 1);
   EXPECT_EQ(generated_tokens, expected);
+}
+
+TEST_F(RunnerTest, TextTokenGeneratorRejectsTemperatureOutOfRange) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  Stats stats;
+  auto generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), &stats);
+
+  std::vector<uint64_t> tokens = {1, 2, 3};
+  EXPECT_CALL(*text_decoder_runner, step(_, _)).Times(0);
+
+  EXPECT_EQ(
+      generator->generate(tokens, 3, 3, -0.1f, [](const std::string&) {})
+          .error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      generator->generate(tokens, 3, 3, 1.1f, [](const std::string&) {})
+          .error(),
+      Error::InvalidArgument);
 }
 
 // Without any processors, greedy argmax picks token 3 (zero-overhead path).

@@ -4,20 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Load a GGUF file into a Gemma 4 31B model.
+"""GGUF tensor-name mapping for Gemma 4 31B.
 
-Streams tensors one at a time via ``iter_gguf_tensors`` for low peak
-memory, remaps GGUF names to model FQNs, handles tied embed/lm_head,
-and packs for the target backend.
-
-Usage:
-    model, config = load_gguf_model("model.gguf", backend="cuda")
-    model, config = load_gguf_model("model.gguf", backend="mlx")
+Maps GGUF tensor names (``blk.0.attn_q.weight``, ``token_embd.weight``, ...) to
+Gemma model FQNs. Used as the ``key_map`` for ``load_checkpoint`` when loading a
+GGUF checkpoint -- see ``export.load_gguf_model``, which pairs this with a
+``tie_map`` to fan the tied embedding out to ``lm_head``.
 """
 
 from typing import Optional
-
-import torch
 
 # GGUF pattern → model FQN pattern. ``{}`` is the layer index.
 _KEY_MAP = {
@@ -63,106 +58,3 @@ def gguf_to_model_key(gguf_key: str) -> Optional[str]:
                 return model_pat.replace("{}", layer_str)
 
     return None
-
-
-def _resolve_tied_lm_head(model, embed_quant, packers):
-    """Handle tied embed/lm_head after streaming all tensors."""
-    from executorch.examples.models.gemma4_31b.quant import pack_one
-
-    lm_head = getattr(model.lm_head, "weight", None)
-    if lm_head is None or lm_head.device.type != "meta":
-        return
-    if embed_quant is not None:
-        pack_one(model, "lm_head.weight", embed_quant, packers)
-    else:
-        pack_one(
-            model,
-            "lm_head.weight",
-            model.embed_tokens.weight.data.clone(),
-            packers,
-        )
-
-
-def _validate_no_meta(model):
-    """Ensure all parameters have been loaded."""
-    for fqn, p in model.named_parameters():
-        if p.device.type == "meta":
-            raise RuntimeError(
-                f"Weight '{fqn}' not found in GGUF file "
-                f"(model/checkpoint version mismatch?)"
-            )
-    for p in model.parameters():
-        p.requires_grad_(False)
-
-
-def load_gguf_model(
-    gguf_path: str,
-    max_seq_len: int = 4096,
-    backend: str = "cuda",
-) -> tuple:
-    """Load a GGUF file, remap keys, and pack for the target backend.
-
-    Streams tensors one at a time for low peak memory.
-
-    GGUF ties ``embed_tokens`` and ``lm_head`` into a single Q4_K tensor.
-    We untie them so ``lm_head`` keeps the original Q4_K quantization.
-    On CUDA, the embedding is dequantized to bf16 because ``Int4Tensor``
-    does not support the gather op that ``nn.Embedding`` requires.  On
-    MLX, the embedding stays quantized — ``QuantizedEmbeddingHandler``
-    handles quantized gather natively.
-
-    Returns ``(model, config)``.
-    """
-    from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
-    from executorch.examples.models.gemma4_31b.quant import dequantize_weight, pack_one
-    from executorch.examples.models.gemma4_31b.quant.gguf import iter_gguf_tensors
-    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
-
-    if backend == "cuda":
-        from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
-
-        packers = DEFAULT_CUDA_PACKERS
-    elif backend == "mlx":
-        from executorch.examples.models.gemma4_31b.quant import DEFAULT_MLX_PACKERS
-
-        packers = DEFAULT_MLX_PACKERS
-    else:
-        raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda', 'mlx'.")
-
-    config = Gemma4_31BConfig(max_seq_len=max_seq_len)
-
-    print("Building model on meta device...")
-    with torch.device("meta"):
-        model = Gemma4_31B(config)
-
-    embed_quant = None
-    n_processed = 0
-
-    print(f"Streaming GGUF from {gguf_path}...")
-    for gguf_name, result in iter_gguf_tensors(gguf_path):
-        model_key = gguf_to_model_key(gguf_name)
-        if model_key is None:
-            continue
-
-        if type(result) is torch.Tensor and result.dtype == torch.float32:
-            result = result.to(torch.bfloat16)
-
-        if model_key == "embed_tokens.weight" and isinstance(result, Int4Tensor):
-            embed_quant = result
-            if backend == "cuda":
-                result = dequantize_weight(result, torch.bfloat16)
-
-        pack_one(model, model_key, result, packers)
-
-        n_processed += 1
-        if n_processed % 100 == 0:
-            print(f"  Processed {n_processed} tensors...")
-
-    _resolve_tied_lm_head(model, embed_quant, packers)
-    del embed_quant
-
-    _validate_no_meta(model)
-    model.eval()
-
-    print(f"Model: {config.num_hidden_layers} layers, hidden={config.hidden_size}")
-    return model, config

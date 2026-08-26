@@ -3,6 +3,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer build helper. This command-line interface is not a public API and
+# may change without deprecation.
 
 # Optional parameter:
 # --build_type= "Release" | "Debug" | "RelWithDebInfo" | "UndefinedSanitizer" | "AddressSanitizer"
@@ -30,6 +33,7 @@ target_cpu=""
 
 help() {
     echo "Usage: $(basename $0) [options]"
+    echo "Note: this developer build script is not a stable public API."
     echo "Options:"
     echo "  --et_build_root=<FOLDER>  Build output root folder to use, defaults to ${et_build_root}"
     echo "  --build_type=<TYPE>       Build with Release, Debug, RelWithDebInfo, UndefinedSanitizer or AddressSanitizer, default is ${build_type}"

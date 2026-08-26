@@ -15,7 +15,7 @@ root_dir="${et_dir}/examples/arm/arm-scratch"
 setup_path_script=""
 mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
 mlsdk_manifest_url="${MLSDK_MANIFEST_URL:-https://github.com/arm/ai-ml-sdk-manifest.git}"
-mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/v2026.03.0}" # Keep this in sync with what is mentioned in requirements-arm-vgf.txt
+mlsdk_manifest_tag="${MLSDK_MANIFEST_TAG:-refs/tags/v2026.03.0}" # Keep this in sync with backends/arm/requirements-arm-vgf.txt and backends/arm/requirements-arm-vgf-runtime.txt
 
 enable_model_converter=0
 enable_vgf_lib=0

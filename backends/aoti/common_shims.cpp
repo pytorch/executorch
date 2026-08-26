@@ -154,6 +154,11 @@ AOTITorchError aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim) {
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel) {
+  *ret_numel = static_cast<int64_t>(tensor->numel());
+  return Error::Ok;
+}
+
 // Device and layout utility functions
 int32_t aoti_torch_device_type_cpu() {
   // Let's say cpu is 0 for ET as well
@@ -173,6 +178,10 @@ int32_t aoti_torch_dtype_float32() {
 
 int32_t aoti_torch_dtype_bfloat16() {
   return 15; // PyTorch's bfloat16 dtype code
+}
+
+int32_t aoti_torch_dtype_float16() {
+  return 5; // PyTorch's float16 (Half) dtype code
 }
 
 int32_t aoti_torch_dtype_uint8() {

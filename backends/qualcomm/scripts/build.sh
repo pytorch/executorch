@@ -48,6 +48,7 @@ usage() {
   echo "e.g.: executorch$ ./backends/qualcomm/scripts/build.sh --skip_x86_64"
   echo ""
   echo "Direct mode: Use --build_direct_mode <dsp_type> --soc_model <model> to enable."
+  echo "<dsp_type> id is mapped to Hexagon SDK dsp id. Refer to Hexagon SDK for more info."
   echo "You can choose either LPAI (ADSP) or CDSP (HTP) as the target DSP:"
   echo "  LPAI (ADSP): dsp_type=0"
   echo "  CDSP (HTP):  dsp_type=3"

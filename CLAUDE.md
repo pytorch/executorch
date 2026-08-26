@@ -41,7 +41,7 @@ Details: [docs/source/using-executorch-building-from-source.md](docs/source/usin
 
 - Only commit when explicitly asked
 - No bullet lists of changes; explain review order for large PRs, or omit for small ones
-- Disclose PR was authored with Claude
+- Disclose PR was authored with AI, include tool name.
 
 ## Code Style
 

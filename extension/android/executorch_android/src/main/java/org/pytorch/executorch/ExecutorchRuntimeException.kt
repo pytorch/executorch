@@ -84,7 +84,7 @@ constructor(
           }
         }
       } catch (e: Exception) {
-        sb.append("Failed to retrieve detailed logs: ").append(e.message)
+        return ""
       }
       return sb.toString()
     }
@@ -124,10 +124,28 @@ constructor(
 
     @DoNotStrip
     @JvmStatic
-    fun makeExecutorchException(errorCode: Int, details: String?): RuntimeException =
-        when (errorCode) {
-          INVALID_ARGUMENT -> ExecutorchInvalidArgumentException(details)
-          else -> ExecutorchRuntimeException(errorCode, details)
-        }
+    fun makeExecutorchException(errorCode: Int, details: String?): RuntimeException {
+      val nativeTail =
+          try {
+            ErrorHelper.getDetailedErrorLogs()
+                .removePrefix("\nDetailed logs:\n")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+          } catch (t: Throwable) {
+            ""
+          }
+      val enrichedDetails =
+          if (nativeTail.isNotBlank()) {
+            "${details ?: "No details provided"} | nativeLog=${nativeTail.takeLast(NATIVE_LOG_TAIL_MAX_CHARS)}"
+          } else {
+            details
+          }
+      return when (errorCode) {
+        INVALID_ARGUMENT -> ExecutorchInvalidArgumentException(enrichedDetails)
+        else -> ExecutorchRuntimeException(errorCode, enrichedDetails)
+      }
+    }
+
+    private const val NATIVE_LOG_TAIL_MAX_CHARS = 2048
   }
 }

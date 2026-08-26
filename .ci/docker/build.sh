@@ -58,6 +58,13 @@ case "${IMAGE_NAME}" in
     ARM_SDK=yes
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-24.04-arm-sdk)
+    OS_VERSION=24.04
+    ARM_SDK=yes
+    CLANG_VERSION=18
+    PYTHON_VERSION=3.12
+    MINICONDA_VERSION=24.1.2-0
+    ;;
   executorch-ubuntu-22.04-zephyr-sdk)
     ZEPHYR_SDK=yes
     GCC_VERSION=11
@@ -89,10 +96,10 @@ case "${IMAGE_NAME}" in
     OS_VERSION=24.04
     GCC_VERSION=14
     ;;
-  executorch-ubuntu-26.04-gcc15)
+  executorch-ubuntu-26.04-gcc14)
     LINTRUNNER=""
     OS_VERSION=26.04
-    GCC_VERSION=15
+    GCC_VERSION=14
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
@@ -102,7 +109,7 @@ esac
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 BUILD_DOCS=1
 
-if [[ "${GCC_VERSION:-}" == "11" && -z "${SKIP_PYTORCH:-}" ]]; then
+if [[ -n "${GCC_VERSION:-}" && -z "${SKIP_PYTORCH:-}" ]]; then
   PYTORCH_BUILD_MAX_JOBS=6
 fi
 

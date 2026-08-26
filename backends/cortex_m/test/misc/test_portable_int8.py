@@ -301,6 +301,36 @@ OP_CASES = {
         (torch.randn(6), torch.randn(6)),
         torch.int64,
     ),
+    "index_put_": OpCase(
+        torch.ops.aten.index_put_.default,
+        _build_module(
+            lambda x, y: torch.ops.aten.index_put_.default(
+                x, (torch.tensor([1, 3]),), torch.tensor([1.0, 2.0]), False
+            )
+        ),
+        (torch.randn(6), torch.randn(6)),
+        torch.int64,
+    ),
+    "index_copy": OpCase(
+        torch.ops.aten.index_copy.default,
+        _build_module(
+            lambda x, y: torch.ops.aten.index_copy.default(
+                x, 0, torch.tensor([0, 2]), y
+            )
+        ),
+        (torch.randn(4, 5), torch.randn(2, 5)),
+        torch.int64,
+    ),
+    "index_copy_": OpCase(
+        torch.ops.aten.index_copy_.default,
+        _build_module(
+            lambda x, y: torch.ops.aten.index_copy_.default(
+                x, 0, torch.tensor([0, 2]), y
+            )
+        ),
+        (torch.randn(4, 5), torch.randn(2, 5)),
+        torch.int64,
+    ),
     "contiguous": OpCase(
         torch.ops.aten.contiguous.default,
         _build_module(lambda x, y: torch.ops.aten.contiguous.default(x)),
@@ -332,6 +362,12 @@ OP_CASES = {
     "cat": OpCase(
         torch.ops.aten.cat.default,
         _build_module(lambda x, y: torch.ops.aten.cat.default([x, y], 1)),
+        (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
+        None,
+    ),
+    "concat": OpCase(
+        torch.ops.aten.concat.default,
+        _build_module(lambda x, y: torch.ops.aten.concat.default([x, y], 1)),
         (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
         None,
     ),

@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
-from executorch.backends.qualcomm.builders.utils import get_parameter
+from executorch.backends.qualcomm.builders.utils import get_parameter, is_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
@@ -54,12 +54,6 @@ class AnnotateQuantAttrs(ExportPass):
         else:
             source_n = quant_node.args[0]
         source_n.meta[QCOM_QUANT_ATTRS] = quant_attrs
-
-    def _expand(self, tensor, dim, axis) -> torch.Tensor:
-        tensor = tensor[(...,) + (None,) * (dim - 1)]
-        order = torch.arange(dim).tolist()
-        order[axis], order[0] = order[0], order[axis]
-        return tensor.permute(order)
 
     # Find the the last dq nodes between regular op nodes
     # Return dq2 in example below when q1 is given as node parameter:
@@ -130,7 +124,7 @@ class AnnotateQuantAttrs(ExportPass):
             self._annotate_requant(n)
             # With fold_quant enabled, check if the input of dq op is quantized param.
             param = None
-            if n.target in dq_ops:
+            if n.target in dq_ops and is_parameter(n.args[0], self.edge_program):
                 param = get_parameter(n.args[0], self.edge_program)
             if n.target not in q_ops and param is None:
                 continue

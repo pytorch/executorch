@@ -19,13 +19,9 @@ ops_before_transforms: dict[str, int] = {}
 ops_after_transforms: dict[str, int] = {}
 
 
-WEIGHTS = "yolo11n.pt"
-yolo = YOLO(WEIGHTS)
-pt_model = yolo.model.eval()
-
 test_cases = {
     "yolo11n": McuTestCase(
-        model=pt_model,
+        model=None,  # type: ignore[arg-type]
         example_inputs=lambda: (
             torch.randn(1, 3, 640, 640).to(memory_format=torch.channels_last),
         ),
@@ -36,8 +32,12 @@ test_cases = {
 @parametrize("test_case", test_cases)
 def test_dialect_yolo11(test_case):
     """This model currently does not lower in the cortex-m backend, this test is to track development progress."""
+    WEIGHTS = "yolo11n.pt"
+    yolo = YOLO(WEIGHTS)
+    pt_model = yolo.model.eval()
+
     inputs = test_case.get_example_inputs()
-    tester = CortexMTester(test_case.model, inputs)
+    tester = CortexMTester(pt_model, inputs)
     tester.test_dialect(
         ops_before_transforms,
         ops_after_transforms,

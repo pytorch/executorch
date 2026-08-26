@@ -23,8 +23,9 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [XNNPACK](backends/xnnpack/xnnpack-overview.md)              | All           | CPU           | General-purpose, fallback       |
 | [CUDA](backends/cuda/cuda-overview.md)                       | Linux/Windows | GPU           | NVIDIA GPU acceleration         |
 | [Core ML](backends/coreml/coreml-overview.md)                | iOS, macOS    | NPU/GPU/CPU   | Apple devices, high performance |
+| [MLX](/backends/mlx/mlx-overview.md)                         | macOS         | GPU           | Apple Silicon GPU (MLX)         |
 | [Metal Performance Shaders](backends/mps/mps-overview.md)    | iOS, macOS    | GPU           | Apple GPU acceleration          |
-| [Vulkan](backends/vulkan/vulkan-overview.md)                 | Android       | GPU           | Android GPU acceleration        |
+| [Vulkan](backends/vulkan/vulkan-overview.md)                 | Android, Linux, Windows | GPU  | Android devices (mature); Desktops (experimental) |
 | [Qualcomm](backends-qualcomm)                                | Android     | NPU           | Qualcomm SoCs                   |
 | [MediaTek](backends-mediatek)                                | Android     | NPU           | MediaTek SoCs                   |
 | [Arm Ethos-U](backends/arm-ethos-u/arm-ethos-u-overview.md)  | Embedded    | NPU           | Arm MCUs                        |
@@ -33,7 +34,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [OpenVINO](build-run-openvino)                               | Embedded    | CPU/GPU/NPU   | Intel SoCs                      |
 | [NXP](backends/nxp/nxp-overview.md)                          | Embedded    | NPU           | NXP SoCs                        |
 | [Cadence](backends-cadence)                                  | Embedded    | DSP           | DSP-optimized workloads         |
-| [Samsung Exynos](backends/samsung/samsung-overview.md)       | Android     | NPU           | Samsung SoCs                    |
+| [Samsung Exynos](backends/samsung/samsung-overview.md)       | Android     | CPU/GPU/NPU   | Samsung Devices, Samsung SoCs; High Performance |
 
 **Tip:** For best performance, export a `.pte` file for each backend you plan to support.
 
@@ -55,6 +56,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 backends/xnnpack/xnnpack-overview
 backends/cuda/cuda-overview
 backends/coreml/coreml-overview
+backends/mlx/mlx-overview
 backends/mps/mps-overview
 backends/vulkan/vulkan-overview
 backends-qualcomm

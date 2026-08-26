@@ -175,16 +175,15 @@ void start_multimodal_runner(
       buf.push_back(c);
     }
   };
-  executorch::extension::llm::GenerationConfig config{
-      .echo = true,
-      .ignore_eos = false,
-      .max_new_tokens = -1,
-      .warming = false,
-      .seq_len = FLAGS_seq_len,
-      .temperature = static_cast<float>(FLAGS_temperature),
-      .num_bos = 0,
-      .num_eos = 0,
-  };
+  executorch::extension::llm::GenerationConfig config;
+  config.echo = true;
+  config.ignore_eos = false;
+  config.max_new_tokens = -1;
+  config.warming = false;
+  config.seq_len = FLAGS_seq_len;
+  config.temperature = static_cast<float>(FLAGS_temperature);
+  config.num_bos = 0;
+  config.num_eos = 0;
 
   // 1. [Multimodal] Get raw files from input_list.txt
   std::vector<std::string> audio_raw_files;

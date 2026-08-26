@@ -686,6 +686,14 @@ class ComputeGraph final {
     return context_->adapter_ptr()->device_type() == vkapi::DeviceType::MALI;
   }
 
+  // AMD-RDNA GPUs (Samsung Xclipse, AMD Radeon). There is no DeviceType for
+  // AMD, so this matches on the driver-reported device name; both casings are
+  // checked since the string casing varies by driver.
+  inline bool device_is_amd() {
+    return device_name_contains("Xclipse") || device_name_contains("xclipse") ||
+        device_name_contains("Radeon") || device_name_contains("radeon");
+  }
+
   const std::string& device_name() {
     return context()->adapter_ptr()->device_name();
   }
@@ -770,6 +778,27 @@ class ComputeGraph final {
    * Add a `api::vTensor` value to the graph with the specified image.
    */
   ValueRef add_tensor(const vkapi::VulkanImage& image);
+
+  /*
+   * Wrap an externally owned image as a tensor with the given logical sizes.
+   * Unlike add_tensor(image), the shape is taken from the caller instead of
+   * being reconstructed from the image's extents.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      const vkapi::VulkanImage& image);
+
+  /*
+   * Wrap an externally owned buffer as a tensor with the given logical sizes.
+   * The buffer must be large enough for them.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout,
+      const vkapi::VulkanBuffer& buffer);
 
   /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`.

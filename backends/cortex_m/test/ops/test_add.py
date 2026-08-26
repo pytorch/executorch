@@ -59,18 +59,34 @@ class CortexMTensorAdd(Model):
     }
 
 
-class CortexMAlphaAdd(ModelAlpha):
+class CortexMIntAlphaAdd(ModelAlpha):
+    """An integer alpha is the case that was silently miscompiled.
+
+    ModelAlpha(0.5) below is caught anyway, by "alpha argument of type float
+    cannot be safely cast", so it never exercised the silent path.
+
+    The boundary quant/dequant pairs are pinned so that a quantizer which
+    stopped annotating anything at all would not read as a successful decline.
+    """
+
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
     }
-
     ops_after_transforms = {
-        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
-        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
-        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 3,
     }
+
+
+class CortexMAlphaAdd(ModelAlpha):
+    """A float alpha is declined by the same guard, and stays in fp32."""
+
+    ops_before_transforms = CortexMIntAlphaAdd.ops_before_transforms
+    ops_after_transforms = CortexMIntAlphaAdd.ops_after_transforms
 
 
 class CortexMAddReLU(torch.nn.Module):
@@ -186,6 +202,13 @@ test_cases = {
             ramp_tensor(-2, 2, (1, 8, 1, 1)),
         ),
     ),
+    "alpha_int": McuTestCase(
+        CortexMIntAlphaAdd(2),
+        (
+            ramp_tensor(-10, 10, (4, 5)),
+            ramp_tensor(-20, 20, (4, 5)),
+        ),
+    ),
     "alpha": McuTestCase(
         CortexMAlphaAdd(0.5),
         (
@@ -224,9 +247,7 @@ test_cases = {
 }
 
 
-xfails_implementation: dict[str, xfail_type] = {
-    "alpha": "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
-}
+xfails_implementation: dict[str, xfail_type] = {}
 xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
     # Cortex-M quantizer will not quantize additions that require broadcasting
     # leading to the add op not being replaced by a cortex-m specific implementation
@@ -238,14 +259,18 @@ xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
 
 
 @parametrize("test_case", test_cases, xfails=xfails_dialect)
-def test_dialect_add(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_add(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
     )
 
 
 @parametrize("test_case", test_cases, xfails=xfails_implementation)
-def test_implementation_add(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_add(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation()

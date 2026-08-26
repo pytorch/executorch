@@ -22,7 +22,6 @@ using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::runtime::Error;
 using std::optional;
 using torch::executor::testing::TensorFactory;
 
@@ -261,6 +260,35 @@ template <>
 void OpMeanOutTest::
     test_mean_dim_out_dtype<ScalarType::Bool, ScalarType::Double>() {
   test_mean_dim_out_bool<ScalarType::Double>();
+}
+
+TEST_F(OpMeanOutTest, BFloat16GenericPathAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Reducing dim=0 of {512, 1} is not the last dim, so the generic path is
+  // taken. Without fp32 accumulation the sum saturates at ~256, giving
+  // 256/512 = 0.5 instead of 1.0.
+  constexpr int N = 512;
+  Tensor x = tf.ones({N, 1});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 0;
+  op_mean_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, 1.0f);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpMeanOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // N=512, all-ones input: without fp32 accumulation the sum saturates at
+  // ~256 in BFloat16, giving 256/512 = 0.5 instead of 1.0.
+  constexpr int N = 512;
+  Tensor x = tf.ones({1, N});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 1;
+  op_mean_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, 1.0f);
+  EXPECT_TENSOR_CLOSE(out, expected);
 }
 
 TEST_F(OpMeanOutTest, InvalidDimensionListDies) {

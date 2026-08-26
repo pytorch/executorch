@@ -9,7 +9,7 @@ The model classifies a static RGB test input tensor with shape `[1, 3, 224, 224]
 ## Prerequisites
 
 - Zephyr SDK with ExecuTorch module enabled
-- Python 3.10+ with ExecuTorch, torchvision, and ethos-u-vela installed
+- Python 3.12+ with ExecuTorch, torchvision, and ethos-u-vela installed
 - A board with Arm Ethos-U NPU (e.g., Corstone-300 FVP, Alif E7/E8 DevKit)
 
 ## Corstone-300 FVP (Ethos-U55)
@@ -27,6 +27,7 @@ Config Zephyr Corstone300 FVP
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
 export ARMFVP_EXTRA_FLAGS="-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_macs=128"
 ```
 
@@ -62,7 +63,7 @@ Config Zephyr Corstone320 FVP
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
-export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
 export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256"
 ```
 
@@ -102,10 +103,25 @@ python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
 ```
 
 ```bash
-west build -b alif_e8_dk/ae822fa0e5597xx0/rtss_hp \
-    -S ethos-u55-enable \
+west build -d build -b ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp \
     modules/lib/executorch/zephyr/samples/mv2-ethosu -- \
     -DET_PTE_FILE_PATH=mv2_ethosu.pte
+```
+
+### Flash with west
+```bash
+west flash
+```
+If `west flash` does not work on your board, flash with Alif SE Tools instead;
+see the [Zephyr Alif tutorial](../../../docs/source/zephyr_alif_tutorial.md).
+
+### Run
+
+After flashing, make sure the board has `SW4=U4`, open the Zephyr
+console at 115200 baud, and reset again:
+
+```bash
+picocom -b 115200 /dev/ttyACM0
 ```
 
 ## Expected output

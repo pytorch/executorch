@@ -19,6 +19,7 @@
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
 # - parakeet: Speech recognition model (CPU, CUDA, Metal, MLX)
 # - sortformer: Speaker diarization model (CPU, CUDA)
+# - supertonic: Text-to-speech model (MLX)
 # - silero_vad: Voice activity detection model (CPU)
 # - llama:    Text generation model (CPU)
 # - llava:    Vision + language model (CPU)
@@ -91,7 +92,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx qwen3_5_moe-cuda qwen3_5_moe-metal clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu supertonic-mlx silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -100,6 +101,7 @@ help:
 	@echo "  voxtral-metal       - Build Voxtral runner with Metal backend (macOS only)"
 	@echo "  voxtral-mlx         - Build Voxtral runner with MLX backend"
 	@echo "  voxtral_realtime-cuda - Build Voxtral Realtime runner with CUDA backend"
+	@echo "  voxtral_realtime-rocm - Build Voxtral Realtime runner with ROCm backend"
 	@echo "  voxtral_realtime-cpu - Build Voxtral Realtime runner with CPU backend"
 	@echo "  voxtral_realtime-metal - Build Voxtral Realtime runner with Metal backend (macOS only)"
 	@echo "  voxtral_realtime-mlx - Build Voxtral Realtime runner with MLX backend"
@@ -119,6 +121,7 @@ help:
 	@echo "  dinov2-cuda-debug   - Build DINOv2 runner with CUDA backend (debug mode)"
 	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
+	@echo "  supertonic-mlx      - Build Supertonic runner with MLX backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
 	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
@@ -127,10 +130,13 @@ help:
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
-	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner with CUDA backend"
-	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner with MLX backend"
+	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner and worker with CUDA backend"
+	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner and worker with MLX backend"
+	@echo "  muse-glimmer-cuda   - Build Muse Glimmer runners and worker with CUDA backend"
+	@echo "  muse-glimmer-mlx    - Build Muse Glimmer runners and worker with MLX backend"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
+	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
 	@echo "  clean               - Clean build artifacts"
 
 voxtral-cuda:
@@ -261,7 +267,8 @@ parakeet-vulkan:
 
 dinov2-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
-	cmake --workflow --preset llm-release-cuda
+	cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-release-cuda-install
 	@echo "==> Building DINOv2 runner with CUDA..."
 	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda
 	@echo ""
@@ -270,7 +277,8 @@ dinov2-cuda:
 
 dinov2-cuda-debug:
 	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
-	cmake --workflow --preset llm-debug-cuda
+	cmake --preset llm-debug-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-debug-cuda-install
 	@echo "==> Building DINOv2 runner with CUDA (debug mode)..."
 	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda-debug
 	@echo ""
@@ -293,6 +301,15 @@ sortformer-cpu:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+
+supertonic-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Supertonic runner with MLX..."
+	cd examples/models/supertonic && cmake --workflow --preset supertonic-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/supertonic/supertonic_runner"
 
 voxtral_realtime-cpu:
 	@echo "==> Building and installing ExecuTorch..."
@@ -320,6 +337,15 @@ voxtral_realtime-cuda:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+voxtral_realtime-rocm:
+	@echo "==> Building and installing ExecuTorch with ROCm..."
+	cmake --workflow --preset llm-release-rocm
+	@echo "==> Building Voxtral Realtime runner with ROCm..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-rocm
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out-rocm-llm/examples/models/voxtral_realtime/voxtral_realtime_runner"
 
 voxtral_realtime-mlx:
 	@echo "==> Building and installing ExecuTorch with MLX..."
@@ -431,29 +457,55 @@ voxtral_tts-cuda:
 qwen3_5_moe-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
-	@echo "==> Building Qwen3.5 MoE runner with CUDA..."
+	@echo "==> Building Qwen3.5 MoE runner and no-bleed test with CUDA..."
 	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+	@echo "  Test:   cmake-out/examples/models/qwen3_5_moe/test_qwen35_moe_nobleed"
+
+muse-glimmer-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Muse Glimmer runners and worker with CUDA..."
+	cd examples/models/muse-glimmer && cmake --workflow --preset muse-glimmer-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Solo runner:   cmake-out/examples/models/muse-glimmer/solo_runner"
+	@echo "  DFlash runner: cmake-out/examples/models/muse-glimmer/dflash_runner"
+	@echo "  Worker:        cmake-out/examples/models/muse-glimmer/muse_glimmer_worker"
+
+muse-glimmer-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Muse Glimmer runners and worker with MLX..."
+	cd examples/models/muse-glimmer && cmake --workflow --preset muse-glimmer-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Solo runner:   cmake-out/examples/models/muse-glimmer/solo_runner"
+	@echo "  DFlash runner: cmake-out/examples/models/muse-glimmer/dflash_runner"
+	@echo "  Worker:        cmake-out/examples/models/muse-glimmer/muse_glimmer_worker"
 
 gemma4_31b-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
-	@echo "==> Building Gemma 4 31B runner with CUDA..."
+	@echo "==> Building Gemma 4 31B runner, worker, and no-bleed test with CUDA..."
 	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-cuda
 	@echo ""
 	@echo "✓ Build complete!"
-	@echo "  Binary: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
+	@echo "  Test:   cmake-out/examples/models/gemma4_31b/test_gemma4_31b_nobleed"
 
 gemma4_31b-mlx:
 	@echo "==> Building and installing ExecuTorch with MLX..."
 	cmake --workflow --preset mlx-release
-	@echo "==> Building Gemma 4 31B runner with MLX..."
+	@echo "==> Building Gemma 4 31B runner and worker with MLX..."
 	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-mlx
 	@echo ""
 	@echo "✓ Build complete!"
-	@echo "  Binary: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
 
 qwen3_5_moe-metal:
 	@echo "==> Building and installing ExecuTorch with Metal..."
@@ -464,7 +516,21 @@ qwen3_5_moe-metal:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
 
+qwen3_5_moe-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Qwen3.5 MoE runner with MLX..."
+	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+
 clean:
 	rm -rf cmake-out \
 	       extension/llm/tokenizers/build \
 	       extension/llm/tokenizers/pytorch_tokenizers.egg-info
+
+# qwen3_dflash-mlx target removed: it depended on the C++ engine sources
+# (CMakeLists.txt, CMakePresets.json, qwen3_dflash_engine.*), which are
+# gitignored/not yet landed. Restore this target in the follow-up PR that
+# actually lands the C++ engine.

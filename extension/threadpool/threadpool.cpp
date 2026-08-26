@@ -52,13 +52,14 @@ void child_atfork() {
 #endif
 
 ThreadPool::ThreadPool(size_t thread_count)
-    : threadpool_(pthreadpool_create(thread_count), pthreadpool_destroy) {}
+    : threadpool_(pthreadpool_create(thread_count), pthreadpool_destroy),
+      thread_count_(
+          threadpool_ ? pthreadpool_get_threads_count(threadpool_.get()) : 0) {}
 
 size_t ThreadPool::get_thread_count() const {
   std::lock_guard<std::mutex> lock{mutex_};
 
-  ET_CHECK_MSG(threadpool_.get(), "Invalid threadpool!");
-  return pthreadpool_get_threads_count(threadpool_.get());
+  return thread_count_;
 }
 
 bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
@@ -72,6 +73,8 @@ bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
   std::lock_guard<std::mutex> lock{mutex_};
 
   threadpool_.reset(pthreadpool_create(new_thread_count));
+  thread_count_ =
+      threadpool_ ? pthreadpool_get_threads_count(threadpool_.get()) : 0;
   return true;
 }
 
@@ -79,6 +82,7 @@ void ThreadPool::_unsafe_destroy_threadpool() {
   std::lock_guard<std::mutex> lock{mutex_};
   ET_LOG(Info, "Destroying threadpool.");
   threadpool_.reset();
+  thread_count_ = 0;
 }
 
 void ThreadPool::run(
@@ -145,7 +149,7 @@ ThreadPool* get_threadpool() {
      * tricky to detect if we are running under tsan, for now capping the
      * default threadcount to the tsan limit unconditionally.
      */
-    constexpr unsigned int tsan_thread_limit = 63;
+    constexpr decltype(result) tsan_thread_limit = 63;
     return std::min(result, tsan_thread_limit);
   })();
 

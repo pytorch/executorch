@@ -34,7 +34,6 @@ using executorch::runtime::Error;
 using executorch::runtime::get_device_allocator;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::TensorShapeDynamism;
-using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 
 namespace {

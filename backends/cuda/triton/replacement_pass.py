@@ -27,7 +27,8 @@ EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.topk.default: triton.topk,
 }
 
-_SPLITK_LKV_THRESHOLD = 2048
+
+_SPLITK_LKV_THRESHOLD = 256
 
 
 class ReplaceEdgeOpWithTritonOpPass(PassBase):
@@ -94,17 +95,22 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         (full-attention KV caches) but loses to the standard kernel for
         small L_kv (sliding-window ring buffers) due to the overhead of
         allocating partial buffers and running the reduction kernel.
+
+        TODO(gasoonjia): Benchmarking to determine the optimal
+        implementation for each shape.
         """
         q_shape = node.args[0].meta["val"].shape
         k_shape = node.args[1].meta["val"].shape
         L_q, D = q_shape[2], q_shape[3]
         L_kv = k_shape[2]
 
+        # TODO: Re-enable split-K after validating ROCm Voxtral decode numerics.
         if (
-            isinstance(L_q, int)
+            torch.version.hip is None
+            and isinstance(L_q, int)
             and L_q == 1
             and isinstance(L_kv, int)
-            and L_kv > _SPLITK_LKV_THRESHOLD
+            and L_kv >= _SPLITK_LKV_THRESHOLD
             and D > 0
             and (D & (D - 1)) == 0  # power of 2
         ):

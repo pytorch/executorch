@@ -18,7 +18,6 @@
 using ::executorch::aten::ArrayRef;
 using ::executorch::aten::IntArrayRef;
 using ::executorch::aten::ScalarType;
-using ::executorch::aten::SizesType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;

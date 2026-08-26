@@ -7,6 +7,7 @@
 from typing import Optional
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
@@ -127,14 +128,16 @@ class Conv1dUnsqueezePass(XNNPACKPass):
         for node in node_list:
             if node.op == "call_function":
                 if node.target.__name__ == "aten.convolution.default":
-                    stride = list(node.args[3])
-                    if len(stride) != 1:
-                        # skip conv if it is not 1d
-                        continue
-
                     kernel_node = node.args[1]
                     if is_dequant(kernel_node) and not is_quant(kernel_node.args[0]):
                         kernel_node = kernel_node.args[0]
+
+                    # The weight rank is the only reliable indicator of the conv
+                    # dimensionality. stride, padding and dilation may each be a
+                    # single value that ATen broadcasts over every spatial dim.
+                    if len(get_shape(kernel_node)) != 3:
+                        # skip conv if it is not 1d
+                        continue
 
                     if not is_param_node(self.exported_program, kernel_node):
                         raise AssertionError(

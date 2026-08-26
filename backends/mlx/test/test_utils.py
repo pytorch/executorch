@@ -275,6 +275,7 @@ def export_model_to_pte(
     dynamic_shapes: Optional[Dict] = None,
     verbose: bool = False,
     edge_compile_config: Optional[exir.EdgeCompileConfig] = None,
+    transform_passes: Optional[list] = None,
 ) -> None:
     """
     Export a PyTorch model to a .pte file using the MLX delegate.
@@ -287,6 +288,8 @@ def export_model_to_pte(
         dynamic_shapes: Optional dynamic shapes specification for torch.export.
             Example: {0: {0: Dim("batch", min=1, max=32)}} for dynamic batch on first input.
         verbose: Whether to print the exported program for debugging.
+        transform_passes: Optional edge-dialect passes to run before partitioning
+            (e.g. ``get_default_passes()``). Mirrors the production export path.
     """
     from executorch.backends.mlx import MLXPartitioner
     from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -308,10 +311,14 @@ def export_model_to_pte(
 
     # Lower to edge and delegate to MLX
     compile_config = edge_compile_config or exir.EdgeCompileConfig()
+    lower_kwargs = {}
+    if transform_passes is not None:
+        lower_kwargs["transform_passes"] = transform_passes
     edge_program = exir.to_edge_transform_and_lower(
         exported_program,
         partitioner=[MLXPartitioner()],
         compile_config=compile_config,
+        **lower_kwargs,
     )
 
     # Print edge program if verbose
@@ -609,6 +616,7 @@ def run_cpp_test_runner(
     output_path: Path,
     verbose: bool = False,
     timeout: Optional[int] = None,
+    kv_cache: Optional[str] = None,
 ) -> bool:
     """
     Run the C++ op_test_runner binary.
@@ -619,6 +627,10 @@ def run_cpp_test_runner(
         output_path: Path to write output .bin file.
         verbose: Whether to print verbose output.
         timeout: Timeout in seconds. None means use DEFAULT_TEST_TIMEOUT.
+        kv_cache: Optional off-graph KV cache spec,
+            "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]". Required by
+            models containing kvcache::update_and_attend, which fail at
+            execute() with no cache installed.
 
     Returns:
         True if execution succeeded, False otherwise.
@@ -637,6 +649,8 @@ def run_cpp_test_runner(
         "--output",
         str(output_path),
     ]
+    if kv_cache:
+        cmd += ["--kv-cache", kv_cache]
     if verbose:
         cmd.append("--verbose")
 
@@ -853,6 +867,9 @@ class OpTestCase:
     expected_node_counts: Optional[Dict[str, int]] = (
         None  # Expected serialized node counts
     )
+    # Off-graph KV cache spec "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]"
+    # installed for the run; required by models using update_and_attend.
+    kv_cache: Optional[str] = None
 
     def _set_seed(self) -> None:
         """Set random seed for reproducibility."""
@@ -877,11 +894,30 @@ class OpTestCase:
         """Return EdgeCompileConfig for export, or None for default."""
         return None
 
+    def get_transform_passes(self) -> Optional[list]:
+        """Return edge-dialect transform passes to run before partitioning.
+
+        Defaults to None (no passes), matching the historical op-test path.
+        Override to return ``get_default_passes()`` to exercise the production
+        lowering pipeline (e.g. for reinplace/donation coverage).
+        """
+        return None
+
     def get_test_dir(self) -> Path:
         """Get the directory for this test's files."""
         test_dir = Path(__file__).parent / "op_tests" / self.name
         test_dir.mkdir(parents=True, exist_ok=True)
         return test_dir
+
+    def compute_expected_outputs(self, model, test_inputs):
+        """Reference outputs the device result is compared against.
+
+        Defaults to the eager ``model`` forward. Override to supply a
+        higher-precision reference -- e.g. fp32 accumulation matching a kernel
+        that accumulates in fp32, so bf16 reference noise doesn't dominate the
+        comparison.
+        """
+        return model(*test_inputs)
 
     def generate_test_files(self, verbose: bool = False) -> Tuple[Path, Path, Path]:
         """
@@ -915,7 +951,7 @@ class OpTestCase:
         with torch.no_grad():
             if isinstance(test_inputs, torch.Tensor):
                 test_inputs = (test_inputs,)
-            expected_outputs = model(*test_inputs)
+            expected_outputs = self.compute_expected_outputs(model, test_inputs)
             if isinstance(expected_outputs, torch.Tensor):
                 expected_outputs = [expected_outputs]
             else:
@@ -937,6 +973,7 @@ class OpTestCase:
             dynamic_shapes=dynamic_shapes,
             verbose=verbose,
             edge_compile_config=self.get_edge_compile_config(),
+            transform_passes=self.get_transform_passes(),
         )
 
         # Save test inputs
@@ -1037,7 +1074,12 @@ class OpTestCase:
         print("\nStep 3: Running C++ binary...")
         actual_path = self.get_test_dir() / "actual_output.bin"
         if not run_cpp_test_runner(
-            pte_path, input_path, actual_path, verbose=verbose, timeout=timeout
+            pte_path,
+            input_path,
+            actual_path,
+            verbose=verbose,
+            timeout=timeout,
+            kv_cache=self.kv_cache,
         ):
             return False
 

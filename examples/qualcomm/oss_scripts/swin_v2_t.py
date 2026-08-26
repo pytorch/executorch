@@ -16,8 +16,7 @@ import torch
 import torchvision
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     FoldQDQ,
-    get_capture_program_passes,
-    get_passes_dependency_for_capture_program,
+    get_qnn_pass_manager_cls,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
 )
@@ -96,12 +95,13 @@ def main(args):
 
     pte_filename = "swin_v2_t_qnn"
     instance = torchvision.models.swin_v2_t(weights="IMAGENET1K_V1").eval()
-    passes_job = get_capture_program_passes()
+    pass_manager_cls = get_qnn_pass_manager_cls()
+    passes_job = pass_manager_cls.get_capture_program_passes()
     passes_job[RewritePartition] = {
         QCOM_PASS_ACTIVATE_KEY: True,
         QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {},
     }
-    passes_dep = get_passes_dependency_for_capture_program()
+    passes_dep = pass_manager_cls.get_passes_dependency_for_capture_program()
     passes_dep[RewritePartition] = [FoldQDQ]
     qnn_quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,

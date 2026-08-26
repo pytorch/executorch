@@ -8,10 +8,15 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 
+#include <thread>
+#include <type_traits>
+
 using namespace executorch::backends::cuda;
+using namespace executorch::extension::cuda;
 using namespace executorch::runtime;
 
 // TODO(gasoonjia): Multiple device tests were not included due to test
@@ -264,4 +269,85 @@ TEST_F(CUDAStreamGuardTest, NullStreamPointer) {
 
   auto current_stream_result = getCurrentCUDAStream(0);
   ASSERT_TRUE(current_stream_result.ok());
+}
+
+// CallerStreamGuard / getCallerStream select the backend's stream through pure
+// thread-local state and never touch a device. They still need the CUDA headers
+// to build, but no CUDA device at runtime, so they run outside the device-gated
+// fixture above using opaque (fake) stream values.
+namespace {
+// Opaque, distinct, never-dereferenced stream handles; using object addresses
+// avoids an int-to-pointer cast.
+cudaStream_t fake_stream(int index) {
+  static char storage[3];
+  return reinterpret_cast<cudaStream_t>(&storage[index]);
+}
+} // namespace
+
+TEST(CallerStreamGuardTest, NoGuardReportsNullopt) {
+  EXPECT_FALSE(getCallerStream().has_value());
+}
+
+TEST(CallerStreamGuardTest, GuardSelectsThenRestores) {
+  const cudaStream_t selected = fake_stream(0);
+  {
+    CallerStreamGuard guard(selected);
+    EXPECT_EQ(getCallerStream(), selected);
+  }
+  EXPECT_FALSE(getCallerStream().has_value());
+}
+
+TEST(CallerStreamGuardTest, ExplicitNullStreamIsStillSelected) {
+  CallerStreamGuard guard(nullptr);
+  ASSERT_TRUE(getCallerStream().has_value());
+  EXPECT_EQ(*getCallerStream(), nullptr);
+}
+
+TEST(CallerStreamGuardTest, SelectionIsThreadLocal) {
+  const cudaStream_t selected = fake_stream(0);
+  CallerStreamGuard guard(selected);
+
+  bool child_started_without_stream = false;
+  bool child_selected_own_stream = false;
+  std::thread child([&]() {
+    child_started_without_stream = !getCallerStream().has_value();
+    CallerStreamGuard child_guard(fake_stream(1));
+    child_selected_own_stream = getCallerStream() == fake_stream(1);
+  });
+  child.join();
+
+  EXPECT_TRUE(child_started_without_stream);
+  EXPECT_TRUE(child_selected_own_stream);
+  EXPECT_EQ(getCallerStream(), selected);
+}
+
+TEST(CallerStreamGuardTest, NestedGuardsRestoreOuter) {
+  const cudaStream_t outer = fake_stream(1);
+  const cudaStream_t inner = fake_stream(2);
+  CallerStreamGuard outer_guard(outer);
+  {
+    CallerStreamGuard inner_guard(inner);
+    EXPECT_EQ(getCallerStream(), inner);
+  }
+  EXPECT_EQ(getCallerStream(), outer);
+}
+
+TEST(CallerStreamGuardCompileTimeTest, NotCopyable) {
+  static_assert(
+      !std::is_copy_constructible_v<CallerStreamGuard>,
+      "CallerStreamGuard should not be copy constructible");
+  static_assert(
+      !std::is_copy_assignable_v<CallerStreamGuard>,
+      "CallerStreamGuard should not be copy assignable");
+}
+
+TEST(CUDAStreamRegistryTest, PeekDoesNotCreateAndClearResets) {
+  // An explicit index skips the cudaGetDevice path, so this needs no device;
+  // use an index no other test touches.
+  constexpr DeviceIndex kIdx = 5;
+  EXPECT_FALSE(peekCurrentCUDAStream(kIdx).has_value());
+  ASSERT_EQ(setCurrentCUDAStream(fake_stream(0), kIdx), Error::Ok);
+  EXPECT_EQ(peekCurrentCUDAStream(kIdx), fake_stream(0));
+  clearCurrentCUDAStream(kIdx);
+  EXPECT_FALSE(peekCurrentCUDAStream(kIdx).has_value());
 }

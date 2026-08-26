@@ -6,7 +6,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -67,7 +66,6 @@ def test_round_tosa_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(reason="where.self not supported on U55")
 def test_round_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
         Round(),
@@ -90,7 +88,7 @@ def test_round_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
 @common.SkipIfNoModelConverter
 def test_round_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](

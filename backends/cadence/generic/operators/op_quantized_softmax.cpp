@@ -24,7 +24,6 @@ namespace generic {
 namespace native {
 namespace {
 
-using ::executorch::aten::IntArrayRef;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;

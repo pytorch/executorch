@@ -83,6 +83,33 @@ target_include_directories(
 )
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
+# The MoE kernel always compiles with a reference fallback (unpack + dequant +
+# cpublas::gemm) using the torchao weight_packing headers from third-party/ao
+# (already on the include path).  Pass
+# -DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON to additionally link the
+# optimized torchao linear_operator (fused INT8-dyn-act GEMM, aarch64 NEON
+# dotprod).
+option(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE
+       "Link the optimized torchao linear kernel for llama::quantized_moe_ffn"
+       OFF
+)
+if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE)
+  if(NOT TARGET torchao_ops_linear_8bit_act_xbit_weight_executorch)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON requires target "
+        "torchao_ops_linear_8bit_act_xbit_weight_executorch, which is not "
+        "defined. Build the torchao ops or set this option OFF."
+    )
+  endif()
+  # Compile definition and link must be gated on the same condition, else the
+  # ENABLE_QUANTIZED_MOE_FFN path compiles without the library that defines it.
+  target_compile_definitions(custom_ops PUBLIC ENABLE_QUANTIZED_MOE_FFN=1)
+  target_link_libraries(
+    custom_ops PUBLIC torchao_ops_linear_8bit_act_xbit_weight_executorch
+  )
+endif()
+
 target_compile_options(custom_ops PUBLIC ${_common_compile_options})
 
 install(
@@ -98,10 +125,13 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     custom_ops_aot_lib SHARED
     ${_custom_ops__srcs}
     ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_moe_aot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/op_fast_hadamard_transform_aten.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop_aot.cpp
   )
+  # This lib compiles real PyTorch headers, which require C++20.
+  set_target_properties(custom_ops_aot_lib PROPERTIES CXX_STANDARD 20)
   target_include_directories(
     custom_ops_aot_lib PRIVATE "${_common_include_directories}"
   )
@@ -111,29 +141,72 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
             ${TORCH_INCLUDE_DIRS}
   )
   # TODO: This only works if we install portable_lib.so to
-  # <site-packages>/executorch/extension/pybindings/.
+  # <site-packages>/executorch/extension/pybindings/. torch is three directories
+  # up from here, and this library links it directly, so the hop has to be
+  # recorded or the only route is the absolute path from the machine that built
+  # the wheel.
   if(APPLE)
-    set(RPATH "@loader_path/../../pybindings")
+    set(RPATH
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib"
+    )
   else()
-    set(RPATH "$ORIGIN/../../pybindings")
+    set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
   endif()
-  set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH ${RPATH})
+  if(EXECUTORCH_BUILD_SHARED)
+    # Also on the built artifact, not only on install. Packaging copies this
+    # library out of the build tree rather than running an install step, so
+    # without this the built file carries whatever the linker recorded. Scoped
+    # to the shared build so a build that does not opt in keeps the parent's
+    # install-only behaviour.
+    set_target_properties(
+      custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                           "${RPATH}"
+    )
+  else()
+    set_target_properties(
+      custom_ops_aot_lib PROPERTIES INSTALL_RPATH "${RPATH}"
+    )
+  endif()
+  executorch_target_shared_runtime_path(
+    custom_ops_aot_lib "extension/llm/custom_ops"
+    "executorch/extension/llm/custom_ops"
+  )
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
     # the ops in PyTorch and ExecuTorch through pybind
     target_link_libraries(custom_ops_aot_lib PUBLIC portable_lib)
-  else()
+  elseif(NOT EXECUTORCH_BUILD_SHARED)
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
     target_link_libraries(
       custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps
     )
+  else()
+    target_link_libraries(custom_ops_aot_lib PUBLIC kernels_util_all_deps)
   endif()
+  executorch_target_link_shared_runtime(custom_ops_aot_lib)
 
   target_link_libraries(
     custom_ops_aot_lib PUBLIC cpublas torch extension_tensor
                               extension_threadpool
   )
+  if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE)
+    if(NOT TARGET torchao_ops_linear_8bit_act_xbit_weight_executorch)
+      message(
+        FATAL_ERROR
+          "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON requires target "
+          "torchao_ops_linear_8bit_act_xbit_weight_executorch, which is not "
+          "defined. Build the torchao ops or set this option OFF."
+      )
+    endif()
+    target_compile_definitions(
+      custom_ops_aot_lib PUBLIC ENABLE_QUANTIZED_MOE_FFN=1
+    )
+    target_link_libraries(
+      custom_ops_aot_lib
+      PUBLIC torchao_ops_linear_8bit_act_xbit_weight_executorch
+    )
+  endif()
   if(WIN32)
     # There is no direct replacement for libpthread.so on Windows. For the
     # Windows build, link directly against pthreadpool and cpuinfo.

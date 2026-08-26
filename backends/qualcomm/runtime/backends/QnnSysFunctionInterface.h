@@ -42,6 +42,13 @@ class QnnSystemInterface {
       system_context_get_binary_info,
       systemContextGetMetaData);
   DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_context_free, systemContextFree);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_dlc_compose_graphs,
+      systemDlcComposeGraphs);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_dlc_create_from_binary,
+      systemDlcCreateFromBinary);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_dlc_free, systemDlcFree);
 
  private:
   const QnnSystemInterface_t* qnn_sys_interface_{nullptr};

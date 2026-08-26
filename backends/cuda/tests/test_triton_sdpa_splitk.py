@@ -10,8 +10,10 @@ Mirrors test_triton_sdpa.py structure. Reference outputs use torch SDPA with
 expanded KV heads in float32.
 """
 
+import importlib
 import itertools
 import unittest
+from unittest import mock
 
 import torch
 import torch.nn.functional as F
@@ -24,16 +26,20 @@ def _skip_if_no_cuda():
         raise unittest.SkipTest("BF16 not supported on this GPU")
 
 
-def _import_splitk():
+def _import_legacy_splitk():
     from executorch.backends.cuda.triton.kernels.sdpa import sdpa_decode_splitk
 
     return sdpa_decode_splitk
 
 
-def _import_sdpa():
-    from executorch.backends.cuda.triton.kernels.sdpa import sdpa
+def _import_small_query_splitk():
+    from executorch.backends.cuda.triton.kernels import sdpa_small_query_splitk
 
-    return sdpa
+    return sdpa_small_query_splitk
+
+
+def _import_sdpa_module():
+    return importlib.import_module("executorch.backends.cuda.triton.kernels.sdpa")
 
 
 def _reference_sdpa(q, k, v, attn_mask=None, scale=None):
@@ -85,8 +91,10 @@ class TestTritonSdpaSplitK(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         _skip_if_no_cuda()
-        cls.splitk = _import_splitk()
-        cls.sdpa = _import_sdpa()
+        cls.legacy_splitk = _import_legacy_splitk()
+        cls.small_query_splitk = _import_small_query_splitk()
+        cls.sdpa_module = _import_sdpa_module()
+        cls.sdpa = cls.sdpa_module.sdpa
 
     # ------------------------------------------------------------------
     # Correctness
@@ -106,7 +114,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
                 v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
 
-                out = self.splitk(q, k, v)
+                out = self.legacy_splitk(q, k, v)
                 ref = _reference_sdpa(q, k, v)
 
                 self.assertEqual(out.shape, (B, H_q, Lq, D))
@@ -130,7 +138,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 mask = torch.zeros(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
                 mask[:, :, :, :200] = True
 
-                out = self.splitk(q, k, v, attn_mask=mask)
+                out = self.legacy_splitk(q, k, v, attn_mask=mask)
                 ref = _reference_sdpa(q, k, v, attn_mask=mask)
 
                 self.assertFalse(torch.isnan(out).any())
@@ -146,11 +154,131 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 k = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
                 v = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
 
-                out = self.splitk(q, k, v)
+                out = self.legacy_splitk(q, k, v)
                 ref = _reference_sdpa(q, k, v)
 
                 self.assertFalse(torch.isnan(out).any())
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_small_query_blocks(self):
+        """Split-K supports each small-query length through the verifier size."""
+        B, H_q, H_kv, Lk, D = 1, 8, 2, 512, 128
+        for Lq in [2, 3, 4]:
+            with self.subTest(Lq=Lq):
+                torch.manual_seed(42)
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
+
+                out = self.small_query_splitk(q, k, v, attn_mask=mask)
+                ref = _reference_sdpa(q, k, v, attn_mask=mask)
+
+                self.assertEqual(out.shape, (B, H_q, Lq, D))
+                self.assertFalse(torch.isnan(out).any())
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_non_power_of_two_gqa_ratio_with_three_queries(self):
+        """Padded group tiles must retain every query row."""
+        B, H_q, H_kv, Lq, Lk, D = 1, 10, 2, 3, 512, 128
+        torch.manual_seed(42)
+        q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
+
+        out = self.small_query_splitk(q, k, v, attn_mask=mask)
+        ref = _reference_sdpa(q, k, v, attn_mask=mask)
+
+        self.assertTrue(torch.isfinite(out).all())
+        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_public_dispatch_isolates_kernel_families(self):
+        """Lq1 and verifier blocks must use disjoint split-K launchers."""
+        B, H_q, H_kv, Lk, D = 1, 8, 2, 256, 64
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        kv_len = torch.tensor(Lk, dtype=torch.int64, device="cuda")
+
+        for Lq, legacy_calls, small_query_calls in [(1, 1, 0), (4, 0, 1)]:
+            with self.subTest(Lq=Lq):
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
+                with mock.patch.object(
+                    self.sdpa_module, "_launch_decode_splitk"
+                ) as legacy_launcher, mock.patch.object(
+                    self.sdpa_module, "_launch_small_query_splitk"
+                ) as small_query_launcher:
+                    self.sdpa(
+                        q,
+                        k,
+                        v,
+                        attn_mask=mask,
+                        enable_gqa=True,
+                        kv_len=kv_len,
+                    )
+
+                self.assertEqual(legacy_launcher.call_count, legacy_calls)
+                self.assertEqual(small_query_launcher.call_count, small_query_calls)
+
+    def test_high_gqa_small_query_with_runtime_kv_len(self):
+        """Exercise Lq=4, 16:1 GQA, and a bottom-right causal mask."""
+        B, H_q, H_kv, Lq, Lk, D = 1, 32, 2, 4, 4096, 128
+        valid_len = 4089
+        torch.manual_seed(42)
+        q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        q_pos = torch.arange(valid_len - Lq, valid_len, device="cuda")
+        k_pos = torch.arange(Lk, device="cuda")
+        mask = (q_pos[:, None] >= k_pos[None, :])[None, None]
+        kv_len = torch.tensor(valid_len, dtype=torch.int64, device="cuda")
+
+        out = self.sdpa(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            enable_gqa=True,
+            kv_len=kv_len,
+        )
+        ref = _reference_sdpa(q, k, v, attn_mask=mask)
+
+        self.assertFalse(torch.isnan(out).any())
+        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_runtime_kv_len_ignores_garbage_tail(self):
+        """The public split-K dispatch must not read past the valid KV prefix."""
+        B, H_q, H_kv, Lq, Lk, D = 1, 32, 2, 4, 131072, 128
+        valid_len = 509
+        torch.manual_seed(42)
+        q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        k[:, :, valid_len:] = 1000
+        v[:, :, valid_len:] = 1000
+        q_pos = torch.arange(valid_len - Lq, valid_len, device="cuda")
+        k_pos = torch.arange(Lk, device="cuda")
+        mask = (q_pos[:, None] >= k_pos[None, :])[None, None]
+        kv_len = torch.tensor(valid_len, dtype=torch.int64, device="cuda")
+
+        out = self.sdpa(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            enable_gqa=True,
+            kv_len=kv_len,
+        )
+        ref = _reference_sdpa(
+            q,
+            k[:, :, :valid_len],
+            v[:, :, :valid_len],
+            attn_mask=mask[:, :, :, :valid_len],
+        )
+
+        self.assertTrue(torch.isfinite(out).all())
+        self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_qwen35_config(self):
         """Exact Qwen3.5 MoE config: H_q=16, H_kv=2, D=256."""
@@ -165,7 +293,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
 
                 mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
 
-                out = self.splitk(q, k, v, attn_mask=mask)
+                out = self.legacy_splitk(q, k, v, attn_mask=mask)
                 ref = _reference_sdpa(q, k, v, attn_mask=mask)
 
                 self.assertEqual(out.shape, (B, H_q, Lq, D))
@@ -181,7 +309,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
 
         scale = 0.05
-        out = self.splitk(q, k, v, scale=scale)
+        out = self.legacy_splitk(q, k, v, scale=scale)
         ref = _reference_sdpa(q, k, v, scale=scale)
 
         self.assertFalse(torch.isnan(out).any())
@@ -199,7 +327,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
                 mask = torch.ones(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
 
-                out_splitk = self.splitk(q, k, v, attn_mask=mask)
+                out_splitk = self.legacy_splitk(q, k, v, attn_mask=mask)
                 out_tiled = self.sdpa(q, k, v, attn_mask=mask, enable_gqa=True)
 
                 self.assertLess(
@@ -221,7 +349,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
 
         mask = torch.zeros(B, 1, Lq, Lk, dtype=torch.bool, device="cuda")
-        out = self.splitk(q, k, v, attn_mask=mask)
+        out = self.legacy_splitk(q, k, v, attn_mask=mask)
 
         self.assertFalse(torch.isnan(out).any(), "All-masked should not NaN")
         self.assertFalse(torch.isinf(out).any(), "All-masked should not Inf")
@@ -234,7 +362,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
 
-        out = self.splitk(q, k, v)
+        out = self.legacy_splitk(q, k, v)
         ref = _reference_sdpa(q, k, v)
 
         self.assertFalse(torch.isnan(out).any())
@@ -250,7 +378,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
                 v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
 
-                out = self.splitk(q, k, v)
+                out = self.legacy_splitk(q, k, v)
                 ref = _reference_sdpa(q, k, v)
 
                 self.assertFalse(torch.isnan(out).any())
@@ -260,14 +388,34 @@ class TestTritonSdpaSplitK(unittest.TestCase):
     # Validation errors
     # ------------------------------------------------------------------
 
-    def test_lq_not_1_rejected(self):
-        """L_q != 1 should raise RuntimeError."""
+    def test_legacy_lq_two_rejected(self):
+        """The legacy decode op remains restricted to L_q == 1."""
+        B, H_q, H_kv, D = 1, 8, 2, 64
+        q = torch.randn(B, H_q, 2, D, dtype=torch.bfloat16, device="cuda")
+        k = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.legacy_splitk(q, k, v)
+
+    def test_small_query_lq_one_and_five_rejected(self):
+        """The small-query op accepts only L_q values 2 through 4."""
+        B, H_q, H_kv, D = 1, 8, 2, 64
+        k = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
+        for Lq in [1, 5]:
+            with self.subTest(Lq=Lq):
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                with self.assertRaises(RuntimeError):
+                    self.small_query_splitk(q, k, v)
+
+    def test_multi_query_implicit_causal_rejected(self):
+        """Cached multi-query attention requires an explicit aligned mask."""
         B, H_q, H_kv, D = 1, 8, 2, 64
         q = torch.randn(B, H_q, 4, D, dtype=torch.bfloat16, device="cuda")
         k = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         with self.assertRaises(RuntimeError):
-            self.splitk(q, k, v)
+            self.small_query_splitk(q, k, v, is_causal=True)
 
     def test_dropout_rejected(self):
         """dropout_p != 0 should raise RuntimeError."""
@@ -276,7 +424,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         k = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         with self.assertRaises(RuntimeError):
-            self.splitk(q, k, v, dropout_p=0.1)
+            self.legacy_splitk(q, k, v, dropout_p=0.1)
 
     def test_is_causal_accepted(self):
         """is_causal=True is a no-op at L_q=1, should not raise."""
@@ -284,7 +432,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         q = torch.randn(B, H_q, 1, D, dtype=torch.bfloat16, device="cuda")
         k = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
-        out = self.splitk(q, k, v, is_causal=True)
+        out = self.legacy_splitk(q, k, v, is_causal=True)
         self.assertEqual(out.shape, (B, H_q, 1, D))
 
     def test_hq_not_divisible_rejected(self):
@@ -294,7 +442,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         k = torch.randn(B, 3, 64, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, 3, 64, D, dtype=torch.bfloat16, device="cuda")
         with self.assertRaises(RuntimeError):
-            self.splitk(q, k, v)
+            self.legacy_splitk(q, k, v)
 
     def test_non_pow2_d_rejected(self):
         """Non-power-of-2 D should raise RuntimeError."""
@@ -303,7 +451,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         k = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, 64, D, dtype=torch.bfloat16, device="cuda")
         with self.assertRaises(RuntimeError):
-            self.splitk(q, k, v)
+            self.legacy_splitk(q, k, v)
 
 
 if __name__ == "__main__":

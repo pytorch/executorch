@@ -14,19 +14,15 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
+using std::optional;
 
 namespace {
 
 optional<Tensor> none_tensor() {
   return optional<Tensor>();
-}
-
-optional<int64_t> none_axis() {
-  return optional<int64_t>();
 }
 
 } // namespace
@@ -66,13 +62,11 @@ TEST_F(FusedQuantHardswishTest, AllQuantizedPerTensor) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(sizes, {0, 0, 0, 3, 6, 10}));
@@ -103,13 +97,11 @@ TEST_F(FusedQuantHardswishTest, FloatInputQuantizedOutput) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(sizes, {0, 0, 0, 3, 6, 10}));
@@ -140,13 +132,11 @@ TEST_F(FusedQuantHardswishTest, QuantizedInputFloatOutput) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_float.make(sizes, {0.0, 0.0, 0.0, 3.0, 6.0, 10.0}));
@@ -158,14 +148,15 @@ TEST_F(FusedQuantHardswishTest, PerChannelInput) {
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
-  // Shape [2, 3], axis=0 → 2 channels, axis_stride=3
+  // Per-channel along axis 0: full-rank scale shape [2, 1] encodes the block
+  // layout (block_size = [2/2, 3/1] = [1, 3]).
   const std::vector<int> sizes{2, 3};
 
   Tensor inp = tf_int8.make(sizes, {-6, -3, 0, 3, 6, 10});
 
   // Per-channel: channel 0 scale=1.0, channel 1 scale=0.5
-  Tensor inp_scale = tf_float.make({2}, {1.0, 0.5});
-  Tensor inp_zp = tf_long.make({2}, {0, 0});
+  Tensor inp_scale = tf_float.make({2, 1}, {1.0, 0.5});
+  Tensor inp_zp = tf_long.make({2, 1}, {0, 0});
   Tensor out_scale = tf_float.make({1}, {0.5});
   Tensor out_zp = tf_long.make({1}, {0});
 
@@ -187,13 +178,11 @@ TEST_F(FusedQuantHardswishTest, PerChannelInput) {
       ScalarType::Float,
       -128,
       127,
-      optional<int64_t>(0),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(sizes, {0, 0, 0, 2, 6, 10}));
@@ -205,14 +194,14 @@ TEST_F(FusedQuantHardswishTest, PerChannelOutput) {
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
-  // Shape [2, 3], axis=0 → 2 channels
+  // Per-channel along axis 0: full-rank scale shape [2, 1] (block_size [1, 3])
   const std::vector<int> sizes{2, 3};
 
   Tensor inp = tf_float.make(sizes, {-6.0, 0.0, 3.0, 6.0, 10.0, 12.0});
 
   // Per-channel output: channel 0 scale=1.0, channel 1 scale=0.5
-  Tensor out_scale = tf_float.make({2}, {1.0, 0.5});
-  Tensor out_zp = tf_long.make({2}, {0, 0});
+  Tensor out_scale = tf_float.make({2, 1}, {1.0, 0.5});
+  Tensor out_zp = tf_long.make({2, 1}, {0, 0});
 
   Tensor out = tf_int8.zeros(sizes);
 
@@ -229,13 +218,11 @@ TEST_F(FusedQuantHardswishTest, PerChannelOutput) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      optional<int64_t>(0),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(sizes, {0, 0, 3, 12, 20, 24}));
@@ -272,13 +259,11 @@ TEST_F(FusedQuantHardswishTest, NonZeroZeroPoint) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(sizes, {1, 1, 1, 4, 7, 11}));
@@ -312,13 +297,11 @@ TEST_F(FusedQuantHardswishTest, NegativeRegion) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(sizes, {0, 0, 0, 0}));
@@ -346,13 +329,11 @@ TEST_F(FusedQuantHardswishTest, LinearRegion) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_float.make(sizes, {3.0, 4.0, 6.0, 10.0}));
@@ -392,13 +373,11 @@ TEST_F(FusedQuantHardswishTest, TransitionRegion) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(sizes, {0, -3, 0, 9, 24}));

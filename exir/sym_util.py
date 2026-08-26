@@ -63,7 +63,13 @@ def eval_upper_bound(maybe_symint: Union[int, torch.SymInt]) -> int:
         ), f"Expect upper bound to be a concrete int but got {concrete_upper}"
         return concrete_upper
     elif int_oo is not None and upper_bound is int_oo:
-        return int_oo
+        hint = eval_expr(maybe_symint)
+        if hint is not None:
+            return hint
+        raise RuntimeError(
+            f"Cannot evaluate a finite upper bound for symbolic expression {expr} "
+            "(int_oo) and no trace hint is available."
+        )
     else:
         raise RuntimeError(
             f"Expect upper bound to be sympy.Integer or int_oo. but got {upper_bound}"
