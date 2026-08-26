@@ -1,0 +1,80 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import unittest
+
+from executorch.backends.cuda.cuda_weight_collector import (
+    AOTI_DEVICE_TYPE_CUDA,
+    CUDA_MULTI_ARCH_MAGIC,
+    CudaAotiVariant,
+    CudaWeightEntry,
+    decode_cuda_aoti_metadata,
+    encode_cuda_multi_arch_metadata,
+    encode_cuda_weight_metadata,
+)
+
+
+class TestCudaWeightMetadata(unittest.TestCase):
+    @staticmethod
+    def _entry() -> CudaWeightEntry:
+        return CudaWeightEntry(
+            fqn="model.weight",
+            storage_key="cuda_fqn_weight:cuda:model.weight",
+            storage_nbytes=24,
+            dtype=6,
+            device_type=AOTI_DEVICE_TYPE_CUDA,
+            storage_offset=0,
+            sizes=(2, 3),
+            strides=(3, 1),
+        )
+
+    def test_multi_arch_metadata_has_shared_weights(self) -> None:
+        entry = self._entry()
+        encoded = encode_cuda_multi_arch_metadata(
+            [
+                CudaAotiVariant(80, 80, "sm80-so"),
+                CudaAotiVariant(120, 120, "sm120-so"),
+            ],
+            [entry],
+        )
+        self.assertTrue(encoded.startswith(CUDA_MULTI_ARCH_MAGIC))
+        decoded = decode_cuda_aoti_metadata(encoded)
+        self.assertEqual(
+            decoded.variants,
+            [
+                CudaAotiVariant(80, 80, "sm80-so"),
+                CudaAotiVariant(120, 120, "sm120-so"),
+            ],
+        )
+        self.assertEqual(decoded.entries, [entry])
+
+    def test_multi_arch_metadata_rejects_duplicate_target(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Duplicate CUDA target SM"):
+            encode_cuda_multi_arch_metadata(
+                [
+                    CudaAotiVariant(80, 80, "first"),
+                    CudaAotiVariant(80, 0, "second"),
+                ],
+                [self._entry()],
+            )
+
+    def test_legacy_metadata_decodes_as_unspecified_target(self) -> None:
+        decoded = decode_cuda_aoti_metadata(
+            encode_cuda_weight_metadata("legacy-so", [self._entry()])
+        )
+        self.assertEqual(decoded.variants, [CudaAotiVariant(0, 0, "legacy-so")])
+        self.assertEqual(decoded.entries, [self._entry()])
+
+    def test_metadata_rejects_trailing_data(self) -> None:
+        encoded = encode_cuda_multi_arch_metadata(
+            [CudaAotiVariant(80, 80, "sm80-so")], [self._entry()]
+        )
+        with self.assertRaisesRegex(ValueError, "trailing bytes"):
+            decode_cuda_aoti_metadata(encoded + b"\0")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -25,7 +25,14 @@ namespace executorch::backends::cuda {
 class CudaWeightCache final {
  public:
   static constexpr char kFormatMagic[] = "ETCUDAFQN3";
+  static constexpr char kMultiArchFormatMagic[] = "ETCUDAFQN4";
   static constexpr size_t kFormatMagicSize = sizeof(kFormatMagic) - 1;
+
+  struct Variant {
+    uint32_t target_sm{0};
+    uint32_t ptx_compute{0};
+    std::string so_blob_key;
+  };
 
   struct Entry {
     std::string fqn;
@@ -39,7 +46,7 @@ class CudaWeightCache final {
   };
 
   struct Metadata {
-    std::string so_blob_key;
+    std::vector<Variant> variants;
     std::vector<Entry> entries;
   };
 
@@ -47,6 +54,12 @@ class CudaWeightCache final {
 
   static runtime::Error
   parse(const void* data, size_t size, Metadata& metadata);
+
+  static runtime::Error select_variant(
+      const Metadata& metadata,
+      uint32_t current_sm,
+      size_t& variant_index,
+      bool& uses_ptx_fallback);
 
   runtime::Error load(
       CudaDelegateHandle* handle,

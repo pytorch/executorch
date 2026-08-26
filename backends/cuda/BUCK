@@ -111,6 +111,21 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "merge_ptes",
+    srcs = [
+        "merge_ptes.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":cuda_backend",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir:schema",
+        "//executorch/extension/flat_tensor/serialize:serialize",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_partitioner",
     srcs = [
         "cuda_partitioner.py",

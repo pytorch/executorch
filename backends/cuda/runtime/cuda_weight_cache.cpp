@@ -140,7 +140,8 @@ bool is_supported_device_type(int32_t device_type) {
 
 bool CudaWeightCache::is_serialized(const void* data, size_t size) {
   return data != nullptr && size >= kFormatMagicSize &&
-      std::memcmp(data, kFormatMagic, kFormatMagicSize) == 0;
+      (std::memcmp(data, kFormatMagic, kFormatMagicSize) == 0 ||
+       std::memcmp(data, kMultiArchFormatMagic, kFormatMagicSize) == 0);
 }
 
 Error CudaWeightCache::parse(
@@ -152,10 +153,41 @@ Error CudaWeightCache::parse(
   }
 
   MetadataReader reader(data, size);
-  if (!reader.skip(kFormatMagicSize) ||
-      !reader.read_string(metadata.so_blob_key) ||
-      metadata.so_blob_key.empty()) {
+  const bool is_multi_arch =
+      std::memcmp(data, kMultiArchFormatMagic, kFormatMagicSize) == 0;
+  if (!reader.skip(kFormatMagicSize)) {
     return Error::InvalidProgram;
+  }
+
+  metadata.variants.clear();
+  if (is_multi_arch) {
+    uint32_t num_variants = 0;
+    constexpr uint32_t kMaxVariants = 256;
+    if (!reader.read_u32(num_variants) || num_variants == 0 ||
+        num_variants > kMaxVariants) {
+      return Error::InvalidProgram;
+    }
+    metadata.variants.reserve(num_variants);
+    std::unordered_set<uint32_t> target_sms;
+    for (uint32_t index = 0; index < num_variants; ++index) {
+      Variant variant;
+      if (!reader.read_u32(variant.target_sm) || variant.target_sm == 0 ||
+          !reader.read_u32(variant.ptx_compute) ||
+          variant.ptx_compute > variant.target_sm ||
+          !reader.read_string(variant.so_blob_key) ||
+          variant.so_blob_key.empty() ||
+          !target_sms.emplace(variant.target_sm).second) {
+        return Error::InvalidProgram;
+      }
+      metadata.variants.push_back(std::move(variant));
+    }
+  } else {
+    Variant variant;
+    if (!reader.read_string(variant.so_blob_key) ||
+        variant.so_blob_key.empty()) {
+      return Error::InvalidProgram;
+    }
+    metadata.variants.push_back(std::move(variant));
   }
 
   uint32_t num_entries = 0;
@@ -200,6 +232,49 @@ Error CudaWeightCache::parse(
   }
 
   return reader.empty() ? Error::Ok : Error::InvalidProgram;
+}
+
+Error CudaWeightCache::select_variant(
+    const Metadata& metadata,
+    uint32_t current_sm,
+    size_t& variant_index,
+    bool& uses_ptx_fallback) {
+  ET_CHECK_OR_RETURN_ERROR(
+      !metadata.variants.empty(), InvalidProgram, "CUDA AOTI has no variants");
+
+  if (metadata.variants.size() == 1 && metadata.variants[0].target_sm == 0) {
+    variant_index = 0;
+    uses_ptx_fallback = false;
+    return Error::Ok;
+  }
+
+  for (size_t index = 0; index < metadata.variants.size(); ++index) {
+    if (metadata.variants[index].target_sm == current_sm) {
+      variant_index = index;
+      uses_ptx_fallback = false;
+      return Error::Ok;
+    }
+  }
+
+  std::optional<size_t> fallback;
+  for (size_t index = 0; index < metadata.variants.size(); ++index) {
+    const Variant& variant = metadata.variants[index];
+    if (variant.ptx_compute == 0 || variant.ptx_compute > current_sm) {
+      continue;
+    }
+    if (!fallback.has_value() ||
+        variant.target_sm < metadata.variants[*fallback].target_sm) {
+      fallback = index;
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      fallback.has_value(),
+      NotSupported,
+      "CUDA AOTI has no native or PTX variant compatible with sm%u",
+      current_sm);
+  variant_index = *fallback;
+  uses_ptx_fallback = true;
+  return Error::Ok;
 }
 
 Error CudaWeightCache::validate_view(const Entry& entry) {

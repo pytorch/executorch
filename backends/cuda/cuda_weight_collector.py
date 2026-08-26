@@ -23,6 +23,7 @@ from executorch.exir.tensor import scalar_type_enum
 
 
 CUDA_WEIGHT_CACHE_MAGIC = b"ETCUDAFQN3"
+CUDA_MULTI_ARCH_MAGIC = b"ETCUDAFQN4"
 
 AOTI_DEVICE_TYPE_CPU = 0
 AOTI_DEVICE_TYPE_CUDA = 1
@@ -44,6 +45,23 @@ class CudaWeightEntry:
 class CudaWeightArtifact:
     entries: List[CudaWeightEntry]
     storages: Dict[str, FileBackedData]
+
+
+@dataclass(frozen=True)
+class CudaAotiVariant:
+    """One native AOTI shared library and its CUDA compatibility metadata."""
+
+    target_sm: int
+    ptx_compute: int
+    so_blob_key: str
+
+
+@dataclass(frozen=True)
+class CudaAotiMetadata:
+    """CUDA AOTI code variants sharing one FQN weight manifest."""
+
+    variants: List[CudaAotiVariant]
+    entries: List[CudaWeightEntry]
 
 
 @dataclass
@@ -143,6 +161,161 @@ def encode_cuda_weight_metadata(
         output.extend(struct.pack(f"<{len(entry.sizes)}q", *entry.sizes))
         output.extend(struct.pack(f"<{len(entry.strides)}q", *entry.strides))
     return bytes(output)
+
+
+def encode_cuda_multi_arch_metadata(
+    variants: List[CudaAotiVariant], entries: List[CudaWeightEntry]
+) -> bytes:
+    """Encode CUDA AOTI variants followed by one shared weight manifest."""
+    if not variants:
+        raise ValueError("CUDA AOTI metadata requires at least one variant")
+
+    output = bytearray(CUDA_MULTI_ARCH_MAGIC)
+
+    def write_string(value: str) -> None:
+        encoded = value.encode("utf-8")
+        output.extend(struct.pack("<I", len(encoded)))
+        output.extend(encoded)
+
+    target_sms = set()
+    output.extend(struct.pack("<I", len(variants)))
+    for variant in variants:
+        if variant.target_sm <= 0:
+            raise ValueError(f"Invalid CUDA target SM: {variant.target_sm}")
+        if variant.target_sm in target_sms:
+            raise ValueError(f"Duplicate CUDA target SM: {variant.target_sm}")
+        if variant.ptx_compute < 0 or variant.ptx_compute > variant.target_sm:
+            raise ValueError(
+                f"Invalid PTX compute target {variant.ptx_compute} for sm{variant.target_sm}"
+            )
+        if not variant.so_blob_key:
+            raise ValueError("CUDA AOTI variant is missing its shared-object key")
+        target_sms.add(variant.target_sm)
+        output.extend(struct.pack("<II", variant.target_sm, variant.ptx_compute))
+        write_string(variant.so_blob_key)
+
+    output.extend(struct.pack("<I", len(entries)))
+    for entry in entries:
+        write_string(entry.fqn)
+        write_string(entry.storage_key)
+        output.extend(
+            struct.pack(
+                "<QiiqI",
+                entry.storage_nbytes,
+                entry.dtype,
+                entry.device_type,
+                entry.storage_offset,
+                len(entry.sizes),
+            )
+        )
+        output.extend(struct.pack(f"<{len(entry.sizes)}q", *entry.sizes))
+        output.extend(struct.pack(f"<{len(entry.strides)}q", *entry.strides))
+    return bytes(output)
+
+
+class _MetadataReader:
+    def __init__(self, data: bytes) -> None:
+        self._data = memoryview(data)
+        self._offset = 0
+
+    def read(self, size: int) -> memoryview:
+        end = self._offset + size
+        if size < 0 or end > len(self._data):
+            raise ValueError("Truncated CUDA AOTI metadata")
+        value = self._data[self._offset : end]
+        self._offset = end
+        return value
+
+    def unpack(self, format: str) -> Tuple[Any, ...]:
+        size = struct.calcsize(format)
+        return struct.unpack(format, self.read(size))
+
+    def read_string(self) -> str:
+        (size,) = self.unpack("<I")
+        try:
+            return bytes(self.read(size)).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError("CUDA AOTI metadata contains invalid UTF-8") from error
+
+    def finish(self) -> None:
+        if self._offset != len(self._data):
+            raise ValueError("CUDA AOTI metadata contains trailing bytes")
+
+
+def _decode_weight_entries(reader: _MetadataReader) -> List[CudaWeightEntry]:
+    (num_entries,) = reader.unpack("<I")
+    if num_entries > 1 << 20:
+        raise ValueError(f"CUDA AOTI metadata has too many weights: {num_entries}")
+
+    entries = []
+    for _ in range(num_entries):
+        fqn = reader.read_string()
+        storage_key = reader.read_string()
+        storage_nbytes, dtype, device_type, storage_offset, ndim = reader.unpack(
+            "<QiiqI"
+        )
+        if not fqn or not storage_key or ndim > 64:
+            raise ValueError("CUDA AOTI metadata contains an invalid weight entry")
+        sizes = reader.unpack(f"<{ndim}q") if ndim else ()
+        strides = reader.unpack(f"<{ndim}q") if ndim else ()
+        if storage_offset < 0 or any(value < 0 for value in sizes + strides):
+            raise ValueError("CUDA AOTI metadata contains invalid tensor metadata")
+        entries.append(
+            CudaWeightEntry(
+                fqn=fqn,
+                storage_key=storage_key,
+                storage_nbytes=storage_nbytes,
+                dtype=dtype,
+                device_type=device_type,
+                storage_offset=storage_offset,
+                sizes=tuple(sizes),
+                strides=tuple(strides),
+            )
+        )
+    return entries
+
+
+def decode_cuda_aoti_metadata(data: bytes) -> CudaAotiMetadata:
+    """Decode legacy single-SO or multi-SM CUDA AOTI metadata."""
+    reader = _MetadataReader(data)
+    magic = bytes(reader.read(len(CUDA_WEIGHT_CACHE_MAGIC)))
+    variants = []
+    if magic == CUDA_WEIGHT_CACHE_MAGIC:
+        so_blob_key = reader.read_string()
+        if not so_blob_key:
+            raise ValueError("CUDA AOTI metadata is missing its shared-object key")
+        variants.append(CudaAotiVariant(0, 0, so_blob_key))
+    elif magic == CUDA_MULTI_ARCH_MAGIC:
+        (num_variants,) = reader.unpack("<I")
+        if num_variants == 0 or num_variants > 256:
+            raise ValueError(
+                f"CUDA AOTI metadata has invalid variant count: {num_variants}"
+            )
+        target_sms = set()
+        for _ in range(num_variants):
+            target_sm, ptx_compute = reader.unpack("<II")
+            so_blob_key = reader.read_string()
+            if (
+                target_sm == 0
+                or target_sm in target_sms
+                or ptx_compute > target_sm
+                or not so_blob_key
+            ):
+                raise ValueError("CUDA AOTI metadata contains an invalid variant")
+            target_sms.add(target_sm)
+            variants.append(
+                CudaAotiVariant(
+                    target_sm=target_sm,
+                    ptx_compute=ptx_compute,
+                    so_blob_key=so_blob_key,
+                )
+            )
+    else:
+        raise ValueError("Unrecognized CUDA AOTI metadata")
+
+    entries = _decode_weight_entries(reader)
+    reader.finish()
+    return CudaAotiMetadata(variants=variants, entries=entries)
 
 
 class CudaWeightCollector:
@@ -311,6 +484,8 @@ class CudaWeightCollector:
         result: PreprocessResult,
         artifact: CudaWeightArtifact,
         device_name: str,
+        target_sm: Optional[int] = None,
+        ptx_compute: int = 0,
     ) -> None:
         if result.data_store_output is None:
             raise RuntimeError("CUDA AOTI preprocess returned no named data")
@@ -344,9 +519,15 @@ class CudaWeightCollector:
             self._add_weight(entry, data, external_tag)
             serialized_entries.append(entry)
 
-        result.processed_bytes = encode_cuda_weight_metadata(
-            so_blob_key, serialized_entries
-        )
+        if target_sm is None:
+            result.processed_bytes = encode_cuda_weight_metadata(
+                so_blob_key, serialized_entries
+            )
+        else:
+            result.processed_bytes = encode_cuda_multi_arch_metadata(
+                [CudaAotiVariant(target_sm, ptx_compute, so_blob_key)],
+                serialized_entries,
+            )
         self._results.append(result)
 
     def finish(self) -> None:

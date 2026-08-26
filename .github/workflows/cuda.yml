@@ -370,6 +370,11 @@ jobs:
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
+        python -m pytest \
+          backends/cuda/tests/test_cuda_weight_metadata.py \
+          backends/cuda/tests/test_merge_ptes.py \
+          -v -o "addopts="
+
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
         cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
