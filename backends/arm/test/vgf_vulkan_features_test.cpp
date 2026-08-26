@@ -7,6 +7,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <optional>
+#include <vector>
+
+#include <executorch/backends/arm/runtime/VGFMutableAlias.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 #include <executorch/backends/arm/runtime/VGFZeroCopy.h>
 
@@ -276,6 +281,29 @@ TEST(VgfZeroCopyMetadataTest, AmbiguousDescriptorLocationIsIneligible) {
   EXPECT_FALSE(vgf_record_boundary_binding(&all_metadata, 1, ref));
   EXPECT_FALSE(all_metadata[0].descriptor_bindings_unambiguous);
   EXPECT_FALSE(all_metadata[1].descriptor_bindings_unambiguous);
+}
+
+TEST(VgfMutableAliasGroupTest, RejectsNonExclusiveGroups) {
+  const std::vector<std::optional<uint32_t>> no_groups = {
+      std::nullopt, std::nullopt};
+  const std::vector<std::optional<uint32_t>> separate_groups = {11, 22, 33, 33};
+  const std::vector<std::optional<uint32_t>> paired_group = {11, 11};
+  const std::vector<std::optional<uint32_t>> paired_group_with_extra = {
+      11, 11, 11};
+  const std::vector<std::optional<uint32_t>> extra_input_member = {11, 22, 11};
+  const std::vector<std::optional<uint32_t>> extra_output_member = {11, 22, 22};
+  const std::vector<std::optional<uint32_t>> ungrouped_output = {
+      11, std::nullopt, 11};
+
+  EXPECT_FALSE(vgf_find_mutable_alias_group_conflict(no_groups, 0, 1));
+  EXPECT_FALSE(vgf_find_mutable_alias_group_conflict(separate_groups, 0, 1));
+  EXPECT_FALSE(vgf_find_mutable_alias_group_conflict(paired_group, 0, 1));
+  EXPECT_EQ(
+      vgf_find_mutable_alias_group_conflict(paired_group_with_extra, 0, 1), 2);
+  EXPECT_EQ(vgf_find_mutable_alias_group_conflict(extra_input_member, 0, 1), 2);
+  EXPECT_EQ(
+      vgf_find_mutable_alias_group_conflict(extra_output_member, 0, 1), 2);
+  EXPECT_EQ(vgf_find_mutable_alias_group_conflict(ungrouped_output, 0, 1), 2);
 }
 
 } // namespace
