@@ -1481,8 +1481,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Copy the MLX metallib next to the Python extension for editable installs.
   # MLX uses dladdr() to find the directory containing the library with MLX
-  # code, then looks for mlx.metallib in that directory. When MLX is statically
-  # linked into the Python extension, we need the metallib colocated with it.
+  # code, then looks for mlx.metallib in that directory. This covers the case
+  # where the delegate is static and therefore absorbed into the extension; a
+  # shared delegate carries MLX itself and is served by the copy installed
+  # beside it instead.
   executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
