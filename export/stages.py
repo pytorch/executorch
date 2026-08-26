@@ -16,6 +16,7 @@ import torch
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
 from executorch.exir.backend.backend_api import validation_disabled
+from executorch.exir.backend.op_backend import OpBackend
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
@@ -564,6 +565,10 @@ class EdgeProgramManagerTransformStage(Stage):
     This stage enables dynamic pass generation where passes need access to the
     EdgeProgramManager instance. Passes are applied sequentially, allowing
     to control order and dependencies between pass groups.
+
+    It also runs the recipe's `op_backends`, which lower by rewriting operators
+    rather than by delegating a subgraph. Placed after a partitioning stage,
+    they see what was left outside the delegates.
     """
 
     def __init__(
@@ -582,6 +587,7 @@ class EdgeProgramManagerTransformStage(Stage):
                 Callable[[EdgeProgramManager], List[PassType] | GraphModulePassManager]
             ]
         ) = None,
+        op_backends: Optional[List[OpBackend]] = None,
     ) -> None:
         """
         Initialize the EdgeProgramManagerTransformStage.
@@ -591,21 +597,31 @@ class EdgeProgramManagerTransformStage(Stage):
                                            and return either List[PassType] or PassManager.
                                            Each callable is applied sequentially, allowing
                                            backends to control pass ordering and dependencies.
+            op_backends: Backends that lower by rewriting operators, applied in
+                order to every method.
         """
         super().__init__()
         self._edge_transform_passes = edge_transform_passes or []
         self._edge_manager_transform_passes = edge_manager_transform_passes or []
+        self._op_backends = op_backends or []
 
     @classmethod
     def from_recipe(
-        cls, lowering_recipe: Optional[LoweringRecipe]
+        cls,
+        lowering_recipe: Optional[LoweringRecipe],
+        with_transform_passes: bool = True,
     ) -> "EdgeProgramManagerTransformStage":
+        """`with_transform_passes` is False when TO_EDGE_TRANSFORM_AND_LOWER is
+        also in the pipeline and has already consumed them."""
         if lowering_recipe is None:
             return cls()
 
         return cls(
-            edge_transform_passes=lowering_recipe.edge_transform_passes,
+            edge_transform_passes=(
+                lowering_recipe.edge_transform_passes if with_transform_passes else None
+            ),
             edge_manager_transform_passes=lowering_recipe.edge_manager_transform_passes,
+            op_backends=lowering_recipe.op_backends,
         )
 
     @property
@@ -614,10 +630,18 @@ class EdgeProgramManagerTransformStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [
-            StageType.TO_EDGE,
-            # StageType.TO_EDGE_TRANSFORM_AND_LOWER,  # TODO
+        partitioned = [
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_BACKEND,
         ]
+        if self._op_backends:
+            # An operator backend lowers what a partitioner declined, so it has
+            # to follow one. TO_EDGE here would hand it the whole graph and the
+            # delegate would then partition around its kernels.
+            return partitioned
+        # The stage predates op_backends and still serves recipes that only
+        # transform, which have no such requirement.
+        return [StageType.TO_EDGE, *partitioned]
 
     @property
     def can_start_pipeline(self) -> bool:
@@ -637,8 +661,11 @@ class EdgeProgramManagerTransformStage(Stage):
                 f"Expected EdgeProgramManager but got {type(edge_program_manager)}"
             )
 
+        for op_backend in self._op_backends:
+            edge_program_manager = edge_program_manager.to_op_backend(op_backend)
+
         if not self._edge_transform_passes and not self._edge_manager_transform_passes:
-            self._artifact = artifact
+            self._artifact = artifact.copy_with_new_data(edge_program_manager)
             return
 
         # Detect if any callable returns PassManager

@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from unittest.mock import call, Mock, patch
 
 import torch
+from executorch.exir.backend.op_backend import OpBackend
 from executorch.export import ExportRecipe, ExportSession
 from executorch.export.recipe import (
     AOQuantizationConfig,
@@ -1092,3 +1093,166 @@ class TestStageArtifactsAreScopedToOneRun(unittest.TestCase):
         with self.assertRaises(ValueError):
             session.export()
         self.assertIs(session.get_executorch_program_manager(), before)
+
+
+class _RecordingOpBackend(OpBackend):
+    """Records the methods it lowered; optionally applies a real pass."""
+
+    def __init__(self, apply_pass: bool = False) -> None:
+        self.seen: List[str] = []
+        self._apply_pass = apply_pass
+
+    def lower(self, exported_program, method_name):
+        from executorch.exir.pass_base import ExportPass
+        from executorch.exir.program._program import _transform
+
+        self.seen.append(method_name)
+        return (
+            _transform(exported_program, ExportPass())
+            if self._apply_pass
+            else exported_program
+        )
+
+
+class TestOpBackendPipeline(unittest.TestCase):
+    """A lowering recipe that declares op_backends has to get the
+    stage that runs them, whatever the input model type."""
+
+    def setUp(self) -> None:
+        self.model = SimpleTestModel()
+        self.inputs = [(torch.randn(1, 10),)]
+
+    def _recipe(self, real_pass: bool = False, **kwargs) -> ExportRecipe:
+        self.backend = _RecordingOpBackend(apply_pass=real_pass)
+        return ExportRecipe(
+            name="ppt",
+            lowering_recipe=LoweringRecipe(op_backends=[self.backend]),
+            **kwargs,
+        )
+
+    def test_stage_added_to_default_pipeline(self) -> None:
+        session = ExportSession(
+            model=self.model, example_inputs=self.inputs, export_recipe=self._recipe()
+        )
+        stages = session._pipeline_stages
+        self.assertGreater(
+            stages.index(StageType.EDGE_PROGRAM_MANAGER_TRANSFORM),
+            stages.index(StageType.TO_EDGE_TRANSFORM_AND_LOWER),
+        )
+        session.export()
+        self.assertEqual(self.backend.seen, ["forward"])
+
+    def test_stage_absent_without_op_backends(self) -> None:
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.inputs,
+            export_recipe=ExportRecipe(name="plain"),
+        )
+        self.assertNotIn(
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, session._pipeline_stages
+        )
+
+    def test_edge_program_manager_getter_returns_the_lowered_program(self) -> None:
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.inputs,
+            export_recipe=self._recipe(real_pass=True),
+        )
+        session.export()
+        artifacts = session.get_stage_artifacts()
+        lowered = artifacts[StageType.TO_EDGE_TRANSFORM_AND_LOWER].data
+        transformed = artifacts[StageType.EDGE_PROGRAM_MANAGER_TRANSFORM].data
+        # Guard the guard: the stage always rebuilds the manager, so comparing
+        # managers proves nothing -- it is the programs that must differ.
+        self.assertIsNot(
+            lowered.exported_program("forward"),
+            transformed.exported_program("forward"),
+        )
+        self.assertIs(session.get_edge_program_manager(), transformed)
+
+
+class TestOpBackendsSeeDelegates(unittest.TestCase):
+    """The premise of the stage: transforms run after the partitioner, so they
+    see what was left outside the delegates."""
+
+    def test_op_backend_observes_a_partitioned_program(self) -> None:
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir.pass_base import ExportPass
+        from executorch.exir.program._program import _transform
+
+        observed = {}
+
+        class Observer(OpBackend):
+            def lower(self, exported_program, method_name):
+                observed["delegates"] = sum(
+                    1
+                    for n in exported_program.graph.nodes
+                    if n.op == "call_function"
+                    and n.target is torch.ops.higher_order.executorch_call_delegate
+                )
+                return _transform(exported_program, ExportPass())
+
+        session = ExportSession(
+            model=SimpleTestModel(),
+            example_inputs=[(torch.randn(1, 10),)],
+            export_recipe=ExportRecipe(
+                name="delegated",
+                lowering_recipe=LoweringRecipe(
+                    partitioners=[XnnpackPartitioner()],
+                    op_backends=[Observer()],
+                ),
+            ),
+        )
+        session.export()
+
+        self.assertGreater(observed["delegates"], 0)
+        self.assertGreater(len(session.get_executorch_program_manager().buffer), 0)
+
+
+class TestEdgeProgramManagerGetterArms(unittest.TestCase):
+    """Each edge stage the getter recognises has to be the one it returns when
+    that stage ran last."""
+
+    def setUp(self) -> None:
+        self.model = SimpleTestModel()
+        self.inputs = [(torch.randn(1, 10),)]
+
+    def _run(self, stages, **lowering):
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.inputs,
+            export_recipe=ExportRecipe(
+                name="arms",
+                lowering_recipe=LoweringRecipe(**lowering) if lowering else None,
+                pipeline_stages=stages,
+            ),
+        )
+        session.export()
+        return session
+
+    def test_to_backend_last(self) -> None:
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+
+        session = self._run(
+            [
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE,
+                StageType.TO_BACKEND,
+                StageType.TO_EXECUTORCH,
+            ],
+            partitioners=[XnnpackPartitioner()],
+        )
+        artifacts = session.get_stage_artifacts()
+        # Without a partitioner these are the same object and the assertion
+        # below would hold whichever arm the getter took.
+        self.assertIsNot(
+            artifacts[StageType.TO_EDGE].data, artifacts[StageType.TO_BACKEND].data
+        )
+        self.assertIs(
+            session.get_edge_program_manager(),
+            artifacts[StageType.TO_BACKEND].data,
+        )

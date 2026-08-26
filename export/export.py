@@ -115,7 +115,9 @@ class ExportSession:
     1. (Optional) Quantize - Apply post-training quantization to the model
     2. Export - Export PyTorch model to ExportedProgram
     3. EdgeTransformAndLower - Transform and lower to EdgeProgramManager
-    4. Executorch - Convert to ExecutorchProgramManager for final execution
+    4. (Optional) EdgeProgramManagerTransform - apply the lowering recipe's
+       op_backends; included only when the recipe sets them
+    5. Executorch - Convert to ExecutorchProgramManager for final execution
     """
 
     def __init__(
@@ -283,13 +285,14 @@ class ExportSession:
         if self._input_model_type != "ExportedProgram":
             stages.append(StageType.TORCH_EXPORT)
 
-        # Always include edge and executorch stages
-        stages.extend(
-            [
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
-                StageType.TO_EXECUTORCH,
-            ]
-        )
+        stages.append(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+
+        # Operator backends only run in their own stage, so a lowering recipe
+        # that declares them would otherwise have them dropped.
+        if self._lowering_recipe and self._lowering_recipe.op_backends:
+            stages.append(StageType.EDGE_PROGRAM_MANAGER_TRANSFORM)
+
+        stages.append(StageType.TO_EXECUTORCH)
 
         return stages
 
@@ -321,7 +324,9 @@ class ExportSession:
                 stage = ToEdgeStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.EDGE_PROGRAM_MANAGER_TRANSFORM:
                 stage = EdgeProgramManagerTransformStage.from_recipe(
-                    self._lowering_recipe
+                    self._lowering_recipe,
+                    with_transform_passes=StageType.TO_EDGE_TRANSFORM_AND_LOWER
+                    not in stages,
                 )
             elif stage_type == StageType.TO_BACKEND:
                 stage = ToBackendStage.from_recipe(self._lowering_recipe)
@@ -513,11 +518,18 @@ class ExportSession:
         """
         Get the EdgeProgramManager after edge lowering stages.
 
-        This method checks multiple stages in order of preference:
-        1. TO_EDGE_TRANSFORM_AND_LOWER (combined stage)
-        2. TO_BACKEND (separate stage with backend delegation)
-        3. EDGE_PROGRAM_MANAGER_TRANSFORM (separate stage after TO_EDGE)
-        4. TO_EDGE (separate stage without backend delegation)
+        Of the built-in edge stages -- TO_EDGE, TO_EDGE_TRANSFORM_AND_LOWER,
+        TO_BACKEND and EDGE_PROGRAM_MANAGER_TRANSFORM -- returns the artifact of
+        whichever ran last, so the result matches the program that was emitted
+        rather than an earlier form of it. A stage supplied through
+        `register_stage` is not recognised as edge-producing.
+
+        This replaced a fixed preference order, which cannot express the answer
+        once EDGE_PROGRAM_MANAGER_TRANSFORM can follow the partitioning stages:
+        ranking TO_EDGE_TRANSFORM_AND_LOWER first returns the program from
+        before the operator backends ran, and ranking the transform stage first
+        breaks TO_EDGE -> transform -> TO_BACKEND. For every pipeline that was
+        legal before, the two agree.
 
         Returns:
             The EdgeProgramManager
@@ -525,13 +537,15 @@ class ExportSession:
         Raises:
             RuntimeError: If no edge stage has been run
         """
-        # Check stages in order of preference
-        for stage_type in [
+        edge_stages = {
             StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_BACKEND,
             StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
             StageType.TO_EDGE,
-        ]:
+        }
+        for stage_type in reversed(self._pipeline_stages):
+            if stage_type not in edge_stages:
+                continue
             artifact = self._stage_to_artifacts.get(stage_type)
             if artifact is not None and artifact.data is not None:
                 logging.info(f"Returning edge program manager from stage {stage_type}")
