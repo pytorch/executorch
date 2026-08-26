@@ -451,6 +451,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.split_copy.Tensor,
         torch.ops.aten.tile.default,
         torch.ops.aten.flip.default,
+        torch.ops.aten.roll.default,
         torch.ops.aten.index_select.default,
         torch.ops.aten.index_put.default,
         torch.ops.aten.index_put_.default,
