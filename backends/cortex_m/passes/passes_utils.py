@@ -175,6 +175,16 @@ def coerce_int_pair(raw, default: tuple[int, int]) -> tuple[int, int]:
     return (items[0], items[1])
 
 
+def is_foldable_alpha(alpha: Any) -> bool:
+    """Whether quantized_add can absorb this alpha into an operand multiplier.
+
+    Only an integer can get that far. FoldAndAnnotateQParamsPass re-traces once
+    the dequantize nodes are gone, and aten refuses a float alpha on an int8
+    add before the lowering ever sees the node.
+    """
+    return isinstance(alpha, int)
+
+
 def is_qualified_int8_node(args) -> bool:
     try:
         if len(args) < 6:
