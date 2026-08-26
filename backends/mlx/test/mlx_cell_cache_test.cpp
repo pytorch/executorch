@@ -19,6 +19,7 @@
 
 #include "MLXCellCache.h"
 #include "backend_options.h" // kMLXBackendId
+#include "utils.h" // allclose, flat_config
 
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <mlx/mlx.h>
@@ -34,43 +35,12 @@ using ::mlx::core::array;
 
 namespace {
 
-// Max absolute difference within tolerance. Computed in float32: item<float>()
-// reads sizeof(float) bytes, so calling it on an fp16 scalar misreads the
-// buffer.
-bool allclose(const array& a, const array& b, float atol) {
-  using namespace ::mlx::core;
-  array m = max(abs(subtract(astype(a, float32), astype(b, float32))));
-  eval(m);
-  return m.item<float>() <= atol;
-}
-
 // Cell j of a [1, H, S, D] window.
 array cell_of(const array& window, int j) {
   using namespace ::mlx::core;
   const int H = static_cast<int>(window.shape(1));
   const int D = static_cast<int>(window.shape(3));
   return slice(window, Shape{0, 0, j, 0}, Shape{1, H, j + 1, D});
-}
-
-cache::CacheConfig cell_config(
-    int capacity,
-    int n_layers,
-    int n_kv_heads,
-    int head_dim,
-    int kv_dtype,
-    std::optional<int> initial_capacity = std::nullopt) {
-  cache::CacheConfig cfg;
-  cfg.capacity = capacity;
-  cfg.n_layers = n_layers;
-  cfg.layers = {cache::LayerConfig{
-      cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0},
-      n_kv_heads,
-      head_dim}};
-  cfg.kv_dtype = kv_dtype;
-  if (initial_capacity) {
-    cfg.initial_capacity = *initial_capacity;
-  }
-  return cfg;
 }
 
 class MLXCellCacheTest : public ::testing::Test {
@@ -105,7 +75,7 @@ class MLXCellCacheTest : public ::testing::Test {
 // and the mask is lower-triangular.
 TEST_F(MLXCellCacheTest, PrefillClaimsCellsInOrder) {
   using namespace ::mlx::core;
-  MLXCellCache c(cell_config(/*capacity=*/32, /*n_layers=*/1, H, D, kHalf));
+  MLXCellCache c(flat_config(/*capacity=*/32, /*n_layers=*/1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   array k = randn(4), v = randn(4);
 
@@ -125,7 +95,7 @@ TEST_F(MLXCellCacheTest, PrefillClaimsCellsInOrder) {
 // Decode appends one cell and reads the whole prefix back.
 TEST_F(MLXCellCacheTest, DecodeExtendsTheWindow) {
   using namespace ::mlx::core;
-  MLXCellCache c(cell_config(32, 1, H, D, kHalf));
+  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   array k0 = randn(2), v0 = randn(2);
   step(c, {a, a}, {0, 1}, k0, v0);
@@ -145,7 +115,7 @@ TEST_F(MLXCellCacheTest, DecodeExtendsTheWindow) {
 // the querying sequence's cells.
 TEST_F(MLXCellCacheTest, MaskIsolatesSequences) {
   using namespace ::mlx::core;
-  MLXCellCache c(cell_config(32, 1, H, D, kHalf));
+  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
   EXPECT_NE(a, b);
@@ -165,7 +135,7 @@ TEST_F(MLXCellCacheTest, MaskIsolatesSequences) {
 // skip the cell still free.
 TEST_F(MLXCellCacheTest, FreedCellsRefillBelowLiveOnes) {
   using namespace ::mlx::core;
-  MLXCellCache c(cell_config(32, 1, H, D, kHalf));
+  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
 
@@ -192,7 +162,7 @@ TEST_F(MLXCellCacheTest, FreedCellsRefillBelowLiveOnes) {
 // A windowed layer hides cells older than its window; a flat layer keeps them.
 TEST_F(MLXCellCacheTest, WindowHidesOlderCells) {
   using namespace ::mlx::core;
-  cache::CacheConfig cfg = cell_config(32, /*n_layers=*/2, H, D, kHalf);
+  cache::CacheConfig cfg = flat_config(32, /*n_layers=*/2, H, D, kHalf);
   cfg.layers = {
       cache::LayerConfig{
           cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0}, H, D},
@@ -225,7 +195,7 @@ TEST_F(MLXCellCacheTest, WindowHidesOlderCells) {
 // cells written before growth survive it.
 TEST_F(MLXCellCacheTest, GrowthPreservesExistingCells) {
   using namespace ::mlx::core;
-  MLXCellCache c(cell_config(32, 1, H, D, kHalf, /*initial_capacity=*/2));
+  MLXCellCache c(flat_config(32, 1, H, D, kHalf, /*initial_capacity=*/2));
   const int32_t a = *c.seq_new();
   array k0 = randn(2), v0 = randn(2);
   step(c, {a, a}, {0, 1}, k0, v0);
@@ -244,7 +214,7 @@ TEST_F(MLXCellCacheTest, GrowthPreservesExistingCells) {
 TEST_F(MLXCellCacheTest, StorageDtypeDiffersCastsOnWrite) {
   using namespace ::mlx::core;
   MLXCellCache c(
-      cell_config(32, 1, H, D, static_cast<int>(ScalarType::BFloat16)));
+      flat_config(32, 1, H, D, static_cast<int>(ScalarType::BFloat16)));
   const int32_t a = *c.seq_new();
   array k = randn(2, float32), v = randn(2, float32);
 
@@ -258,7 +228,7 @@ TEST_F(MLXCellCacheTest, StorageDtypeDiffersCastsOnWrite) {
 // layer and a position a sequence already holds are all refused.
 TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
   using namespace ::mlx::core;
-  MLXCellCache c(cell_config(32, 1, H, D, kHalf));
+  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   array k = randn(2), v = randn(2);
 
@@ -279,7 +249,7 @@ TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
 
 // A step wider than the free cells is refused, and refusing claims nothing.
 TEST_F(MLXCellCacheTest, StepPastCapacityIsRefused) {
-  MLXCellCache c(cell_config(/*capacity=*/2, 1, H, D, kHalf));
+  MLXCellCache c(flat_config(/*capacity=*/2, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   step(c, {a, a}, {0, 1}, randn(2), randn(2));
 
@@ -288,7 +258,7 @@ TEST_F(MLXCellCacheTest, StepPastCapacityIsRefused) {
 }
 
 TEST_F(MLXCellCacheTest, InvalidConfigThrows) {
-  cache::CacheConfig cfg = cell_config(32, /*n_layers=*/2, H, D, kHalf);
+  cache::CacheConfig cfg = flat_config(32, /*n_layers=*/2, H, D, kHalf);
   cfg.layers.resize(1);
   cfg.layers.push_back(cache::LayerConfig{{}, H, D});
   cfg.capacity = 0;
@@ -299,7 +269,7 @@ TEST_F(MLXCellCacheTest, InvalidConfigThrows) {
 // is as much a part of the layout as the class.
 TEST_F(MLXCellCacheTest, RegistryBuildsCellLayout) {
   auto built = cache::CacheBuilderRegistry::global().build(
-      kMLXBackendId, "cell", cell_config(32, 1, H, D, kHalf));
+      kMLXBackendId, "cell", flat_config(32, 1, H, D, kHalf));
   ASSERT_TRUE(built.ok());
   const std::shared_ptr<cache::CacheBase>& c = *built;
   EXPECT_NE(c->as_batch_control(), nullptr);

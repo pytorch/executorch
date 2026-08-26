@@ -60,9 +60,9 @@ class Pool {
         s);
   }
 
-  // Place `update` one token per slot, at `cells[i]` for token i. Cells refill
-  // from below as sequences are removed, so a step's slots need not be
-  // contiguous or ordered.
+  // Place `update` one token per slot, at `cells[i]` for token i. The cells
+  // must be distinct. They refill from below as sequences are removed, so
+  // a step's slots need not be contiguous or ordered.
   void write_cells(
       const std::vector<int32_t>& cells,
       const Tensor& update,
