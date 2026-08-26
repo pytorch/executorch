@@ -16,7 +16,7 @@ import sys
 import tempfile
 import types
 from dataclasses import dataclass, fields
-from typing import Callable, List, Optional, Set, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 import torch
@@ -676,10 +676,18 @@ def make_quantizer(
     is_qat=False,
     submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     backend=QnnExecuTorchBackendType.kHtpBackend,
-    soc_model="SM8750",
+    soc_model: Union[str, QcomChipset, Sequence[Union[str, QcomChipset]]] = "SM8750",
     eps=None,
 ):
-    quantizer = QnnQuantizer(backend=backend, soc_model=getattr(QcomChipset, soc_model))
+    def to_chipset(model: Union[str, QcomChipset]) -> QcomChipset:
+        return model if isinstance(model, QcomChipset) else getattr(QcomChipset, model)
+
+    soc_models = (
+        [to_chipset(model) for model in soc_model]
+        if not isinstance(soc_model, (str, QcomChipset))
+        else to_chipset(soc_model)
+    )
+    quantizer = QnnQuantizer(backend=backend, soc_model=soc_models)
     quantizer.add_custom_quant_annotations(custom_annotations)
     quantizer.set_default_quant_config(
         quant_dtype,

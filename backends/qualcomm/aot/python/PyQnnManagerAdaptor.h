@@ -245,7 +245,7 @@ class PyQnnManager {
     return qnn_manager_->IsNodeSupportedByBackend(op_wrappers);
   }
 
-  py::array_t<char> Compile(
+  py::bytes Compile(
       const std::vector<std::string>& graph_names,
       std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers) {
     QnnExecuTorchContextBinary binary_info;
@@ -254,7 +254,7 @@ class PyQnnManager {
       if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) !=
           executorch::runtime::Error::Ok) {
         QNN_EXECUTORCH_LOG_ERROR("Fail to compile QNN graph");
-        return py::array_t<char>(0);
+        return py::bytes("", 0);
       }
     }
     auto qnn_executorch_options = GetQnnExecuTorchOptions(
@@ -262,15 +262,47 @@ class PyQnnManager {
     if (qnn_executorch_options->saver() ||
         qnn_manager_->GetContextBinary(binary_info) !=
             executorch::runtime::Error::Ok) {
-      return py::array_t<char>(0);
+      return py::bytes("", 0);
     }
 
-    // allocate py::array (to pass the result of the C++ function to Python)
-    auto result = py::array_t<char>(binary_info.nbytes);
-    auto result_buffer = result.request();
-    char* result_ptr = (char*)result_buffer.ptr;
-    std::memcpy(result_ptr, binary_info.buffer, binary_info.nbytes);
-    return result;
+    return py::bytes(
+        reinterpret_cast<const char*>(binary_info.buffer), binary_info.nbytes);
+  }
+  py::int_ CreateDlc() {
+    void* handle = nullptr;
+    if (qnn_manager_->CreateDlc(handle) != Error::Ok) {
+      throw std::runtime_error("Failed to create QNN DLC");
+    }
+    return reinterpret_cast<uintptr_t>(handle);
+  }
+
+  void CompileToDlc(
+      const std::vector<std::string>& graph_names,
+      std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers,
+      uintptr_t dlc_handle) {
+    for (uint32_t i = 0; i < graph_names.size(); ++i) {
+      if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) != Error::Ok) {
+        throw std::runtime_error("Failed to compile QNN graph");
+      }
+    }
+    if (qnn_manager_->AddContextToDlc(reinterpret_cast<void*>(dlc_handle)) !=
+        Error::Ok) {
+      throw std::runtime_error("Failed to add QNN context to DLC");
+    }
+  }
+
+  py::bytes GetDlcBinary(uintptr_t dlc_handle) {
+    std::vector<uint8_t> binary;
+    if (qnn_manager_->GetDlcBinary(
+            reinterpret_cast<void*>(dlc_handle), binary) != Error::Ok) {
+      throw std::runtime_error("Failed to get QNN DLC binary");
+    }
+    return py::bytes(
+        reinterpret_cast<const char*>(binary.data()), binary.size());
+  }
+
+  void FreeDlc(uintptr_t dlc_handle) {
+    qnn_manager_->FreeDlc(reinterpret_cast<void*>(dlc_handle));
   }
 
   void Destroy() {

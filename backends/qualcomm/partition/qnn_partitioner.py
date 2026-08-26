@@ -74,9 +74,15 @@ class QnnOperatorSupport(OperatorSupportBase):
         # checker (e.g. the LPAI fallback pass) are distinguishable in the logs.
         self.phase = phase
         self.nodes_to_wrappers = defaultdict(dict)
-        self.qnn_manager = get_current_qnn_manager(
-            python_options.backend_options.backend_type, compiler_specs
+        target_socs = (
+            [target.soc_info.soc_model for target in python_options.fcb_options.targets]
+            if python_options.fcb_options is not None
+            else [python_options.soc_info.soc_model]
         )
+        self.qnn_managers = [
+            get_current_qnn_manager(compiler_specs, soc_model)
+            for soc_model in target_socs
+        ]
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         if node.op != "call_function" or node.target in not_supported_operator:
@@ -128,8 +134,10 @@ class QnnOperatorSupport(OperatorSupportBase):
             op_wrapper_list.append(op_wrapper)
 
         if op_wrapper is not None:
-            supported = self.qnn_manager.IsNodeSupportedByBackend(
-                [op_wrapper.GetOpWrapper() for op_wrapper in op_wrapper_list]
+            wrappers = [op.GetOpWrapper() for op in op_wrapper_list]
+            supported = all(
+                manager.IsNodeSupportedByBackend(wrappers)
+                for manager in self.qnn_managers
             )
 
         self.nodes_to_wrappers.clear()
