@@ -337,8 +337,9 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp
-                               runtime/cuda_mutable_state.cpp
+set(_aoti_cuda_backend_sources
+    runtime/cuda_backend.cpp runtime/cuda_mutable_state.cpp
+    runtime/cuda_weight_cache.cpp
 )
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
@@ -448,4 +449,10 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_weight_cache SOURCES runtime/test/test_cuda_weight_cache.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
 endif()
