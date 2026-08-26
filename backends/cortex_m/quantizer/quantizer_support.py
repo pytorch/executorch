@@ -26,6 +26,8 @@ BINARY_OP_PATTERNS = {
     (torch.ops.aten.add.Tensor, torch.ops.aten.clamp.default): CortexMAddMulCheck,
     (torch.ops.aten.add.Tensor, torch.ops.aten.clamp_.default): CortexMAddMulCheck,
     (torch.ops.aten.add_.Tensor,): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor,): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.mul.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.mul_.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.hardswish.default,): CortexMAddMulCheck,  # lowers to mul
