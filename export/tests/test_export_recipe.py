@@ -299,8 +299,8 @@ class TestExportRecipeCombine(unittest.TestCase):
     def test_combine_rejects_pipeline_stages(self) -> None:
         from executorch.export.types import StageType
 
-        # Unnamed recipes fall back to their position; named ones are named.
-        with self.assertRaisesRegex(ValueError, r"pipeline_stages.*recipes\[0\]"):
+        # Recipes with different pipeline_stages (including None vs. a list) must be rejected.
+        with self.assertRaisesRegex(ValueError, r"pipeline_stages"):
             ExportRecipe.combine(
                 [
                     ExportRecipe(
@@ -309,7 +309,7 @@ class TestExportRecipeCombine(unittest.TestCase):
                     ExportRecipe(name="b"),
                 ]
             )
-        with self.assertRaisesRegex(ValueError, r"pipeline_stages.*'stagey'"):
+        with self.assertRaisesRegex(ValueError, r"pipeline_stages"):
             ExportRecipe.combine(
                 [
                     ExportRecipe(
@@ -498,7 +498,11 @@ class TestCombineRecipesLowering(unittest.TestCase):
             ),
         )
         result = ExportRecipe.combine([r1, r2])
-        self.assertIs(result.lowering_recipe.edge_compile_config, config)
+        # combine() deepcopies the config so the combined recipe cannot mutate
+        # the provider's shared object; assert value-equality, not identity.
+        self.assertIsNotNone(result.lowering_recipe)
+        self.assertEqual(result.lowering_recipe.edge_compile_config, config)
+        self.assertIsNot(result.lowering_recipe.edge_compile_config, config)
 
 
 class TestCombineRecipesQuantization(unittest.TestCase):

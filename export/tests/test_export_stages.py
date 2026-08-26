@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -409,6 +410,7 @@ class TestQuantizeStage(unittest.TestCase):
         result_artifact = stage.get_artifacts()
         self.assertEqual(result_artifact, artifact)
 
+    @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")
     @patch("executorch.export.stages.prepare_pt2e")
     @patch("executorch.export.stages.ComposableQuantizer")
@@ -419,12 +421,14 @@ class TestQuantizeStage(unittest.TestCase):
         mock_composable_quantizer: Mock,
         mock_prepare_pt2e: Mock,
         mock_convert_pt2e: Mock,
+        mock_move_to_eval: Mock,
     ) -> None:
         """Test execution with quantizers"""
         mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -449,9 +453,9 @@ class TestQuantizeStage(unittest.TestCase):
         artifact = PipelineArtifact(data=self.models_dict, context=self.context)
         stage.run(artifact)
 
-        # Verify torch.export.export was called
+        # Verify torch.export.export was called with dynamic_shapes=None (no dynamic batch)
         mock_torch_export.assert_called_once_with(
-            self.model, self.example_inputs[0], strict=True
+            self.model, self.example_inputs[0], dynamic_shapes=None, strict=True
         )
 
         # Verify ComposableQuantizer was created with the quantizers
@@ -477,6 +481,9 @@ class TestQuantizeStage(unittest.TestCase):
         self.assertEqual(artifact.data["forward"], self.model)
         self.assertIsNot(result_artifact.data["forward"], self.model)
 
+    @patch("executorch.export.stages.allow_exported_model_train_eval")
+    @patch("executorch.export.stages.move_exported_model_to_eval")
+    @patch("executorch.export.stages.move_exported_model_to_train")
     @patch("executorch.export.stages.convert_pt2e")
     @patch("executorch.export.stages.prepare_qat_pt2e")
     @patch("executorch.export.stages.ComposableQuantizer")
@@ -487,13 +494,27 @@ class TestQuantizeStage(unittest.TestCase):
         mock_composable_quantizer: Mock,
         mock_prepare_qat_pt2e: Mock,
         mock_convert_pt2e: Mock,
+        mock_move_to_train: Mock,
+        mock_move_to_eval: Mock,
+        mock_allow_train_eval: Mock,
     ) -> None:
-        """QAT flow: prepare_qat_pt2e is called and train_fn is invoked with the prepared model."""
+        """QAT flow: prepare_qat_pt2e is called and train_fn is invoked with the prepared model.
+        allow_exported_model_train_eval must be called after preparation.
+        move_exported_model_to_train must be called before train_fn, and
+        move_exported_model_to_eval must be called after train_fn."""
         mock_quantizer = self.create_dummy_quantizer()
-        train_fn = Mock()
+        call_order = []
+        mock_allow_train_eval.side_effect = lambda m: call_order.append(
+            "allow_train_eval"
+        )
+        mock_move_to_train.side_effect = lambda m: call_order.append("to_train")
+        mock_move_to_eval.side_effect = lambda m: call_order.append("to_eval")
+
+        train_fn = Mock(side_effect=lambda m: call_order.append("train_fn"))
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.train_fn = train_fn
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -520,6 +541,13 @@ class TestQuantizeStage(unittest.TestCase):
         mock_prepare_qat_pt2e.assert_called_once_with(
             mock_captured_graph, mock_composed_quantizer
         )
+        # allow_exported_model_train_eval before move_to_train, then train_fn, then to_eval
+        self.assertEqual(
+            call_order, ["allow_train_eval", "to_train", "train_fn", "to_eval"]
+        )
+        mock_allow_train_eval.assert_called_once_with(mock_prepared_model)
+        mock_move_to_train.assert_called_once_with(mock_prepared_model)
+        mock_move_to_eval.assert_called_once_with(mock_prepared_model)
         # train_fn must be called with the prepared model
         train_fn.assert_called_once_with(mock_prepared_model)
         # convert_pt2e must still be called after training
@@ -535,6 +563,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.train_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -552,6 +581,7 @@ class TestQuantizeStage(unittest.TestCase):
             stage.run(artifact)
         self.assertIn("train_fn must be provided when is_qat=True", str(cm.exception))
 
+    @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")
     @patch("executorch.export.stages.prepare_pt2e")
     @patch("executorch.export.stages.prepare_qat_pt2e")
@@ -564,12 +594,14 @@ class TestQuantizeStage(unittest.TestCase):
         mock_prepare_qat_pt2e: Mock,
         mock_prepare_pt2e: Mock,
         mock_convert_pt2e: Mock,
+        mock_move_to_eval: Mock,
     ) -> None:
         """PTQ flow must not call prepare_qat_pt2e (regression guard)."""
         mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -590,6 +622,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_prepare_pt2e.assert_called_once()
         mock_prepare_qat_pt2e.assert_not_called()
 
+    @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")
     @patch("executorch.export.stages.prepare_pt2e")
     @patch("executorch.export.stages.ComposableQuantizer")
@@ -600,6 +633,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_composable_quantizer: Mock,
         mock_prepare_pt2e: Mock,
         mock_convert_pt2e: Mock,
+        mock_move_to_eval: Mock,
     ) -> None:
         """All four pass hooks are called at the correct points in the PTQ flow."""
         call_order = []
@@ -615,6 +649,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = [make_pass("pre_prepare")]
         mock_recipe.post_prepare_passes = [make_pass("post_prepare")]
@@ -638,6 +673,9 @@ class TestQuantizeStage(unittest.TestCase):
             ["pre_prepare", "post_prepare", "pre_convert", "post_convert"],
         )
 
+    @patch("executorch.export.stages.allow_exported_model_train_eval")
+    @patch("executorch.export.stages.move_exported_model_to_eval")
+    @patch("executorch.export.stages.move_exported_model_to_train")
     @patch("executorch.export.stages.convert_pt2e")
     @patch("executorch.export.stages.prepare_qat_pt2e")
     @patch("executorch.export.stages.ComposableQuantizer")
@@ -648,6 +686,9 @@ class TestQuantizeStage(unittest.TestCase):
         mock_composable_quantizer: Mock,
         mock_prepare_qat_pt2e: Mock,
         mock_convert_pt2e: Mock,
+        mock_move_to_train: Mock,
+        mock_move_to_eval: Mock,
+        mock_allow_train_eval: Mock,
     ) -> None:
         """All four pass hooks are called at the correct points in the QAT flow."""
         call_order = []
@@ -663,6 +704,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = True
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.train_fn = Mock()
         mock_recipe.pre_prepare_passes = [make_pass("pre_prepare")]
         mock_recipe.post_prepare_passes = [make_pass("post_prepare")]
@@ -685,6 +727,7 @@ class TestQuantizeStage(unittest.TestCase):
             ["pre_prepare", "post_prepare", "pre_convert", "post_convert"],
         )
 
+    @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")
     @patch("executorch.export.stages.prepare_pt2e")
     @patch("executorch.export.stages.ComposableQuantizer")
@@ -695,6 +738,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_composable_quantizer: Mock,
         mock_prepare_pt2e: Mock,
         mock_convert_pt2e: Mock,
+        mock_move_to_eval: Mock,
     ) -> None:
         """When calibration_inputs_fn is set, it is called and its output is used for calibration."""
         custom_input = (torch.randn(2, 10),)
@@ -704,6 +748,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.calibration_inputs_fn = calibration_inputs_fn
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -727,6 +772,7 @@ class TestQuantizeStage(unittest.TestCase):
         # prepared model must be called with the custom calibration input
         mock_prepared_model.assert_called_once_with(*custom_input)
 
+    @patch("executorch.export.stages.move_exported_model_to_eval")
     @patch("executorch.export.stages.convert_pt2e")
     @patch("executorch.export.stages.prepare_pt2e")
     @patch("executorch.export.stages.ComposableQuantizer")
@@ -737,12 +783,14 @@ class TestQuantizeStage(unittest.TestCase):
         mock_composable_quantizer: Mock,
         mock_prepare_pt2e: Mock,
         mock_convert_pt2e: Mock,
+        mock_move_to_eval: Mock,
     ) -> None:
         """When calibration_inputs_fn is None, example inputs are used for calibration."""
         mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         mock_recipe.is_qat = False
+        mock_recipe.dynamic_batch_size = False
         mock_recipe.calibration_inputs_fn = None
         mock_recipe.pre_prepare_passes = None
         mock_recipe.post_prepare_passes = None
@@ -947,6 +995,175 @@ class TestToBackendStage(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             stage.run(artifact)
         self.assertIn("Edge program manager is not set", str(cm.exception))
+
+
+class TestQuantizeStageExportDynamicShapes(unittest.TestCase):
+    """Tests for the dynamic_batch_size export behavior in QuantizeStage."""
+
+    def setUp(self) -> None:
+        self.model = torch.nn.Linear(10, 5)
+        self.models_dict = {"forward": self.model}
+        self.example_inputs = [(torch.randn(1, 10),)]
+        self.context = {"example_inputs": {"forward": self.example_inputs}}
+
+    @staticmethod
+    def _make_recipe(is_qat: bool, dynamic_batch_size: bool) -> Mock:
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [Mock(spec=TorchAOPT2EQuantizer)]
+        mock_recipe.is_qat = is_qat
+        mock_recipe.dynamic_batch_size = dynamic_batch_size
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.train_fn = Mock() if is_qat else None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+        return mock_recipe
+
+    @patch("executorch.export.stages.move_exported_model_to_eval")
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_dynamic_batch_size_false_exports_without_dynamic_shapes(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+        mock_move_to_eval: Mock,
+    ) -> None:
+        """When dynamic_batch_size=False, torch.export.export is called with dynamic_shapes=None."""
+        mock_ep = Mock(spec=ExportedProgram)
+        mock_ep.module.return_value = Mock()
+        mock_torch_export.return_value = mock_ep
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepare_pt2e.return_value = Mock()
+        mock_convert_pt2e.return_value = Mock()
+
+        recipe = self._make_recipe(is_qat=False, dynamic_batch_size=False)
+        stage = QuantizeStage(recipe)
+        stage.run(PipelineArtifact(data=self.models_dict, context=self.context))
+
+        mock_torch_export.assert_called_once_with(
+            self.model,
+            self.example_inputs[0],
+            dynamic_shapes=None,
+            strict=True,
+        )
+
+    @patch("executorch.export.stages.allow_exported_model_train_eval")
+    @patch("executorch.export.stages.move_exported_model_to_eval")
+    @patch("executorch.export.stages.move_exported_model_to_train")
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_qat_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_dynamic_batch_size_true_exports_with_dynamic_batch_dim(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_qat_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+        mock_move_to_train: Mock,
+        mock_move_to_eval: Mock,
+        mock_allow_train_eval: Mock,
+    ) -> None:
+        """When dynamic_batch_size=True, torch.export.export is called with a
+        dynamic_shapes tuple where dimension 0 of every tensor is dynamic."""
+        mock_ep = Mock(spec=ExportedProgram)
+        mock_ep.module.return_value = Mock()
+        mock_torch_export.return_value = mock_ep
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepare_qat_pt2e.return_value = Mock()
+        mock_convert_pt2e.return_value = Mock()
+
+        recipe = self._make_recipe(is_qat=True, dynamic_batch_size=True)
+        stage = QuantizeStage(recipe)
+        stage.run(PipelineArtifact(data=self.models_dict, context=self.context))
+
+        call_kwargs = mock_torch_export.call_args
+        dynamic_shapes_arg = call_kwargs.kwargs.get(
+            "dynamic_shapes", call_kwargs.args[2] if len(call_kwargs.args) > 2 else None
+        )
+        # dynamic_shapes must be a non-None tuple with one entry per input tensor.
+        self.assertIsNotNone(dynamic_shapes_arg)
+        self.assertIsInstance(dynamic_shapes_arg, tuple)
+        self.assertEqual(len(dynamic_shapes_arg), len(self.example_inputs[0]))
+        # The entry for the single tensor input must map dim 0 to a Dim.
+        first_entry = dynamic_shapes_arg[0]
+        self.assertIsInstance(first_entry, dict)
+        self.assertIn(0, first_entry)
+
+    @patch("executorch.export.stages.move_exported_model_to_eval")
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_dynamic_batch_size_true_ptq_exports_with_dynamic_shapes(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+        mock_move_to_eval: Mock,
+    ) -> None:
+        """When dynamic_batch_size=True and is_qat=False, export is called with dynamic shapes."""
+        mock_ep = Mock(spec=ExportedProgram)
+        mock_ep.module.return_value = Mock()
+        mock_torch_export.return_value = mock_ep
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepare_pt2e.return_value = Mock()
+        mock_convert_pt2e.return_value = Mock()
+
+        recipe = self._make_recipe(is_qat=False, dynamic_batch_size=True)
+        stage = QuantizeStage(recipe)
+        stage.run(PipelineArtifact(data=self.models_dict, context=self.context))
+
+        call_kwargs = mock_torch_export.call_args
+        dynamic_shapes_arg = call_kwargs.kwargs.get(
+            "dynamic_shapes", call_kwargs.args[2] if len(call_kwargs.args) > 2 else None
+        )
+        self.assertIsNotNone(dynamic_shapes_arg)
+        self.assertIsInstance(dynamic_shapes_arg, tuple)
+        self.assertEqual(len(dynamic_shapes_arg), len(self.example_inputs[0]))
+        first_entry = dynamic_shapes_arg[0]
+        self.assertIsInstance(first_entry, dict)
+        self.assertIn(0, first_entry)
+
+    def test_dynamic_batch_size_true_ptq_calibration_with_variable_batch_sizes(
+        self,
+    ) -> None:
+        """PTQ calibration runs without error when batch sizes vary across calibration inputs."""
+        from executorch.export.recipe import QuantizationRecipe
+
+        class PassthroughQuantizer(TorchAOPT2EQuantizer):
+            def annotate(self, model):
+                return model
+
+            def validate(self, model):
+                pass
+
+        def calibration_inputs_fn():
+            for batch_size in (2, 4, 8):
+                yield (torch.randn(batch_size, 10),)
+
+        recipe = QuantizationRecipe(
+            quantizers=[PassthroughQuantizer()],
+            is_qat=False,
+            dynamic_batch_size=True,
+            calibration_inputs_fn=calibration_inputs_fn,
+        )
+        stage = QuantizeStage(recipe)
+        # Use batch size 2 for the example input so torch.export does not
+        # specialize dim 0 as the constant 1.
+        context = {"example_inputs": {"forward": [(torch.randn(2, 10),)]}}
+        artifact = PipelineArtifact(
+            data={"forward": torch.nn.Linear(10, 5)},
+            context=context,
+        )
+        stage.run(artifact)
+        self.assertIn("forward", stage.get_artifacts().data)
 
 
 class TestEmptyPassDictIsNotApplied(unittest.TestCase):

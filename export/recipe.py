@@ -1,13 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import copy
 import dataclasses
+import logging
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, EnumMeta
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
@@ -138,6 +141,9 @@ class QuantizationRecipe:
                                  AOBaseConfig with optional filter functions.
         is_qat: If True, use the QAT flow (prepare_qat_pt2e -> train_fn -> convert_pt2e).
                 If False (default), use the PTQ flow (prepare_pt2e -> calibrate -> convert_pt2e).
+        dynamic_batch_size: If True, dimension 0 (batch) of the calibration/QAT
+                            training inputs may vary. Otherwise it is fixed to the
+                            example inputs' batch size.
         calibration_inputs_fn: Optional callable returning an iterable of input tuples used for
                                PTQ calibration. When None (default), the example inputs are used.
                                Ignored when is_qat=True.
@@ -159,6 +165,7 @@ class QuantizationRecipe:
     quantizers: Optional[List[Quantizer]] = None
     ao_quantization_configs: Optional[List[AOQuantizationConfig]] = None
     is_qat: bool = False
+    dynamic_batch_size: bool = False
     calibration_inputs_fn: Optional[Callable[[], Iterable[tuple]]] = None
     train_fn: Optional[Callable[["torch.fx.GraphModule"], None]] = None
     pre_prepare_passes: Optional[
@@ -216,6 +223,32 @@ class LoweringRecipe:
     ) = None
     # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = None
+
+
+@dataclass
+class _CombineAccumulator:
+    """Private accumulator used by ExportRecipe._collect_recipe_fields."""
+
+    partitioners: list = field(default_factory=list)
+    partitioners_by_method: dict = field(default_factory=dict)
+    quantizers: list = field(default_factory=list)
+    ao_quantization_configs: list = field(default_factory=list)
+    pre_edge_passes: list = field(default_factory=list)
+    edge_transform_passes: list = field(default_factory=list)
+    edge_manager_transform_passes: list = field(default_factory=list)
+    pre_prepare_passes: list = field(default_factory=list)
+    post_prepare_passes: list = field(default_factory=list)
+    pre_convert_passes: list = field(default_factory=list)
+    post_convert_passes: list = field(default_factory=list)
+    is_qat_values: list = field(default_factory=list)
+    dynamic_batch_size_values: list = field(default_factory=list)
+    train_fn_values: list = field(default_factory=list)
+    calibration_inputs_fn_values: list = field(default_factory=list)
+    strict_values: list = field(default_factory=list)
+    mode_values: list = field(default_factory=list)
+    pipeline_stages_values: list = field(default_factory=list)
+    source_transform_in_place_values: list = field(default_factory=list)
+    backend_config: object = None
 
 
 @experimental(
@@ -315,125 +348,45 @@ class ExportRecipe:
 
         return cls._combine_recipes(recipes, recipe_name)
 
-    @classmethod
-    def _combine_recipes(  # noqa: C901
-        cls, backend_recipes: List["ExportRecipe"], recipe_name: Optional[str] = None
-    ) -> "ExportRecipe":
-        """
-        Util to combine multiple backend recipes into a single multi-backend recipe.
-
-        Args:
-            backend_recipes: List of ExportRecipe objects to combine
-            recipe_name: Optional name for the combined recipe
-
-        Returns:
-            Combined ExportRecipe for multi-backend deployment
-        """
-        overriding = [
-            r.name or f"recipes[{i}]"
-            for i, r in enumerate(backend_recipes)
-            if r.pipeline_stages
-        ]
-        if overriding:
+    @staticmethod
+    def _assert_scalar_fields_agree(field_name: str, values: list) -> None:
+        """Raise ValueError when a scalar field has conflicting values across recipes."""
+        unique = set(values)
+        if len(unique) > 1:
             raise ValueError(
-                "Cannot combine recipes that override pipeline_stages, there is no "
-                f"correct way to merge the orderings: {overriding}"
+                f"Cannot combine recipes with conflicting '{field_name}' values: {unique}"
             )
 
-        # Scalar fields that must be identical across all recipes.
-        def _assert_agree(field_name: str, values: list) -> None:
-            unique = set(values)
-            if len(unique) > 1:
-                raise ValueError(
-                    f"Cannot combine recipes with conflicting '{field_name}' values: {unique}"
-                )
+    @classmethod
+    def _combine_quantization_recipe(
+        cls,
+        is_qat_values: list,
+        dynamic_batch_size_values: list,
+        train_fn_values: list,
+        calibration_inputs_fn_values: list,
+        all_quantizers: list,
+        all_ao_quantization_configs: list,
+        all_pre_prepare_passes: list,
+        all_post_prepare_passes: list,
+        all_pre_convert_passes: list,
+        all_post_convert_passes: list,
+    ) -> "Optional[QuantizationRecipe]":
+        """
+        Build the combined QuantizationRecipe from per-recipe collected lists.
 
-        # Collect all components.
-        all_partitioners: list = []
-        all_partitioners_by_method = {}
-        all_quantizers: list = []
-        all_ao_quantization_configs: list = []
-        all_pre_edge_passes: list = []
-        all_edge_transform_passes: list = []
-        all_edge_manager_transform_passes: list = []
-        all_pre_prepare_passes: list = []
-        all_post_prepare_passes: list = []
-        all_pre_convert_passes: list = []
-        all_post_convert_passes: list = []
-        combined_backend_config = None
+        Returns None when no recipe contributed any quantization fields, and logs
+        an INFO message so callers know quantization is absent from the combination.
+        """
+        # is_qat must agree: the two flows (QAT vs PTQ) are incompatible.
+        cls._assert_scalar_fields_agree("is_qat", is_qat_values)
 
-        is_qat_values: list = []
-        train_fn_values: list = []
-        calibration_inputs_fn_values: list = []
-        strict_values: list = []
-        mode_values: list = []
-        pipeline_stages_values: list = []
-        source_transform_in_place_values: list = []
-
-        for recipe in backend_recipes:
-            if recipe.aten_transform_passes:
-                all_pre_edge_passes.extend(recipe.aten_transform_passes)
-
-            if lr := recipe.lowering_recipe:
-                if lr.partitioners:
-                    if isinstance(lr.partitioners, dict):
-                        for method_name, method_partitioners in lr.partitioners.items():
-                            all_partitioners_by_method.setdefault(method_name, []).extend(
-                                method_partitioners
-                            )
-                    else:
-                        all_partitioners.extend(lr.partitioners)
-                if lr.edge_transform_passes:
-                    all_edge_transform_passes.extend(lr.edge_transform_passes)
-                if lr.edge_manager_transform_passes:
-                    all_edge_manager_transform_passes.extend(
-                        lr.edge_manager_transform_passes
-                    )
-
-            if qr := recipe.quantization_recipe:
-                if qr.quantizers:
-                    all_quantizers.extend(qr.quantizers)
-                if qr.ao_quantization_configs:
-                    all_ao_quantization_configs.extend(qr.ao_quantization_configs)
-                is_qat_values.append(qr.is_qat)
-                train_fn_values.append(qr.train_fn)
-                calibration_inputs_fn_values.append(qr.calibration_inputs_fn)
-                if qr.pre_prepare_passes:
-                    all_pre_prepare_passes.extend(qr.pre_prepare_passes)
-                if qr.post_prepare_passes:
-                    all_post_prepare_passes.extend(qr.post_prepare_passes)
-                if qr.pre_convert_passes:
-                    all_pre_convert_passes.extend(qr.pre_convert_passes)
-                if qr.post_convert_passes:
-                    all_post_convert_passes.extend(qr.post_convert_passes)
-
-            strict_values.append(recipe.strict)
-            mode_values.append(recipe.mode)
-            pipeline_stages_values.append(
-                tuple(recipe.pipeline_stages) if recipe.pipeline_stages else None
-            )
-            source_transform_in_place_values.append(recipe.source_transform_in_place)
-
-            # Use the first backend config as base
-            if combined_backend_config is None and recipe.executorch_backend_config:
-                combined_backend_config = copy.deepcopy(
-                    recipe.executorch_backend_config
-                )
-
-        # Validate fields that must agree across all recipes.
-        _assert_agree("strict", strict_values)
-        _assert_agree("mode", mode_values)
-        _assert_agree("pipeline_stages", pipeline_stages_values)
-        _assert_agree("source_transform_in_place", source_transform_in_place_values)
-
-        # is_qat must agree across all recipes that carry a QuantizationRecipe.
-        _assert_agree("is_qat", is_qat_values)
-        # train_fn must have at most one non-None value across all recipes.
+        # At most one recipe may supply a train_fn.
         non_none_train_fns = [f for f in train_fn_values if f is not None]
         if len(non_none_train_fns) > 1:
             raise ValueError(
                 "Cannot combine recipes: more than one recipe provides a train_fn."
             )
+
         # Multiple calibration_inputs_fn values are chained into a single factory.
         non_none_calib_fns = [f for f in calibration_inputs_fn_values if f is not None]
         if len(non_none_calib_fns) > 1:
@@ -443,13 +396,13 @@ class ExportRecipe:
                 for _fn in _fns:
                     yield from _fn()
 
-            combined_calib_fn = _combined_calib_fn
+            combined_calib_fn: "Optional[Callable[[], Iterable[tuple]]]" = (
+                _combined_calib_fn
+            )
         else:
             combined_calib_fn = non_none_calib_fns[0] if non_none_calib_fns else None
 
-        # Build combined QuantizationRecipe.
-        combined_quantization_recipe = None
-        if (
+        if not (
             all_quantizers
             or all_ao_quantization_configs
             or all_pre_prepare_passes
@@ -457,17 +410,40 @@ class ExportRecipe:
             or all_pre_convert_passes
             or all_post_convert_passes
         ):
-            combined_quantization_recipe = QuantizationRecipe(
-                quantizers=all_quantizers or None,
-                ao_quantization_configs=all_ao_quantization_configs or None,
-                is_qat=is_qat_values[0] if is_qat_values else False,
-                train_fn=non_none_train_fns[0] if non_none_train_fns else None,
-                calibration_inputs_fn=combined_calib_fn,
-                pre_prepare_passes=all_pre_prepare_passes or None,
-                post_prepare_passes=all_post_prepare_passes or None,
-                pre_convert_passes=all_pre_convert_passes or None,
-                post_convert_passes=all_post_convert_passes or None,
+            logging.info(
+                "Combined recipe has no quantizers, quantization configs, or "
+                "quantization passes; quantization_recipe will be None."
             )
+            return None
+
+        return QuantizationRecipe(
+            quantizers=all_quantizers or None,
+            ao_quantization_configs=all_ao_quantization_configs or None,
+            is_qat=is_qat_values[0] if is_qat_values else False,
+            dynamic_batch_size=any(dynamic_batch_size_values),
+            train_fn=non_none_train_fns[0] if non_none_train_fns else None,
+            calibration_inputs_fn=combined_calib_fn,
+            pre_prepare_passes=all_pre_prepare_passes or None,
+            post_prepare_passes=all_post_prepare_passes or None,
+            pre_convert_passes=all_pre_convert_passes or None,
+            post_convert_passes=all_post_convert_passes or None,
+        )
+
+    @classmethod
+    def _combine_lowering_recipe(
+        cls,
+        backend_recipes: "List[ExportRecipe]",
+        all_partitioners: list,
+        all_partitioners_by_method: dict,
+        all_edge_transform_passes: list,
+        all_edge_manager_transform_passes: list,
+    ) -> "Optional[LoweringRecipe]":
+        """
+        Build the combined LoweringRecipe from per-recipe collected lists.
+
+        Returns None when no recipe contributed any lowering fields, and logs
+        an INFO message so callers know lowering is absent from the combination.
+        """
 
         if all_partitioners and all_partitioners_by_method:
             raise ValueError(
@@ -476,7 +452,7 @@ class ExportRecipe:
             )
         combined_partitioners = all_partitioners_by_method or all_partitioners
 
-        # By value, not identity: every provider builds a fresh config object,
+        # Compare edge_compile_confgs by value, not identity: every provider builds a fresh config object,
         # so asking for the same thing twice is not a conflict.
         distinct: List[tuple[str, EdgeCompileConfig]] = []
         for i, recipe in enumerate(backend_recipes):
@@ -498,48 +474,164 @@ class ExportRecipe:
             )
         edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
 
-        combined_lowering_recipe = None
-        if (
+        if not (
             combined_partitioners
             or all_edge_transform_passes
             or all_edge_manager_transform_passes
             or edge_compile_config
         ):
-            edge_compile_config = None
-            for recipe in backend_recipes:
-                if (
-                    recipe.lowering_recipe
-                    and recipe.lowering_recipe.edge_compile_config
-                ):
-                    edge_compile_config = recipe.lowering_recipe.edge_compile_config
-                    break
-
-            combined_lowering_recipe = LoweringRecipe(
-                partitioners=combined_partitioners or None,
-                edge_transform_passes=all_edge_transform_passes or None,
-                edge_manager_transform_passes=all_edge_manager_transform_passes or None,
-                edge_compile_config=edge_compile_config or EdgeCompileConfig(),
+            logging.info(
+                "Combined recipe has no lowering fields; lowering_recipe will be None."
             )
+            return None
+
+        return LoweringRecipe(
+            partitioners=combined_partitioners or None,
+            edge_transform_passes=all_edge_transform_passes or None,
+            edge_manager_transform_passes=all_edge_manager_transform_passes or None,
+            edge_compile_config=edge_compile_config or EdgeCompileConfig(),
+        )
+
+    @staticmethod
+    def _collect_lowering_fields(
+        acc: "_CombineAccumulator", lr: "LoweringRecipe"
+    ) -> None:
+        """Accumulate fields from a single LoweringRecipe into acc."""
+        if lr.partitioners:
+            if isinstance(lr.partitioners, dict):
+                for method_name, method_partitioners in lr.partitioners.items():
+                    acc.partitioners_by_method.setdefault(method_name, []).extend(
+                        method_partitioners
+                    )
+            else:
+                acc.partitioners.extend(lr.partitioners)
+        if lr.edge_transform_passes:
+            acc.edge_transform_passes.extend(lr.edge_transform_passes)
+        if lr.edge_manager_transform_passes:
+            acc.edge_manager_transform_passes.extend(lr.edge_manager_transform_passes)
+
+    @staticmethod
+    def _collect_quantization_fields(
+        acc: "_CombineAccumulator", qr: "QuantizationRecipe"
+    ) -> None:
+        """Accumulate fields from a single QuantizationRecipe into acc."""
+        if qr.quantizers:
+            acc.quantizers.extend(qr.quantizers)
+        if qr.ao_quantization_configs:
+            acc.ao_quantization_configs.extend(qr.ao_quantization_configs)
+        acc.is_qat_values.append(qr.is_qat)
+        acc.dynamic_batch_size_values.append(qr.dynamic_batch_size)
+        acc.train_fn_values.append(qr.train_fn)
+        acc.calibration_inputs_fn_values.append(qr.calibration_inputs_fn)
+        if qr.pre_prepare_passes:
+            acc.pre_prepare_passes.extend(qr.pre_prepare_passes)
+        if qr.post_prepare_passes:
+            acc.post_prepare_passes.extend(qr.post_prepare_passes)
+        if qr.pre_convert_passes:
+            acc.pre_convert_passes.extend(qr.pre_convert_passes)
+        if qr.post_convert_passes:
+            acc.post_convert_passes.extend(qr.post_convert_passes)
+
+    @classmethod
+    def _collect_recipe_fields(
+        cls,
+        backend_recipes: "List[ExportRecipe]",
+    ) -> "_CombineAccumulator":
+        """
+        Iterate over all recipes and accumulate their fields into a single
+        _CombineAccumulator for later merging.
+        """
+        acc = _CombineAccumulator()
+
+        for recipe in backend_recipes:
+            if recipe.aten_transform_passes:
+                acc.pre_edge_passes.extend(recipe.aten_transform_passes)
+
+            if lr := recipe.lowering_recipe:
+                cls._collect_lowering_fields(acc, lr)
+
+            if qr := recipe.quantization_recipe:
+                cls._collect_quantization_fields(acc, qr)
+
+            acc.strict_values.append(recipe.strict)
+            acc.mode_values.append(recipe.mode)
+            acc.pipeline_stages_values.append(
+                tuple(recipe.pipeline_stages) if recipe.pipeline_stages else None
+            )
+            acc.source_transform_in_place_values.append(
+                recipe.source_transform_in_place
+            )
+
+            # Use the executorch_backend_config from the first recipe that supplies one.
+            if acc.backend_config is None and recipe.executorch_backend_config:
+                acc.backend_config = copy.deepcopy(recipe.executorch_backend_config)
+
+        return acc
+
+    @classmethod
+    def _combine_recipes(
+        cls, backend_recipes: "List[ExportRecipe]", recipe_name: "Optional[str]" = None
+    ) -> "ExportRecipe":
+        """
+        Util to combine multiple backend recipes into a single multi-backend recipe.
+
+        Args:
+            backend_recipes: List of ExportRecipe objects to combine
+            recipe_name: Optional name for the combined recipe
+
+        Returns:
+            Combined ExportRecipe for multi-backend deployment
+        """
+        acc = cls._collect_recipe_fields(backend_recipes)
+
+        # Validate scalar fields that must agree across all recipes.
+        cls._assert_scalar_fields_agree("strict", acc.strict_values)
+        cls._assert_scalar_fields_agree("mode", acc.mode_values)
+        cls._assert_scalar_fields_agree("pipeline_stages", acc.pipeline_stages_values)
+        cls._assert_scalar_fields_agree(
+            "source_transform_in_place", acc.source_transform_in_place_values
+        )
+
+        combined_quantization_recipe = cls._combine_quantization_recipe(
+            is_qat_values=acc.is_qat_values,
+            dynamic_batch_size_values=acc.dynamic_batch_size_values,
+            train_fn_values=acc.train_fn_values,
+            calibration_inputs_fn_values=acc.calibration_inputs_fn_values,
+            all_quantizers=acc.quantizers,
+            all_ao_quantization_configs=acc.ao_quantization_configs,
+            all_pre_prepare_passes=acc.pre_prepare_passes,
+            all_post_prepare_passes=acc.post_prepare_passes,
+            all_pre_convert_passes=acc.pre_convert_passes,
+            all_post_convert_passes=acc.post_convert_passes,
+        )
+
+        combined_lowering_recipe = cls._combine_lowering_recipe(
+            backend_recipes=backend_recipes,
+            all_partitioners=acc.partitioners,
+            all_partitioners_by_method=acc.partitioners_by_method,
+            all_edge_transform_passes=acc.edge_transform_passes,
+            all_edge_manager_transform_passes=acc.edge_manager_transform_passes,
+        )
 
         recipe_name = recipe_name or "_".join(
             [r.name for r in backend_recipes if r.name is not None]
         )
+        # All pipeline_stages values are equal (enforced above); use the first non-None one.
+        shared_pipeline_stages = next(
+            (r.pipeline_stages for r in backend_recipes if r.pipeline_stages), None
+        )
         return cls(
             name=recipe_name,
             quantization_recipe=combined_quantization_recipe,
-            aten_transform_passes=all_pre_edge_passes or None,
+            aten_transform_passes=acc.pre_edge_passes or None,
             lowering_recipe=combined_lowering_recipe,
-            executorch_backend_config=combined_backend_config,
-            strict=strict_values[0] if strict_values else True,
-            mode=mode_values[0] if mode_values else Mode.RELEASE,
-            pipeline_stages=(
-                list(pipeline_stages_values[0])
-                if pipeline_stages_values and pipeline_stages_values[0] is not None
-                else None
-            ),
+            executorch_backend_config=acc.backend_config,
+            pipeline_stages=shared_pipeline_stages,
+            strict=acc.strict_values[0] if acc.strict_values else True,
+            mode=acc.mode_values[0] if acc.mode_values else Mode.RELEASE,
             source_transform_in_place=(
-                source_transform_in_place_values[0]
-                if source_transform_in_place_values
+                acc.source_transform_in_place_values[0]
+                if acc.source_transform_in_place_values
                 else False
             ),
         )

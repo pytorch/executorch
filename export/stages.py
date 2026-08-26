@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,6 +24,11 @@ from torch import nn
 from torch._export.pass_base import PassType
 from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
+from torchao.quantization.pt2e import (
+    allow_exported_model_train_eval,
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
@@ -475,13 +481,18 @@ class QuantizeStage(Stage):
         passes: Optional[List[Callable]],
     ) -> "torch.fx.GraphModule":
         for pass_fn in passes or []:
-            model = pass_fn(model)
+            try:
+                model = pass_fn(model)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"QuantizeStage: Pass '{pass_fn!r}' raised an error: {exc}"
+                ) from exc
         return model
 
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
             logging.info(
-                "Quantization recipe is invalid to run QunatizeStage, returning original model"
+                "Quantization recipe is invalid to run QuantizeStage, returning original model"
             )
             self._artifact = artifact
             return
@@ -501,7 +512,22 @@ class QuantizeStage(Stage):
                 )
 
             inputs = example_inputs[method_name][0]
-            captured_graph = torch.export.export(model, inputs, strict=True).module()
+
+            # When dynamic_batch_size is requested, mark dimension 0 of every
+            # tensor input as dynamic so that a QAT training loop can feed
+            # mini-batches of arbitrary size through the prepared graph.
+            export_dynamic_shapes = None
+            if recipe.dynamic_batch_size:
+                from torch.export import Dim
+
+                batch = Dim("batch", min=1)
+                export_dynamic_shapes = tuple(
+                    {0: batch} if isinstance(t, torch.Tensor) else None for t in inputs
+                )
+
+            captured_graph = torch.export.export(
+                model, inputs, dynamic_shapes=export_dynamic_shapes, strict=True
+            ).module()
 
             # Pass 1: pre-prepare passes.
             captured_graph = self._apply_passes(
@@ -520,7 +546,10 @@ class QuantizeStage(Stage):
                     prepared_model, recipe.post_prepare_passes
                 )
 
+                allow_exported_model_train_eval(prepared_model)
+                move_exported_model_to_train(prepared_model)
                 recipe.train_fn(prepared_model)
+                move_exported_model_to_eval(prepared_model)
             else:
                 prepared_model = prepare_pt2e(captured_graph, quantizer)
 
