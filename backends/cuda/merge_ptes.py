@@ -373,6 +373,45 @@ def _compact_delegate_data(program: Program) -> None:
     program.backend_delegate_data = payloads
 
 
+def _merge_delegate_variants(
+    artifacts: Sequence[_Artifact],
+    artifact_delegates: Sequence[Dict[Tuple[str, int], CudaAotiMetadata]],
+    reference_metadata: CudaAotiMetadata,
+    identity: Tuple[str, int],
+    merged_store: NamedDataStore,
+) -> List[CudaAotiVariant]:
+    variants = []
+    target_sms = set()
+    reference = artifacts[0]
+    for artifact, delegates in zip(artifacts, artifact_delegates):
+        metadata = delegates[identity]
+        _validate_shared_weights(
+            reference, reference_metadata, artifact, metadata, identity
+        )
+        for variant in metadata.variants:
+            if variant.target_sm in target_sms:
+                raise ValueError(f"Duplicate CUDA target sm{variant.target_sm}")
+            target_sms.add(variant.target_sm)
+            try:
+                so_data = artifact.pte_named_data[variant.so_blob_key]
+            except KeyError as error:
+                raise ValueError(
+                    f"{artifact.source.pte_path} does not contain CUDA SO "
+                    f"{variant.so_blob_key!r}"
+                ) from error
+            merged_store.add_named_data(variant.so_blob_key, so_data)
+            variants.append(variant)
+
+    variants.sort(key=lambda variant: variant.target_sm)
+    fallback = next((variant for variant in variants if variant.ptx_compute), None)
+    if fallback is not None:
+        variants = [
+            variant if variant is fallback else replace(variant, ptx_compute=0)
+            for variant in variants
+        ]
+    return variants
+
+
 def merge_cuda_pte_files(inputs: Sequence[CudaPteInput]) -> Cord:
     """Merge native CUDA exports into a PTE containing one SO per target SM."""
     if len(inputs) < 2:
@@ -411,36 +450,13 @@ def merge_cuda_pte_files(inputs: Sequence[CudaPteInput]) -> Cord:
     expected_target_sms = None
     for identity_index, identity in enumerate(reference_identities):
         reference_metadata = reference.delegates[identity_index].metadata
-        variants = []
-        target_sms = set()
-        for artifact, delegates in zip(artifacts, artifact_delegates):
-            metadata = delegates[identity]
-            _validate_shared_weights(
-                reference, reference_metadata, artifact, metadata, identity
-            )
-            for variant in metadata.variants:
-                if variant.target_sm in target_sms:
-                    raise ValueError(f"Duplicate CUDA target sm{variant.target_sm}")
-                target_sms.add(variant.target_sm)
-                try:
-                    so_data = artifact.pte_named_data[variant.so_blob_key]
-                except KeyError as error:
-                    raise ValueError(
-                        f"{artifact.source.pte_path} does not contain CUDA SO "
-                        f"{variant.so_blob_key!r}"
-                    ) from error
-                merged_store.add_named_data(variant.so_blob_key, so_data)
-                variants.append(variant)
-
-        variants.sort(key=lambda variant: variant.target_sm)
-        fallback = next(
-            (variant for variant in variants if variant.ptx_compute != 0), None
+        variants = _merge_delegate_variants(
+            artifacts,
+            artifact_delegates,
+            reference_metadata,
+            identity,
+            merged_store,
         )
-        if fallback is not None:
-            variants = [
-                variant if variant is fallback else replace(variant, ptx_compute=0)
-                for variant in variants
-            ]
         current_target_sms = tuple(variant.target_sm for variant in variants)
         if expected_target_sms is None:
             expected_target_sms = current_target_sms
