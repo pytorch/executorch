@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.transforms.fuse_duplicate_users_pass import (
     FuseDuplicateUsersPass as _FuseDuplicateUsersPass,
 )
@@ -17,7 +18,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 TOSA_EXCLUDED_TARGETS = frozenset({exir_ops.backend.tosa.RESCALE.default})
 
 
-class FuseDuplicateUsersPass(_FuseDuplicateUsersPass):
+class FuseDuplicateUsersPass(_FuseDuplicateUsersPass, ArmPass):
     """TOSA-aware configuration of the shared duplicate-user fusion."""
 
     def __init__(self, excluded_targets: frozenset | None = None) -> None:
