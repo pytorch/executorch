@@ -17,7 +17,7 @@ from executorch.export.recipe import (
     LoweringRecipe,
     QuantizationRecipe,
 )
-from executorch.export.stages import PipelineArtifact
+from executorch.export.stages import PipelineArtifact, Stage
 from executorch.export.types import StageType
 
 
@@ -971,3 +971,49 @@ class TestIntermediateStateGetters(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             session.get_edge_program_manager()
         self.assertIn("Edge program manager is not available", str(cm.exception))
+
+
+class TestStageArtifactsAreScopedToOneRun(unittest.TestCase):
+    def test_rerunning_export_discards_the_previous_run(self) -> None:
+        # A stage that raises must not leave the previous run's artifact behind
+        # for the accessors to hand back as if it were current.
+        model = SimpleTestModel()
+        inputs = [(torch.randn(1, 10),)]
+        session = ExportSession(
+            model=model, example_inputs=inputs, export_recipe=ExportRecipe(name="t")
+        )
+        session.export()
+        first = session.get_stage_artifacts()[StageType.TO_EXECUTORCH]
+
+        artifacts = session.get_stage_artifacts()
+
+        failing = Mock(spec=Stage)
+        failing.run.side_effect = RuntimeError("boom")
+        failing.stage_type = StageType.TO_EXECUTORCH
+        failing.valid_predecessor_stages = [StageType.TO_EDGE_TRANSFORM_AND_LOWER]
+        failing.can_start_pipeline = False
+        session.register_stage(StageType.TO_EXECUTORCH, failing)
+
+        with self.assertRaises(RuntimeError):
+            session.export()
+        self.assertNotIn(StageType.TO_EXECUTORCH, session.get_stage_artifacts())
+        # Cleared in place, so a dict the caller captured before the re-run
+        # reflects the clear too.
+        self.assertNotIn(StageType.TO_EXECUTORCH, artifacts)
+        self.assertIsNotNone(first)
+
+    def test_a_rejected_pipeline_leaves_the_previous_run_intact(self) -> None:
+        # Validation runs before anything is cleared: a pipeline that never
+        # executes must not destroy results the caller still has.
+        session = ExportSession(
+            model=SimpleTestModel(),
+            example_inputs=[(torch.randn(1, 10),)],
+            export_recipe=ExportRecipe(name="t"),
+        )
+        session.export()
+        before = session.get_executorch_program_manager()
+
+        session._pipeline_stages = [StageType.TO_EXECUTORCH]
+        with self.assertRaises(ValueError):
+            session.export()
+        self.assertIs(session.get_executorch_program_manager(), before)
