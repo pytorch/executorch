@@ -74,6 +74,7 @@
 # executorch::backend_mlx        The MLX delegate. macOS on Apple Silicon only.
 #                                Its Metal kernel archive is published as
 #                                MLX_METALLIB_PATH, see below.
+# executorch::kernels_torchao    The TorchAO kernels. macOS on Apple Silicon only.
 # executorch::backend_cuda       The CUDA delegate. Linux only.
 # executorch::extension_cuda     The CUDA stream extension. Linux only.
 # executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
@@ -333,6 +334,7 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   foreach(
     _executorch_component IN
     ITEMS libexecutorch_kernels_optimized
+          libexecutorch_kernels_torchao
           libexecutorch_backend_xnnpack
           libexecutorch_backend_mlx
           libexecutorch_backend_cuda
@@ -590,6 +592,9 @@ _executorch_define_component(threadpool executorch_threadpool)
 # checks, so it has to be defined here or a consumer following the documentation
 # gets a bare name that CMake hands to the linker as a literal flag.
 _executorch_define_component(kernels_optimized executorch_kernels_optimized)
+# The TorchAO kernels, present only in a wheel built for Apple Silicon, which is
+# the only architecture they build for.
+_executorch_define_component(kernels_torchao executorch_kernels_torchao)
 # The quantized kernels, optional in the same way: a wheel built without them
 # simply has no such library and the component is not defined.
 #

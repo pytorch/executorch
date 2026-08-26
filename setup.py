@@ -2178,6 +2178,8 @@ class CustomBuild(build):
                     cmake_build_args += ["--target", "optimized_native_cpu_ops_lib"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED"):
                     cmake_build_args += ["--target", "executorch_quantized_ops"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_TORCHAO"):
+                    cmake_build_args += ["--target", "executorch_kernels_torchao"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
                     cmake_build_args += ["--target", "xnnpack_backend"]
 
@@ -2348,6 +2350,20 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
+                    ],
+                ),
+                # The TorchAO kernels, so a C++ application running a model that
+                # uses them can link them from the wheel. The Apple framework build
+                # already ships these; this is the wheel's equivalent. Written to
+                # the cache root because the wrapper target is declared there.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name=get_dynamic_lib_name("executorch_kernels_torchao"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_kernels_torchao"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_TORCHAO",
                     ],
                 ),
                 # The OpenVINO delegate, so a C++ application can link it from the

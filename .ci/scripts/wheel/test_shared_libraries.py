@@ -156,6 +156,10 @@ _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 _MLX_SYMBOLS = ("executorch::backends::mlx::mutable_state_note_handle",)
 _BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::free",)
 
+# A representative symbol from the TorchAO kernels. These are Apple Silicon only, so
+# most wheels ship no such library and the row below is not required.
+_TORCHAO_KERNEL_SYMBOLS = ("torchao::quantization::get_qvals_range",)
+
 # A representative symbol from the profiler. A second definer means two event
 # tracers, so a trace records only part of what ran.
 _ETDUMP_SYMBOLS = ("executorch::etdump::ETDumpGen::ETDumpGen",)
@@ -962,6 +966,12 @@ _OWNED_COMPONENTS = (
         _QUANTIZED_KERNEL_SYMBOLS,
         _library_file_name("libexecutorch_kernels_quantized"),
         True,
+    ),
+    (
+        "set of TorchAO kernels",
+        _TORCHAO_KERNEL_SYMBOLS,
+        _library_file_name("libexecutorch_kernels_torchao"),
+        False,
     ),
     # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
     # which is decided at check time rather than here: a fixed False meant a wheel
@@ -2195,7 +2205,9 @@ def test_extension_contains_no_component() -> None:
     # Not every shipped library serves Python. The quantized kernels exist for a C++
     # application, since Python registers those operators through the torch-linked
     # ahead-of-time library at export time, and requiring a dependency would demand the
-    # extension link code it has no use for.
+    # extension link code it has no use for. The TorchAO kernels are in that same
+    # category: torchao registers its operators itself at export time, so the extension
+    # has no reason to link them either.
     #
     # The CUDA delegate is NOT in that category. The build deliberately links it into the
     # extension with a retention option, so it does carry a dependency, and excluding it
@@ -2205,7 +2217,10 @@ def test_extension_contains_no_component() -> None:
     expected = {
         name
         for name in shipped
-        if not any(marker in name for marker in ("kernels_quantized", "extension_cuda"))
+        if not any(
+            marker in name
+            for marker in ("kernels_quantized", "kernels_torchao", "extension_cuda")
+        )
     }
     unused = sorted(expected - needed)
     assert not unused, (
@@ -2313,6 +2328,7 @@ def test_shipped_library_names_are_expected() -> None:
         "libexecutorch",
         "libexecutorch_kernels_optimized",
         "libexecutorch_kernels_quantized",
+        "libexecutorch_kernels_torchao",
         "libexecutorch_backend_cuda",
         "libexecutorch_extension_cuda",
         # The same library under the name a non-shared build gives it. The shared

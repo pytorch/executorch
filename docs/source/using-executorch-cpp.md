@@ -178,6 +178,7 @@ These are the components the package provides:
 | `threadpool` | Multi-threaded execution. | Linux, macOS |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS |
+| `kernels_torchao` | The TorchAO low-bit quantized kernels | macOS, Apple Silicon |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
@@ -188,8 +189,9 @@ To see what your own install offers, ask CMake:
 ```cmake
 find_package(executorch REQUIRED)
 foreach(_component
-        runtime kernels_optimized kernels_quantized backend_xnnpack
-        backend_mlx backend_cuda extension_cuda backend_openvino threadpool etdump)
+        runtime kernels_optimized kernels_quantized kernels_torchao
+        backend_xnnpack backend_mlx backend_cuda extension_cuda
+        backend_openvino threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
