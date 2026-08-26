@@ -12,9 +12,14 @@ import torch.nn as nn
 from executorch.backends.apple.coreai.compiler.enumerated_shapes import (
     resolve_input_enumerations,
 )
-from executorch.backends.apple.coreai.partition.partitioner import CoreAIPartitioner
+from executorch.backends.apple.coreai.partition.partitioner import (
+    CoreAIPartitioner,
+    do_not_delegate,
+)
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import executorch_call_delegate
+from executorch.exir.pass_base import PassResult
 
 
 def _model():
@@ -48,6 +53,22 @@ def _shared_dim_ep():
     )
 
 
+class _Concat(nn.Module):
+    """Two inputs whose batch dims can differ, so one can derive from the other."""
+
+    def forward(self, x, y):
+        return torch.cat([x, y], dim=0)
+
+
+def _derived_dim_ep():
+    batch = torch.export.Dim("batch", min=2, max=32)
+    return torch.export.export(
+        _Concat().eval(),
+        (torch.randn(4, 8), torch.randn(8, 8)),
+        dynamic_shapes={"x": {0: batch}, "y": {0: 2 * batch}},
+    )
+
+
 class _Elementwise(nn.Module):
     """No shape constraints, so both dims can be dynamic."""
 
@@ -66,7 +87,74 @@ def _two_dynamic_dims_ep():
     )
 
 
-def _capture_shape_configs(exported_program, input_enumerations):
+class _Independent(nn.Module):
+    """Two inputs with unrelated dynamic dims, so one can be left un-enumerated."""
+
+    def forward(self, x, y):
+        return x.sum() + y.sum()
+
+
+def _independent_dims_ep():
+    batch = torch.export.Dim("batch", min=2, max=64)
+    seq = torch.export.Dim("seq", min=2, max=64)
+    return torch.export.export(
+        _Independent().eval(),
+        (torch.randn(4, 8), torch.randn(6, 8)),
+        dynamic_shapes={"x": {0: batch}, "y": {0: seq}},
+    )
+
+
+class _DoubledIntermediate(nn.Module):
+    """``cat`` doubles the dynamic dim, so a later boundary carries ``2*s``."""
+
+    def __init__(self):
+        super().__init__()
+        self.first = nn.Linear(8, 8)
+        self.second = nn.Linear(8, 8)
+
+    def forward(self, x):
+        h = torch.cat([x, x], 0)
+        return self.second(self.first(h).relu()).relu()
+
+
+def _doubled_intermediate_ep():
+    batch = torch.export.Dim("batch", min=2, max=64)
+    return torch.export.export(
+        _DoubledIntermediate().eval(),
+        (torch.randn(4, 8),),
+        dynamic_shapes={"x": {0: batch}},
+    )
+
+
+def _addmm_nodes(graph_module):
+    return [
+        n
+        for n in graph_module.graph.nodes
+        if n.op == "call_function"
+        and isinstance(n.target, EdgeOpOverload)
+        and n.target._op.__name__ == "addmm.default"
+    ]
+
+
+class _TagSecondLinear:
+    """Force a graph break so the delegate's inputs are intermediates."""
+
+    def __call__(self, graph_module):
+        addmms = _addmm_nodes(graph_module)
+        if len(addmms) >= 2:
+            second = addmms[1]
+            do_not_delegate(second)
+            # Its weight-transpose too, else a dangling single-node permute
+            # delegate is left behind instead of a clean break.
+            for inp in second.all_input_nodes:
+                if isinstance(
+                    inp.target, EdgeOpOverload
+                ) and inp.target._op.__name__.endswith("_copy.default"):
+                    do_not_delegate(inp)
+        return PassResult(graph_module, True)
+
+
+def _capture_shape_configs(exported_program, input_enumerations, transform_passes=None):
     """Every shapes_config handed to the SDK during a full lowering."""
     from coreai.authoring import AIProgram
 
@@ -82,6 +170,7 @@ def _capture_shape_configs(exported_program, input_enumerations):
         to_edge_transform_and_lower(
             exported_program,
             partitioner=[CoreAIPartitioner(input_enumerations=input_enumerations)],
+            transform_passes=transform_passes,
         ).to_executorch()
     finally:
         AIProgram.set_static_shape_config = orig
@@ -100,6 +189,11 @@ class ResolveInputEnumerationsTest(unittest.TestCase):
     def test_static_dim_raises(self):
         with self.assertRaises(ValueError):
             resolve_input_enumerations(_static_ep(), [{0: [4, 16]}])
+
+    def test_derived_dim_raises(self):
+        """Substituting the symbol would pin 2*value, not the requested value."""
+        with self.assertRaisesRegex(ValueError, "derived"):
+            resolve_input_enumerations(_derived_dim_ep(), [None, {0: [8, 16]}])
 
     def test_no_enumerations_is_none(self):
         self.assertIsNone(resolve_input_enumerations(_dynamic_ep(), None))
@@ -210,11 +304,88 @@ class MultiInputEnumerationsTest(unittest.TestCase):
         Without a check this reaches sympy as ``Cannot convert symbols to int``,
         naming neither the input nor the dim.
         """
-        with self.assertRaisesRegex(Exception, "s1|dim|enumerat"):
+        with self.assertRaisesRegex(Exception, "after substitution"):
             to_edge_transform_and_lower(
                 _two_dynamic_dims_ep(),
                 partitioner=[CoreAIPartitioner(input_enumerations=[{0: [2, 4]}])],
             ).to_executorch()
+
+
+class BoundaryCoverageTest(unittest.TestCase):
+    """Every symbolic dim at the boundary must be pinned by a specialization.
+
+    ``set_static_shape_config`` treats a key as a whole-graph shape, so an input
+    left symbolic in an entry is unconstrained there.
+    """
+
+    def test_unenumerated_sibling_input_is_rejected(self):
+        """A second input's dynamic dim cannot be left out of the entries."""
+        with self.assertRaisesRegex(Exception, "after substitution"):
+            _capture_shape_configs(_independent_dims_ep(), [{0: [4, 16]}, None])
+
+    def test_every_boundary_input_is_named(self):
+        captured = _capture_shape_configs(_independent_dims_ep(), [{0: [4]}, {0: [6]}])
+        self.assertTrue(captured, "set_static_shape_config was not called")
+        for cfg in captured:
+            for key, shapes in cfg.items():
+                with self.subTest(key):
+                    self.assertEqual(set(shapes), {"x", "y"})
+
+
+class SubgraphBoundaryTest(unittest.TestCase):
+    """The delegate boundary is a subgraph's, not necessarily the model's.
+
+    Elsewhere here a single whole-graph partition makes the boundary inputs the
+    model inputs, which hides the actual contract: an ET-input enumeration
+    implies a *derived* enumeration at each subgraph, obtained by evaluating
+    that boundary dim's own symbolic expression.
+    """
+
+    def _lower_split(self):
+        """The two delegates' configs, as (model-input side, intermediate side).
+
+        ``cat([x, x], 0)`` doubles the dim before the tagged linear, so the
+        second delegate's boundary carries ``2*s``.
+        """
+        captured = _capture_shape_configs(
+            _doubled_intermediate_ep(),
+            [{0: [4, 16]}],
+            transform_passes=[_TagSecondLinear()],
+        )
+        self.assertEqual(
+            len(captured), 2, "expected a graph break into exactly 2 delegates"
+        )
+        # Identify by content rather than order, which preprocess does not fix.
+        model_input = next(c for c in captured if "x" in next(iter(c.values())))
+        intermediate = next(c for c in captured if c is not model_input)
+        return model_input, intermediate
+
+    def test_intermediate_boundary_enumerates_to_the_derived_values(self):
+        model_input, intermediate = self._lower_split()
+        self.assertEqual(
+            sorted(tuple(s) for v in model_input.values() for s in v.values()),
+            [(4, 8), (16, 8)],
+        )
+        # Declared [4, 16] on the ET input, but 2*s at this boundary.
+        self.assertEqual(
+            sorted(tuple(s) for v in intermediate.values() for s in v.values()),
+            [(8, 8), (32, 8)],
+        )
+
+    def test_specialization_keys_align_across_delegates(self):
+        """Keying on the symbol is what keeps the two sides paired.
+
+        Delegate 0 produces (2s, 8) and delegate 1 consumes it, so under one key
+        the two shapes have to correspond. Keying on local shape values instead
+        would let them drift apart.
+        """
+        model_input, intermediate = self._lower_split()
+        self.assertEqual(set(model_input), set(intermediate))
+        for key, shapes in model_input.items():
+            with self.subTest(key):
+                (declared,) = shapes.values()
+                (derived,) = intermediate[key].values()
+                self.assertEqual(derived[0], 2 * declared[0])
 
 
 if __name__ == "__main__":
