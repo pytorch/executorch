@@ -25,6 +25,25 @@ def test_dump_artifacts_uses_test_name(monkeypatch, tmp_path) -> None:
     )
 
 
+def test_dump_artifacts_sanitizes_commas_and_spaces_in_test_name(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        pytest,
+        "_test_options",
+        {"dump_artifacts": str(tmp_path)},
+        raising=False,
+    )
+    monkeypatch.setenv(
+        "PYTEST_CURRENT_TEST",
+        "backends/arm/test/ops/test_add.py::test_add_tosa_INT[1, 2, 3] (call)",
+    )
+
+    assert common.maybe_get_tosa_artifact_path() == str(
+        tmp_path / "test_add_tosa_INT[1_2_3]"
+    )
+
+
 def test_custom_path_overrides_dump_artifacts(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         pytest,
