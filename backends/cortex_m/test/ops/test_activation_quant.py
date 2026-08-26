@@ -145,11 +145,28 @@ class _GELU(torch.nn.Module):
         return self.gelu(x)
 
 
-import torch as _torch
+class _Transcendental(torch.nn.Module):
+    """The transcendental set differs only in the function and the domain the
+    input has to stay inside, so one class covers all of them."""
+
+    def __init__(self, fn, edge_name):
+        super().__init__()
+        self.fn = fn
+        self.ops_before_transforms = {
+            **_OPS_BEFORE,
+            f"executorch_exir_dialects_edge__ops_aten_{edge_name}_default": 1,
+        }
+        self.ops_after_transforms = {
+            **_OPS_AFTER,
+            f"executorch_exir_dialects_edge__ops_aten_{edge_name}_default": 0,
+        }
+
+    def forward(self, x):
+        return self.fn(x)
 
 
 def _zero_input(shape):
-    return _torch.zeros(shape, dtype=_torch.float32)
+    return torch.zeros(shape, dtype=torch.float32)
 
 
 # Wide-magnitude inputs exercise the `max(-128, min(127, q_out))` clamp inside
@@ -260,6 +277,63 @@ test_cases = {
     "gelu_zero": McuTestCase(
         model=_GELU(),
         example_inputs=(_zero_input((16,)),),
+    ),
+    # Each of these stays inside its function's domain. What the table does
+    # outside it is pinned by test_activation_lut instead, since the quantized
+    # reference here saturates to the same rail whatever the table holds.
+    "log": McuTestCase(
+        model=_Transcendental(torch.log, "log"),
+        example_inputs=(ramp_tensor(0.5, 8, (16,)),),
+    ),
+    "log2": McuTestCase(
+        model=_Transcendental(torch.log2, "log2"),
+        example_inputs=(ramp_tensor(0.5, 8, (16,)),),
+    ),
+    "log10": McuTestCase(
+        model=_Transcendental(torch.log10, "log10"),
+        example_inputs=(ramp_tensor(0.5, 8, (16,)),),
+    ),
+    "log1p": McuTestCase(
+        model=_Transcendental(torch.log1p, "log1p"),
+        example_inputs=(ramp_tensor(-0.5, 8, (16,)),),
+    ),
+    "sqrt": McuTestCase(
+        model=_Transcendental(torch.sqrt, "sqrt"),
+        example_inputs=(ramp_tensor(0, 9, (16,)),),
+    ),
+    "rsqrt": McuTestCase(
+        model=_Transcendental(torch.rsqrt, "rsqrt"),
+        example_inputs=(ramp_tensor(0.5, 9, (16,)),),
+    ),
+    "sqrt_rank4": McuTestCase(
+        model=_Transcendental(torch.sqrt, "sqrt"),
+        example_inputs=(ramp_tensor(0, 9, (1, 8, 4, 4)),),
+    ),
+    # An in-place activation rewrites the placeholder, so each input range is
+    # chosen to keep the result inside its own function's domain.
+    "log_inplace": McuTestCase(
+        model=_Transcendental(torch.Tensor.log_, "log"),
+        example_inputs=lambda: (ramp_tensor(1.5, 8, (16,)),),
+    ),
+    "log2_inplace": McuTestCase(
+        model=_Transcendental(torch.Tensor.log2_, "log2"),
+        example_inputs=lambda: (ramp_tensor(1.5, 8, (16,)),),
+    ),
+    "log10_inplace": McuTestCase(
+        model=_Transcendental(torch.Tensor.log10_, "log10"),
+        example_inputs=lambda: (ramp_tensor(1.5, 8, (16,)),),
+    ),
+    "sqrt_inplace": McuTestCase(
+        model=_Transcendental(torch.Tensor.sqrt_, "sqrt"),
+        example_inputs=lambda: (ramp_tensor(0, 9, (16,)),),
+    ),
+    "rsqrt_inplace": McuTestCase(
+        model=_Transcendental(torch.Tensor.rsqrt_, "rsqrt"),
+        example_inputs=lambda: (ramp_tensor(0.5, 9, (16,)),),
+    ),
+    "log1p_inplace": McuTestCase(
+        model=_Transcendental(torch.Tensor.log1p_, "log1p"),
+        example_inputs=lambda: (ramp_tensor(-0.5, 8, (16,)),),
     ),
 }
 

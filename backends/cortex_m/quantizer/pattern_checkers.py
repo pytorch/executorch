@@ -140,8 +140,8 @@ class CortexMLinearCheck(PatternCheck):
 
 
 class CortexMActivationCheck(PatternCheck):
-    """Accept standalone elementwise activations (sigmoid / tanh / silu)
-    that the LUT-based cortex_m.quantized_activation op handles uniformly.
+    """Accept the standalone elementwise activations that the LUT-based
+    cortex_m.quantized_activation op handles uniformly.
 
     The kernel is shape-agnostic and the LUT is computed AoT from per-tensor
     qparams, so the only thing to enforce is int8 per-tensor quantization.
