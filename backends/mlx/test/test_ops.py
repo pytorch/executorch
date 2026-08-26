@@ -4819,6 +4819,7 @@ def _make_unary_op_test(
 _UNARY_OP_TESTS = [
     {"op_name": "floor",      "op_fn": torch.floor,      "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
     {"op_name": "ceil",       "op_fn": torch.ceil,       "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
+    {"op_name": "trunc",      "op_fn": torch.trunc,      "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
     {"op_name": "square",     "op_fn": torch.square,     "shapes": _SHAPES_3},
     {"op_name": "exp",        "op_fn": torch.exp,        "shapes": _SHAPES_3},
     {"op_name": "sin",        "op_fn": torch.sin,        "shapes": _SHAPES_3, "input_fn": _input_fn(scale=3.14159)},

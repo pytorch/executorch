@@ -159,6 +159,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     TransposeNode,
     TrilNode,
     TriuNode,
+    TruncNode,
     UpdateAndAttendNode,
     VarNode,
     VidOrTid,
@@ -384,6 +385,7 @@ _UNARY_OPS: List[Tuple[Any, Any, str]] = [
     # Rounding
     (torch.ops.aten.floor.default, FloorNode, "aten.floor"),
     (torch.ops.aten.ceil.default, CeilNode, "aten.ceil"),
+    (torch.ops.aten.trunc.default, TruncNode, "aten.trunc"),
     # Powers / roots
     (torch.ops.aten.square.default, SquareNode, "aten.square"),
     (torch.ops.aten.exp.default, ExpNode, "aten.exp"),
