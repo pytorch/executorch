@@ -86,13 +86,16 @@ class Pool {
       high = std::max(high, cell + 1);
     }
     maybe_grow(high, s);
+    const Tensor u = update.dtype() == dtype_
+        ? update
+        : ::mlx::core::astype(update, dtype_, s);
     // put_along_axis broadcasts the one index per token across heads and
-    // head_dim, and casts the update to the storage dtype.
+    // head_dim.
     buf_ = ::mlx::core::put_along_axis(
         buf_,
         ::mlx::core::array(
             cells.data(), ::mlx::core::Shape{1, 1, T, 1}, ::mlx::core::int32),
-        update,
+        u,
         2,
         s);
   }
