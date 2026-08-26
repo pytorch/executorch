@@ -736,10 +736,12 @@ class StaticAttentionTest(unittest.TestCase):
 
     def test_yoco_shared_layer_skips_rope(self):
         config = self._make_yoco_args(n_layers=4, num_kv_shared_layers=2)
-        config.no_rope_layer_interval = 3
+        config.no_rope_layer_interval = 2
         rope = Rope(config)
 
         attn_mha = AttentionMHA(config, layer_id=2, rope=rope).eval()
+        self.assertFalse(AttentionMHA(config, layer_id=1, rope=rope).use_rope)
+        self.assertFalse(attn_mha.use_rope)
 
         x = torch.rand(1, config.max_seq_len, config.dim)
         q = attn_mha.wq(x).view(1, config.max_seq_len, config.n_heads, config.head_dim)

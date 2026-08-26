@@ -438,10 +438,14 @@ class AttentionMHA(Attention):
 
         self.layer_id = layer_id
         self.rope = rope
-        self.use_rope = (
-            args.no_rope_layer_interval is None
-            or (layer_id + 1) % args.no_rope_layer_interval != 0
+
+        interval = args.no_rope_layer_interval
+        rope_layer_id = (
+            args.n_layers - args.num_kv_shared_layers - 1
+            if self.is_kv_shared_layer
+            else layer_id
         )
+        self.use_rope = interval is None or (rope_layer_id + 1) % interval != 0
 
         causal_mask = torch.tril(
             torch.ones(

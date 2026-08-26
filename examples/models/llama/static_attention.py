@@ -936,10 +936,15 @@ class StaticAttention(Attention):
         self._init_wo(config)
         self.rope = _Rope(rope.params)
         self.layer_id = layer_id
-        self.use_rope = (
-            config.no_rope_layer_interval is None
-            or (layer_id + 1) % config.no_rope_layer_interval != 0
+
+        interval = config.no_rope_layer_interval
+        rope_layer_id = (
+            config.n_layers - config.num_kv_shared_layers - 1
+            if self.is_kv_shared_layer
+            else layer_id
         )
+        self.use_rope = interval is None or (rope_layer_id + 1) % interval != 0
+
         self._init_qk_norms(config, is_kv_shared_layer)
 
     def _init_wo(self, config: ModelArgs) -> None:
