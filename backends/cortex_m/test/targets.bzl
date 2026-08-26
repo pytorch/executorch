@@ -36,6 +36,21 @@ def define_common_targets(is_fbcode = False):
         define_operator_test_target(op)
 
     if is_fbcode:
+        # Nothing else depends on the recipes library, so without this the
+        # internal build never imports it.
+        python_unittest(
+            name = "test_cortex_m_recipes",
+            srcs = [
+                "recipes/test_cortex_m_recipes.py",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/recipes:recipes",
+                "//executorch/export:lib",
+            ],
+        )
+
         python_unittest(
             name = "test_activation_lut",
             srcs = [
