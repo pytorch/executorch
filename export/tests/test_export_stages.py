@@ -13,6 +13,7 @@ import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
 from executorch.export import AOQuantizationConfig, QuantizationRecipe, StageType
 from executorch.export.stages import (
+    EdgeProgramManagerTransformStage,
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
@@ -551,3 +552,70 @@ class TestToBackendStage(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             stage.run(artifact)
         self.assertIn("Edge program manager is not set", str(cm.exception))
+
+
+class TestEmptyPassDictIsNotApplied(unittest.TestCase):
+    """`EdgeProgramManager.transform` deep-copies the graph and weights of every
+    method the pass dict does not name, so handing it an empty dict copies
+    methods 2..n in order to apply nothing."""
+
+    def _manager(self) -> Mock:
+        manager = Mock(spec=EdgeProgramManager)
+        manager.methods = {"forward", "decode"}
+        manager.transform.return_value = Mock(spec=EdgeProgramManager)
+        manager.exported_program.return_value = Mock()
+        return manager
+
+    def test_edge_program_manager_stage_skips_empty_transform(self) -> None:
+        manager = self._manager()
+        stage = EdgeProgramManagerTransformStage(
+            edge_manager_transform_passes=[lambda epm: []]
+        )
+        stage.run(PipelineArtifact(data=manager, context={}))
+
+        manager.transform.assert_not_called()
+        self.assertIs(stage.get_artifacts().data, manager)
+
+    def test_edge_program_manager_stage_still_applies_real_passes(self) -> None:
+        manager = self._manager()
+        pass_ = Mock()
+        stage = EdgeProgramManagerTransformStage(
+            edge_manager_transform_passes=[lambda epm: [pass_]]
+        )
+        stage.run(PipelineArtifact(data=manager, context={}))
+
+        manager.transform.assert_called_once_with([pass_])
+        self.assertIs(stage.get_artifacts().data, manager.transform.return_value)
+
+    @patch("executorch.export.stages.get_delegation_info")
+    @patch("executorch.export.stages.to_edge_transform_and_lower")
+    def test_lower_stage_passes_none_not_empty_dict(
+        self, mock_lower: Mock, mock_delegation_info: Mock
+    ) -> None:
+        mock_lower.return_value = Mock(spec=EdgeProgramManager)
+        mock_delegation_info.return_value = {}
+        stage = EdgeTransformAndLowerStage()
+        stage.run(
+            PipelineArtifact(data={"forward": Mock(spec=ExportedProgram)}, context={})
+        )
+
+        self.assertIsNone(mock_lower.call_args.kwargs["transform_passes"])
+
+
+class TestUnknownStageIsNotRegistered(unittest.TestCase):
+    def test_unknown_stage_type_gets_no_stage(self) -> None:
+        # The loop used to hold the previous iteration's instance, so an
+        # unrecognised stage type silently registered the stage before it and
+        # the "register it first" guard could never fire.
+        from executorch.export import ExportRecipe
+        from executorch.export.export import ExportSession
+
+        session = ExportSession(
+            model=SimpleTestModel(),
+            example_inputs=[(torch.randn(1, 10),)],
+            export_recipe=ExportRecipe(name="t"),
+        )
+        registry = session._build_stages(
+            [StageType.TORCH_EXPORT, "not_a_stage", StageType.TO_EXECUTORCH]
+        )
+        self.assertNotIn("not_a_stage", registry)
