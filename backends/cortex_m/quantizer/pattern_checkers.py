@@ -29,9 +29,12 @@ class CortexMAddMulCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
         """
-        Checks that the pattern does not perform unsupported broadcasting.
+        Checks that the pattern does not perform unsupported broadcasting, and
+        that add/sub carry no alpha, which quantized_add has nowhere to put.
         """
         for node in pattern:
+            if node.kwargs.get("alpha", 1) != 1:
+                return False
             if len(node.all_input_nodes) == 2:
                 t1 = get_first_fake_tensor(node.all_input_nodes[0])
                 t2 = get_first_fake_tensor(node.all_input_nodes[1])
