@@ -94,6 +94,8 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
 
     aten_bounded_index_ops = aten_argmax_ops + aten_argmin_ops
     edge_bounded_index_ops = edge_argmax_ops + edge_argmin_ops
+    aten_index_consumer_ops = (torch.ops.aten.index.Tensor,)
+    edge_index_consumer_ops = (exir_ops.edge.aten.index.Tensor,)
 
     aten_index_relay_ops = (
         torch.ops.aten.unsqueeze.default,
@@ -311,6 +313,8 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
         return node.target in (
             self.aten_cast_ops
             + self.edge_cast_ops
+            + self.aten_index_consumer_ops
+            + self.edge_index_consumer_ops
             + self.aten_index_add_ops
             + self.edge_index_add_ops
             + self.aten_index_sub_ops
