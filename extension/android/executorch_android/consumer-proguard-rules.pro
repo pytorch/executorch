@@ -14,7 +14,7 @@
 # Keep fbjni classes and members according to fbjni's JNI annotations.
 # ExecuTorch's native bindings depend on these internals at runtime.
 -keep @com.facebook.jni.annotations.DoNotStrip class com.facebook.jni.** { *; }
--keepclassmembers class com.facebook.jni.** {
+-keepclasseswithmembers class com.facebook.jni.** {
     @com.facebook.jni.annotations.DoNotStrip *;
 }
 -keep @com.facebook.jni.annotations.DoNotStripAny class com.facebook.jni.** { *; }
