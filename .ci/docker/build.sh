@@ -58,6 +58,13 @@ case "${IMAGE_NAME}" in
     ARM_SDK=yes
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-24.04-arm-sdk)
+    OS_VERSION=24.04
+    ARM_SDK=yes
+    CLANG_VERSION=18
+    PYTHON_VERSION=3.12
+    MINICONDA_VERSION=24.1.2-0
+    ;;
   executorch-ubuntu-22.04-zephyr-sdk)
     ZEPHYR_SDK=yes
     GCC_VERSION=11

@@ -52,11 +52,13 @@ def define_arm_tests():
     test_files += [
         "quantizer/test_generic_annotater.py",
         "quantizer/test_uint8_io_quantization.py",
+        "quantizer/test_vgf_snorm_quantization.py",
     ]
 
     # Misc tests
     test_files += [
         "misc/test_compile_spec.py",
+        "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
@@ -76,10 +78,6 @@ def define_arm_tests():
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
 
-    # Deprecation tests
-    test_files += [
-        "deprecation/test_arm_compile_spec_deprecation.py",
-    ]
 
     # These import the top-level executorch.backends.arm package, whose
     # __init__ eagerly imports torch. Pulling that into pytest collection fails
@@ -87,6 +85,7 @@ def define_arm_tests():
     # surface is covered by a dedicated backward-compatibility CI job.
     if runtime.is_oss:
         test_files += [
+            "misc/test_docgen_op_support.py",
             "misc/test_public_api_manifest.py",
             "misc/test_validate_public_api_manifest.py",
         ]
@@ -149,8 +148,20 @@ def define_arm_tests():
                 # __init__ (and its torch import) into pytest collection.
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
-            ] if runtime.is_oss else []),
+            ] if runtime.is_oss else []) + ([
+                "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
+            ] if test_file == "misc/test_docgen_op_support.py" else []),
         )
+
+    runtime.cxx_test(
+        name = "vela_external_blocks_test",
+        srcs = ["vela_external_blocks_test.cpp"],
+        deps = [
+            "//executorch/backends/arm/runtime:vela_bin_stream",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+        ],
+    )
 
     if not runtime.is_oss and _ENABLE_VGF:
         runtime.cxx_test(

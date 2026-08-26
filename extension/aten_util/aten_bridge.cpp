@@ -134,22 +134,6 @@ c10::ScalarType executorch_to_torch_scalar_type(
   return static_cast<c10::ScalarType>(intermediate);
 }
 
-c10::Device executorch_to_torch_device(
-    executorch::runtime::etensor::Device device) {
-  switch (device.type()) {
-    case executorch::runtime::etensor::DeviceType::CPU:
-      return c10::Device(c10::DeviceType::CPU);
-    case executorch::runtime::etensor::DeviceType::CUDA:
-      return c10::Device(c10::DeviceType::CUDA, device.index());
-  }
-  // Aborting on an unknown device rather than falling back to CPU: a wrong
-  // label made the host read accelerator memory and segfault.
-  ET_CHECK_MSG(
-      false,
-      "Tensor reports device type %d, which this build cannot map to a PyTorch device",
-      static_cast<int>(device.type()));
-}
-
 /*
  * Following makes two assumptions:
  * 1. aten_tensor's lifetime is longer than the liftime within which mutable_et

@@ -25,6 +25,34 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.cxx_test(
+        name = "etdump_device_test",
+        srcs = [
+            "etdump_device_test.cpp",
+        ],
+        deps = [
+            "//executorch/devtools/etdump:etdump_flatcc",
+            "//executorch/devtools/etdump:etdump_schema_flatcc",
+            "//executorch/devtools/etdump/data_sinks:buffer_data_sink",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "etdump_device_no_allocator_test",
+        srcs = [
+            "etdump_device_no_allocator_test.cpp",
+        ],
+        deps = [
+            "//executorch/devtools/etdump:etdump_flatcc",
+            "//executorch/devtools/etdump/data_sinks:buffer_data_sink",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "etdump_filter_test",
         srcs = [
             "etdump_filter_test.cpp",

@@ -5,7 +5,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import tempfile
+from pathlib import Path
+
 import test_base
+import test_cpp_sdk
+import test_shared_libraries
 from examples.models import Backend, Model
 
 if __name__ == "__main__":
@@ -25,6 +30,17 @@ if __name__ == "__main__":
         "OpenvinoBackend" in registered
     ), f"OpenvinoBackend not found in registered backends: {registered}"
     print("✓ OpenvinoBackend is registered")
+
+    # The wheel ships the runtime, the kernels, the delegate, the thread pool and
+    # the profiler as separate shared libraries now, so check that each has
+    # exactly one owner and that all of them are loadable.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_shared_libraries.run_tests(Path(work_dir))
+
+    # And that a C++ application outside the wheel can actually use those
+    # libraries, which nothing above covers.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_cpp_sdk.run_tests(Path(work_dir))
 
     test_base.run_tests(
         model_tests=[

@@ -129,6 +129,7 @@ TEST_F(TensorPtrTest, TensorResize) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
   EXPECT_EQ(resize_tensor_ptr(tensor, {5, 4}), Error::Ok);
   EXPECT_EQ(tensor->size(0), 5);
@@ -153,6 +154,7 @@ TEST_F(TensorPtrTest, TensorWithCustomDataDeleter) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [&deleter_called](void* ptr) {
         deleter_called = true;
@@ -173,6 +175,7 @@ TEST_F(TensorPtrTest, TensorManagesMovedVector) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [moved_data = std::move(data), &deleter_called](void*) mutable {
         deleter_called = true;
@@ -195,6 +198,7 @@ TEST_F(TensorPtrTest, TensorDeleterReleasesCapturedSharedPtr) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
@@ -458,6 +462,7 @@ TEST_F(TensorPtrTest, MakeViewRankDecreaseFlatten) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
   auto view = make_tensor_ptr(tensor, {6});
   EXPECT_EQ(view->dim(), 1);
@@ -532,6 +537,7 @@ TEST_F(TensorPtrTest, MakeViewDynamismPropagationResizeAlias) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
   auto alias = make_tensor_ptr(tensor);
   EXPECT_EQ(resize_tensor_ptr(alias, {2, 6}), Error::Ok);
@@ -626,6 +632,7 @@ TEST_F(TensorPtrTest, CloneTensorPtrCastNullData) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
   auto cloned_tensor =
       clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Int);
@@ -1012,6 +1019,7 @@ TEST_F(TensorPtrTest, TensorDataDeleterReleasesCapturedSharedPtr) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
@@ -1051,6 +1059,7 @@ TEST_F(TensorPtrTest, CustomDeleterWithSharedData) {
         {},
         {},
         executorch::aten::ScalarType::Float,
+        executorch::aten::DeviceType::CPU,
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
         [data, &deleter_called](void*) mutable {
           deleter_called = true;
@@ -1123,6 +1132,7 @@ TEST_F(TensorPtrTest, MakeViewFromTensorPtrKeepsSourceAlive) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [&freed](void* p) {
         freed = true;
@@ -1147,6 +1157,7 @@ TEST_F(TensorPtrTest, MakeViewFromTensorDoesNotKeepAliveByDefault) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [&freed](void* p) {
         freed = true;
@@ -1169,6 +1180,7 @@ TEST_F(TensorPtrTest, MakeViewFromTensorWithDeleterKeepsAlive) {
       {},
       {},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [&freed](void* p) {
         freed = true;

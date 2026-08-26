@@ -747,12 +747,6 @@ aten_lib.define(
     "_cat_nop.out(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-# Custom ops with cadence_nn_ops namespace
-jarvis_nn_lib = Library("jarvis_nn_ops", "DEF")
-jarvis_nn_lib.define(
-    "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
-)
-
 # Custom ops in aten namespace. RMSNorm is usually decomposed, so having
 # an out-variant is non-standard
 

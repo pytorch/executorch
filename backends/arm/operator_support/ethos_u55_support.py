@@ -197,7 +197,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.ne.Scalar,
-        exir_ops.edge.aten.flip.default,  # REVERSE
         exir_ops.edge.aten.gather.default,  # GATHER
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
         exir_ops.edge.aten.index.Tensor,  # GATHER
@@ -334,6 +333,30 @@ class EthosU55ResizeCheck(OperatorSupportBase):
             node, "U55 nearest-neighbor resize requires a 2x, 4x, or 8x upscale."
         )
         return False
+
+
+class EthosU55ReverseCheck(OperatorSupportBase):
+    """Accept the REVERSE cases proven to run on Ethos-U55."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target == exir_ops.edge.aten.flip.default:
+            input_rank = len(get_first_fake_tensor(node.all_input_nodes[0]).shape)
+            dims = typing.cast(typing.Sequence[int], node.args[1])
+            if input_rank == 4 and len(dims) == 1 and dims[0] % input_rank in (1, 2):
+                return True
+            self.reporter.report_reject(
+                node,
+                "U55 flip support is limited to rank-4 channel or height reversal.",
+            )
+            return False
+
+        return True
 
 
 class EthosU55CastCheck(OperatorSupportBase):

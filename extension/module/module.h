@@ -730,7 +730,8 @@ class Module {
   std::unique_ptr<PlannedMemory> make_planned_memory_with_shared_arenas(
       const std::vector<size_t>& buffer_sizes,
       std::vector<std::vector<uint8_t>>& shared_arenas);
-  std::unique_ptr<PlannedMemory> make_planned_memory_with_devices(
+  runtime::Result<std::unique_ptr<PlannedMemory>>
+  make_planned_memory_with_devices(
       const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta);
   runtime::Result<std::vector<size_t>> get_mem_planned_buffer_sizes(
       const std::string& method_name);

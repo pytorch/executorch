@@ -6,7 +6,6 @@
 import sys
 from pathlib import Path
 
-import pytest
 import torch
 import torch.nn.functional as F
 
@@ -16,13 +15,14 @@ from backends.arm.test.runtime._vgf_runtime_test_utils import (
     alias_groups,
     lower_add_vgf,
     lower_in_tree_vgf,
+    lower_threes_vgf,
     make_identity_grid,
     make_input_tensor,
-    xfail_if_legacy_model_converter_release,
+    xfail_if_model_converter_below_minimum_version,
 )
 from executorch.backends.arm.test import common
 
-pytestmark = xfail_if_legacy_model_converter_release()
+pytestmark = xfail_if_model_converter_below_minimum_version()
 
 
 class _IdentityGridSample(torch.nn.Module):
@@ -110,22 +110,30 @@ def test_shader_buffer_to_graph_tensor_handoff(tmp_path):
     assert torch.allclose(expected, actual, atol=1e-6, rtol=0.0)
 
 
+class _GraphToBufferShader(torch.nn.Module):
+    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        return torch.ops.arm_test_shader_ops.threes.default(a + b)
+
+
 # Covers artifact-level tensor/buffer aliasing in the generated VGF.
 # Checks at least one alias group spans tensor and storage-buffer descriptors.
 @common.SkipIfNoModelConverter
 def test_tensor_buffer_alias_group_reuses_backing_memory(tmp_path):
-    x = make_input_tensor(4, 4)
-    grid = make_identity_grid(4, 4)
-    _, _, vgf_json = lower_in_tree_vgf(_GraphToShader(), (x, grid), tmp_path)
+    a = torch.randn(256)
+    b = torch.randn(256)
+
+    _, _, vgf_json = lower_threes_vgf(_GraphToBufferShader(), (a, b), tmp_path)
+
     groups = alias_groups(vgf_json)
+
+    expected_pair = {
+        "VK_DESCRIPTOR_TYPE_TENSOR_ARM",
+        "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
+    }
 
     assert groups
     assert any(
-        {resource["vk_descriptor_type"] for resource in group}
-        >= {
-            "VK_DESCRIPTOR_TYPE_TENSOR_ARM",
-            "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
-        }
+        expected_pair.issubset({resource["vk_descriptor_type"] for resource in group})
         for group in groups.values()
     )
 
@@ -154,9 +162,6 @@ def test_two_input_add_buffer_shader_executes(tmp_path):
 
 # Covers the two-input storage-buffer shader path when both inputs are the same tensor.
 # Checks runtime execution matches eager output for the duplicated-input add case.
-@pytest.mark.xfail(
-    reason="model-converter drops duplicated custom shader inputs", strict=True
-)
 @common.SkipIfNoModelConverter
 def test_two_input_add_buffer_shader_with_duplicated_input_executes(tmp_path):
     x = torch.randn(256)

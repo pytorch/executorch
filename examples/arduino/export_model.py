@@ -24,6 +24,9 @@ import os
 import numpy as np
 import soundfile as sf
 import torch
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
@@ -32,7 +35,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 from executorch.examples.models.mlperf_tiny.ds_cnn import DSCNNKWS
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import to_edge
 from pte_to_header import to_header
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -155,11 +158,7 @@ def export_model(
     cpu = CortexM.M33 if "m33" in target else CortexM.M55
     edge = to_edge(
         export(converted, (example,)),
-        compile_config=EdgeCompileConfig(
-            preserve_ops=[torch.ops.aten.linear.default],
-            _check_ir_validity=False,
-            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-        ),
+        compile_config=cortex_m_edge_compile_config(),
     )
     pm = CortexMPassManager(
         edge.exported_program(),
