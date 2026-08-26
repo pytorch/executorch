@@ -23,9 +23,17 @@ def define_common_targets():
         # build environments where those live in a separate library from c10,
         # they collide at link time with the copies the application already
         # links.
-        exported_external_deps = [
-            "c10",
-        ],
+        exported_external_deps = ["c10"] if runtime.is_oss else [],
+        fbcode_exported_deps = [
+            "fbcode//caffe2/c10:c10",
+        ] if not runtime.is_oss else [],
+        xplat_exported_deps = select({
+            "DEFAULT": ["fbsource//xplat/caffe2/c10:c10"],
+            "ovr_config//build_mode:arvr_mode[enabled]": select({
+                "DEFAULT": ["fbsource//xplat/caffe2/c10:c10_ovrsource"],
+                "ovr_config//os:android": ["fbsource//xplat/caffe2/c10:c10"],
+            }),
+        }) if not runtime.is_oss else [],
     )
 
     runtime.cxx_library(

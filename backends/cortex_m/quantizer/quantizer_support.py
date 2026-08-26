@@ -131,6 +131,18 @@ ACTIVATION_OP_PATTERNS = {
     (torch.ops.aten.silu.default,): CortexMActivationCheck,
     (torch.ops.aten.silu_.default,): CortexMActivationCheck,
     (torch.ops.aten.gelu.default,): CortexMActivationCheck,
+    (torch.ops.aten.log.default,): CortexMActivationCheck,
+    (torch.ops.aten.log_.default,): CortexMActivationCheck,
+    (torch.ops.aten.log2.default,): CortexMActivationCheck,
+    (torch.ops.aten.log2_.default,): CortexMActivationCheck,
+    (torch.ops.aten.log10.default,): CortexMActivationCheck,
+    (torch.ops.aten.log10_.default,): CortexMActivationCheck,
+    (torch.ops.aten.log1p.default,): CortexMActivationCheck,
+    (torch.ops.aten.log1p_.default,): CortexMActivationCheck,
+    (torch.ops.aten.sqrt.default,): CortexMActivationCheck,
+    (torch.ops.aten.sqrt_.default,): CortexMActivationCheck,
+    (torch.ops.aten.rsqrt.default,): CortexMActivationCheck,
+    (torch.ops.aten.rsqrt_.default,): CortexMActivationCheck,
 }
 
 POOL_OP_PATTERNS = {
