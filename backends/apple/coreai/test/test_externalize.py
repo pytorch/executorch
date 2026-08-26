@@ -20,7 +20,7 @@ import executorch.backends.apple.coreai.compiler.preprocess as preprocess_module
 
 import torch
 import torch.nn as nn
-from coreai_torch import externalize_modules, ExternalizeSpec, get_decomp_table
+from coreai_torch import ExternalizeSpec, get_decomp_table
 from coreai_torch.composite_ops import GatherMM, RMSNorm, SDPA
 
 from executorch.backends.apple.coreai import (
@@ -30,6 +30,7 @@ from executorch.backends.apple.coreai import (
 )
 from executorch.backends.apple.coreai.externalize import (
     default_specs,
+    externalize_modules,
     is_externalize_target,
     is_supported_target,
     lookup,
@@ -566,6 +567,59 @@ class CustomExternalizationTest(unittest.TestCase):
         self.assertIsNotNone(declared, "composite declared no inputs")
         self.assertEqual(declared.group(1), '"x", "scale"')
         self.assertIn("eps = ", captured[0], "composite attrs should be declared")
+
+
+class NestedLeaf(nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * 2.0
+
+
+class NestedParent(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.leaf = NestedLeaf()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.leaf(x) + 1.0
+
+
+class NestedWrapper(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parent = NestedParent()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.parent(x)
+
+
+class NestedExternalizationTest(unittest.TestCase):
+    """An externalized submodule may itself contain an externalized one.
+
+    The inner call site is inside the outer submodule's own program rather
+    than the partitioned graph, so a lookup that only reads the graph it is
+    converting will not find it.
+    """
+
+    def _externalize_nested(self):
+        sample = (torch.randn(4, 8),)
+        return externalize_modules(
+            NestedWrapper().eval(),
+            [
+                ExternalizeSpec(target_class=NestedParent),
+                ExternalizeSpec(target_class=NestedLeaf),
+            ],
+            export_fn=lambda m: torch.export.export(m, sample).run_decompositions(
+                get_decomp_table()
+            ),
+        )
+
+    def test_both_levels_are_prepared(self) -> None:
+        _, externalized = self._externalize_nested()
+        self.assertEqual(len(externalized), 2)
+
+    def test_nested_externalization_lowers(self) -> None:
+        ep, externalized = self._externalize_nested()
+        _lower(ep, externalized).to_executorch()
 
 
 class RegistryLifetimeTest(unittest.TestCase):

@@ -6,7 +6,7 @@
 
 """Carrying externalized submodules from export time into ``preprocess``.
 
-``coreai_torch.externalize_modules`` must run before ``torch.export``, while the
+``externalize_modules`` must run before ``torch.export``, while the
 ``nn.Module`` still exists, but its result is only needed much later, when the
 backend converts a partitioned subgraph. The result holds live
 ``ExportedProgram`` objects, so it cannot travel in a ``CompileSpec``, and node
@@ -28,7 +28,7 @@ their submodule programs.
 import weakref
 from typing import List, Sequence
 
-from coreai_torch import ExternalizedModule
+from coreai_torch.externalize import _ExternalizedExportedProgram as ExternalizedModule
 
 _PREPARED: "weakref.WeakValueDictionary[str, ExternalizedModule]" = (
     weakref.WeakValueDictionary()
@@ -65,8 +65,8 @@ def lookup(op_names: Sequence[str]) -> List[ExternalizedModule]:
     if missing:
         raise KeyError(
             f"no prepared submodule registered for {sorted(missing)}. Pass the "
-            f"result of coreai_torch.externalize_modules to CoreAIPartitioner "
-            f"via externalized_modules=, keep a reference to it until lowering "
+            f"result of externalize_modules to CoreAIPartitioner via "
+            f"externalized_modules=, keep a reference to it until lowering "
             f"finishes, and lower in the same process."
         )
     return found

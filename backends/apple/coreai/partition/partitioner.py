@@ -152,8 +152,8 @@ class _OperatorsSupportedForCoreAIBackend(OperatorSupportBase):
                 raise RuntimeError(
                     f"Externalized op {name} has no prepared submodule, and it "
                     f"cannot be lowered outside the Core AI delegate. Pass the "
-                    f"result of coreai_torch.externalize_modules to "
-                    f"CoreAIPartitioner via externalized_modules=."
+                    f"result of externalize_modules to CoreAIPartitioner via "
+                    f"externalized_modules=."
                 )
             return True
 

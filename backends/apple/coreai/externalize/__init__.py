@@ -6,15 +6,18 @@
 
 """Preserve submodule boundaries as Core AI composite ops through ExecuTorch.
 
-Externalization itself belongs to coreai-torch. ``externalize_modules`` marks
-the matching submodules, exports the model, and prepares each submodule;
-``TorchConverter`` turns the result into ``noinline`` composite graphs. This
-package only supplies what ExecuTorch adds: the boundary has to be captured
-before ``torch.export`` because a backend never sees the ``nn.Module``, and the
-prepared submodules have to reach ``preprocess``.
+Externalization itself belongs to coreai-torch, which splits it into two calls
+with the caller's export in between: patch the matching submodules, export,
+sub-export each one. :func:`externalize_modules` runs all three, since
+ExecuTorch has nothing to do in between and a backend never sees the
+``nn.Module``, so the boundary must be captured before ``torch.export``.
+``TorchConverter`` turns the result into ``noinline`` composite graphs; the
+rest of this package carries the prepared submodules through to ``preprocess``.
 
-    from coreai_torch import externalize_modules
-    from executorch.backends.apple.coreai.externalize import default_specs
+    from executorch.backends.apple.coreai.externalize import (
+        default_specs,
+        externalize_modules,
+    )
 
     ep, externalized = externalize_modules(
         model, default_specs(), export_fn=my_export_fn
@@ -28,13 +31,26 @@ Specs are ``coreai_torch.ExternalizeSpec``, so the same list also drives
 ``TorchConverter.add_pytorch_module(externalize_modules=...)``.
 """
 
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 
-from coreai_torch import ExternalizedModule, ExternalizeSpec
+import torch
 
-# The namespace coreai-torch marks externalized submodules with. Private
-# upstream; see docs/externalize_spec.md for the request to publish it.
+from coreai_torch import (
+    _patch_model_for_externalization,
+    _subexport_and_restore,
+    ExternalizeSpec,
+)
+
+# Private upstream; see docs/externalize_spec.md for the request to publish
+# NAMESPACE and the externalized-module type. The restore helpers are needed
+# only because _subexport_and_restore cannot unpatch a model whose export
+# raised.
 from coreai_torch._utils import _EXTERNALIZE_NAMESPACE as NAMESPACE
+from coreai_torch.externalize import (
+    _ExternalizedExportedProgram as ExternalizedModule,
+    _find_marked_submodules,
+    _restore_externalized,
+)
 
 from executorch.backends.apple.coreai.compiler.fx_targets import (
     target_name,
@@ -46,6 +62,43 @@ from executorch.backends.apple.coreai.externalize.registry import (
     register,
 )
 from executorch.backends.apple.coreai.externalize.specs import default_specs, spec_for
+from torch.export.exported_program import ExportedProgram
+
+
+def externalize_modules(
+    model: torch.nn.Module,
+    targets: Sequence[Union[type, ExternalizeSpec]],
+    *,
+    export_fn: Callable[[torch.nn.Module], ExportedProgram],
+) -> Tuple[ExportedProgram, List[ExternalizedModule]]:
+    """Patch, export, and sub-export in one call.
+
+    coreai-torch keeps the patch and the sub-export apart so a caller can
+    quantize in between. ExecuTorch has no such step and needs both results
+    together for ``CoreAIPartitioner(externalized_modules=...)``, so they run
+    as one call here.
+
+    The model is left unpatched even when ``export_fn`` raises, which
+    ``_subexport_and_restore`` cannot handle itself: it owns the restore but
+    never runs if the export it consumes failed.
+
+    Args:
+        model: Model to externalize. Not mutated once this returns.
+        targets: ``ExternalizeSpec`` objects, or bare classes.
+        export_fn: Exports the patched model. Must use a decomposition table
+            that preserves the composite ops expected to survive.
+
+    Returns:
+        The whole-model program containing the custom op call sites, and one
+        prepared submodule per call site.
+    """
+    _patch_model_for_externalization(model, targets)
+    try:
+        exported_program = export_fn(model)
+    except Exception:
+        _restore_externalized(_find_marked_submodules(model))
+        raise
+    return exported_program, _subexport_and_restore(model, exported_program)
 
 
 def is_externalize_target(target: Any) -> bool:
@@ -83,6 +136,7 @@ __all__ = [
     "NAMESPACE",
     "clear",
     "default_specs",
+    "externalize_modules",
     "externalized_op_name",
     "is_externalize_target",
     "is_supported_target",
