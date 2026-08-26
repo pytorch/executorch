@@ -2333,6 +2333,18 @@ setup(
                         "EXECUTORCH_BUILD_XNNPACK",
                     ],
                 ),
+                # Install the MLX delegate beside them, so a C++ consumer can link
+                # it out of the wheel rather than only reaching it from Python.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/mlx/",
+                    src_name=get_dynamic_lib_name("executorch_backend_mlx"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_mlx"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_MLX",
+                    ],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
@@ -2348,15 +2360,28 @@ setup(
                     modpath="executorch.extension.pybindings.data_loader",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
                 ),
-                # MLX metallib (Metal GPU kernels) must be colocated with _C.so
-                # because MLX uses dladdr() to find the directory containing the library,
-                # then looks for mlx.metallib in that directory at runtime.
+                # MLX metallib (Metal GPU kernels) must be colocated with the image
+                # that carries MLX code, because MLX resolves its own address with
+                # dladdr() and looks for mlx.metallib in that directory at runtime.
+                # Which image that is depends on how the delegate was built: a shared
+                # delegate carries MLX itself, while a static one is absorbed into the
+                # Python extension. The build decides which of these two entries
+                # applies, so exactly one copy ships.
                 # After submodule migration, the path is backends/mlx/mlx/...
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
                     src_name="mlx.metallib",
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_MLX",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
+                    src_name="mlx.metallib",
                     dst="executorch/extension/pybindings/",
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
+                    dependent_cmake_flags=["EXECUTORCH_MLX_METALLIB_IN_PYBINDINGS"],
                 ),
                 BuiltExtension(
                     src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh

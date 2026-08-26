@@ -71,6 +71,9 @@
 #                                model. Not part of EXECUTORCH_LIBRARIES, see
 #                                below.
 # executorch::backend_xnnpack    The XNNPACK delegate.
+# executorch::backend_mlx        The MLX delegate. macOS on Apple Silicon only.
+#                                Its Metal kernel archive is published as
+#                                MLX_METALLIB_PATH, see below.
 # executorch::backend_cuda       The CUDA delegate. Linux only.
 # executorch::extension_cuda     The CUDA stream extension. Linux only.
 # executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
@@ -85,6 +88,11 @@
 # executorch.kernels.quantized loads carries its own copy of those kernels, so a
 # process holding both stops on a repeated operator registration, and a consumer
 # linking the aggregate would inherit that without asking for it.
+#
+# MLX_METALLIB_PATH is set when the wheel ships the MLX delegate's Metal kernel
+# archive. MLX locates that archive next to whichever library holds MLX code, so
+# an application that copies the delegate somewhere else has to bring the
+# archive along, and this is where it finds it.
 #
 # Check with if(TARGET executorch::<name>) rather than assuming one exists. A
 # namespaced name that was never defined is a configure-time error that names
@@ -326,6 +334,7 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
     _executorch_component IN
     ITEMS libexecutorch_kernels_optimized
           libexecutorch_backend_xnnpack
+          libexecutorch_backend_mlx
           libexecutorch_backend_cuda
           libexecutorch_extension_cuda
           libexecutorch_backend_openvino
@@ -644,6 +653,23 @@ if(TARGET executorch::runtime AND TARGET executorch::threadpool)
 endif()
 
 _executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
+# The MLX delegate, present only in a wheel built on Apple Silicon with the
+# Metal compiler available.
+_executorch_define_component(backend_mlx executorch_backend_mlx)
+# MLX locates its Metal kernel archive relative to the library holding MLX code,
+# so an application that copies the delegate next to its own binary has to bring
+# the archive along. Publish its path so a consumer does not have to guess the
+# layout inside the wheel.
+#
+# Tested directly rather than with find_file, for the reason given above the
+# package root search: the path is a fixed offset from this file, so a search
+# adds nothing, and it would apply the consumer's find-root rules. Not cached
+# either, so a second install in the same build tree does not inherit the first
+# one's path.
+set(_executorch_mlx_metallib "${_executorch_package_root}/lib/mlx.metallib")
+if(EXISTS "${_executorch_mlx_metallib}")
+  set(MLX_METALLIB_PATH "${_executorch_mlx_metallib}")
+endif()
 _executorch_define_component(backend_openvino executorch_backend_openvino)
 # The CUDA delegate and its stream helper, present only in a wheel built from a
 # CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
