@@ -613,7 +613,7 @@ class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseO
         )
 
 
-class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
+class RemoveSqueezeViewBeforeElementwiseOps(PassBase):
     """
     Looks for subgraphs of the form:
     squeeze -> [elementwise ops] -> view
@@ -667,6 +667,17 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
 
         return squeeze_indices
 
+    def recompute_meta(self, nodes: List[Node]) -> None:
+        for node in nodes:
+            args, kwargs = pytree.tree_map_only(
+                Node,
+                lambda arg: arg.meta["val"],
+                (node.args, node.kwargs),
+            )
+            assert callable(node.target)
+            node.meta["val"] = node.target(*args, **kwargs)
+            node.meta["tensor_meta"] = None
+
     def handle_squeeze(self, view_node: Node, visited_view_nodes: Set[Node]) -> bool:
         if view_node in visited_view_nodes:
             return False
@@ -681,6 +692,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         node = next(iter(view_node.users))
 
         # Traverse down from the node until finding another view op.
+        intermediate_nodes = []
         intermediate_slices = []
         while node.target != exir_ops.edge.aten.view_copy.default:
             # Only handle simple chains for now
@@ -688,6 +700,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
                 return False
             if node.target not in self.intermediate_ops:
                 return False
+            intermediate_nodes.append(node)
             if node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 intermediate_slices.append(node)
             node = next(iter(node.users))
@@ -710,6 +723,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         # Skip the initial view node.
         input_node = get_arg(view_node, "input", Node)
         view_node.replace_all_uses_with(input_node)
+        self.recompute_meta(intermediate_nodes)
         return True
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -723,7 +737,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         if modified:
             graph_module.graph.eliminate_dead_code()
             graph_module.recompile()
-            return super().call(graph_module)
+            return PassResult(graph_module, True)
 
         return PassResult(graph_module, False)
 

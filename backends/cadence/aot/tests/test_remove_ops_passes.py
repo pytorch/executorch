@@ -599,11 +599,14 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([unsqueeze])
         model = builder.get_graph_module()
+        original_graph = model.graph
         original = copy.deepcopy(model)
 
         p = RemoveSqueezeViewBeforeElementwiseOps()
         pass_result = cast(PassResult, p(model))
         self.assertTrue(pass_result.modified)
+        self.assertIs(pass_result.graph_module, model)
+        self.assertIs(pass_result.graph_module.graph, original_graph)
         transformed = pass_result.graph_module
 
         # First view should be eliminated and second view should be trivial.
@@ -619,6 +622,13 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         self.assertEqual(len(slices), 1)
         self.assertEqual(slices[0].args[1], 2)
+        quantize_nodes = transformed.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )
+        self.assertEqual(quantize_nodes[0].meta["val"].shape, torch.Size([8, 1, 4, 4]))
+        self.assertEqual(slices[0].meta["val"].shape, torch.Size([8, 1, 2, 4]))
+        self.assertEqual(views[0].meta["val"].shape, torch.Size([8, 1, 2, 4]))
 
         # Verify the output of the model is the same as the original.
         sample_input = torch.randn(8, 1, 4, 4)
@@ -650,10 +660,15 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([view_copy])
         model = builder.get_graph_module()
+        original_graph = model.graph
         original = copy.deepcopy(model)
 
         p = RemoveSqueezeViewBeforeElementwiseOps()
-        transformed = cast(PassResult, p(model)).graph_module
+        pass_result = cast(PassResult, p(model))
+        self.assertTrue(pass_result.modified)
+        self.assertIs(pass_result.graph_module, model)
+        self.assertIs(pass_result.graph_module.graph, original_graph)
+        transformed = pass_result.graph_module
 
         # First view should be eliminated.
         self.assertEqual(
@@ -666,6 +681,14 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         self.assertEqual(len(slices), 1)
         self.assertEqual(slices[0].args[1], 3)
+        quantize_nodes = transformed.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )
+        self.assertEqual(
+            quantize_nodes[0].meta["val"].shape, torch.Size([8, 1, 1, 4, 1, 4])
+        )
+        self.assertEqual(slices[0].meta["val"].shape, torch.Size([8, 1, 1, 2, 1, 4]))
 
         # Verify the output of the model is the same as the original.
         sample_input = torch.randn(8, 1, 1, 4, 1, 4)
