@@ -266,6 +266,15 @@ if(APPLE)
     )
     # Ships beside the runtime in the wheel's lib/ directory.
     executorch_target_shipped_runtime_path(coremldelegate)
+    # A signal for packaging that the standalone delegate library exists. The
+    # EXECUTORCH_BUILD_COREML flag alone is not enough because it is also on for
+    # the Python extension on non-Apple platforms, where this shared library is
+    # not built, so keying the wheel's install on it would look for a file that
+    # was never produced.
+    set(EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT
+        ON
+        CACHE INTERNAL "The standalone Core ML delegate library was built"
+    )
   else()
     target_link_libraries(
       coremldelegate

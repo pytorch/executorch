@@ -2410,8 +2410,10 @@ setup(
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_backend_coreml"),
                     dependent_cmake_flags=[
-                        "EXECUTORCH_BUILD_SHARED",
-                        "EXECUTORCH_BUILD_COREML",
+                        # Not EXECUTORCH_BUILD_COREML: that is also on for the Python
+                        # extension on non-Apple platforms, where this shared library
+                        # is not built. This flag is set only when it actually is.
+                        "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
                     ],
                 ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
