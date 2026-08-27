@@ -182,6 +182,7 @@ These are the components the package provides:
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
+| `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
 | `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
 
 To see what your own install offers, ask CMake:
@@ -190,17 +191,13 @@ To see what your own install offers, ask CMake:
 find_package(executorch REQUIRED)
 foreach(_component
         runtime kernels_optimized kernels_quantized kernels_torchao
-        backend_xnnpack backend_mlx backend_cuda extension_cuda
+        backend_xnnpack backend_coreml backend_mlx backend_cuda extension_cuda
         backend_openvino threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
 endforeach()
 ```
-
-On macOS the Core ML delegate is registered inside the Python extension rather than shipped as a
-separate C++ library, so a C++ application there cannot link it as a component; use it from
-Python, or build from source if you need it in C++.
 
 Profiling a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in
 total. It does not record the individual operators inside the delegate, because that detail comes
