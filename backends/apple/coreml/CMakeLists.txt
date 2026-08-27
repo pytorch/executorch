@@ -261,6 +261,17 @@ if(APPLE)
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime/sdk
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/src
     )
+    # protobuf's test build needs a googletest submodule that is not cloned in a
+    # framework build, and we do not need protobuf's own tests or examples, so
+    # turn them off before adding it, the same way the SDK test script does.
+    set(protobuf_BUILD_TESTS
+        OFF
+        CACHE BOOL "" FORCE
+    )
+    set(protobuf_BUILD_EXAMPLES
+        OFF
+        CACHE BOOL "" FORCE
+    )
     add_subdirectory(
       ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
     )
