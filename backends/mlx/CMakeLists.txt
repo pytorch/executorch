@@ -191,21 +191,12 @@ set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
 )
-# In a framework build the delegate is linked statically into the consumer, so
-# MLX cannot find its metallib next to a shared library the way it does in the
-# wheel. MLX instead searches loaded bundles for one named by SWIFTPM_BUNDLE,
-# which the SwiftPM package ships as a resource bundle. That bundle holds a
-# metallib per platform slice, because a metallib built for one slice does not
-# load on another, so each slice's binary asks for its own file by name. Compile
-# both names in for Apple framework builds, identified by PLATFORM being set by
-# ios.toolchain. PLATFORM is absent for the wheel build, which keeps the
-# colocated path. For an Apple framework build, compile the delegate to find its
-# Metal kernels in the SwiftPM resource bundle. SWIFTPM_BUNDLE is the bundle's
-# name and MLX_SWIFTPM_METALLIB_NAME is the per-slice file name inside it; MLX
-# concatenates the two, they are not a fallback chain. PLATFORM is set only for
-# the Apple presets, so a plain build passes an empty value and uses the
-# colocated metallib. The sub-build is a fresh configure that inherits no CXX
-# flags, so replacing them is safe.
+# In a framework build the delegate is static, so MLX cannot find a colocated
+# metallib and instead loads one from a SwiftPM resource bundle. SWIFTPM_BUNDLE
+# is the bundle name and MLX_SWIFTPM_METALLIB_NAME the per-slice file inside it
+# (one per slice, since a slice's metallib does not load on another). PLATFORM is
+# set only for the Apple presets; a plain wheel build leaves it empty and keeps
+# the colocated path.
 set(_mlx_extra_cxx_flags "")
 if(PLATFORM)
   if(PLATFORM STREQUAL "OS64")
@@ -220,9 +211,7 @@ if(PLATFORM)
   )
 endif()
 
-# The deployment target to build MLX for. Prefer the preset's DEPLOYMENT_TARGET,
-# which holds the correct per-slice minimum, and fall back to the toolchain's
-# CMAKE_OSX_DEPLOYMENT_TARGET for a plain build that sets no preset value.
+# Prefer the preset's per-slice DEPLOYMENT_TARGET; fall back to the toolchain value.
 if(DEPLOYMENT_TARGET)
   set(_mlx_osx_deployment_target ${DEPLOYMENT_TARGET})
 else()
@@ -402,11 +391,8 @@ endif()
 
 executorch_target_link_options_shared_lib(mlxdelegate)
 target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
-# The Apple frameworks build compiles this delegate with Xcode's default
-# -Wshorten-64-to-32 and -Werror. It includes the core tensor headers, which
-# carry pre-existing narrowing conversions that trip that pair, so suppress it
-# here as the XNNPACK and abseil third-party builds already do for the same
-# warning. Only meaningful under the Apple toolchain; a no-op elsewhere.
+# Core tensor headers carry pre-existing narrowing conversions that trip Xcode's
+# -Wshorten-64-to-32 -Werror; suppress it here as XNNPACK and abseil already do.
 target_compile_options(mlxdelegate PRIVATE -Wno-shorten-64-to-32)
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(mlxdelegate PRIVATE ${_mlx_sanitizer_link_options})

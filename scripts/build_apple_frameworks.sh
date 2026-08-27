@@ -101,21 +101,17 @@ libcoreml_inmemoryfs.a,\
 libcoremldelegate.a,\
 :"
 
+FRAMEWORK_BACKEND_MLX="backend_mlx:\
+libmlxdelegate.a,\
+libmlx.a,\
+libextension_llm_cache.a,\
+:"
+
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
 libkleidiai.a,\
 libxnnpack_backend.a,\
 libxnnpack-microkernels-prod.a,\
-:"
-
-# The MLX backend. libmlx.a is the MLX runtime the delegate binds to, and
-# libextension_llm_cache.a carries the off-graph KV-cache registry the backend
-# uses; neither ships in any other framework. The Metal kernels are a separate
-# mlx.metallib resource handled below, not a static archive.
-FRAMEWORK_BACKEND_MLX="backend_mlx:\
-libmlxdelegate.a,\
-libmlx.a,\
-libextension_llm_cache.a,\
 :"
 
 FRAMEWORK_KERNELS_LLM="kernels_llm:\
@@ -322,8 +318,8 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
-  append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MLX" "$FRAMEWORK_BACKEND_MLX" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_LLM" "$FRAMEWORK_KERNELS_LLM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
@@ -333,27 +329,19 @@ for mode in "${MODES[@]}"; do
     "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
 
-# Ship the MLX Metal kernels as a SwiftPM resource. Unlike the static archives
-# merged into the xcframework, the metallib is a data file MLX loads at runtime by
-# bundle name. A metallib is platform specific, so one is copied per slice into the
-# shared backend_mlx_resources target, where SwiftPM turns them into
-# executorch_backend_mlx_resources.bundle. Each slice's MLX binary was compiled to
-# ask for its own mlx-<slice>.metallib, so all three ship and each binary picks its
-# own.
+# The MLX Metal kernels ship as a per-slice metallib in a shared SwiftPM resource
+# bundle, not merged into the xcframework, since MLX loads them at runtime by name.
 if [[ ! " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
   mlx_resources_dir="$SOURCE_ROOT_DIR/.Package.swift/backend_mlx_resources"
   mkdir -p "${mlx_resources_dir}"
   for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
     mlx_metallib="${OUTPUT_DIR}/${preset_out_dir}/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
-    # The metallib name compiled into each slice (see backends/mlx/CMakeLists.txt):
-    # the simulator preset dir is "simulator" but the slice name is "ios-simulator".
+    # The simulator preset dir is "simulator" but the compiled-in slice name is "ios-simulator".
     case "${preset_out_dir}" in
       simulator) slice="ios-simulator" ;;
       *) slice="${preset_out_dir}" ;;
     esac
-    # A missing metallib means the delegate ships but throws at first device init on
-    # that platform only, so fail the build here rather than ship a half-populated
-    # bundle. This is the metallib counterpart of the framework-set guard below.
+    # Fail loudly rather than ship a bundle missing a slice, which would only fault at device init.
     if [[ ! -f "${mlx_metallib}" ]]; then
       echo "error: MLX is enabled but ${mlx_metallib} was not produced for the ${slice} slice" >&2
       exit 1
