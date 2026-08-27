@@ -323,6 +323,8 @@ Error invoke_linux_driver(
 }
 } // namespace
 
+// Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
+// cppcheck-suppress unusedFunction
 PlatformState* platform_init(
     ArrayRef<CompileSpec> specs,
     MemoryAllocator* allocator) {
@@ -335,10 +337,14 @@ PlatformState* platform_init(
   return state;
 }
 
+// Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
+// cppcheck-suppress unusedFunction
 void platform_destroy(PlatformState* state) {
   delete state;
 }
 
+// Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
+// cppcheck-suppress unusedFunction
 Error platform_execute(
     BackendExecutionContext& /*context*/,
     const ExecutionHandle* execution_handle,

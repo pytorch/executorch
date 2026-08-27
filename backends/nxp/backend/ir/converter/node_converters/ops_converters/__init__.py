@@ -1,3 +1,8 @@
+# Copyright 2024-2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.abs_converter import (
     AbsConverter,
 )

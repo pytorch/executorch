@@ -208,6 +208,8 @@ class Context final {
       const void* = nullptr,
       const uint32_t = 0);
 
+  void register_barrier(vkapi::PipelineBarrier& pipeline_barrier);
+
   void register_blit(
       vkapi::PipelineBarrier&,
       vkapi::VulkanImage& src,

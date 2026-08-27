@@ -24,7 +24,7 @@ Deploy ExecuTorch on iOS devices with Apple hardware acceleration.
 **→ {doc}`ios-section` — Complete iOS deployment guide**
 
 Key features:
-- Apple hardware optimization (CoreML, MPS, XNNPACK)
+- Apple hardware optimization (CoreML, XNNPACK)
 - Swift and Objective-C integration
 - LLM and computer vision examples
 
@@ -36,7 +36,7 @@ Deploy ExecuTorch on Linux, macOS, and Windows with optimized backends.
 
 Key features:
 - Cross-platform C++ runtime
-- Platform-specific optimization (OpenVINO, CoreML, MPS)
+- Platform-specific optimization (OpenVINO, CoreML)
 - CPU and GPU acceleration options
 
 ## Embedded Systems

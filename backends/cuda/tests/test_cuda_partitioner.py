@@ -13,9 +13,21 @@ from typing import Tuple
 from unittest.mock import patch
 
 import torch
-from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_backend import (
+    _aoti_device_type_for_weight,
+    CudaBackend,
+)
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.backends.cuda.cuda_weight_collector import (
+    AOTI_DEVICE_TYPE_CPU,
+    AOTI_DEVICE_TYPE_CUDA,
+    CUDA_WEIGHT_CACHE_MAGIC,
+    CudaWeightCollector,
+    encode_cuda_weight_metadata,
+)
 from executorch.exir._serialize._cord import FileBackedData
+from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir.backend.backend_details import PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import PartitionResult
 from executorch.exir.delegate import executorch_call_delegate
@@ -26,10 +38,24 @@ from torch.fx.passes.utils.fuser_utils import validate_partition
 
 
 class TestCudaLowMemoryExport(unittest.TestCase):
-    @patch.object(CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True)
-    def test_low_memory_streaming_keeps_external_weights_abi(self, _) -> None:
-        from torch._inductor import codecache
+    @staticmethod
+    def _materialize(weights, directory, device_type=AOTI_DEVICE_TYPE_CPU):
+        return CudaWeightCollector().materialize(
+            weights, directory, lambda _: device_type
+        )
 
+    @staticmethod
+    def _parent_result(so_key: str) -> PreprocessResult:
+        store = NamedDataStore()
+        store.add_named_data(so_key, so_key.encode())
+        store.add_named_data("empty_weights", b"", external_tag="aoti_cuda_blob")
+        return PreprocessResult(
+            processed_bytes=f"{so_key}\nempty_weights".encode(),
+            data_store_output=store.get_named_data_store_output(),
+        )
+
+    @patch.object(CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True)
+    def test_all_cuda_exports_request_structured_weights(self, _) -> None:
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec("low_memory_mode", b"ON")]
         )
@@ -37,15 +63,14 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             options["aot_inductor.package_constants_on_disk_format"],
             "pickle_weights",
         )
+        self.assertEqual(
+            CudaBackend.get_aoti_compile_options([])[
+                "aot_inductor.package_constants_on_disk_format"
+            ],
+            "pickle_weights",
+        )
 
-        original = codecache.determine_aoti_mmap_flags
-        with CudaBackend.get_extra_aoti_compile_context_manager(
-            [CompileSpec("low_memory_mode", b"ON")]
-        ):
-            self.assertEqual(codecache.determine_aoti_mmap_flags(0), (True, False))
-        self.assertIs(codecache.determine_aoti_mmap_flags, original)
-
-    def test_low_memory_weights_are_streamed_in_binary_blob_format(self) -> None:
+    def test_weights_are_materialized_as_independent_storages(self) -> None:
         first = torch.tensor([1, 2, 3], dtype=torch.int16)
         second = torch.tensor([4, 5], dtype=torch.int32)
         weights = Weights(
@@ -56,41 +81,254 @@ class TestCudaLowMemoryExport(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as directory:
-            so_path = os.path.join(directory, "model.wrapper.so")
-            blob_path = os.path.join(directory, "model.wrapper_weights.blob")
-            # AOTI emits this empty placeholder when the wrapper is compiled
-            # with the external-weights ABI and the tensor values are pickled.
-            with open(blob_path, "wb"):
-                pass
-
-            paths = CudaBackend.materialize_weights_blob(
-                [so_path, blob_path, weights],
-                [CompileSpec("low_memory_mode", b"ON")],
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.entries))
+            self.assertEqual(2, len(artifact.storages))
+            self.assertEqual(artifact.entries[0].device_type, 0)
+            self.assertEqual(artifact.entries[1].device_type, 0)
+            self.assertEqual(
+                bytes(first.untyped_storage()),
+                artifact.storages[artifact.entries[0].storage_key].to_bytes(),
+            )
+            self.assertEqual(
+                bytes(second.untyped_storage()),
+                artifact.storages[artifact.entries[1].storage_key].to_bytes(),
             )
 
-            self.assertEqual([so_path, blob_path], paths)
-            with open(blob_path, "rb") as blob:
-                data = blob.read()
-            expected = (
-                bytes(first.untyped_storage())
-                + bytes(58)
-                + bytes(second.untyped_storage())
-                + bytes(56)
-            )
-            self.assertEqual(expected, data)
+            metadata = encode_cuda_weight_metadata("so-key", artifact.entries)
+            self.assertTrue(metadata.startswith(CUDA_WEIGHT_CACHE_MAGIC))
+            self.assertIn(b"first", metadata)
+            self.assertIn(b"second", metadata)
+            for storage in artifact.storages.values():
+                storage.close()
 
-            # The streaming write computes the digest in the same pass. Loading
-            # the file-backed blob must not reread it solely for hashing.
-            with patch.object(
-                FileBackedData,
-                "sha256",
-                side_effect=AssertionError("unexpected blob reread"),
-            ):
-                blob, digest = CudaBackend.load_weights_blob(
-                    blob_path, [CompileSpec("low_memory_mode", b"ON")]
+    @patch(
+        "executorch.backends.cuda.cuda_backend._is_cpu_clone_active",
+        return_value=True,
+    )
+    def test_low_memory_cpu_clones_keep_cuda_device_type(self, _) -> None:
+        tensor = torch.tensor([1, 2], dtype=torch.int16)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = CudaWeightCollector().materialize(
+                weights, directory, _aoti_device_type_for_weight
+            )
+            self.assertEqual(artifact.entries[0].device_type, AOTI_DEVICE_TYPE_CUDA)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_different_fqn_views_have_distinct_logical_storage(self) -> None:
+        base = torch.arange(12, dtype=torch.float32).reshape(3, 4)
+        view = base[:, 1:]
+        weights = Weights(
+            {
+                "base": (base, TensorProperties(base)),
+                # AOTI may return a cloned value tensor; TensorProperties is
+                # the source of truth for reconstructing the original view.
+                "view": (base, TensorProperties(view)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.storages))
+            self.assertNotEqual(
+                artifact.entries[0].storage_key,
+                artifact.entries[1].storage_key,
+            )
+            self.assertEqual(1, artifact.entries[1].storage_offset)
+            self.assertEqual((3, 3), artifact.entries[1].sizes)
+            self.assertEqual((4, 1), artifact.entries[1].strides)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_identical_values_keep_distinct_fqn_keys(self) -> None:
+        first = torch.zeros(4)
+        second = torch.zeros(4)
+        weights = Weights(
+            {
+                "first": (first, TensorProperties(first)),
+                "second": (second, TensorProperties(second)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.storages))
+            self.assertNotEqual(artifact.entries[0].fqn, artifact.entries[1].fqn)
+            self.assertNotEqual(
+                artifact.entries[0].storage_key,
+                artifact.entries[1].storage_key,
+            )
+            store = NamedDataStore()
+            for entry in artifact.entries:
+                store.add_named_data(
+                    entry.storage_key, artifact.storages[entry.storage_key]
                 )
-            self.assertEqual(hashlib.sha256(expected).hexdigest(), digest)
-            self.assertEqual(expected, blob.to_bytes())
+            self.assertEqual(1, len(store.buffers))
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_same_fqn_with_different_data_is_rejected_when_merged(self) -> None:
+        first = torch.zeros(4)
+        second = torch.ones(4)
+
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(
+                Weights({"weight": (first, TensorProperties(first))}), first_dir
+            )
+            second_artifact = self._materialize(
+                Weights({"weight": (second, TensorProperties(second))}), second_dir
+            )
+            first_key = first_artifact.entries[0].storage_key
+            second_key = second_artifact.entries[0].storage_key
+            self.assertEqual(first_key, second_key)
+
+            collector = CudaWeightCollector()
+            collector.add_preprocess_result(
+                self._parent_result("first_so"), first_artifact, "cuda"
+            )
+            with self.assertRaisesRegex(ValueError, "different data"):
+                collector.add_preprocess_result(
+                    self._parent_result("second_so"), second_artifact, "cuda"
+                )
+
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_same_fqn_with_different_metadata_shares_storage(self) -> None:
+        tensor = torch.arange(4)
+        view = tensor.reshape(2, 2)
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(
+                Weights({"weight": (tensor, TensorProperties(tensor))}), first_dir
+            )
+            second_artifact = self._materialize(
+                Weights({"weight": (tensor, TensorProperties(view))}), second_dir
+            )
+            collector = CudaWeightCollector()
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            self.assertIs(
+                first_result.data_store_output, second_result.data_store_output
+            )
+            self.assertNotEqual(
+                first_result.processed_bytes, second_result.processed_bytes
+            )
+            weight_key = first_artifact.entries[0].storage_key
+            self.assertIn(
+                weight_key,
+                first_result.data_store_output.external_data["aoti_cuda_blob"],
+            )
+
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_aoti_local_fqns_are_scoped_by_library(self) -> None:
+        first = torch.zeros(4)
+        second = torch.ones(5)
+
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(
+                Weights(
+                    {
+                        "_tensor_constant0": (
+                            first,
+                            TensorProperties(first),
+                        )
+                    }
+                ),
+                first_dir,
+            )
+            second_artifact = self._materialize(
+                Weights(
+                    {
+                        "_tensor_constant0": (
+                            second,
+                            TensorProperties(second),
+                        )
+                    }
+                ),
+                second_dir,
+            )
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector = CudaWeightCollector()
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            external_data = first_result.data_store_output.external_data[
+                "aoti_cuda_blob"
+            ]
+            first_key = "cuda_fqn_weight:cpu:first_so:_tensor_constant0"
+            second_key = "cuda_fqn_weight:cpu:second_so:_tensor_constant0"
+            self.assertIn(first_key, external_data)
+            self.assertIn(second_key, external_data)
+            self.assertIn(first_key.encode(), first_result.processed_bytes)
+            self.assertIn(second_key.encode(), second_result.processed_bytes)
+
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_methods_share_one_collected_named_data_store(self) -> None:
+        tensor = torch.arange(4)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+        with (
+            tempfile.TemporaryDirectory() as first_dir,
+            tempfile.TemporaryDirectory() as second_dir,
+        ):
+            first_artifact = self._materialize(weights, first_dir)
+            second_artifact = self._materialize(weights, second_dir)
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector = CudaWeightCollector()
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            self.assertIs(
+                first_result.data_store_output, second_result.data_store_output
+            )
+            weight_key = first_artifact.entries[0].storage_key
+            self.assertIn(
+                weight_key,
+                first_result.data_store_output.external_data["aoti_cuda_blob"],
+            )
+            for artifact in (first_artifact, second_artifact):
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_device_is_part_of_the_fqn_key(self) -> None:
+        tensor = torch.zeros(4)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+        with (
+            tempfile.TemporaryDirectory() as cpu_dir,
+            tempfile.TemporaryDirectory() as cuda_dir,
+        ):
+            cpu = self._materialize(weights, cpu_dir, AOTI_DEVICE_TYPE_CPU)
+            cuda = self._materialize(weights, cuda_dir, AOTI_DEVICE_TYPE_CUDA)
+            self.assertNotEqual(cpu.entries[0].storage_key, cuda.entries[0].storage_key)
+            for artifact in (cpu, cuda):
+                for storage in artifact.storages.values():
+                    storage.close()
 
     def test_low_memory_weights_require_wrapper_so(self) -> None:
         tensor = torch.tensor([1], dtype=torch.int16)

@@ -34,6 +34,9 @@ class MockCudaAllocator : public DeviceAllocator {
     // malloc returns memory aligned to alignof(max_align_t), which satisfies
     // kDefaultAlignment; the mock only exercises the default alignment.
     (void)alignment;
+    if (fail_allocations_) {
+      return Error::MemoryAllocationFailed;
+    }
     void* ptr = std::malloc(nbytes);
     if (!ptr) {
       return Error::MemoryAllocationFailed;
@@ -98,6 +101,7 @@ class MockCudaAllocator : public DeviceAllocator {
   }
 
   void reset() {
+    fail_allocations_ = false;
     allocate_count_ = 0;
     deallocate_count_ = 0;
     h2d_count_ = 0;
@@ -116,6 +120,10 @@ class MockCudaAllocator : public DeviceAllocator {
     last_d2h_size_ = 0;
     last_d2h_index_ = -1;
   }
+
+  /// When set, allocate() reports MemoryAllocationFailed without allocating,
+  /// so callers can be tested against a device that is out of memory.
+  bool fail_allocations_ = false;
 
   // Allocation tracking
   int allocate_count_ = 0;

@@ -614,6 +614,32 @@ def _package_relative_depth(library: Path) -> int:
     return max(len(parts) - index - 2, 0)
 
 
+def _torchao_requirement() -> str:
+    """The torchao dependency, pinned to the series install_requirements.py installs.
+
+    Derived from that module rather than written out, so a nightly bump cannot move the
+    pin without moving this bound with it. A bump into the next series would otherwise
+    silently stop satisfying the lower bound, and installing this package over a
+    development checkout would replace the torchao that was just installed.
+
+    Loaded by path, the way install_utils is above, because setuptools executes this
+    file without the project directory on sys.path, so a plain import does not resolve.
+    """
+    path = Path(__file__).parent / "install_requirements.py"
+    spec = importlib.util.spec_from_file_location("install_requirements", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    # The module imports install_utils by name at import time, which only resolves
+    # because that name is registered below.
+    sys.modules.setdefault("install_utils", install_utils)
+    spec.loader.exec_module(module)
+
+    version = module.TORCHAO_NIGHTLY_VERSION
+    major, minor = (int(part) for part in version.split(".")[:2])
+    return f"torchao>={version},<{major}.{minor + 1}"
+
+
 def _base_dependencies() -> List[str]:
     """Runtime dependencies for the full wheel.
 
@@ -639,6 +665,21 @@ def _base_dependencies() -> List[str]:
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
+        # Shipped code imports torchao at module scope in many places, so a plain install cannot
+        # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
+        # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
+        # The MLX backend needs it too, though indirectly: it registers a torchao operator that
+        # only exists once torchao has been imported.
+        #
+        # The lower bound is the nightly install_requirements.py pins, so that installing this
+        # package over a development checkout leaves that pin in place. A bound at the stable
+        # release instead would evict it, because a dev release sorts below its own final.
+        #
+        # The upper bound is what makes naming a pre-release safe. A specifier that names one
+        # accepts pre-releases for this requirement, so without the bound pip would resolve a
+        # pre-release of the next series wherever one is published, such as an index carrying
+        # nightlies. Keep both bounds in the same series.
+        _torchao_requirement(),
         "pyyaml",
         "ruamel.yaml",
         "sympy",
@@ -646,9 +687,21 @@ def _base_dependencies() -> List[str]:
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-        "coremltools==9.0; (platform_system == 'Darwin' or platform_system == 'Linux') and python_version < '3.14'",
-        # scikit-learn is used to support palettization in the coreml backend.
-        "scikit-learn>=1.7.1",
+        # Linux is deliberate: the Core ML export flow runs there, so a model can be lowered
+        # for Apple hardware from a Linux machine. Linux is narrowed to x86_64 because that is
+        # the only Linux architecture coremltools publishes a build for. Everywhere else pip
+        # falls back to the source archive and produces a py3-none-any install with none of the
+        # compiled extensions, which imports and then cannot write a model, because
+        # libmilstoragepython, which stores the weights of an mlprogram, is absent. Measured
+        # with coremltools 9.0 on a Linux aarch64 machine. Keep this in sync with the condition
+        # in conftest.py; .ci/scripts/tests/test_coreml_markers.py checks that the two agree.
+        "coremltools==9.0; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
+        # coremltools uses scikit-learn for palettization, so it follows coremltools. Without a
+        # marker it also installed where coremltools does not, most visibly on Windows, and
+        # brought scipy with it. Nothing in this repository imports scikit-learn from the Core
+        # ML backend; the example scripts that do import it, and the scripts that import scipy,
+        # now name both in requirements-examples.txt rather than relying on this entry.
+        "scikit-learn>=1.7.1; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]
@@ -2125,6 +2178,8 @@ class CustomBuild(build):
                     cmake_build_args += ["--target", "optimized_native_cpu_ops_lib"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED"):
                     cmake_build_args += ["--target", "executorch_quantized_ops"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_TORCHAO"):
+                    cmake_build_args += ["--target", "executorch_kernels_torchao"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
                     cmake_build_args += ["--target", "xnnpack_backend"]
 
@@ -2297,6 +2352,20 @@ setup(
                         "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
                     ],
                 ),
+                # The TorchAO kernels, so a C++ application running a model that
+                # uses them can link them from the wheel. The Apple framework build
+                # already ships these; this is the wheel's equivalent. Written to
+                # the cache root because the wrapper target is declared there.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name=get_dynamic_lib_name("executorch_kernels_torchao"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_kernels_torchao"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_TORCHAO",
+                    ],
+                ),
                 # The OpenVINO delegate, so a C++ application can link it from the
                 # wheel. Only the adapter ships here: the OpenVINO runtime itself is
                 # loaded at run time and comes from the openvino extra.
@@ -2321,6 +2390,18 @@ setup(
                         "EXECUTORCH_BUILD_XNNPACK",
                     ],
                 ),
+                # Install the MLX delegate beside them, so a C++ consumer can link
+                # it out of the wheel rather than only reaching it from Python.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/mlx/",
+                    src_name=get_dynamic_lib_name("executorch_backend_mlx"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_mlx"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_MLX",
+                    ],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
@@ -2336,15 +2417,28 @@ setup(
                     modpath="executorch.extension.pybindings.data_loader",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
                 ),
-                # MLX metallib (Metal GPU kernels) must be colocated with _C.so
-                # because MLX uses dladdr() to find the directory containing the library,
-                # then looks for mlx.metallib in that directory at runtime.
+                # MLX metallib (Metal GPU kernels) must be colocated with the image
+                # that carries MLX code, because MLX resolves its own address with
+                # dladdr() and looks for mlx.metallib in that directory at runtime.
+                # Which image that is depends on how the delegate was built: a shared
+                # delegate carries MLX itself, while a static one is absorbed into the
+                # Python extension. The build decides which of these two entries
+                # applies, so exactly one copy ships.
                 # After submodule migration, the path is backends/mlx/mlx/...
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
                     src_name="mlx.metallib",
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_MLX",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
+                    src_name="mlx.metallib",
                     dst="executorch/extension/pybindings/",
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
+                    dependent_cmake_flags=["EXECUTORCH_MLX_METALLIB_IN_PYBINDINGS"],
                 ),
                 BuiltExtension(
                     src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
