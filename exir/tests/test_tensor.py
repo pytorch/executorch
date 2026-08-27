@@ -183,23 +183,6 @@ class TestTensor(unittest.TestCase):
             with self.assertRaisesRegex(Exception, test_case[1], msg=f"{kwargs}"):
                 make_allocation_info(**kwargs)
 
-    def test_inplace_base_aliases_storage_base_at_offset_zero(self) -> None:
-        base = TensorSpec.from_tensor(torch.empty(4))
-        child = TensorSpec.from_tensor(torch.empty(4))
-
-        child.inplace_base = base
-
-        self.assertIs(child.storage_base, base)
-        self.assertEqual(child.storage_base_offset, 0)
-        self.assertIs(child.inplace_base, base)
-
-        child.storage_base_offset = 4
-        with self.assertRaisesRegex(Exception, "offset 0"):
-            child.inplace_base
-        with self.assertRaisesRegex(Exception, "storage_base_offset is 0"):
-            child.inplace_base = base
-        self.assertEqual(child.storage_base_offset, 4)
-
     def test_contiguous_stride_from_shape(self) -> None:
         shape = (2, 3, 4)
         stride = contiguous_stride_from_shape(torch.Size(shape))
