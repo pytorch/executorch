@@ -11,8 +11,9 @@
 #import "ExecuTorchETDumpError.h"
 
 #import <executorch/devtools/etdump/etdump_flatcc.h>
-#import <executorch/extension/apple/ExecuTorch/Internal/ExecuTorchModule+Internal.h>
 #import <executorch/runtime/core/event_tracer_hooks.h>
+
+#import <ExecuTorch/ExecuTorchModule+Internal.h>
 
 #import <flatcc/flatcc_builder.h>
 
