@@ -217,6 +217,13 @@ ExternalProject_Add(
   mlx_external
   SOURCE_DIR ${MLX_SOURCE_DIR}
   BINARY_DIR ${_mlx_binary_dir}
+  # Force a single-config generator for the sub-build. The parent Apple build
+  # uses the Xcode generator, which is multi-config and would place libmlx.a in
+  # a per-config subdirectory (mlx/Debug/libmlx.a). The paths below that consume
+  # the archive expect it flat at ${_mlx_binary_dir}/libmlx.a, the way a
+  # single-config generator emits it, which is also how the wheel build already
+  # produces it.
+  CMAKE_GENERATOR "Unix Makefiles"
   PATCH_COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh
                 ${MLX_SOURCE_DIR} ${_mlx_patches}
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
