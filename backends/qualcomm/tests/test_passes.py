@@ -848,5 +848,79 @@ class TestPasses(unittest.TestCase):
         self.assertGreaterEqual(reused, 1, "third manager must reuse the live bundle")
 
 
+class TestIoBindingCheck(unittest.TestCase):
+    """_check_io_binding must fire when QNN publishes I/O the signature lacks.
+
+    The runtime binds delegate arguments positionally against the tensor list in
+    the context binary, so a graph that declares more bindable tensors than the
+    program passes reads past the end of args. That has to be caught at lowering.
+    """
+
+    @staticmethod
+    def _edge_program(num_inputs, num_outputs):
+        signature = MagicMock()
+        signature.user_inputs = [f"arg_{i}" for i in range(num_inputs)]
+        signature.user_outputs = [f"out_{i}" for i in range(num_outputs)]
+        edge_program = MagicMock()
+        edge_program.graph_signature = signature
+        return edge_program
+
+    def _run(self, names, num_inputs, num_outputs):
+        from executorch.backends.qualcomm import qnn_preprocess
+
+        wrappers = {f"n{i}": {0: object()} for i in range(len(names))}
+        by_id = {
+            id(next(iter(v.values()))): name
+            for v, name in zip(wrappers.values(), names)
+        }
+
+        class _StubWrapper:
+            def __init__(self, wrapper):
+                self._name = by_id[id(wrapper)]
+
+            def GetName(self):
+                return self._name
+
+        with unittest.mock.patch.object(
+            qnn_preprocess.PyQnnManager, "PyQnnTensorWrapper", _StubWrapper
+        ):
+            qnn_preprocess._check_io_binding(
+                self._edge_program(num_inputs, num_outputs), wrappers
+            )
+
+    def test_matching_io_passes(self):
+        self._run(
+            ["input_0_x", "output_y", "conv2d_3", "_frozen_param0"],
+            num_inputs=1,
+            num_outputs=1,
+        )
+
+    def test_mutable_buffers_do_not_consume_arguments(self):
+        # A mutable buffer is threaded through separately and is not a user input.
+        self._run(
+            ["input_0_x", "input_1_mutbuf_0_cache", "output_y"],
+            num_inputs=1,
+            num_outputs=1,
+        )
+
+    def test_extra_published_inputs_are_rejected(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run(
+                ["input_0_x", "input_1_stray", "input_2_stray", "output_y"],
+                num_inputs=1,
+                num_outputs=1,
+            )
+        message = str(ctx.exception)
+        self.assertIn("QNN declares 3 graph inputs", message)
+        self.assertIn("input_1_stray", message)
+
+    def test_extra_published_outputs_are_rejected(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run(
+                ["input_0_x", "output_y", "output_stray"], num_inputs=1, num_outputs=1
+            )
+        self.assertIn("2 graph outputs", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
