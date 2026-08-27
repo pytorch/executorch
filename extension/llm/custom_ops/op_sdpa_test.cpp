@@ -33,6 +33,26 @@ executorch::aten::Tensor op_scaled_dot_product_attention(
       context, query, key, value, attn_mask, dropout_p, is_causal, scale, out);
 }
 
+executorch::aten::Tensor op_custom_sdpa(
+    const executorch::aten::Tensor& query,
+    const executorch::aten::Tensor& key,
+    const executorch::aten::Tensor& value,
+    const std::optional<executorch::aten::Tensor>& attn_mask,
+    executorch::aten::Tensor& out) {
+  executorch::runtime::KernelRuntimeContext context{};
+  return torch::executor::native::custom_sdpa_out(
+      context,
+      query,
+      key,
+      value,
+      /*start_pos=*/0,
+      attn_mask,
+      /*dropout_p=*/0.0,
+      /*is_causal=*/false,
+      /*scale=*/std::nullopt,
+      out);
+}
+
 std::tuple<executorch::aten::Tensor&, executorch::aten::Tensor&>
 op_gated_delta_rule(
     executorch::runtime::KernelRuntimeContext& context,
@@ -334,6 +354,70 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_105) {
   executorch::aten::Tensor ret = op_scaled_dot_product_attention(
       query, key, value, attn_mask, dropout_p, is_causal, scale, out);
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected, 1e-4, 1e-4);
+}
+
+TEST(OpScaledDotProductAttentionTest, WrappedSparseMaskMatchesReference) {
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+
+  constexpr int32_t kv_size = 1536;
+  constexpr int32_t active_per_end = 128;
+  std::vector<float> key_values(kv_size * 2, 0.0f);
+  std::vector<float> value_values(kv_size * 2);
+  std::vector<float> mask_values(
+      kv_size, -std::numeric_limits<float>::infinity());
+
+  for (int32_t i = 0; i < kv_size; ++i) {
+    value_values[2 * i] = static_cast<float>(i);
+    value_values[2 * i + 1] = static_cast<float>(2 * i + 1);
+  }
+  for (int32_t i = 0; i < active_per_end; ++i) {
+    mask_values[i] = 0.0f;
+    mask_values[kv_size - active_per_end + i] = 0.0f;
+  }
+
+  // custom_sdpa uses [batch, sequence, heads, head_dim]. The two active
+  // regions model a logical sliding window that wraps around the physical ring
+  // buffer, leaving the entire middle K/V tile masked.
+  auto query = tfFloat.zeros({1, 1, 1, 2});
+  auto key = tfFloat.make({1, kv_size, 1, 2}, key_values);
+  auto value = tfFloat.make({1, kv_size, 1, 2}, value_values);
+  auto attn_mask = tfFloat.make({1, kv_size}, mask_values);
+  auto out = tfFloat.zeros({1, 1, 1, 2});
+
+  auto result = op_custom_sdpa(query, key, value, attn_mask, out);
+
+  // q and k are zero, so softmax is uniform over the 256 unmasked values.
+  // Their indices are [0, 127] and [1408, 1535].
+  auto expected = tfFloat.make({1, 1, 1, 2}, {767.5f, 1536.0f});
+  EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-5, 1e-5);
+}
+
+TEST(OpScaledDotProductAttentionTest, SparseAdditiveMaskPreservesSoftmax) {
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+
+  constexpr int32_t kv_size = 512;
+  std::vector<float> key_values(kv_size, 0.0f);
+  std::vector<float> value_values(kv_size, 0.0f);
+  std::vector<float> mask_values(
+      kv_size, -std::numeric_limits<float>::infinity());
+
+  // With zero Q/K, these mask values assign probabilities 1/4 and 3/4 to
+  // values 2 and 6. The large masked gap exercises the two-range path.
+  value_values[10] = 2.0f;
+  value_values[500] = 6.0f;
+  mask_values[10] = 0.0f;
+  mask_values[500] = 1.0986122886681098f; // log(3)
+
+  auto query = tfFloat.zeros({1, 1, 1, 1});
+  auto key = tfFloat.make({1, kv_size, 1, 1}, key_values);
+  auto value = tfFloat.make({1, kv_size, 1, 1}, value_values);
+  auto attn_mask = tfFloat.make({1, kv_size}, mask_values);
+  auto out = tfFloat.zeros({1, 1, 1, 1});
+
+  auto result = op_custom_sdpa(query, key, value, attn_mask, out);
+
+  auto expected = tfFloat.make({1, 1, 1, 1}, {5.0f});
+  EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-5, 1e-5);
 }
 
 TEST(OpScaledDotProductAttentionTest, CorrectnessTest_11) {
