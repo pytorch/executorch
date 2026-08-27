@@ -259,9 +259,9 @@ if(APPLE)
     # so bundle them inside this one shipped library instead of making every
     # consumer supply them. A plain private link is enough, not whole-archive:
     # the delegate references the helpers it uses, so ordinary resolution pulls
-    # exactly those objects. They carry no self-registering constructors that an
-    # unreferenced link would drop, which is the only thing force_load would add
-    # here.
+    # exactly those objects. Neither helper registers anything from an
+    # unreferenced namespace-scope initializer, which is the only thing
+    # force_load would add here.
     target_link_libraries(
       coremldelegate PRIVATE coreml_util coreml_inmemoryfs executorch_shared
     )
