@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.24)
+
 foreach(required RUNNER PTE ASSET_DIR STYLE WORK_DIR)
   if(NOT DEFINED ${required})
     message(FATAL_ERROR "Missing JSONL runner variable: ${required}")
