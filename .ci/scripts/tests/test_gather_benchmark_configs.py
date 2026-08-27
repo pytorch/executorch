@@ -40,7 +40,6 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
 
         self.assertIn("xnnpack_q8", ios_configs)
         self.assertIn("coreml_fp16", ios_configs)
-        self.assertIn("mps", ios_configs)
         self.assertIn("llama3_coreml_ane", ios_configs)
         self.assertIn("llama3_spinquant", ios_configs)
         self.assertIn("llama3_qlora", ios_configs)
@@ -166,7 +165,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         result = self.gather_benchmark_configs.generate_compatible_configs(
             model_name, target_os
         )
-        expected = ["xnnpack_q8", "coreml_fp16", "mps"]
+        expected = ["xnnpack_q8", "coreml_fp16"]
         self.assertEqual(result, expected)
 
     def test_generate_compatible_configs_unknown_model(self):
@@ -229,7 +228,6 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         self.assertIn('"model": "dl3"', result.stdout)
         self.assertIn('"config": "coreml_fp16"', result.stdout)
         self.assertIn('"config": "xnnpack_q8"', result.stdout)
-        self.assertIn('"config": "mps"', result.stdout)
 
     def test_gather_benchmark_configs_cli_invalid_device(self):
         args = {
@@ -269,7 +267,6 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         self.assertIn('"model": "dl3"', result.stdout)
         self.assertIn('"config": "coreml_fp16"', result.stdout)
         self.assertIn('"config": "xnnpack_q8"', result.stdout)
-        self.assertNotIn('"config": "mps"', result.stdout)
 
     def test_gather_benchmark_configs_cli_specified_configs_raise(self):
         args = {

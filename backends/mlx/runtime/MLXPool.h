@@ -19,9 +19,10 @@ namespace backends {
 namespace mlx {
 
 // Per-layer K or V store, SDPA-major [1, H, slots, D] (cells on axis 2). The
-// caller hands down physical slot ranges (it has already applied any ring
-// modulo), so the pool is layout-agnostic: policies differ only in how many
-// slots the layer asks for and how many ranges a step produces.
+// caller hands down physical slots -- a contiguous range, or one index per
+// token -- having already applied any ring modulo, so the pool is
+// layout-agnostic: layouts differ only in how many slots the layer asks for and
+// where in them a step lands.
 class Pool {
  public:
   // initial_slots above max_slots is clamped, not rejected: the config default
@@ -56,6 +57,46 @@ class Pool {
         u,
         ::mlx::core::Shape{0, 0, start, 0},
         ::mlx::core::Shape{1, H, start + len, D},
+        s);
+  }
+
+  // Place `update` one token per slot, at `cells[i]` for token i. The cells
+  // must be distinct. They refill from below as sequences are removed, so
+  // a step's slots need not be contiguous or ordered.
+  void write_cells(
+      const std::vector<int32_t>& cells,
+      const Tensor& update,
+      StreamOrDevice s) {
+    const int H = static_cast<int>(buf_.shape(1));
+    const int D = static_cast<int>(buf_.shape(3));
+    const int T = static_cast<int>(cells.size());
+    if (static_cast<int>(update.shape(2)) != T) {
+      throw std::runtime_error(
+          "Pool::write_cells: update length != cell count");
+    }
+    if (static_cast<int>(update.shape(1)) != H ||
+        static_cast<int>(update.shape(3)) != D) {
+      throw std::runtime_error("Pool::write_cells: K/V heads/dim mismatch");
+    }
+    int high = 0;
+    for (int32_t cell : cells) {
+      if (cell < 0 || cell >= max_slots_) {
+        throw std::runtime_error("Pool::write_cells: cell out of bounds");
+      }
+      high = std::max(high, cell + 1);
+    }
+    maybe_grow(high, s);
+    const Tensor u = update.dtype() == dtype_
+        ? update
+        : ::mlx::core::astype(update, dtype_, s);
+    // put_along_axis broadcasts the one index per token across heads and
+    // head_dim.
+    buf_ = ::mlx::core::put_along_axis(
+        buf_,
+        ::mlx::core::array(
+            cells.data(), ::mlx::core::Shape{1, 1, T, 1}, ::mlx::core::int32),
+        u,
+        2,
         s);
   }
 

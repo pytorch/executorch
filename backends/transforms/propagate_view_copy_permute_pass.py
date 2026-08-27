@@ -105,7 +105,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         if result.modified:
             graph_module = self._retrace(graph_module)
 
-        while self.should_propagate():
+        while True:
             iteration_modified = False
             for node in list(graph_module.graph.nodes):
                 if node.target in self._targets:
@@ -156,6 +156,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 break
 
             if not self._can_cross_next_nodes(frontier, next_nodes):
+                break
+
+            if self.blocks_moving(node, frontier, next_nodes):
                 break
 
             if len(next_nodes) > 1:
@@ -310,14 +313,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """Update the graph to move the node into its new position."""
         raise NotImplementedError()
 
-    def should_propagate(self) -> bool:
-        """Whether single-node propagation should run at all.
-
-        Backends that have a reason to disable it -- a known miscompile on a
-        particular target, say -- override this.
-
-        """
-        return True
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Shape the crossed node operates on once ``moving_node`` has moved."""
+        raise NotImplementedError()
 
     def is_transparent(self, node: torch.fx.Node) -> bool:
         """Ops a data-movement node may cross without changing meaning.
@@ -335,6 +333,30 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
     def blocks_crossing(self, node: torch.fx.Node) -> bool:
         """Users past which a frontier node must not be moved."""
         return False
+
+    def blocks_moving(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> bool:
+        """Whether this copy must stop here, whatever the nodes ahead allow.
+
+        Asked once per step, before the step is planned, for reasons about the
+        value being moved rather than about the node being crossed -- a storage
+        format the copy would address wrongly, say.
+
+        """
+        return False
+
+    def tolerates_shape_after_move(self, next_node: torch.fx.Node, shape: Any) -> bool:
+        """Whether ``next_node`` can operate on the shape the move leaves it.
+
+        Crossing a node changes the shape it reads, and a backend can have
+        operators that are correct only for some of them.
+
+        """
+        return True
 
     def is_elementwise(self, node: torch.fx.Node) -> bool:
         if node.op != "call_function":
@@ -395,6 +417,11 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             ):
                 return False
 
+        if not self.tolerates_shape_after_move(
+            next_node, self._shape_seen_by_next_node(moving_node)
+        ):
+            return False
+
         if moving_node.target not in self._permute_targets:
             return True
 
@@ -417,6 +444,11 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     - Node is moved before the frontier next_node
     - Horizontal fuses are performed on users
     """
+
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Moving up leaves the crossed node reading ``moving_node``'s output."""
+        val = moving_node.meta.get("val")
+        return getattr(val, "shape", None)
 
     def fuse_horizontal(self, graph_module):
         modified = False
@@ -697,6 +729,11 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
     - Horizontal fuses are performed on inputs
     """
 
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Moving down leaves the crossed node reading ``moving_node``'s input."""
+        val = cast(torch.fx.Node, moving_node.args[0]).meta.get("val")
+        return getattr(val, "shape", None)
+
     def fuse_horizontal(self, graph_module):
         modified = False
         result = FuseIdenticalInputTransformsPass(
@@ -760,67 +797,12 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
     ) -> bool:
         if frontier is not node and previous_frontier is None:
             return False
-        if self._fork_split_strands_a_copy(next_nodes):
-            return False
         plan = self._plan_fork_split(node, frontier, next_nodes)
         if plan is None:
             return False
         producer, branch_splits = plan
         self._apply_fork_split(node, frontier, producer, branch_splits)
         return True
-
-    @staticmethod
-    def _fork_split_strands_a_copy(
-        next_nodes: Sequence[torch.fx.Node], search_limit: int = 64
-    ) -> bool:
-        """Whether splitting this fork would leave a copy that cannot be merged.
-
-        After a split, each branch carries its own copy. Two things can merge
-        them again: branches that rejoin have their copies fused at the meeting
-        node, and branches that stay separate have their copies hoisted back to
-        the shared producer on the way up.
-
-        Both work when every branch does the same thing. A fork where some
-        branches rejoin and others do not ends with copies at two different
-        producers -- one below the rejoin, one at the source -- and neither
-        mechanism can bring those together. Upward propagation has no fork
-        split of its own, so it cannot hoist a copy above a rejoin.
-
-        The graph output is not a meeting point; returned values carry
-        independent copies.
-        """
-        if len(next_nodes) < 2:
-            return False
-
-        owner: dict[torch.fx.Node, int] = {}
-        group = list(range(len(next_nodes)))
-
-        def root(i: int) -> int:
-            while group[i] != i:
-                group[i] = group[group[i]]
-                i = group[i]
-            return i
-
-        for index, start in enumerate(next_nodes):
-            frontier = [start]
-            visited = 0
-            while frontier and visited < search_limit:
-                current = frontier.pop()
-                if current.op == "output":
-                    continue
-                visited += 1
-                previous = owner.get(current)
-                if previous is None:
-                    owner[current] = index
-                    frontier.extend(current.users)
-                elif root(previous) != root(index):
-                    group[root(previous)] = root(index)
-
-        sizes: dict[int, int] = {}
-        for index in range(len(next_nodes)):
-            sizes[root(index)] = sizes.get(root(index), 0) + 1
-        # Uniform is fine: one group (all rejoin) or all singletons (all diverge).
-        return len(sizes) > 1 and any(size > 1 for size in sizes.values())
 
     def _plan_fork_split(
         self,

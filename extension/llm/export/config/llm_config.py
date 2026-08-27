@@ -589,15 +589,6 @@ class QNNConfig:
 
 
 @dataclass
-class MPSConfig:
-    """
-    Configures the MPS backend.
-    """
-
-    enabled: bool = False
-
-
-@dataclass
 class OpenvinoConfig:
     """
     Configures the QNN backend.
@@ -680,7 +671,6 @@ class BackendConfig:
     coreml: CoreMLConfig = field(default_factory=CoreMLConfig)
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
-    mps: MPSConfig = field(default_factory=MPSConfig)
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
@@ -860,10 +850,6 @@ class LlmConfig:
             )
         if hasattr(args, "num_sharding"):
             llm_config.backend.qnn.num_sharding = args.num_sharding
-
-        # MPS
-        if hasattr(args, "mps"):
-            llm_config.backend.mps.enabled = args.mps
 
         # MLX - auto-enable use_kv_cache when MLX is enabled
         if hasattr(args, "mlx"):
