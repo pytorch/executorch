@@ -37,8 +37,10 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 void main() {
-  const int out_buf_idx = int(gl_GlobalInvocationID.x);
+  const int out_buf_idx = int(linear_idx_from_gid());
 
   // Extract sizes from BufferMetadata
   const ivec4 im2col_sizes = ivec4(im2col_outp.sizes[0]);
