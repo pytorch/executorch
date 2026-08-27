@@ -26,12 +26,21 @@ class DumpTest: XCTestCase {
     throw XCTSkip("add.pte not bundled.")
   }
 
-  func testAvailable() {
-    // The frameworks published for Apple platforms are built with tracing on, so
-    // in that build a recorder can be created. A source build without tracing
-    // reports the opposite, and the initializer fails rather than recording
-    // nothing, which the next test covers.
-    XCTAssertTrue(Dump.isAvailable)
+  func testAvailable() throws {
+    // isAvailable reports whether this runtime was built with tracing on, which
+    // depends on the build: the published Apple frameworks turn it on, a plain
+    // source build does not. Rather than assume one, check the contract holds
+    // either way: available means a recorder can be created, unavailable means
+    // the initializer fails with the matching error instead of recording nothing.
+    if Dump.isAvailable {
+      XCTAssertNoThrow(try Dump(filePath: modelPath()))
+    } else {
+      XCTAssertThrowsError(try Dump(filePath: modelPath())) { error in
+        XCTAssertEqual((error as NSError).domain, DumpErrorDomain)
+        XCTAssertEqual(
+          (error as NSError).code, DumpError.unavailable.rawValue)
+      }
+    }
   }
 
   func testRecordsAfterRun() throws {

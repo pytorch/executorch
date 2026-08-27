@@ -50,9 +50,10 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
 @implementation ExecuTorchDump {
   ExecuTorchModule *_module;
   ExecuTorchDumpTracer *_tracer;
-  // Serialises taking a trace against running a method. Completing a trace ends
-  // the buffer being written, so the two must not overlap, and the runtime
-  // performs no synchronisation of its own.
+  // Serialises one take against another. Completing a trace finalises the buffer
+  // and resets the generator, so two takes must not overlap. This does not guard
+  // a take against a concurrent run: the caller must not take while a method is
+  // running on another thread, since the generator is being written then.
   NSLock *_lock;
 }
 

@@ -390,12 +390,13 @@ check_required_options_on(
   EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
 )
 
-# The wrapper links the profiler, and the profiler only records anything when the
-# runtime was compiled with the tracing hooks enabled. It needs the etdump target,
-# which the root CMakeLists adds for this build, not the whole devtools umbrella.
+# The wrapper links the profiler and the core Apple extension. The profiler only
+# records anything when the runtime was compiled with the tracing hooks enabled,
+# and it needs the etdump target, which the root CMakeLists adds for this build,
+# not the whole devtools umbrella.
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE REQUIRES
-  EXECUTORCH_ENABLE_EVENT_TRACER
+  EXECUTORCH_ENABLE_EVENT_TRACER EXECUTORCH_BUILD_EXTENSION_APPLE
 )
 
 check_required_options_on(

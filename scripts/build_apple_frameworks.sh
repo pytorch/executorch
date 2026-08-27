@@ -453,8 +453,6 @@ python3 extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_mode
 cp -f extension/apple/ExecuTorch/__tests__/resources/add.pte             extension/apple/ExecuTorch/__tests__/ObjC/add.pte
 cp -f extension/apple/ExecuTorch/__tests__/resources/add_coreml.pte      extension/apple/ExecuTorch/__tests__/ObjC/add_coreml.pte
 cp -f extension/apple/ExecuTorch/__tests__/resources/add_mul_coreml.pte  extension/apple/ExecuTorch/__tests__/ObjC/add_mul_coreml.pte
-mkdir -p extension/apple/dump/ExecuTorchDump/__tests__/resources
-cp -f extension/apple/ExecuTorch/__tests__/resources/add.pte             extension/apple/dump/ExecuTorchDump/__tests__/resources/add.pte
 
 echo "Running tests"
 
