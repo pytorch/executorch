@@ -2402,6 +2402,18 @@ setup(
                         "EXECUTORCH_BUILD_MLX",
                     ],
                 ),
+                # Install the Core ML delegate beside them, so a C++ consumer can
+                # link it out of the wheel rather than only reaching it from Python.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreml/",
+                    src_name=get_dynamic_lib_name("executorch_backend_coreml"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_coreml"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_COREML",
+                    ],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.

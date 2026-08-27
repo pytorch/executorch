@@ -155,6 +155,12 @@ _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 # does: a second copy means two MLX runtimes in one process.
 _MLX_SYMBOLS = ("executorch::backends::mlx::mutable_state_note_handle",)
 _BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::free",)
+# A representative symbol from the Core ML delegate, exported from the shipped
+# library. get_registered_delegate() rather than the constructor, which demangles
+# to two entries (complete and base object), while this is a single definition.
+_COREML_SYMBOLS = (
+    "executorch::backends::coreml::CoreMLBackendDelegate::get_registered_delegate()",
+)
 
 # A representative symbol from the TorchAO kernels. These are Apple Silicon only, so
 # most wheels ship no such library and the row below is not required.
@@ -945,6 +951,14 @@ _OWNED_COMPONENTS = (
         _XNNPACK_SYMBOLS,
         _library_file_name("libexecutorch_backend_xnnpack"),
         True,
+    ),
+    # Not required: the delegate is built only on a macOS wheel, so every other
+    # wheel legitimately ships no Core ML library and the row skips.
+    (
+        "Core ML delegate",
+        _COREML_SYMBOLS,
+        _library_file_name("libexecutorch_backend_coreml"),
+        False,
     ),
     # Not required: the delegate is built only on an Apple Silicon macOS wheel whose
     # build found the Metal compiler, so every other wheel legitimately ships no MLX
@@ -2337,6 +2351,7 @@ def test_shipped_library_names_are_expected() -> None:
         # dependency, so both have to ship and both are expected here.
         "libextension_cuda",
         "libexecutorch_backend_xnnpack",
+        "libexecutorch_backend_coreml",
         "libexecutorch_backend_mlx",
         "libexecutorch_backend_openvino",
         "libexecutorch_backend_qnn",
