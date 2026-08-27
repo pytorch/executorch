@@ -205,6 +205,12 @@ if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_mul_coreml.pte") 
 }
 
 let testLinkerSettings: [LinkerSetting] = [
+  // The test bundles force-load C++ static archives, so they must link libc++.
+  // The executorch product declares this, but a test target is its own linked
+  // image and does not inherit a product's linker settings. Below macOS 13 a
+  // Swift back-deployment shim pulled libc++ in by accident; the macOS 14 floor
+  // this package now sets drops that shim, so link it explicitly.
+  .linkedLibrary("c++"),
   .unsafeFlags([
     "-Xlinker", "-force_load",
     "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
