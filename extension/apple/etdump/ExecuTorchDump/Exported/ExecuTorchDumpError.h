@@ -10,22 +10,21 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-FOUNDATION_EXPORT NSErrorDomain const ExecuTorchETDumpErrorDomain
-    NS_SWIFT_NAME(ETDumpErrorDomain);
+FOUNDATION_EXPORT NSErrorDomain const ExecuTorchDumpErrorDomain NS_SWIFT_NAME(DumpErrorDomain);
 
 /**
  * Errors reported while recording a profile.
  */
-typedef NS_ERROR_ENUM(ExecuTorchETDumpErrorDomain, ExecuTorchETDumpErrorCode){
+typedef NS_ERROR_ENUM(ExecuTorchDumpErrorDomain, ExecuTorchDumpErrorCode){
     /**
      * The linked runtime was built without tracing, so nothing can be recorded.
-     * Check `ExecuTorchETDump.available` before creating one.
+     * Check `ExecuTorchDump.available` before creating one.
      */
-    ExecuTorchETDumpErrorCodeUnavailable = 1,
+    ExecuTorchDumpErrorCodeUnavailable = 1,
     /**
      * Nothing has been recorded since the last read. Run a method first.
      */
-    ExecuTorchETDumpErrorCodeNoData = 2,
-} NS_SWIFT_NAME(ETDumpError);
+    ExecuTorchDumpErrorCodeNoData = 2,
+} NS_SWIFT_NAME(DumpError);
 
 NS_ASSUME_NONNULL_END

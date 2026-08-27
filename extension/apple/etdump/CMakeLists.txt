@@ -18,9 +18,7 @@ endif()
 
 add_library(extension_etdump_apple)
 
-file(GLOB OBJC_SOURCES ExecuTorchETDump/Exported/*.m
-     ExecuTorchETDump/Exported/*.mm
-)
+file(GLOB OBJC_SOURCES ExecuTorchDump/Exported/*.m ExecuTorchDump/Exported/*.mm)
 
 target_sources(extension_etdump_apple PRIVATE ${OBJC_SOURCES})
 
@@ -44,7 +42,7 @@ file(COPY ${_etdump_core_headers}
 
 target_include_directories(
   extension_etdump_apple
-  PUBLIC ExecuTorchETDump/Exported
+  PUBLIC ExecuTorchDump/Exported
   PRIVATE ${_etdump_core_headers_dir}
           # For <executorch/...> includes reached through etdump_flatcc.h.
           ${EXECUTORCH_ROOT}/..

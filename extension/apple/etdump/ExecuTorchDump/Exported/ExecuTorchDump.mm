@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchETDump.h"
+#import "ExecuTorchDump.h"
 
-#import "ExecuTorchETDumpError.h"
+#import "ExecuTorchDumpError.h"
 
 #import <executorch/devtools/etdump/etdump_flatcc.h>
 #import <executorch/runtime/core/event_tracer_hooks.h>
@@ -20,16 +20,16 @@
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 
-NSErrorDomain const ExecuTorchETDumpErrorDomain =
+NSErrorDomain const ExecuTorchDumpErrorDomain =
     @"org.pytorch.executorch.etdump";
 
-static NSError *ETDumpError(ExecuTorchETDumpErrorCode code, NSString *message) {
-  return [NSError errorWithDomain:ExecuTorchETDumpErrorDomain
+static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
+  return [NSError errorWithDomain:ExecuTorchDumpErrorDomain
                              code:code
                          userInfo:@{NSLocalizedDescriptionKey : message}];
 }
 
-@implementation ExecuTorchETDump {
+@implementation ExecuTorchDump {
   // The module owns the tracer, so this is the only owning reference either
   // needs. Reaching the tracer through the module keeps that true for the whole
   // lifetime rather than by convention.
@@ -52,10 +52,10 @@ static NSError *ETDumpError(ExecuTorchETDumpErrorCode code, NSString *message) {
                             dataFilePaths:(NSArray<NSString *> *)dataFilePaths
                                  loadMode:(ExecuTorchModuleLoadMode)loadMode
                                     error:(NSError **)error {
-  if (!ExecuTorchETDump.isAvailable) {
+  if (!ExecuTorchDump.isAvailable) {
     if (error) {
-      *error = ETDumpError(
-          ExecuTorchETDumpErrorCodeUnavailable,
+      *error = DumpError(
+          ExecuTorchDumpErrorCodeUnavailable,
           @"This ExecuTorch runtime was built without event tracing, so no "
           @"profile can be recorded.");
     }
@@ -104,9 +104,9 @@ static NSError *ETDumpError(ExecuTorchETDumpErrorCode code, NSString *message) {
   [_lock unlock];
   if (result.buf == nullptr || result.size == 0) {
     if (error) {
-      *error = ETDumpError(ExecuTorchETDumpErrorCodeNoData,
-                           @"Nothing has been recorded since the last read. "
-                           @"Run a method first.");
+      *error = DumpError(ExecuTorchDumpErrorCodeNoData,
+                         @"Nothing has been recorded since the last read. "
+                         @"Run a method first.");
     }
     return nil;
   }

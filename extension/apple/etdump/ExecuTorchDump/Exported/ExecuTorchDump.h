@@ -10,7 +10,7 @@
 
 #import <ExecuTorch/ExecuTorchModule.h>
 
-#import "ExecuTorchETDumpError.h"
+#import "ExecuTorchDumpError.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -25,9 +25,9 @@ NS_ASSUME_NONNULL_BEGIN
  * Events accumulate across runs, and taking the trace completes it, so take it
  * once per report rather than after every call.
  */
-NS_SWIFT_NAME(ETDump)
+NS_SWIFT_NAME(Dump)
 __attribute__((objc_subclassing_restricted))
-@interface ExecuTorchETDump : NSObject
+@interface ExecuTorchDump : NSObject
 
 /**
  * Whether the linked runtime records events at all.

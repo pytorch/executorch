@@ -70,7 +70,7 @@ let products = deliverables([
       "c++",
     ],
   ],
-  "executorch_etdump": [
+  "executorch_dump": [
     "targets": [
       "executorch",
     ],
