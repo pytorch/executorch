@@ -194,6 +194,15 @@ if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_mul_coreml.pte") 
   objcTestResources.append(.copy("add_mul_coreml.pte"))
 }
 
+// The dump test fixture is copied under the target by
+// scripts/build_apple_frameworks.sh from the canonical resources directory and is
+// gitignored, so include it only when present, the way the fixtures above are.
+let dumpTestsDir = "extension/apple/dump/ExecuTorchDump/__tests__"
+var dumpTestResources: [Resource] = []
+if FileManager.default.fileExists(atPath: "\(dumpTestsDir)/resources/add.pte") {
+  dumpTestResources.append(.copy("resources/add.pte"))
+}
+
 let testLinkerSettings: [LinkerSetting] = [
   // The test targets depend on the executorch binary target directly, which
   // carries no linker settings, rather than the with-dependencies target that
@@ -251,8 +260,8 @@ let package = Package(
         .target(name: "executorch_dump\(dependencies_suffix)"),
         .target(name: "kernels_optimized\(dependencies_suffix)"),
       ],
-      path: "extension/apple/etdump/ExecuTorchDump/__tests__",
-      resources: [.copy("resources/add.pte")],
+      path: "extension/apple/dump/ExecuTorchDump/__tests__",
+      resources: dumpTestResources,
       linkerSettings: testLinkerSettings
     )
   ]

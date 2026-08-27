@@ -235,49 +235,17 @@ if(APPLE)
   # member initializer. It only takes that type by reference. A source added
   # here that breaks either condition would give the linker two bodies of one
   # inline function to choose between.
-  #
-  # Built only when devtools is on and the coremltools clone that carries the
-  # protobuf sources is present. A framework build can turn devtools on for
-  # another component (the ETDump extension) without that clone, so the sdk path
-  # keys on the sources existing, not on devtools alone.
-  if(EXECUTORCH_BUILD_DEVTOOLS
-     AND EXISTS
-         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
-  )
-    set(_coreml_build_sdk ON)
-  else()
-    set(_coreml_build_sdk OFF)
-  endif()
-
-  if(NOT _coreml_build_sdk)
+  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     target_compile_options(coremldelegate PRIVATE -UET_EVENT_TRACER_ENABLED)
   endif()
 
-  if(_coreml_build_sdk)
+  if(EXECUTORCH_BUILD_DEVTOOLS)
     target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
     target_include_directories(
       coremldelegate
       PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime/sdk
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/src
-    )
-    # protobuf's test build needs a googletest submodule that is not cloned in a
-    # framework build, and we do not need protobuf's own tests or examples, so
-    # turn them off before adding it, the same way the SDK test script does. The
-    # protoc compiler is not needed either: the SDK links libprotobuf-lite
-    # against pre-generated sources, and building the protoc executable fails
-    # under the Xcode generator for want of a bundle identifier.
-    set(protobuf_BUILD_TESTS
-        OFF
-        CACHE BOOL "" FORCE
-    )
-    set(protobuf_BUILD_EXAMPLES
-        OFF
-        CACHE BOOL "" FORCE
-    )
-    set(protobuf_BUILD_PROTOC_BINARIES
-        OFF
-        CACHE BOOL "" FORCE
     )
     add_subdirectory(
       ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
@@ -338,7 +306,7 @@ if(APPLE)
                            -Wno-null-character -Wno-receiver-expr
   )
 
-  if(_coreml_build_sdk)
+  if(EXECUTORCH_BUILD_DEVTOOLS)
     target_compile_options(executorch_core PUBLIC -DET_EVENT_TRACER_ENABLED)
     target_compile_options(coremldelegate PRIVATE "-frtti")
     target_compile_options(libprotobuf-lite PRIVATE "-frtti")

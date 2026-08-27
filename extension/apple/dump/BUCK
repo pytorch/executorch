@@ -23,12 +23,10 @@ non_fbcode_target(_kind = fb_apple_library,
         "ovr_config//os:macos": [
             "//xplat/executorch/devtools/etdump:etdump_flatccAppleMac",
             "//xplat/executorch/extension/apple:ExecuTorch",
-            "//xplat/executorch/extension/module:moduleAppleMac",
         ],
         "DEFAULT": [
             "//xplat/executorch/devtools/etdump:etdump_flatccApple",
             "//xplat/executorch/extension/apple:ExecuTorch",
-            "//xplat/executorch/extension/module:moduleApple",
         ],
     }),
 )

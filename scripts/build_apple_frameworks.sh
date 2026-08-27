@@ -89,15 +89,15 @@ libsentencepiece.a,\
 libtokenizers.a,\
 :${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
 
-FRAMEWORK_EXECUTORCH_ETDUMP_NAME="executorch_dump"
-FRAMEWORK_EXECUTORCH_ETDUMP_MODULE_NAME="ExecuTorchDump"
-FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_ETDUMP_NAME}_include"
-FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_DIR}"
-FRAMEWORK_EXECUTORCH_ETDUMP="${FRAMEWORK_EXECUTORCH_ETDUMP_NAME}:\
+FRAMEWORK_EXECUTORCH_DUMP_NAME="executorch_dump"
+FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME="ExecuTorchDump"
+FRAMEWORK_EXECUTORCH_DUMP_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_DUMP_NAME}_include"
+FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_DUMP_HEADERS_DIR}"
+FRAMEWORK_EXECUTORCH_DUMP="${FRAMEWORK_EXECUTORCH_DUMP_NAME}:\
 libetdump.a,\
 libextension_etdump_apple.a,\
 libflatccrt.a,\
-:${FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_DIR}"
+:${FRAMEWORK_EXECUTORCH_DUMP_HEADERS_DIR}"
 
 FRAMEWORK_THREADPOOL="threadpool:\
 libcpuinfo.a,\
@@ -352,15 +352,15 @@ module ${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME} {
 }
 EOF
 
-# FRAMEWORK_EXECUTORCH_ETDUMP
+# FRAMEWORK_EXECUTORCH_DUMP
 
-mkdir -p "$FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_ETDUMP_MODULE_NAME"
+mkdir -p "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME"
 
-cp "$SOURCE_ROOT_DIR/extension/apple/etdump/$FRAMEWORK_EXECUTORCH_ETDUMP_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_ETDUMP_MODULE_NAME"
+cp "$SOURCE_ROOT_DIR/extension/apple/dump/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME"
 
-cat > "$FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_ETDUMP_MODULE_NAME/module.modulemap" << EOF
-module ${FRAMEWORK_EXECUTORCH_ETDUMP_MODULE_NAME} {
-  umbrella header "${FRAMEWORK_EXECUTORCH_ETDUMP_MODULE_NAME}.h"
+cat > "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME/module.modulemap" << EOF
+module ${FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME} {
+  umbrella header "${FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME}.h"
   export *
 }
 EOF
@@ -419,7 +419,7 @@ for mode in "${MODES[@]}"; do
 
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH" "$mode"
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
-  append_framework_flag "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE" "$FRAMEWORK_EXECUTORCH_ETDUMP" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE" "$FRAMEWORK_EXECUTORCH_DUMP" "$mode"
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MLX" "$FRAMEWORK_BACKEND_MLX" "$mode"
@@ -441,7 +441,7 @@ done
 
 rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
 rm -rf "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
-rm -rf "$FRAMEWORK_EXECUTORCH_ETDUMP_HEADERS_PATH"
+rm -rf "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH"
 
 echo "Generating Swift test fixtures (requires CoreML python deps)"
 
@@ -453,6 +453,8 @@ python3 extension/apple/ExecuTorch/__tests__/resources/generate_coreml_test_mode
 cp -f extension/apple/ExecuTorch/__tests__/resources/add.pte             extension/apple/ExecuTorch/__tests__/ObjC/add.pte
 cp -f extension/apple/ExecuTorch/__tests__/resources/add_coreml.pte      extension/apple/ExecuTorch/__tests__/ObjC/add_coreml.pte
 cp -f extension/apple/ExecuTorch/__tests__/resources/add_mul_coreml.pte  extension/apple/ExecuTorch/__tests__/ObjC/add_mul_coreml.pte
+mkdir -p extension/apple/dump/ExecuTorchDump/__tests__/resources
+cp -f extension/apple/ExecuTorch/__tests__/resources/add.pte             extension/apple/dump/ExecuTorchDump/__tests__/resources/add.pte
 
 echo "Running tests"
 

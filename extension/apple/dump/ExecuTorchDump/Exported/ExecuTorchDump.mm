@@ -13,12 +13,11 @@
 #import <executorch/devtools/etdump/etdump_flatcc.h>
 #import <executorch/runtime/core/event_tracer_hooks.h>
 
-#import <ExecuTorch/ExecuTorchModule+Internal.h>
+#import <ExecuTorch/ExecuTorchEventTracer+Internal.h>
 
 #import <flatcc/flatcc_builder.h>
 
-using executorch::etdump::ETDumpGen;
-using executorch::etdump::ETDumpResult;
+using namespace executorch::etdump;
 
 NSErrorDomain const ExecuTorchDumpErrorDomain =
     @"org.pytorch.executorch.etdump";
@@ -29,11 +28,28 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
                          userInfo:@{NSLocalizedDescriptionKey : message}];
 }
 
+// A concrete event tracer backed by an ETDumpGen. The base class owns the
+// generator through its C++ tracer; this subclass keeps a typed pointer to the
+// same object so the recorder can read the trace back without a downcast. The
+// pointer stays valid for as long as the module the tracer was given to lives.
+@interface ExecuTorchDumpTracer : ExecuTorchEventTracer
+- (instancetype)init;
+@property(nonatomic, readonly) ETDumpGen *generator;
+@end
+
+@implementation ExecuTorchDumpTracer
+
+- (instancetype)init {
+  auto generator = std::make_unique<ETDumpGen>();
+  _generator = generator.get();
+  return [super initWithCppTracer:std::move(generator)];
+}
+
+@end
+
 @implementation ExecuTorchDump {
-  // The module owns the tracer, so this is the only owning reference either
-  // needs. Reaching the tracer through the module keeps that true for the whole
-  // lifetime rather than by convention.
   ExecuTorchModule *_module;
+  ExecuTorchDumpTracer *_tracer;
   // Serialises taking a trace against running a method. Completing a trace ends
   // the buffer being written, so the two must not overlap, and the runtime
   // performs no synchronisation of its own.
@@ -64,11 +80,11 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
   self = [super init];
   if (self) {
     _lock = [NSLock new];
-    _module =
-        [ExecuTorchModule moduleWithFilePath:filePath
-                               dataFilePaths:dataFilePaths
-                                    loadMode:loadMode
-                                 eventTracer:std::make_unique<ETDumpGen>()];
+    _tracer = [[ExecuTorchDumpTracer alloc] init];
+    _module = [[ExecuTorchModule alloc] initWithFilePath:filePath
+                                           dataFilePaths:dataFilePaths
+                                                loadMode:loadMode
+                                             eventTracer:_tracer];
   }
   return self;
 }
@@ -87,19 +103,14 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
 
 - (nullable NSData *)takeDataWithError:(NSError **)error {
   [_lock lock];
-  // The module owns the tracer and this path always installs an ETDumpGen, so a
-  // static_cast is correct and needs no RTTI, which this target is built
-  // without. Reaching it through the module is what keeps the pointer valid
-  // rather than a second reference that could outlive it.
-  auto *tracer = static_cast<ETDumpGen *>(_module.eventTracer);
+  ETDumpGen *generator = _tracer.generator;
   // get_etdump_data() finalises the builder and leaves the generator in its
   // Done state, which a second call does not handle and would abort on. Reset
   // after a successful take so a report-on-a-timer caller gets NoData on the
   // next call rather than a process abort.
-  ETDumpResult result =
-      tracer ? tracer->get_etdump_data() : ETDumpResult{nullptr, 0};
+  ETDumpResult result = generator->get_etdump_data();
   if (result.buf != nullptr && result.size != 0) {
-    tracer->reset();
+    generator->reset();
   }
   [_lock unlock];
   if (result.buf == nullptr || result.size == 0) {

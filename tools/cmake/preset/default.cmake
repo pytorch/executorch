@@ -355,11 +355,14 @@ define_overridable_option(
 # At this point all the options should be configured with their final value.
 # ------------------------------------------------------------------------------
 
-# The tracer needs the etdump target, not the whole devtools umbrella. A pybind
-# or shared build adds that target on its own, so accept either route rather
-# than forcing an option that also pulls in submodules a wheel does not check
-# out.
-if(NOT EXECUTORCH_BUILD_PYBIND AND NOT EXECUTORCH_BUILD_SHARED)
+# The tracer needs the etdump target, not the whole devtools umbrella. A pybind,
+# shared, or Apple ETDump build adds that target on its own, so accept any of
+# those routes rather than forcing an option that also pulls in submodules a wheel
+# does not check out.
+if(NOT EXECUTORCH_BUILD_PYBIND
+   AND NOT EXECUTORCH_BUILD_SHARED
+   AND NOT EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE
+)
   check_required_options_on(
     IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
   )
@@ -387,11 +390,12 @@ check_required_options_on(
   EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
 )
 
-# The wrapper links the profiler, and the profiler only records anything when
-# the runtime was compiled with the tracing hooks enabled.
+# The wrapper links the profiler, and the profiler only records anything when the
+# runtime was compiled with the tracing hooks enabled. It needs the etdump target,
+# which the root CMakeLists adds for this build, not the whole devtools umbrella.
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE REQUIRES
-  EXECUTORCH_BUILD_DEVTOOLS EXECUTORCH_ENABLE_EVENT_TRACER
+  EXECUTORCH_ENABLE_EVENT_TRACER
 )
 
 check_required_options_on(
