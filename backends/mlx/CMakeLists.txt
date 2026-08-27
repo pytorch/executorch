@@ -194,9 +194,9 @@ set(_mlx_patches
 # In a framework build the delegate is static, so MLX cannot find a colocated
 # metallib and instead loads one from a SwiftPM resource bundle. SWIFTPM_BUNDLE
 # is the bundle name and MLX_SWIFTPM_METALLIB_NAME the per-slice file inside it
-# (one per slice, since a slice's metallib does not load on another). PLATFORM is
-# set only for the Apple presets; a plain wheel build leaves it empty and keeps
-# the colocated path.
+# (one per slice, since a slice's metallib does not load on another). PLATFORM
+# is set only for the Apple presets; a plain wheel build leaves it empty and
+# keeps the colocated path.
 set(_mlx_extra_cxx_flags "")
 if(PLATFORM)
   if(PLATFORM STREQUAL "OS64")
@@ -211,7 +211,8 @@ if(PLATFORM)
   )
 endif()
 
-# Prefer the preset's per-slice DEPLOYMENT_TARGET; fall back to the toolchain value.
+# Prefer the preset's per-slice DEPLOYMENT_TARGET; fall back to the toolchain
+# value.
 if(DEPLOYMENT_TARGET)
   set(_mlx_osx_deployment_target ${DEPLOYMENT_TARGET})
 else()
