@@ -178,10 +178,15 @@ class Session {
 
 class Runner {
  public:
-  // Neither reference is owned; both must outlive shutdown or destruction on
-  // an external thread. One scheduler per runner, which also supplies the
-  // prefill chunk size prompts are split to.
-  Runner(Executor& executor, Scheduler& scheduler);
+  // Takes the scheduler, one per runner, which also supplies the prefill chunk
+  // size prompts are split to. Owned rather than borrowed because a Session
+  // keeps the runner's internals alive after ~Runner, and the close and cancel
+  // paths reach the scheduler from there; a caller holding it separately would
+  // have no way to see that its lifetime had been extended. Must be non-null.
+  //
+  // The executor is not owned and must outlive shutdown or destruction on an
+  // external thread.
+  Runner(Executor& executor, std::unique_ptr<Scheduler> scheduler);
   ~Runner();
 
   Runner(const Runner&) = delete;

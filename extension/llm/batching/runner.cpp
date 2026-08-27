@@ -140,8 +140,10 @@ FinishReason GenerationHandle::finish_reason() const {
 // than a dangling one.
 class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
  public:
-  RunnerImpl(Executor& executor, Scheduler& scheduler)
-      : executor_(executor), scheduler_(scheduler) {}
+  RunnerImpl(Executor& executor, std::unique_ptr<Scheduler> scheduler)
+      : executor_(executor), scheduler_(std::move(scheduler)) {
+    assert(scheduler_ != nullptr && "Runner requires a scheduler");
+  }
 
   ~RunnerImpl() {
     shutdown();
@@ -271,7 +273,9 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void notify_engine_();
 
   Executor& executor_;
-  Scheduler& scheduler_;
+  // Owned, so that a Session outliving its Runner still finds a live scheduler
+  // on the close and cancel paths.
+  std::unique_ptr<Scheduler> scheduler_;
 
   // Lifecycle writes and operations that must linearize with shutdown hold this
   // mutex. Lock-free lifecycle observations use acquire loads.
@@ -355,8 +359,8 @@ GenerationHandle Session::generate_async(
 
 // --- lifecycle -------------------------------------------------------------
 
-Runner::Runner(Executor& executor, Scheduler& scheduler)
-    : impl_(std::make_shared<RunnerImpl>(executor, scheduler)) {
+Runner::Runner(Executor& executor, std::unique_ptr<Scheduler> scheduler)
+    : impl_(std::make_shared<RunnerImpl>(executor, std::move(scheduler))) {
   impl_->start();
 }
 
@@ -444,7 +448,7 @@ void RunnerImpl::run_() {
     std::unique_lock<std::mutex> lock(control_mutex_);
     engine_cv_.wait_for(lock, std::chrono::milliseconds(20), [this] {
       return lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running ||
-          !inbox_.empty() || scheduler_.has_work();
+          !inbox_.empty() || scheduler_->has_work();
     });
   }
 
@@ -452,7 +456,7 @@ void RunnerImpl::run_() {
   // an ack would hang.
   process_pending_commands_();
 
-  scheduler_.clear();
+  scheduler_->clear();
 
   std::vector<std::pair<SessionId, std::optional<Generation>>> open_sessions;
   open_sessions.reserve(sessions_.size());
@@ -541,7 +545,7 @@ void RunnerImpl::process_pending_commands_() {
         // Unconditional: a task can outlive the generation that submitted it,
         // so an empty active_generation does not mean an empty queue. Anything
         // left would run against a session the executor has released.
-        (void)scheduler_.cancel(cmd.session);
+        (void)scheduler_->cancel(cmd.session);
         if (active) {
           complete_generation_(std::move(*active), FinishReason::Cancelled);
         }
@@ -563,7 +567,7 @@ bool RunnerImpl::execute_one_batch_() {
     if (lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running) {
       return false;
     }
-    tasks = scheduler_.get_work();
+    tasks = scheduler_->get_work();
   }
   if (tasks.empty()) {
     return false;
@@ -792,7 +796,7 @@ std::vector<Task> RunnerImpl::create_tasks_(
   // The scheduler owns this limit, so the runner cannot split a prompt into
   // chunks the scheduler would then refuse. It is non-zero and clamped to the
   // token count, so the loop below always advances.
-  const std::size_t limit = scheduler_.max_prefill_chunk_size();
+  const std::size_t limit = scheduler_->max_prefill_chunk_size();
   const std::int32_t chunk = limit >= static_cast<std::size_t>(total)
       ? total
       : static_cast<std::int32_t>(limit);
@@ -827,7 +831,7 @@ void RunnerImpl::submit_(SessionId session, std::vector<Task> tasks) {
     std::lock_guard<std::mutex> lock(control_mutex_);
     running = lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running;
     if (running && !tasks.empty()) {
-      accepted = scheduler_.submit(std::move(tasks));
+      accepted = scheduler_->submit(std::move(tasks));
     }
   }
   if (!accepted) {
@@ -992,7 +996,7 @@ void RunnerImpl::complete_active_generation_(
   session->second.active_generation.reset();
 
   // Anything of this generation still queued would otherwise reach a batch.
-  for (Task& task : scheduler_.cancel(session_id)) {
+  for (Task& task : scheduler_->cancel(session_id)) {
     (void)task;
   }
   complete_generation_(std::move(active), reason, std::move(final_tokens));

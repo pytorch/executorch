@@ -117,13 +117,13 @@ struct Fixture {
       FakeExecutor& executor,
       std::int32_t max_decode_sequences = 4,
       std::int32_t max_prefill_chunk_size = 8)
-      : scheduler(DecodeFirstScheduler::create(
-            2 * max_prefill_chunk_size + max_decode_sequences,
-            max_decode_sequences,
-            static_cast<std::size_t>(max_prefill_chunk_size))),
-        runner(executor, *scheduler) {}
+      : runner(
+            executor,
+            DecodeFirstScheduler::create(
+                2 * max_prefill_chunk_size + max_decode_sequences,
+                max_decode_sequences,
+                static_cast<std::size_t>(max_prefill_chunk_size))) {}
 
-  std::unique_ptr<DecodeFirstScheduler> scheduler;
   Runner runner;
 };
 
@@ -766,8 +766,7 @@ TEST(SpeculativeTest, AcceptedRunUsesExecutorPosition) {
 
 TEST(FailureTest, SchedulerRejectionEndsTheGeneration) {
   FakeExecutor executor;
-  RejectingScheduler scheduler;
-  Runner runner(executor, scheduler);
+  Runner runner(executor, std::make_unique<RejectingScheduler>());
   Session session = open(runner);
   auto updates = std::make_shared<Updates>();
 
@@ -959,6 +958,19 @@ TEST(SessionTest, DestroyingASessionEndsItsGeneration) {
   session = Session{};
   ASSERT_TRUE(updates->wait());
   EXPECT_EQ(updates->finish(), FinishReason::Cancelled);
+}
+
+// A Session holds the runner's internals alive past ~Runner, and closing it
+// reaches the scheduler. The runner therefore owns the scheduler: were it
+// borrowed, this ordering would leave that reference dangling.
+TEST(LifetimeTest, SessionOutlivingTheRunnerStillClosesCleanly) {
+  FakeExecutor executor;
+  Session session;
+  {
+    Fixture fixture(executor);
+    session = open(fixture.runner);
+  }
+  session = Session{};
 }
 
 TEST(ShutdownTest, EndsLiveAndRejectsNewWork) {
