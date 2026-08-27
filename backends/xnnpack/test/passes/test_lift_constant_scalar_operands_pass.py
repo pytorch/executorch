@@ -9,6 +9,7 @@ import unittest
 from copy import deepcopy
 
 import torch
+from executorch.backends.xnnpack._passes.convert_to_sdpa import ConvertToSDPAPass
 from executorch.backends.xnnpack._passes.lift_constant_scalar_operands_pass import (
     LiftConstantScalarOperandsPass,
 )
@@ -30,6 +31,10 @@ class TestLiftConstantScalarOperandsPass(unittest.TestCase):
     class AddScalar(torch.nn.Module):
         def forward(self, x):
             return torch.ops.aten.add.Scalar(x, 0.5)
+
+    class SDPA(torch.nn.Module):
+        def forward(self, q, k, v, mask):
+            return torch.nn.functional.scaled_dot_product_attention(q, k, v, mask)
 
     def _to_edge_program_manager(self, module):
         return to_edge(
@@ -68,11 +73,11 @@ class TestLiftConstantScalarOperandsPass(unittest.TestCase):
             any(node.target == exir_ops.edge.aten.add.Scalar for node in graph.nodes)
         )
 
-    def test_keeps_sdpa_scale_mul_scalar(self):
+    def test_lifts_sdpa_scale_mul_scalar(self):
         for graph in sdpa.get_graphs():
             graph_module = deepcopy(graph)
 
-            LiftConstantScalarOperandsPass()(graph_module)
+            graph_module = LiftConstantScalarOperandsPass()(graph_module).graph_module
 
             scale_mul_count = 0
             lifted_mul_count = 0
@@ -84,5 +89,32 @@ class TestLiftConstantScalarOperandsPass(unittest.TestCase):
                 if node.target == exir_ops.edge.aten.mul.Tensor:
                     lifted_mul_count += 1
 
-            self.assertEqual(scale_mul_count, 2)
-            self.assertEqual(lifted_mul_count, 0)
+            self.assertEqual(scale_mul_count, 0)
+            self.assertEqual(lifted_mul_count, 2)
+
+    def test_converts_sdpa_after_lifting_scale_mul_scalar(self):
+        q = torch.randn(2, 4, 8, 16)
+        k = torch.randn(2, 4, 8, 16)
+        v = torch.randn(2, 4, 8, 16)
+        mask = torch.randn(8, 8)
+        edge = to_edge(
+            torch.export.export(self.SDPA(), (q, k, v, mask), strict=True),
+            compile_config=get_xnnpack_edge_compile_config(),
+        )
+        exported_program = ExportedProgramPassManager(
+            [LiftConstantScalarOperandsPass()]
+        )(edge.exported_program()).exported_program
+        exported_program = ExportedProgramPassManager(
+            [ConvertToSDPAPass(exported_program)]
+        )(exported_program).exported_program
+
+        graph = exported_program.graph_module.graph
+        self.assertTrue(
+            any(
+                node.target == exir_ops.edge.aten.scaled_dot_product_attention.default
+                for node in graph.nodes
+            )
+        )
+        self.assertFalse(
+            any(node.target == exir_ops.edge.aten.bmm.default for node in graph.nodes)
+        )

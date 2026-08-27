@@ -34,10 +34,6 @@ class LiftConstantScalarOperandsPass(ExportPass):
     default_scalar_to_tensor_ops: Dict[ScalarOp, ScalarOp] = {
         exir_ops.edge.aten.mul.Scalar: exir_ops.edge.aten.mul.Tensor,
     }
-    sdpa_passthrough_ops = {
-        exir_ops.edge.aten.expand_copy.default,
-        exir_ops.edge.aten.view_copy.default,
-    }
 
     def __init__(
         self,
@@ -83,33 +79,6 @@ class LiftConstantScalarOperandsPass(ExportPass):
             index += 1
         return f"{prefix}{index}"
 
-    def _feeds_sdpa_qk_bmm(self, node: torch.fx.Node) -> bool:
-        """
-        Return true for the scale muls consumed by XNNPACK's SDPA pattern.
-
-        ConvertToSDPAPass recovers the user-specified attention scale from the
-        pre-QK^T ``aten.mul.Scalar`` nodes. Keep those scalar muls intact so
-        SDPA conversion can still find the scale before replacing the pattern.
-        """
-        users_to_visit = list(node.users)
-        visited = set()
-        while users_to_visit:
-            user = users_to_visit.pop()
-            if user in visited:
-                continue
-            visited.add(user)
-
-            if (
-                user.op == "call_function"
-                and user.target == exir_ops.edge.aten.bmm.default
-            ):
-                return True
-
-            if user.op == "call_function" and user.target in self.sdpa_passthrough_ops:
-                users_to_visit.extend(user.users)
-
-        return False
-
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
 
@@ -120,12 +89,6 @@ class LiftConstantScalarOperandsPass(ExportPass):
                 or len(node.args) != 2
                 or not isinstance(node.args[0], torch.fx.Node)
                 or not isinstance(node.args[1], Number)
-            ):
-                continue
-
-            if (
-                node.target == exir_ops.edge.aten.mul.Scalar
-                and self._feeds_sdpa_qk_bmm(node)
             ):
                 continue
 
