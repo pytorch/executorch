@@ -46,6 +46,18 @@ target_include_directories(
   extension_etdump_apple
   PUBLIC ExecuTorchETDump/Exported
   PRIVATE ${_etdump_core_headers_dir}
+          # For <executorch/...> includes reached through etdump_flatcc.h.
+          ${EXECUTORCH_ROOT}/..
+          # For the c10 portable types those headers pull in.
+          ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
+
+# The wrapper pulls in the core tensor headers through etdump_flatcc.h, which
+# reach c10's Macros.h. Without this define that header tries to include a
+# generated cmake_macros.h the Apple build does not produce, so use the custom
+# path the other Apple targets use.
+target_compile_definitions(
+  extension_etdump_apple PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
 if(NOT TARGET etdump)
