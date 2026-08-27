@@ -56,6 +56,7 @@ let products = deliverables([
   "backend_mlx": [
     "frameworks": [
       "Metal",
+      "Foundation",
       "QuartzCore",
     ],
   ],
