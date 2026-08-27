@@ -235,11 +235,25 @@ if(APPLE)
   # member initializer. It only takes that type by reference. A source added
   # here that breaks either condition would give the linker two bodies of one
   # inline function to choose between.
-  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
+  #
+  # Built only when devtools is on and the coremltools clone that carries the
+  # protobuf sources is present. A framework build can turn devtools on for
+  # another component (the ETDump extension) without that clone, so the sdk path
+  # keys on the sources existing, not on devtools alone.
+  if(EXECUTORCH_BUILD_DEVTOOLS
+     AND EXISTS
+         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
+  )
+    set(_coreml_build_sdk ON)
+  else()
+    set(_coreml_build_sdk OFF)
+  endif()
+
+  if(NOT _coreml_build_sdk)
     target_compile_options(coremldelegate PRIVATE -UET_EVENT_TRACER_ENABLED)
   endif()
 
-  if(EXECUTORCH_BUILD_DEVTOOLS)
+  if(_coreml_build_sdk)
     target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
     target_include_directories(
       coremldelegate
@@ -306,7 +320,7 @@ if(APPLE)
                            -Wno-null-character -Wno-receiver-expr
   )
 
-  if(EXECUTORCH_BUILD_DEVTOOLS)
+  if(_coreml_build_sdk)
     target_compile_options(executorch_core PUBLIC -DET_EVENT_TRACER_ENABLED)
     target_compile_options(coremldelegate PRIVATE "-frtti")
     target_compile_options(libprotobuf-lite PRIVATE "-frtti")
