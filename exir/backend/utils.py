@@ -342,31 +342,24 @@ def format_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
     return graph_format_str
 
 
-def tag_constant_data(edge_program: ExportedProgram) -> None:
+def _mutated_buffer_placeholders(edge_program: ExportedProgram) -> Set[torch.fx.Node]:
     """
-    Util function for partitioners. This function tags the const/param/buffers nodes
-    whose users all belong within the same partition. This should be called after tagging all other nodes.
-    Any const/param/buffer which is used as input to a subgraph, will be tagged with the same tag as that
-    subgraph. Throw error when const/param/buffers is used across different partitions. That is the
-    underlying data will be owned by multiple delegates.
+    Placeholders whose data the program mutates, which must not be treated as
+    constant. A buffer is matched against the signature's mutation targets rather
+    than by looking through its users for the mutating node: a buffer that is not
+    written in one step — a cache first concatenated with new values and written
+    back further down the chain — has something other than the mutation as its
+    user, and would otherwise be taken for a constant and folded into a delegate
+    instead of remaining a mutable buffer input. Parameters and lifted constants
+    have no mutation target, so for them the direct-user check remains.
     """
-    # Cache signature lookups to avoid rebuilding dicts on every access.
     sig = edge_program.graph_signature
     params_map = sig.inputs_to_parameters
     buffers_map = sig.inputs_to_buffers
     constants_map = sig.inputs_to_lifted_tensor_constants
     buffers_to_mutate = sig.buffers_to_mutate
-
-    # Which buffers the program says are mutated. Reading the targets rather than
-    # matching the mutating node's name against a buffer's direct users is what makes
-    # this hold for a buffer that is not mutated in one step: a cache that is first
-    # concatenated with the new values and written back further down the chain has
-    # something other than the mutation as its user, and used to be taken for a
-    # constant. It would then be handed to a delegate as a buffer, and a backend that
-    # compiles mutable buffers into state — Core ML does — produced a model asking for
-    # state that the runtime had been told, by take_over_mutable_buffer=False, not to
-    # provide.
     mutated_targets = set(buffers_to_mutate.values())
+
     mutated_buffer = set()
     for node in edge_program.graph.nodes:
         if node.op == "placeholder" and (
@@ -386,6 +379,24 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
                         "The buffer node is a mutated buffer node, which is not constant."
                     )
                     mutated_buffer.add(node)
+    return mutated_buffer
+
+
+def tag_constant_data(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners. This function tags the const/param/buffers nodes
+    whose users all belong within the same partition. This should be called after tagging all other nodes.
+    Any const/param/buffer which is used as input to a subgraph, will be tagged with the same tag as that
+    subgraph. Throw error when const/param/buffers is used across different partitions. That is the
+    underlying data will be owned by multiple delegates.
+    """
+    # Cache signature lookups to avoid rebuilding dicts on every access.
+    sig = edge_program.graph_signature
+    params_map = sig.inputs_to_parameters
+    buffers_map = sig.inputs_to_buffers
+    constants_map = sig.inputs_to_lifted_tensor_constants
+
+    mutated_buffer = _mutated_buffer_placeholders(edge_program)
 
     for node in edge_program.graph.nodes:
         # go through const/param/buffer nodes, if all users of const/param/buffer nodes are partitioned then partition
