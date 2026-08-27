@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Any, Callable
+from typing import Any, Callable, TypeGuard
 
 import torch
 
@@ -175,7 +175,7 @@ def coerce_int_pair(raw, default: tuple[int, int]) -> tuple[int, int]:
     return (items[0], items[1])
 
 
-def is_foldable_alpha(alpha: Any) -> bool:
+def is_foldable_alpha(alpha: Any) -> TypeGuard[int]:
     """Whether quantized_add can absorb this alpha into an operand multiplier.
 
     Only an integer can get that far. FoldAndAnnotateQParamsPass re-traces once
