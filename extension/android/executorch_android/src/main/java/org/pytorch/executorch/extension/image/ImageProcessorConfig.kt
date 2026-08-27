@@ -167,9 +167,9 @@ data class ImageProcessorConfig(
 }
 
 /**
- * Per-side letterbox padding in pixels.
+ * Offset of the resized content within the letterboxed output, in pixels.
  *
- * @property x The left/right pad of the resized content.
- * @property y The top/bottom pad of the resized content.
+ * @property x The left offset of the resized content.
+ * @property y The top offset of the resized content.
  */
 @Experimental data class LetterboxPadding(val x: Int, val y: Int)

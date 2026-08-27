@@ -70,14 +70,20 @@ TensorPtr outputTensor(
         "Output buffer must be a direct java.nio.FloatBuffer");
     return nullptr;
   }
-  const int32_t required = image::ImageProcessorConfig::kOutputChannels *
-      config.target_height * config.target_width;
-  if (floatCapacity < required) {
+  // Bound the pixel count before multiplying by the channel count so the
+  // guard itself cannot overflow; a jint capacity can never satisfy a
+  // requirement past INT32_MAX anyway.
+  const int64_t pixels =
+      static_cast<int64_t>(config.target_height) * config.target_width;
+  if (pixels > INT32_MAX / image::ImageProcessorConfig::kOutputChannels ||
+      floatCapacity < image::ImageProcessorConfig::kOutputChannels * pixels) {
     setExecutorchPendingException(
         env,
         static_cast<uint32_t>(Error::InvalidArgument),
         "Output buffer holds " + std::to_string(floatCapacity) +
-            " floats, need " + std::to_string(required));
+            " floats, need " +
+            std::to_string(
+                image::ImageProcessorConfig::kOutputChannels * pixels));
     return nullptr;
   }
   return from_blob(
@@ -281,35 +287,47 @@ Java_org_pytorch_executorch_extension_image_ImageProcessor_nativeProcessBitmap(
     jint orientationCode,
     jobject outBuffer,
     jint outCapacity) {
-  auto* processor = toProcessor(env, nativeHandle);
-  if (processor == nullptr) {
-    return;
-  }
-  image::Orientation orientation;
-  if (!toOrientation(env, orientationCode, orientation)) {
-    return;
-  }
-  auto out = outputTensor(env, outBuffer, outCapacity, processor->config());
-  if (out == nullptr) {
-    return;
-  }
+  try {
+    auto* processor = toProcessor(env, nativeHandle);
+    if (processor == nullptr) {
+      return;
+    }
+    image::Orientation orientation;
+    if (!toOrientation(env, orientationCode, orientation)) {
+      return;
+    }
+    auto out = outputTensor(env, outBuffer, outCapacity, processor->config());
+    if (out == nullptr) {
+      return;
+    }
 
-  ScopedBitmapLock lock(env, bitmap);
-  if (!lock.ok()) {
-    return;
-  }
+    ScopedBitmapLock lock(env, bitmap);
+    if (!lock.ok()) {
+      return;
+    }
 
-  const Error error = processor->process_into(
-      lock.pixels(),
-      lock.width(),
-      lock.height(),
-      lock.stride(),
-      image::ColorFormat::RGBA,
-      *out,
-      orientation);
-  if (error != Error::Ok) {
+    const Error error = processor->process_into(
+        lock.pixels(),
+        lock.width(),
+        lock.height(),
+        lock.stride(),
+        image::ColorFormat::RGBA,
+        *out,
+        orientation);
+    if (error != Error::Ok) {
+      setExecutorchPendingException(
+          env, static_cast<uint32_t>(error), "Failed to process Bitmap");
+    }
+  } catch (const std::exception& e) {
     setExecutorchPendingException(
-        env, static_cast<uint32_t>(error), "Failed to process Bitmap");
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        std::string("Failed to process Bitmap: ") + e.what());
+  } catch (...) {
+    setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        "Failed to process Bitmap: unknown exception");
   }
 }
 
@@ -331,55 +349,70 @@ Java_org_pytorch_executorch_extension_image_ImageProcessor_nativeProcessYuv(
     jint orientationCode,
     jobject outBuffer,
     jint outCapacity) {
-  auto* processor = toProcessor(env, nativeHandle);
-  if (processor == nullptr) {
-    return;
-  }
-  image::Orientation orientation;
-  if (!toOrientation(env, orientationCode, orientation)) {
-    return;
-  }
-  auto out = outputTensor(env, outBuffer, outCapacity, processor->config());
-  if (out == nullptr) {
-    return;
-  }
-  // The last row of each plane is only read up to `width`, not a full stride,
-  // and the chroma plane's very last byte is never read -- see the
-  // substitution in yuv_to_rgba_semi_planar, which exists because a CameraX
-  // plane stops one byte short of it. Leave the dimension and stride checks
-  // themselves to process_yuv_into; clamp to 0 here so a bad input cannot
-  // produce a negative bound.
-  const int64_t yRequired = width > 0 && height > 0
-      ? static_cast<int64_t>(yStride) * (height - 1) + width
-      : 0;
-  const int64_t uvRequired = width > 0 && height > 0
-      ? static_cast<int64_t>(uvStride) * (height / 2 - 1) + width - 1
-      : 0;
-  const uint8_t* y = directBytes(env, yPlane, yCapacity, yRequired, "yPlane");
-  if (y == nullptr) {
-    return;
-  }
-  const uint8_t* uv =
-      directBytes(env, uvPlane, uvCapacity, uvRequired, "uvPlane");
-  if (uv == nullptr) {
-    return;
-  }
+  try {
+    auto* processor = toProcessor(env, nativeHandle);
+    if (processor == nullptr) {
+      return;
+    }
+    image::Orientation orientation;
+    if (!toOrientation(env, orientationCode, orientation)) {
+      return;
+    }
+    auto out = outputTensor(env, outBuffer, outCapacity, processor->config());
+    if (out == nullptr) {
+      return;
+    }
+    // The last row of each plane is only read up to `width`, not a full
+    // stride, and the chroma bound stops one byte short of the last pair,
+    // because that is where a CameraX plane view ends. The capacity is passed
+    // down as uv_plane_size, so the decode reads the final byte whenever it is
+    // actually there and substitutes it only when it is not. Leave the
+    // dimension and stride checks themselves to process_yuv_into; clamp to 0
+    // here so a bad input cannot produce a negative bound.
+    const int64_t yRequired = width > 0 && height > 0
+        ? static_cast<int64_t>(yStride) * (height - 1) + width
+        : 0;
+    const int64_t uvRequiredRaw = width > 0 && height > 0
+        ? static_cast<int64_t>(uvStride) * (height / 2 - 1) + width - 1
+        : 0;
+    const int64_t uvRequired = uvRequiredRaw < 0 ? 0 : uvRequiredRaw;
+    const uint8_t* y = directBytes(env, yPlane, yCapacity, yRequired, "yPlane");
+    if (y == nullptr) {
+      return;
+    }
+    const uint8_t* uv =
+        directBytes(env, uvPlane, uvCapacity, uvRequired, "uvPlane");
+    if (uv == nullptr) {
+      return;
+    }
 
-  const Error error = processor->process_yuv_into(
-      y,
-      yStride,
-      uv,
-      uvStride,
-      width,
-      height,
-      static_cast<image::YUVFormat>(format),
-      *out,
-      orientation,
-      image::kFullImage,
-      static_cast<image::YUVRange>(range));
-  if (error != Error::Ok) {
+    const Error error = processor->process_yuv_into(
+        y,
+        yStride,
+        uv,
+        uvStride,
+        width,
+        height,
+        static_cast<image::YUVFormat>(format),
+        *out,
+        orientation,
+        image::kFullImage,
+        static_cast<image::YUVRange>(range),
+        static_cast<int64_t>(uvCapacity));
+    if (error != Error::Ok) {
+      setExecutorchPendingException(
+          env, static_cast<uint32_t>(error), "Failed to process YUV planes");
+    }
+  } catch (const std::exception& e) {
     setExecutorchPendingException(
-        env, static_cast<uint32_t>(error), "Failed to process YUV planes");
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        std::string("Failed to process YUV planes: ") + e.what());
+  } catch (...) {
+    setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        "Failed to process YUV planes: unknown exception");
   }
 }
 
@@ -391,24 +424,38 @@ Java_org_pytorch_executorch_extension_image_ImageProcessor_nativeComputeOutputSh
     jint inputWidth,
     jint inputHeight,
     jint orientationCode) {
-  auto* processor = toProcessor(env, nativeHandle);
-  if (processor == nullptr) {
-    return nullptr;
-  }
-  image::Orientation orientation;
-  if (!toOrientation(env, orientationCode, orientation)) {
-    return nullptr;
-  }
+  try {
+    auto* processor = toProcessor(env, nativeHandle);
+    if (processor == nullptr) {
+      return nullptr;
+    }
+    image::Orientation orientation;
+    if (!toOrientation(env, orientationCode, orientation)) {
+      return nullptr;
+    }
 
-  const auto shape =
-      processor->compute_output_shape(inputWidth, inputHeight, orientation);
-  jintArray result = env->NewIntArray(static_cast<jsize>(shape.size()));
-  if (result == nullptr) {
+    const auto shape =
+        processor->compute_output_shape(inputWidth, inputHeight, orientation);
+    jintArray result = env->NewIntArray(static_cast<jsize>(shape.size()));
+    if (result == nullptr) {
+      return nullptr;
+    }
+    env->SetIntArrayRegion(
+        result, 0, static_cast<jsize>(shape.size()), shape.data());
+    return result;
+  } catch (const std::exception& e) {
+    setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        std::string("Failed to compute output shape: ") + e.what());
+    return nullptr;
+  } catch (...) {
+    setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        "Failed to compute output shape: unknown exception");
     return nullptr;
   }
-  env->SetIntArrayRegion(
-      result, 0, static_cast<jsize>(shape.size()), shape.data());
-  return result;
 }
 
 JNIEXPORT jintArray JNICALL
@@ -419,24 +466,38 @@ Java_org_pytorch_executorch_extension_image_ImageProcessor_nativeComputeLetterbo
     jint inputWidth,
     jint inputHeight,
     jint orientationCode) {
-  auto* processor = toProcessor(env, nativeHandle);
-  if (processor == nullptr) {
-    return nullptr;
-  }
-  image::Orientation orientation;
-  if (!toOrientation(env, orientationCode, orientation)) {
-    return nullptr;
-  }
+  try {
+    auto* processor = toProcessor(env, nativeHandle);
+    if (processor == nullptr) {
+      return nullptr;
+    }
+    image::Orientation orientation;
+    if (!toOrientation(env, orientationCode, orientation)) {
+      return nullptr;
+    }
 
-  const auto padding = processor->compute_letterbox_padding(
-      inputWidth, inputHeight, orientation);
-  const jint values[2] = {padding.first, padding.second};
-  jintArray result = env->NewIntArray(2);
-  if (result == nullptr) {
+    const auto padding = processor->compute_letterbox_padding(
+        inputWidth, inputHeight, orientation);
+    const jint values[2] = {padding.first, padding.second};
+    jintArray result = env->NewIntArray(2);
+    if (result == nullptr) {
+      return nullptr;
+    }
+    env->SetIntArrayRegion(result, 0, 2, values);
+    return result;
+  } catch (const std::exception& e) {
+    setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        std::string("Failed to compute letterbox padding: ") + e.what());
+    return nullptr;
+  } catch (...) {
+    setExecutorchPendingException(
+        env,
+        static_cast<uint32_t>(Error::Internal),
+        "Failed to compute letterbox padding: unknown exception");
     return nullptr;
   }
-  env->SetIntArrayRegion(result, 0, 2, values);
-  return result;
 }
 
 } // extern "C"

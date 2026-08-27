@@ -190,10 +190,11 @@ class ImageProcessor(val config: ImageProcessorConfig) : Closeable {
    * stride of 1 means fully planar I420, which this path cannot consume.
    *
    * Both buffers are bounds-checked against the strides and dimensions given here, so a plane a
-   * camera HAL trimmed short is rejected rather than read past its end. The chroma bound stops one
-   * byte short of the last pair, because that is where a CameraX plane ends: `planes[1]` and
-   * `planes[2]` are views one byte apart into the same allocation, so whichever one is passed is
-   * missing an end byte, and the decode fills that one sample in from the neighboring pair.
+   * camera HAL trimmed short is rejected rather than read past its end. A complete chroma plane is
+   * decoded exactly. The one allowance is the plane's final byte: a CameraX plane ends one byte
+   * short of it (`planes[1]` and `planes[2]` are views one byte apart into the same allocation), so
+   * a buffer missing exactly that byte is accepted, and the decode fills that one sample in from
+   * the neighboring pair.
    *
    * @param yPlane Direct buffer holding the luma plane.
    * @param yStride Row stride of the luma plane, in bytes.
@@ -301,9 +302,9 @@ class ImageProcessor(val config: ImageProcessorConfig) : Closeable {
   }
 
   /**
-   * Letterbox padding (per side, in pixels) applied for the given source, letting callers map model
-   * output back to source coordinates without replicating the resize geometry. Returns `(0, 0)` for
-   * [ResizeMode.STRETCH] or [LetterboxAnchor.TOP_LEFT].
+   * Left and top offsets (in pixels) of the resized content within the letterboxed output, letting
+   * callers map model output back to source coordinates without replicating the resize geometry.
+   * Returns `(0, 0)` for [ResizeMode.STRETCH] or [LetterboxAnchor.TOP_LEFT].
    *
    * @param inputWidth Source width in pixels.
    * @param inputHeight Source height in pixels.
@@ -327,7 +328,15 @@ class ImageProcessor(val config: ImageProcessorConfig) : Closeable {
     return handle
   }
 
-  private fun outputNumel(): Int = OUTPUT_CHANNELS * config.targetHeight * config.targetWidth
+  private fun outputNumel(): Int {
+    // Bound the pixel count before multiplying so the guard itself cannot
+    // overflow: Int dimensions keep targetHeight * targetWidth within a Long.
+    val pixels = config.targetHeight.toLong() * config.targetWidth
+    require(pixels <= Int.MAX_VALUE / (OUTPUT_CHANNELS.toLong() * Float.SIZE_BYTES)) {
+      "Output for ${config.targetWidth}x${config.targetHeight} cannot fit in a Java buffer"
+    }
+    return (OUTPUT_CHANNELS * pixels).toInt()
+  }
 
   private fun outputShape(): LongArray =
       longArrayOf(
@@ -344,8 +353,8 @@ class ImageProcessor(val config: ImageProcessorConfig) : Closeable {
           tensor.shape().contentToString()
     }
     val buffer = tensor.getRawDataBuffer()
-    require(buffer is FloatBuffer && buffer.isDirect) {
-      "Output tensor must be backed by a direct FloatBuffer"
+    require(buffer is FloatBuffer && buffer.isDirect && !buffer.isReadOnly) {
+      "Output tensor must be backed by a writable direct FloatBuffer"
     }
     return buffer
   }

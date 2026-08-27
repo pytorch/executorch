@@ -1140,6 +1140,88 @@ TEST_P(ProcessTest, YuvDefaultsToVideoRange) {
       "default vs explicit video range");
 }
 
+TEST_P(ProcessTest, YuvShortChromaPlaneSubstitutesOnlyTheMissingByte) {
+  // A complete chroma plane decodes its final pair exactly. The same plane
+  // handed over one byte short -- how an Android camera plane view arrives --
+  // is accepted, and only that missing sample is substituted from the
+  // neighboring pair; the pair's first byte, which is present either way, must
+  // still be read exactly.
+  const int32_t w = 4, h = 4;
+  auto img = make_yuv(w, h, 150, 128, 128, YUVFormat::NV12);
+  img.uv[img.uv.size() - 2] = 100; // final pair Cb, present in both runs
+  img.uv[img.uv.size() - 1] = 200; // final pair Cr, the byte a view cuts off
+  ImageProcessor p(cfg(w, h)); // identity STRETCH keeps pixels addressable
+
+  auto complete = p.process_yuv(
+      img.y.data(),
+      w,
+      img.uv.data(),
+      w,
+      w,
+      h,
+      YUVFormat::NV12,
+      Orientation::UP,
+      kFullImage,
+      YUVRange::FULL,
+      static_cast<int64_t>(img.uv.size()));
+  auto shorted = p.process_yuv(
+      img.y.data(),
+      w,
+      img.uv.data(),
+      w,
+      w,
+      h,
+      YUVFormat::NV12,
+      Orientation::UP,
+      kFullImage,
+      YUVRange::FULL,
+      static_cast<int64_t>(img.uv.size()) - 1);
+  ASSERT_TRUE(complete.ok());
+  ASSERT_TRUE(shorted.ok());
+  const float* c = complete.get()->const_data_ptr<float>();
+  const float* s = shorted.get()->const_data_ptr<float>();
+
+  // Bottom-right 2x2 block reads the final pair. Complete plane: the true
+  // Cr=200; short plane: the previous pair's Cr=128. Cb=100 is read exactly in
+  // both, so blue agrees while red splits. Values from the fixed-point BT.601
+  // full-range decode of (Y=150, Cb=100, Cr) for Cr=200 and Cr=128.
+  expect_rgb(c, h, w, 3, 3, 251 / 255.0f, 108 / 255.0f, 100 / 255.0f);
+  expect_rgb(s, h, w, 3, 3, 150 / 255.0f, 160 / 255.0f, 100 / 255.0f);
+  // Away from the final pair the two runs read identical bytes.
+  for (int32_t row = 0; row < h; ++row) {
+    for (int32_t col = 0; col < w; ++col) {
+      if (row >= 2 && col >= 2) {
+        continue;
+      }
+      for (int32_t ch = 0; ch < 3; ++ch) {
+        EXPECT_EQ(chw(c, h, w, ch, row, col), chw(s, h, w, ch, row, col))
+            << "channel " << ch << " at " << row << "," << col;
+      }
+    }
+  }
+}
+
+TEST_P(ProcessTest, YuvChromaPlaneShorterThanCameraViewIsRejected) {
+  // One missing byte is the camera-view allowance; anything shorter is an
+  // error, not a wider substitution.
+  const int32_t w = 4, h = 4;
+  auto img = make_yuv(w, h, 150, 128, 128, YUVFormat::NV12);
+  ImageProcessor p(cfg(w, h));
+  auto result = p.process_yuv(
+      img.y.data(),
+      w,
+      img.uv.data(),
+      w,
+      w,
+      h,
+      YUVFormat::NV12,
+      Orientation::UP,
+      kFullImage,
+      YUVRange::FULL,
+      static_cast<int64_t>(img.uv.size()) - 2);
+  EXPECT_FALSE(result.ok());
+}
+
 // --- Thread safety ---
 
 TEST(ThreadSafetyTest, ConcurrentProcessIsSafe) {

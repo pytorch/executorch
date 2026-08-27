@@ -120,6 +120,7 @@ void yuv_to_rgba_semi_planar(
     int32_t y_stride,
     const uint8_t* uv_plane,
     int32_t uv_stride,
+    int64_t uv_size,
     int32_t width,
     int32_t height,
     YUVFormat format,
@@ -128,25 +129,27 @@ void yuv_to_rgba_semi_planar(
     int32_t rgba_stride) {
   const bool is_nv12 = (format == YUVFormat::NV12);
   const bool is_full = (range == YUVRange::FULL);
+  // An Android camera hands the interleaved chroma plane over as a view that
+  // stops one byte short of its last pair -- planes[1] and planes[2] point one
+  // byte apart into the same allocation, so whichever one a caller passes is
+  // missing an end byte. When `uv_size` says that byte is not there, never
+  // read it; substitute the previous pair's sample of the same channel (or
+  // neutral chroma when the row holds a single pair). A complete plane
+  // (uv_size < 0, or large enough) is decoded exactly.
+  const int64_t last_byte_offset =
+      static_cast<int64_t>(uv_stride) * (height / 2 - 1) + width - 1;
+  const bool last_byte_absent = uv_size >= 0 && uv_size <= last_byte_offset;
   for (int32_t y = 0; y < height; ++y) {
     const uint8_t* y_row = y_plane + y * y_stride;
     const uint8_t* uv_row = uv_plane + (y / 2) * uv_stride;
     uint8_t* out_row = rgba_out + y * rgba_stride;
-
-    // Every Android camera hands the interleaved chroma plane over as a view
-    // that stops one byte short of its last pair -- planes[1] and planes[2]
-    // point one byte apart into the same allocation, so whichever one a caller
-    // passes is missing an end byte. Never read that byte; substitute the
-    // previous pair's sample of the same channel (or neutral chroma when the
-    // row holds a single pair), which keeps U and V distinct instead of
-    // collapsing the corner onto whichever channel the last byte holds.
     const bool last_uv_row = (y / 2) == (height / 2 - 1);
 
     for (int32_t x = 0; x < width; ++x) {
       const int32_t uv_idx = (x / 2) * 2;
       const uint8_t first = uv_row[uv_idx];
       uint8_t second;
-      if (last_uv_row && uv_idx == width - 2) {
+      if (last_byte_absent && last_uv_row && uv_idx == width - 2) {
         second = uv_idx > 0 ? uv_row[uv_idx - 1] : 128;
       } else {
         second = uv_row[uv_idx + 1];
@@ -467,7 +470,8 @@ Error ImageProcessor::process_yuv_into(
     executorch::aten::Tensor& out,
     Orientation orientation,
     NormalizedRect roi,
-    YUVRange range) const {
+    YUVRange range,
+    int64_t uv_plane_size) const {
   ET_CHECK_OR_RETURN_ERROR(
       y_plane != nullptr, InvalidArgument, "y_plane is null");
   ET_CHECK_OR_RETURN_ERROR(
@@ -484,6 +488,15 @@ Error ImageProcessor::process_yuv_into(
       y_stride >= width, InvalidArgument, "y_stride too small");
   ET_CHECK_OR_RETURN_ERROR(
       uv_stride >= width, InvalidArgument, "uv_stride too small");
+  // The chroma plane may end one byte short of its final pair (that is where
+  // an Android camera plane view stops, and the decode substitutes exactly
+  // that sample), but no shorter.
+  ET_CHECK_OR_RETURN_ERROR(
+      uv_plane_size < 0 ||
+          uv_plane_size >=
+              static_cast<int64_t>(uv_stride) * (height / 2 - 1) + width - 1,
+      InvalidArgument,
+      "uv_plane_size too small");
   // yuv_to_rgb_semi_planar reduces format/range to a single bool each, treating
   // anything other than NV12/FULL as NV21/VIDEO. Reject unknown enum values so
   // a bogus cast (or a future variant the decoder doesn't yet handle) fails
@@ -514,6 +527,7 @@ Error ImageProcessor::process_yuv_into(
       y_stride,
       uv_plane,
       uv_stride,
+      uv_plane_size,
       width,
       height,
       format,
@@ -574,7 +588,8 @@ Result<TensorPtr> ImageProcessor::process_yuv(
     YUVFormat format,
     Orientation orientation,
     NormalizedRect roi,
-    YUVRange range) const {
+    YUVRange range,
+    int64_t uv_plane_size) const {
   ET_CHECK_OR_RETURN_ERROR(
       config().target_width > 0 && config().target_height > 0,
       InvalidArgument,
@@ -599,7 +614,8 @@ Result<TensorPtr> ImageProcessor::process_yuv(
       *out,
       orientation,
       roi,
-      range);
+      range,
+      uv_plane_size);
   if (err != Error::Ok) {
     return err;
   }
