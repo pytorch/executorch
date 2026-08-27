@@ -7,10 +7,10 @@
 """TOSA configuration of the shared permute/view propagation passes."""
 
 from collections.abc import Sequence
+from typing import Any
 
 import torch
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
-from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass as _DownPass,
     PropagateViewCopyPermutePass as _BasePass,
@@ -37,16 +37,52 @@ class TosaPropagationOverrides(_BasePass):
     def duplicate_user_fusion_exclusions(self) -> frozenset:
         return TOSA_EXCLUDED_TARGETS
 
+    def blocks_moving(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> bool:
+        # INT48 storage is not laid out like the int32 fake tensor used for
+        # metadata, so permuting it would address the packed data incorrectly.
+        return moving_node.target == self._PERMUTE_TARGET and any(
+            self._node_or_inputs_are_int48(candidate)
+            for candidate in (frontier, *next_nodes)
+        )
+
+    def tolerates_shape_after_move(self, next_node: torch.fx.Node, shape: Any) -> bool:
+        # Moving a view across a TABLE changes the shape the lookup table
+        # operates on. Ethos-U85 miscompiles a TABLE fed by a MAC op when that
+        # operand is [N, 1, 1, C] with N > 1 (MLBEDSW-11805), so keep the view
+        # on the other side of the table in that case.
+        if next_node.target != exir_ops.backend.tosa.TABLE.default:
+            return True
+        return not self._is_unsafe_table_operand_shape(shape)
+
+    @staticmethod
+    def _is_unsafe_table_operand_shape(shape: Any) -> bool:
+        """Whether a TABLE reading ``shape`` is miscompiled on Ethos-U85."""
+        return (
+            shape is not None
+            and len(shape) == 4
+            and all(isinstance(dim, int) for dim in shape)
+            and shape[0] > 1
+            and shape[1] == 1
+            and shape[2] == 1
+        )
+
+    @staticmethod
+    def _node_or_inputs_are_int48(node: torch.fx.Node) -> bool:
+        special_dtype_key = TosaSpecialDtype.meta_key()
+        return node.meta.get(special_dtype_key) == TosaSpecialDtype.INT48 or any(
+            input_node.meta.get(special_dtype_key) == TosaSpecialDtype.INT48
+            for input_node in node.all_input_nodes
+        )
+
     def make_fusion_pass(self) -> ExportPass | None:
         if self.exported_program is None:
             return None
         return RemovePermutesAroundElementwiseTosaOps(self.exported_program)
-
-    def should_propagate(self) -> bool:
-        # Do not run for Ethos-U85 since this exposes a numerical issue.
-        # There is no target meta-data at this stage so use INT+cf as proxy.
-        # To be removed after MLBEDSW-11805.
-        return not self._is_u85_like_tosa_int_cf()
 
     def is_transparent(self, node: torch.fx.Node) -> bool:
         return (
@@ -66,21 +102,6 @@ class TosaPropagationOverrides(_BasePass):
         if node.target == exir_ops.backend.tosa.TABLE.default:
             return True
         return super().is_elementwise(node)
-
-    def _is_u85_like_tosa_int_cf(self) -> bool:
-        if self.compile_spec is not None:
-            tosa_spec = self.compile_spec.tosa_spec
-        else:
-            try:
-                tosa_spec = get_context_spec()
-            except RuntimeError:
-                return False
-
-        return (
-            tosa_spec.support_integer()
-            and not tosa_spec.support_float()
-            and tosa_spec.support_extension("cf")
-        )
 
     def _is_per_tensor_rescale(self, node: torch.fx.Node) -> bool:
         if len(node.args) < 3:

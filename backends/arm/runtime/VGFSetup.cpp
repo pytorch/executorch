@@ -3211,9 +3211,15 @@ bool VgfRepr::process_vgf(
           return false;
         }
 
+        const VkDataGraphPipelineSessionBindPointRequirementARM
+            bind_point_requirement_template{
+                .sType =
+                    VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM,
+                .pNext = nullptr,
+            };
         vector<VkDataGraphPipelineSessionBindPointRequirementARM>
-            bind_point_requirements;
-        bind_point_requirements.resize(bind_point_count);
+            bind_point_requirements(
+                bind_point_count, bind_point_requirement_template);
         {
           VGF_PROFILE_SCOPE(
               event_tracer, "VGF_INIT_QUERY_DATA_GRAPH_BIND_POINTS");

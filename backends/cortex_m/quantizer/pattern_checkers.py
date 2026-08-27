@@ -11,6 +11,7 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     coerce_int_pair,
     is_channel_broadcast,
     is_channels_last,
+    is_foldable_alpha,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
@@ -29,9 +30,12 @@ class CortexMAddMulCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
         """
-        Checks that the pattern does not perform unsupported broadcasting.
+        Checks that the pattern does not perform unsupported broadcasting, and
+        that any alpha on an add/sub is one quantized_add can fold.
         """
         for node in pattern:
+            if not is_foldable_alpha(node.kwargs.get("alpha", 1)):
+                return False
             if len(node.all_input_nodes) == 2:
                 t1 = get_first_fake_tensor(node.all_input_nodes[0])
                 t2 = get_first_fake_tensor(node.all_input_nodes[1])
