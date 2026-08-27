@@ -108,6 +108,16 @@ libxnnpack_backend.a,\
 libxnnpack-microkernels-prod.a,\
 :"
 
+# The MLX backend. libmlx.a is the MLX runtime the delegate binds to, and
+# libextension_llm_cache.a carries the off-graph KV-cache registry the backend
+# uses; neither ships in any other framework. The Metal kernels are a separate
+# mlx.metallib resource handled below, not a static archive.
+FRAMEWORK_BACKEND_MLX="backend_mlx:\
+libmlxdelegate.a,\
+libmlx.a,\
+libextension_llm_cache.a,\
+:"
+
 FRAMEWORK_KERNELS_LLM="kernels_llm:\
 libcustom_ops.a,\
 :"
@@ -138,6 +148,7 @@ usage() {
   echo "  --Release            Build Release version."
   echo "  --coreml             Only build the Core ML backend."
   echo "  --llm                Only build the LLM custom kernels."
+  echo "  --mlx                Only build the MLX backend."
   echo "  --optimized          Only build the Optimized kernels."
   echo "  --quantized          Only build the Quantized kernels."
   echo "  --torchao            Only build the TorchAO kernels."
@@ -158,6 +169,7 @@ set_cmake_options_override() {
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF"
+      "-DEXECUTORCH_BUILD_MLX=OFF"
       "-DEXECUTORCH_BUILD_XNNPACK=OFF"
     )
   fi
@@ -185,6 +197,7 @@ for arg in "$@"; do
         ;;
       --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
       --llm) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_LLM" ;;
+      --mlx) set_cmake_options_override "EXECUTORCH_BUILD_MLX" ;;
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
       --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
@@ -310,14 +323,39 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_MLX" "$FRAMEWORK_BACKEND_MLX" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_LLM" "$FRAMEWORK_KERNELS_LLM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
 
-  cd "${OUTPUT_DIR}"
-  "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
+    cd "${OUTPUT_DIR}"
+    "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
+
+# Ship the MLX Metal kernels as a SwiftPM resource. Unlike the static archives
+# merged into the xcframework, the metallib is a data file MLX loads at runtime by
+# bundle name. A metallib is platform specific, so one is copied per slice into the
+# shared backend_mlx_resources target, where SwiftPM turns them into
+# executorch_backend_mlx_resources.bundle. Each slice's MLX binary was compiled to
+# ask for its own mlx-<slice>.metallib, so all three ship and each binary picks its
+# own.
+if [[ ! " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
+  mlx_resources_dir="$SOURCE_ROOT_DIR/.Package.swift/backend_mlx_resources"
+  mkdir -p "${mlx_resources_dir}"
+  for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
+    mlx_metallib="${OUTPUT_DIR}/${preset_out_dir}/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
+    if [[ -f "${mlx_metallib}" ]]; then
+      # The metallib name compiled into each slice (see backends/mlx/CMakeLists.txt):
+      # the simulator preset dir is "simulator" but the slice name is "ios-simulator".
+      case "${preset_out_dir}" in
+        simulator) slice="ios-simulator" ;;
+        *) slice="${preset_out_dir}" ;;
+      esac
+      cp "${mlx_metallib}" "${mlx_resources_dir}/mlx-${slice}.metallib"
+    fi
+  done
+fi
 
 echo "Cleaning up"
 

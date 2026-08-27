@@ -18,6 +18,10 @@ add_compile_options(
 set_overridable_option(BUILD_TESTING OFF)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_COREML ON)
+# The MLX backend runs models on the Apple GPU through Metal. It builds only for
+# Apple Silicon and requires a deployment target of macOS 14 or iOS 17, which
+# the Apple presets set.
+set_overridable_option(EXECUTORCH_BUILD_MLX ON)
 set_overridable_option(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE ON)
 set_overridable_option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_APPLE ON)

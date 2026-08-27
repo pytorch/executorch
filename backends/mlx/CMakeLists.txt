@@ -188,7 +188,31 @@ set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
 )
+# In a framework build the delegate is linked statically into the consumer, so
+# MLX cannot find its metallib next to a shared library the way it does in the
+# wheel. MLX instead searches loaded bundles for one named by SWIFTPM_BUNDLE,
+# which the SwiftPM package ships as a resource bundle. That bundle holds a
+# metallib per platform slice, because a metallib built for one slice does not
+# load on another, so each slice's binary asks for its own file by name. Compile
+# both names in for Apple framework builds, identified by PLATFORM being set by
+# ios.toolchain. PLATFORM is absent for the wheel build, which keeps the
+# colocated path.
+set(_mlx_extra_cxx_flags "")
+if(PLATFORM)
+  if(PLATFORM STREQUAL "OS64")
+    set(_mlx_metallib_slice "ios")
+  elseif(PLATFORM STREQUAL "SIMULATORARM64")
+    set(_mlx_metallib_slice "ios-simulator")
+  else()
+    set(_mlx_metallib_slice "macos")
+  endif()
+  set(_mlx_extra_cxx_flags
+      "-DSWIFTPM_BUNDLE=\\\"executorch_backend_mlx_resources\\\" -DMLX_SWIFTPM_METALLIB_NAME=\\\"mlx-${_mlx_metallib_slice}\\\""
+  )
+endif()
 ExternalProject_Add(
   mlx_external
   SOURCE_DIR ${MLX_SOURCE_DIR}
@@ -197,6 +221,7 @@ ExternalProject_Add(
                 ${MLX_SOURCE_DIR} ${_mlx_patches}
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
+             "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}"
              -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
              -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
              -DPLATFORM=${PLATFORM}

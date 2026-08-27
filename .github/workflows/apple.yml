@@ -193,6 +193,7 @@ jobs:
           "executorch_llm"
           "backend_coreml"
           "backend_xnnpack"
+          "backend_mlx"
           "kernels_llm"
           "kernels_optimized"
           "kernels_quantized"
@@ -219,6 +220,15 @@ jobs:
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}_debug-${VERSION}.zip" "${FRAMEWORK}_debug.xcframework"
         ) done
+
+        # The MLX Metal kernel libraries are data files, not part of any
+        # xcframework, so carry them in the artifact for the SwiftPM update job to
+        # commit onto the package branch beside the manifest.
+        if [ -d .Package.swift/backend_mlx_resources ]; then
+          mkdir -p "${RUNNER_TEMP}/artifacts/backend_mlx_resources"
+          cp .Package.swift/backend_mlx_resources/*.metallib \
+            "${RUNNER_TEMP}/artifacts/backend_mlx_resources/" 2>/dev/null || true
+        fi
 
   upload-frameworks-ios:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
@@ -331,6 +341,16 @@ jobs:
 
             git config --global user.name "PyTorch Bot"
             git config --global user.email "pytorchbot@users.noreply.github.com"
+            # Carry the MLX Metal kernel libraries onto the package branch beside
+            # the manifest. They are data files the MLX product loads at runtime,
+            # not part of any xcframework, so they travel with the package source
+            # rather than an S3 zip.
+            if [ -d "${RUNNER_TEMP}/frameworks-ios/backend_mlx_resources" ]; then
+              mkdir -p .Package.swift/backend_mlx_resources
+              cp "${RUNNER_TEMP}"/frameworks-ios/backend_mlx_resources/*.metallib \
+                .Package.swift/backend_mlx_resources/
+              git add -f .Package.swift/backend_mlx_resources/*.metallib
+            fi
             git add Package.swift
             git commit -am "${VERSION}"
             git push -f origin "${BRANCH}"
