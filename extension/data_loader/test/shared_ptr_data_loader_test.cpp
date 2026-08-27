@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -138,5 +139,117 @@ TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
         /*segment_info=*/
         DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
+  }
+}
+
+TEST_F(SharedPtrDataLoaderTest, InBoundsLoadIntoSucceeds) {
+  // Create some heterogeneous data.
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+  for (int i = 0; i < SIZE; ++i) {
+    data[i] = i;
+  }
+
+  // Wrap it in a loader.
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  // Copying from an offset copies the expected slice of the data.
+  {
+    const size_t offset = 2;
+    const size_t size = 3;
+    uint8_t dst[size] = {};
+
+    Error err = sbdl.load_into(
+        offset,
+        size,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        dst);
+    EXPECT_EQ(err, Error::Ok);
+    EXPECT_EQ(0, std::memcmp(dst, "\x02\x03\x04", size));
+
+    // The source data is unaltered.
+    EXPECT_EQ(0, std::memcmp(dst, data.get() + offset, size));
+  }
+
+  // Copying all of the data succeeds.
+  {
+    std::vector<uint8_t> dst(SIZE);
+
+    Error err = sbdl.load_into(
+        /*offset=*/0,
+        /*size=*/SIZE,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        dst.data());
+    EXPECT_EQ(err, Error::Ok);
+    EXPECT_EQ(0, std::memcmp(dst.data(), data.get(), SIZE));
+  }
+}
+
+TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadIntoFails) {
+  // Wrap some data in a loader.
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+
+  // Wrap it in a loader.
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  std::vector<uint8_t> dst(SIZE + 1);
+
+  // Copying beyond the end of the data should fail.
+  {
+    Error err = sbdl.load_into(
+        /*offset=*/0,
+        /*size=*/SIZE + 1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        dst.data());
+    EXPECT_EQ(err, Error::InvalidArgument);
+  }
+
+  // Copying zero bytes still fails if it's past the end of the data.
+  {
+    Error err = sbdl.load_into(
+        /*offset=*/SIZE + 1,
+        /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        dst.data());
+    EXPECT_EQ(err, Error::InvalidArgument);
+  }
+}
+
+TEST_F(SharedPtrDataLoaderTest, LoadIntoNullDstFails) {
+  // Wrap some data in a loader.
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+
+  // Wrap it in a loader.
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  // Copying into a null destination should fail.
+  {
+    Error err = sbdl.load_into(
+        /*offset=*/0,
+        /*size=*/1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        nullptr);
+    EXPECT_EQ(err, Error::InvalidArgument);
+  }
+
+  // Copying zero bytes still fails if the destination is null.
+  {
+    Error err = sbdl.load_into(
+        /*offset=*/0,
+        /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        nullptr);
+    EXPECT_EQ(err, Error::InvalidArgument);
   }
 }
