@@ -10,15 +10,17 @@
 
 #import <ExecuTorch/ExecuTorchModule.h>
 
+#import "ExecuTorchETDumpError.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
 /**
  * Records what a model does while it runs: which methods and operators
  * executed, and how long each took.
  *
- * Load a model through this instead of through `Module` directly, run methods on
- * the `module` it owns, then take the recorded trace. The trace is an ETDump,
- * which the ExecuTorch developer tools read.
+ * Load a model through this instead of through `Module` directly, run methods
+ * on the `module` it owns, then take the recorded trace. The trace is an
+ * ETDump, which the ExecuTorch developer tools read.
  *
  * Events accumulate across runs, and taking the trace completes it, so take it
  * once per report rather than after every call.
@@ -32,10 +34,11 @@ __attribute__((objc_subclassing_restricted))
  *
  * Tracing is a build-time choice: the frameworks published for Apple platforms
  * enable it, a runtime built from source does so only when asked. When this is
- * NO, creating an instance fails rather than returning one that records nothing.
+ * NO, creating an instance fails rather than returning one that records
+ * nothing.
  */
-@property(class, readonly, getter=isAvailable) BOOL available
-    NS_SWIFT_NAME(isAvailable);
+@property(class, readonly, getter=isAvailable)
+    BOOL available NS_SWIFT_NAME(isAvailable);
 
 /**
  * The module being profiled. Run methods on this.

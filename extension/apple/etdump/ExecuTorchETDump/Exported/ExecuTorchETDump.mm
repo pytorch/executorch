@@ -11,12 +11,16 @@
 #import "ExecuTorchETDumpError.h"
 
 #import <executorch/devtools/etdump/etdump_flatcc.h>
+#import <executorch/extension/apple/ExecuTorch/Internal/ExecuTorchModule+Internal.h>
 #import <executorch/runtime/core/event_tracer_hooks.h>
+
+#import <flatcc/flatcc_builder.h>
 
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 
-NSErrorDomain const ExecuTorchETDumpErrorDomain = @"org.pytorch.executorch.etdump";
+NSErrorDomain const ExecuTorchETDumpErrorDomain =
+    @"org.pytorch.executorch.etdump";
 
 static NSError *ETDumpError(ExecuTorchETDumpErrorCode code, NSString *message) {
   return [NSError errorWithDomain:ExecuTorchETDumpErrorDomain
@@ -59,10 +63,11 @@ static NSError *ETDumpError(ExecuTorchETDumpErrorCode code, NSString *message) {
   self = [super init];
   if (self) {
     _lock = [NSLock new];
-    _module = [[ExecuTorchModule alloc] initWithFilePath:filePath
-                                          dataFilePaths:dataFilePaths
-                                            eventTracer:std::make_unique<ETDumpGen>()
-                                               loadMode:loadMode];
+    _module =
+        [ExecuTorchModule moduleWithFilePath:filePath
+                               dataFilePaths:dataFilePaths
+                                    loadMode:loadMode
+                                 eventTracer:std::make_unique<ETDumpGen>()];
   }
   return self;
 }
@@ -81,20 +86,34 @@ static NSError *ETDumpError(ExecuTorchETDumpErrorCode code, NSString *message) {
 
 - (nullable NSData *)takeDataWithError:(NSError **)error {
   [_lock lock];
-  ETDumpResult result = [_module takeETDumpResult];
+  // The module owns the tracer and this path always installs an ETDumpGen, so a
+  // static_cast is correct and needs no RTTI, which this target is built
+  // without. Reaching it through the module is what keeps the pointer valid
+  // rather than a second reference that could outlive it.
+  auto *tracer = static_cast<ETDumpGen *>(_module.eventTracer);
+  // get_etdump_data() finalises the builder and leaves the generator in its
+  // Done state, which a second call does not handle and would abort on. Reset
+  // after a successful take so a report-on-a-timer caller gets NoData on the
+  // next call rather than a process abort.
+  ETDumpResult result =
+      tracer ? tracer->get_etdump_data() : ETDumpResult{nullptr, 0};
+  if (result.buf != nullptr && result.size != 0) {
+    tracer->reset();
+  }
   [_lock unlock];
   if (result.buf == nullptr || result.size == 0) {
     if (error) {
-      *error = ETDumpError(
-          ExecuTorchETDumpErrorCodeNoData,
-          @"Nothing has been recorded since the last read. Run a method first.");
+      *error = ETDumpError(ExecuTorchETDumpErrorCodeNoData,
+                           @"Nothing has been recorded since the last read. "
+                           @"Run a method first.");
     }
     return nil;
   }
-  // The tracer allocated this buffer and hands it over, so copy it into an
-  // object with Cocoa's lifetime and release it on every path out.
+  // The tracer allocated this buffer with flatcc's aligned allocation and hands
+  // it over, so copy it into an object with Cocoa's lifetime and free it with
+  // the matching flatcc deallocator on every path out.
   NSData *data = [NSData dataWithBytes:result.buf length:result.size];
-  free(result.buf);
+  flatcc_builder_aligned_free(result.buf);
   return data;
 }
 

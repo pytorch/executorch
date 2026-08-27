@@ -53,7 +53,7 @@ endif()
 
 find_library(FOUNDATION_FRAMEWORK Foundation)
 target_link_libraries(
-  extension_etdump_apple PRIVATE etdump extension_module_static
+  extension_etdump_apple PRIVATE etdump extension_apple extension_module_static
                                  ${FOUNDATION_FRAMEWORK}
 )
 
