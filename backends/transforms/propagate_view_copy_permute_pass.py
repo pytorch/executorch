@@ -369,9 +369,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 else next_node.kwargs.get("keepdim")
             )
             if keep_dim is not True:
-                raise RuntimeError(
-                    f"{self.__class__.__name__} expects keep_dim=True for reduction ops to simplify propagation logic, got {keep_dim} for node {next_node.name}."
-                )
+                # A reduction that drops the dimension changes rank, so the
+                # permutation cannot simply be remapped across it.
+                return False
         return True
 
     def _can_move_through_elementwise(

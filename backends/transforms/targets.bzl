@@ -246,6 +246,19 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_test(
+        name = "test_propagate_view_copy_permute_pass",
+        srcs = [
+            "test/test_propagate_view_copy_permute_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":propagate_view_copy_permute_pass",
+            "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
     runtime.python_library(
         name = "canonicalize_view_copy_permute_pass",
         srcs = [

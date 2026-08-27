@@ -90,6 +90,24 @@ class TosaPropagationOverrides(_BasePass):
             or node.target == exir_ops.backend.tosa.RESCALE.default
         )
 
+    def is_swappable(self, next_node: torch.fx.Node) -> bool:
+        # Arm normalizes reductions to keepdim=True before this pass runs, so a
+        # non-keepdim reduction here means the pipeline is misordered. The
+        # shared pass merely declines; Arm wants to hear about it.
+        if next_node.target in self._REDUCTION_TARGETS:
+            keep_dim = (
+                next_node.args[2]
+                if len(next_node.args) > 2
+                else next_node.kwargs.get("keepdim")
+            )
+            if keep_dim is not True:
+                raise RuntimeError(
+                    f"{self.__class__.__name__} expects keep_dim=True for "
+                    f"reduction ops to simplify propagation logic, got "
+                    f"{keep_dim} for node {next_node.name}."
+                )
+        return super().is_swappable(next_node)
+
     def is_multi_input_elementwise(self, node: torch.fx.Node) -> bool:
         return node.target == exir_ops.backend.tosa.TABLE.default
 
