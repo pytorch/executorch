@@ -121,7 +121,6 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         if modified:
             graph_module = self._retrace(graph_module)
-            graph_module.recompile()
 
         return PassResult(graph_module, modified)
 

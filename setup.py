@@ -2170,6 +2170,8 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
                 cmake_build_args += ["--target", "executorch_shared"]
                 cmake_build_args += ["--target", "etdump"]
+                if cmake_cache.is_enabled("EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT"):
+                    cmake_build_args += ["--target", "coremldelegate"]
                 if cmake_cache.is_enabled(
                     "EXECUTORCH_BUILD_PTHREADPOOL"
                 ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
@@ -2400,6 +2402,20 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_MLX",
+                    ],
+                ),
+                # Install the Core ML delegate beside them, so a C++ consumer can
+                # link it out of the wheel rather than only reaching it from Python.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreml/",
+                    src_name=get_dynamic_lib_name("executorch_backend_coreml"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_coreml"),
+                    dependent_cmake_flags=[
+                        # Not EXECUTORCH_BUILD_COREML: that is also on for the Python
+                        # extension on non-Apple platforms, where this shared library
+                        # is not built. This flag is set only when it actually is.
+                        "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
                     ],
                 ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,

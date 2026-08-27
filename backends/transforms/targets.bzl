@@ -89,6 +89,19 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "collapse_view_copy",
+        srcs = ["collapse_view_copy.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fuse_view_copy",
         srcs = ["fuse_view_copy.py"],
         visibility = [
@@ -440,6 +453,18 @@ def define_common_targets():
             "//executorch/exir:lib",
             "//executorch/extension/pybindings:portable_lib",
             "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_collapse_view_copy",
+        srcs = [
+            "test/test_collapse_view_copy.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":collapse_view_copy",
         ],
     )
 
