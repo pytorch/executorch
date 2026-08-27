@@ -198,6 +198,7 @@ set(_mlx_patches
 # is set only for the Apple presets; a plain wheel build leaves it empty and
 # keeps the colocated path.
 set(_mlx_extra_cxx_flags "")
+set(_mlx_cxx_flags_arg "")
 if(PLATFORM)
   if(PLATFORM STREQUAL "OS64")
     set(_mlx_metallib_slice "ios")
@@ -209,6 +210,10 @@ if(PLATFORM)
   set(_mlx_extra_cxx_flags
       "-DSWIFTPM_BUNDLE=\\\"executorch_backend_mlx_resources\\\" -DMLX_SWIFTPM_METALLIB_NAME=\\\"mlx-${_mlx_metallib_slice}\\\""
   )
+  # Only override the sub-build's CXX flags when there is something to add. An
+  # empty -DCMAKE_CXX_FLAGS= on the command line beats the environment, so passing
+  # it unconditionally would silently drop a wheel build's CXXFLAGS for MLX only.
+  set(_mlx_cxx_flags_arg "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}")
 endif()
 
 # Prefer the preset's per-slice DEPLOYMENT_TARGET; fall back to the toolchain
@@ -234,7 +239,7 @@ ExternalProject_Add(
                 ${MLX_SOURCE_DIR} ${_mlx_patches}
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
-             "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}"
+             ${_mlx_cxx_flags_arg}
              # The preset's DEPLOYMENT_TARGET carries the correct per-slice
              # minimum (iOS 17, macOS 14); the ios.toolchain leaves
              # CMAKE_OSX_DEPLOYMENT_TARGET at 12.0 on the iOS slices and only
