@@ -5461,6 +5461,8 @@ def _flip_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.flip")
     x, dims = args
 
+    require_static_ints(dims, "dims", "aten.flip")
+
     out = P.make_or_get_slot(n)
 
     P.emit(

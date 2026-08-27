@@ -8617,6 +8617,7 @@ class FlipTest(OpTestCase):
             cls(shape=(4, 5), dims=[0, 1]),
             cls(shape=(3, 4, 5), dims=[-1]),
             cls(shape=(3, 4, 5), dims=[0, 2]),
+            cls(shape=(3, 4, 5), dims=[0, 1, 2]),
         ]
 
     def create_model(self) -> nn.Module:
