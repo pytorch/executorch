@@ -8,7 +8,6 @@
  */
 
 import PackageDescription
-import Foundation
 
 let version = "__VERSION__"
 let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
@@ -148,19 +147,15 @@ for (key, value) in products {
 // resource bundle both MLX products share. Kept out of the generic loop above so
 // there is one bundle (executorch_backend_mlx_resources.bundle) rather than a
 // separate debug copy, and so the release and debug delegates resolve the same
-// name. Each slice's MLX binary asks for its own mlx-<slice>.metallib. The files
-// are committed to this branch by the release job and gitignored elsewhere, so
-// each is included only when present.
+// name. Each slice's MLX binary asks for its own mlx-<slice>.metallib. The
+// release job commits all three files to this branch beside the manifest, so they
+// are always present in the published package and copied unconditionally.
 let mlxMetallibSlices = ["mlx-ios", "mlx-ios-simulator", "mlx-macos"]
-let mlxResourcesDir = ".Package.swift/backend_mlx_resources"
 if products.keys.contains("backend_mlx") {
   packageTargets.append(.target(
     name: "backend_mlx_resources",
-    path: mlxResourcesDir,
-    resources: mlxMetallibSlices.compactMap { slice in
-      FileManager.default.fileExists(atPath: "\(mlxResourcesDir)/\(slice).metallib")
-        ? .copy("\(slice).metallib") : nil
-    }
+    path: ".Package.swift/backend_mlx_resources",
+    resources: mlxMetallibSlices.map { .copy("\($0).metallib") }
   ))
   for suffix in ["", debug_suffix] {
     if let index = packageTargets.firstIndex(where: {
