@@ -343,6 +343,12 @@ class ET_EXPERIMENTAL CudaBackend final
       uint32_t current_sm = 0;
       if (!(fqn_weights.variants.size() == 1 &&
             fqn_weights.variants[0].target_sm == 0)) {
+#if defined(EXECUTORCH_USE_HIP)
+        ET_LOG(
+            Error,
+            "Multi-SM CUDA AOTI metadata is not supported by the ROCm runtime");
+        return Error::NotSupported;
+#else
         int device_index = 0;
         cudaDeviceProp device_properties{};
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&device_index));
@@ -355,6 +361,7 @@ class ET_EXPERIMENTAL CudaBackend final
                 fqn_weights, current_sm, variant_index, uses_ptx_fallback),
             "Failed to select a CUDA AOTI variant for sm%u",
             current_sm);
+#endif
       }
       const auto& variant = fqn_weights.variants[variant_index];
       so_blob_key = variant.so_blob_key;
