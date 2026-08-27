@@ -26,8 +26,14 @@ set(_json_include
 # executorch
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+find_package(Threads REQUIRED)
 executorch_target_link_options_shared_lib(executorch)
 
+# Older installed packages may omit this header-only interface target.
+if(NOT TARGET extension_llm_session)
+  add_library(extension_llm_session INTERFACE)
+  target_link_libraries(extension_llm_session INTERFACE executorch_core)
+endif()
 set(test_link_libraries executorch extension_llm_session tokenizers::tokenizers)
 
 # Pure unit test for the warm-resume prefill planner (worker_prefill_plan.h). No
@@ -47,5 +53,7 @@ add_executable(test_worker_loop test_worker_loop.cpp)
 target_include_directories(
   test_worker_loop PUBLIC ${_common_include_directories} ${_json_include}
 )
-target_link_libraries(test_worker_loop PUBLIC ${test_link_libraries})
+target_link_libraries(
+  test_worker_loop PUBLIC ${test_link_libraries} Threads::Threads
+)
 add_test(NAME worker_loop COMMAND test_worker_loop)
