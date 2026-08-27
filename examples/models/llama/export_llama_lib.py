@@ -35,7 +35,6 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
-    get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
     get_tosa_partitioner,
@@ -488,7 +487,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         choices=["full", "linear"],
         help="VGF quantization scope. Use 'linear' to quantize only Linear modules.",
     )
-    parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
         "--coreml-enable-state",
@@ -952,7 +950,6 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             ethosu=llm_config.backend.ethosu.enabled,
             use_qnn_sha=llm_config.backend.qnn.use_sha,
             optimized_rotation_path=llm_config.backend.qnn.optimized_rotation_path,
-            mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
@@ -1107,12 +1104,10 @@ def _validate_args(llm_config):
             f"max_context_length {llm_config.export.max_context_length} must be >= max_seq_len {llm_config.export.max_seq_length}. max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. Please use --max_context_length to specify context length."
         )
     if llm_config.model.enable_dynamic_shape and (
-        llm_config.backend.coreml.enabled
-        or llm_config.backend.mps.enabled
-        or llm_config.backend.qnn.enabled
+        llm_config.backend.coreml.enabled or llm_config.backend.qnn.enabled
     ):
         raise ValueError(
-            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            "Dynamic shape is not supported with coreml or qnn backends."
             " Please use --disable_dynamic_shape."
         )
 
@@ -1142,12 +1137,11 @@ def _validate_args(llm_config):
             llm_config.backend.coreml.enabled
             or llm_config.backend.vulkan.enabled
             or llm_config.backend.qnn.enabled
-            or llm_config.backend.mps.enabled
             or llm_config.backend.openvino.enabled
         ):
             raise ValueError(
                 "multimethod export only supports XNNPACK backend or portable ops. "
-                "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
+                "Please disable other backends (coreml, vulkan, qnn, openvino)."
             )
 
 
@@ -1358,7 +1352,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
     quantizers,
     quant_dtype,
     vulkan: bool = False,
-    mps: bool = False,
     coreml: bool = False,
     qnn: bool = False,
     dtype_override: str = "fp32",
@@ -1391,10 +1384,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
         )
         modelname = f"vulkan_{modelname}"
-
-    if mps:
-        partitioners.append(get_mps_partitioner(use_kv_cache))
-        modelname = f"mps_{modelname}"
 
     if coreml:
         coreml_partitioner = get_coreml_partitioner(
@@ -1766,7 +1755,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quantizers,
             quant_dtype,
             vulkan=llm_config.backend.vulkan.enabled,
-            mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             qnn=llm_config.backend.qnn.enabled,
             dtype_override=llm_config.model.dtype_override.value,
@@ -1942,7 +1930,6 @@ def _get_source_transforms(  # noqa
     ethosu: bool = False,
     use_qnn_sha: bool = False,
     optimized_rotation_path: Optional[str] = None,
-    mps: bool = False,
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
@@ -1984,7 +1971,6 @@ def _get_source_transforms(  # noqa
         ethosu: Whether to use Ethos-U.
         use_qnn_sha: Whether to use QNN SHA.
         optimized_rotation_path: Path to optimized rotation.
-        mps: Whether to use MPS.
         coreml: Whether to use CoreML.
         coreml_ios: CoreML iOS version.
         vulkan: Whether to use Vulkan.
@@ -2143,12 +2129,6 @@ def _get_source_transforms(  # noqa
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))
                 # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
-
-        elif mps:
-            # Currently mps doesn't support sdpa op, use the simpler decomposition
-            # to get free perf gain.
-            transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_causal_mask)
 
         elif coreml:
             # iOS 18 introduced fused sdpa op

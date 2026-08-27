@@ -40,6 +40,7 @@ from executorch.exir.passes import dead_code_elimination_pass
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind, OutputKind
 from torch.fx.node import Node
+from torch.fx.passes.infra.pass_base import PassBase
 from torch.utils import _pytree as pytree
 
 
@@ -727,7 +728,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         return PassResult(graph_module, False)
 
 
-class RemoveBranchedQuantDequant(ExportPass):
+class RemoveBranchedQuantDequant(PassBase):
     """
     This pass looks for adjacent quant and dequant nodes with identical
     parameters, where the quant node has other users in addition to the
@@ -755,10 +756,9 @@ class RemoveBranchedQuantDequant(ExportPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            result = super().call(graph_module)
-            return result
+            graph_module.recompile()
 
-        return PassResult(graph_module, False)
+        return PassResult(graph_module, modified)
 
     def remove_branched(
         self,
@@ -848,7 +848,7 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
 
 
 class CommonRemovePasses:
-    passes: List[Type[ExportPass]] = [
+    passes: List[Type[PassBase]] = [
         # Canonicalise squeeze/unsqueeze to view_copy first: the nop-view and
         # permute passes below both reason about view_copy only.
         ReplaceSqueezeAndUnsqueezeWithViewPassImported,
@@ -964,7 +964,7 @@ class RemoveBNTrackingMutationsPass(ExportedProgramPassBase):
 
 
 class CadenceRemoveNops:
-    passes: List[Type[ExportPass]] = CommonRemovePasses.passes + [
+    passes: List[Type[PassBase]] = CommonRemovePasses.passes + [
         SimplifySliceOpPass,
         RemoveNopRequantizeOpPass,
         RemoveZeroSizedConstantPadNd,

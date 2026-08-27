@@ -16,6 +16,7 @@ on:
       - examples/models/gemma4_31b/**
       - examples/models/muse-glimmer/**
       - examples/models/parakeet/**
+      - examples/models/supertonic/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
   workflow_dispatch:
@@ -67,7 +68,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build test runners"
-        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_mutable_state_test mlx_sequence_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_mutable_state_test mlx_sequence_cache_test mlx_cell_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
 
         echo "::group::Run mutable-state (multi-session) unit test"
@@ -76,6 +77,7 @@ jobs:
 
         echo "::group::Run off-graph KV-cache op test"
         ./cmake-out/backends/mlx/test/mlx_sequence_cache_test
+        ./cmake-out/backends/mlx/test/mlx_cell_cache_test
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
@@ -113,6 +115,93 @@ jobs:
           echo "--- ${mod} ---"
           ${CONDA_RUN} python -m "${mod}" run -v
         done
+        echo "::endgroup::"
+
+  test-mlx-supertonic:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-supertonic
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and Supertonic requirements"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} pip install -r examples/models/supertonic/requirements.txt
+        echo "::endgroup::"
+
+        echo "::group::Run asset-independent Supertonic Python tests"
+        ${CONDA_RUN} python -m pytest examples/models/supertonic/tests -v
+        echo "::endgroup::"
+
+        echo "::group::Download pinned Supertonic assets"
+        SUPERTONIC_ASSETS=/tmp/supertonic-3
+        ${CONDA_RUN} python - <<'PY'
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(
+            "Supertone/supertonic-3",
+            revision="3cadd1ee6394adea1bd021217a0e650ede09a323",
+            allow_patterns=(
+                "onnx/tts.json",
+                "onnx/duration_predictor.onnx",
+                "onnx/text_encoder.onnx",
+                "onnx/vector_estimator.onnx",
+                "onnx/vocoder.onnx",
+                "onnx/unicode_indexer.json",
+                "voice_styles/F1.json",
+                "LICENSE",
+            ),
+            local_dir="/tmp/supertonic-3",
+        )
+        PY
+        echo "::endgroup::"
+
+        echo "::group::Run published-model parity tests"
+        SUPERTONIC_MODEL_DIR="${SUPERTONIC_ASSETS}" \
+          ${CONDA_RUN} python -m pytest \
+            examples/models/supertonic/tests/test_checkpoint_loader.py \
+            examples/models/supertonic/tests/test_stage_parity.py \
+            -v
+        echo "::endgroup::"
+
+        echo "::group::Export the Supertonic PTE"
+        SUPERTONIC_PTE="${SUPERTONIC_ASSETS}/supertonic_fp16_mlx.pte"
+        ${CONDA_RUN} python -m examples.models.supertonic.export.export_supertonic \
+          --asset-dir "${SUPERTONIC_ASSETS}" \
+          --output "${SUPERTONIC_PTE}" \
+          --max-text-length 512 \
+          --max-latent-length 512 \
+          --flow-steps 5
+        echo "::endgroup::"
+
+        echo "::group::Build ExecuTorch and Supertonic with MLX"
+        ${CONDA_RUN} make supertonic-mlx
+        echo "::endgroup::"
+
+        echo "::group::Run Supertonic native tests"
+        pushd examples/models/supertonic
+        ${CONDA_RUN} cmake --preset supertonic-mlx \
+          -DSUPERTONIC_INTEGRATION_PTE="${SUPERTONIC_PTE}" \
+          -DSUPERTONIC_INTEGRATION_ASSET_DIR="${SUPERTONIC_ASSETS}" \
+          -DSUPERTONIC_INTEGRATION_STYLE="${SUPERTONIC_ASSETS}/voice_styles/F1.json"
+        ${CONDA_RUN} ctest --preset supertonic-mlx
+        popd
+        echo "::endgroup::"
+
+        echo "::group::Verify the Supertonic runner and MLX metallib"
+        RUNNER=cmake-out/examples/models/supertonic/supertonic_runner
+        test -x "${RUNNER}"
+        test -f "$(dirname "${RUNNER}")/mlx.metallib"
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:
