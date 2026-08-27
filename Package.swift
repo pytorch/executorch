@@ -142,11 +142,18 @@ for (key, value) in products {
 // included only when present, or a consumer's resolve fails before the build has
 // produced them.
 let mlxMetallibSlices = ["mlx-ios", "mlx-ios-simulator", "mlx-macos"]
-let mlxResourcesDir = ".Package.swift/backend_mlx_resources"
+// Anchored to this manifest's own directory, not the process working directory.
+// When the package is a dependency, the manifest runs with the cwd set to the
+// consumer's root, so a relative check would be false for every slice and ship an
+// empty bundle. #filePath is always this file, so the check holds either way.
+let mlxResourcesRelDir = ".Package.swift/backend_mlx_resources"
+let mlxResourcesDir =
+  URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+  .appendingPathComponent(mlxResourcesRelDir).path
 if products.keys.contains("backend_mlx") {
   packageTargets.append(.target(
     name: "backend_mlx_resources",
-    path: mlxResourcesDir,
+    path: mlxResourcesRelDir,
     resources: mlxMetallibSlices.compactMap { slice in
       FileManager.default.fileExists(atPath: "\(mlxResourcesDir)/\(slice).metallib")
         ? .copy("\(slice).metallib") : nil
