@@ -48,6 +48,23 @@ class CortexMAlphaSub(CortexMTensorSub):
         return torch.sub(x, y, alpha=2)
 
 
+class CortexMSubReLU(CortexMTensorSub):
+    """ActivationFusionPass clamps the difference's output range in place, so
+    the relu costs no node of its own."""
+
+    ops_after_transforms = {
+        **CortexMTensorSub.ops_after_transforms,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 0,
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x, y):
+        return self.relu(x - y)
+
+
 class CortexMNegativeAlphaSub(CortexMTensorSub):
     def forward(self, x, y):
         return torch.sub(x, y, alpha=-2)
@@ -127,6 +144,20 @@ test_cases = {
         example_inputs=(
             ramp_tensor(-10, 10, (4, 5)),
             ramp_tensor(-2, 8, (4, 5)),
+        ),
+    ),
+    "sub_relu": McuTestCase(
+        model=CortexMSubReLU(),
+        example_inputs=(
+            ramp_tensor(-5, 5, (2, 4)),
+            ramp_tensor(-3, 3, (2, 4)),
+        ),
+    ),
+    "sub_relu_channels_last": McuTestCase(
+        model=CortexMSubReLU(),
+        example_inputs=(
+            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-3, 3, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
     "alpha_int": McuTestCase(
