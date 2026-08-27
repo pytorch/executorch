@@ -80,3 +80,18 @@ set_target_properties(
   extension_etdump_apple
   PROPERTIES XCODE_ATTRIBUTE_BUILD_LIBRARY_FOR_DISTRIBUTION YES
 )
+
+# The Apple framework build merges each static library straight from the target
+# output directory, but flatccrt (the flatcc runtime the etdump framework
+# bundles) is built into its own third-party/flatcc/lib directory, not beside
+# this target. Copy it next to this library after it builds so the framework
+# packaging finds it where it expects. TARGET_FILE_DIR resolves to the
+# per-config directory the packaging reads, so this is correct under every
+# generator.
+add_custom_command(
+  TARGET extension_etdump_apple
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:flatccrt>
+          $<TARGET_FILE_DIR:extension_etdump_apple>/libflatccrt.a
+  VERBATIM
+)
