@@ -584,7 +584,7 @@ class CoreMLBackend(BackendDetails):
             # embedding is one constant feeding both a gather and a linear, and coremltools
             # refuses to compress a constant its consumers disagree about, so opting the
             # gather out there does not skip the table, it fails the whole lowering.
-            tied = CoreMLBackend.gathers_sharing_a_weight(mlmodel)
+            tied = CoreMLBackend._gathers_sharing_a_weight(mlmodel)
             config = cto.coreml.OptimizationConfig(
                 global_config=op_linear_quantizer_config,
                 op_type_configs={"gather": None},
@@ -595,7 +595,7 @@ class CoreMLBackend(BackendDetails):
         return mlmodel
 
     @staticmethod
-    def gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
+    def _gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
         """
         Names of gather ops whose table is also consumed by an op of another type.
 
