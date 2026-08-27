@@ -12,12 +12,13 @@
 
 namespace ptn {
 
-// Index-arena handles: a NodeRef indexes the graph's node arena, a ValueRef
-// its value arena. Plain int32_t aliases — they index, compare, and hash
-// directly, at the cost of no NodeRef/ValueRef type distinction. kInvalid marks
-// "no ref".
+// Index-arena handles: a NodeRef indexes the graph's node arena, a ValueRef its
+// value arena, a GraphRef a subgraph arena (HOP branch bodies). Plain int32_t
+// aliases — they index, compare, and hash directly, at the cost of no type
+// distinction between them. kInvalid marks "no ref".
 using NodeRef = int32_t;
 using ValueRef = int32_t;
+using GraphRef = int32_t;
 inline constexpr int32_t kInvalid = -1;
 
 constexpr bool valid(int32_t ref) {
