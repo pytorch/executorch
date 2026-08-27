@@ -210,7 +210,46 @@ if [[ ${#MODES[@]} -eq 0 ]]; then
   MODES=("Release" "Debug")
 fi
 
+# The MLX Metal kernels ship as a per-slice metallib in a shared SwiftPM resource
+# bundle, not merged into the xcframework, since MLX loads them at runtime by name.
+# Capture it during the build loop: both modes build into the same directory, so
+# the Debug pass overwrites the Release metallib, and the shipped kernels should be
+# the Release build.
+capture_mlx_metallib() {
+  local preset_out_dir="$1"
+  if [[ " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
+    return
+  fi
+  local mlx_resources_dir="$SOURCE_ROOT_DIR/.Package.swift/backend_mlx_resources"
+  mkdir -p "${mlx_resources_dir}"
+  local mlx_metallib="${OUTPUT_DIR}/${preset_out_dir}/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
+  # The simulator preset dir is "simulator" but the compiled-in slice name is "ios-simulator".
+  local slice
+  case "${preset_out_dir}" in
+    simulator) slice="ios-simulator" ;;
+    *) slice="${preset_out_dir}" ;;
+  esac
+  # Fail loudly rather than ship a bundle missing a slice, which would only fault at device init.
+  if [[ ! -f "${mlx_metallib}" ]]; then
+    echo "error: MLX is enabled but ${mlx_metallib} was not produced for the ${slice} slice" >&2
+    exit 1
+  fi
+  cp "${mlx_metallib}" "${mlx_resources_dir}/mlx-${slice}.metallib"
+}
+
 echo "Building libraries"
+
+# The MLX metallib should be captured from the Release build. Both modes build
+# into the same directory, so a later Debug pass would overwrite it. Prefer
+# Release; if it is not being built, fall back to the last mode in the list.
+MLX_CAPTURE_MODE="${MODES[0]}"
+for mode in "${MODES[@]}"; do
+  if [[ "${mode}" == "Release" ]]; then
+    MLX_CAPTURE_MODE="Release"
+    break
+  fi
+  MLX_CAPTURE_MODE="${mode}"
+done
 
 rm -rf "${OUTPUT_DIR}"
 for preset_index in "${!PRESETS[@]}"; do
@@ -231,6 +270,12 @@ for preset_index in "${!PRESETS[@]}"; do
 
     cmake --build "${preset_output_dir}" \
           --config "${mode}"
+
+    # Capture the metallib on the chosen pass, before a later pass building into
+    # the same directory overwrites it.
+    if [[ "${mode}" == "${MLX_CAPTURE_MODE}" ]]; then
+      capture_mlx_metallib "${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
+    fi
   done
 done
 
@@ -325,30 +370,9 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
 
-    cd "${OUTPUT_DIR}"
-    "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
+  cd "${OUTPUT_DIR}"
+  "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
-
-# The MLX Metal kernels ship as a per-slice metallib in a shared SwiftPM resource
-# bundle, not merged into the xcframework, since MLX loads them at runtime by name.
-if [[ ! " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
-  mlx_resources_dir="$SOURCE_ROOT_DIR/.Package.swift/backend_mlx_resources"
-  mkdir -p "${mlx_resources_dir}"
-  for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
-    mlx_metallib="${OUTPUT_DIR}/${preset_out_dir}/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
-    # The simulator preset dir is "simulator" but the compiled-in slice name is "ios-simulator".
-    case "${preset_out_dir}" in
-      simulator) slice="ios-simulator" ;;
-      *) slice="${preset_out_dir}" ;;
-    esac
-    # Fail loudly rather than ship a bundle missing a slice, which would only fault at device init.
-    if [[ ! -f "${mlx_metallib}" ]]; then
-      echo "error: MLX is enabled but ${mlx_metallib} was not produced for the ${slice} slice" >&2
-      exit 1
-    fi
-    cp "${mlx_metallib}" "${mlx_resources_dir}/mlx-${slice}.metallib"
-  done
-fi
 
 echo "Cleaning up"
 
