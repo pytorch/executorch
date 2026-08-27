@@ -138,7 +138,7 @@ let package = Package(
   name: "executorch",
   platforms: [
     .iOS(.v17),
-    .macOS(.v12),
+    .macOS(.v14),
   ],
   products: packageProducts,
   targets: packageTargets
