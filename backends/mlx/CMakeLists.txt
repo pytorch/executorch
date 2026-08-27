@@ -337,6 +337,21 @@ add_dependencies(mlxdelegate mlx_schema)
 # Depend on mlx_external directly so libmlx.a exists before mlxdelegate links.
 add_dependencies(mlxdelegate mlx_external)
 
+# The Apple framework build reads each static library straight from the target
+# output directory (it merges them without an install step), but libmlx.a is
+# produced by the MLX sub-build in its own binary dir, not next to the delegate.
+# Copy it beside libmlxdelegate.a after the delegate builds so the framework
+# packaging finds it where it expects. TARGET_FILE_DIR resolves to the
+# per-config directory the packaging reads, so this is correct under every
+# generator.
+add_custom_command(
+  TARGET mlxdelegate
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_mlx_static_lib}
+          $<TARGET_FILE_DIR:mlxdelegate>/libmlx.a
+  VERBATIM
+)
+
 # Add logging flag if enabled
 if(ET_MLX_ENABLE_OP_LOGGING)
   target_compile_definitions(mlxdelegate PRIVATE ET_MLX_ENABLE_OP_LOGGING=1)
