@@ -118,6 +118,7 @@ fbcode_target(
     visibility = ["PUBLIC"],
     deps = [
         ":cuda_backend",
+        "//caffe2:torch",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir:schema",
         "//executorch/extension/flat_tensor/serialize:serialize",

@@ -44,6 +44,7 @@ from executorch.exir.schema import (
 from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 
 
+@patch("executorch.backends.cuda.merge_ptes.torch.version.hip", None)
 class TestMergeCudaPtes(unittest.TestCase):
     def _write_artifact(
         self,
@@ -316,6 +317,12 @@ class TestMergeCudaPtes(unittest.TestCase):
             ]
             with self.assertRaisesRegex(ValueError, "Duplicate CUDA target sm80"):
                 merge_cuda_pte_files(inputs)
+
+    def test_rejects_rocm(self) -> None:
+        with patch(
+            "executorch.backends.cuda.merge_ptes.torch.version.hip", "6.3"
+        ), self.assertRaisesRegex(RuntimeError, "only NVIDIA CUDA"):
+            merge_cuda_pte_files([])
 
     def test_cli_writes_merged_pte_and_reuses_base_ptd(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

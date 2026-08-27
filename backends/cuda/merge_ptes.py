@@ -14,6 +14,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+import torch
+
 from executorch.backends.cuda.cuda_weight_collector import (
     CudaAotiMetadata,
     CudaAotiVariant,
@@ -414,6 +416,10 @@ def _merge_delegate_variants(
 
 def merge_cuda_pte_files(inputs: Sequence[CudaPteInput]) -> Cord:
     """Merge native CUDA exports into a PTE containing one SO per target SM."""
+    if torch.version.hip is not None:
+        raise RuntimeError(
+            "CUDA PTE merging supports only NVIDIA CUDA and is not supported on ROCm"
+        )
     if len(inputs) < 2:
         raise ValueError("At least two CUDA PTE inputs are required")
     artifacts = [_load_artifact(source) for source in inputs]
