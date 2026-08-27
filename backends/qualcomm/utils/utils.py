@@ -456,12 +456,21 @@ def to_edge_transform_and_lower_to_qnn(
     }
 
     for graph_name, m in module.items():
-        ep = torch.export.export(
-            m,
-            inputs[graph_name],
-            dynamic_shapes=dynamic_shapes[graph_name],
-            strict=True,
-        )
+        if isinstance(inputs[graph_name], dict):
+            ep = torch.export.export(
+                m,
+                args=(),
+                kwargs=inputs[graph_name],
+                dynamic_shapes=dynamic_shapes[graph_name],
+                strict=True,
+            )
+        else:
+            ep = torch.export.export(
+                m,
+                args=inputs[graph_name],
+                dynamic_shapes=dynamic_shapes[graph_name],
+                strict=True,
+            )
         option = generate_qnn_executorch_option(compiler_specs[graph_name])
         python_options = flatbuffer_to_option(option)
         backend_type = python_options.backend_options.backend_type

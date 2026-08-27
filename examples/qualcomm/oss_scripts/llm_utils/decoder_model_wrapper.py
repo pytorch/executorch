@@ -15,6 +15,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.apply_rope import (
 )
 from transformers import GenerationConfig, PretrainedConfig
 from transformers.cache_utils import Cache, StaticLayer
+from transformers.exporters import ExecutorchQnnLlmConfig
 
 TRANSFORMERS_VERSION = "4.53.1"
 
@@ -187,23 +188,31 @@ class QnnPrecomputedRotaryEmbedding(torch.nn.Module):
 
 
 class QnnCausalLMExportableModule(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model: torch.nn.Module, config: ExecutorchQnnLlmConfig):
         super().__init__()
         self.model = model
-        self.config = model.config
+        self.config = config
         self._metadata = save_config_to_constant_methods(
             model.config, model.generation_config
         )
         logging.info(f"Metadata to be recorded in PTE: {self._metadata}")
 
-        self.num_layers = self.config.num_hidden_layers
+        self.num_layers = self.model.config.num_hidden_layers
         self.num_kv_heads = getattr(
-            self.config, "num_key_value_heads", self.config.num_attention_heads
+            self.model.config,
+            "num_key_value_heads",
+            self.model.config.num_attention_heads,
         )
-        self.head_dim = self.config.head_dim
         self.max_seq_len = self.config.max_seq_len
         self.ar_len = self.config.ar_len
         self.past_len = self.max_seq_len - self.ar_len
+
+        # Some config has head_dim provided that is different from equation below(e.g., qwen3)
+        if not hasattr(self.model.config, "head_dim"):
+            self.model.config.head_dim = (
+                self.model.config.hidden_size // self.model.config.num_attention_heads
+            )
+        self.head_dim = self.model.config.head_dim
 
         self._register_attention_mask_for_4_53()
         self._use_precomputed_rope()
@@ -261,7 +270,13 @@ class QnnCausalLMExportableModule(torch.nn.Module):
             torch.zeros(1, self.num_kv_heads, self.past_len, self.head_dim)
             for _ in range(self.num_layers)
         ]
-        return (input_tokens, atten_mask, pos_ids, past_k, past_v)
+        return {
+            "input_tokens": input_tokens,
+            "atten_mask": atten_mask,
+            "pos_ids": pos_ids,
+            "past_k": past_k,
+            "past_v": past_v,
+        }
 
     def forward(self, input_tokens, atten_mask, pos_ids, past_k, past_v):
         cache = QnnCustomStaticCache(past_k, past_v, max_cache_len=self.max_seq_len)
