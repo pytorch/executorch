@@ -208,6 +208,10 @@ void Context::register_shader_dispatch(
   cmd_.dispatch(effective_global_wg);
 }
 
+void Context::register_barrier(vkapi::PipelineBarrier& pipeline_barrier) {
+  cmd_.insert_barrier_only(pipeline_barrier);
+}
+
 void Context::register_blit(
     vkapi::PipelineBarrier& pipeline_barrier,
     vkapi::VulkanImage& src,

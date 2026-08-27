@@ -149,6 +149,23 @@ _OPENVINO_BACKEND_SYMBOLS = ("executorch::backends::openvino::OpenvinoBackend",)
 
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 
+# A representative symbol from the MLX delegate, and one from the MLX runtime the
+# delegate bundles. The runtime is third-party code compiled into the delegate
+# rather than depended on, so it gets its own row for the same reason XNNPACK's
+# does: a second copy means two MLX runtimes in one process.
+_MLX_SYMBOLS = ("executorch::backends::mlx::mutable_state_note_handle",)
+_BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::free",)
+# A representative symbol from the Core ML delegate, exported from the shipped
+# library. get_registered_delegate() rather than the constructor, which demangles
+# to two entries (complete and base object), while this is a single definition.
+_COREML_SYMBOLS = (
+    "executorch::backends::coreml::CoreMLBackendDelegate::get_registered_delegate()",
+)
+
+# A representative symbol from the TorchAO kernels. These are Apple Silicon only, so
+# most wheels ship no such library and the row below is not required.
+_TORCHAO_KERNEL_SYMBOLS = ("torchao::quantization::get_qvals_range",)
+
 # A representative symbol from the profiler. A second definer means two event
 # tracers, so a trace records only part of what ran.
 _ETDUMP_SYMBOLS = ("executorch::etdump::ETDumpGen::ETDumpGen",)
@@ -861,6 +878,11 @@ _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
 # Marker for a row whose owner every Linux wheel carries and no macOS wheel does.
 _REQUIRED_ON_LINUX = "linux-only"
+# Marker for a row whose owner every macOS wheel carries and no other wheel does.
+# The Core ML delegate is built on every macOS wheel, so its presence is decidable
+# from the installed wheel and a macOS wheel that dropped it should fail rather than
+# quietly regress to folding it into the Python extension.
+_REQUIRED_ON_MACOS = "macos-only"
 # Narrower than the marker above on purpose. The Qualcomm SDK the delegate builds
 # against is published for Linux x86_64 only, so the aarch64 Linux wheels ship no such
 # library and demanding it there would fail a wheel that is correct. Reusing the
@@ -874,6 +896,8 @@ def _resolve_required(required):
         return bool(_wheel_cuda_train())
     if required == _REQUIRED_ON_LINUX:
         return sys.platform == "linux"
+    if required == _REQUIRED_ON_MACOS:
+        return sys.platform == "darwin"
     if required == _REQUIRED_ON_LINUX_X86:
         return sys.platform == "linux" and platform.machine() in ("x86_64", "amd64")
     return required
@@ -935,6 +959,24 @@ _OWNED_COMPONENTS = (
         _library_file_name("libexecutorch_backend_xnnpack"),
         True,
     ),
+    # Required on macOS, where the delegate is built for every wheel, so a macOS
+    # wheel that folds it back into the Python extension fails here. Not built on
+    # any other platform, where the row resolves to not-required and skips.
+    (
+        "Core ML delegate",
+        _COREML_SYMBOLS,
+        _library_file_name("libexecutorch_backend_coreml"),
+        _REQUIRED_ON_MACOS,
+    ),
+    # Not required: the delegate is built only on an Apple Silicon macOS wheel whose
+    # build found the Metal compiler, so every other wheel legitimately ships no MLX
+    # library and the row skips.
+    (
+        "MLX delegate",
+        _MLX_SYMBOLS,
+        _library_file_name("libexecutorch_backend_mlx"),
+        False,
+    ),
     (
         "set of CPU kernels",
         _KERNEL_SYMBOLS,
@@ -946,6 +988,12 @@ _OWNED_COMPONENTS = (
         _QUANTIZED_KERNEL_SYMBOLS,
         _library_file_name("libexecutorch_kernels_quantized"),
         True,
+    ),
+    (
+        "set of TorchAO kernels",
+        _TORCHAO_KERNEL_SYMBOLS,
+        _library_file_name("libexecutorch_kernels_torchao"),
+        False,
     ),
     # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
     # which is decided at check time rather than here: a fixed False meant a wheel
@@ -992,6 +1040,13 @@ _OWNED_COMPONENTS = (
         _BUNDLED_XNNPACK_SYMBOLS,
         _library_file_name("libexecutorch_backend_xnnpack"),
         True,
+    ),
+    # Not required, for the same reason as the delegate row above.
+    (
+        "bundled MLX runtime",
+        _BUNDLED_MLX_SYMBOLS,
+        _library_file_name("libexecutorch_backend_mlx"),
+        False,
     ),
     # Required on Linux, where packaging turns the backend on for every non-minimal
     # build. A fixed False passed a wheel that had compiled the delegate back into the
@@ -2172,7 +2227,9 @@ def test_extension_contains_no_component() -> None:
     # Not every shipped library serves Python. The quantized kernels exist for a C++
     # application, since Python registers those operators through the torch-linked
     # ahead-of-time library at export time, and requiring a dependency would demand the
-    # extension link code it has no use for.
+    # extension link code it has no use for. The TorchAO kernels are in that same
+    # category: torchao registers its operators itself at export time, so the extension
+    # has no reason to link them either.
     #
     # The CUDA delegate is NOT in that category. The build deliberately links it into the
     # extension with a retention option, so it does carry a dependency, and excluding it
@@ -2182,7 +2239,10 @@ def test_extension_contains_no_component() -> None:
     expected = {
         name
         for name in shipped
-        if not any(marker in name for marker in ("kernels_quantized", "extension_cuda"))
+        if not any(
+            marker in name
+            for marker in ("kernels_quantized", "kernels_torchao", "extension_cuda")
+        )
     }
     unused = sorted(expected - needed)
     assert not unused, (
@@ -2290,6 +2350,7 @@ def test_shipped_library_names_are_expected() -> None:
         "libexecutorch",
         "libexecutorch_kernels_optimized",
         "libexecutorch_kernels_quantized",
+        "libexecutorch_kernels_torchao",
         "libexecutorch_backend_cuda",
         "libexecutorch_extension_cuda",
         # The same library under the name a non-shared build gives it. The shared
@@ -2298,6 +2359,8 @@ def test_shipped_library_names_are_expected() -> None:
         # dependency, so both have to ship and both are expected here.
         "libextension_cuda",
         "libexecutorch_backend_xnnpack",
+        "libexecutorch_backend_coreml",
+        "libexecutorch_backend_mlx",
         "libexecutorch_backend_openvino",
         "libexecutorch_backend_qnn",
         "libexecutorch_threadpool",
@@ -2341,6 +2404,41 @@ def test_shipped_library_names_are_expected() -> None:
         f"consumer would look for a file the wheel does not ship: {mismatched}"
     )
     print(f"✓ {len(shipped)} shipped libraries have expected names and identities")
+
+
+def test_windows_import_library_tracks_the_cuda_delegate() -> None:
+    """The Windows import library ships exactly where the CUDA delegate does.
+
+    It is the link input the delegate uses when lowering for a Windows target, so a
+    wheel without the delegate has no use for it and a CUDA wheel cannot do that
+    lowering without it. Checked here rather than by the symbol tests above, because
+    it is an archive of import stubs rather than a shared object, so nothing that
+    scans shipped libraries sees it. It is also checked in rather than built, which
+    is how it came to ship in every wheel with nothing noticing.
+
+    Keyed on the shim library the wheel actually ships rather than on the version
+    label, because only a published wheel carries a +cuXXX local version and a
+    locally built CUDA wheel would otherwise be told to drop a file it needs. Both
+    files are packaged behind EXECUTORCH_BUILD_CUDA alone, so they arrive together.
+    """
+    package_dir = _installed_package_dir()
+    import_library = package_dir / "data" / "lib" / "aoti_cuda_shims.lib"
+    shim_library = _library_file_name("libaoti_cuda_shims")
+    present = import_library.is_file()
+    if any(
+        path.name.startswith(shim_library)
+        for path in _shipped_shared_objects(package_dir)
+    ):
+        assert present, (
+            f"this CUDA wheel ships no {import_library.name}, so lowering the "
+            "delegate for a Windows target has nothing to link against."
+        )
+    else:
+        assert not present, (
+            f"this wheel ships {import_library.name} but no CUDA delegate, so it "
+            "carries a link stub for a library it does not contain."
+        )
+    print(f"✓ {import_library.name} {'ships' if present else 'is absent'} as expected")
 
 
 _PARITY_MODEL = '''
@@ -2559,6 +2657,7 @@ def run_tests(work_dir: Path) -> None:
     test_declared_dependencies_match_the_wheel_tag()
     test_extension_contains_no_component()
     test_shipped_library_names_are_expected()
+    test_windows_import_library_tracks_the_cuda_delegate()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
     test_custom_op_compiles(work_dir)

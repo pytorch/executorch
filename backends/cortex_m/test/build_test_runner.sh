@@ -42,6 +42,7 @@ join_by_comma() {
 
 ops_list=(
     aten::add.out
+    aten::sub.out
     aten::clamp.out
     aten::mul.out
     aten::convolution.out

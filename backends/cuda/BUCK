@@ -94,6 +94,7 @@ fbcode_target(
     srcs = [
         "cuda_backend.py",
         "target_smem.py",
+        "cuda_weight_collector.py",
     ],
     visibility = ["PUBLIC"],
     deps = [

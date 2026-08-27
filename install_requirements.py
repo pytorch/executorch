@@ -49,8 +49,9 @@ def install_requirements(use_pytorch_nightly):
     # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
     # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
     # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
-    # where it exists. Nothing in the wheel links or bundles torchao; it is a quantization
-    # workflow dependency of the examples and tests.
+    # where it exists. This nightly is what a development checkout is tested against, and the
+    # wheel's own torchao lower bound is this same version so that installing the package
+    # afterwards leaves this pin in place rather than replacing it.
     if platform.machine().lower() in ("aarch64", "arm64"):
         # The cpu channel specifically, not the index root. The root carries every variant, and a
         # pin without a local segment admits all of them while ordering a local segment highest,

@@ -37,6 +37,20 @@ def define_common_targets(is_fbcode = False):
 
     if is_fbcode:
         python_unittest(
+            name = "test_activation_lut",
+            srcs = [
+                "test_activation_lut.py",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m/passes:passes_utils",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
+                "//executorch/exir/dialects:lib",
+            ],
+        )
+
+        python_unittest(
             name = "test_replace_quant_nodes",
             srcs = [
                 "test_helpers_passes_utils.py",

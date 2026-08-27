@@ -12,17 +12,24 @@ from dataclasses import dataclass
 from typing import Any, cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes.dim_maps import PermuteMap, ViewMap
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
-from executorch.backends.arm.tosa.specification import get_context_spec
+from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
+    CanonicalizeViewCopyPermutePass,
+)
+from executorch.backends.transforms.dim_maps import PermuteMap, ViewMap
+from executorch.backends.transforms.fuse_duplicate_users_pass import (
+    FuseDuplicateUsersPass,
+)
+from executorch.backends.transforms.fuse_identical_input_transforms_pass import (
+    FuseIdenticalInputTransformsPass,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from .arm_pass import ArmPass
-from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass
-from .fuse_duplicate_users_pass import FuseDuplicateUsersPass
-from .fuse_identical_input_transforms_pass import FuseIdenticalInputTransformsPass
+
+from .fuse_duplicate_users_pass import TOSA_EXCLUDED_TARGETS
 from .remove_permutes_around_elementwise_tosa_ops import (
     RemovePermutesAroundElementwiseTosaOps,
 )
@@ -97,10 +104,7 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         if result.modified:
             graph_module = self._retrace(graph_module)
 
-        # Do not run for Ethos-U85 since this exposes a numerical issue
-        # There is no target meta-data at this stage so use INT+cf as proxy
-        # To be removed after MLBEDSW-11805
-        while not self._is_u85_like_tosa_int_cf():
+        while self.should_propagate():
             iteration_modified = False
             for node in list(graph_module.graph.nodes):
                 if node.target in self._TARGETS:
@@ -129,21 +133,6 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
 
         return PassResult(graph_module, modified)
 
-    def _is_u85_like_tosa_int_cf(self) -> bool:
-        if self.compile_spec is not None:
-            tosa_spec = self.compile_spec.tosa_spec
-        else:
-            try:
-                tosa_spec = get_context_spec()
-            except RuntimeError:
-                return False
-
-        return (
-            tosa_spec.support_integer()
-            and not tosa_spec.support_float()
-            and tosa_spec.support_extension("cf")
-        )
-
     def _retrace(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         graph_module.graph.eliminate_dead_code()
         graph_module.graph.lint()
@@ -166,6 +155,14 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
                 break
 
             if not self._can_cross_next_nodes(frontier, next_nodes):
+                break
+
+            # INT48 storage is not laid out like the int32 fake tensor used
+            # for metadata, so permuting it would address the packed data incorrectly.
+            if node.target == self._PERMUTE_TARGET and any(
+                self._node_or_inputs_are_int48(candidate)
+                for candidate in (frontier, *next_nodes)
+            ):
                 break
 
             if len(next_nodes) > 1:
@@ -209,14 +206,40 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         self._move_node(node, frontier, previous_frontier)
         return True
 
+    def duplicate_user_fusion_exclusions(self) -> frozenset:
+        """Targets whose duplicate users must not be collapsed onto one node.
+
+        Fusing them is unsound wherever a later stage assumes each consumer
+        keeps its own producer.
+
+        """
+        return frozenset()
+
+    def make_fusion_pass(self) -> ExportPass | None:
+        """The region-cancellation engine to run before canonicalization.
+
+        Region cancellation reaches shapes single-node propagation cannot -- a
+        diamond whose operands are both inside the region, for instance -- so
+        the two are complementary. Return None to skip it.
+
+        """
+        return None
+
+    @staticmethod
+    def _node_or_inputs_are_int48(node: torch.fx.Node) -> bool:
+        special_dtype_key = TosaSpecialDtype.meta_key()
+        return node.meta.get(special_dtype_key) == TosaSpecialDtype.INT48 or any(
+            input_node.meta.get(special_dtype_key) == TosaSpecialDtype.INT48
+            for input_node in node.all_input_nodes
+        )
+
     def fuse_vertical(self, graph_module: torch.fx.GraphModule) -> PassResult:
         """Fuse consecutive permute/view nodes."""
         modified = False
 
-        if self.exported_program is not None:
-            result = RemovePermutesAroundElementwiseTosaOps(self.exported_program).call(
-                graph_module
-            )
+        fusion_pass = self.make_fusion_pass()
+        if fusion_pass is not None:
+            result = fusion_pass.call(graph_module)
             graph_module = result.graph_module
             modified |= result.modified
 
@@ -301,37 +324,43 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         """Update the graph to move the node into its new position."""
         raise NotImplementedError()
 
+    def should_propagate(self) -> bool:
+        """Whether single-node propagation should run at all.
+
+        Backends that have a reason to disable it -- a known miscompile on a
+        particular target, say -- override this.
+
+        """
+        return True
+
+    def is_transparent(self, node: torch.fx.Node) -> bool:
+        """Ops a data-movement node may cross without changing meaning.
+
+        Rank-changing views may not cross these, so a backend adding to the set
+        is asserting layout-invariance, not merely elementwise-ness.
+
+        """
+        return node.target in self._TRANSPARENT_TARGETS
+
+    def is_multi_input_elementwise(self, node: torch.fx.Node) -> bool:
+        """Elementwise ops whose extra inputs are not layout-carrying."""
+        return False
+
+    def blocks_crossing(self, node: torch.fx.Node) -> bool:
+        """Users past which a frontier node must not be moved."""
+        return False
+
     def is_elementwise(self, node: torch.fx.Node) -> bool:
         if node.op != "call_function":
             return False
 
-        if node.target == exir_ops.backend.tosa.RESCALE.default:
-            return self._is_per_tensor_rescale(node)
-
-        if node.target == exir_ops.backend.tosa.TABLE.default:
-            return True
-
-        if node.target in self._TRANSPARENT_TARGETS:
+        if self.is_transparent(node):
             return True
 
         op = getattr(node.target, "_op", None)
         if op is not None and hasattr(op, "tags"):
             return torch.Tag.pointwise in op.tags
         return False
-
-    def _is_per_tensor_rescale(self, node: torch.fx.Node) -> bool:
-        if len(node.args) < 3:
-            return False
-        input_nodes = node.all_input_nodes
-        if len(input_nodes) != 1:
-            return False
-        special_dtype_key = TosaSpecialDtype.meta_key()
-        if input_nodes[0].meta.get(special_dtype_key) != node.meta.get(
-            special_dtype_key
-        ):
-            return False
-        scales = node.args[2]
-        return not isinstance(scales, Sequence) or len(scales) == 1
 
     def is_swappable(self, next_node: torch.fx.Node) -> bool:
         if next_node.target not in self._ARG_UPDATE_TARGETS:
@@ -347,6 +376,27 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
                     f"{self.__class__.__name__} expects keep_dim=True for reduction ops to simplify propagation logic, got {keep_dim} for node {next_node.name}."
                 )
         return True
+
+    @staticmethod
+    def _is_unsafe_table_operand_shape(shape: Any) -> bool:
+        """Whether a TABLE reading ``shape`` is miscompiled on Ethos-U85."""
+        return (
+            shape is not None
+            and len(shape) == 4
+            and all(isinstance(dim, int) for dim in shape)
+            and shape[0] > 1
+            and shape[1] == 1
+            and shape[2] == 1
+        )
+
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Shape the crossed node operates on once ``moving_node`` has moved.
+
+        Moving downwards leaves the crossed node reading ``moving_node``'s input.
+
+        """
+        val = cast(torch.fx.Node, moving_node.args[0]).meta.get("val")
+        return getattr(val, "shape", None)
 
     def _can_move_through_elementwise(
         self,
@@ -364,7 +414,7 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
             not self.is_elementwise(next_node)
             or (
                 len(next_node.all_input_nodes) != 1
-                and next_node.target != exir_ops.backend.tosa.TABLE.default
+                and not self.is_multi_input_elementwise(next_node)
             )
             or not isinstance(next_node.meta.get("val"), torch.Tensor)
         ):
@@ -375,9 +425,20 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
             if not view_map.is_valid_map:
                 return False
             if (
-                next_node.target in self._TRANSPARENT_TARGETS
-                or next_node.target == exir_ops.backend.tosa.RESCALE.default
-            ) and view_map.source_rank != view_map.target_rank:
+                self.is_transparent(next_node)
+                and view_map.source_rank != view_map.target_rank
+            ):
+                return False
+
+            # Moving a view across a TABLE changes the shape the lookup table
+            # operates on. Ethos-U85 miscompiles a TABLE fed by a MAC op when
+            # that operand is [N, 1, 1, C] with N > 1 (MLBEDSW-11805), so keep
+            # the view on the other side of the table in that case.
+            if next_node.target == exir_ops.backend.tosa.TABLE.default and (
+                self._is_unsafe_table_operand_shape(
+                    self._shape_seen_by_next_node(moving_node)
+                )
+            ):
                 return False
 
         if moving_node.target != self._PERMUTE_TARGET:
@@ -393,7 +454,59 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         )
 
 
-class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
+class TosaPropagationOverrides(PropagateViewCopyPermutePass):
+    """TOSA-specific answers to the propagation pass's extension points.
+
+    Kept apart from the pass itself so the algorithm can be shared with backends
+    that have no TOSA dialect.
+
+    """
+
+    def duplicate_user_fusion_exclusions(self) -> frozenset:
+        return TOSA_EXCLUDED_TARGETS
+
+    def make_fusion_pass(self) -> ExportPass | None:
+        if self.exported_program is None:
+            return None
+        return RemovePermutesAroundElementwiseTosaOps(self.exported_program)
+
+    def is_transparent(self, node: torch.fx.Node) -> bool:
+        return (
+            super().is_transparent(node)
+            or node.target == exir_ops.backend.tosa.RESCALE.default
+        )
+
+    def is_multi_input_elementwise(self, node: torch.fx.Node) -> bool:
+        return node.target == exir_ops.backend.tosa.TABLE.default
+
+    def blocks_crossing(self, node: torch.fx.Node) -> bool:
+        return node.target == exir_ops.backend.tosa.SCATTER.default
+
+    def is_elementwise(self, node: torch.fx.Node) -> bool:
+        if node.target == exir_ops.backend.tosa.RESCALE.default:
+            return self._is_per_tensor_rescale(node)
+        if node.target == exir_ops.backend.tosa.TABLE.default:
+            return True
+        return super().is_elementwise(node)
+
+    def _is_per_tensor_rescale(self, node: torch.fx.Node) -> bool:
+        if len(node.args) < 3:
+            return False
+        input_nodes = node.all_input_nodes
+        if len(input_nodes) != 1:
+            return False
+        special_dtype_key = TosaSpecialDtype.meta_key()
+        if input_nodes[0].meta.get(special_dtype_key) != node.meta.get(
+            special_dtype_key
+        ):
+            return False
+        scales = node.args[2]
+        return not isinstance(scales, Sequence) or len(scales) == 1
+
+
+class PropagateViewCopyPermuteUpPass(
+    TosaPropagationOverrides, PropagateViewCopyPermutePass
+):
     """Implements PropagateViewCopyPermutePass for upwards propagation:
 
     - Next propagation nodes are the input of the current node
@@ -405,7 +518,9 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
 
     def fuse_horizontal(self, graph_module):
         modified = False
-        result = FuseDuplicateUsersPass().call(graph_module)
+        result = FuseDuplicateUsersPass(self.duplicate_user_fusion_exclusions()).call(
+            graph_module
+        )
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
@@ -419,15 +534,17 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     def _can_cross_next_nodes(
         self, frontier: torch.fx.Node, next_nodes: Sequence[torch.fx.Node]
     ) -> bool:
-        if any(
-            user.target == exir_ops.backend.tosa.SCATTER.default
-            for user in frontier.users
-        ):
+        if any(self.blocks_crossing(user) for user in frontier.users):
             return False
         return all(
             all(prev_node is frontier for prev_node in self._get_prev_nodes(next_node))
             for next_node in next_nodes
         )
+
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Moving up leaves the crossed node reading ``moving_node`` output."""
+        val = moving_node.meta.get("val")
+        return getattr(val, "shape", None)
 
     def _can_move_through_elementwise(
         self,
@@ -673,7 +790,9 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         return True
 
 
-class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
+class PropagateViewCopyPermuteDownPass(
+    TosaPropagationOverrides, PropagateViewCopyPermutePass
+):
     """Implements PropagateViewCopyPermutePass for downward propagation:
 
     - Next propagation nodes are the users of the current node

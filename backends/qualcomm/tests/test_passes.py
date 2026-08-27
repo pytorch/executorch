@@ -795,6 +795,146 @@ class TestPasses(unittest.TestCase):
                 _resolve_qnn_data_type(py_type, "arg", "my_ops.foo.default")
             )
 
+    def test_backend_bundle_cache_survives_an_expired_entry(self):
+        """A backend bundle that expires must not poison the cache.
+
+        QnnBackendUnifiedRegistry holds bundles by weak_ptr keyed on backend type.
+        The stale key left behind by an expired bundle was never replaced, so once
+        one bundle had come and gone every later request built a fresh backend --
+        even while another bundle for that type was alive.
+        """
+        import os
+        import tempfile
+
+        import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+        from executorch.backends.qualcomm.partition.utils import (
+            generate_qnn_executorch_option,
+        )
+
+        option = generate_qnn_executorch_option(
+            generate_qnn_executorch_compiler_spec(
+                soc_model=QcomChipset.SM8650,
+                backend_options=generate_htp_compiler_spec(use_fp16=True),
+            )
+        )
+
+        # QNN logs from C++, so capture at the fd level.
+        with tempfile.TemporaryFile() as cap:
+            saved = os.dup(2)
+            os.dup2(cap.fileno(), 2)
+            try:
+                first = PyQnnManager.QnnManager(option)
+                if first.InitBackend().value != 0:
+                    self.skipTest("QNN backend unavailable")
+                first.Destroy()
+                del first
+
+                kept = PyQnnManager.QnnManager(option)
+                self.addCleanup(kept.Destroy)
+                self.assertEqual(0, kept.InitBackend().value)
+
+                later = PyQnnManager.QnnManager(option)
+                self.addCleanup(later.Destroy)
+                self.assertEqual(0, later.InitBackend().value)
+            finally:
+                os.dup2(saved, 2)
+                os.close(saved)
+            cap.seek(0)
+            log = cap.read().decode("utf-8", "replace")
+
+        created = log.count("Creating new backend bundle")
+        reused = log.count("Use cached backend bundle")
+        self.assertEqual(2, created, f"expected 2 backend creations, got {created}")
+        self.assertGreaterEqual(reused, 1, "third manager must reuse the live bundle")
+
+    def test_is_graph_output_tolerates_users_without_a_name(self):
+        """call_module targets are plain strings; reading __name__ raised."""
+        from executorch.backends.qualcomm.builders.utils import is_graph_output
+
+        graph = torch.fx.Graph()
+        placeholder = graph.placeholder("x")
+        # a call_module user, whose target is a str and so has no __name__
+        graph.create_node("call_module", "_guards_fn", (placeholder,))
+        graph.output((placeholder,))
+
+        self.assertTrue(any(u.op == "call_module" for u in placeholder.users))
+        self.assertTrue(is_graph_output(placeholder))
+        self.assertTrue(is_graph_output(placeholder, 0))
+
+    def test_is_graph_output_is_per_output_not_per_node(self):
+        """Only the outputs a graph actually consumes may be published.
+
+        A multi-output node used to be treated as a whole: one escaping output
+        marked every output of that node as a graph output, so QNN published
+        values nothing reads. The published set then no longer matched the one
+        ExecuTorch bound, and the two are paired by position.
+        """
+        from executorch.backends.qualcomm.builders.utils import is_graph_output
+
+        class OnlyValues(torch.nn.Module):
+            def forward(self, x):
+                # max.dim returns (values, indices); only values is returned.
+                return torch.max(x, dim=1).values
+
+        gm = torch.export.export(
+            OnlyValues().eval(), (torch.randn(2, 3),), strict=True
+        ).module()
+        node = next(
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function" and "max" in str(n.target)
+        )
+        getitems = {
+            u.args[1]: u
+            for u in node.users
+            if getattr(u.target, "__name__", "") == "getitem"
+        }
+        self.assertEqual({0, 1}, set(getitems), "both outputs should be unpacked")
+        self.assertTrue(getitems[0].users, "values reaches the graph output")
+        self.assertFalse(getitems[1].users, "indices is dead")
+
+        self.assertTrue(is_graph_output(node), "node does reach a graph output")
+        self.assertTrue(is_graph_output(node, 0), "values is consumed")
+        self.assertFalse(
+            is_graph_output(node, 1),
+            "indices has no consumer and must not be published",
+        )
+
+    def test_unconsumed_output_is_native_not_app_read(self):
+        """The tensor type is what actually reaches QNN, so assert on it.
+
+        An unconsumed output published as APP_READ makes the QNN graph declare
+        more outputs than ExecuTorch binds, and the two are paired by position.
+        """
+        import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+        from executorch.backends.qualcomm.builders.node_visitor import NodeVisitor
+
+        class OnlyValues(torch.nn.Module):
+            def forward(self, x):
+                return torch.max(x, dim=1).values
+
+        edge_program = torch.export.export(
+            OnlyValues().eval(), (torch.randn(2, 3),), strict=True
+        )
+        node = next(
+            n
+            for n in edge_program.graph_module.graph.nodes
+            if n.op == "call_function" and "max" in str(n.target)
+        )
+        visitor = NodeVisitor({node: 0}, edge_program, enable_tensor_dump=False)
+
+        native = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+        self.assertEqual(
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ,
+            visitor.get_tensor_type(node, native, 0),
+            "values is consumed and must be published",
+        )
+        self.assertEqual(
+            native,
+            visitor.get_tensor_type(node, native, 1),
+            "indices has no consumer and must stay internal",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
