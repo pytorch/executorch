@@ -373,7 +373,7 @@ def test_down_pass_moves_permute_after_transparent_chain() -> None:
     assert targets.index(RELU) < targets.index(NEG) < targets.index(PERMUTE)
 
 
-def test_down_pass_skips_propagation_for_u85_like_tosa_int_cf() -> None:
+def test_down_pass_propagates_for_u85_like_tosa_int_cf() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4))
@@ -388,7 +388,7 @@ def test_down_pass_skips_propagation_for_u85_like_tosa_int_cf() -> None:
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT+cf")):
         targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
 
-    assert targets.index(PERMUTE) < targets.index(RELU) < targets.index(NEG)
+    assert targets.index(RELU) < targets.index(NEG) < targets.index(PERMUTE)
 
 
 def test_down_pass_still_canonicalizes_for_u85_like_tosa_int_cf() -> None:
@@ -941,6 +941,50 @@ def test_down_pass_moves_permutation_after_reduction() -> None:
     assert transform.meta["val"].shape == torch.Size((1, 3, 4, 1))
 
 
+@pytest.mark.parametrize("mean_first", [False, True])
+def test_down_pass_keeps_permute_before_reduction_with_layout_dependent_user(
+    mean_first: bool,
+) -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 512, 796))
+    direct = graph.placeholder("direct")
+    direct.meta["val"] = torch.empty((1, 796, 512))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 1]))
+    permute.meta["val"] = torch.empty((1, 796, 512))
+    relu = graph.call_function(RELU, args=(permute,))
+    relu.meta["val"] = torch.empty((1, 796, 512))
+    mean = graph.call_function(MEAN, args=(relu, [1], True))
+    mean.meta["val"] = torch.empty((1, 1, 512))
+    sub_args = (mean, direct) if mean_first else (direct, mean)
+    sub = graph.call_function(SUB, args=sub_args)
+    sub.meta["val"] = torch.empty((1, 796, 512))
+    graph.output(sub)
+
+    graph_module = _run_pass_on_graph_module(graph, PropagateViewCopyPermuteDownPass)
+    call_nodes = [
+        node for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+    mean = next(node for node in call_nodes if node.target == MEAN)
+    sub = next(node for node in call_nodes if node.target == SUB)
+    mean_input_shape = mean.all_input_nodes[0].meta["val"].shape
+    mean_output_shape = mean.meta["val"].shape
+    sub_input_shapes = [
+        input_node.meta["val"].shape for input_node in sub.all_input_nodes
+    ]
+    reduction_dims = [dim % len(mean_input_shape) for dim in mean.args[1]]
+
+    assert all(mean_output_shape[dim] == 1 for dim in reduction_dims)
+    assert all(
+        output_dim == 1 if dim in reduction_dims else output_dim == input_dim
+        for dim, (input_dim, output_dim) in enumerate(
+            zip(mean_input_shape, mean_output_shape)
+        )
+    )
+    assert torch.broadcast_shapes(*sub_input_shapes) == sub.meta["val"].shape
+    assert torch.Size((1, 512, 1)) not in sub_input_shapes
+
+
 def test_down_pass_splits_permute_over_elementwise_fanout() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
@@ -1256,6 +1300,74 @@ def test_propagate_fuses_permute_view_around_table() -> None:
     assert targets == [TABLE]
 
 
+def test_propagate_down_keeps_view_before_table_with_batched_singleton_spatial() -> (
+    None
+):
+    """Ethos-U85 miscompiles a TABLE reading [N, 1, 1, C] with N > 1.
+
+    Sinking the view would leave the table on the [990, 1, 1, 64] operand, so it
+    has to stay in front of the table.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((990, 1, 1, 64), dtype=torch.int8)
+    table = graph.placeholder("table")
+    table.meta["val"] = torch.empty((256,), dtype=torch.int8)
+    view = graph.call_function(VIEW, args=(x, [99, 10, 64]))
+    view.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    table_node = graph.call_function(TABLE, args=(view, table))
+    table_node.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    graph.output(table_node)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
+
+    assert targets.index(VIEW) < targets.index(TABLE)
+
+
+def test_propagate_up_keeps_view_after_table_with_batched_singleton_spatial() -> None:
+    """The upward pass must not hoist the view above the table either.
+
+    Hoisting it would leave the table reading the view's [990, 1, 1, 64] output.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    table = graph.placeholder("table")
+    table.meta["val"] = torch.empty((256,), dtype=torch.int8)
+    table_node = graph.call_function(TABLE, args=(x, table))
+    table_node.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    view = graph.call_function(VIEW, args=(table_node, [990, 1, 1, 64]))
+    view.meta["val"] = torch.empty((990, 1, 1, 64), dtype=torch.int8)
+    graph.output(view)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteUpPass)
+
+    assert targets.index(TABLE) < targets.index(VIEW)
+
+
+def test_propagate_down_still_sinks_view_through_table_for_safe_shapes() -> None:
+    """The guard is limited to [N, 1, 1, C] with N > 1; other views sink."""
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 1, 1, 64), dtype=torch.int8)
+    table = graph.placeholder("table")
+    table.meta["val"] = torch.empty((256,), dtype=torch.int8)
+    view = graph.call_function(VIEW, args=(x, [1, 64]))
+    view.meta["val"] = torch.empty((1, 64), dtype=torch.int8)
+    table_node = graph.call_function(TABLE, args=(view, table))
+    table_node.meta["val"] = torch.empty((1, 64), dtype=torch.int8)
+    graph.output(table_node)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
+
+    assert targets.index(TABLE) < targets.index(VIEW)
+
+
 def test_propagate_stops_at_per_channel_rescale() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
@@ -1429,7 +1541,7 @@ def test_smaller_dtype_pass_restores_permute_after_narrowing_rescale_behind_unar
     assert targets.index(RESCALE) < targets.index(PERMUTE)
 
 
-def test_propagate_moves_before_int48_special_dtype() -> None:
+def test_tagged_int48_permute_does_not_propagate() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
@@ -1444,7 +1556,23 @@ def test_propagate_moves_before_int48_special_dtype() -> None:
 
     targets = _run_pass_on_graph(graph)
 
-    assert targets.index(PERMUTE) < targets.index(RELU)
+    assert targets.index(RELU) < targets.index(PERMUTE)
+
+
+def test_permute_does_not_cross_int48_rescale_input() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((2, 3, 5), dtype=torch.int32)
+    x.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+    rescale = graph.call_function(RESCALE, args=(x, torch.int8, [0.25], 0, 0))
+    rescale.meta["val"] = torch.empty((2, 3, 5), dtype=torch.int8)
+    permute = graph.call_function(PERMUTE, args=(rescale, [1, 0, 2]))
+    permute.meta["val"] = torch.empty((3, 2, 5), dtype=torch.int8)
+    graph.output(permute)
+
+    targets = _run_pass_on_graph(graph)
+
+    assert targets.index(RESCALE) < targets.index(PERMUTE)
 
 
 def test_propagate_moves_output_view_before_sum_with_split_dim_remap() -> None:

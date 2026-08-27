@@ -4,12 +4,13 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <executorch/backends/native/runtime/Program.h>
+#include <executorch/backends/native/runtime/utils/ToDot.h>
 
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include <executorch/backends/native/runtime/Program.h>
 #include <executorch/backends/native/runtime/graph/Format.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
 
@@ -24,8 +25,6 @@ namespace ptn {
 namespace {
 
 namespace nb = ::native_backend;
-
-// ---- small string helpers ---------------------------------------------------
 
 // Escape a dynamic string for embedding inside a DOT double-quoted label:
 // backslash and double-quote get escaped; real newlines collapse to spaces so
@@ -60,8 +59,6 @@ std::string str_of(const flatbuffers::String* s) {
 bool nonempty(const flatbuffers::String* s) {
   return s != nullptr && s->size() > 0;
 }
-
-// ---- schema-node -> label fragments -----------------------------------------
 
 std::string dim_str(const nb::Dim* d) {
   if (d->min() == d->max()) {
@@ -220,11 +217,9 @@ struct Ctx {
   std::unordered_map<std::string, const nb::OutputSpec*> ospecs;
 };
 
-// Draws the dataflow edges of one graph. Bundles what every edge needs: the
-// output buffer, the graph's node-id prefix, its metadata and producer
-// (name -> defining node id) side tables, and the method context. `dangling`
-// numbers the synthesized sources for values with no producer in this graph, so
-// it persists across draw() calls. One emitter per graph body.
+// Draws the dataflow edges of one graph. `dangling` numbers the synthesized
+// sources for values with no producer in this graph, so it persists across
+// draw() calls. One emitter per graph body.
 struct EdgeEmitter {
   std::string& out;
   const std::string& prefix;
@@ -288,7 +283,6 @@ void emit_graph(
     const nb::Graph* g,
     const Ctx& ctx);
 
-// A placeholder node's label + fill style, from the method side tables.
 void placeholder_label(
     const std::string& name,
     const nb::TensorMeta* meta,
@@ -373,7 +367,6 @@ void emit_graph(
     return;
   }
 
-  // value name -> tensor metadata
   std::unordered_map<std::string, const nb::TensorMeta*> tm;
   if (const auto* tvs = g->tensor_values()) {
     for (const nb::TensorValue* tv : *tvs) {
@@ -552,8 +545,8 @@ std::string render_program(const nb::Program& program_fb) {
 
 } // namespace
 
-std::string Program::to_dot() const {
-  return render_program(*program_fb_);
+std::string to_dot(const Program& program) {
+  return render_program(*program.flatbuffer());
 }
 
 } // namespace ptn

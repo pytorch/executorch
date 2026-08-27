@@ -124,10 +124,12 @@ def define_common_targets(is_fbcode = False):
         srcs = [
             "cuda_backend.cpp",
             "cuda_mutable_state.cpp",
+            "cuda_weight_cache.cpp",
         ],
         headers = [
             "cuda_delegate_handle.h",
             "cuda_mutable_state.h",
+            "cuda_weight_cache.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
@@ -169,6 +171,25 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
             "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_weight_cache",
+        srcs = [
+            "test/test_cuda_weight_cache.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            "//executorch/runtime/core:core",
         ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),

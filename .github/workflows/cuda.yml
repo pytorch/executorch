@@ -26,6 +26,8 @@ on:
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
       - examples/models/muse-glimmer/**
+      - extension/pybindings/**
+      - runtime/__init__.py
   workflow_dispatch:
 
 concurrency:
@@ -160,6 +162,8 @@ jobs:
   unittest-cuda:
     name: unittest-cuda
     needs: [changed-files, run-decision]
+    # This job runs the pybindings device test, so it also has to fire on the
+    # two pybindings paths the workflow filter lists.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -167,6 +171,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -189,6 +195,29 @@ jobs:
         # which the default system libstdc++ doesn't have. Install a newer one.
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        # The pybindings loader only asks for device memory on a build that has
+        # a device allocator registered, so this test cannot run in the CPU
+        # jobs. It needs the install above and nothing built below, so run it
+        # here and fail before the long builds.
+        #
+        # unittest exits 0 when a test skips, and this test skips when the CUDA
+        # backend is missing or no GPU is visible. Both are the prerequisites
+        # this job exists to provide, so treat a skip as a failure rather than
+        # let a packaging regression pass silently. `tee` would otherwise hide
+        # the real exit status behind its own, so read it back explicitly.
+        set +e
+        python -m unittest -v executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device 2>&1 | tee /tmp/pybindings_device_test.log
+        pybindings_device_status=${PIPESTATUS[0]}
+        set -e
+        if [ "${pybindings_device_status}" -ne 0 ]; then
+          echo "::error::the pybindings device test failed"
+          exit "${pybindings_device_status}"
+        fi
+        if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
+          echo "::error::the pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+          exit 1
+        fi
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
@@ -244,9 +273,10 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
 
   test-model-cuda-e2e:
     name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}

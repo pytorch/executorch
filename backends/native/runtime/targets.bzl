@@ -11,6 +11,9 @@ def define_common_targets():
 
     # Compile the native graph FlatBuffer schema to a C++ header. flatc takes an
     # output directory (not a file), so use `outs` to expand ${OUT} to the dir.
+    #
+    # Note that --cpp-std only picks the feature level of the flatbuffer
+    # *generated* accessors. flatc takes c++0x / c++11 / c++17 only -- no c++20.
     runtime.genrule(
         name = "generate_native_graph",
         srcs = [native_graph_fbs],
@@ -40,19 +43,32 @@ def define_common_targets():
     )
 
     # The native runtime program reader (standalone; no ExecuTorch dependency).
-    # utils/ToDot.cpp implements Program::to_dot() (DOT rendering); it is part of
-    # this package (no BUCK under utils/).
     runtime.cxx_library(
         name = "runtime",
         srcs = [
             "Program.cpp",
-            "utils/ToDot.cpp",
         ],
         exported_headers = [
             "Program.h",
         ],
         deps = [
             ":native_graph_schema",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    # utils/ has no BUCK of its own, so the DOT renderer's target lives here.
+    runtime.cxx_library(
+        name = "to_dot",
+        srcs = [
+            "utils/ToDot.cpp",
+        ],
+        exported_headers = [
+            "utils/ToDot.h",
+        ],
+        deps = [
+            ":native_graph_schema",
+            ":runtime",
             "//executorch/backends/native/runtime/graph:format",
         ],
         visibility = ["PUBLIC"],

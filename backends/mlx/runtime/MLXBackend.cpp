@@ -7,6 +7,7 @@
 //
 
 #include "MLXCache.h"
+#include "MLXCellCache.h"
 #include "MLXExecutor.h"
 #include "MLXInterpreter.h"
 #include "MLXLoader.h"
@@ -560,6 +561,11 @@ const int cache_builders_registered = [] {
       kMLXBackendId, "seq", [](const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::CacheBase>(
             std::make_shared<MLXSequenceCache>(cfg));
+      });
+  cache::CacheBuilderRegistry::global().register_builder(
+      kMLXBackendId, "cell", [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::CacheBase>(
+            std::make_shared<MLXCellCache>(cfg));
       });
   return 0;
 }();

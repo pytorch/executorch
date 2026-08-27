@@ -8,28 +8,23 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <vector>
 
-// Forward-declaration of the generated FlatBuffer root type. The generated
-// header is included only in Program.cpp / utils/ToGraphViz.cpp, so flatbuffers
-// stays an implementation detail of the reader.
+// Forward-declaration of the generated FlatBuffer root type, included only from
+// .cpp files so flatbuffers stays an implementation detail of the reader.
 namespace native_backend {
 struct Program;
 } // namespace native_backend
 
 namespace ptn {
 
-// A loaded native-graph program: owns the serialized FlatBuffer bytes and
-// exposes a zero-copy view of the root. Reader-only for now (no in-memory
-// mutable graph, constants, or execution).
+// Represents a loaded native-graph program
 class Program {
  private:
   // Owns the bytes; the program_fb_ pointer aliases into this buffer.
   // std::vector's move preserves the buffer address, so program_fb_ stays valid
-  // across a move. Never null on a live Program: the constructor is private and
-  // load(), the only caller, throws rather than hand back a null root, so the
-  // accessors below dereference it unchecked.
+  // across a move. Never null: load() is the only constructor path and throws
+  // rather than return a null root, so accessors dereference it unchecked.
   std::vector<uint8_t> bytes_;
   const ::native_backend::Program* program_fb_ = nullptr;
 
@@ -45,21 +40,15 @@ class Program {
   Program(const Program&) = delete;
   Program& operator=(const Program&) = delete;
 
-  // Parse and verify serialized native-graph bytes (a *.nptg buffer). Throws
-  // std::runtime_error on failure. The returned Program owns a copy of the
-  // bytes; the zero-copy accessors are valid for its lifetime.
+  // Parse and verify serialized native-graph bytes (a *.ptg buffer). Throws
+  // std::runtime_error on failure.
   static Program load(const void* data, size_t size);
 
-  // Zero-copy FlatBuffer root, pointing into this Program's owned bytes.
   const ::native_backend::Program* flatbuffer() const {
     return program_fb_;
   }
 
   size_t num_methods() const;
-
-  // Render this program to Graphviz DOT text (impl in utils/ToDot.cpp). Pure
-  // string builder; the caller writes/renders it (e.g. `dot -Tpng`).
-  std::string to_dot() const;
 };
 
 } // namespace ptn
