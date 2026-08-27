@@ -188,8 +188,9 @@ endif()
 if(APPLE)
   # Build the delegate as a shared library for the wheel so a C++ consumer can
   # link it, and so the Python extension links it dynamically instead of
-  # absorbing its code. Keep it static everywhere else so no other build
-  # changes.
+  # absorbing its code. Keyed on EXECUTORCH_BUILD_SHARED rather than
+  # BUILD_SHARED_LIBS, the same way the other shipped delegates decide this, so
+  # the wheel controls it independently of the generic CMake switch.
   if(EXECUTORCH_BUILD_SHARED)
     set(_coreml_backend_library_type SHARED)
   else()

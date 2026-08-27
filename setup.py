@@ -2170,6 +2170,8 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
                 cmake_build_args += ["--target", "executorch_shared"]
                 cmake_build_args += ["--target", "etdump"]
+                if cmake_cache.is_enabled("EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT"):
+                    cmake_build_args += ["--target", "coremldelegate"]
                 if cmake_cache.is_enabled(
                     "EXECUTORCH_BUILD_PTHREADPOOL"
                 ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
