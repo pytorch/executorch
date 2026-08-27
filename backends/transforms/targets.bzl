@@ -255,6 +255,7 @@ def define_common_targets():
             "//caffe2:torch",
             ":propagate_view_copy_permute_pass",
             "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )
 

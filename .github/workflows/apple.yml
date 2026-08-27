@@ -192,7 +192,6 @@ jobs:
           "executorch"
           "executorch_llm"
           "backend_coreml"
-          "backend_mps"
           "backend_xnnpack"
           "kernels_llm"
           "kernels_optimized"
@@ -300,6 +299,36 @@ jobs:
           done < "${RUNNER_TEMP}/checksums.txt"
 
           if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            # The manifest and the built frameworks have to describe the same set,
+            # checked in both directions because each failure is silent on its own.
+            #
+            # A placeholder with no framework publishes literal text where a checksum
+            # belongs, which stops SwiftPM resolving the package for every consumer
+            # rather than only users of that product. Eight consecutive nightlies
+            # shipped that way in August 2025.
+            #
+            # A framework with no placeholder is the reverse: sed matches nothing, so
+            # the product silently disappears from the manifest while its archive is
+            # still uploaded. Release branches share this template, so a branch that
+            # still builds a removed framework lands here. Compared against the base
+            # name, because the manifest declares each product once and synthesises
+            # its debug variant.
+            #
+            # Gated on the upload, because only a run that publishes can do harm and a
+            # branch whose template is momentarily out of step should not redden every
+            # unrelated pull request.
+            if grep -q "__SHA256_" Package.swift; then
+              echo "::error::Package.swift still has unsubstituted checksums:"
+              grep -o "__SHA256_[A-Za-z_]*__" Package.swift | sort -u
+              exit 1
+            fi
+            while read -r FRAMEWORK CHECKSUM; do
+              if ! grep -q "\"${FRAMEWORK%_debug}\"" Package.swift; then
+                echo "::error::built framework ${FRAMEWORK} has no product in Package.swift"
+                exit 1
+              fi
+            done < "${RUNNER_TEMP}/checksums.txt"
+
             git config --global user.name "PyTorch Bot"
             git config --global user.email "pytorchbot@users.noreply.github.com"
             git add Package.swift
