@@ -1,6 +1,6 @@
 # Using ExecuTorch on iOS
 
-ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and Metal Performance Shaders (MPS) for hardware-accelerated execution on Apple platforms.
+ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML for hardware-accelerated execution on Apple platforms.
 
 ## Integration
 
@@ -9,7 +9,6 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 * `executorch` - Core runtime components
 * `executorch_llm` - LLM-specific runtime components
 * `backend_coreml` - Core ML backend
-* `backend_mps` - MPS backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
@@ -113,7 +112,7 @@ git clone -b viable/strict https://github.com/pytorch/executorch.git --depth 1 -
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](backends/coreml/coreml-overview.md) or [MPS](backends/mps/mps-overview.md), if you plan to build them later:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends/coreml/coreml-overview.md), if you plan to build them later:
 
 ```bash
 ./install_requirements.sh
@@ -155,7 +154,6 @@ ET_PLATFORM[sdk=macos*] = macos
 OTHER_LDFLAGS = $(inherited) \
     -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch_debug_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_$(ET_PLATFORM).a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a
@@ -943,7 +941,7 @@ settings append target.source-map /executorch <path_to_executorch_source_code>
 
 ### Slow execution
 
-Ensure the exported model is using an appropriate backend, such as XNNPACK, Core ML, or MPS. If the correct backend is invoked but performance issues persist, confirm that you are linking against the Release build of the backend runtime.
+Ensure the exported model is using an appropriate backend, such as XNNPACK or Core ML. If the correct backend is invoked but performance issues persist, confirm that you are linking against the Release build of the backend runtime.
 
 For optimal performance, link the ExecuTorch runtime in Release mode too. If debugging is needed, you can keep the ExecuTorch runtime in Debug mode with minimal impact on performance, but preserve logging and debug symbols.
 
