@@ -629,6 +629,18 @@ def _generate_htp_analysis_result(
     return [qnn_tool.run(mode=mode, binary_file=os.path.basename(f)) for f in dumpfiles]
 
 
+# backward compatibility shim
+def generate_optrace(
+    artifact,
+    soc_id: QcomChipset,
+    adb,
+    pte_path: str,
+    inputs: Sequence[Tuple[torch.Tensor]],
+):
+    """see generate_htp_profile_result()"""
+    return generate_htp_profile_result(artifact, soc_id, pte_path, inputs, adb)
+
+
 def generate_htp_profile_result(
     artifact_dir: str,
     soc_id: QcomChipset,

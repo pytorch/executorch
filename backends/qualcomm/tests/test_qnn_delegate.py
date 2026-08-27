@@ -9,7 +9,6 @@ import itertools
 import json
 import logging
 import operator
-import os
 import subprocess
 import sys
 import tempfile
@@ -4461,12 +4460,12 @@ class TestQNNQuantizedOperator(TestQNN):
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
                     adb = self.get_adb_tool(pte_path)
-                    binaries_trace = generate_optrace(
+                    binaries_trace = generate_htp_profile_result(
                         tmp_dir,
                         self.chipset_table[TestQNN.soc_model],
-                        adb,
                         pte_path,
                         [sample_input],
+                        adb,
                     )
                     htp_ops = []
                     for _, (_, qhas) in binaries_trace.items():
@@ -4521,7 +4520,7 @@ class TestQNNQuantizedOperator(TestQNN):
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
                     adb = self.get_adb_tool(pte_path)
-                    binaries_trace = generate_optrace(
+                    binaries_trace = generate_htp_profile_result(
                         tmp_dir,
                         self.chipset_table[TestQNN.soc_model],
                         adb,
@@ -4575,12 +4574,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with open(pte_path, "wb") as f:
                 edge_prog_mgr.write_to_file(f)
             adb = self.get_adb_tool(pte_path)
-            binaries_trace = generate_optrace(
+            binaries_trace = generate_htp_profile_result(
                 tmp_dir,
                 self.chipset_table[TestQNN.soc_model],
-                adb,
                 pte_path,
                 [sample_input],
+                adb,
             )
             htp_ops = []
             for _, (_, qhas) in binaries_trace.items():
