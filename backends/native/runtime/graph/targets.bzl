@@ -8,3 +8,23 @@ def define_common_targets():
         ],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    runtime.cxx_library(
+        name = "scalar_type",
+        exported_headers = [
+            "ScalarType.h",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    runtime.cxx_library(
+        name = "tensor_meta",
+        srcs = ["TensorMeta.cpp"],
+        exported_headers = [
+            "TensorMeta.h",
+        ],
+        exported_deps = [
+            ":scalar_type",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
