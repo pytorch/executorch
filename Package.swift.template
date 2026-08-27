@@ -143,13 +143,11 @@ for (key, value) in products {
   packageTargets.append(target)
 }
 
-// The MLX Metal kernel libraries, one per platform slice, shipped as a single
-// resource bundle both MLX products share. Kept out of the generic loop above so
-// there is one bundle (executorch_backend_mlx_resources.bundle) rather than a
-// separate debug copy, and so the release and debug delegates resolve the same
-// name. Each slice's MLX binary asks for its own mlx-<slice>.metallib. The
-// release job commits all three files to this branch beside the manifest, so they
-// are always present in the published package and copied unconditionally.
+// One resource bundle shared by both MLX products (release and debug) so they
+// resolve the same bundle name, with a per-slice metallib since one slice's does
+// not load on another. Kept out of the loop above to avoid a per-debug copy. The
+// release job commits all three files beside the manifest, so copy them
+// unconditionally.
 let mlxMetallibSlices = ["mlx-ios", "mlx-ios-simulator", "mlx-macos"]
 if products.keys.contains("backend_mlx") {
   packageTargets.append(.target(
