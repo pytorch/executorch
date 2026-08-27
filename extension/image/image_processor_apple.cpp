@@ -1022,6 +1022,7 @@ Result<TensorPtr> ImageProcessor::process(
       std::move(tensor_shape),
       static_cast<void*>(output.release()),
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [](void* p) { delete[] static_cast<float*>(p); });
 
@@ -1063,6 +1064,7 @@ Result<TensorPtr> ImageProcessor::process_yuv(
       std::move(tensor_shape),
       static_cast<void*>(output.release()),
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [](void* p) { delete[] static_cast<float*>(p); });
 
@@ -1330,6 +1332,7 @@ Result<TensorPtr> process_pixelbuffer(
       std::move(tensor_shape),
       static_cast<void*>(output.release()),
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [](void* p) { delete[] static_cast<float*>(p); });
 

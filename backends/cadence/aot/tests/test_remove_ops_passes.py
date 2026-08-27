@@ -913,9 +913,28 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([x1_output, y1_output])
         original = builder.get_graph_module()
+        original_nodes = list(original.graph.nodes)
+        original_abs_nodes = original.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.abs.default
+        )
+        x1_output_node = original_abs_nodes[1]
+        x1_output_node.meta["remove_branched_test"] = "preserved"
+        x1_output_meta = x1_output_node.meta
         pass_result = cast(PassResult, RemoveBranchedQuantDequant()(original))
         self.assertTrue(pass_result.modified)
         graph_after_passes = pass_result.graph_module
+        self.assertIs(graph_after_passes, original)
+        self.assertIs(x1_output_node.meta, x1_output_meta)
+        self.assertEqual(x1_output_node.meta["remove_branched_test"], "preserved")
+        self.assertIs(
+            next(
+                node
+                for node in graph_after_passes.graph.nodes
+                if node.name == x1_output_node.name
+            ),
+            x1_output_node,
+        )
+        self.assertLess(len(list(graph_after_passes.graph.nodes)), len(original_nodes))
         self.assertEqual(
             count_node(
                 graph_after_passes,

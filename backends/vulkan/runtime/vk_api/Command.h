@@ -74,6 +74,8 @@ class CommandBuffer final {
   State state_;
   Bound bound_;
 
+  void record_barrier(PipelineBarrier& pipeline_barrier);
+
  public:
   inline bool is_reusable() {
     return !(flags_ & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
@@ -92,6 +94,7 @@ class CommandBuffer final {
   void set_push_constants(VkPipelineLayout, const void*, uint32_t);
 
   void insert_barrier(PipelineBarrier& pipeline_barrier);
+  void insert_barrier_only(PipelineBarrier& pipeline_barrier);
   void dispatch(const utils::uvec3&);
   void blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst);
 

@@ -29,9 +29,12 @@ class CortexMAddMulCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
         """
-        Checks that the pattern does not perform unsupported broadcasting.
+        Checks that the pattern does not perform unsupported broadcasting, and
+        that add/sub carry no alpha, which quantized_add has nowhere to put.
         """
         for node in pattern:
+            if node.kwargs.get("alpha", 1) != 1:
+                return False
             if len(node.all_input_nodes) == 2:
                 t1 = get_first_fake_tensor(node.all_input_nodes[0])
                 t2 = get_first_fake_tensor(node.all_input_nodes[1])
@@ -140,8 +143,8 @@ class CortexMLinearCheck(PatternCheck):
 
 
 class CortexMActivationCheck(PatternCheck):
-    """Accept standalone elementwise activations (sigmoid / tanh / silu)
-    that the LUT-based cortex_m.quantized_activation op handles uniformly.
+    """Accept the standalone elementwise activations that the LUT-based
+    cortex_m.quantized_activation op handles uniformly.
 
     The kernel is shape-agnostic and the LUT is computed AoT from per-tensor
     qparams, so the only thing to enforce is int8 per-tensor quantization.

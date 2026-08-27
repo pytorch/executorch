@@ -850,11 +850,6 @@ if(EXECUTORCH_BUILD_COREML)
   list(APPEND _executorch_backends coremldelegate)
 endif()
 
-if(EXECUTORCH_BUILD_MPS)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
-  list(APPEND _executorch_backends mpsdelegate)
-endif()
-
 if(EXECUTORCH_BUILD_MLX)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
   list(APPEND _executorch_backends mlxdelegate)
@@ -1137,6 +1132,25 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND _executorch_kernels torchao_ops_executorch)
 
+  # The wheel ships one shared library per component so a process holds a single
+  # copy of each. These kernels are static archives declared in the TorchAO
+  # submodule, so wrap them the way the quantized kernels are wrapped rather
+  # than changing a third-party target. extension_threadpool is named explicitly
+  # because the kernels call into it and the wheel ships it as its own library,
+  # so this resolves against that one copy instead of bundling a second.
+  if(EXECUTORCH_BUILD_SHARED)
+    executorch_add_shared_library(
+      executorch_kernels_torchao torchao_ops_executorch extension_threadpool
+      executorch_shared
+    )
+    # Holds registration constructors and no symbol a consumer names, so a link
+    # with --as-needed would drop it and register nothing.
+    executorch_target_link_options_shared_lib(executorch_kernels_torchao)
+    # Ships beside the runtime in the wheel's lib/ directory, and links it, so
+    # it has to be able to find it from wherever the package is installed.
+    executorch_target_shipped_runtime_path(executorch_kernels_torchao)
+  endif()
+
   install(
     TARGETS torchao_ops_executorch torchao_kernels_aarch64
     EXPORT ExecuTorchTargets
@@ -1305,10 +1319,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_VGF)
     list(APPEND _dep_libs vgf_backend)
-  endif()
-
-  if(EXECUTORCH_BUILD_MPS)
-    list(APPEND _dep_libs mpsdelegate)
   endif()
 
   if(EXECUTORCH_BUILD_MLX)
@@ -1492,8 +1502,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Copy the MLX metallib next to the Python extension for editable installs.
   # MLX uses dladdr() to find the directory containing the library with MLX
-  # code, then looks for mlx.metallib in that directory. When MLX is statically
-  # linked into the Python extension, we need the metallib colocated with it.
+  # code, then looks for mlx.metallib in that directory. This covers the case
+  # where the delegate is static and therefore absorbed into the extension; a
+  # shared delegate carries MLX itself and is served by the copy installed
+  # beside it instead.
   executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
