@@ -12,6 +12,15 @@ if(APPLE)
   find_library(SQLITE_LIBRARY sqlite3 REQUIRED)
 endif()
 
+# Signals to packaging whether the standalone shared delegate library was built.
+# Reset to OFF on every configure so a reused build directory that switches
+# platform or library type does not carry a stale value; the shared branch below
+# turns it on only when it actually produces the library.
+set(EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT
+    OFF
+    CACHE INTERNAL "The standalone Core ML delegate library was built"
+)
+
 if(EXECUTORCH_BUILD_DEVTOOLS)
   # protobuf requires frtti
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -frtti")
@@ -281,13 +290,6 @@ if(APPLE)
       coremldelegate
       PUBLIC coreml_util coreml_inmemoryfs
       PRIVATE executorch_core
-    )
-    # Clear the packaging signal too, so an in-place reconfigure that turns the
-    # shared build off does not leave a stale ON in the cache and make packaging
-    # look for a library this build no longer produces.
-    set(EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT
-        OFF
-        CACHE INTERNAL "The standalone Core ML delegate library was built"
     )
   endif()
 
