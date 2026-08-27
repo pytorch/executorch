@@ -12,6 +12,15 @@ if(APPLE)
   find_library(SQLITE_LIBRARY sqlite3 REQUIRED)
 endif()
 
+# Signals to packaging whether the standalone shared delegate library was built.
+# Reset to OFF on every configure so a reused build directory that switches
+# platform or library type does not carry a stale value; the shared branch below
+# turns it on only when it actually produces the library.
+set(EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT
+    OFF
+    CACHE INTERNAL "The standalone Core ML delegate library was built"
+)
+
 if(EXECUTORCH_BUILD_DEVTOOLS)
   # protobuf requires frtti
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -frtti")
@@ -186,7 +195,17 @@ endif()
 # coremldelegate
 
 if(APPLE)
-  add_library(coremldelegate)
+  # Build the delegate as a shared library for the wheel so a C++ consumer can
+  # link it, and so the Python extension links it dynamically instead of
+  # absorbing its code. Keyed on EXECUTORCH_BUILD_SHARED rather than
+  # BUILD_SHARED_LIBS, the same way the other shipped delegates decide this, so
+  # the wheel controls it independently of the generic CMake switch.
+  if(EXECUTORCH_BUILD_SHARED)
+    set(_coreml_backend_library_type SHARED)
+  else()
+    set(_coreml_backend_library_type STATIC)
+  endif()
+  add_library(coremldelegate ${_coreml_backend_library_type})
   target_sources(coremldelegate PRIVATE ${KVSTORE_SOURCES} ${DELEGATE_SOURCES})
 
   target_include_directories(
@@ -237,11 +256,42 @@ if(APPLE)
   endif()
 
   target_link_libraries(
-    coremldelegate
-    PUBLIC coreml_util coreml_inmemoryfs
-    PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
-            ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+    coremldelegate PRIVATE ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
+                           ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
+  if(EXECUTORCH_BUILD_SHARED)
+    set_target_properties(
+      coremldelegate PROPERTIES OUTPUT_NAME executorch_backend_coreml
+    )
+    executorch_target_soname_policy(coremldelegate)
+    # coreml_util and coreml_inmemoryfs are static archives this delegate owns,
+    # so bundle them inside this one shipped library instead of making every
+    # consumer supply them. A plain private link is enough, not whole-archive:
+    # the delegate references the helpers it uses, so ordinary resolution pulls
+    # exactly those objects. Neither helper registers anything from an
+    # unreferenced namespace-scope initializer, which is the only thing
+    # force_load would add here.
+    target_link_libraries(
+      coremldelegate PRIVATE coreml_util coreml_inmemoryfs executorch_shared
+    )
+    # Ships beside the runtime in the wheel's lib/ directory.
+    executorch_target_shipped_runtime_path(coremldelegate)
+    # A signal for packaging that the standalone delegate library exists. The
+    # EXECUTORCH_BUILD_COREML flag alone is not enough because it is also on for
+    # the Python extension on non-Apple platforms, where this shared library is
+    # not built, so keying the wheel's install on it would look for a file that
+    # was never produced.
+    set(EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT
+        ON
+        CACHE INTERNAL "The standalone Core ML delegate library was built"
+    )
+  else()
+    target_link_libraries(
+      coremldelegate
+      PUBLIC coreml_util coreml_inmemoryfs
+      PRIVATE executorch_core
+    )
+  endif()
 
   executorch_target_link_options_shared_lib(coremldelegate)
 

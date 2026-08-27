@@ -23,6 +23,14 @@ This package includes the dependencies needed to export a PyTorch model, as well
 pip install executorch
 ```
 
+To get the latest features before they reach a stable release, install a nightly
+build instead. Nightly wheels are built from the `main` branch every day, so a
+change that has landed but is not yet in a stable release is available there first.
+
+```
+pip install executorch --pre --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+```
+
 To build the framework from source, see [Building From Source](using-executorch-building-from-source.md). Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
 
 > **_NOTE:_** On Windows, ExecuTorch requires a [Visual Studio Developer Powershell](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell?view=vs-2022). Running from outside of a developer prompt will manifest as errors related to CL.exe.

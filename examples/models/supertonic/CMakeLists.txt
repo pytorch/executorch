@@ -141,3 +141,18 @@ set_tests_properties(
   PROPERTIES TIMEOUT 1800 SKIP_REGULAR_EXPRESSION
              "SKIP: Supertonic integration assets are unavailable"
 )
+add_test(
+  NAME supertonic_jsonl_integration
+  COMMAND
+    ${CMAKE_COMMAND} -DRUNNER=$<TARGET_FILE:supertonic_runner>
+    -DPTE=${SUPERTONIC_INTEGRATION_PTE}
+    -DASSET_DIR=${SUPERTONIC_INTEGRATION_ASSET_DIR}
+    -DSTYLE=${SUPERTONIC_INTEGRATION_STYLE}
+    -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/jsonl-integration -P
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/tests/run_jsonl_server_integration.cmake
+)
+set_tests_properties(
+  supertonic_jsonl_integration
+  PROPERTIES TIMEOUT 1800 SKIP_REGULAR_EXPRESSION
+             "SKIP: Supertonic JSONL server assets are unavailable"
+)
