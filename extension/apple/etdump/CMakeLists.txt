@@ -24,8 +24,24 @@ file(GLOB OBJC_SOURCES ExecuTorchETDump/Exported/*.m
 
 target_sources(extension_etdump_apple PRIVATE ${OBJC_SOURCES})
 
+# The public header exposes ExecuTorchModule and so imports it as
+# <ExecuTorch/ExecuTorchModule.h>, the path a consumer of the assembled
+# framework uses. That layout does not exist during this build, so stage the
+# core Exported headers under an ExecuTorch directory and put it on the include
+# path, mirroring what the framework packaging produces.
+set(_etdump_core_headers_dir ${CMAKE_CURRENT_BINARY_DIR}/include)
+file(MAKE_DIRECTORY ${_etdump_core_headers_dir}/ExecuTorch)
+file(GLOB _etdump_core_headers
+     ${EXECUTORCH_ROOT}/extension/apple/ExecuTorch/Exported/*.h
+)
+file(COPY ${_etdump_core_headers}
+     DESTINATION ${_etdump_core_headers_dir}/ExecuTorch
+)
+
 target_include_directories(
-  extension_etdump_apple PUBLIC ExecuTorchETDump/Exported
+  extension_etdump_apple
+  PUBLIC ExecuTorchETDump/Exported
+  PRIVATE ${_etdump_core_headers_dir}
 )
 
 if(NOT TARGET etdump)
