@@ -105,5 +105,7 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
             bypass_ops=self.bypass_ops,
         )
         if modified:
-            return super().call(graph_module)
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return PassResult(graph_module, True)
         return PassResult(graph_module, False)

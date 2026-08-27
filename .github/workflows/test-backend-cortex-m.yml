@@ -52,12 +52,17 @@ jobs:
     with:
       backend: cortex_m
       flows: '["cortex_m"]'
-      # Most of the operator suite still fails on a kernel the runner does not
-      # carry. Growing ops_list in backends/cortex_m/test/build_test_runner.sh
-      # is the wrong fix -- portable kernels bloat the binary, and most of these
-      # operators should be lowered, folded or decomposed instead of reaching
-      # one. Excluded until enough of them lower to be worth the runtime.
-      exclude: '[{"flow": "cortex_m", "suite": "operators"}]'
+      # The operator suite is a scoreboard for how much of the operator set the
+      # backend lowers, not a gate: most of its cases reach an operator cortex_m
+      # does not implement and abort on a kernel the runner does not carry. It
+      # earns a scheduled run, not a place on every PR and every merge to main.
+      # Growing ops_list to make those cases run is not the fix -- a case that
+      # only passes on a portable fallback says nothing about coverage.
+      exclude: >-
+        ${{ (github.event_name == 'schedule'
+             || github.event_name == 'workflow_dispatch')
+            && '[]'
+            || '[{"flow": "cortex_m", "suite": "operators"}]' }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
