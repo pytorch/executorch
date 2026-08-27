@@ -271,10 +271,21 @@ class RingKVCache(KVCache):
         head_dim: int,
         enable_dynamic_shape: bool,
         dtype=torch.float32,
+        cache_size: Optional[int] = None,
     ):
         self.window_size = max_context_length
+        cache_size = max_context_length * 2 if cache_size is None else int(cache_size)
+        assert cache_size >= max_context_length, (
+            f"Ring cache size ({cache_size}) must be at least the sliding window "
+            f"size ({max_context_length})"
+        )
         """
-        Reason why we want the kv cache size to be twice the context length:
+        The cache needs room for the retained sliding window and the current
+        prefill chunk. By default this remains 2x the window for backwards
+        compatibility. The local/global transformation supplies a cache size
+        based on window_size + max_seq_len, capped by the full-context cache.
+
+        Reason why a cache larger than the sliding window is needed:
         Sliding window attention without ringbuffer
         pos   0  1  2  3  4  5  6  7  8  9  10
         0     x  0  0  0  0  0  0  0  0  0  0
@@ -320,7 +331,7 @@ class RingKVCache(KVCache):
         """
         super().__init__(
             max_batch_size,
-            max_context_length * 2,
+            cache_size,
             n_heads,
             head_dim,
             enable_dynamic_shape,

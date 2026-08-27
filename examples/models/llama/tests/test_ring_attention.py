@@ -84,7 +84,10 @@ class TestRingAttention(unittest.TestCase):
             return attention
 
     def _create_ring_attention(
-        self, attention, kv_cache_type: KVCacheType = KVCacheType.REGULAR
+        self,
+        attention,
+        kv_cache_type: KVCacheType = KVCacheType.REGULAR,
+        max_seq_len=None,
     ):
         """Create attention with ring buffer KV cache."""
         assert self.sliding_window is not None
@@ -98,12 +101,14 @@ class TestRingAttention(unittest.TestCase):
             baseline_attention.kv_cache = QuantizedRingKVCache.from_quantized_kv_cache(
                 baseline_attention.kv_cache,
                 self.sliding_window,
+                max_seq_len,
             )
         elif isinstance(baseline_attention.kv_cache, CustomKVCache):
             # Replace CustomKVCache with CustomRingKVCache
             baseline_attention.kv_cache = CustomRingKVCache.from_custom_kv_cache(
                 baseline_attention.kv_cache,
                 self.sliding_window,
+                max_seq_len,
             )
         else:
             # Replace regular KVCache with RingKVCache
@@ -114,8 +119,67 @@ class TestRingAttention(unittest.TestCase):
                 self.head_dim,
                 self.args.enable_dynamic_shape,
                 self.dtype,
+                cache_size=min(
+                    self.args.max_context_len,
+                    self.sliding_window
+                    + (self.sliding_window if max_seq_len is None else max_seq_len),
+                ),
             )
         return baseline_attention
+
+    def test_continuation_prefill_larger_than_window(
+        self, kv_cache_type: KVCacheType = KVCacheType.REGULAR
+    ):
+        """A W+C cache preserves history when the incoming chunk exceeds W."""
+        self.sliding_window = 4
+        self.max_context_len = 16
+        chunk_size = 6
+        baseline_attn = self._create_baseline_attention(12, kv_cache_type)
+        ring_attn = self._create_ring_attention(
+            baseline_attn, kv_cache_type, max_seq_len=chunk_size
+        )
+
+        self.assertEqual(ring_attn.kv_cache.max_context_length, 10)
+
+        with torch.nn.attention.sdpa_kernel(
+            [SDPBackend.FLASH_ATTENTION]
+        ), torch.no_grad():
+            for pos in (0, chunk_size):
+                x = torch.randn(
+                    (self.batch_size, chunk_size, self.dim), dtype=self.dtype
+                )
+                input_pos = torch.tensor([pos], dtype=torch.long)
+                freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, chunk_size)
+
+                baseline_out, _ = baseline_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
+                ring_out, _ = ring_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
+
+                tolerance = 1e-6 if kv_cache_type != KVCacheType.REGULAR else 1e-7
+                self.assertTrue(
+                    torch.allclose(
+                        baseline_out,
+                        ring_out,
+                        rtol=tolerance,
+                        atol=tolerance,
+                    ),
+                    f"Outputs differ at position {pos}",
+                )
+
+    def test_continuation_prefill_larger_than_window_quantized(self):
+        self._run_test_with_kv_cache_type(
+            self.test_continuation_prefill_larger_than_window,
+            KVCacheType.QUANTIZED,
+        )
+
+    def test_continuation_prefill_larger_than_window_custom(self):
+        self._run_test_with_kv_cache_type(
+            self.test_continuation_prefill_larger_than_window,
+            KVCacheType.CUSTOM,
+        )
 
     def _create_sliding_window_mask(self, seq_len, context_len, window_size):
         """Create a sliding window mask for the baseline."""
