@@ -10,6 +10,7 @@ package org.pytorch.executorch
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.nio.ByteBuffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,6 +24,8 @@ import org.pytorch.executorch.extension.image.ImageProcessorConfig
 import org.pytorch.executorch.extension.image.LetterboxAnchor
 import org.pytorch.executorch.extension.image.Normalization
 import org.pytorch.executorch.extension.image.ResizeMode
+import org.pytorch.executorch.extension.image.YuvFormat
+import org.pytorch.executorch.extension.image.YuvRange
 
 /**
  * Instrumentation tests for [ImageProcessor].
@@ -282,6 +285,263 @@ class ImageProcessorInstrumentationTest {
     }
   }
 
+  // ─── YUV ────────────────────────────────────────────────────────────────────
+
+  @Test
+  fun testProcessYuvDecodesKnownNv12() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      val tensor =
+          processor.processYuv(
+              yPlane(4, 4, luma = 150),
+              4,
+              uvPlane(4, 4, cb = 100, cr = 180, format = YuvFormat.NV12),
+              4,
+              4,
+              4,
+              YuvFormat.NV12,
+              range = YuvRange.FULL,
+          )
+      assertArrayEquals(longArrayOf(1, 3, 4, 4), tensor.shape())
+      val data = tensor.dataAsFloatArray
+      // Solid input, identity resize: every pixel is the fixed-point full-range
+      // BT.601 decode of (Y=150, Cb=100, Cr=180), which is RGB (223, 122, 100).
+      for (i in 0 until 16) {
+        assertEquals("R[$i]", 223 / 255.0f, data[i], TOLERANCE)
+        assertEquals("G[$i]", 122 / 255.0f, data[16 + i], TOLERANCE)
+        assertEquals("B[$i]", 100 / 255.0f, data[32 + i], TOLERANCE)
+      }
+    }
+  }
+
+  @Test
+  fun testProcessYuvHonorsRange() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      val uv = uvPlane(4, 4, cb = 100, cr = 180, format = YuvFormat.NV12)
+      val full =
+          processor
+              .processYuv(yPlane(4, 4, 150), 4, uv, 4, 4, 4, YuvFormat.NV12, range = YuvRange.FULL)
+              .dataAsFloatArray
+      val video =
+          processor
+              .processYuv(yPlane(4, 4, 150), 4, uv, 4, 4, 4, YuvFormat.NV12, range = YuvRange.VIDEO)
+              .dataAsFloatArray
+      // Same samples, different quantization ranges: video range stretches the
+      // luma about its 16 offset, so red decodes 223 (full) vs 239 (video).
+      assertEquals(223 / 255.0f, full[0], TOLERANCE)
+      assertEquals(239 / 255.0f, video[0], TOLERANCE)
+    }
+  }
+
+  @Test
+  fun testProcessYuvNv21MatchesNv12() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      // The same logical chroma stored in both interleave orders must decode to
+      // the same image; only the byte order inside each pair differs.
+      val nv12 =
+          processor
+              .processYuv(
+                  yPlane(4, 4, 150),
+                  4,
+                  uvPlane(4, 4, cb = 100, cr = 180, format = YuvFormat.NV12),
+                  4,
+                  4,
+                  4,
+                  YuvFormat.NV12,
+                  range = YuvRange.FULL,
+              )
+              .dataAsFloatArray
+      val nv21 =
+          processor
+              .processYuv(
+                  yPlane(4, 4, 150),
+                  4,
+                  uvPlane(4, 4, cb = 100, cr = 180, format = YuvFormat.NV21),
+                  4,
+                  4,
+                  4,
+                  YuvFormat.NV21,
+                  range = YuvRange.FULL,
+              )
+              .dataAsFloatArray
+      assertArrayEquals(nv12, nv21, TOLERANCE)
+    }
+  }
+
+  @Test
+  fun testProcessYuvStridedPlanesMatchTight() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      val yTight = yBytes(4, 4, luma = 150)
+      val uvTight = uvBytes(4, 4, cb = 100, cr = 180, format = YuvFormat.NV12)
+      val tight =
+          processor
+              .processYuv(
+                  directBuffer(yTight),
+                  4,
+                  directBuffer(uvTight),
+                  4,
+                  4,
+                  4,
+                  YuvFormat.NV12,
+                  range = YuvRange.FULL,
+              )
+              .dataAsFloatArray
+      // Re-lay both planes at wider strides with poisoned padding; a
+      // stride-ignoring read would diverge from the tight run.
+      val strided =
+          processor
+              .processYuv(
+                  directBuffer(withStride(yTight, rowBytes = 4, rows = 4, stride = 7)),
+                  7,
+                  directBuffer(withStride(uvTight, rowBytes = 4, rows = 2, stride = 6)),
+                  6,
+                  4,
+                  4,
+                  YuvFormat.NV12,
+                  range = YuvRange.FULL,
+              )
+              .dataAsFloatArray
+      assertArrayEquals(tight, strided, 0.0f)
+    }
+  }
+
+  @Test
+  fun testProcessYuvShortCameraPlaneSubstitutesOnlyTheMissingByte() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      // Neutral chroma except the final pair, whose second byte (Cr for NV12)
+      // is the one a CameraX plane view cannot deliver.
+      val uv = uvBytes(4, 4, cb = 128, cr = 128, format = YuvFormat.NV12)
+      uv[6] = 100.toByte() // final pair Cb, present either way
+      uv[7] = 200.toByte() // final pair Cr, the byte the view cuts off
+      val complete =
+          processor
+              .processYuv(
+                  yPlane(4, 4, 150),
+                  4,
+                  directBuffer(uv),
+                  4,
+                  4,
+                  4,
+                  YuvFormat.NV12,
+                  range = YuvRange.FULL,
+              )
+              .dataAsFloatArray
+      val shortPlane =
+          processor
+              .processYuv(
+                  yPlane(4, 4, 150),
+                  4,
+                  directBuffer(uv.copyOf(7)),
+                  4,
+                  4,
+                  4,
+                  YuvFormat.NV12,
+                  range = YuvRange.FULL,
+              )
+              .dataAsFloatArray
+      // Bottom-right pixel (3,3) reads the final pair. The complete plane
+      // decodes the true Cr=200; the short plane substitutes the previous
+      // pair's Cr=128. Cb=100 is present in both, so blue agrees.
+      val corner = 3 * 4 + 3
+      assertEquals("complete R", 251 / 255.0f, complete[corner], TOLERANCE)
+      assertEquals("complete G", 108 / 255.0f, complete[16 + corner], TOLERANCE)
+      assertEquals("complete B", 100 / 255.0f, complete[32 + corner], TOLERANCE)
+      assertEquals("short R", 150 / 255.0f, shortPlane[corner], TOLERANCE)
+      assertEquals("short G", 160 / 255.0f, shortPlane[16 + corner], TOLERANCE)
+      assertEquals("short B", 100 / 255.0f, shortPlane[32 + corner], TOLERANCE)
+      // Away from the final pair the two runs read identical bytes.
+      assertEquals(complete[0], shortPlane[0], 0.0f)
+    }
+  }
+
+  @Test
+  fun testProcessYuvRejectsTruncatedChromaPlane() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      // One missing byte is the camera-view allowance; two is a truncated
+      // plane and must be rejected, not substituted more widely.
+      val uv = uvBytes(4, 4, cb = 128, cr = 128, format = YuvFormat.NV12)
+      try {
+        processor.processYuv(
+            yPlane(4, 4, 150),
+            4,
+            directBuffer(uv.copyOf(6)),
+            4,
+            4,
+            4,
+            YuvFormat.NV12,
+        )
+        fail("Should throw for a chroma plane more than one byte short")
+      } catch (_: ExecutorchRuntimeException) {}
+    }
+  }
+
+  @Test
+  fun testProcessYuvRejectsOddDimensions() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      try {
+        processor.processYuv(
+            yPlane(4, 4, 150),
+            4,
+            uvPlane(4, 4, cb = 128, cr = 128, format = YuvFormat.NV12),
+            4,
+            3,
+            4,
+            YuvFormat.NV12,
+        )
+        fail("Should throw for an odd width")
+      } catch (_: ExecutorchRuntimeException) {}
+    }
+  }
+
+  @Test
+  fun testProcessYuvIntoMatchesProcessYuv() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      val allocated =
+          processor.processYuv(
+              yPlane(4, 4, 150),
+              4,
+              uvPlane(4, 4, cb = 100, cr = 180, format = YuvFormat.NV12),
+              4,
+              4,
+              4,
+              YuvFormat.NV12,
+              range = YuvRange.FULL,
+          )
+      val reused = Tensor.fromBlob(Tensor.allocateFloatBuffer(3 * 4 * 4), longArrayOf(1, 3, 4, 4))
+      processor.processYuvInto(
+          yPlane(4, 4, 150),
+          4,
+          uvPlane(4, 4, cb = 100, cr = 180, format = YuvFormat.NV12),
+          4,
+          4,
+          4,
+          YuvFormat.NV12,
+          reused,
+          range = YuvRange.FULL,
+      )
+      assertArrayEquals(allocated.dataAsFloatArray, reused.dataAsFloatArray, TOLERANCE)
+    }
+  }
+
+  @Test
+  fun testProcessYuvIntoRejectsWrongShape() {
+    ImageProcessor(ImageProcessorConfig(targetWidth = 4, targetHeight = 4)).use { processor ->
+      val wrong = Tensor.fromBlob(Tensor.allocateFloatBuffer(3 * 2 * 2), longArrayOf(1, 3, 2, 2))
+      try {
+        processor.processYuvInto(
+            yPlane(4, 4, 150),
+            4,
+            uvPlane(4, 4, cb = 128, cr = 128, format = YuvFormat.NV12),
+            4,
+            4,
+            4,
+            YuvFormat.NV12,
+            wrong,
+        )
+        fail("Should throw for a tensor with the wrong shape")
+      } catch (_: IllegalArgumentException) {}
+    }
+  }
+
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   private fun solidBitmap(width: Int, height: Int, color: Int): Bitmap {
@@ -298,6 +558,40 @@ class ImageProcessorInstrumentationTest {
       }
     }
     return bitmap
+  }
+
+  private fun directBuffer(bytes: ByteArray): ByteBuffer =
+      ByteBuffer.allocateDirect(bytes.size).apply {
+        put(bytes)
+        rewind()
+      }
+
+  private fun yBytes(width: Int, height: Int, luma: Int): ByteArray =
+      ByteArray(width * height) { luma.toByte() }
+
+  private fun yPlane(width: Int, height: Int, luma: Int): ByteBuffer =
+      directBuffer(yBytes(width, height, luma))
+
+  /** Tightly packed interleaved chroma plane holding one (cb, cr) value everywhere. */
+  private fun uvBytes(width: Int, height: Int, cb: Int, cr: Int, format: YuvFormat): ByteArray {
+    val bytes = ByteArray(width / 2 * (height / 2) * 2)
+    for (pair in 0 until bytes.size / 2) {
+      bytes[pair * 2] = (if (format == YuvFormat.NV12) cb else cr).toByte()
+      bytes[pair * 2 + 1] = (if (format == YuvFormat.NV12) cr else cb).toByte()
+    }
+    return bytes
+  }
+
+  private fun uvPlane(width: Int, height: Int, cb: Int, cr: Int, format: YuvFormat): ByteBuffer =
+      directBuffer(uvBytes(width, height, cb, cr, format))
+
+  /** Re-lay tightly packed rows at a wider stride, poisoning the padding bytes. */
+  private fun withStride(tight: ByteArray, rowBytes: Int, rows: Int, stride: Int): ByteArray {
+    val padded = ByteArray(stride * rows) { 0xAB.toByte() }
+    for (r in 0 until rows) {
+      System.arraycopy(tight, r * rowBytes, padded, r * stride, rowBytes)
+    }
+    return padded
   }
 
   private companion object {
