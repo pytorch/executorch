@@ -194,6 +194,16 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   };
 
   struct SessionRecord {
+    SessionRecord() = default;
+
+    // Exclusively owned by sessions_. A copy would duplicate the generation
+    // and the carried token, and both copies would answer for one session.
+    // Moved into the map on open, so the move members stay.
+    SessionRecord(const SessionRecord&) = delete;
+    SessionRecord& operator=(const SessionRecord&) = delete;
+    SessionRecord(SessionRecord&&) = default;
+    SessionRecord& operator=(SessionRecord&&) = default;
+
     std::shared_ptr<SessionStatus> status;
     bool poisoned = false;
     // Accepted and emitted by the last generation but never fed back, because
@@ -310,6 +320,11 @@ struct SessionState {
     status->open.store(false, std::memory_order_release);
     impl->request_close(session);
   }
+
+  // A copy would share the session id and close it a second time. Held only
+  // by unique_ptr, so it is never moved either.
+  SessionState(const SessionState&) = delete;
+  SessionState& operator=(const SessionState&) = delete;
 
   std::shared_ptr<RunnerImpl> impl;
   SessionId session;
