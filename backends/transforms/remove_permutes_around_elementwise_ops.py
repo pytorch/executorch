@@ -166,9 +166,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         Flattening such a tensor -- e.g. the ``[1, C, 1, 1] -> [1, C]`` after a
         global pool -- is permutation-invariant: every layout of the input
         produces the identical output (the single non-unit run of elements is
-        contiguous regardless of which axis holds it). A permutation propagating
-        into it therefore simply dies, so the region can terminate here with no
-        compensating permute.
+        contiguous regardless of which axis holds it). The region may terminate
+        here without a compensating permute when downstream consumers do not use
+        the output shape for layout-dependent broadcasting.
         """
         if node.target not in self._VIEW_OPS:
             return False
@@ -179,6 +179,40 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # are treated as non-unit, i.e. conservatively not a sink).
         non_unit = [d for d in shape if not (isinstance(d, int) and d == 1)]
         return len(non_unit) <= 1
+
+    def _sink_users_are_layout_invariant(self, sink: torch.fx.Node) -> bool:
+        """Return whether dropping layout at ``sink`` is safe for its consumers."""
+        frontier = [(user, sink) for user in sink.users]
+        visited: set[torch.fx.Node] = set()
+        while frontier:
+            node, producer = frontier.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+
+            if node.op == "output":
+                continue
+            if node.target == exir_ops.edge.aten.permute_copy.default:
+                # This explicit transform re-establishes the downstream layout,
+                # so consumers beyond it do not depend on the sink's layout.
+                continue
+            if self._is_permutation_sink_view(node):
+                continue
+
+            tensor_inputs = [
+                input_node
+                for input_node in node.all_input_nodes
+                if input_node.meta.get("val") is not None
+            ]
+            if any(
+                input_node is not producer and input_node.meta["val"].numel() != 1
+                for input_node in tensor_inputs
+            ):
+                return False
+            if not self.is_node_permutable(node):
+                return False
+            frontier.extend((user, node) for user in node.users)
+        return True
 
     def _inserted_unit_dim(self, node: torch.fx.Node) -> int | None:
         """Position of the size-1 dim ``node`` inserts, else None.
@@ -518,12 +552,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             elif user.op == "output":
                 return False
             elif self._is_permutation_sink_view(user):
-                # The permutation dies at this reshape (see
-                # _is_permutation_sink_view), so terminate the region here with
-                # no compensating permute and no further downstream traversal.
-                # Checked before the rank-change handling below: a sink always
-                # terminates cleanly, whereas crossing it would leave the region
-                # hunting for an end permute that layout-invariance made moot.
+                # The tensor's element order is invariant at this reshape, but
+                # its output shape can still carry broadcast-axis meaning.
+                if not self._sink_users_are_layout_invariant(user):
+                    return False
                 continue
             elif not self.visit(
                 user, subgraph, processed_nodes, downstream_end, downstream_start

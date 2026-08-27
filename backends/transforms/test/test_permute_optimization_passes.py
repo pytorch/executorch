@@ -1594,6 +1594,110 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permutation_sink_view_splitting_the_non_unit_dim",
         )
 
+    def test_permutation_sink_view_preserves_broadcast_layout(self) -> None:
+        x_data = torch.randn(1, 4, 1, 1)
+        direct_data = torch.randn(1, 8, 4)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        direct = builder.placeholder("direct", direct_data)
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(permute, permute)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mul, [1, 1, 4])
+        )
+        sub = builder.call_operator(
+            op=exir_ops.edge.aten.sub.Tensor, args=(direct, view)
+        )
+        builder.output([sub])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, direct_data],
+            "permutation_sink_view_preserves_broadcast_layout",
+        )
+
+    def test_permutation_sink_view_preserves_cat_layout(self) -> None:
+        x_data = torch.randn(1, 4, 1, 1)
+        direct_data = torch.randn(1, 7, 4)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        direct = builder.placeholder("direct", direct_data)
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(permute, permute)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mul, [1, 1, 4])
+        )
+        cat = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default, args=([direct, view], 1)
+        )
+        builder.output([cat])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, direct_data],
+            "permutation_sink_view_preserves_cat_layout",
+        )
+
+    def test_permutation_sink_view_preserves_keyword_broadcast_layout(self) -> None:
+        x_data = torch.randn(1, 4, 1, 1)
+        direct_data = torch.randn(1, 8, 4)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        direct = builder.placeholder("direct", direct_data)
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(permute, permute)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mul, [1, 1, 4])
+        )
+        sub = builder.call_operator(
+            op=exir_ops.edge.aten.sub.Tensor,
+            args=(view,),
+            kwargs={"other": direct},
+        )
+        builder.output([sub])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, direct_data],
+            "permutation_sink_view_preserves_keyword_broadcast_layout",
+        )
+
     def test_upstream_squeeze_view_rank_mismatch_no_crash(self) -> None:
         """Regression test for IndexError when a squeeze view_copy is reached
         via upstream traversal with a permutation at the view's output rank.
