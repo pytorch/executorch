@@ -33,9 +33,11 @@ enum class ValueKind : int8_t {
 // nothing here validates them.
 //
 // The variant's alternatives are listed in ValueKind order, so kind() is its
-// index. A List holds ValueRefs to its elements rather than nested Values, so
-// nesting goes through the arena; nothing deserialized is a List, it exists for
-// in-memory rewrites such as grouping a tuple.
+// index. A Tensor carries metadata only, so a weight is an ordinary arena
+// value like any other, with its bytes held outside the graph. A List holds
+// ValueRefs to its elements, so nesting goes through the arena; nothing
+// deserialized is a List, it exists for in-memory rewrites such as grouping a
+// tuple.
 class Value {
  private:
   std::variant<std::monostate, TensorMeta, Scalar, std::vector<ValueRef>>

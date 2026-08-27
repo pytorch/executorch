@@ -12,9 +12,10 @@
 
 namespace ptn {
 
-// A concrete scalar value: an int / double / bool. Analogous to c10::Scalar. A
-// float is held as a double, which represents every float exactly. There is no
-// "none" state — the graph's Value owns that.
+// A concrete scalar value, analogous to c10::Scalar: one alternative per
+// domain — integral, floating point, boolean — each stored at its widest type.
+// A narrower value is stored exactly, and to<T>() narrows it back on read.
+// There is no "none" state — the graph's Value owns that.
 class Scalar {
  private:
   std::variant<int64_t, double, bool> value_ = int64_t{0};

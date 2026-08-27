@@ -42,7 +42,7 @@ enum class ScalarType : int8_t {
 };
 
 #define PTN_DEFINE_CONSTANT(cpp_type, name, id) \
-  constexpr ScalarType k##name = ScalarType::name;
+  inline constexpr ScalarType k##name = ScalarType::name;
 PTN_FORALL_SCALAR_TYPES(PTN_DEFINE_CONSTANT)
 #undef PTN_DEFINE_CONSTANT
 
@@ -63,7 +63,7 @@ using cpp_type_t = typename ScalarTypeToCppType<N>::type;
 
 // Throws std::runtime_error on a value outside the table, e.g. a bad cast from
 // an out-of-range serialized byte.
-inline size_t element_size(ScalarType t) {
+constexpr size_t element_size(ScalarType t) {
   switch (t) {
 #define PTN_CASE_ELEMSIZE(cpp_type, name, id) \
   case ScalarType::name:                      \
@@ -75,7 +75,7 @@ inline size_t element_size(ScalarType t) {
 }
 
 // Enumerator name, e.g. "Float". Throws on a value outside the table.
-inline const char* scalar_type_name(ScalarType t) {
+constexpr const char* scalar_type_name(ScalarType t) {
   switch (t) {
 #define PTN_CASE_NAME(cpp_type, name, id) \
   case ScalarType::name:                  \

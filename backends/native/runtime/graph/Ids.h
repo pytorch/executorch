@@ -18,15 +18,15 @@ namespace ptn {
 // "no ref".
 using NodeRef = int32_t;
 using ValueRef = int32_t;
-constexpr int32_t kInvalid = -1;
+inline constexpr int32_t kInvalid = -1;
 
-inline bool valid(int32_t ref) {
+constexpr bool valid(int32_t ref) {
   return ref >= 0;
 }
 
 // std::cmp_less compares the signed ref against the unsigned size without
 // casting either side.
-inline bool in_bounds(int32_t ref, size_t size) {
+constexpr bool in_bounds(int32_t ref, size_t size) {
   return valid(ref) && std::cmp_less(ref, size);
 }
 
