@@ -39,7 +39,7 @@ DynamicDispatchNode::DynamicDispatchNode(
       pick_local_wg_fn_(pick_local_wg_fn) {
   global_workgroup_size_ =
       pick_global_wg_fn(&graph, shader_, args, resize_args);
-  local_workgroup_size_ = utils::WorkgroupSize(pick_local_wg_fn(
+  local_workgroup_size_ = LocalWorkGroup(pick_local_wg_fn(
       &graph, shader_, global_workgroup_size_, args, resize_args));
 
   // Calculate dispatch grid similar to Context.cpp register_shader_dispatch
@@ -76,7 +76,7 @@ DynamicDispatchNode::DynamicDispatchNode(
       pick_local_wg_fn_(pick_local_wg_fn) {
   global_workgroup_size_ =
       pick_global_wg_fn(&graph, shader_, args, resize_args);
-  local_workgroup_size_ = utils::WorkgroupSize(pick_local_wg_fn(
+  local_workgroup_size_ = LocalWorkGroup(pick_local_wg_fn(
       &graph, shader_, global_workgroup_size_, args, resize_args));
   // Calculate the work group grid that will be dispatched
   wg_dispatch_grid_ = {
@@ -119,8 +119,7 @@ bool DynamicDispatchNode::trigger_resize(ComputeGraph* graph) {
   if (pick_local_wg_fn_) {
     utils::uvec3 new_local_wg_uvec3 = pick_local_wg_fn_(
         graph, shader_, global_workgroup_size_, args_, resize_args_);
-    utils::WorkgroupSize new_local_wg =
-        utils::WorkgroupSize(new_local_wg_uvec3);
+    LocalWorkGroup new_local_wg = LocalWorkGroup(new_local_wg_uvec3);
     if (local_workgroup_size_ != new_local_wg) {
       local_workgroup_size_ = new_local_wg;
       dispatch_params_changed = true;

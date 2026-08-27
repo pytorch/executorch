@@ -74,7 +74,7 @@ void Context::cmd_reset_querypool() {
 void Context::report_shader_dispatch_start(
     const std::string& shader_name,
     const utils::uvec3& global_wg_size,
-    const utils::WorkgroupSize& local_wg_size,
+    const LocalWorkGroup& local_wg_size,
     const uint32_t dispatch_id) {
   if (querypool_) {
     querypool_.shader_profile_begin(
@@ -133,7 +133,7 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
 
 vkapi::DescriptorSet Context::get_descriptor_set(
     const vkapi::ShaderInfo& shader_descriptor,
-    const utils::WorkgroupSize& local_workgroup_size,
+    const LocalWorkGroup& local_workgroup_size,
     const vkapi::SpecVarList& additional_constants,
     const uint32_t push_constants_size) {
   VkDescriptorSetLayout shader_layout =
@@ -324,7 +324,7 @@ VkPipeline Context::get_shader_pipeline(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
+  const LocalWorkGroup local_workgroup_size(4u, 4u, 1u);
   vkapi::SpecVarList spec_constants = {
       SV(local_workgroup_size[0u]),
       SV(local_workgroup_size[1u]),
