@@ -179,15 +179,15 @@ GlobalWorkGrid pick_q4gsw_nc_coop_gwg(
   const std::vector<int64_t> out_sizes = graph->sizes_of(out);
   const uint32_t M =
       utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
-  if (M != 1u) {
-    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
-  }
   const uint32_t N =
       utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
-  const uint32_t N8 = (N + 7u) / 8u;
   const CoopVariant v = pick_coop_variant_for_N(N);
-  const uint32_t wgs_along_x = utils::div_up(N8, v.num_groups);
   const LocalWorkGroup lwg(1u, v.num_groups, v.workers_per_group);
+  if (M != 1u) {
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid, lwg);
+  }
+  const uint32_t N8 = (N + 7u) / 8u;
+  const uint32_t wgs_along_x = utils::div_up(N8, v.num_groups);
   GlobalWorkGrid gwg({wgs_along_x * v.num_groups, 1u, 1u}, kLinearWorkGrid);
   gwg.wrap_linear_dispatch(
       graph->context()->adapter_ptr()->max_compute_workgroup_count(), lwg);
