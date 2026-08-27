@@ -263,12 +263,19 @@ if(APPLE)
     )
     # protobuf's test build needs a googletest submodule that is not cloned in a
     # framework build, and we do not need protobuf's own tests or examples, so
-    # turn them off before adding it, the same way the SDK test script does.
+    # turn them off before adding it, the same way the SDK test script does. The
+    # protoc compiler is not needed either: the SDK links libprotobuf-lite
+    # against pre-generated sources, and building the protoc executable fails
+    # under the Xcode generator for want of a bundle identifier.
     set(protobuf_BUILD_TESTS
         OFF
         CACHE BOOL "" FORCE
     )
     set(protobuf_BUILD_EXAMPLES
+        OFF
+        CACHE BOOL "" FORCE
+    )
+    set(protobuf_BUILD_PROTOC_BINARIES
         OFF
         CACHE BOOL "" FORCE
     )
