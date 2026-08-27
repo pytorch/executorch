@@ -6,6 +6,7 @@
 
 import torch
 from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.cortex_m.quantizer.quantizer_support import BINARY_OP_PATTERNS
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -59,18 +60,34 @@ class CortexMTensorAdd(Model):
     }
 
 
-class CortexMAlphaAdd(ModelAlpha):
+class CortexMIntAlphaAdd(ModelAlpha):
+    """An integer alpha is the case that was silently miscompiled.
+
+    ModelAlpha(0.5) below is caught anyway, by "alpha argument of type float
+    cannot be safely cast", so it never exercised the silent path.
+
+    The boundary quant/dequant pairs are pinned so that a quantizer which
+    stopped annotating anything at all would not read as a successful decline.
+    """
+
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
     }
-
     ops_after_transforms = {
-        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
-        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
-        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 3,
     }
+
+
+class CortexMAlphaAdd(ModelAlpha):
+    """A float alpha is declined by the same guard, and stays in fp32."""
+
+    ops_before_transforms = CortexMIntAlphaAdd.ops_before_transforms
+    ops_after_transforms = CortexMIntAlphaAdd.ops_after_transforms
 
 
 class CortexMAddReLU(torch.nn.Module):
@@ -93,6 +110,18 @@ class CortexMAddReLU(torch.nn.Module):
 
     def forward(self, x, y):
         return self.relu(x + y)
+
+
+class CortexMInplaceAddReLU(CortexMAddReLU):
+    """`out += identity; relu(out)`, the residual block torchvision writes.
+
+    Functionalization maps this onto the same edge ops as the functional
+    spelling, so the inherited counts hold; only the quantizer sees add_.
+    """
+
+    def forward(self, x, y):
+        x += y
+        return torch.relu_(x)
 
 
 class CortexMAddHardtanh(torch.nn.Module):
@@ -186,6 +215,13 @@ test_cases = {
             ramp_tensor(-2, 2, (1, 8, 1, 1)),
         ),
     ),
+    "alpha_int": McuTestCase(
+        CortexMIntAlphaAdd(2),
+        (
+            ramp_tensor(-10, 10, (4, 5)),
+            ramp_tensor(-20, 20, (4, 5)),
+        ),
+    ),
     "alpha": McuTestCase(
         CortexMAlphaAdd(0.5),
         (
@@ -207,6 +243,21 @@ test_cases = {
             ramp_tensor(-3, 3, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
+    # Fresh tensors per case: this model rewrites the input it is handed.
+    "inplace_add_relu": McuTestCase(
+        CortexMInplaceAddReLU(),
+        lambda: (
+            ramp_tensor(-5, 5, (2, 4)),
+            ramp_tensor(-3, 3, (2, 4)),
+        ),
+    ),
+    "inplace_add_relu_channels_last": McuTestCase(
+        CortexMInplaceAddReLU(),
+        lambda: (
+            ramp_tensor(-6, 6, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+            ramp_tensor(-2, 6, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
     "add_hardtanh": McuTestCase(
         CortexMAddHardtanh(min_val=-0.5, max_val=0.5),
         (
@@ -224,9 +275,7 @@ test_cases = {
 }
 
 
-xfails_implementation: dict[str, xfail_type] = {
-    "alpha": "Expecting kwargs for aten op IR to be empty - alpha arg not supported.",
-}
+xfails_implementation: dict[str, xfail_type] = {}
 xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
     # Cortex-M quantizer will not quantize additions that require broadcasting
     # leading to the add op not being replaced by a cortex-m specific implementation
@@ -235,6 +284,20 @@ xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
     "broadcast_3": "Broadcasting is not supported in Cortex-M backend",
     "broadcast_channels_continous": "Broadcasting channels is not supported in continous memory_format in Cortex-M backend.",
 }
+
+
+def test_both_add_spellings_fuse_the_same_activations():
+    """The quantizer matches the in-place spelling separately, so it needs its
+    own entry for every activation the functional one fuses."""
+
+    def followers(op):
+        return {
+            pattern[1]
+            for pattern in BINARY_OP_PATTERNS
+            if len(pattern) == 2 and pattern[0] is op
+        }
+
+    assert followers(torch.ops.aten.add_.Tensor) == followers(torch.ops.aten.add.Tensor)
 
 
 @parametrize("test_case", test_cases, xfails=xfails_dialect)

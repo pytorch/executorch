@@ -845,6 +845,11 @@ table NegNode {
     out: Tid (required);
 }
 
+table TruncNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
 // =============================================================================
 // Math ops - Binary element-wise
 // =============================================================================
@@ -1191,7 +1196,8 @@ union OpNode {
     BitwiseXorNode,
     IfNode,
     RandomBitsNode,
-    UpdateAndAttendNode
+    UpdateAndAttendNode,
+    TruncNode,
     // BC: Add new op nodes here (append only)
 }
 

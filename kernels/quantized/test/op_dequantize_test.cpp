@@ -368,3 +368,59 @@ TEST(OpDequantizeOutTest, DequantizePerChannelChannelsLast) {
 
   EXPECT_TENSOR_CLOSE(out, expected);
 }
+
+// The schema allows an Int zero_point tensor as well as a Long one. Reading an
+// Int tensor as int64 reinterprets pairs of channels as a single value and runs
+// off the end of the buffer, which silently corrupted every channel.
+template <ScalarType DTYPE>
+void test_per_channel_int_zero_point() {
+  TensorFactory<DTYPE> tf;
+  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Int> tf_int;
+  TensorFactory<ScalarType::Float> tfo;
+
+  Tensor scale = tf_double.make({4}, {0.5, 0.75, 1, 2});
+  Tensor zero_point = tf_int.make({4}, {30, 50, 60, 90});
+  int64_t quant_min = 0;
+  int64_t quant_max = 127;
+
+  // Multi-dimensional input, channel axis 0.
+  Tensor input = tf.full({4, 2}, 100);
+  Tensor out = tfo.zeros({4, 2});
+  Tensor expected = tfo.make({4, 2}, {35, 35, 37.5, 37.5, 40, 40, 20, 20});
+  dequantize_per_channel_out(
+      input,
+      scale,
+      zero_point,
+      /*axis=*/0,
+      quant_min,
+      quant_max,
+      DTYPE,
+      optional<ScalarType>(),
+      out);
+  EXPECT_TENSOR_EQ(out, expected);
+
+  // Single-dimensional input takes a separate branch in the kernel.
+  input = tf.make({4}, {100, 100, 100, 100});
+  out = tfo.zeros({4});
+  expected = tfo.make({4}, {35, 37.5, 40, 20});
+  dequantize_per_channel_out(
+      input,
+      scale,
+      zero_point,
+      /*axis=*/0,
+      quant_min,
+      quant_max,
+      DTYPE,
+      optional<ScalarType>(),
+      out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpDequantizeOutTest, DequantizePerChannelIntZeroPoint) {
+  et_pal_init();
+  test_per_channel_int_zero_point<ScalarType::Byte>();
+  test_per_channel_int_zero_point<ScalarType::Char>();
+  test_per_channel_int_zero_point<ScalarType::Short>();
+  test_per_channel_int_zero_point<ScalarType::Int>();
+}

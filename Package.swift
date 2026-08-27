@@ -53,13 +53,6 @@ let products = deliverables([
       "sqlite3",
     ],
   ],
-  "backend_mps": [
-    "frameworks": [
-      "Metal",
-      "MetalPerformanceShaders",
-      "MetalPerformanceShadersGraph",
-    ],
-  ],
   "backend_xnnpack": [
     "targets": [
       "threadpool",
