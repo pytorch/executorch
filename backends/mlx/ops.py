@@ -81,6 +81,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     ExpandDimsNode,
     Expm1Node,
     ExpNode,
+    FlipNode,
     FloatOrVid,
     FloorDivideIntNode,
     FloorDivideNode,
@@ -5451,6 +5452,26 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
     return output_slots
+
+
+@REGISTRY.register(target=[torch.ops.aten.flip.default])
+def _flip_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 2, "aten.flip")
+    require_kwargs(P.kwargs(n), set(), "aten.flip")
+    x, dims = args
+
+    out = P.make_or_get_slot(n)
+
+    P.emit(
+        FlipNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            axes=list(dims),
+        )
+    )
+
+    return out
 
 
 # ---------------------------------------------------------------------------
