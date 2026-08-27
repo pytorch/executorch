@@ -345,15 +345,20 @@ if [[ ! " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; t
   mkdir -p "${mlx_resources_dir}"
   for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
     mlx_metallib="${OUTPUT_DIR}/${preset_out_dir}/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
-    if [[ -f "${mlx_metallib}" ]]; then
-      # The metallib name compiled into each slice (see backends/mlx/CMakeLists.txt):
-      # the simulator preset dir is "simulator" but the slice name is "ios-simulator".
-      case "${preset_out_dir}" in
-        simulator) slice="ios-simulator" ;;
-        *) slice="${preset_out_dir}" ;;
-      esac
-      cp "${mlx_metallib}" "${mlx_resources_dir}/mlx-${slice}.metallib"
+    # The metallib name compiled into each slice (see backends/mlx/CMakeLists.txt):
+    # the simulator preset dir is "simulator" but the slice name is "ios-simulator".
+    case "${preset_out_dir}" in
+      simulator) slice="ios-simulator" ;;
+      *) slice="${preset_out_dir}" ;;
+    esac
+    # A missing metallib means the delegate ships but throws at first device init on
+    # that platform only, so fail the build here rather than ship a half-populated
+    # bundle. This is the metallib counterpart of the framework-set guard below.
+    if [[ ! -f "${mlx_metallib}" ]]; then
+      echo "error: MLX is enabled but ${mlx_metallib} was not produced for the ${slice} slice" >&2
+      exit 1
     fi
+    cp "${mlx_metallib}" "${mlx_resources_dir}/mlx-${slice}.metallib"
   done
 fi
 

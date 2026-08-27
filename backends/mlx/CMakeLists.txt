@@ -199,7 +199,13 @@ set(_mlx_patches
 # load on another, so each slice's binary asks for its own file by name. Compile
 # both names in for Apple framework builds, identified by PLATFORM being set by
 # ios.toolchain. PLATFORM is absent for the wheel build, which keeps the
-# colocated path.
+# colocated path. For an Apple framework build, compile the delegate to find its
+# Metal kernels in the SwiftPM resource bundle. SWIFTPM_BUNDLE is the bundle's
+# name and MLX_SWIFTPM_METALLIB_NAME is the per-slice file name inside it; MLX
+# concatenates the two, they are not a fallback chain. PLATFORM is set only for
+# the Apple presets, so a plain build passes an empty value and uses the
+# colocated metallib. The sub-build is a fresh configure that inherits no CXX
+# flags, so replacing them is safe.
 set(_mlx_extra_cxx_flags "")
 if(PLATFORM)
   if(PLATFORM STREQUAL "OS64")
@@ -213,6 +219,16 @@ if(PLATFORM)
       "-DSWIFTPM_BUNDLE=\\\"executorch_backend_mlx_resources\\\" -DMLX_SWIFTPM_METALLIB_NAME=\\\"mlx-${_mlx_metallib_slice}\\\""
   )
 endif()
+
+# The deployment target to build MLX for. Prefer the preset's DEPLOYMENT_TARGET,
+# which holds the correct per-slice minimum, and fall back to the toolchain's
+# CMAKE_OSX_DEPLOYMENT_TARGET for a plain build that sets no preset value.
+if(DEPLOYMENT_TARGET)
+  set(_mlx_osx_deployment_target ${DEPLOYMENT_TARGET})
+else()
+  set(_mlx_osx_deployment_target ${CMAKE_OSX_DEPLOYMENT_TARGET})
+endif()
+
 ExternalProject_Add(
   mlx_external
   SOURCE_DIR ${MLX_SOURCE_DIR}
@@ -229,7 +245,13 @@ ExternalProject_Add(
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
              "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}"
-             -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
+             # The preset's DEPLOYMENT_TARGET carries the correct per-slice
+             # minimum (iOS 17, macOS 14); the ios.toolchain leaves
+             # CMAKE_OSX_DEPLOYMENT_TARGET at 12.0 on the iOS slices and only
+             # syncs it for MAC. The shader-flag patch reads
+             # CMAKE_OSX_DEPLOYMENT_TARGET, so feed the preset value in as that,
+             # or the iOS metallib is stamped -mios-version-min=12.0.
+             -DCMAKE_OSX_DEPLOYMENT_TARGET=${_mlx_osx_deployment_target}
              -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
              -DPLATFORM=${PLATFORM}
              -DDEPLOYMENT_TARGET=${DEPLOYMENT_TARGET}

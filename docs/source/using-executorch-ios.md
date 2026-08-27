@@ -53,7 +53,7 @@ let package = Package(
   name: "YourPackageName",
   platforms: [
     .iOS(.v17),
-    .macOS(.v12),
+    .macOS(.v14),
   ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
