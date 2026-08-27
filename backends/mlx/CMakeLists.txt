@@ -336,9 +336,9 @@ add_dependencies(mlxdelegate mlx_external)
 # output directory (it merges them without an install step), but libmlx.a is
 # produced by the MLX sub-build in its own binary dir, not next to the delegate.
 # Copy it beside libmlxdelegate.a after the delegate builds so the framework
-# packaging finds it where it expects. TARGET_FILE_DIR resolves to the
-# per-config directory the packaging reads, so this is correct under every
-# generator.
+# packaging finds it where it expects. Under the multi-config Xcode generator
+# the Apple presets use, TARGET_FILE_DIR resolves to the per-config directory
+# the packaging reads (<preset>/Release), which is what this relies on.
 add_custom_command(
   TARGET mlxdelegate
   POST_BUILD

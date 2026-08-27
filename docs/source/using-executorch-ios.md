@@ -81,8 +81,9 @@ let package = Package(
 ```
 
 The ExecuTorch package requires a minimum of iOS 17 and macOS 14. Your package
-has to declare at least these versions, as shown above, or resolving the
-dependency fails.
+has to declare at least these versions, as shown above. If it declares a lower
+one, the dependency resolves but the build then fails with a message that the
+target's platform version is too low.
 
 Then check if everything works correctly:
 

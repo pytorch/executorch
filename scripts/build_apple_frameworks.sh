@@ -234,6 +234,10 @@ capture_mlx_metallib() {
     echo "error: MLX is enabled but ${mlx_metallib} was not produced for the ${slice} slice" >&2
     exit 1
   fi
+  # The destination lives outside OUTPUT_DIR, so the top-level rm -rf does not
+  # reach it; drop any previous copy so a stale metallib cannot survive into this
+  # build and ship.
+  rm -f "${mlx_resources_dir}/mlx-${slice}.metallib"
   cp "${mlx_metallib}" "${mlx_resources_dir}/mlx-${slice}.metallib"
 }
 
