@@ -61,17 +61,15 @@ target_compile_definitions(
 if(NOT TARGET etdump)
   message(
     FATAL_ERROR
-      "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE requires the etdump target, which "
-      "the root CMakeLists builds when this option is on. It is missing here, so "
-      "the build was configured in a way that skipped it."
+      "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE requires the etdump target, "
+      "which the root CMakeLists builds when this option is on. It is missing "
+      "here, so the build was configured in a way that skipped it."
   )
 endif()
 
 if(NOT TARGET extension_apple)
-  message(
-    FATAL_ERROR
-      "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE requires "
-      "EXECUTORCH_BUILD_EXTENSION_APPLE."
+  message(FATAL_ERROR "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE requires "
+                      "EXECUTORCH_BUILD_EXTENSION_APPLE."
   )
 endif()
 

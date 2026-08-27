@@ -45,11 +45,11 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 # The profiler records events through the runtime's event tracer, which is a
 # compile-time choice for the whole runtime, so the tracer stays on here. The
-# etdump C++ library the wrapper links is pulled in on its own by the condition in
-# the root CMakeLists that builds devtools for this case, so the full devtools
-# umbrella is deliberately NOT turned on: that umbrella also flips the Core ML
-# delegate into its protobuf path, which the shipped Core ML framework does not
-# bundle. The wheel's pybind preset configures profiling the same way.
+# etdump C++ library the wrapper links is pulled in on its own by the condition
+# in the root CMakeLists that builds devtools for this case, so the full
+# devtools umbrella is deliberately NOT turned on: that umbrella also flips the
+# Core ML delegate into its protobuf path, which the shipped Core ML framework
+# does not bundle. The wheel's pybind preset configures profiling the same way.
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_IMAGE ON)
