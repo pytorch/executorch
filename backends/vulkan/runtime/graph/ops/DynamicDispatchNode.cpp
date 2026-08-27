@@ -15,8 +15,8 @@ namespace vkcompute {
 DynamicDispatchNode::DynamicDispatchNode(
     ComputeGraph& graph,
     const PickShaderFn& pick_shader_fn,
-    const PickGlobalFn& pick_global_wg_fn,
-    const PickLocalFn& pick_local_wg_fn,
+    const PickGwgFn& pick_gwg_fn,
+    const PickLwgFn& pick_lwg_fn,
     const std::vector<ArgGroup>& args,
     const vkapi::ParamsBindList& params,
     const std::vector<PushConstantDataInfo>& push_constants,
@@ -26,8 +26,8 @@ DynamicDispatchNode::DynamicDispatchNode(
     : DispatchNode(
           graph,
           pick_shader_fn(&graph, args, resize_args),
-          {1u, 1u, 1u},
-          {8u, 8u, 1u},
+          GlobalWorkGrid({1u, 1u, 1u}, kExplicitWorkGrid),
+          LocalWorkGroup(8u, 8u, 1u),
           args,
           params,
           push_constants,
@@ -35,25 +35,26 @@ DynamicDispatchNode::DynamicDispatchNode(
           resize_args,
           resize_fn),
       pick_shader_fn_(pick_shader_fn),
-      pick_global_wg_fn_(pick_global_wg_fn),
-      pick_local_wg_fn_(pick_local_wg_fn) {
-  global_workgroup_size_ =
-      pick_global_wg_fn(&graph, shader_, args, resize_args);
-  local_workgroup_size_ = LocalWorkGroup(pick_local_wg_fn(
-      &graph, shader_, global_workgroup_size_, args, resize_args));
+      pick_gwg_fn_(pick_gwg_fn),
+      pick_lwg_fn_(pick_lwg_fn) {
+  gwg_ = pick_gwg_fn(&graph, shader_, args, resize_args);
+  lwg_ = pick_lwg_fn(&graph, shader_, gwg_, args, resize_args);
+  if (gwg_.required_lwg_size().is_valid()) {
+    lwg_ = gwg_.required_lwg_size();
+  }
 
   // Calculate dispatch grid similar to Context.cpp register_shader_dispatch
   wg_dispatch_grid_ = {
-      utils::div_up(global_workgroup_size_[0], local_workgroup_size_[0]),
-      utils::div_up(global_workgroup_size_[1], local_workgroup_size_[1]),
-      utils::div_up(global_workgroup_size_[2], local_workgroup_size_[2])};
+      utils::div_up(gwg_[0], lwg_[0]),
+      utils::div_up(gwg_[1], lwg_[1]),
+      utils::div_up(gwg_[2], lwg_[2])};
 }
 
 DynamicDispatchNode::DynamicDispatchNode(
     ComputeGraph& graph,
     const vkapi::ShaderInfo& shader,
-    const PickGlobalFn& pick_global_wg_fn,
-    const PickLocalFn& pick_local_wg_fn,
+    const PickGwgFn& pick_gwg_fn,
+    const PickLwgFn& pick_lwg_fn,
     const std::vector<ArgGroup>& args,
     const vkapi::ParamsBindList& params,
     const std::vector<PushConstantDataInfo>& push_constants,
@@ -63,8 +64,8 @@ DynamicDispatchNode::DynamicDispatchNode(
     : DispatchNode(
           graph,
           shader,
-          {1u, 1u, 1u},
-          {8u, 8u, 1u},
+          GlobalWorkGrid({1u, 1u, 1u}, kExplicitWorkGrid),
+          LocalWorkGroup(8u, 8u, 1u),
           args,
           params,
           push_constants,
@@ -72,17 +73,18 @@ DynamicDispatchNode::DynamicDispatchNode(
           resize_args,
           resize_fn),
       pick_shader_fn_{nullptr},
-      pick_global_wg_fn_(pick_global_wg_fn),
-      pick_local_wg_fn_(pick_local_wg_fn) {
-  global_workgroup_size_ =
-      pick_global_wg_fn(&graph, shader_, args, resize_args);
-  local_workgroup_size_ = LocalWorkGroup(pick_local_wg_fn(
-      &graph, shader_, global_workgroup_size_, args, resize_args));
+      pick_gwg_fn_(pick_gwg_fn),
+      pick_lwg_fn_(pick_lwg_fn) {
+  gwg_ = pick_gwg_fn(&graph, shader_, args, resize_args);
+  lwg_ = pick_lwg_fn(&graph, shader_, gwg_, args, resize_args);
+  if (gwg_.required_lwg_size().is_valid()) {
+    lwg_ = gwg_.required_lwg_size();
+  }
   // Calculate the work group grid that will be dispatched
   wg_dispatch_grid_ = {
-      utils::div_up(global_workgroup_size_[0], local_workgroup_size_[0]),
-      utils::div_up(global_workgroup_size_[1], local_workgroup_size_[1]),
-      utils::div_up(global_workgroup_size_[2], local_workgroup_size_[2])};
+      utils::div_up(gwg_[0], lwg_[0]),
+      utils::div_up(gwg_[1], lwg_[1]),
+      utils::div_up(gwg_[2], lwg_[2])};
 }
 
 bool DynamicDispatchNode::trigger_resize(ComputeGraph* graph) {
@@ -108,29 +110,30 @@ bool DynamicDispatchNode::trigger_resize(ComputeGraph* graph) {
       dispatch_params_changed = true;
     }
   }
-  if (pick_global_wg_fn_) {
+  if (pick_gwg_fn_) {
     // Note that if global workgroup size changes, then the dispatch params
     // may not actually be different. The actual value to check is the
     // work group grid size that will be dispatched, which is calculated
     // below.
-    global_workgroup_size_ =
-        pick_global_wg_fn_(graph, shader_, args_, resize_args_);
+    gwg_ = pick_gwg_fn_(graph, shader_, args_, resize_args_);
   }
-  if (pick_local_wg_fn_) {
-    utils::uvec3 new_local_wg_uvec3 = pick_local_wg_fn_(
-        graph, shader_, global_workgroup_size_, args_, resize_args_);
-    LocalWorkGroup new_local_wg = LocalWorkGroup(new_local_wg_uvec3);
-    if (local_workgroup_size_ != new_local_wg) {
-      local_workgroup_size_ = new_local_wg;
+  if (pick_lwg_fn_) {
+    LocalWorkGroup new_lwg =
+        pick_lwg_fn_(graph, shader_, gwg_, args_, resize_args_);
+    if (gwg_.required_lwg_size().is_valid()) {
+      new_lwg = gwg_.required_lwg_size();
+    }
+    if (lwg_ != new_lwg) {
+      lwg_ = new_lwg;
       dispatch_params_changed = true;
     }
   }
 
   // Always recompute the new dispatch grid and check if it's different
   utils::uvec3 new_wg_dispatch_grid = {
-      utils::div_up(global_workgroup_size_[0], local_workgroup_size_[0]),
-      utils::div_up(global_workgroup_size_[1], local_workgroup_size_[1]),
-      utils::div_up(global_workgroup_size_[2], local_workgroup_size_[2])};
+      utils::div_up(gwg_[0], lwg_[0]),
+      utils::div_up(gwg_[1], lwg_[1]),
+      utils::div_up(gwg_[2], lwg_[2])};
 
   // Check if the new dispatch grid is different from the old one
   if (wg_dispatch_grid_ != new_wg_dispatch_grid) {

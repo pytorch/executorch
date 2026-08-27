@@ -22,7 +22,7 @@ namespace vkcompute {
 // Shader dispatch utilities
 //
 
-utils::uvec3 pick_q8ta_im2col_global_wg_size(
+GlobalWorkGrid pick_q8ta_im2col_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -41,22 +41,22 @@ utils::uvec3 pick_q8ta_im2col_global_wg_size(
   const uint32_t W4 = utils::div_up_4(W);
 
   // Each thread handles one 4x4 block in the output
-  return {K4 * W4 * H, 1, 1};
+  return graph->create_linear_gwg(K4 * W4 * H);
 }
 
-utils::uvec3 pick_q8ta_im2col_local_wg_size(
+LocalWorkGroup pick_q8ta_im2col_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
   (void)args;
   (void)resize_args;
-  (void)global_workgroup_size;
+  (void)gwg;
 
-  return {64, 1, 1};
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 //
@@ -212,8 +212,8 @@ void add_q8ta_im2col_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_im2col_global_wg_size,
-      pick_q8ta_im2col_local_wg_size,
+      pick_q8ta_im2col_gwg,
+      pick_q8ta_im2col_lwg,
       // Inputs and Outputs
       {{packed_int8_im2col, vkapi::kWrite}, {packed_int8_input, vkapi::kRead}},
       // Shader params buffers

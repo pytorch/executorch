@@ -56,7 +56,7 @@ namespace {
 //   2. An adaptive nc-coop GEMV DynamicDispatchNode whose global WG
 //      self-gates to {0,0,0} at M!=1 — handles decode (M==1) only.
 //
-// The framework re-invokes pick_shader_fn / pick_global_wg / pick_local_wg
+// The framework re-invokes pick_shader_fn / pick_gwg / pick_lwg
 // on every trigger_resize(), so M transitions across `virtual_resize` are
 // routed to the correct node without re-encode beyond what the changed WG
 // shape requires.
@@ -168,7 +168,7 @@ vkapi::ShaderInfo pick_q4gsw_nc_coop_shader(
 
 // Global WG for the nc-coop GEMV. Self-gates to {0,0,0} when M != 1 so the
 // node is a no-op on prefill (the parallel GEMM dispatch handles M>1).
-utils::uvec3 pick_q4gsw_nc_coop_global_wg(
+GlobalWorkGrid pick_q4gsw_nc_coop_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -180,37 +180,25 @@ utils::uvec3 pick_q4gsw_nc_coop_global_wg(
   const uint32_t M =
       utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
   if (M != 1u) {
-    return {0u, 0u, 0u};
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
   }
   const uint32_t N =
       utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
   const uint32_t N8 = (N + 7u) / 8u;
   const CoopVariant v = pick_coop_variant_for_N(N);
   const uint32_t wgs_along_x = utils::div_up(N8, v.num_groups);
-  return {wgs_along_x, v.num_groups, v.workers_per_group};
-}
-
-utils::uvec3 pick_q4gsw_nc_coop_local_wg(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const uint32_t N =
-      utils::safe_downcast<uint32_t>(utils::val_at(-1, graph->sizes_of(out)));
-  const CoopVariant v = pick_coop_variant_for_N(N);
-  return {1u, v.num_groups, v.workers_per_group};
+  const LocalWorkGroup lwg(1u, v.num_groups, v.workers_per_group);
+  GlobalWorkGrid gwg({wgs_along_x * v.num_groups, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(
+      graph->context()->adapter_ptr()->max_compute_workgroup_count(), lwg);
+  return gwg;
 }
 
 } // namespace
 
 // Global WG picker for the fp32 GEMM path. Exposed so the forced-shader test
 // selectors (GEMM_W_4X8) can dispatch the same kernel with arbitrary M.
-utils::uvec3 pick_q4gsw_linear_gemm_global_wg(
+GlobalWorkGrid pick_q4gsw_linear_gemm_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -224,26 +212,28 @@ utils::uvec3 pick_q4gsw_linear_gemm_global_wg(
   const uint32_t M =
       utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
   // fp32 GEMM: 4M x 8N per-thread tile.
-  return {utils::div_up(N, kGemmTileN), utils::div_up(M, kGemmTileM), 1u};
+  return GlobalWorkGrid(
+      {utils::div_up(N, kGemmTileN), utils::div_up(M, kGemmTileM), 1u},
+      kTiledWorkGrid);
 }
 
 // Local WG picker for the fp32 GEMM path.
-utils::uvec3 pick_q4gsw_linear_gemm_local_wg(
+LocalWorkGroup pick_q4gsw_linear_gemm_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {8u, 8u, 1u};
+  return LocalWorkGroup(8u, 8u, 1u);
 }
 
 // Global WG picker for the fp16 tin GEMM path.
-utils::uvec3 pick_q4gsw_linear_tin_gemm_global_wg(
+GlobalWorkGrid pick_q4gsw_linear_tin_gemm_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -258,22 +248,24 @@ utils::uvec3 pick_q4gsw_linear_tin_gemm_global_wg(
       utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
   // fp16 tin GEMM: 8M x 4N per-thread tile. Shader x/y are swapped relative
   // to the fp32 GEMM — x = M tiles, y = N tiles.
-  return {utils::div_up(M, kTinGemmTileM), utils::div_up(N, kTinGemmTileN), 1u};
+  return GlobalWorkGrid(
+      {utils::div_up(M, kTinGemmTileM), utils::div_up(N, kTinGemmTileN), 1u},
+      kTiledWorkGrid);
 }
 
 // Local WG picker for the fp16 tin GEMM path.
-utils::uvec3 pick_q4gsw_linear_tin_gemm_local_wg(
+LocalWorkGroup pick_q4gsw_linear_tin_gemm_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {1u, 128u, 1u};
+  return LocalWorkGroup(1u, 128u, 1u);
 }
 
 namespace {
@@ -283,7 +275,7 @@ namespace {
 // M==1 decode; this gate prevents the GEMM shader from running at M==1 and
 // overwriting the nc-coop output. The ungated pickers remain available for
 // forced-shader test selectors that need to dispatch GEMM at arbitrary M.
-utils::uvec3 pick_q4gsw_linear_gemm_gated_global_wg(
+GlobalWorkGrid pick_q4gsw_linear_gemm_gated_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -292,12 +284,12 @@ utils::uvec3 pick_q4gsw_linear_gemm_gated_global_wg(
   const uint32_t M =
       utils::safe_downcast<uint32_t>(utils::val_at(-2, graph->sizes_of(out)));
   if (M == 1u) {
-    return {0u, 0u, 0u};
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
   }
-  return pick_q4gsw_linear_gemm_global_wg(graph, shader, args, resize_args);
+  return pick_q4gsw_linear_gemm_gwg(graph, shader, args, resize_args);
 }
 
-utils::uvec3 pick_q4gsw_linear_tin_gemm_gated_global_wg(
+GlobalWorkGrid pick_q4gsw_linear_tin_gemm_gated_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -306,9 +298,9 @@ utils::uvec3 pick_q4gsw_linear_tin_gemm_gated_global_wg(
   const uint32_t M =
       utils::safe_downcast<uint32_t>(utils::val_at(-2, graph->sizes_of(out)));
   if (M == 1u) {
-    return {0u, 0u, 0u};
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
   }
-  return pick_q4gsw_linear_tin_gemm_global_wg(graph, shader, args, resize_args);
+  return pick_q4gsw_linear_tin_gemm_gwg(graph, shader, args, resize_args);
 }
 
 } // namespace
@@ -365,16 +357,17 @@ ValueRef prepack_q4_w_4x8_nc_buffer(
   // identical layout.
   const int32_t n4_pitch = utils::safe_downcast<int32_t>(N4_padded);
 
-  utils::uvec3 global_wg = {
-      utils::safe_downcast<uint32_t>(K4),
-      utils::safe_downcast<uint32_t>(N8),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(K4),
+       utils::safe_downcast<uint32_t>(N8),
+       1u},
+      kTiledWorkGrid);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR("pack_q4_linear_weight__w_4x8_nc_buffer"),
-      global_wg,
-      graph.create_local_wg_size(global_wg),
+      gwg,
+      graph.create_lwg(gwg),
       weight_data,
       packed_weight,
       {},
@@ -409,7 +402,7 @@ ValueRef prepack_q4_scales(
 //   1. GEMM DynamicDispatchNode — self-gates to {0,0,0} when M==1.
 //   2. nc-coop GEMV DynamicDispatchNode — self-gates to {0,0,0} when M!=1.
 // Together they cover decode (M==1) and prefill (M>1) without re-encode cost,
-// since the framework re-runs pick_shader_fn + pick_global_wg on every
+// since the framework re-runs pick_shader_fn + pick_gwg on every
 // trigger_resize() and re-encodes only when the chosen kernel changes.
 //
 // The fp16 path additionally requires a transpose preprocess dispatch
@@ -423,7 +416,7 @@ ValueRef prepack_q4_scales(
 // (output, fp_input, transposed_input, q4_weights, scales, bias), where
 // `transposed_input` is a 0-element dummy (nc-coop never reads it).
 //
-// Self-gates to {0,0,0} when M != 1 via pick_q4gsw_nc_coop_global_wg, so the
+// Self-gates to {0,0,0} when M != 1 via pick_q4gsw_nc_coop_gwg, so the
 // node is a no-op at prefill. At decode, pick_q4gsw_nc_coop_shader selects
 // the nc-buffer coop variant whose (NUM_GROUPS, WORKERS_PER_GROUP) decomp is
 // best for the current N. The nc-buffer payload is byte-identical to the
@@ -449,8 +442,8 @@ void add_q4gsw_linear_nc_coop_gemv_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_q4gsw_nc_coop_shader,
-      pick_q4gsw_nc_coop_global_wg,
-      pick_q4gsw_nc_coop_local_wg,
+      pick_q4gsw_nc_coop_gwg,
+      pick_required_lwg,
       {{output, vkapi::kWrite},
        {{fp_input,
          dummy_transposed_input.vref,
@@ -513,8 +506,8 @@ void add_q4gsw_linear_w_4x8_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_q4gsw_linear_w_4x8_shader,
-      pick_q4gsw_linear_gemm_gated_global_wg,
-      pick_q4gsw_linear_gemm_local_wg,
+      pick_q4gsw_linear_gemm_gated_gwg,
+      pick_q4gsw_linear_gemm_lwg,
       {{output, vkapi::kWrite},
        {{fp_input,
          dummy_transposed_input.vref,
@@ -608,8 +601,8 @@ void add_q4gsw_linear_tin_w_4x8_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_q4gsw_linear_tin_w_4x8_shader,
-      pick_q4gsw_linear_tin_gemm_gated_global_wg,
-      pick_q4gsw_linear_tin_gemm_local_wg,
+      pick_q4gsw_linear_tin_gemm_gated_gwg,
+      pick_q4gsw_linear_tin_gemm_lwg,
       {{output, vkapi::kWrite},
        {{fp_input,
          transposed_input.vref,
