@@ -43,6 +43,12 @@ set_overridable_option(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE ON)
 set_overridable_option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+# The profiler and its Objective-C wrapper. The tracing hooks it records through
+# are a compile-time choice for the whole runtime, which is why the option sits
+# beside the components rather than being decided per framework.
+set_overridable_option(EXECUTORCH_BUILD_DEVTOOLS ON)
+set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_IMAGE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)

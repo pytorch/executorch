@@ -191,6 +191,7 @@ jobs:
         FRAMEWORKS=(
           "executorch"
           "executorch_llm"
+          "executorch_etdump"
           "backend_coreml"
           "backend_mlx"
           "backend_xnnpack"

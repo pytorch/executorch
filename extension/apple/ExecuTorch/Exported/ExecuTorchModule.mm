@@ -12,6 +12,7 @@
 #import "ExecuTorchBackendOptionsMap.h"
 #import "ExecuTorchBackendOptionsMap+Internal.h"
 #import "ExecuTorchError.h"
+#import "ExecuTorchModule+Internal.h"
 #import "ExecuTorchUtils.h"
 
 #import <executorch/extension/module/module.h>
@@ -294,6 +295,36 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   return [self initWithFilePath:filePath
                   dataFilePaths:@[]
                        loadMode:ExecuTorchModuleLoadModeFile];
+}
+
++ (instancetype)moduleWithFilePath:(NSString *)filePath
+                     dataFilePaths:(NSArray<NSString *> *)dataFilePaths
+                          loadMode:(ExecuTorchModuleLoadMode)loadMode
+                       eventTracer:
+                           (std::unique_ptr<executorch::runtime::EventTracer>)
+                               eventTracer {
+  // A class method rather than an initializer because a category cannot add a
+  // designated one, and the C++ module takes its tracer at construction. The
+  // module built by the public initializer is replaced rather than loaded twice:
+  // construction only records the path, so nothing is read until load.
+  ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:filePath
+                                                         dataFilePaths:dataFilePaths
+                                                              loadMode:loadMode];
+  std::vector<std::string> dataFilePathsVector;
+  for (NSString *dataFile in dataFilePaths) {
+    dataFilePathsVector.emplace_back(dataFile.UTF8String);
+  }
+  module->_module = std::make_unique<Module>(
+    filePath.UTF8String,
+    dataFilePathsVector,
+    static_cast<Module::LoadMode>(loadMode),
+    std::move(eventTracer)
+  );
+  return module;
+}
+
+- (nullable executorch::runtime::EventTracer *)eventTracer {
+  return _module->event_tracer();
 }
 
 - (BOOL)loadWithVerification:(ExecuTorchVerification)verification

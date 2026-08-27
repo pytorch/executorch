@@ -1536,6 +1536,10 @@ if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
   list(APPEND _executorch_extensions extension_asr_runner)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple/etdump)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()

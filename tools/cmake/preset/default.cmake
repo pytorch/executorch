@@ -101,6 +101,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE "Build the ETDump Apple extension"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM_APPLE "Build the LLM Apple extension" BOOL OFF
 )
 define_overridable_option(
@@ -381,6 +385,13 @@ check_required_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_APPLE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+)
+
+# The wrapper links the profiler, and the profiler only records anything when
+# the runtime was compiled with the tracing hooks enabled.
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE REQUIRES
+  EXECUTORCH_BUILD_DEVTOOLS EXECUTORCH_ENABLE_EVENT_TRACER
 )
 
 check_required_options_on(
