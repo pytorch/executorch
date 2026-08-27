@@ -282,6 +282,13 @@ if(APPLE)
       PUBLIC coreml_util coreml_inmemoryfs
       PRIVATE executorch_core
     )
+    # Clear the packaging signal too, so an in-place reconfigure that turns the
+    # shared build off does not leave a stale ON in the cache and make packaging
+    # look for a library this build no longer produces.
+    set(EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT
+        OFF
+        CACHE INTERNAL "The standalone Core ML delegate library was built"
+    )
   endif()
 
   executorch_target_link_options_shared_lib(coremldelegate)
