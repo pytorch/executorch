@@ -243,6 +243,17 @@ let package = Package(
       exclude: [".gitignore"],
       resources: objcTestResources,
       linkerSettings: testLinkerSettings
+    ),
+    .testTarget(
+      name: "dump_tests",
+      dependencies: [
+        .target(name: "executorch\(debug_suffix)"),
+        .target(name: "executorch_dump\(dependencies_suffix)"),
+        .target(name: "kernels_optimized\(dependencies_suffix)"),
+      ],
+      path: "extension/apple/etdump/ExecuTorchDump/__tests__",
+      resources: [.copy("resources/add.pte")],
+      linkerSettings: testLinkerSettings
     )
   ]
 )
