@@ -15,12 +15,12 @@ import torch
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
 from executorch.exir.backend.backend_api import validation_disabled
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
 from torch import nn
 from torch._export.pass_base import PassType
+from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import (
@@ -28,6 +28,12 @@ from torchao.quantization.pt2e.quantizer import (
     Quantizer as TorchAOPT2EQuantizer,
 )
 from torchao.utils import unwrap_tensor_subclass
+
+
+def _drop_empty(
+    passes_by_method: Dict[str, List[PassType]]
+) -> Dict[str, List[PassType]]:
+    return {method: p for method, p in passes_by_method.items() if p}
 
 
 class PipelineArtifact:
@@ -176,7 +182,12 @@ class EdgeTransformAndLowerStage(Stage):
         self,
         partitioners: Optional[List[Any]] = None,
         transform_passes: (
-            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[
+                    [str, ExportedProgram], List[PassType] | GraphModulePassManager
+                ]
+            ]
         ) = None,
         compile_config: Optional[Any] = None,
     ) -> None:
@@ -229,7 +240,7 @@ class EdgeTransformAndLowerStage(Stage):
                         "Transform passes must be a callable that resolves to passes"
                     )
                 passes = pass_callable(method_name, ep)
-                if isinstance(passes, PassManager):
+                if isinstance(passes, GraphModulePassManager):
                     pass_manager = passes
                     break
                 else:
@@ -237,8 +248,9 @@ class EdgeTransformAndLowerStage(Stage):
             if pass_manager:
                 break
 
-        # Use PassManager directly if found, otherwise use dict
-        final_passes = pass_manager if pass_manager else transform_passes
+        # An empty dict is not no passes: EdgeProgramManager deep-copies every
+        # method the dict does not name, so it would copy to apply nothing.
+        final_passes = pass_manager or _drop_empty(transform_passes) or None
 
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
@@ -310,8 +322,13 @@ class SourceTransformStage(Stage):
     Optional stage: Source transform stage: Apply source transformations to the model.
     """
 
-    def __init__(self, quantization_recipe: Optional[QuantizationRecipe]) -> None:
+    def __init__(
+        self,
+        quantization_recipe: Optional[QuantizationRecipe],
+        in_place: bool = False,
+    ) -> None:
         self._quantization_recipe = quantization_recipe
+        self._in_place = in_place
         self._transformed_models: Dict[str, nn.Module] = {}
 
     @property
@@ -342,8 +359,11 @@ class SourceTransformStage(Stage):
 
         assert isinstance(artifact.data, dict)
 
-        # Store the original models
-        self._transformed_models = copy.deepcopy(artifact.data)
+        # A second copy of the model is not affordable for every caller, so
+        # large models can opt out and have their own model mutated instead.
+        self._transformed_models = (
+            artifact.data if self._in_place else copy.deepcopy(artifact.data)
+        )
 
         # Apply torchao quantize_ to each model
         for _, model in self._transformed_models.items():
@@ -514,10 +534,18 @@ class EdgeProgramManagerTransformStage(Stage):
     def __init__(
         self,
         edge_transform_passes: (
-            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[
+                    [str, ExportedProgram], List[PassType] | GraphModulePassManager
+                ]
+            ]
         ) = None,
         edge_manager_transform_passes: (
-            None | List[Callable[[EdgeProgramManager], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[[EdgeProgramManager], List[PassType] | GraphModulePassManager]
+            ]
         ) = None,
     ) -> None:
         """
@@ -590,7 +618,7 @@ class EdgeProgramManagerTransformStage(Stage):
                         "Transform passes must be a callable that resolves to passes"
                     )
                 passes = pass_callable(method_name, ep)
-                if isinstance(passes, PassManager):
+                if isinstance(passes, GraphModulePassManager):
                     pass_manager = passes
                     break
                 else:
@@ -598,11 +626,10 @@ class EdgeProgramManagerTransformStage(Stage):
             if pass_manager:
                 break
 
-        # Use PassManager directly if found, otherwise use dict
-        final_passes = pass_manager if pass_manager else transform_passes
-
-        # Apply edge transform passes
-        edge_program_manager = edge_program_manager.transform(final_passes)
+        # See EdgeTransformAndLowerStage.run.
+        final_passes = pass_manager or _drop_empty(transform_passes) or None
+        if final_passes is not None:
+            edge_program_manager = edge_program_manager.transform(final_passes)
 
         # Run edge manager transform passes
         for pass_callable in self._edge_manager_transform_passes:

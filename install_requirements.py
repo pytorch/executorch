@@ -7,6 +7,7 @@
 
 import argparse
 import os
+import platform
 import subprocess
 import sys
 
@@ -45,7 +46,20 @@ def install_requirements(use_pytorch_nightly):
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
     torch_url = determine_torch_url(TORCH_URL_BASE)
-    torchao_url = determine_torch_url(TORCHAO_URL_BASE)
+    # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
+    # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
+    # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
+    # where it exists. This nightly is what a development checkout is tested against, and the
+    # wheel's own torchao lower bound is this same version so that installing the package
+    # afterwards leaves this pin in place rather than replacing it.
+    if platform.machine().lower() in ("aarch64", "arm64"):
+        # The cpu channel specifically, not the index root. The root carries every variant, and a
+        # pin without a local segment admits all of them while ordering a local segment highest,
+        # so the xpu channel's pure python wheel would win on version before pip compares wheel
+        # tags, silently replacing the compiled aarch64 build.
+        torchao_url = f"{TORCHAO_URL_BASE}/cpu"
+    else:
+        torchao_url = determine_torch_url(TORCHAO_URL_BASE)
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [

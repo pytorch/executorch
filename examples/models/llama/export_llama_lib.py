@@ -13,6 +13,7 @@ import argparse
 import copy
 import json
 import logging
+import math
 import re
 import shlex
 from functools import partial
@@ -34,8 +35,6 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
-    get_ethosu_partitioner,
-    get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
     get_tosa_partitioner,
@@ -65,9 +64,12 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
 )
 from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.custom_kv_cache import (
+    enable_static_kv_cache_calibration,
+    finalize_static_kv_cache_calibration,
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
     replace_kv_cache_with_ring_kv_cache,
+    replace_kv_cache_with_static_quantized_kv_cache,
 )
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
@@ -328,6 +330,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using int8 per token quantized kv cache",
     )
     parser.add_argument(
+        "--static_quantize_kv_cache",
+        default=False,
+        action="store_true",
+        help="Whether or not to export a model using static-qparams int8 KV cache storage",
+    )
+    parser.add_argument(
+        "--static_quantize_kv_cache_scale",
+        type=float,
+        default=1.0 / 127.0,
+        help="Fixed symmetric per-head-dim scale for static quantized KV cache",
+    )
+    parser.add_argument(
         "--num_sharding",
         type=int,
         default=0,
@@ -473,7 +487,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         choices=["full", "linear"],
         help="VGF quantization scope. Use 'linear' to quantize only Linear modules.",
     )
-    parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
         "--coreml-enable-state",
@@ -727,6 +740,115 @@ def export_llama(  # noqa: C901
         return filename
 
 
+def _static_kvq_out_variants_registered() -> bool:
+    try:
+        _ = torch.ops.quantized_decomposed.quantize_per_tensor.out
+        _ = torch.ops.quantized_decomposed.dequantize_per_tensor.out
+        return True
+    except AttributeError:
+        return False
+
+
+def _ensure_static_kvq_out_variants(llm_config: LlmConfig) -> None:
+    if _static_kvq_out_variants_registered():
+        return
+
+    if llm_config.export.so_library:
+        libraries = [llm_config.export.so_library]
+    else:
+        import glob
+        import os
+
+        import executorch
+        from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
+        libraries = sorted(
+            {
+                os.path.realpath(library)
+                for package_path in executorch.__path__
+                for library in glob.glob(
+                    f"{package_path}/**/*quantized_ops_aot_lib.*", recursive=True
+                )
+            }
+        )
+        if len(libraries) != 1:
+            discovered = ", ".join(libraries) if libraries else "none"
+            raise RuntimeError(
+                "Static quantized KV cache export could not select a packaged "
+                "quantized ops out-variant library. "
+                f"Discovered: {discovered}. Set export.so_library explicitly."
+            )
+
+    library = libraries[0]
+    logging.info("Loading quantized ops library for static KV cache: %s", library)
+    torch.ops.load_library(library)
+    if not _static_kvq_out_variants_registered():
+        raise RuntimeError(
+            f"{library} does not register the required quantized_decomposed "
+            "per-tensor out variants."
+        )
+
+
+def _calibrate_static_kv_cache(
+    edge_manager: LLMEdgeManager, llm_config: LlmConfig
+) -> None:
+    tasks = llm_config.quantization.calibration_tasks
+    if not tasks:
+        logging.warning(
+            "No calibration task provided for static KV cache; using the configured "
+            "fixed scale %s",
+            llm_config.model.static_quantize_kv_cache_scale,
+        )
+        return
+    if llm_config.quantization.calibration_seq_length is None:
+        raise ValueError(
+            "Static KV cache calibration requires quantization.calibration_seq_length"
+        )
+    if llm_config.base.tokenizer_path is None:
+        raise ValueError("Static KV cache calibration requires base.tokenizer_path")
+
+    from executorch.examples.models.llama.eval_llama_lib import GraphModuleEvalWrapper
+    from lm_eval.evaluator import simple_evaluate
+    from pytorch_tokenizers import get_tokenizer
+
+    caches = enable_static_kv_cache_calibration(edge_manager.model)
+    tokenizer = get_tokenizer(llm_config.base.tokenizer_path)
+    eval_wrapper = GraphModuleEvalWrapper(
+        model=edge_manager.model,
+        tokenizer=tokenizer,
+        max_seq_length=llm_config.quantization.calibration_seq_length,
+        use_kv_cache=True,
+        generate_full_logits=edge_manager.generate_full_logits,
+        enable_dynamic_shape=False,
+        device="cpu",
+    )
+    logging.info(
+        "Calibrating static KV cache with tasks=%s, limit=%s, seq_length=%s",
+        tasks,
+        llm_config.quantization.calibration_limit,
+        llm_config.quantization.calibration_seq_length,
+    )
+    with torch.no_grad():
+        simple_evaluate(
+            model=eval_wrapper,
+            tasks=tasks,
+            limit=llm_config.quantization.calibration_limit,
+        )
+    finalize_static_kv_cache_calibration(edge_manager.model)
+
+    k_scales = torch.cat([cache.k_cache_scales.flatten() for cache in caches])
+    v_scales = torch.cat([cache.v_cache_scales.flatten() for cache in caches])
+    logging.info(
+        "Calibrated %d static KV caches: K scale range [%g, %g], "
+        "V scale range [%g, %g]",
+        len(caches),
+        k_scales.min().item(),
+        k_scales.max().item(),
+        v_scales.min().item(),
+        v_scales.max().item(),
+    )
+
+
 def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
@@ -777,6 +899,23 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
     # dtype_override afterward. IntxUnpackedToInt8Tensor.to() properly
     # propagates the dtype change to scale/zero_point/output dtype.
     logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
+    if llm_config.backend.vgf.enabled and llm_config.model.static_quantize_kv_cache:
+        pt2e_quantize = (
+            llm_config.quantization.pt2e_quantize.value
+            if llm_config.quantization.pt2e_quantize
+            else None
+        )
+        if (
+            pt2e_quantize != "vgf_16a8w"
+            or llm_config.backend.vgf.quantize_scope.value != "linear"
+        ):
+            raise ValueError(
+                "VGF static quantized KV cache is only supported with the "
+                "linear16a8w demo path. Set "
+                "quantization.pt2e_quantize=vgf_16a8w and "
+                "backend.vgf.quantize_scope=linear."
+            )
+
     edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
         _get_source_transforms(
             dtype_override=dtype_override,
@@ -802,11 +941,15 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             or bool(llm_config.model.use_attention_sink),
             use_sdpa_with_kv_cache=llm_config.model.use_sdpa_with_kv_cache,
             quantize_kv_cache=llm_config.model.quantize_kv_cache,
+            static_quantize_kv_cache=llm_config.model.static_quantize_kv_cache,
+            static_quantize_kv_cache_scale=llm_config.model.static_quantize_kv_cache_scale,
             use_kv_cache=llm_config.model.use_kv_cache,
             qnn=llm_config.backend.qnn.enabled,
+            vgf=llm_config.backend.vgf.enabled,
+            tosa=llm_config.backend.tosa.enabled,
+            ethosu=llm_config.backend.ethosu.enabled,
             use_qnn_sha=llm_config.backend.qnn.use_sha,
             optimized_rotation_path=llm_config.backend.qnn.optimized_rotation_path,
-            mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
@@ -922,18 +1065,49 @@ def _qmode_type(value):
     )
 
 
+def _validate_static_kv_cache_args(llm_config):
+    # from_args mutates ModelConfig after __post_init__, so validate again here.
+    if not llm_config.model.static_quantize_kv_cache:
+        return
+    if not llm_config.model.use_kv_cache:
+        raise ValueError("static_quantize_kv_cache requires model.use_kv_cache=True")
+    if llm_config.model.quantize_kv_cache:
+        raise ValueError(
+            "Cannot enable both quantize_kv_cache and static_quantize_kv_cache"
+        )
+    if llm_config.model.enable_dynamic_shape:
+        raise ValueError(
+            "static_quantize_kv_cache requires model.enable_dynamic_shape=False"
+        )
+    if llm_config.model.local_global_attention:
+        raise ValueError(
+            "static_quantize_kv_cache does not support model.local_global_attention"
+        )
+    if llm_config.model.use_attention_sink:
+        raise ValueError(
+            "static_quantize_kv_cache does not support model.use_attention_sink"
+        )
+    if (
+        not math.isfinite(llm_config.model.static_quantize_kv_cache_scale)
+        or llm_config.model.static_quantize_kv_cache_scale <= 0
+    ):
+        raise ValueError(
+            "model.static_quantize_kv_cache_scale must be finite and positive"
+        )
+
+
 def _validate_args(llm_config):
+    _validate_static_kv_cache_args(llm_config)
+
     if llm_config.export.max_context_length < llm_config.export.max_seq_length:
         raise ValueError(
             f"max_context_length {llm_config.export.max_context_length} must be >= max_seq_len {llm_config.export.max_seq_length}. max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. Please use --max_context_length to specify context length."
         )
     if llm_config.model.enable_dynamic_shape and (
-        llm_config.backend.coreml.enabled
-        or llm_config.backend.mps.enabled
-        or llm_config.backend.qnn.enabled
+        llm_config.backend.coreml.enabled or llm_config.backend.qnn.enabled
     ):
         raise ValueError(
-            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            "Dynamic shape is not supported with coreml or qnn backends."
             " Please use --disable_dynamic_shape."
         )
 
@@ -963,12 +1137,11 @@ def _validate_args(llm_config):
             llm_config.backend.coreml.enabled
             or llm_config.backend.vulkan.enabled
             or llm_config.backend.qnn.enabled
-            or llm_config.backend.mps.enabled
             or llm_config.backend.openvino.enabled
         ):
             raise ValueError(
                 "multimethod export only supports XNNPACK backend or portable ops. "
-                "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
+                "Please disable other backends (coreml, vulkan, qnn, openvino)."
             )
 
 
@@ -983,17 +1156,24 @@ def _to_edge_and_lower_llama_xnnpack(
     generate_etrecord: bool = False,
     verbose: bool = False,
     gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
+    enable_bf16: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
 
     # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
-    partitioners.append(get_xnnpack_partitioner(dynamic_quant_only_partitioner=True))
+    partitioners.append(
+        get_xnnpack_partitioner(
+            dynamic_quant_only_partitioner=True, enable_bf16=enable_bf16
+        )
+    )
 
     modelname = f"xnnpack_dq_{modelname}"
 
     if xnnpack_extended_ops:
         partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+            get_xnnpack_partitioner(
+                dynamic_quant_only_partitioner=False, enable_bf16=enable_bf16
+            )
         )
         modelname = f"xnnpack_{modelname}"
 
@@ -1076,12 +1256,41 @@ def _to_edge_and_lower_llama_arm(
 
     partitioners = []
     if llm_config.backend.ethosu.enabled:
+        from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+        from executorch.backends.arm.ethosu.partitioner import EthosUPartitioner
+
+        compile_spec = EthosUCompileSpec(
+            llm_config.backend.ethosu.target,
+            system_config=(
+                None
+                if llm_config.backend.ethosu.system_config == "default"
+                else llm_config.backend.ethosu.system_config
+            ),
+            memory_mode=(
+                None
+                if llm_config.backend.ethosu.memory_mode == "default"
+                else llm_config.backend.ethosu.memory_mode
+            ),
+            extra_flags=llm_config.backend.ethosu.extra_flags,
+        )
+
+        additional_checks = []
+        if (
+            llm_config.model.use_kv_cache
+            and not llm_config.model.static_quantize_kv_cache
+        ):
+            from torch.fx.passes.operator_support import OperatorSupportBase
+
+            class EthosUKVCacheOperatorSupport(OperatorSupportBase):
+                def is_node_supported(self, submodules, node):
+                    return "aten.index.Tensor" not in str(node.target)
+
+            additional_checks.append(EthosUKVCacheOperatorSupport())
+
         partitioners.append(
-            get_ethosu_partitioner(
-                llm_config.backend.ethosu.target,
-                llm_config.backend.ethosu.system_config,
-                llm_config.backend.ethosu.memory_mode,
-                llm_config.backend.ethosu.extra_flags,
+            EthosUPartitioner(
+                compile_spec,
+                additional_checks=additional_checks or None,
             )
         )
         modelname = f"ethosu_{modelname}"
@@ -1143,7 +1352,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
     quantizers,
     quant_dtype,
     vulkan: bool = False,
-    mps: bool = False,
     coreml: bool = False,
     qnn: bool = False,
     dtype_override: str = "fp32",
@@ -1176,10 +1384,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
         )
         modelname = f"vulkan_{modelname}"
-
-    if mps:
-        partitioners.append(get_mps_partitioner(use_kv_cache))
-        modelname = f"mps_{modelname}"
 
     if coreml:
         coreml_partitioner = get_coreml_partitioner(
@@ -1438,6 +1642,8 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
 
 def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     _validate_args(llm_config)
+    if llm_config.model.static_quantize_kv_cache:
+        _ensure_static_kvq_out_variants(llm_config)
 
     # Check for multimethod export
     if llm_config.multimethod.enabled:
@@ -1450,6 +1656,12 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     additional_passes = []
     if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+    if llm_config.model.use_kv_cache and (
+        llm_config.backend.tosa.enabled
+        or llm_config.backend.vgf.enabled
+        or llm_config.backend.ethosu.enabled
+    ):
+        additional_passes.append(InitializedMutableBufferPass(["k_cache", "v_cache"]))
 
     # For attention sink models, cache_positions must be initialized to -1
     # (sentinel for "empty slot"). Without this pass, ExecuTorch only serializes
@@ -1460,6 +1672,8 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
+    if llm_config.model.static_quantize_kv_cache:
+        _calibrate_static_kv_cache(builder_manager, llm_config)
     if (
         llm_config.backend.tosa.enabled
         or llm_config.backend.vgf.enabled
@@ -1541,7 +1755,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quantizers,
             quant_dtype,
             vulkan=llm_config.backend.vulkan.enabled,
-            mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             qnn=llm_config.backend.qnn.enabled,
             dtype_override=llm_config.model.dtype_override.value,
@@ -1708,11 +1921,15 @@ def _get_source_transforms(  # noqa
     use_custom_sdpa_with_attention_mask: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     quantize_kv_cache: bool = False,
+    static_quantize_kv_cache: bool = False,
+    static_quantize_kv_cache_scale: float = 1.0 / 127.0,
     use_kv_cache: bool = False,
     qnn: bool = False,
+    vgf: bool = False,
+    tosa: bool = False,
+    ethosu: bool = False,
     use_qnn_sha: bool = False,
     optimized_rotation_path: Optional[str] = None,
-    mps: bool = False,
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
@@ -1746,11 +1963,14 @@ def _get_source_transforms(  # noqa
         use_custom_sdpa_with_attention_mask: Whether to use custom SDPA with attention mask.
         use_sdpa_with_kv_cache: Whether to use SDPA with KV cache.
         quantize_kv_cache: Whether to quantize KV cache.
+        static_quantize_kv_cache: Whether to use static-qparams int8 KV cache storage.
         use_kv_cache: Whether to use KV cache.
         qnn: Whether to use QNN.
+        vgf: Whether to use VGF.
+        tosa: Whether to use TOSA.
+        ethosu: Whether to use Ethos-U.
         use_qnn_sha: Whether to use QNN SHA.
         optimized_rotation_path: Path to optimized rotation.
-        mps: Whether to use MPS.
         coreml: Whether to use CoreML.
         coreml_ios: CoreML iOS version.
         vulkan: Whether to use Vulkan.
@@ -1864,9 +2084,27 @@ def _get_source_transforms(  # noqa
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
+        if static_quantize_kv_cache:
+            raise ValueError(
+                "Cannot enable both quantize_kv_cache and static_quantize_kv_cache"
+            )
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
-        # Right now
         transforms.append(replace_sdpa_with_quantized_sdpa)
+
+    if static_quantize_kv_cache:
+        assert use_kv_cache, "static_quantize_kv_cache requires use_kv_cache=True"
+        if use_sdpa_with_kv_cache:
+            raise ValueError(
+                "Static quantized KV cache uses standard tensor cache updates; "
+                "disable model.use_sdpa_with_kv_cache."
+            )
+        transforms.append(
+            partial(
+                replace_kv_cache_with_static_quantized_kv_cache,
+                scale=static_quantize_kv_cache_scale,
+                use_custom_update_cache_op=not (vgf or tosa or ethosu),
+            )
+        )
 
     if use_kv_cache:
         if qnn:
@@ -1891,12 +2129,6 @@ def _get_source_transforms(  # noqa
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))
                 # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
-
-        elif mps:
-            # Currently mps doesn't support sdpa op, use the simpler decomposition
-            # to get free perf gain.
-            transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_causal_mask)
 
         elif coreml:
             # iOS 18 introduced fused sdpa op

@@ -11,6 +11,7 @@ import executorch.backends.transforms.channels_last_ops  # noqa: F401
 
 import torch
 
+from executorch.backends.transforms.channels_last_layout import LAYOUT_PERMUTE_COPY
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -63,7 +64,7 @@ class ChannelsLastOpSpec:
     # Positional arg indices of tensor inputs that should be permuted NCHW→NHWC.
     input_indices: list[int]
 
-    # Indices of the outputs that should be permuted NCHW→NHWC.
+    # Indices of the outputs that should be permuted NHWC→NCHW.
     output_indices: list[int]
 
     # If provided, this function must return True for a node to be replaced.
@@ -101,6 +102,14 @@ _DEFAULT_OP_MAP: dict[Target, ChannelsLastOpSpec] = {
         output_indices=[0, 1],
         filter_fn=_requires_rank([3, 4]),
     ),
+    # RemoveGetItemPass turns max_pool2d_with_indices + getitem(0) into this
+    # single-output operator before backend layout lowering.
+    exir_ops.edge.aten.max_pool2d.default: ChannelsLastOpSpec(
+        target=exir_ops.edge.channels_last.max_pool2d.default,
+        input_indices=[0],
+        output_indices=[0],
+        filter_fn=_requires_rank([3, 4]),
+    ),
     exir_ops.edge.aten.upsample_bilinear2d.vec: ChannelsLastOpSpec(
         target=exir_ops.edge.channels_last.upsample_bilinear2d.default,
         input_indices=[0],
@@ -125,6 +134,11 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
 
     By default, all currently implemented channels_last dialect ops are replaced.
     Pass a custom op_map to restrict or extend the set of replacements.
+
+    Metadata from each replaced operator is preserved so provenance and backend
+    annotations survive the rewrite. ExportPass recomputes shape metadata after
+    retracing. Callers must reject or remap semantic metadata tied to dimensions
+    changed by ``input_indices`` or ``output_indices``, such as per-channel axes.
     """
 
     def __init__(
@@ -153,7 +167,7 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
 
         res = graph.create_node(
             "call_function",
-            target=exir_ops.edge.channels_last.permute_copy.default,
+            target=LAYOUT_PERMUTE_COPY,
             args=(node_input, _NCHW_TO_NHWC_PERM),
         )
         res.meta = {}
@@ -169,7 +183,7 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
     ):
         output = graph.create_node(
             "call_function",
-            target=exir_ops.edge.channels_last.permute_copy.default,
+            target=LAYOUT_PERMUTE_COPY,
             args=(node_output, _NHWC_TO_NCHW_PERM),
         )
         output.meta = {}
@@ -221,7 +235,7 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
                     args=tuple(args),
                     kwargs=node.kwargs,
                 )
-                nhwc_node.meta = {}
+                nhwc_node.meta = dict(node.meta)
 
                 users = list(node.users)
                 if all(

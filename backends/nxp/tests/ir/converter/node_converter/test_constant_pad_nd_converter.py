@@ -13,10 +13,7 @@ from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
     ModelBuilder,
 )
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import (
-    ConstantPadNDConvModule,
-    ConstantPadNDModule,
-)
+from executorch.backends.nxp.tests.models import PadConvModule, PadModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import ConstantPadND, Convolution
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
@@ -78,8 +75,7 @@ class TestConstantPadND:
     def test__basic_nsys_inference(
         self, mocker, request, input_shape, paddings, use_qat
     ):
-        # These test cases are also supported by the old flow.
-        model = ConstantPadNDModule(paddings)
+        model = PadModule(paddings, "constant")
         self.assert_delegated(model, input_shape, mocker, request, use_qat)
 
     def test__channels_padding(self, mocker, request):
@@ -87,7 +83,7 @@ class TestConstantPadND:
         # These paddings will be applied to the last dimension, which is the channels as the input is formatless.
         paddings = (1, 1)
         expected_output_shape = (2, 4, 8)  # Padded channels.
-        model = ConstantPadNDModule(paddings)
+        model = PadModule(paddings, "constant")
 
         self.assert_delegated_and_output_shape_equals(
             model, input_shape, expected_output_shape, mocker, request
@@ -97,7 +93,7 @@ class TestConstantPadND:
         input_shape = (2, 4, 6)
         paddings = (0, 0, 0, 0, 1, 1)  # Padding applied to the batch dimension.
         expected_output_shape = (4, 4, 6)  # Padded batch.
-        model = ConstantPadNDModule(paddings)
+        model = PadModule(paddings, "constant")
 
         self.assert_delegated_and_output_shape_equals(
             model, input_shape, expected_output_shape, mocker, request
@@ -107,7 +103,7 @@ class TestConstantPadND:
     def test__specific_constant(self, mocker, request, constant):
         input_shape = (2, 4, 6)
         paddings = (1, 1)
-        model = ConstantPadNDModule(paddings, constant)
+        model = PadModule(paddings, "constant", constant)
         self.assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
@@ -119,7 +115,13 @@ class TestConstantPadND:
         ],
     )
     def test__channels_first(self, mocker, request, input_shape, paddings):
-        model = ConstantPadNDConvModule(paddings)
+        # compute channels size after padding
+        if len(paddings) // 2 == len(input_shape) - 1:
+            conv_in_channels = input_shape[1] + paddings[-1] + paddings[-2]
+        else:
+            conv_in_channels = input_shape[1]
+
+        model = PadConvModule(conv_in_channels, paddings, "constant")
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={ConstantPadND: 1, Convolution: 1},

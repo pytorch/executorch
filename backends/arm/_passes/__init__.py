@@ -1,3 +1,5 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 # Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -6,10 +8,13 @@
 
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
+from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (  # noqa
+    CanonicalizeViewCopyPermutePass,
+)
+
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
-from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
@@ -68,6 +73,9 @@ from .decompose_index_tensor_to_gather_pass import (  # noqa
     DecomposeIndexTensorToGatherPass,
 )
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
+from .decompose_large_stride_maxpool2d_pass import (  # noqa
+    DecomposeLargeStrideMaxPool2dForU55Pass,
+)
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinalgVectorNormPass  # noqa
@@ -111,6 +119,8 @@ from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass 
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
+from .fold_dyt_affine_into_conv_pass import FoldDyTAffineIntoConvPass  # noqa
+from .fold_dyt_alpha_into_lut_pass import FoldDyTAlphaIntoLUTPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
@@ -170,6 +180,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .remove_permutes_around_elementwise_tosa_ops import (  # noqa
     RemovePermutesAroundElementwiseTosaOps,
 )
+from .remove_safe_softmax_guard_pass import RemoveSafeSoftmaxGuardPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )

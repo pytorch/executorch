@@ -36,6 +36,15 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
+class SubTensorAlphaModule(torch.nn.Module):
+    def __init__(self, alpha):
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, x, y):
+        return torch.sub(x, y, alpha=self.alpha)
+
+
 class TestSubTensor:
     @pytest.mark.parametrize(
         "x_input_shape",
@@ -252,3 +261,17 @@ class TestSubTensor:
             comparator,
             remove_quant_io_ops=remove_quant_io_ops,
         )
+
+    def test__alpha(self):
+        model = SubTensorAlphaModule(alpha=2)
+        shape = (42,)
+
+        delegated_ep = to_quantized_edge_program(
+            model, [ModelInputSpec(shape), ModelInputSpec(shape)]
+        ).exported_program()
+
+        # Make sure the `sub.Tensor` was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [SubTensor])

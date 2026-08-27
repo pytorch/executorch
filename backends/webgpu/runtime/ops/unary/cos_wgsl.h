@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from cos.wgsl - DO NOT EDIT.
+// @generated from unary.wgsl - DO NOT EDIT.
 // wgsl-sha256: 9df78873e5fae98d347c26db2a02b047ea3d5d2c93f0761cb9ac6995f9a71ab2
 inline constexpr const char* kCosWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;

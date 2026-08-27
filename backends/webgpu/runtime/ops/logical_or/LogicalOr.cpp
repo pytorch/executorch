@@ -9,7 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/logical_or/logical_or_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/logical_binary/logical_or_wgsl.h>
 
 #include <webgpu/webgpu.h>
 

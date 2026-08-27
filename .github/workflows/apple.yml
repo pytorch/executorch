@@ -25,7 +25,7 @@ on:
     - cron: '0 10 * * *'  # Runs daily at 2 AM PST
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -161,7 +161,7 @@ jobs:
       device-type: ios
       # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
       runner: linux.2xlarge
-      test-infra-ref: ''
+      test-infra-ref: main
       # This is the ARN of ExecuTorch project on AWS
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       # This is the custom device pool that only includes iOS devices
@@ -192,7 +192,6 @@ jobs:
           "executorch"
           "executorch_llm"
           "backend_coreml"
-          "backend_mps"
           "backend_xnnpack"
           "kernels_llm"
           "kernels_optimized"
@@ -300,6 +299,36 @@ jobs:
           done < "${RUNNER_TEMP}/checksums.txt"
 
           if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            # The manifest and the built frameworks have to describe the same set,
+            # checked in both directions because each failure is silent on its own.
+            #
+            # A placeholder with no framework publishes literal text where a checksum
+            # belongs, which stops SwiftPM resolving the package for every consumer
+            # rather than only users of that product. Eight consecutive nightlies
+            # shipped that way in August 2025.
+            #
+            # A framework with no placeholder is the reverse: sed matches nothing, so
+            # the product silently disappears from the manifest while its archive is
+            # still uploaded. Release branches share this template, so a branch that
+            # still builds a removed framework lands here. Compared against the base
+            # name, because the manifest declares each product once and synthesises
+            # its debug variant.
+            #
+            # Gated on the upload, because only a run that publishes can do harm and a
+            # branch whose template is momentarily out of step should not redden every
+            # unrelated pull request.
+            if grep -q "__SHA256_" Package.swift; then
+              echo "::error::Package.swift still has unsubstituted checksums:"
+              grep -o "__SHA256_[A-Za-z_]*__" Package.swift | sort -u
+              exit 1
+            fi
+            while read -r FRAMEWORK CHECKSUM; do
+              if ! grep -q "\"${FRAMEWORK%_debug}\"" Package.swift; then
+                echo "::error::built framework ${FRAMEWORK} has no product in Package.swift"
+                exit 1
+              fi
+            done < "${RUNNER_TEMP}/checksums.txt"
+
             git config --global user.name "PyTorch Bot"
             git config --global user.email "pytorchbot@users.noreply.github.com"
             git add Package.swift

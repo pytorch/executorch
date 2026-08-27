@@ -25,10 +25,13 @@ on:
       - .ci/scripts/test-cuda-build.sh
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
+      - examples/models/muse-glimmer/**
+      - extension/pybindings/**
+      - runtime/__init__.py
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: false
 
 permissions:
@@ -159,6 +162,8 @@ jobs:
   unittest-cuda:
     name: unittest-cuda
     needs: [changed-files, run-decision]
+    # This job runs the pybindings device test, so it also has to fire on the
+    # two pybindings paths the workflow filter lists.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
@@ -166,6 +171,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -188,6 +195,29 @@ jobs:
         # which the default system libstdc++ doesn't have. Install a newer one.
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        # The pybindings loader only asks for device memory on a build that has
+        # a device allocator registered, so this test cannot run in the CPU
+        # jobs. It needs the install above and nothing built below, so run it
+        # here and fail before the long builds.
+        #
+        # unittest exits 0 when a test skips, and this test skips when the CUDA
+        # backend is missing or no GPU is visible. Both are the prerequisites
+        # this job exists to provide, so treat a skip as a failure rather than
+        # let a packaging regression pass silently. `tee` would otherwise hide
+        # the real exit status behind its own, so read it back explicitly.
+        set +e
+        python -m unittest -v executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device 2>&1 | tee /tmp/pybindings_device_test.log
+        pybindings_device_status=${PIPESTATUS[0]}
+        set -e
+        if [ "${pybindings_device_status}" -ne 0 ]; then
+          echo "::error::the pybindings device test failed"
+          exit "${pybindings_device_status}"
+        fi
+        if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
+          echo "::error::the pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+          exit 1
+        fi
 
         # Build ExecuTorch with CUDA support
         cmake --workflow --preset llm-release-cuda
@@ -243,12 +273,13 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
 
-  export-model-cuda-artifact:
-    name: export-model-cuda-artifact
+  test-model-cuda-e2e:
+    name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
     # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
     # filter so push commits that don't touch CUDA-relevant paths skip
@@ -351,7 +382,7 @@ jobs:
               repo: "facebook"
               name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
-          # Qwen3 int4-weight-only: no downstream job consumes this artifact
+          # Keep the existing Qwen3 coverage to non-quantized and tile-packed.
           - model:
               repo: "Qwen"
               name: "Qwen3-0.6B"
@@ -376,7 +407,7 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
-      timeout: 150
+      timeout: 240
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
@@ -418,27 +449,23 @@ jobs:
           echo "::endgroup::"
         fi
 
-        source .ci/scripts/export_model_artifact.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        RUN_EXPORT=1 source .ci/scripts/test_model_e2e.sh cuda \
+          "${{ matrix.model.repo }}/${{ matrix.model.name }}" \
+          "${{ matrix.quant }}" \
+          "${RUNNER_ARTIFACT_DIR}"
 
-  test-model-cuda-e2e:
-    name: test-model-cuda-e2e
-    # Same path filter as export-model-cuda-artifact above. Also explicitly
-    # gated on the export job succeeding — when needs: jobs are *skipped*
-    # (e.g. fork PR), GitHub still evaluates this if:, so without the
-    # explicit success-check this job would run and then fail trying
-    # to download an artifact that was never produced.
-    needs: [changed-files, export-model-cuda-artifact, run-decision]
+  test-muse-glimmer-cuda-e2e:
+    name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
+    needs: [changed-files, run-decision]
     if: |
-      needs.export-model-cuda-artifact.result == 'success' &&
-      (
-        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
-        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
-        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
-        needs.run-decision.outputs.is-full-run == 'true'
-      )
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -446,111 +473,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model:
-          - repo: "mistralai"
-            name: "Voxtral-Mini-3B-2507"
-          - repo: "mistralai"
-            name: "Voxtral-Mini-4B-Realtime-2602"
-          - repo: "nvidia"
-            name: "diar_streaming_sortformer_4spk-v2"
-          - repo: "openai"
-            name: "whisper-small"
-          - repo: "openai"
-            name: "whisper-large-v3-turbo"
-          - repo: "google"
-            name: "gemma-3-4b-it"
-          - repo: "nvidia"
-            name: "parakeet-tdt"
-          - repo: "facebook"
-            name: "dinov2-small-imagenet1k-1-layer"
-          - repo: "SocialLocalMobile"
-            name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "unsloth"
-            name: "gemma-4-31B-it-GGUF"
-        quant:
-          - "non-quantized"
-          - "quantized-int4-tile-packed"
-          - "quantized-int4-weight-only"
-        exclude:
-          # TODO: enable int4-weight-only on gemma3.
-          - model:
-              repo: "google"
-              name: "gemma-3-4b-it"
-            quant: "quantized-int4-weight-only"
-          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
-          - model:
-              repo: "SocialLocalMobile"
-              name: "Qwen3.5-35B-A3B-HQQ-INT4"
-            quant: "non-quantized"
-          - model:
-              repo: "SocialLocalMobile"
-              name: "Qwen3.5-35B-A3B-HQQ-INT4"
-            quant: "quantized-int4-weight-only"
-          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
-          - model:
-              repo: "unsloth"
-              name: "gemma-4-31B-it-GGUF"
-            quant: "non-quantized"
-          - model:
-              repo: "unsloth"
-              name: "gemma-4-31B-it-GGUF"
-            quant: "quantized-int4-weight-only"
-          # Voxtral Realtime only supports int4-tile-packed on CUDA
-          - model:
-              repo: "mistralai"
-              name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "non-quantized"
-          - model:
-              repo: "mistralai"
-              name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "quantized-int4-weight-only"
-          # Sortformer currently supports only non-quantized export
-          - model:
-              repo: "nvidia"
-              name: "diar_streaming_sortformer_4spk-v2"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "nvidia"
-              name: "diar_streaming_sortformer_4spk-v2"
-            quant: "quantized-int4-weight-only"
-          # DINOv2 currently supports only non-quantized export
-          - model:
-              repo: "facebook"
-              name: "dinov2-small-imagenet1k-1-layer"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "facebook"
-              name: "dinov2-small-imagenet1k-1-layer"
-            quant: "quantized-int4-weight-only"
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
-          # Whisper: cover all quant types and both sizes with minimal combos
-          # whisper-small: non-quantized only
-          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
-          - model:
-              repo: "openai"
-              name: "whisper-small"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "openai"
-              name: "whisper-small"
-            quant: "quantized-int4-weight-only"
-          - model:
-              repo: "openai"
-              name: "whisper-large-v3-turbo"
-            quant: "non-quantized"
+        include:
+          - variant: kquant-17gb
+            mode: solo-text
+          - variant: kquant-17gb
+            mode: dflash-image
+          - variant: kquant-dynamic
+            mode: solo-text
+          - variant: kquant-dynamic
+            mode: dflash-image
     with:
-      timeout: 90
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
+      timeout: 240
+      runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
+        set -eux
+
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
+        mkdir -p "${HF_HOME}"
+
+        echo "::group::Setup ExecuTorch"
         # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
         # transitive deps resolve to. Pre-install torch's pure-python deps from the
         # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
@@ -559,22 +508,30 @@ jobs:
         # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
         # examples install doesn't try to downgrade it from the public CDN.
         pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
-        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
-        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
-        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
-        mkdir -p "${HF_HOME}"
-        source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
+        export USE_MKL=OFF
+        ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Fix libstdc++ GLIBCXX version"
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+        echo "::endgroup::"
+
+        RUN_EXPORT=1 source .ci/scripts/test_model_e2e.sh cuda \
+          "meta-models/Muse-Glimmer-30B-GGUF" \
+          "${{ matrix.variant }}" \
+          "${RUNNER_TEMP}/muse_glimmer" \
+          "${{ matrix.mode }}"
 
   test-cuda-pybind:
     name: test-cuda-pybind
-    # This job downloads models exported by export-model-cuda-artifact and runs them using pybind.
-    # Same gating as test-model-cuda-e2e — explicit success-check on the
-    # export job so a skipped export (fork PR, non-sampled push, no path
-    # match) auto-skips this job too.
-    needs: [changed-files, export-model-cuda-artifact, run-decision]
+    # This job downloads models exported by test-model-cuda-e2e and runs them using pybind.
+    # Explicitly check the producer job so a skipped run (fork PR,
+    # non-sampled push, or no path match) auto-skips this job too.
+    needs: [changed-files, test-model-cuda-e2e, run-decision]
     if: |
-      needs.export-model-cuda-artifact.result == 'success' &&
+      needs.test-model-cuda-e2e.result == 'success' &&
       (
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||

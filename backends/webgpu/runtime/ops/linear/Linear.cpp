@@ -33,6 +33,11 @@ static_assert(sizeof(LinearParams) == 16, "LinearParams must be 16 bytes");
 
 constexpr uint32_t kTile = 32u;
 
+LinearParams
+make_linear_params(uint32_t M, uint32_t N, uint32_t K, bool has_bias) {
+  return {M, N, K, has_bias ? 1u : 0u};
+}
+
 // aten.linear (+ optional bias); shared-memory tiled GEMM.
 void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // args: [input, weight, bias?, out]; out is last. bias (arg 2) is a tensor
@@ -82,11 +87,7 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     }
   }
 
-  LinearParams params = {};
-  params.M = M;
-  params.N = N;
-  params.K = K;
-  params.has_bias = has_bias ? 1u : 0u;
+  LinearParams params = make_linear_params(M, N, K, has_bias);
 
   // Bias binding (binding 4); a 4-byte dummy satisfies it when None
   // (WGSL-gated).
@@ -138,7 +139,7 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       in_id,
-      [in_id, out_id, M, N, K, dispatch_x, dispatch_idx, params_buf](
+      [in_id, out_id, M, N, K, has_bias, dispatch_x, dispatch_idx, params_buf](
           WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         const uint64_t numel = utils::numel_of(d);
@@ -152,10 +153,7 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           throw std::runtime_error(
               "WebGPU linear: live M is 0 or exceeds the build-time max");
         }
-        LinearParams p = {};
-        p.M = m;
-        p.N = N;
-        p.K = K;
+        LinearParams p = make_linear_params(m, N, K, has_bias);
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         g.dispatch_at(dispatch_idx).workgroup_count_x = dispatch_x;
         g.dispatch_at(dispatch_idx).workgroup_count_y =

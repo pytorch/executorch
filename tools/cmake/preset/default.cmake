@@ -123,7 +123,6 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_APPLE "Build the Apple extension" BOOL OFF
 )
-define_overridable_option(EXECUTORCH_BUILD_MPS "Build the MPS backend" BOOL OFF)
 define_overridable_option(EXECUTORCH_BUILD_MLX "Build the MLX backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" BOOL OFF
@@ -192,6 +191,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_ROCM "Build the CUDA/AOTI backend against ROCm" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
 )
 define_overridable_option(
@@ -229,8 +231,8 @@ define_overridable_option(
   ${_default_executorch_build_cpuinfo}
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_SHARED "Build a consolidated ExecuTorch shared library" BOOL
-  OFF
+  EXECUTORCH_BUILD_SHARED
+  "Build a consolidated ExecuTorch shared library (Linux and macOS)" BOOL OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default
@@ -349,9 +351,15 @@ define_overridable_option(
 # At this point all the options should be configured with their final value.
 # ------------------------------------------------------------------------------
 
-check_required_options_on(
-  IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
-)
+# The tracer needs the etdump target, not the whole devtools umbrella. A pybind
+# or shared build adds that target on its own, so accept either route rather
+# than forcing an option that also pulls in submodules a wheel does not check
+# out.
+if(NOT EXECUTORCH_BUILD_PYBIND AND NOT EXECUTORCH_BUILD_SHARED)
+  check_required_options_on(
+    IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+  )
+endif()
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
@@ -461,6 +469,14 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_CUDA REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM CONFLICTS_WITH EXECUTORCH_BUILD_CUDA
 )
 
 check_required_options_on(

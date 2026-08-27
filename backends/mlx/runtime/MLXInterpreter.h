@@ -11,6 +11,9 @@
 #include "MLXCache.h"
 #include "MLXExecutor.h"
 
+#include <algorithm>
+#include <vector>
+
 #include <mlx/array.h>
 #include <mlx/fast.h>
 #include <mlx/mlx.h>
@@ -310,17 +313,43 @@ inline void exec_update_and_attend(
   // The cache does the KV write + read and declares the mask; the handler owns
   // the query side (q, scale) and calls SDPA.
   const array& q = st.const_tensor_ref(n.q);
-  // The run's start is position[0], read host-side so the cache stays pure
-  // graph + integer bookkeeping. This is a device->host sync per node, i.e.
-  // n_layers stalls per step -- not one -- even though every layer of a step
-  // sees the same position. The fix is for position to arrive as a host-side
-  // constant instead of a graph tensor; this is the single spot to change.
-  array pos = astype(st.const_tensor_ref(n.position), int32, s);
+  // One position per query token, read host-side so the cache stays pure graph
+  // + integer bookkeeping. Every layer of a step reads the same position
+  // tensor, so evaluating it in place costs one sync for the first layer and
+  // nothing for the rest.
+  auto pos = st.const_tensor_ref(n.position);
   eval(pos);
-  const int position = pos.data<int32_t>()[0];
+  // The entries are read in order off the buffer, which a strided view would
+  // walk with the wrong stride.
+  if (!pos.flags().row_contiguous) {
+    throw std::runtime_error("update_and_attend: position must be contiguous");
+  }
+  const int length = static_cast<int>(pos.size());
+  if (length != static_cast<int>(q.shape(2))) {
+    throw std::runtime_error(
+        "update_and_attend: position must hold one entry per query token");
+  }
+  std::vector<int32_t> positions(static_cast<size_t>(length));
+  switch (pos.dtype()) {
+    case ::mlx::core::int32:
+      std::copy(
+          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
+      break;
+    case ::mlx::core::int64:
+      std::transform(
+          pos.data<int64_t>(),
+          pos.data<int64_t>() + length,
+          positions.begin(),
+          [](int64_t p) { return static_cast<int32_t>(p); });
+      break;
+    default:
+      throw std::runtime_error(
+          std::string("update_and_attend: position must be int32 or int64, ") +
+          "got " + ExecutionState::dtype_str(pos.dtype()));
+  }
   AttendSpec spec = st.cache->update_and_fetch(
       *n.layer_id,
-      position,
+      positions,
       st.const_tensor_ref(n.k),
       st.const_tensor_ref(n.v),
       s);
@@ -328,10 +357,9 @@ inline void exec_update_and_attend(
   // storage precision may differ from the compute dtype).
   array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
   array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
-  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
-  // than test for Causal: None and Explicit both map to "" and are told apart
-  // only by spec.mask, so an Explicit with no mask would silently attend
-  // unmasked.
+  // MLX takes the mask as a mode string plus an optional tensor. Switch: None
+  // and Explicit both map to "" and are told apart only by spec.mask, so an
+  // Explicit with no mask would silently attend unmasked.
   std::string mask_mode;
   switch (spec.kind) {
     case AttendSpec::Mask::None:
@@ -1534,6 +1562,11 @@ inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_trunc(const TruncNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, trunc(st.const_tensor_ref(n.x), s));
+}
+
+inline void
 exec_square(const SquareNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, square(st.const_tensor_ref(n.x), s));
 }
@@ -2223,6 +2256,9 @@ class Interpreter {
         break;
       case OpCode::CEIL:
         ops::exec_ceil(std::get<CeilNode>(instr.node), st, s);
+        break;
+      case OpCode::TRUNC:
+        ops::exec_trunc(std::get<TruncNode>(instr.node), st, s);
         break;
       case OpCode::SQUARE:
         ops::exec_square(std::get<SquareNode>(instr.node), st, s);

@@ -185,7 +185,7 @@ message(
 # mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
 )
@@ -267,7 +267,14 @@ set(_mlx_backend__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/mlx_mutable_state.cpp
 )
 
-add_library(mlxdelegate ${_mlx_backend__srcs})
+# Build the delegate as a shared library for the wheel so a C++ consumer can
+# link it, and keep it static everywhere else so no other build changes.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_mlx_backend_library_type SHARED)
+else()
+  set(_mlx_backend_library_type STATIC)
+endif()
+add_library(mlxdelegate ${_mlx_backend_library_type} ${_mlx_backend__srcs})
 
 # Ensure schema is generated before compiling
 add_dependencies(mlxdelegate mlx_schema)
@@ -294,11 +301,35 @@ target_include_directories(
 )
 
 # Link against MLX and executorch. mlx is an imported static lib (built by
-# mlx_external); it is only consumed at build time here, not re-exported, so
-# downstream consumers must link to mlx separately via the package config.
+# mlx_external) and is not re-exported, so a consumer of the static build must
+# link mlx separately via the package config. The shared build bundles it
+# instead, see below. extension_llm_cache carries the off-graph KV-cache
+# registry the backend binds to in init(); it is defined under
+# EXECUTORCH_BUILD_EXTENSION_LLM, which the mlx preset enables.
 target_link_libraries(
-  mlxdelegate PRIVATE mlx_schema executorch_core $<BUILD_INTERFACE:mlx>
+  mlxdelegate PRIVATE mlx_schema extension_llm_cache $<BUILD_INTERFACE:mlx>
 )
+if(EXECUTORCH_BUILD_SHARED)
+  set_target_properties(
+    mlxdelegate PROPERTIES OUTPUT_NAME executorch_backend_mlx
+  )
+  executorch_target_soname_policy(mlxdelegate)
+  # mlx is built as a static archive, so bundle it inside this library instead
+  # of making every consumer supply it. Written out rather than routed through
+  # executorch_target_whole_archive() so the archive stays out of this target's
+  # link interface: the imported target exists only while building, and naming
+  # it anywhere a consumer can see would leave the installed export set
+  # referring to a target that is not there. The BUILD_INTERFACE link above
+  # already makes the archive a build prerequisite.
+  target_link_options(
+    mlxdelegate PRIVATE "SHELL:LINKER:-force_load,$<TARGET_FILE:mlx>"
+  )
+  target_link_libraries(mlxdelegate PRIVATE executorch_shared)
+  # Ships beside the runtime in the wheel's lib/ directory.
+  executorch_target_shipped_runtime_path(mlxdelegate)
+else()
+  target_link_libraries(mlxdelegate PRIVATE executorch_core)
+endif()
 
 executorch_target_link_options_shared_lib(mlxdelegate)
 target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
@@ -335,20 +366,37 @@ install(
 # exist)
 #
 # where {binary_dir} is determined at runtime via dladdr() on the library
-# containing MLX code. When MLX is statically linked into _portable_lib.so, this
-# is the directory containing _portable_lib.so.
+# containing MLX code. When MLX is statically linked into _C.so, this is the
+# directory containing _C.so.
 #
 # For the installed library, we put metallib in lib/ alongside libmlx.a. The
 # metallib is produced in the mlx_external build tree (MLX_METAL_JIT=ON does not
 # install it); _mlx_metallib points there.
 install(FILES ${_mlx_metallib} DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-# Cache the metallib path for pybindings to copy it next to _portable_lib.so
-# This enables editable installs to work correctly
+# Cache the metallib path for pybindings to copy it next to _C.so. This enables
+# editable installs to work correctly
 set(MLX_METALLIB_PATH
     "${_mlx_metallib}"
     CACHE INTERNAL "Path to mlx.metallib for pybindings"
 )
+
+# Whether the Python extension is the image carrying MLX code, which is true
+# only when the delegate is static and therefore absorbed into it. Packaging
+# reads this to decide whether the metallib has to ship beside the extension: a
+# shared delegate carries MLX itself and is served by the copy beside it
+# instead.
+if(EXECUTORCH_BUILD_SHARED)
+  set(EXECUTORCH_MLX_METALLIB_IN_PYBINDINGS
+      OFF
+      CACHE INTERNAL "Ship mlx.metallib beside the Python extension"
+  )
+else()
+  set(EXECUTORCH_MLX_METALLIB_IN_PYBINDINGS
+      ON
+      CACHE INTERNAL "Ship mlx.metallib beside the Python extension"
+  )
+endif()
 
 # -----------------------------------------------------------------------------
 # Tests (off by default; CI passes -DEXECUTORCH_BUILD_TESTS=ON)

@@ -6,8 +6,8 @@
 
 """`aten.div.Tensor_mode` module for the WebGPU op-test framework.
 
-`FloorDivideModule` is imported by `cases.py`. Same-shape elementwise
-`div(a, b, rounding_mode="floor")`. The kernel computes `floor(a/b)` mirroring
+`FloorDivideModule` is imported by `cases.py`. Same-shape and broadcast
+`div(a, b, rounding_mode="floor")` use `floor(a/b)`, mirroring
 the Vulkan `floor_divide` glsl (`floor(X/Y)`); this differs from torch's own
 fmod-corrected `div_floor` at rare fp boundaries, so the suite goldens against a
 `floor(a/b)` `golden_fn` (Vulkan-faithful), not this module's eager output.

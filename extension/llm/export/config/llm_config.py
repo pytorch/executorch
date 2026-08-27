@@ -19,6 +19,7 @@ for more information.
 """
 
 import argparse
+import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -188,6 +189,7 @@ class ModelConfig:
         input_prune_map: Path to the output pruning token mapping file (token_map.json).
         use_kv_cache: Whether to use KV cache.
         quantize_kv_cache: Whether to perform int8 per token quantization on the KV cache.
+        static_quantize_kv_cache: Whether to use static-qparams int8 KV cache storage.
         local_global_attention: List of integers specifying local and global attention pattern.
             e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16.
             [0, 16, 32] pattern specifies 2nd and 3rd layers have sliding windows of 16 and 32.
@@ -204,6 +206,8 @@ class ModelConfig:
     input_prune_map: Optional[str] = None
     use_kv_cache: bool = False
     quantize_kv_cache: bool = False
+    static_quantize_kv_cache: bool = False
+    static_quantize_kv_cache_scale: float = 1.0 / 127.0
     local_global_attention: Optional[List[int]] = None
     # Replace eager MOEFeedForward modules with the
     # `llama::quantized_moe_ffn` portable-runtime custom op.
@@ -215,6 +219,39 @@ class ModelConfig:
         if self.quantize_kv_cache and not self.use_kv_cache:
             raise ValueError(
                 "Cannot quantize the KV cache (quantize_kv_cache) without enabling the KV cache (use_kv_cache)"
+            )
+
+        if self.static_quantize_kv_cache and not self.use_kv_cache:
+            raise ValueError(
+                "Cannot statically quantize the KV cache (static_quantize_kv_cache) without enabling the KV cache (use_kv_cache)"
+            )
+
+        if self.quantize_kv_cache and self.static_quantize_kv_cache:
+            raise ValueError(
+                "Cannot enable both dynamic quantized KV cache (quantize_kv_cache) and static quantized KV cache (static_quantize_kv_cache)"
+            )
+
+        if self.static_quantize_kv_cache and self.enable_dynamic_shape:
+            raise ValueError(
+                "static_quantize_kv_cache requires static export shapes (enable_dynamic_shape=False)"
+            )
+
+        if self.static_quantize_kv_cache and self.local_global_attention:
+            raise ValueError(
+                "static_quantize_kv_cache does not support local_global_attention"
+            )
+
+        if self.static_quantize_kv_cache and self.use_attention_sink:
+            raise ValueError(
+                "static_quantize_kv_cache does not support use_attention_sink"
+            )
+
+        if (
+            not math.isfinite(self.static_quantize_kv_cache_scale)
+            or self.static_quantize_kv_cache_scale <= 0
+        ):
+            raise ValueError(
+                "static_quantize_kv_cache_scale must be finite and positive"
             )
 
         if self.local_global_attention and not self.use_kv_cache:
@@ -552,15 +589,6 @@ class QNNConfig:
 
 
 @dataclass
-class MPSConfig:
-    """
-    Configures the MPS backend.
-    """
-
-    enabled: bool = False
-
-
-@dataclass
 class OpenvinoConfig:
     """
     Configures the QNN backend.
@@ -643,7 +671,6 @@ class BackendConfig:
     coreml: CoreMLConfig = field(default_factory=CoreMLConfig)
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
-    mps: MPSConfig = field(default_factory=MPSConfig)
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
@@ -729,6 +756,12 @@ class LlmConfig:
             llm_config.model.use_kv_cache = args.use_kv_cache
         if hasattr(args, "quantize_kv_cache"):
             llm_config.model.quantize_kv_cache = args.quantize_kv_cache
+        if hasattr(args, "static_quantize_kv_cache"):
+            llm_config.model.static_quantize_kv_cache = args.static_quantize_kv_cache
+        if hasattr(args, "static_quantize_kv_cache_scale"):
+            llm_config.model.static_quantize_kv_cache_scale = (
+                args.static_quantize_kv_cache_scale
+            )
         if hasattr(args, "local_global_attention"):
             llm_config.model.local_global_attention = args.local_global_attention
         if hasattr(args, "use_moe_quantized_op"):
@@ -817,10 +850,6 @@ class LlmConfig:
             )
         if hasattr(args, "num_sharding"):
             llm_config.backend.qnn.num_sharding = args.num_sharding
-
-        # MPS
-        if hasattr(args, "mps"):
-            llm_config.backend.mps.enabled = args.mps
 
         # MLX - auto-enable use_kv_cache when MLX is enabled
         if hasattr(args, "mlx"):

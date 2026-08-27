@@ -63,9 +63,6 @@ class ChatCompletionRequest(BaseModel):
     stop: Optional[Union[str, list[str]]] = None
     n: int = 1
     seed: Optional[int] = None
-    # Sampling knobs that change generation output. We don't plumb these, so they
-    # are modeled (not dropped) in order to be rejected with a clear error rather
-    # than silently ignored — see serving_chat's unsupported-parameter check.
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     top_k: Optional[int] = None

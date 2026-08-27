@@ -32,7 +32,17 @@ def _sse_chunks(text):
 
 def test_health(make_client):
     client, _ = make_client()
-    assert client.get("/health").json() == {"status": "ok"}
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_health_reports_unavailable_worker(make_client):
+    client, worker = make_client()
+    worker.healthy = False
+    response = client.get("/health")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}
 
 
 def test_models_listing_shape(make_client):
@@ -96,7 +106,7 @@ def test_chat_streaming_protocol(make_client):
 
 
 def test_request_params_forwarded_to_generation(make_client):
-    # Contract behavior: the server must honor max_tokens/temperature.
+    # Contract behavior: the server must honor all supported sampling controls.
     client, fake = make_client()
     client.post(
         "/v1/chat/completions",
@@ -105,10 +115,16 @@ def test_request_params_forwarded_to_generation(make_client):
             "messages": [{"role": "user", "content": "hi"}],
             "max_tokens": 7,
             "temperature": 0.1,
+            "top_p": 0.8,
+            "top_k": 32,
+            "seed": 123,
         },
     )
     assert fake.captured_config.max_new_tokens == 7
     assert abs(fake.captured_config.temperature - 0.1) < 1e-6
+    assert abs(fake.captured_config.top_p - 0.8) < 1e-6
+    assert fake.captured_config.top_k == 32
+    assert fake.captured_config.seed == 123
 
 
 def test_special_tokens_forwarded_to_worker_as_stops(make_client):

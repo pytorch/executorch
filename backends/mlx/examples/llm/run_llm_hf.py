@@ -25,8 +25,15 @@ import logging
 import time
 
 import torch
+
+from executorch.backends.mlx.examples.llm.runtime_meta import (
+    apply_chat_template,
+    chunked_prefill,
+    get_eos_token_ids,
+    load_text_processor,
+    read_model_limits,
+)
 from executorch.runtime import Runtime, Verification
-from transformers import AutoProcessor, AutoTokenizer
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -36,66 +43,14 @@ logger = logging.getLogger(__name__)
 def _get_max_input_seq_len(program) -> int:
     """Inspect the .pte program metadata to determine the max input_ids seq len.
 
+    Fallback for .pte files exported before get_prefill_chunk_size existed.
     Returns the static seq-len dimension of the first input tensor (input_ids).
-    For models exported with dynamic shapes this will be the upper-bound; for
-    models exported with a fixed (1,1) shape it will be 1.
     """
     meta = program.metadata("forward")
     input_ids_info = meta.input_tensor_meta(0)
     sizes = input_ids_info.sizes()
     # sizes is (batch, seq_len)
     return sizes[1] if len(sizes) >= 2 else 1
-
-
-def _load_text_processor(model_id: str, revision: str | None):
-    """
-    Load a text processor for the model.
-
-    Prefer AutoTokenizer for text-only prompting, even for checkpoints that
-    also ship an AutoProcessor. Some hybrid checkpoints (for example Gemma 4)
-    expose both, but the tokenizer path is the more stable interface for the
-    plain text generation flow exercised by this runner.
-    """
-    logger.info(f"Loading tokenizer from HuggingFace: {model_id}...")
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
-        return tokenizer, False
-    except Exception as exc:
-        logger.info(f"AutoTokenizer unavailable for {model_id}: {exc}")
-
-    try:
-        processor = AutoProcessor.from_pretrained(model_id, revision=revision)
-        if hasattr(processor, "apply_chat_template") and hasattr(processor, "decode"):
-            logger.info(f"Loaded processor from HuggingFace: {model_id}")
-            return processor, True
-    except Exception as exc:
-        logger.info(f"AutoProcessor unavailable for {model_id}: {exc}")
-
-    raise RuntimeError(f"Could not load tokenizer or processor for {model_id}")
-
-
-def _apply_chat_template(text_processor, messages) -> str:
-    try:
-        return text_processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-    except TypeError:
-        return text_processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-
-
-def _get_eos_token_id(text_processor):
-    eos_token_id = getattr(text_processor, "eos_token_id", None)
-    if eos_token_id is not None:
-        return eos_token_id
-    tokenizer = getattr(text_processor, "tokenizer", None)
-    return getattr(tokenizer, "eos_token_id", None)
 
 
 def run_inference(
@@ -106,53 +61,39 @@ def run_inference(
     max_new_tokens: int = 50,
 ) -> str:
     """Run inference on the exported HuggingFace model."""
-    text_processor, uses_processor = _load_text_processor(model_id, revision)
+    text_processor = load_text_processor(model_id, revision)
 
     logger.info(f"Loading model from {pte_path}...")
     et_runtime = Runtime.get()
     program = et_runtime.load_program(pte_path, verification=Verification.Minimal)
 
-    max_seq_len = _get_max_input_seq_len(program)
-    logger.info(f"Model input_ids max seq len: {max_seq_len}")
+    max_ctx_len, prefill_chunk_size = read_model_limits(program)
+    if prefill_chunk_size is None:
+        prefill_chunk_size = _get_max_input_seq_len(program)
+    logger.info(
+        f"Model limits: max_ctx_len={max_ctx_len}, "
+        f"prefill_chunk_size={prefill_chunk_size}"
+    )
 
     forward = program.load_method("forward")
 
     logger.info(f"Encoding prompt: {prompt!r}")
-    messages = [{"role": "user", "content": prompt}]
-    formatted_prompt = _apply_chat_template(text_processor, messages)
-    if uses_processor:
-        input_ids = text_processor(text=formatted_prompt, return_tensors="pt")[
-            "input_ids"
-        ]
-    else:
-        input_ids = text_processor.encode(formatted_prompt, return_tensors="pt")
+    input_ids = apply_chat_template(text_processor, prompt)
     logger.info(f"Input shape: {input_ids.shape}")
 
     generated_tokens = input_ids[0].tolist()
     seq_len = input_ids.shape[1]
-    eos_token_id = _get_eos_token_id(text_processor)
+    eos_token_ids = get_eos_token_ids(text_processor, model_id=model_id)
 
     start_time = time.time()
 
-    if max_seq_len == 1:
-        # Model was exported with fixed (1,1) input — token-by-token prefill
-        logger.info(f"Running token-by-token prefill ({seq_len} tokens)...")
-        for i in range(seq_len):
-            token_input = input_ids[:, i : i + 1]
-            cache_position = torch.tensor([i], dtype=torch.long)
-            outputs = forward.execute([token_input, cache_position])
-        logits = outputs[0]
-    else:
-        # Model was exported with dynamic seq len — full-prompt prefill
-        logger.info(f"Running full-prompt prefill ({seq_len} tokens)...")
-        cache_position = torch.arange(seq_len, dtype=torch.long)
-        outputs = forward.execute([input_ids, cache_position])
-        logits = outputs[0]
+    logger.info(f"Running prefill ({seq_len} tokens, chunk {prefill_chunk_size})...")
+    outputs = chunked_prefill(forward, input_ids, prefill_chunk_size)
+    logits = outputs[0]
 
     prefill_time = time.time() - start_time
     logger.info(
-        f"Prefill time: {prefill_time:.3f}s "
-        f"({seq_len / prefill_time:.1f} tokens/sec)"
+        f"Prefill time: {prefill_time:.3f}s ({seq_len / prefill_time:.1f} tokens/sec)"
     )
 
     # Get the next token from the last position
@@ -176,7 +117,7 @@ def run_inference(
         next_token = torch.argmax(next_token_logits).item()
         generated_tokens.append(next_token)
 
-        if eos_token_id is not None and next_token == eos_token_id:
+        if next_token in eos_token_ids:
             logger.info(f"EOS token reached at position {i + 1}")
             break
 

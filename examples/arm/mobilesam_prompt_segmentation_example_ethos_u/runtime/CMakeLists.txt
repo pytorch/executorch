@@ -106,8 +106,7 @@ configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
 add_executable(mobilesam_prompt_segmentation_example main.cpp)
 target_sources(
   mobilesam_prompt_segmentation_example
-  PRIVATE main.cpp
-          ${CMAKE_SOURCE_DIR}/../../executor_runner/arm_memory_allocator.cpp
+  PRIVATE main.cpp ${ET_DIR_PATH}/examples/arm/common/arm_memory_allocator.cpp
 )
 target_link_libraries(
   mobilesam_prompt_segmentation_example
@@ -126,13 +125,15 @@ target_link_libraries(
   mobilesam_prompt_segmentation_example PUBLIC executorch_delegate_ethos_u
 )
 
-if(MEMORY_MODE MATCHES "Dedicated_Sram")
+if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
   set(ETHOSU_ARENA "1")
   if(NOT DEFINED ET_SEGMENTATION_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     set(ET_SEGMENTATION_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x1000000)
   endif()
   if(NOT DEFINED ET_SEGMENTATION_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_SEGMENTATION_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+    set_ethosu_dedicated_sram_fast_scratch_size(
+      ET_SEGMENTATION_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE "${MEMORY_MODE}"
+    )
   endif()
 else()
   set(ETHOSU_ARENA "0")
@@ -176,7 +177,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 set(LINK_FILE_OUT_BASE "platform_linker_script")
-set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/../../executor_runner/Corstone-320.ld")
+set(LINK_FILE_IN
+    "${ET_DIR_PATH}/backends/arm/cmake/linker_scripts/Corstone-320.ld"
+)
 set(LINK_FILE_OUT
     ${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}
 )
@@ -192,11 +195,10 @@ set(MODEL_PTE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/model_pte.h")
 add_custom_command(
   OUTPUT "${MODEL_PTE_HEADER}"
   COMMAND
-    ${PYTHON_EXECUTABLE}
-    ${CMAKE_SOURCE_DIR}/../../executor_runner/pte_to_header.py --pte
-    ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    ${PYTHON_EXECUTABLE} ${ET_DIR_PATH}/examples/arm/common/pte_to_header.py
+    --pte ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
   DEPENDS ${ET_PTE_FILE_PATH}
-          ${CMAKE_SOURCE_DIR}/../../executor_runner/pte_to_header.py
+          ${ET_DIR_PATH}/examples/arm/common/pte_to_header.py
   VERBATIM
 )
 set(IMAGE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/image.h")
@@ -217,5 +219,5 @@ target_sources(
 target_include_directories(
   mobilesam_prompt_segmentation_example
   PRIVATE ${ET_INCLUDE_PATH} ${ET_DIR_PATH}/runtime/core/portable_type/c10
-          ${CMAKE_SOURCE_DIR}/../../executor_runner ${CMAKE_CURRENT_BINARY_DIR}
+          ${ET_DIR_PATH}/examples/arm/common ${CMAKE_CURRENT_BINARY_DIR}
 )

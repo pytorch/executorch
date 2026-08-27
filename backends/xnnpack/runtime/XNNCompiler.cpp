@@ -15,6 +15,7 @@
 #include <cinttypes>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
@@ -2065,6 +2066,58 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
 #undef _DEFINE
 
 /*
+Serialized id of an xvalue, or XNN_INVALID_VALUE_ID if it is not a tensor.
+*/
+uint32_t getSerializedValueId(ValuePtr value) noexcept {
+  const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
+  if (value->xvalue_union_type() == fb_xnnpack::XValueUnion::XNNTensorValue) {
+    tensor_value = value->xvalue_union_as_XNNTensorValue();
+  } else if (
+      value->xvalue_union_type() ==
+      fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
+    tensor_value =
+        value->xvalue_union_as_XNNQuantizedTensorValue()->tensor_value();
+  }
+  return tensor_value != nullptr ? tensor_value->id_out()
+                                 : XNN_INVALID_VALUE_ID;
+}
+
+/*
+Serialized ids of the values that XNNPACK copies into its own packed storage
+while the runtime is created. Every other constant value is referenced by raw
+pointer for the lifetime of the runtime.
+*/
+std::unordered_set<uint32_t> getPackedValueIds(GraphPtr flatbuffer_graph) {
+  std::unordered_set<uint32_t> packed_ids;
+  auto insert_weights = [&packed_ids](uint32_t filter_id, uint32_t bias_id) {
+    packed_ids.insert(filter_id);
+    if (bias_id != XNN_INVALID_VALUE_ID) {
+      packed_ids.insert(bias_id);
+    }
+  };
+
+  // Deliberately an if-chain rather than a switch: XNodeUnion has ~50
+  // enumerators and -Wswitch-enum requires every one of them to be listed.
+  for (auto node : *flatbuffer_graph->xnodes()) {
+    auto type = node->xnode_union_type();
+    if (type == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
+      auto n = node->xnode_union_as_XNNFullyConnected();
+      insert_weights(n->filter_id(), n->bias_id());
+    } else if (type == fb_xnnpack::XNodeUnion::XNNConv2d) {
+      auto n = node->xnode_union_as_XNNConv2d();
+      insert_weights(n->filter_id(), n->bias_id());
+    } else if (type == fb_xnnpack::XNodeUnion::XNNDepthwiseConv2d) {
+      auto n = node->xnode_union_as_XNNDepthwiseConv2d();
+      insert_weights(n->filter_id(), n->bias_id());
+    } else if (type == fb_xnnpack::XNodeUnion::XNNConvTranspose2d) {
+      auto n = node->xnode_union_as_XNNConvTranspose2d();
+      insert_weights(n->filter_id(), n->bias_id());
+    }
+  }
+  return packed_ids;
+}
+
+/*
 Builds the xnnpack runtime object using the buffer pointer. The buffer pointer
 must be a valid pointer to the serialized xnnpack object. It also fills the
 XNNExecutor object with the built xnn_runtime and the input/output ids.
@@ -2168,15 +2221,19 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   // Invalid ids do not need to be remapped
   remapped_ids.emplace(XNN_INVALID_VALUE_ID, XNN_INVALID_VALUE_ID);
 
-  // If weight cache is not on we hold onto all the unpacked buffers
-  // and we free them at the end
+  // Buffers loaded from the named data map for values whose data XNNPACK packs
+  // during runtime creation. They stay alive until the runtime exists and are
+  // freed afterwards.
   std::vector<FreeableBuffer> unpacked_buffers;
+  const std::unordered_set<uint32_t> packed_value_ids =
+      getPackedValueIds(flatbuffer_graph);
 
   // External Ids for inputs and outputs
   std::vector<uint32_t> input_ids;
   std::vector<uint32_t> output_ids;
   Error err = Error::Ok;
   for (auto value : *flatbuffer_graph->xvalues()) {
+    size_t prev_buffers = unpacked_buffers.size();
     err = defineTensor(
         subgraph.get(),
         remapped_ids,
@@ -2194,6 +2251,17 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
     if (err != Error::Ok) {
       return err;
+    }
+
+    // Operators that don't pack (PReLU, for example) keep raw pointers into
+    // the constant data, so hand their buffers to the executor. A single value
+    // can contribute more than one buffer: a quantized weight also loads its
+    // scales.
+    if (packed_value_ids.count(getSerializedValueId(value)) == 0) {
+      for (size_t i = prev_buffers; i < unpacked_buffers.size(); i++) {
+        executor->unpacked_buffers_.push_back(std::move(unpacked_buffers[i]));
+      }
+      unpacked_buffers.resize(prev_buffers);
     }
   }
 
@@ -2249,6 +2317,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         "Failed to finalize weights cache after creating the xnn runtime");
     packed_weights_names = std::move(packed_weights_names_result.get());
   } else {
+    // XNNPACK has copied these into its own packed storage.
     for (auto& buffer : unpacked_buffers) {
       buffer.Free();
     }

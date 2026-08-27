@@ -137,13 +137,7 @@ void CommandBuffer::set_push_constants(
   }
 }
 
-void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
-  VK_CHECK_COND(
-      state_ == CommandBuffer::State::DESCRIPTORS_BOUND ||
-          state_ == CommandBuffer::State::RECORDING,
-      "Vulkan CommandBuffer: called insert_barrier() on a command buffer whose state "
-      "is not DESCRIPTORS_BOUND or RECORDING.");
-
+void CommandBuffer::record_barrier(PipelineBarrier& pipeline_barrier) {
   if (pipeline_barrier) {
     if (!pipeline_barrier.buffer_barrier_handles.empty()) {
       pipeline_barrier.buffer_barrier_handles.clear();
@@ -174,8 +168,27 @@ void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
             ? pipeline_barrier.image_barrier_handles.data()
             : nullptr); // pImageMemoryBarriers
   }
+}
+
+void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
+  VK_CHECK_COND(
+      state_ == CommandBuffer::State::DESCRIPTORS_BOUND ||
+          state_ == CommandBuffer::State::RECORDING,
+      "Vulkan CommandBuffer: called insert_barrier() on a command buffer whose state "
+      "is not DESCRIPTORS_BOUND or RECORDING.");
+
+  record_barrier(pipeline_barrier);
 
   state_ = CommandBuffer::State::BARRIERS_INSERTED;
+}
+
+void CommandBuffer::insert_barrier_only(PipelineBarrier& pipeline_barrier) {
+  VK_CHECK_COND(
+      state_ == CommandBuffer::State::RECORDING,
+      "Vulkan CommandBuffer: called insert_barrier_only() on a command buffer "
+      "whose state is not RECORDING.");
+
+  record_barrier(pipeline_barrier);
 }
 
 void CommandBuffer::dispatch(const utils::uvec3& global_workgroup_size) {

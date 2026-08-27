@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+import dataclasses
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
@@ -30,6 +31,46 @@ Export recipe definitions for ExecuTorch.
 This module provides the data structures needed to configure the export process
 for ExecuTorch models, including export configurations and quantization recipes.
 """
+
+
+# Operator lists say which ops to keep, not in what order.
+_UNORDERED_EDGE_CONFIG_FIELDS = ("preserve_ops", "_core_aten_ops_exception_list")
+
+
+def _edge_config_key(config: EdgeCompileConfig) -> tuple:
+    return tuple(
+        (
+            frozenset(getattr(config, f.name) or [])
+            if f.name in _UNORDERED_EDGE_CONFIG_FIELDS
+            else getattr(config, f.name)
+        )
+        for f in dataclasses.fields(config)
+    )
+
+
+def _edge_compile_configs_agree(
+    left: EdgeCompileConfig, right: EdgeCompileConfig
+) -> bool:
+    return left is right or _edge_config_key(left) == _edge_config_key(right)
+
+
+def _edge_compile_config_conflict(configs: List[tuple[str, EdgeCompileConfig]]) -> str:
+    """Report only the fields the configs actually disagree on."""
+
+    def render(config: EdgeCompileConfig, name: str) -> str:
+        value = getattr(config, name)
+        if name in _UNORDERED_EDGE_CONFIG_FIELDS:
+            return str(sorted(str(op) for op in value or []))
+        return str(value)
+
+    keys = [_edge_config_key(config) for _, config in configs]
+    return "; ".join(
+        f"{field.name} ("
+        + ", ".join(f"{name}={render(config, field.name)}" for name, config in configs)
+        + ")"
+        for i, field in enumerate(dataclasses.fields(configs[0][1]))
+        if any(key[i] != keys[0][i] for key in keys[1:])
+    )
 
 
 class RecipeTypeMeta(EnumMeta, ABCMeta):
@@ -154,6 +195,9 @@ class ExportRecipe:
         quantization_recipe: Optional quantization recipe for model quantization
         aten_transform_passes: Optional list of functions to apply transformation passes to the program before edge lowering.
                                These callables are invoked to modify and return the transformed program.
+        source_transform_in_place: Skip the defensive deepcopy in the SOURCE_TRANSFORM
+                               stage and mutate the caller's model. Necessary for models
+                               large enough that a second copy will not fit in memory.
         lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
@@ -166,6 +210,7 @@ class ExportRecipe:
     aten_transform_passes: Optional[
         List[Callable[[str, ExportedProgram], ExportedProgram]]
     ] = None
+    source_transform_in_place: bool = False
     lowering_recipe: Optional[LoweringRecipe] = None
     # pyre-ignore[11]: Type not defined
     executorch_backend_config: Optional[ExecutorchBackendConfig] = None
@@ -245,6 +290,17 @@ class ExportRecipe:
         Returns:
             Combined ExportRecipe for multi-backend deployment
         """
+        overriding = [
+            r.name or f"recipes[{i}]"
+            for i, r in enumerate(backend_recipes)
+            if r.pipeline_stages
+        ]
+        if overriding:
+            raise ValueError(
+                "Cannot combine recipes that override pipeline_stages, there is no "
+                f"correct way to merge the orderings: {overriding}"
+            )
+
         # Extract components from individual recipes
         all_partitioners = []
         all_quantizers = []
@@ -296,18 +352,30 @@ class ExportRecipe:
                 ),
             )
 
-        # Create combined lowering recipe
-        combined_lowering_recipe = None
-        if all_partitioners or all_transform_passes:
-            edge_compile_config = None
-            for recipe in backend_recipes:
-                if (
-                    recipe.lowering_recipe
-                    and recipe.lowering_recipe.edge_compile_config
-                ):
-                    edge_compile_config = recipe.lowering_recipe.edge_compile_config
-                    break
+        # By value, not identity: every provider builds a fresh config object,
+        # so asking for the same thing twice is not a conflict.
+        distinct: List[tuple[str, EdgeCompileConfig]] = []
+        for i, recipe in enumerate(backend_recipes):
+            config = (
+                recipe.lowering_recipe.edge_compile_config
+                if recipe.lowering_recipe
+                else None
+            )
+            if config is None or any(
+                _edge_compile_configs_agree(config, seen) for _, seen in distinct
+            ):
+                continue
+            distinct.append((recipe.name or f"recipes[{i}]", config))
 
+        if len(distinct) > 1:
+            raise ValueError(
+                "Cannot combine recipes whose edge_compile_configs disagree on "
+                + _edge_compile_config_conflict(distinct)
+            )
+        edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
+
+        combined_lowering_recipe = None
+        if all_partitioners or all_transform_passes or edge_compile_config:
             combined_lowering_recipe = LoweringRecipe(
                 partitioners=all_partitioners if all_partitioners else None,
                 edge_transform_passes=(

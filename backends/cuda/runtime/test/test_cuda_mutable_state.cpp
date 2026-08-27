@@ -14,7 +14,7 @@
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/runtime/core/error.h>
 
-#include <cuda_runtime.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -190,7 +190,7 @@ std::unique_ptr<slim::SlimTensor> make_device_tensor(
       cudaMemcpyHostToDevice);
   if (err != cudaSuccess) {
     ADD_FAILURE() << "cudaMemcpy failed: " << cudaGetErrorString(err);
-    cudaFree(*device_ptr);
+    (void)cudaFree(*device_ptr);
     *device_ptr = nullptr;
     return nullptr;
   }
@@ -352,7 +352,7 @@ TEST(CudaMutableStateTest, RebindRejectsCudaGraphHandle) {
       Error::NotSupported);
 
   c.destroy_session(token.get());
-  cudaFree(source_ptr);
+  EXPECT_EQ(cudaFree(source_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
@@ -371,11 +371,17 @@ TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
   container.fqns = {"model.state"};
   container.extracted["model.state"] =
       reinterpret_cast<aoti::AtenTensorHandle>(source_tensor.get());
+  FakeContainer stateless_container;
   cu::CudaDelegateHandle handle = fake_container_handle(&container);
+  cu::CudaDelegateHandle stateless_handle =
+      fake_container_handle(&stateless_container);
 
   cu::MutableStateContextOwner c;
   c.register_fqns({"model.state"});
-  c.with_load_scope([&] { cu::mutable_state_note_handle(&handle); });
+  c.with_load_scope([&] {
+    cu::mutable_state_note_handle(&handle);
+    cu::mutable_state_note_handle(&stateless_handle);
+  });
 
   ASSERT_TRUE(c.available());
   EXPECT_EQ(c.bytes_per_session(), 4 * sizeof(float));
@@ -387,6 +393,7 @@ TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
 
   auto token = c.create_session();
   ASSERT_TRUE(token.ok());
+  EXPECT_EQ(cu::mutable_state_rebind_for_execute(&stateless_handle), Error::Ok);
   EXPECT_EQ(cu::mutable_state_rebind_for_execute(&handle), Error::InvalidState);
 
   ASSERT_EQ(
@@ -421,7 +428,7 @@ TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
       Error::Ok);
 
   c.destroy_session(token.get());
-  cudaFree(source_ptr);
+  EXPECT_EQ(cudaFree(source_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, SharedFqnAcrossHandlesUsesSameSessionBuffer) {
@@ -488,8 +495,8 @@ TEST(CudaMutableStateTest, SharedFqnAcrossHandlesUsesSameSessionBuffer) {
   EXPECT_NE(decode_container.last_bound_data, decode_ptr);
 
   c.destroy_session(token.get());
-  cudaFree(prefill_ptr);
-  cudaFree(decode_ptr);
+  EXPECT_EQ(cudaFree(prefill_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(decode_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, SessionsStayIsolatedForSameHandleAndFqn) {
@@ -592,7 +599,7 @@ TEST(CudaMutableStateTest, SessionsStayIsolatedForSameHandleAndFqn) {
 
   c.destroy_session(session_a.get());
   c.destroy_session(session_b.get());
-  cudaFree(source_ptr);
+  EXPECT_EQ(cudaFree(source_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, EmptyInternalNameIsSkipped) {
@@ -656,8 +663,8 @@ TEST(CudaMutableStateTest, EmptyInternalNameIsSkipped) {
   EXPECT_NE(valid_container.last_bound_data, skipped_ptr);
 
   c.destroy_session(token.get());
-  cudaFree(skipped_ptr);
-  cudaFree(valid_ptr);
+  EXPECT_EQ(cudaFree(skipped_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(valid_ptr), cudaSuccess);
 }
 
 TEST(
@@ -703,8 +710,8 @@ TEST(
   EXPECT_EQ(c.create_session().error(), Error::InvalidProgram);
   EXPECT_EQ(large_container.update_calls, 0u);
 
-  cudaFree(small_ptr);
-  cudaFree(large_ptr);
+  EXPECT_EQ(cudaFree(small_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(large_ptr), cudaSuccess);
 }
 
 TEST(
@@ -778,8 +785,8 @@ TEST(
       current_device);
 
   c.destroy_session(token.get());
-  cudaFree(unspecified_ptr);
-  cudaFree(explicit_ptr);
+  EXPECT_EQ(cudaFree(unspecified_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(explicit_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, BuildRejectsNonCudaDescriptorForSharedFqn) {
@@ -823,5 +830,5 @@ TEST(CudaMutableStateTest, BuildRejectsNonCudaDescriptorForSharedFqn) {
   EXPECT_EQ(c.create_session().error(), Error::InvalidArgument);
   EXPECT_EQ(cpu_container.update_calls, 0u);
 
-  cudaFree(cuda_ptr);
+  EXPECT_EQ(cudaFree(cuda_ptr), cudaSuccess);
 }

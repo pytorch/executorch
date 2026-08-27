@@ -193,6 +193,12 @@ def test_argmin(request, kwargs):
     ArgMin.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_activation_dtype([Tolerance(), Tolerance(), pytest.raises(AssertionError)])
+@with_htp_context
+def test_as_strided(request, kwargs):
+    AsStrided.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype(
     [
         Tolerance(),
@@ -731,6 +737,21 @@ def test_group_norm(request, kwargs):
     GroupNorm.test(request, kwargs)  # noqa: F405
 
 
+# HadamardTransform is activation-16 only in QNN, so test 16a8w only.
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": 16, "param": 8, "pcq": False, "expected": Tolerance()},
+            id="16a8w",
+        ),
+    ],
+)
+@with_htp_context
+def test_hadamard(request, kwargs):
+    Hadamard.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_hardsigmoid(request, kwargs):
@@ -943,6 +964,37 @@ def test_linear_non_constant_weight(request, kwargs):
     LinearNonConstantWeight.test(request, kwargs)  # noqa: F405
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": 8, "param": 8, "pcq": True, "expected": CosineSimilarity(0.95)},
+            id="8a8w_pcq",
+        ),
+        pytest.param(
+            {"act": 16, "param": 4, "pcq": True, "expected": CosineSimilarity(0.95)},
+            id="16a4w_pcq",
+        ),
+        pytest.param(
+            {"act": 16, "param": 8, "pcq": True, "expected": Tolerance()},
+            id="16a8w_pcq",
+        ),
+        pytest.param(
+            {
+                "act": "fp16",
+                "param": 8,
+                "pcq": True,
+                "expected": CosineSimilarity(0.95),
+            },
+            id="fp16a8w_pcq",
+        ),
+    ],
+)
+@with_htp_context
+def test_linear_shared_weights(request, kwargs):
+    LinearSharedWeight.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_log(request, kwargs):
@@ -1137,6 +1189,12 @@ def test_reflection_pad_2d(request, kwargs):
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
+def test_reflection_pad_3d(request, kwargs):
+    ReflectionPad.test_5d(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
 def test_relu(request, kwargs):
     Relu.test(request, kwargs)  # noqa: F405
 
@@ -1219,6 +1277,46 @@ def test_sdpa(request, kwargs):
     ScaledDotProductAttention.test(request, kwargs)  # noqa: F405
 
 
+# QNN HTP ScatterElements with reduction != NONE is only supported in quantized
+# mode; the fp16 backend validator rejects it, so the fp case falls back to CPU.
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        Tolerance(),
+        pytest.raises(Exception, check=check_exception(EXCEPTION_EXIR_PROGRAM)),
+    ]
+)
+@with_htp_context
+def test_scatter_add(request, kwargs):
+    ScatterAdd.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        Tolerance(),
+        pytest.raises(Exception, check=check_exception(EXCEPTION_EXIR_PROGRAM)),
+    ]
+)
+@with_htp_context
+def test_scatter_reduce_sum(request, kwargs):
+    ScatterReduce.test_sum(request, kwargs)  # noqa: F405
+
+
+# "prod" multiplies up to 3 values per output element, so the relative error
+# compounds multiplicatively and needs a looser bound than "sum".
+@enumerate_activation_dtype(
+    [
+        CosineSimilarity(0.95),
+        CosineSimilarity(0.95),
+        pytest.raises(Exception, check=check_exception(EXCEPTION_EXIR_PROGRAM)),
+    ]
+)
+@with_htp_context
+def test_scatter_reduce_prod(request, kwargs):
+    ScatterReduce.test_prod(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_scatter_src(request, kwargs):
@@ -1265,6 +1363,18 @@ def test_slice_copy(request, kwargs):
 @with_htp_context
 def test_slice_scatter(request, kwargs):
     SliceScatter.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        Tolerance(),
+        pytest.raises(AssertionError),
+    ]
+)
+@with_htp_context
+def test_scatter_value(request, kwargs):
+    ScatterValue.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
