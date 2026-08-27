@@ -358,6 +358,12 @@ endif()
 
 executorch_target_link_options_shared_lib(mlxdelegate)
 target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
+# The Apple frameworks build compiles this delegate with Xcode's default
+# -Wshorten-64-to-32 and -Werror. It includes the core tensor headers, which
+# carry pre-existing narrowing conversions that trip that pair, so suppress it
+# here as the XNNPACK and abseil third-party builds already do for the same
+# warning. Only meaningful under the Apple toolchain; a no-op elsewhere.
+target_compile_options(mlxdelegate PRIVATE -Wno-shorten-64-to-32)
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(mlxdelegate PRIVATE ${_mlx_sanitizer_link_options})
 endif()
