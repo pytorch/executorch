@@ -35,9 +35,23 @@ except ImportError:
 
 
 import logging
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, TYPE_CHECKING, Union
 
-from transformers.feature_extraction_utils import BatchFeature
+if TYPE_CHECKING:
+    from transformers.feature_extraction_utils import BatchFeature
+
+
+def _batch_feature_type():
+    """The HuggingFace BatchFeature class, imported on use.
+
+    transformers is not a dependency of this package, and only the generate_hf helpers
+    below need it, so importing it at module scope made the whole runner unimportable on
+    an install that has no transformers, including the compiled extension imported above
+    that has nothing to do with HuggingFace.
+    """
+    from transformers.feature_extraction_utils import BatchFeature
+
+    return BatchFeature
 
 
 def _find_image_token_runs(
@@ -68,7 +82,7 @@ def _find_image_token_runs(
 
 
 def _hf_to_multimodal_inputs(  # noqa: C901
-    inputs: BatchFeature, image_token_id: Optional[int] = None
+    inputs: "BatchFeature", image_token_id: Optional[int] = None
 ) -> List[MultimodalInput]:
     """Convert a HuggingFace AutoProcessor dict to ExecuTorch MultimodalInputs.
     Currently only support 1 image inside the input.
@@ -171,14 +185,14 @@ def _hf_to_multimodal_inputs(  # noqa: C901
 
 def generate_hf(
     runner: MultimodalRunner,
-    inputs: Union[BatchFeature, List[MultimodalInput]],
+    inputs: Union["BatchFeature", List[MultimodalInput]],
     config: GenerationConfig,
     image_token_id: Optional[int] = None,
     token_callback: Optional[Callable[[str], None]] = None,
     stats_callback: Optional[Callable[[Stats], None]] = None,
 ) -> None:
     """Generate using an BatchFeature by converting to multimodal inputs internally, or using a list of MultimodalInput."""
-    if isinstance(inputs, BatchFeature):
+    if isinstance(inputs, _batch_feature_type()):
         logging.info(
             "Input is a BatchFeature, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
         )
@@ -197,12 +211,12 @@ def generate_hf(
 
 def generate_text_hf(
     runner: MultimodalRunner,
-    inputs: Union[BatchFeature, List[MultimodalInput]],
+    inputs: Union["BatchFeature", List[MultimodalInput]],
     config: GenerationConfig,
     image_token_id: Optional[int] = None,
 ) -> str:
     """Generate using an BatchFeature by converting to multimodal inputs internally, or using a list of MultimodalInput."""
-    if isinstance(inputs, BatchFeature):
+    if isinstance(inputs, _batch_feature_type()):
         logging.info(
             "Input is a BatchFeature, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
         )
