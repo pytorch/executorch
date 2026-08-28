@@ -10,6 +10,7 @@
 #include <limits>
 #include <ranges>
 #include <stdexcept>
+#include <string>
 
 namespace ptn {
 
@@ -49,26 +50,6 @@ int64_t TensorMeta::numel() const {
     n *= extent;
   }
   return n;
-}
-
-std::string TensorMeta::to_string() const {
-  std::string s = scalar_type_name(dtype);
-  s += "[";
-  for (size_t i = 0; i < sizes.size(); ++i) {
-    if (i != 0) {
-      s += ",";
-    }
-    const Dim& d = sizes[i];
-    if (d.is_static()) {
-      s += std::to_string(d.min);
-    } else if (d.max < 0) {
-      s += std::to_string(d.min) + "..?";
-    } else {
-      s += std::to_string(d.min) + ".." + std::to_string(d.max);
-    }
-  }
-  s += "]";
-  return s;
 }
 
 } // namespace ptn
