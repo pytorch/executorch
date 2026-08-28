@@ -27,6 +27,18 @@ enum class ValueKind : int8_t {
   List = 3,
 };
 
+// How a Value's storage is owned / sourced. The placeholder roles are pinned to
+// the schema InputKind ids; Intermediate extends them for a value a node
+// produces. Parameter / ConstantTensor are frozen external data; a Buffer is
+// persistent state when its binding ships data, else zero-initialized at load.
+enum class ValueRole : int8_t {
+  UserInput = 0,
+  Parameter = 1,
+  Buffer = 2,
+  ConstantTensor = 3,
+  Intermediate = 4,
+};
+
 // A single SSA value (dataflow edge) in a Graph: its contents plus def-use
 // wiring, a storage alias and an open annotation map. The id fields are plain
 // handles; whether one is in range is a property of the owning arena, so
@@ -53,6 +65,9 @@ class Value {
   std::vector<NodeId> consumer_ids;
   // Shares storage with this value (a view); fresh if invalid.
   ValueId alias_id = kInvalid;
+  // Stamped from the Method's data bindings, so a value can be classified
+  // without searching them; the storage itself is located through the binding.
+  ValueRole role = ValueRole::Intermediate;
   // Open annotations for graph passes and engines, like node.meta in FX.
   std::unordered_map<std::string, std::any> attrs;
 
