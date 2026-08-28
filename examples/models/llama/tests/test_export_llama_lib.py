@@ -70,6 +70,24 @@ class ExportLlamaLibTest(unittest.TestCase):
         for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
 
+    def test_bf16_xnnpack_delegates_linears_when_enabled(self):
+        parser = build_args_parser()
+        args = parser.parse_args([])
+        args.use_kv_cache = True
+        args.xnnpack = True
+        args.xnnpack_extended_ops = True
+        args.xnnpack_enable_bf16 = True
+        args.dtype_override = "bf16"
+
+        llm_config = LlmConfig.from_args(args)
+        builder = _export_llama(llm_config)
+        graph_module = builder.edge_manager.exported_program().graph_module
+        delegation_info = get_delegation_info(graph_module)
+
+        linear = delegation_info.delegation_by_operator["aten_linear_default"]
+        self.assertGreater(linear.delegated, 0)
+        self.assertEqual(linear.non_delegated, 0)
+
     @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
     def test_get_quantizer_and_quant_params_returns_tosa_quantizer(self):
         llm_config = LlmConfig()
