@@ -15,6 +15,7 @@
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 #include <array>
+#include <vector>
 
 namespace executorch {
 namespace cpublas {
@@ -138,7 +139,123 @@ float bf16_dot_with_fp32_arith(
     const torch::executor::BFloat16* vec1,
     const torch::executor::BFloat16* vec2,
     int64_t len);
+// Four dots of vec1 against vec2, vec2 + stride2, ... into out[0..3].
+void bf16_dot4_with_fp32_arith(
+    const torch::executor::BFloat16* vec1,
+    const torch::executor::BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out);
+void bf16_gemv_notrans_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const torch::executor::BFloat16* a,
+    int64_t lda,
+    const torch::executor::BFloat16* b,
+    float beta,
+    float* c);
+void bf16_gemv_transa_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const torch::executor::BFloat16* a,
+    int64_t lda,
+    const torch::executor::BFloat16* b,
+    float beta,
+    float* c);
 } // namespace internal
+
+// Used by custom SDPA's attn@V. Serial on purpose: SDPA already parallelizes
+// its outer head loop, and executorch's threadpool deadlocks on a nested
+// parallel_for.
+// clang-format off
+template <>
+inline typename std::enable_if<
+    !std::is_same<torch::executor::BFloat16, float>::value,
+    void>::type
+gemm_notrans_<torch::executor::BFloat16, float, float>(
+    int64_t m, int64_t n, int64_t k,
+    float alpha,
+    const torch::executor::BFloat16 *a, int64_t lda,
+    const torch::executor::BFloat16 *b, int64_t ldb,
+    float beta,
+    float *c, int64_t ldc) {
+  if (n == 1) {
+    internal::bf16_gemv_notrans_with_fp32_arith(
+        m, k, alpha, a, lda, b, beta, c);
+    return;
+  }
+
+  // bf16_dot_with_fp32_arith needs a contiguous k-vector, but a is strided by
+  // lda in k, so the dot path must gather each row first. On aarch64 the
+  // gather-free form wins for small n; x86 uses the dot path from n == 2.
+  // The crossover is empirical and only visible with runtime-valued
+  // dimensions: constant-folded ones let the gather-free loop unroll.
+#if defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE)
+  constexpr int64_t kMinColsForGather = 32;
+#else
+  constexpr int64_t kMinColsForGather = 2;
+#endif
+  const bool use_dot = n >= kMinColsForGather;
+
+  if (!use_dot) {
+    for (int64_t j = 0; j < n; ++j) {
+      float *c_col = c + j * ldc;
+      if (beta == 0) {
+        for (int64_t i = 0; i < m; ++i) {
+          c_col[i] = 0.0f;
+        }
+      } else if (beta != 1.0f) {
+        for (int64_t i = 0; i < m; ++i) {
+          c_col[i] *= beta;
+        }
+      }
+    }
+    // l outermost so a's column is loaded once and reused across c's columns.
+    for (int64_t l = 0; l < k; ++l) {
+      const torch::executor::BFloat16 *a_col = a + l * lda;
+      for (int64_t j = 0; j < n; ++j) {
+        const float b_val = static_cast<float>(b[l + j * ldb]) * alpha;
+        float *c_col = c + j * ldc;
+        // Unrolled for the same reason the fp32 specialization above is: the
+        // bf16->fp32 conversion does not vectorize from the rolled form.
+        int64_t i = 0;
+        for (; i + 4 <= m; i += 4) {
+          c_col[i + 0] += static_cast<float>(a_col[i + 0]) * b_val;
+          c_col[i + 1] += static_cast<float>(a_col[i + 1]) * b_val;
+          c_col[i + 2] += static_cast<float>(a_col[i + 2]) * b_val;
+          c_col[i + 3] += static_cast<float>(a_col[i + 3]) * b_val;
+        }
+        for (; i < m; ++i) {
+          c_col[i] += static_cast<float>(a_col[i]) * b_val;
+        }
+      }
+    }
+    return;
+  }
+
+  // This path runs once per SDPA tile. Reuse storage across calls so gathering
+  // a row does not allocate in the tile loop.
+  /* library-local */ thread_local std::vector<torch::executor::BFloat16> a_row;
+  a_row.resize(k);
+  for (int64_t i = 0; i < m; ++i) {
+    for (int64_t l = 0; l < k; ++l) {
+      a_row[l] = a[l * lda + i];
+    }
+    const torch::executor::BFloat16 *b_ = b;
+    for (int64_t j = 0; j < n; ++j) {
+      const float dot = internal::bf16_dot_with_fp32_arith(a_row.data(), b_, k);
+      b_ += ldb;
+      if (beta == 0) {
+        c[j * ldc + i] = alpha * dot;
+      } else {
+        c[j * ldc + i] = beta * c[j * ldc + i] + alpha * dot;
+      }
+    }
+  }
+}
+// clang-format on
 
 // clang-format off
 template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
@@ -208,6 +325,46 @@ inline void gemm_transa_<torch::executor::BFloat16, torch::executor::BFloat16, t
       a_ += lda;
     }
   });
+}
+
+// Used by custom SDPA's q@k.T; both k-dimensions are already contiguous.
+// Serial for the same reason as the gemm_notrans_ specialization above.
+template <>
+inline void gemm_transa_<torch::executor::BFloat16, float, float>(
+    int64_t m, int64_t n, int64_t k,
+    float alpha,
+    const torch::executor::BFloat16 *a, int64_t lda,
+    const torch::executor::BFloat16 *b, int64_t ldb,
+    float beta,
+    float *c, int64_t ldc) {
+  if (n == 1) {
+    internal::bf16_gemv_transa_with_fp32_arith(
+        m, k, alpha, a, lda, b, beta, c);
+    return;
+  }
+
+  // Four columns at a time: k is headSize here, short enough that each dot's
+  // cross-lane reduction is a large share of its cost, and this tile produces
+  // m*n of them.
+  const auto *a_ = a;
+  for (int64_t i = 0; i < m; ++i) {
+    int64_t j = 0;
+    for (; j + 4 <= n; j += 4) {
+      std::array<float, 4> dots{};
+      internal::bf16_dot4_with_fp32_arith(
+          a_, b + j * ldb, ldb, k, dots.data());
+      for (int64_t d = 0; d < 4; ++d) {
+        float *dst = c + (j + d) * ldc + i;
+        *dst = (beta == 0) ? alpha * dots[d] : beta * *dst + alpha * dots[d];
+      }
+    }
+    for (; j < n; ++j) {
+      const float dot = internal::bf16_dot_with_fp32_arith(a_, b + j * ldb, k);
+      float *dst = c + j * ldc + i;
+      *dst = (beta == 0) ? alpha * dot : beta * *dst + alpha * dot;
+    }
+    a_ += lda;
+  }
 }
 // clang-format on
 
