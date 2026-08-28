@@ -19,6 +19,8 @@
 #include <optional>
 #include <vector>
 
+#include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
+
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -33,13 +35,13 @@ using TaskId = std::int64_t;
 
 // Sampling policy for a generation. Installed on the session before its tasks
 // are submitted, so it does not ride on every Input.
-struct SamplingParams {
+struct ET_EXPERIMENTAL SamplingParams {
   float temperature = 0.0f;
   float top_p = 1.0f;
   std::int32_t top_k = 0;
 };
 
-struct Input {
+struct ET_EXPERIMENTAL Input {
   SessionId sid;
   bool produce_output;
 
@@ -53,7 +55,7 @@ struct Input {
   Position position;
 };
 
-struct Output {
+struct ET_EXPERIMENTAL Output {
   SessionId sid;
 
   // What this input produced: usually one token, can be more than one for
@@ -61,14 +63,14 @@ struct Output {
   std::vector<Token> tokens;
 };
 
-struct Task {
+struct ET_EXPERIMENTAL Task {
   TaskId tid;
   bool cancelled;
   Input input;
   bool is_decode;
 };
 
-struct BatchInput {
+struct ET_EXPERIMENTAL BatchInput {
   std::vector<Input> inputs;
   size_t size() const {
     size_t sz = 0;
@@ -84,7 +86,7 @@ struct BatchInput {
 //
 // Moves each Input out of its Task, preserving task order, so outputs[i]
 // answers batch.inputs[i].
-inline BatchInput to_batch_input(std::vector<Task>& tasks) {
+ET_EXPERIMENTAL inline BatchInput to_batch_input(std::vector<Task>& tasks) {
   BatchInput batch;
   batch.inputs.reserve(tasks.size());
   for (Task& t : tasks) {
@@ -93,7 +95,7 @@ inline BatchInput to_batch_input(std::vector<Task>& tasks) {
   return batch;
 }
 
-struct BatchOutput {
+struct ET_EXPERIMENTAL BatchOutput {
   std::vector<std::optional<Output>> outputs;
 };
 
