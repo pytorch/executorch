@@ -202,19 +202,19 @@ Note that, regardless of whether the original `TensorPtr` owns the data or not, 
 
 #### Cloning To or From a Device
 
-If a tensor lives on CPU and you want a copy on an accelerator, or the other way around, use `clone_tensor_ptr_to` with the device you want. It allocates memory on the target device, copies the data for you, and the returned `TensorPtr` owns that memory.
+If a tensor lives on CPU and you want a copy on an accelerator, or the other way around, pass the device you want to `clone_tensor_ptr`. It allocates memory on the target device, copies the data for you, and the returned `TensorPtr` owns that memory.
 
 ```cpp
 auto cpu_tensor = make_tensor_ptr({2, 3}, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f});
 
 // CPU to device:
-auto device_tensor = clone_tensor_ptr_to(cpu_tensor, DeviceType::CUDA);
+auto device_tensor = clone_tensor_ptr(cpu_tensor, DeviceType::CUDA);
 
 // Device back to CPU:
-auto host_tensor = clone_tensor_ptr_to(device_tensor, DeviceType::CPU);
+auto host_tensor = clone_tensor_ptr(device_tensor, DeviceType::CPU);
 ```
 
-The direction is chosen from the source and target device. This needs a `DeviceAllocator` registered for the device, so it is available only in the portable (non-`USE_ATEN_LIB`) build. For a plain CPU-to-CPU copy, use `clone_tensor_ptr` instead.
+The direction is chosen from the source and target device. One end has to be CPU: copying from an accelerator to an accelerator is not supported, not even onto the device the tensor already lives on, and asking for it aborts. Leaving the device out clones onto the source tensor's own device, which works for a CPU source; to bring an accelerator tensor back, ask for CPU explicitly as shown above. Copying to or from an accelerator needs a `DeviceAllocator` registered for that device. That transfer path is compiled out of `USE_ATEN_LIB` builds, so there both ends have to be CPU; move the data with `tensor.to(device)` instead.
 
 ### Resizing Tensors
 
@@ -316,7 +316,7 @@ auto tensor = from_blob(
 
 The tensor only records where the memory lives. It does not allocate, copy, or migrate
 anything, so the pointer must really be valid on the device you name. To move data that
-starts on the host, use `clone_tensor_ptr_to(tensor, DeviceType::CUDA)` instead, which
+starts on the host, use `clone_tensor_ptr(tensor, DeviceType::CUDA)` instead, which
 allocates on the device and copies across.
 
 ### Creating Empty Tensors
@@ -418,7 +418,8 @@ Here's a table matching `TensorPtr` creation functions with their corresponding 
 | `at::tensor(data, type)`                    | `make_tensor_ptr(data, type)`               |
 | `at::tensor(data, type).reshape(sizes)`     | `make_tensor_ptr(sizes, data, type)`        |
 | `tensor.clone()`                            | `clone_tensor_ptr(tensor)`                  |
-| `tensor.to(device)`                         | `clone_tensor_ptr_to(tensor, device)`       |
+| `tensor.to(type)`                           | `convert_tensor_ptr(tensor, type)`          |
+| `tensor.to(device)`                         | `clone_tensor_ptr(tensor, device)`          |
 | `tensor.resize_(new_sizes)`                 | `resize_tensor_ptr(tensor, new_sizes)`      |
 | `at::scalar_tensor(value)`                  | `scalar_tensor(value)`                      |
 | `at::from_blob(data, sizes, type)`          | `from_blob(data, sizes, type)`              |
@@ -440,6 +441,8 @@ Here's a table matching `TensorPtr` creation functions with their corresponding 
 | `at::randn_like(tensor)`                    | `randn_like(tensor)`                        |
 | `at::randint(low, high, sizes)`             | `randint(low, high, sizes)`                 |
 | `at::randint_like(tensor, low, high)`       | `randint_like(tensor, low, high)`           |
+
+The `tensor.clone()`, `tensor.to(type)` and `tensor.to(device)` rows are narrower than their ATen counterparts. `convert_tensor_ptr` casts between Bool, the signed and unsigned integer types, Half, BFloat16, Float and Double, and only when `canCast` allows it; asking for the type the tensor already has is a plain clone that skips both limits. `clone_tensor_ptr(tensor, device)` moves data between CPU and an accelerator in the portable build only; in a `USE_ATEN_LIB` build both ends have to be CPU. `clone_tensor_ptr(tensor)` keeps the copy on the source tensor's own device, so it works for a CPU source only. All three abort instead of returning an error; in a `USE_ATEN_LIB` build, call the ATen method on the tensor directly when you need the full behavior.
 
 ## Best Practices
 

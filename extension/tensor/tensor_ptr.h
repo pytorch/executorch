@@ -36,7 +36,8 @@ using TensorPtr = std::shared_ptr<executorch::aten::Tensor>;
  * allocated or copied. The caller is responsible for ensuring `data` already
  * lives on the requested device; construct the `executorch::aten::Device` from
  * the runtime environment and pass it in. To copy CPU data to a device, use
- * `clone_tensor_ptr_to` instead.
+ * `clone_tensor_ptr` with a device target instead, or `tensor.to(device)` in a
+ * USE_ATEN_LIB build.
  *
  * @param sizes A vector specifying the size of each dimension.
  * @param data A pointer to the data buffer (CPU or device, see device).
@@ -110,7 +111,8 @@ inline TensorPtr make_tensor_ptr(
  * vectors of one type and a different scalar type.
  *
  * The result is always a CPU tensor. To move it to a device, use
- * `clone_tensor_ptr_to`.
+ * `clone_tensor_ptr` with a device target, or `tensor.to(device)` in a
+ * USE_ATEN_LIB build.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param sizes A vector specifying the size of each dimension.
@@ -206,7 +208,8 @@ inline TensorPtr make_tensor_ptr(
  * vector's data type.
  *
  * The result is always a CPU tensor. To move it to a device, use
- * `clone_tensor_ptr_to`.
+ * `clone_tensor_ptr` with a device target, or `tensor.to(device)` in a
+ * USE_ATEN_LIB build.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param data A vector containing the tensor's data.
@@ -238,7 +241,8 @@ inline TensorPtr make_tensor_ptr(
  * from the initializer list's data type.
  *
  * The result is always a CPU tensor. To move it to a device, use
- * `clone_tensor_ptr_to`.
+ * `clone_tensor_ptr` with a device target, or `tensor.to(device)` in a
+ * USE_ATEN_LIB build.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the initializer
  * list.
@@ -280,7 +284,8 @@ inline TensorPtr make_tensor_ptr(
  * initializer list's elements.
  *
  * The result is always a CPU tensor. To move it to a device, use
- * `clone_tensor_ptr_to`.
+ * `clone_tensor_ptr` with a device target, or `tensor.to(device)` in a
+ * USE_ATEN_LIB build.
  *
  * @tparam T The C++ type of the tensor elements, deduced from the initializer
  * list.
@@ -377,7 +382,8 @@ inline TensorPtr make_tensor_ptr(
  * is left empty so the core may infer it from the provided strides.
  *
  * This overload always aliases — it never copies. To copy a tensor's data to
- * a device, use `clone_tensor_ptr_to`.
+ * a device, use `clone_tensor_ptr` with a device target, or
+ * `tensor.to(device)` in a USE_ATEN_LIB build.
  *
  * @param tensor The source tensor to alias.
  * @param sizes Optional sizes override.
@@ -442,7 +448,8 @@ inline TensorPtr make_tensor_ptr(
  * Keeps the original TensorPtr alive until the returned TensorPtr is destroyed.
  *
  * This overload always aliases — it never copies. To copy a tensor's data to
- * a device, use `clone_tensor_ptr_to`.
+ * a device, use `clone_tensor_ptr` with a device target, or
+ * `tensor.to(device)` in a USE_ATEN_LIB build.
  *
  * @param tensor_ptr The source tensor pointer to alias.
  * @param sizes Optional sizes override.
@@ -464,60 +471,137 @@ inline TensorPtr make_tensor_ptr(
 }
 
 /**
- * Creates a TensorPtr that manages a new Tensor with the same properties
- * as the given Tensor, but with a copy of the data owned by the returned
- * TensorPtr, or nullptr if the original data is null.
+ * Creates a TensorPtr that manages a new Tensor with the same properties as the
+ * given Tensor, but with a copy of the data owned by the returned TensorPtr.
+ *
+ * `target` says where the copy lives. The overload without it copies to the
+ * source tensor's own device. One end of every copy has to be CPU: an
+ * accelerator source with an accelerator target is not supported, not even
+ * when both name the same device. So a clone that names no target copies a CPU
+ * source and fails for an accelerator source; route that case through CPU. An
+ * accelerator target keeps its device index, while a CPU result is plain CPU
+ * whatever index was asked for or carried by the source.
+ *
+ * Between CPU and an accelerator the copy goes through the DeviceAllocator
+ * registered for that accelerator, and a device-backed result frees its memory
+ * through the same allocator when destroyed. That path is compiled out of
+ * USE_ATEN_LIB builds, so both ends have to be CPU there; move data with
+ * `tensor.to(device)` instead.
+ *
+ * A CPU-to-CPU clone of a Tensor whose data is null returns a TensorPtr with
+ * null data. A copy that touches an accelerator needs real data and fails
+ * without it.
+ *
+ * The clone keeps the source dtype. To change dtype, use `convert_tensor_ptr`.
  *
  * @param tensor The Tensor to clone.
- * @param type The data type for the cloned tensor. The data will be cast
- * from the source tensor's type.
- * @return A new TensorPtr that manages a Tensor with the specified type
- * and copied/cast data.
+ * @param target The device the copy should live on.
+ * @return A new TensorPtr owning a copy of the data on `target`.
  */
 TensorPtr clone_tensor_ptr(
+    const executorch::aten::Tensor& tensor,
+    executorch::aten::Device target);
+
+/**
+ * Overload that copies a CPU tensor. One end of every copy has to be CPU, so an
+ * accelerator source with no target named aborts; name a CPU target to bring
+ * the data back.
+ *
+ * @param tensor The Tensor to clone.
+ * @return A new TensorPtr owning a copy of the data.
+ */
+inline TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor) {
+  return clone_tensor_ptr(tensor, tensor.device());
+}
+
+/**
+ * Convenience overload identical to clone_tensor_ptr(*tensor, target).
+ *
+ * @param tensor The TensorPtr to clone.
+ * @param target The device the copy should live on.
+ * @return A new TensorPtr owning a copy of the data on `target`.
+ */
+inline TensorPtr clone_tensor_ptr(
+    const TensorPtr& tensor,
+    executorch::aten::Device target) {
+  return clone_tensor_ptr(*tensor, target);
+}
+
+/**
+ * Convenience overload identical to clone_tensor_ptr(*tensor).
+ *
+ * @param tensor The TensorPtr to clone.
+ * @return A new TensorPtr owning a copy of the data.
+ */
+inline TensorPtr clone_tensor_ptr(const TensorPtr& tensor) {
+  return clone_tensor_ptr(*tensor);
+}
+
+/**
+ * Creates a TensorPtr that manages a new Tensor holding the given Tensor's data
+ * cast to `type`.
+ *
+ * Both the source and the result are CPU tensors: move the data to CPU first if
+ * it lives on an accelerator. The cast covers Bool, the signed and unsigned
+ * integer types, Half, BFloat16, Float and Double; any other type on either
+ * side, complex and quantized among them, aborts. The cast also has to be one
+ * `canCast` allows, so Float to Int and Int to Bool abort as well.
+ * Two requests skip the cast: asking for the type the tensor already has is a
+ * plain clone, and a Tensor whose data is null converts to a TensorPtr with
+ * null data of the requested type.
+ *
+ * @param tensor The Tensor to convert.
+ * @param type The data type for the new tensor. The data is cast from the
+ * source tensor's type.
+ * @return A new TensorPtr that manages a Tensor with the specified type and
+ * cast data.
+ */
+TensorPtr convert_tensor_ptr(
     const executorch::aten::Tensor& tensor,
     executorch::aten::ScalarType type);
 
 /**
- * Creates a TensorPtr that manages a new Tensor with the same properties
- * as the given Tensor, but with a copy of the data owned by the returned
- * TensorPtr, or nullptr if the original data is null.
+ * Convenience overload identical to convert_tensor_ptr(*tensor, type).
  *
- * @param tensor The Tensor to clone.
- * @return A new TensorPtr that manages a Tensor with the same properties as the
- * original but with copied data.
+ * @param tensor The TensorPtr to convert.
+ * @param type The data type for the new tensor. The data is cast from the
+ * source tensor's type.
+ * @return A new TensorPtr that manages a Tensor with the specified type and
+ * cast data.
  */
-inline TensorPtr clone_tensor_ptr(const executorch::aten::Tensor& tensor) {
-  return clone_tensor_ptr(tensor, tensor.scalar_type());
-}
-
-/**
- * Creates a new TensorPtr by cloning the given TensorPtr, copying the
- * underlying data.
- *
- * @param tensor The TensorPtr to clone.
- * @param type The data type for the cloned tensor. The data will be cast
- * from the source tensor's type.
- * @return A new TensorPtr that manages a Tensor with the specified type
- * and copied/cast data.
- */
-inline TensorPtr clone_tensor_ptr(
+inline TensorPtr convert_tensor_ptr(
     const TensorPtr& tensor,
     executorch::aten::ScalarType type) {
-  return clone_tensor_ptr(*tensor, type);
+  return convert_tensor_ptr(*tensor, type);
 }
 
 /**
- * Creates a new TensorPtr by cloning the given TensorPtr, copying the
- * underlying data.
- *
- * @param tensor The TensorPtr to clone.
- * @return A new TensorPtr that manages a Tensor with the same properties as the
- * original but with copied data.
+ * DEPRECATED: a clone keeps the dtype. Use `convert_tensor_ptr(tensor, type)`
+ * to cast instead. May be removed in 1.7.0 or later.
  */
-inline TensorPtr clone_tensor_ptr(const TensorPtr& tensor) {
-  return clone_tensor_ptr(*tensor, tensor->scalar_type());
+ET_DEPRECATED TensorPtr clone_tensor_ptr(
+    const executorch::aten::Tensor& tensor,
+    executorch::aten::ScalarType type);
+
+/**
+ * DEPRECATED: a clone keeps the dtype. Use `convert_tensor_ptr(tensor, type)`
+ * to cast instead. May be removed in 1.7.0 or later.
+ */
+ET_DEPRECATED inline TensorPtr clone_tensor_ptr(
+    const TensorPtr& tensor,
+    executorch::aten::ScalarType type) {
+  return convert_tensor_ptr(*tensor, type);
 }
+
+#ifndef USE_ATEN_LIB
+/**
+ * DEPRECATED: use `clone_tensor_ptr(tensor, target)` instead. This name now
+ * forwards there, so a CPU source with a CPU target, which used to abort, is a
+ * plain clone under either name. May be removed in 1.7.0 or later.
+ */
+ET_DEPRECATED TensorPtr
+clone_tensor_ptr_to(const TensorPtr& tensor, executorch::aten::Device target);
+#endif // USE_ATEN_LIB
 
 /**
  * Resizes the Tensor managed by the provided TensorPtr to the new sizes.
@@ -530,32 +614,6 @@ ET_NODISCARD
 runtime::Error resize_tensor_ptr(
     TensorPtr& tensor,
     const std::vector<executorch::aten::SizesType>& sizes);
-
-/**
- * Clones a TensorPtr's data onto the given target device, allocating and
- * copying as needed.
- *
- * The transfer direction is inferred from the source and target device:
- * host-to-device when `target` is an accelerator, and device-to-host when
- * `target` is CPU. Copies use the DeviceAllocator registered for the
- * accelerator side; a device-backed result owns its memory and frees it via
- * that allocator when destroyed.
- *
- * Source and target must differ in device domain: for a CPU-to-CPU copy use
- * clone_tensor_ptr, and device-to-device transfers are not supported.
- *
- * Only available in the ExecuTorch portable build: it relies on the ExecuTorch
- * DeviceAllocator, which has no equivalent in USE_ATEN_LIB builds.
- *
- * @param tensor The source tensor whose data will be copied.
- * @param target The destination device (CPU or an accelerator).
- * @return A TensorPtr backed by `target` memory containing the copied data.
- */
-#ifndef USE_ATEN_LIB
-TensorPtr clone_tensor_ptr_to(
-    const TensorPtr& tensor,
-    executorch::aten::Device target);
-#endif // USE_ATEN_LIB
 
 } // namespace extension
 } // namespace executorch

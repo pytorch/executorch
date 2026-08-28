@@ -35,7 +35,7 @@
 
 namespace executorch::extension::llm {
 
-using ::executorch::extension::clone_tensor_ptr_to;
+using ::executorch::extension::clone_tensor_ptr;
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
 using ::executorch::extension::TensorPtr;
@@ -462,7 +462,7 @@ TensorPtr build_decode_pos_table(
   for (int64_t i = 0; i < ctx_it->second; ++i) {
     pos_data[i] = i;
   }
-  return clone_tensor_ptr_to(
+  return clone_tensor_ptr(
       from_blob(
           pos_data.data(),
           {static_cast<SizesType>(pos_data.size())},
@@ -507,11 +507,11 @@ class MuseGlimmerSession : public LLMSession,
     decode_pos_ =
         from_blob(decode_pos_data_, {1}, executorch::aten::ScalarType::Long);
 #ifdef EXECUTORCH_BUILD_CUDA
-    decode_tokens_dev_ = clone_tensor_ptr_to(decode_tokens_, cuda_device_);
-    decode_pos_dev_ = clone_tensor_ptr_to(decode_pos_, cuda_device_);
+    decode_tokens_dev_ = clone_tensor_ptr(decode_tokens_, cuda_device_);
+    decode_pos_dev_ = clone_tensor_ptr(decode_pos_, cuda_device_);
     auto temp_host =
         from_blob(&temp_val_, {1}, executorch::aten::ScalarType::Float);
-    temp_tensor_dev_ = clone_tensor_ptr_to(temp_host, cuda_device_);
+    temp_tensor_dev_ = clone_tensor_ptr(temp_host, cuda_device_);
 #endif
 #ifdef EXECUTORCH_BUILD_MLX
     temp_tensor_mlx_ =
@@ -905,7 +905,7 @@ class MuseGlimmerSession : public LLMSession,
 
 #ifdef EXECUTORCH_BUILD_CUDA
   TensorPtr to_cuda(TensorPtr tensor, std::vector<TensorPtr>& keep_alive) {
-    keep_alive.push_back(clone_tensor_ptr_to(tensor, cuda_device_));
+    keep_alive.push_back(clone_tensor_ptr(tensor, cuda_device_));
     return keep_alive.back();
   }
 
