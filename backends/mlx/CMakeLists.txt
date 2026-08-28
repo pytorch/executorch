@@ -211,8 +211,9 @@ if(PLATFORM)
       "-DSWIFTPM_BUNDLE=\\\"executorch_backend_mlx_resources\\\" -DMLX_SWIFTPM_METALLIB_NAME=\\\"mlx-${_mlx_metallib_slice}\\\""
   )
   # Only override the sub-build's CXX flags when there is something to add. An
-  # empty -DCMAKE_CXX_FLAGS= on the command line beats the environment, so passing
-  # it unconditionally would silently drop a wheel build's CXXFLAGS for MLX only.
+  # empty -DCMAKE_CXX_FLAGS= on the command line beats the environment, so
+  # passing it unconditionally would silently drop a wheel build's CXXFLAGS for
+  # MLX only.
   set(_mlx_cxx_flags_arg "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}")
 endif()
 
@@ -222,6 +223,17 @@ if(DEPLOYMENT_TARGET)
   set(_mlx_osx_deployment_target ${DEPLOYMENT_TARGET})
 else()
   set(_mlx_osx_deployment_target ${CMAKE_OSX_DEPLOYMENT_TARGET})
+endif()
+
+# The sub-build is forced to a single-config generator (Unix Makefiles), which
+# reads CMAKE_BUILD_TYPE, not the --config passed to the parent. The Apple
+# presets do not set CMAKE_BUILD_TYPE, so without a default MLX would compile
+# unoptimized (no -O3 -DNDEBUG) even for a release framework. Default to Release
+# when the parent left it empty; build_apple_frameworks.sh and the wheel set it
+# explicitly and are unaffected.
+set(_mlx_build_type ${CMAKE_BUILD_TYPE})
+if(NOT _mlx_build_type)
+  set(_mlx_build_type Release)
 endif()
 
 ExternalProject_Add(
@@ -235,9 +247,7 @@ ExternalProject_Add(
   # single-config generator emits it, which is also how the wheel build already
   # produces it.
   CMAKE_GENERATOR "Unix Makefiles"
-  PATCH_COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh
-                ${MLX_SOURCE_DIR} ${_mlx_patches}
-  CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+  CMAKE_ARGS -DCMAKE_BUILD_TYPE=${_mlx_build_type}
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
              ${_mlx_cxx_flags_arg}
              # The preset's DEPLOYMENT_TARGET carries the correct per-slice
@@ -273,6 +283,20 @@ ExternalProject_Add(
   BUILD_ALWAYS ON
   # Required so Ninja knows these are produced by the external build.
   BUILD_BYPRODUCTS ${_mlx_static_lib} ${_mlx_metallib}
+)
+
+# ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so a
+# reused build directory whose MLX source was reset (patches reverted) would
+# recompile an unpatched MLX and silently drop the iOS Metal SDK selection and the
+# SwiftPM metallib name. Re-apply the patches on every configure; apply.sh is
+# idempotent (it reverse-checks each patch and skips the ones already applied).
+ExternalProject_Add_Step(
+  mlx_external reapply_patches
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
+          ${_mlx_patches}
+  DEPENDEES download
+  DEPENDERS configure
+  ALWAYS 1
 )
 
 # Imported target for the MLX static library produced by mlx_external. A static
