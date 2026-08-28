@@ -9,7 +9,7 @@
 ]]
 
 # Let include directory as "executorch/..."
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 
 if(EXECUTORCH_BUILD_NEURON_BUFFER_ALLOCATOR)
   message(STATUS "Neuron buffer allocator Build is enabled")

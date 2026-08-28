@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 set(_neutron_sources ${CMAKE_CURRENT_SOURCE_DIR}/runtime/NeutronBackend.cpp)

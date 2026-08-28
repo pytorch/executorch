@@ -15,9 +15,13 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
 include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmEthosUSDK.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 set(_common_include_directories
-    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+    ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 

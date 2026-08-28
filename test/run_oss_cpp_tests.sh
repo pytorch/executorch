@@ -28,6 +28,7 @@ fi
 which "${PYTHON_EXECUTABLE}"
 
 build_executorch() {
+  local source_dir="${EXECUTORCH_CMAKE_SOURCE_DIR:-.}"
   BUILD_VULKAN="OFF"
   if [ -x "$(command -v glslc)" ]; then
     BUILD_VULKAN="ON"
@@ -38,7 +39,7 @@ build_executorch() {
     SANITIZER_FLAG="-DEXECUTORCH_USE_SANITIZER=ON"
   fi
 
-  cmake . \
+  cmake "${source_dir}" \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     ${SANITIZER_FLAG} \
@@ -59,6 +60,9 @@ build_executorch() {
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_TESTS=ON \
     -Bcmake-out
+  if [[ -n "${EXECUTORCH_CMAKE_SOURCE_DIR:-}" ]]; then
+    test cmake-out/executorch_source_include/executorch -ef "${source_dir}"
+  fi
   cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
 }
 

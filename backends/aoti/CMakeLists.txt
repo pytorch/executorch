@@ -23,6 +23,9 @@ endif()
 
 # Use ExecuTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 find_package_torch()
 
 # ==============================================================================
@@ -34,7 +37,7 @@ add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
   aoti_common
   PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
-         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+         $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
 )
 target_compile_options(
   aoti_common
@@ -73,7 +76,7 @@ add_library(slimtensor INTERFACE)
 target_include_directories(
   slimtensor
   INTERFACE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
-            $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+            $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
             $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/runtime/core/portable_type/c10>
             $<INSTALL_INTERFACE:include>
 )

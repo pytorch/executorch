@@ -37,7 +37,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 include_directories(
-  ${EXECUTORCH_SOURCE_DIR}/..
+  ${EXECUTORCH_SOURCE_INCLUDE_DIR}
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
   ${EXYNOS_AI_LITECORE_ROOT}
 )

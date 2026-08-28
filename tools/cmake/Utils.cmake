@@ -18,6 +18,93 @@
 # It should also be cmake-lint clean.
 #
 
+# Create an include root that exposes this checkout as `executorch/`, regardless
+# of the checkout directory's name. Source headers keep their public `#include
+# <executorch/...>` spelling without relying on the repository's parent
+# directory.
+function(executorch_get_build_include_dir source_root out_var)
+  get_filename_component(source_root_real "${source_root}" REALPATH)
+  set(include_root "${CMAKE_BINARY_DIR}/executorch_source_include")
+  set(source_link "${include_root}/executorch")
+
+  get_property(
+    configured_source_root GLOBAL PROPERTY EXECUTORCH_BUILD_INCLUDE_SOURCE_ROOT
+  )
+  if(configured_source_root)
+    if(NOT "${configured_source_root}" STREQUAL "${source_root_real}")
+      message(
+        FATAL_ERROR
+          "The ExecuTorch source include root is already configured for "
+          "${configured_source_root}, not ${source_root_real}."
+      )
+    endif()
+    set(${out_var}
+        "${include_root}"
+        PARENT_SCOPE
+    )
+    return()
+  endif()
+
+  file(MAKE_DIRECTORY "${include_root}")
+  if(CMAKE_HOST_WIN32)
+    file(TO_NATIVE_PATH "${source_link}" source_link_native)
+    file(TO_NATIVE_PATH "${source_root_real}" source_root_native)
+    execute_process(
+      COMMAND cmd /c rmdir "${source_link_native}" OUTPUT_QUIET ERROR_QUIET
+    )
+    execute_process(
+      COMMAND cmd /c mklink /J "${source_link_native}" "${source_root_native}"
+      RESULT_VARIABLE link_result
+      OUTPUT_VARIABLE link_output
+      ERROR_VARIABLE link_error
+    )
+    if(NOT link_result EQUAL 0)
+      message(
+        FATAL_ERROR
+          "Failed to create the ExecuTorch source include junction at "
+          "${source_link}: ${link_output}${link_error}"
+      )
+    endif()
+  elseif(EXISTS "${source_link}")
+    get_filename_component(linked_root "${source_link}" REALPATH)
+    if(NOT "${linked_root}" STREQUAL "${source_root_real}")
+      message(
+        FATAL_ERROR
+          "${source_link} points to ${linked_root}, not ${source_root_real}. "
+          "Remove the build directory and configure again."
+      )
+    endif()
+  elseif(IS_SYMLINK "${source_link}")
+    message(
+      FATAL_ERROR
+        "${source_link} is a broken symbolic link. Remove the build directory "
+        "and configure again."
+    )
+  else()
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" -E create_symlink "${source_root_real}"
+              "${source_link}"
+      RESULT_VARIABLE link_result
+      OUTPUT_VARIABLE link_output
+      ERROR_VARIABLE link_error
+    )
+    if(NOT link_result EQUAL 0)
+      message(
+        FATAL_ERROR "Failed to create the ExecuTorch source include symlink at "
+                    "${source_link}: ${link_output}${link_error}"
+      )
+    endif()
+  endif()
+
+  set_property(
+    GLOBAL PROPERTY EXECUTORCH_BUILD_INCLUDE_SOURCE_ROOT "${source_root_real}"
+  )
+  set(${out_var}
+      "${include_root}"
+      PARENT_SCOPE
+  )
+endfunction()
+
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
 # target_link_options is broken for this case, it only append the interface link
 # options of the first library.

@@ -9,7 +9,8 @@ add_library(cadence_kernels kernels.cpp)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories
-    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+    ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
 
 target_include_directories(

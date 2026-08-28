@@ -211,7 +211,12 @@ build_executorch_runner_cmake() {
     -DCMAKE_BUILD_TYPE="${build_type}" \
     ${sanitizer_flag} \
     ${CMAKE_ARGS:-} \
-    -B${CMAKE_OUTPUT_DIR} .
+    -B${CMAKE_OUTPUT_DIR} "${EXECUTORCH_CMAKE_SOURCE_DIR:-.}"
+
+  if [[ -n "${EXECUTORCH_CMAKE_SOURCE_DIR:-}" ]]; then
+    test "${CMAKE_OUTPUT_DIR}/executorch_source_include/executorch" \
+      -ef "${EXECUTORCH_CMAKE_SOURCE_DIR}"
+  fi
 
   if [ "$(uname)" == "Darwin" ]; then
     CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))

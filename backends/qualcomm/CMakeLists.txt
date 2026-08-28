@@ -19,9 +19,7 @@ get_filename_component(
   QNN_EXECUTORCH_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE
 )
 # Let files say "include <executorch/path/to/header.h>".
-get_filename_component(
-  _common_include_directories "${EXECUTORCH_SOURCE_DIR}/.." ABSOLUTE
-)
+set(_common_include_directories "${EXECUTORCH_SOURCE_INCLUDE_DIR}")
 
 # If QNN_SDK_ROOT was not passed as a CMake variable, fall back to the
 # environment variable.  Prefer downloading the SDK *outside* of CMake (e.g. via
