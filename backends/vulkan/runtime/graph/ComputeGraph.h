@@ -26,6 +26,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+
 #ifdef ET_EVENT_TRACER_ENABLED
 std::string& set_and_get_current_operator_json(const std::string& json);
 size_t get_current_operator_count(const bool increment = false);
@@ -1010,7 +1012,7 @@ class ComputeGraph final {
 
   void register_pipeline_to_create(
       const vkapi::ShaderInfo& shader_info,
-      const utils::WorkgroupSize& local_workgroup_size,
+      const LocalWorkGroup& local_workgroup_size,
       const vkapi::SpecVarList& spec_vars,
       const std::vector<PushConstantDataInfo>& push_constants);
 
