@@ -247,8 +247,8 @@ cmake_host_system_information(
 if(CMAKE_GENERATOR MATCHES "Make")
   set(_mlx_build_command "")
 else()
-  set(_mlx_build_command
-      ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${_mlx_host_cores}
+  set(_mlx_build_command ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+                         ${_mlx_host_cores}
   )
 endif()
 
