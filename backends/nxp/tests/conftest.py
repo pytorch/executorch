@@ -33,6 +33,33 @@ def pytest_sessionstart(session):
     import executorch.extension.pybindings.portable_lib
     import executorch.kernels.quantized  # noqa F401
 
-    # Remove all cached test files
-    shutil.rmtree(outputs_dir.OUTPUTS_DIR, ignore_errors=True)
-    os.makedirs(outputs_dir.OUTPUTS_DIR, exist_ok=True)
+    # Remove all cached test files.
+    #
+    # Guarded because OUTPUTS_DIR is derived from the working directory, so a session started
+    # somewhere unexpected would point this at a directory these tests never created. This
+    # conftest is reachable from an installed package, where pytest collects it for any
+    # session run under site-packages, so the guard decides whether a delete happens at all
+    # rather than merely tidying up.
+    outputs = outputs_dir.OUTPUTS_DIR
+    if outputs.is_dir() and not _is_created_by_these_tests(outputs):
+        raise RuntimeError(
+            f"{outputs} exists but was not created by these tests, so it is not being "
+            f"removed. Run the NXP tests from a directory that does not already contain a "
+            f"'.outputs' directory, or delete it yourself if it is stale."
+        )
+    shutil.rmtree(outputs, ignore_errors=True)
+    os.makedirs(outputs, exist_ok=True)
+    (outputs / _MARKER_NAME).touch()
+
+
+_MARKER_NAME = ".created-by-nxp-tests"
+
+
+def _is_created_by_these_tests(directory: pathlib.Path) -> bool:
+    """Whether this directory is one a previous run of these tests made.
+
+    An empty directory counts, since that is what a run that produced no artifacts leaves.
+    """
+    if (directory / _MARKER_NAME).exists():
+        return True
+    return not any(directory.iterdir())
