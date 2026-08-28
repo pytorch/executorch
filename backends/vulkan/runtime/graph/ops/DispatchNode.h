@@ -15,6 +15,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+
 namespace vkcompute {
 
 class ComputeGraph;
@@ -49,7 +51,7 @@ class DispatchNode : public ExecuteNode {
  protected:
   vkapi::ShaderInfo shader_;
   utils::uvec3 global_workgroup_size_;
-  utils::WorkgroupSize local_workgroup_size_;
+  LocalWorkGroup local_workgroup_size_;
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
   const std::vector<PushConstantDataInfo> push_constants_;

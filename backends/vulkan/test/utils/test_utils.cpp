@@ -439,7 +439,7 @@ void record_matmul_texture3d(
 
   vkapi::DescriptorSet descriptor_set = api::context()->get_descriptor_set(
       VK_KERNEL_FROM_STR(kernel_name),
-      utils::WorkgroupSize(local_wg_size),
+      LocalWorkGroup(local_wg_size),
       specialization_constants,
       sizeof(push_constants));
 

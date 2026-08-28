@@ -31,6 +31,10 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
 
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+
 using namespace vkcompute;
 using namespace vkcompute::api;
 
@@ -3523,4 +3527,171 @@ TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
       test_int8x4_staging_round_trip(sizes, layout);
     }
   }
+}
+
+TEST(VulkanWorkGroupSizeTest, local_workgroup_size) {
+  const LocalWorkGroup lwg(64u, 2u, 1u);
+
+  EXPECT_EQ(lwg.x(), 64u);
+  EXPECT_EQ(lwg.y(), 2u);
+  EXPECT_EQ(lwg.z(), 1u);
+  EXPECT_TRUE(lwg.is_valid());
+  EXPECT_EQ(lwg.nthreads(), 128u);
+  EXPECT_EQ(lwg.target_total_nthreads(), 64u);
+  EXPECT_EQ(static_cast<utils::uvec3>(lwg), utils::uvec3({64u, 2u, 1u}));
+
+  const LocalWorkGroup targeted_lwg(8u, 4u, 1u, 128u);
+  EXPECT_EQ(targeted_lwg.target_total_nthreads(), 128u);
+  EXPECT_EQ(targeted_lwg, LocalWorkGroup(8u, 4u, 1u, 64u));
+  EXPECT_EQ(LocalWorkGroup(kLinearLwg, 1u), LocalWorkGroup(kCubeLwg, 1u));
+
+  const LocalWorkGroup large_z_lwg(1u, 1u, 1024u);
+  EXPECT_EQ(large_z_lwg.z(), 1024u);
+
+  EXPECT_FALSE(LocalWorkGroup().is_valid());
+  EXPECT_THROW(LocalWorkGroup(3u, 2u, 1u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, local_workgroup_size_validation) {
+  const utils::uvec3 max_lwg{1024u, 1024u, 64u};
+  const LocalWorkGroup lwg(8u, 8u, 1u);
+
+  EXPECT_NO_THROW(lwg.validate(max_lwg, 64u));
+  EXPECT_THROW(LocalWorkGroup().validate(max_lwg, 64u), vkapi::Error);
+  EXPECT_THROW(
+      LocalWorkGroup(128u, 1u, 1u).validate({64u, 1024u, 64u}, 128u),
+      vkapi::Error);
+  EXPECT_THROW(lwg.validate(max_lwg, 32u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, lwg_shape) {
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kLinearLwg, 64u)),
+      utils::uvec3({64u, 1u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kSquareLwg, 64u)),
+      utils::uvec3({8u, 8u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kCubeLwg, 64u)),
+      utils::uvec3({4u, 4u, 4u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kSquareLwg, 128u)),
+      utils::uvec3({16u, 8u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kCubeLwg, 128u)),
+      utils::uvec3({8u, 4u, 4u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(LwgShape{4u, 2u, 1u}, 64u)),
+      utils::uvec3({16u, 4u, 1u}));
+
+  EXPECT_THROW(LocalWorkGroup(kSquareLwg, 48u), vkapi::Error);
+  EXPECT_THROW(LocalWorkGroup(8u, 4u, 1u, 48u), vkapi::Error);
+  EXPECT_THROW(LocalWorkGroup(LwgShape{}, 64u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, fit_to_global) {
+  const LocalWorkGroup cube(kCubeLwg, 64u);
+  const GlobalWorkGrid gwg({1024u, 4u, 2u}, kExplicitWorkGrid);
+
+  auto fitted = cube;
+  fitted.fit_to_global(gwg);
+
+  EXPECT_EQ(static_cast<utils::uvec3>(fitted), utils::uvec3({4u, 4u, 4u}));
+  EXPECT_EQ(fitted.target_total_nthreads(), 64u);
+
+  const LocalWorkGroup square(kSquareLwg, 64u);
+  const GlobalWorkGrid shallow_gwg({1024u, 4u, 1u}, kExplicitWorkGrid);
+  auto shallow_fitted = square;
+  shallow_fitted.fit_to_global(shallow_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(shallow_fitted), utils::uvec3({16u, 4u, 1u}));
+
+  const GlobalWorkGrid permuted_gwg({4u, 1024u, 2u}, kExplicitWorkGrid);
+  auto permuted_fitted = cube;
+  permuted_fitted.fit_to_global(permuted_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(permuted_fitted), utils::uvec3({4u, 4u, 4u}));
+
+  const LocalWorkGroup linear(kLinearLwg, 64u);
+  const GlobalWorkGrid square_gwg({8u, 8u, 1u}, kExplicitWorkGrid);
+  auto square_fitted = linear;
+  square_fitted.fit_to_global(square_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(square_fitted), utils::uvec3({8u, 8u, 1u}));
+
+  const GlobalWorkGrid large_gwg({1024u, 1024u, 1u}, kExplicitWorkGrid);
+  square_fitted.fit_to_global(large_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(square_fitted), utils::uvec3({8u, 8u, 1u}));
+
+  const GlobalWorkGrid wide_gwg({4u, 1024u, 2u}, kExplicitWorkGrid);
+  auto wide_fitted = linear;
+  wide_fitted.fit_to_global(wide_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(wide_fitted), utils::uvec3({4u, 16u, 1u}));
+
+  const GlobalWorkGrid small_gwg({3u, 3u, 1u}, kExplicitWorkGrid);
+  auto small_fitted = square;
+  small_fitted.fit_to_global(small_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(small_fitted), utils::uvec3({4u, 4u, 1u}));
+
+  auto explicit_linear = LocalWorkGroup(64u, 1u, 1u);
+  explicit_linear.fit_to_global(square_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(explicit_linear), utils::uvec3({64u, 1u, 1u}));
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_at_x_limit) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65536u * 64u, 1u, 1u}, kLinearWorkGrid);
+  EXPECT_FALSE(gwg.required_lwg_size().is_valid());
+  gwg.wrap_linear_dispatch(max_wg_count);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({65536u * 64u, 1u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+  EXPECT_TRUE(gwg.is_linear());
+  EXPECT_EQ(gwg.intent(), kLinearWorkGrid);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_wraps_across_xy) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65537u * 64u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, 64u);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({257u * 64u, 256u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+  EXPECT_TRUE(gwg.is_linear());
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_rejects_insufficient_y) {
+  const utils::uvec3 max_wg_count{2u, 1u, 1u};
+  GlobalWorkGrid gwg({3u * 64u, 1u, 1u}, kLinearWorkGrid);
+
+  EXPECT_THROW(gwg.wrap_linear_dispatch(max_wg_count, 64u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, explicit_gwg_preserves_extents) {
+  const GlobalWorkGrid gwg({31u, 17u, 5u}, kExplicitWorkGrid);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({31u, 17u, 5u}));
+  EXPECT_FALSE(gwg.required_lwg_size().is_valid());
+  EXPECT_FALSE(gwg.is_linear());
+  EXPECT_EQ(gwg.intent(), kExplicitWorkGrid);
+}
+
+TEST(VulkanWorkGroupSizeTest, gwg_intents) {
+  const utils::uvec3 extents{32u, 24u, 8u};
+
+  EXPECT_EQ(
+      GlobalWorkGrid(extents, kTextureExtentsWorkGrid).intent(),
+      kTextureExtentsWorkGrid);
+  EXPECT_EQ(GlobalWorkGrid(extents, kTiledWorkGrid).intent(), kTiledWorkGrid);
+
+  GlobalWorkGrid texture_grid(extents, kTextureExtentsWorkGrid);
+  texture_grid.wrap_linear_dispatch({1u, 1u, 1u}, 64u);
+  EXPECT_EQ(texture_grid.extents(), extents);
+  EXPECT_FALSE(texture_grid.required_lwg_size().is_valid());
 }

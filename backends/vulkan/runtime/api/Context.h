@@ -16,6 +16,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Command.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Fence.h>
 #include <executorch/backends/vulkan/runtime/vk_api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
@@ -151,7 +152,7 @@ class Context final {
   void report_shader_dispatch_start(
       const std::string& shader_name,
       const utils::uvec3& global_wg_size,
-      const utils::WorkgroupSize& local_wg_size,
+      const LocalWorkGroup& local_wg_size,
       const uint32_t dispatch_id = UINT32_MAX);
 
   /*
@@ -190,13 +191,13 @@ class Context final {
 
   vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo&,
-      const utils::WorkgroupSize&,
+      const LocalWorkGroup&,
       const vkapi::SpecVarList&,
       const uint32_t push_constants_size);
 
   inline vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo& shader_descriptor,
-      const utils::WorkgroupSize& local_work_group_size) {
+      const LocalWorkGroup& local_work_group_size) {
     return get_descriptor_set(shader_descriptor, local_work_group_size, {}, 0u);
   }
 
@@ -370,7 +371,7 @@ inline bool Context::submit_compute_job(
   report_shader_dispatch_start(
       shader.kernel_name,
       global_work_group,
-      utils::WorkgroupSize(local_work_group_size),
+      LocalWorkGroup(local_work_group_size),
       dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
@@ -378,7 +379,7 @@ inline bool Context::submit_compute_job(
   // push constants size is assumed to be 0.
   vkapi::DescriptorSet descriptor_set = get_descriptor_set(
       shader,
-      utils::WorkgroupSize(local_work_group_size),
+      LocalWorkGroup(local_work_group_size),
       specialization_constants,
       0u);
 
