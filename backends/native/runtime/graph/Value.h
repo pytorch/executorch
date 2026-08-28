@@ -28,30 +28,29 @@ enum class ValueKind : int8_t {
 };
 
 // A single SSA value (dataflow edge) in a Graph: its contents plus def-use
-// wiring, a storage alias and an open annotation map. The ref fields are plain
+// wiring, a storage alias and an open annotation map. The id fields are plain
 // handles; whether one is in range is a property of the owning arena, so
 // nothing here validates them.
 //
 // The variant's alternatives are listed in ValueKind order, so kind() is its
 // index. A Tensor carries metadata only, so a weight is an ordinary arena
 // value like any other, with its bytes held outside the graph. A List holds
-// ValueRefs to its elements, so nesting goes through the arena; nothing
+// ValueIds to its elements, so nesting goes through the arena; nothing
 // deserialized is a List, it exists for in-memory rewrites such as grouping a
 // tuple.
 class Value {
  private:
-  std::variant<std::monostate, TensorMeta, Scalar, std::vector<ValueRef>>
-      value_;
+  std::variant<std::monostate, TensorMeta, Scalar, std::vector<ValueId>> value_;
 
  public:
   // SSA name, scoped to the enclosing Graph.
   std::string name;
   // Defining node; invalid => graph input.
-  NodeRef producer_ref = kInvalid;
+  NodeId producer_id = kInvalid;
   // Def-use, built by inverting node inputs.
-  std::vector<NodeRef> consumer_refs;
+  std::vector<NodeId> consumer_ids;
   // Shares storage with this value (a view); fresh if invalid.
-  ValueRef alias_ref = kInvalid;
+  ValueId alias_id = kInvalid;
   // Open annotations for graph passes and engines, like node.meta in FX.
   std::unordered_map<std::string, std::any> attrs;
 
@@ -71,8 +70,8 @@ class Value {
   Value(std::string name, Scalar value)
       : value_(value), name(std::move(name)) {}
 
-  Value(std::string name, std::vector<ValueRef> elem_refs)
-      : value_(std::move(elem_refs)), name(std::move(name)) {}
+  Value(std::string name, std::vector<ValueId> elem_ids)
+      : value_(std::move(elem_ids)), name(std::move(name)) {}
 
   ValueKind kind() const {
     return static_cast<ValueKind>(value_.index());
@@ -84,7 +83,7 @@ class Value {
     return std::holds_alternative<Scalar>(value_);
   }
   bool is_list() const {
-    return std::holds_alternative<std::vector<ValueRef>>(value_);
+    return std::holds_alternative<std::vector<ValueId>>(value_);
   }
   bool is_none() const {
     return std::holds_alternative<std::monostate>(value_);
@@ -93,7 +92,7 @@ class Value {
   // Typed payload accessors: throw std::runtime_error unless the kind matches.
   const TensorMeta& tensor_meta() const;
   const Scalar& scalar() const;
-  const std::vector<ValueRef>& content_refs() const;
+  const std::vector<ValueId>& content_ids() const;
 };
 
 } // namespace ptn
