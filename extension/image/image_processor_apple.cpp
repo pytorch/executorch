@@ -819,7 +819,7 @@ Error ImageProcessor::process_yuv_into(
       uv_plane_size < 0 || uv_plane_size >= uv_last_byte,
       InvalidArgument,
       "uv_plane_size too small");
-  const uint8_t* uv_src = uv_plane;
+  const uint8_t* uv_full = uv_plane;
   if (uv_plane_size >= 0 && uv_plane_size <= uv_last_byte) {
     // Full-stride allocation, neutral-filled past the copied bytes, so the
     // framework paths may read whole rows without leaving the scratch.
@@ -829,20 +829,20 @@ Error ImageProcessor::process_yuv_into(
     std::memcpy(completed, uv_plane, static_cast<size_t>(uv_last_byte));
     completed[uv_last_byte] =
         width > 2 ? uv_plane[uv_last_byte - 2] : static_cast<uint8_t>(128);
-    uv_src = completed;
+    uv_full = completed;
   }
 
   // NV21 stores chroma as Cr,Cb. Swap it to NV12's Cb,Cr ordering once, up
   // front, so both the GPU and CPU paths below are format-agnostic (always
   // NV12).
-  const uint8_t* cbcr = uv_src;
+  const uint8_t* cbcr = uv_full;
   int32_t cbcr_stride = uv_stride;
   if (format == YUVFormat::NV21) {
     const int32_t chroma_w = (width + 1) / 2;
     const int32_t chroma_h = (height + 1) / 2;
     uint8_t* swapped =
         impl_->uv_swap.resize(static_cast<size_t>(chroma_w) * 2 * chroma_h);
-    swap_chroma_cbcr(uv_src, uv_stride, swapped, chroma_w, chroma_h);
+    swap_chroma_cbcr(uv_full, uv_stride, swapped, chroma_w, chroma_h);
     cbcr = swapped;
     cbcr_stride = chroma_w * 2;
   }
