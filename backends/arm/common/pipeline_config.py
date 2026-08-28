@@ -10,13 +10,25 @@ from typing import Any, cast
 
 
 class SoftmaxDecompositionConfig(Enum):
+    """Options for decomposing softmax before lowering."""
+
     MASKED = auto()  # Stable softmax + masked fill decomposition
     STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
 class LeakyReLULoweringConfig(Enum):
+    """Options for lowering quantized LeakyReLU."""
+
     TABLE = auto()  # Lower quantized leaky_relu with TOSA TABLE
     DECOMPOSE = auto()  # Lower leaky_relu into clamp, mul, and add
+
+
+class SDPASafeSoftmaxGuardPolicy(Enum):
+    """Options for preserving or removing SDPA safe-softmax guards."""
+
+    PRESERVE = auto()  # Preserve safe-softmax all--inf row guards
+    REMOVE = auto()  # Remove exact expanded safe-softmax guards
+    REMOVE_WHEN_PROVEN = auto()  # Preserve unless a proof is available
 
 
 @dataclass
@@ -46,6 +58,8 @@ class ArmPassPipelineConfig:
             mode.
         quantize_inf (QuantizeInfConfig): Values used when replacing
             infinities before quantization.
+        sdpa_safe_softmax_guard (SDPASafeSoftmaxGuardPolicy): SDPA
+            safe-softmax guard policy.
 
     Example:
         compile_spec.set_pass_pipeline_config(
@@ -64,15 +78,21 @@ class ArmPassPipelineConfig:
     softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
     leaky_relu: LeakyReLULoweringConfig = LeakyReLULoweringConfig.DECOMPOSE
     quantize_inf: QuantizeInfConfig = field(default_factory=QuantizeInfConfig)
+    sdpa_safe_softmax_guard: SDPASafeSoftmaxGuardPolicy = (
+        SDPASafeSoftmaxGuardPolicy.PRESERVE
+    )
 
     def is_default(self) -> bool:
+        """Return true when all options are set to their defaults."""
         return (
             self.softmax is SoftmaxDecompositionConfig.MASKED
             and self.leaky_relu is LeakyReLULoweringConfig.DECOMPOSE
+            and (self.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.PRESERVE)
             and self.quantize_inf == QuantizeInfConfig()
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dictionary."""
         data: dict[str, Any] = {}
         for f in fields(self):
             value = getattr(self, f.name)
@@ -86,6 +106,7 @@ class ArmPassPipelineConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ArmPassPipelineConfig":
+        """Create a config from a serialized dictionary."""
         config = cls()
         for f in fields(cls):
             raw_value = data.get(f.name)
@@ -105,5 +126,6 @@ class ArmPassPipelineConfig:
         return json.dumps(self.to_dict()).encode()
 
     def __repr__(self):
+        """Return a compact field representation."""
         fields = ", ".join(f"{name}={value!r}" for name, value in self.__dict__.items())
         return f"({fields})"
