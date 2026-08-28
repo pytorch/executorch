@@ -226,15 +226,12 @@ else()
 endif()
 
 # The sub-build is forced to a single-config generator (Unix Makefiles), which
-# reads CMAKE_BUILD_TYPE, not the --config passed to the parent. The Apple
-# presets do not set CMAKE_BUILD_TYPE, so without a default MLX would compile
-# unoptimized (no -O3 -DNDEBUG) even for a release framework. Default to Release
-# when the parent left it empty; build_apple_frameworks.sh and the wheel set it
-# explicitly and are unaffected.
-set(_mlx_build_type ${CMAKE_BUILD_TYPE})
-if(NOT _mlx_build_type)
-  set(_mlx_build_type Release)
-endif()
+# reads CMAKE_BUILD_TYPE, not the --config passed to the parent. Follow the
+# active configuration through $<CONFIG>, which resolves to the config being built
+# under a multi-config parent (Xcode) and to CMAKE_BUILD_TYPE under a single-config
+# one. It is empty only for a bare single-config parent that set no type, so
+# default that case to Release rather than compile MLX with no optimization.
+set(_mlx_build_type "$<IF:$<BOOL:$<CONFIG>>,$<CONFIG>,Release>")
 
 ExternalProject_Add(
   mlx_external
@@ -247,7 +244,7 @@ ExternalProject_Add(
   # single-config generator emits it, which is also how the wheel build already
   # produces it.
   CMAKE_GENERATOR "Unix Makefiles"
-  CMAKE_ARGS -DCMAKE_BUILD_TYPE=${_mlx_build_type}
+  CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${_mlx_build_type}"
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
              ${_mlx_cxx_flags_arg}
              # The preset's DEPLOYMENT_TARGET carries the correct per-slice
