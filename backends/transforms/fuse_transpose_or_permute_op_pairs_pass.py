@@ -10,6 +10,10 @@ from typing import Any, Callable, cast
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import (
+    ATEN_PERMUTE_COPY,
+    LAYOUT_PERMUTE_COPY,
+)
 from executorch.backends.transforms.permute_pass_utils import (
     FuseOpPairsAcrossBranchesPass,
     get_permuted_dims,
@@ -55,7 +59,8 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         # this mapping helps to handle both transpose and permutations
         f: dict[Any, Callable] = {
             exir_ops.edge.aten.transpose_copy.int: get_transposed_dims,
-            exir_ops.edge.aten.permute_copy.default: get_permuted_dims,
+            ATEN_PERMUTE_COPY: get_permuted_dims,
+            LAYOUT_PERMUTE_COPY: get_permuted_dims,
         }
         in_dims = f[producer.target](producer, ident_dims)
         out_dims = f[consumer.target](consumer, in_dims)
@@ -80,6 +85,7 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
                 (consumer.args[0], output_shape),
                 {},
             )
+        view.meta = dict(consumer.meta)
         return view
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -89,13 +95,17 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
             producer_op_packets={
                 exir_ops.edge.aten.transpose_copy,
                 exir_ops.edge.aten.permute_copy,
+                exir_ops.edge.channels_last.permute_copy,
             },
             consumer_op_packets={
                 exir_ops.edge.aten.transpose_copy,
                 exir_ops.edge.aten.permute_copy,
+                exir_ops.edge.channels_last.permute_copy,
             },
             bypass_ops=self.bypass_ops,
         )
         if modified:
-            return super().call(graph_module)
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return PassResult(graph_module, True)
         return PassResult(graph_module, False)
