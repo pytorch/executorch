@@ -37,11 +37,18 @@ def pytest_sessionstart(session):
     #
     # Guarded because OUTPUTS_DIR is derived from the working directory, so a session started
     # somewhere unexpected would point this at a directory these tests never created. This
-    # conftest is reachable from an installed package, where pytest collects it for any
-    # session run under site-packages, so the guard decides whether a delete happens at all
-    # rather than merely tidying up.
+    # conftest is reachable from an installed package, where pytest collects it for any session
+    # run under site-packages, so the guard decides whether a delete happens at all rather than
+    # merely tidying up.
+    #
+    # Only the xdist controller clears it. Every worker also runs this hook, and they run
+    # concurrently, so letting all of them delete and recreate one directory means a worker can
+    # remove what another just made. The controller has no workerinput attribute; a worker does.
+    if hasattr(session.config, "workerinput"):
+        return
+
     outputs = outputs_dir.OUTPUTS_DIR
-    if outputs.is_dir() and not _is_created_by_these_tests(outputs):
+    if not _is_created_by_these_tests(outputs):
         raise RuntimeError(
             f"{outputs} exists but was not created by these tests, so it is not being "
             f"removed. Run the NXP tests from a directory that does not already contain a "
@@ -49,17 +56,20 @@ def pytest_sessionstart(session):
         )
     shutil.rmtree(outputs, ignore_errors=True)
     os.makedirs(outputs, exist_ok=True)
-    (outputs / _MARKER_NAME).touch()
+    (outputs / _MARKER_NAME).touch(exist_ok=True)
 
 
 _MARKER_NAME = ".created-by-nxp-tests"
 
 
 def _is_created_by_these_tests(directory: pathlib.Path) -> bool:
-    """Whether this directory is one a previous run of these tests made.
+    """Whether this directory is one a previous run of these tests made, or does not exist yet.
 
-    An empty directory counts, since that is what a run that produced no artifacts leaves.
+    An empty directory counts, since that is what a run producing no artifacts leaves, and so
+    does one that is not there at all.
     """
+    if not directory.is_dir():
+        return True
     if (directory / _MARKER_NAME).exists():
         return True
     return not any(directory.iterdir())
