@@ -235,17 +235,21 @@ endif()
 set(_mlx_build_type "$<IF:$<BOOL:$<CONFIG>>,$<CONFIG>,Release>")
 
 # Decide the MLX sub-build's build command, consumed by BUILD_COMMAND below. An
-# empty value leaves ExternalProject's default in place.
+# empty value leaves ExternalProject's default in place, which is only the right
+# choice for a Makefiles parent: ExternalProject emits `$(MAKE)` (inheriting the
+# parent's jobserver) only when the PARENT generator matches "Make". Under Xcode
+# or Ninja it emits a bare `cmake --build`, with no -j and no jobserver, so MLX
+# would compile on one core. Name a job count there; a bare --parallel with no
+# number would expand to `make -j`, unbounded.
 cmake_host_system_information(
   RESULT _mlx_host_cores QUERY NUMBER_OF_LOGICAL_CORES
 )
-if(CMAKE_CONFIGURATION_TYPES)
-  set(_mlx_build_command
-      ${CMAKE_COMMAND} --build <BINARY_DIR> --config $<CONFIG> --parallel
-      ${_mlx_host_cores}
-  )
-else()
+if(CMAKE_GENERATOR MATCHES "Make")
   set(_mlx_build_command "")
+else()
+  set(_mlx_build_command
+      ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${_mlx_host_cores}
+  )
 endif()
 
 ExternalProject_Add(
@@ -310,18 +314,17 @@ ExternalProject_Add(
 # recompile an unpatched MLX and silently drop the iOS Metal SDK selection and
 # the SwiftPM metallib name.
 # Re-apply the patches on every build; apply.sh is idempotent (it reverse-checks
-# each patch, skipping those already applied). DEPENDERS build, not
-# configure:
-# naming configure invalidates the sub-build's configure stamp each time,
-# so MLX
-# re-runs its whole configure, including the metal_cpp FetchContent, on
-# every incremental build of all six slice and mode combinations.
+# each patch, skipping those already applied). DEPENDERS configure, not build:
+# mlx_metal_sdk_per_platform.patch edits the sub-project's own CMake to pick the
+# Metal SDK from PLATFORM, so it must land before the sub-configure runs, or the
+# shaders are built against the macOS SDK for every slice. That does mean the
+# sub-configure re-runs on each build, which is the price of the ordering.
 ExternalProject_Add_Step(
   mlx_external reapply_patches
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
           ${_mlx_patches}
   DEPENDEES patch
-  DEPENDERS build
+  DEPENDERS configure
   ALWAYS 1
 )
 
