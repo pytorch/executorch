@@ -221,10 +221,12 @@ capture_mlx_metallib() {
   # Apple presets probe for the Metal compiler and leave EXECUTORCH_BUILD_MLX OFF
   # when it is missing, and CMAKE_OPTIONS_OVERRIDE is empty unless the caller
   # passed a --<backend> flag, so testing that array alone would hard-fail a
-  # plain no-flag build on a machine without the Metal toolchain.
+  # plain no-flag build on a machine without the Metal toolchain. Do not name a
+  # cache type: set_overridable_option writes STRING, define_overridable_option
+  # writes BOOL, and the preset path produces the former.
   local cache="${OUTPUT_DIR}/${preset_out_dir}/CMakeCache.txt"
   if [[ -f "${cache}" ]] &&
-    ! grep -q "^EXECUTORCH_BUILD_MLX:BOOL=ON" "${cache}"; then
+    ! grep -qE "^EXECUTORCH_BUILD_MLX:[A-Z]+=(ON|1|TRUE|YES)$" "${cache}"; then
     return
   fi
   if [[ " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
