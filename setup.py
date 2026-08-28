@@ -1256,6 +1256,11 @@ class InstallerBuildExt(build_ext):
             self.get_finalized_command("build"), "cmake_cache_dir", None
         )
         _strip_absolute_runtime_paths(dst_file, _cuda_libraries_built(cmake_cache_dir))
+        # After the rewrite, since it opens the file for writing and would otherwise be
+        # rewriting a file whose symbol table just moved. Only the wheel copy is stripped;
+        # the editable copy above is a developer's own build output, where the local symbols
+        # are what a debugger and a profiler read.
+        _strip_local_symbols(dst_file)
 
 
 def _append_relative_search_paths(entries: List[str], depth: int = 1) -> None:
@@ -1335,6 +1340,37 @@ def _run_install_name_tool(command: List[str], library: Path) -> None:
         raise RuntimeError(
             f"{' '.join(command[1:3])} failed on {library.name}, so its runtime search paths are not "
             f"what this build intended: {(result.stderr or result.stdout).decode(errors='replace').strip()}"
+        )
+
+
+def _strip_local_symbols(library: Path) -> None:
+    """Discard the local symbol table from a Mach-O file the wheel ships.
+
+    Only on macOS, and only because its linker keeps these where the GNU one does not. The
+    Linux libraries ship with no .symtab at all, while the macOS ones carried a local symbol
+    for every internal function: 448 in the runtime, 4190 in the merged kernels, and 35496 in
+    flatc, which alone was 6 MB of the 7 MB this removes.
+
+    `-x` removes local symbols and keeps every external one, so what a consumer can link
+    against does not change. Anything beyond that would strip exported symbols and break
+    linking, so the flag matters.
+
+    A failure here is not fatal. The file is correct either way, and a wheel that is larger
+    than intended is better than a build that stops.
+    """
+    if not _is_macos():
+        return
+    strip = shutil.which("strip")
+    if strip is None:
+        return
+    result = subprocess.run(
+        [strip, "-x", os.fspath(library)], capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        print(
+            f"warning: could not strip local symbols from {library.name}, shipping it as "
+            f"built: {(result.stderr or result.stdout).decode(errors='replace').strip()}",
+            flush=True,
         )
 
 
