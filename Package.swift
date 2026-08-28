@@ -190,7 +190,11 @@ if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_mul_coreml.pte") 
 }
 
 let testLinkerSettings: [LinkerSetting] = [
-  // Test targets do not inherit the executorch product's libc++ link, and the macOS 14 floor drops the shim that used to supply it.
+  // The test targets depend on the executorch binary target directly, which
+  // carries no linker settings, rather than the with-dependencies target that
+  // owns the libc++ link, so they must link libc++ themselves. Below a macOS 13
+  // deployment target a Swift back-deployment shim used to supply it implicitly;
+  // at this package's floor that shim is gone, so name it explicitly here.
   .linkedLibrary("c++"),
   .unsafeFlags([
     "-Xlinker", "-force_load",
