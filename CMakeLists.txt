@@ -1419,7 +1419,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # Only the libraries that do not already retain themselves are named. A
   # delegate that calls executorch_target_link_options_shared_lib exports
   # --no-as-needed around its own file to every consumer, so the CUDA and
-  # OpenVINO backends are covered by that and are deliberately absent here.
+  # OpenVINO backends are covered by that and are deliberately absent here. That
+  # export is emitted only for NOT APPLE, so it does nothing for an Apple-only
+  # delegate like Core ML; those are covered instead by Mach-O, which keeps a
+  # named dylib's namespace-scope initializers without an --as-needed
+  # equivalent.
   foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend
                               extension_threadpool etdump
   )
