@@ -150,10 +150,11 @@ for (key, value) in products {
 // name. Each slice's MLX binary asks for its own mlx-<slice>.metallib.
 //
 // The release job commits all three files to this branch before publishing, so
-// they are declared unconditionally: a slice that failed to arrive is then
-// reported as "Invalid Resource ... File not found" at resolve time, rather than
-// silently producing a bundle with no kernels that the delegate would only fault
-// on at Metal device init inside a consumer's app.
+// they are declared unconditionally: a slice that failed to arrive then shows up
+// as an "Invalid Resource ... File not found" warning when a consumer builds,
+// rather than silently producing a bundle with no kernels that the delegate would
+// only fault on at Metal device init. The warning is not an error and the build
+// still succeeds, so this makes the failure visible rather than fatal.
 // Do not gate these on FileManager.fileExists: a relative path is resolved
 // against the process working directory, and when this package is a dependency
 // that is the consumer's root, so every slice would appear missing and the
