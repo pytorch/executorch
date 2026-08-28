@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <string>
 
+#include <executorch/backends/native/runtime/graph/StringFormat.h>
+
 namespace ptn {
 
 std::string to_string(const TensorMeta& meta) {
@@ -29,6 +31,16 @@ std::string to_string(const TensorMeta& meta) {
   }
   s += "]";
   return s;
+}
+
+std::string to_string(const Scalar& scalar) {
+  if (scalar.is_bool()) {
+    return scalar.to_bool() ? "true" : "false";
+  }
+  if (scalar.is_int()) {
+    return std::to_string(scalar.to_int());
+  }
+  return format_double(scalar.to_double());
 }
 
 } // namespace ptn
