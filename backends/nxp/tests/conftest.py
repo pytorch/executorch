@@ -63,13 +63,25 @@ _MARKER_NAME = ".created-by-nxp-tests"
 
 
 def _is_created_by_these_tests(directory: pathlib.Path) -> bool:
-    """Whether this directory is one a previous run of these tests made, or does not exist yet.
+    """Whether this directory is one these tests made, or does not exist yet.
 
-    An empty directory counts, since that is what a run producing no artifacts leaves, and so
-    does one that is not there at all.
+    Three ways it can be ours, in decreasing confidence:
+
+    - the marker file, written by every run since this check was added
+    - empty, which is what a run producing no artifacts leaves
+    - nothing in it but directories, which is the only shape these tests write: one
+      subdirectory per test name, and never a file at the top level
+
+    The third case exists so that a directory left by a run from before the marker, or by a
+    checkout that does not write one, is still recognised rather than stopping the session. A
+    directory holding a file at the top level is not something these tests produce, so it is
+    left alone.
     """
     if not directory.is_dir():
         return True
     if (directory / _MARKER_NAME).exists():
         return True
-    return not any(directory.iterdir())
+    entries = list(directory.iterdir())
+    if not entries:
+        return True
+    return all(entry.is_dir() for entry in entries)
