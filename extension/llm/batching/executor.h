@@ -57,13 +57,14 @@
 #include <vector>
 
 #include <executorch/extension/llm/batching/types.h>
+#include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
 namespace executorch {
 namespace extension {
 namespace llm {
 namespace batching {
 
-class Executor {
+class ET_EXPERIMENTAL Executor {
  public:
   virtual ~Executor() = default;
 

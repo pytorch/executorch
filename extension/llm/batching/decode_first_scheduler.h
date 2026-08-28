@@ -28,6 +28,7 @@
 
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/batching/types.h>
+#include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
 namespace executorch {
 namespace extension {
@@ -39,7 +40,7 @@ namespace batching {
 using TaskPtr = std::shared_ptr<Task>;
 using TaskQueue = std::deque<TaskPtr>;
 
-class DecodeFirstScheduler : public Scheduler {
+class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
  public:
   // Returns nullptr if the limits are unusable. All three must be non-zero,
   // and the budget must cover a saturated decode batch plus one full chunk.
