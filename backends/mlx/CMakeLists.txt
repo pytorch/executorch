@@ -293,11 +293,11 @@ ExternalProject_Add(
   # metallib at all, so skip the install step and read both from the build tree.
   INSTALL_COMMAND ""
   # Build in parallel, but only where it is needed and always with a job count.
-  # Under the multi-config Xcode parent the generated sub-build step is
-  # `cmake --build . --config <cfg>` with no -j and no jobserver to inherit, so
-  # MLX would compile fully serially. Under a single-config parent the default
-  # build command is `$(MAKE)`, which already inherits the parent's jobserver,
-  # so overriding it there would break that and serialize MLX instead. A bare
+  # Under the multi-config Xcode parent the generated sub-build step is `cmake
+  # --build . --config <cfg>` with no -j and no jobserver to inherit, so MLX
+  # would compile fully serially. Under a single-config parent the default build
+  # command is `$(MAKE)`, which already inherits the parent's jobserver, so
+  # overriding it there would break that and serialize MLX instead. A bare
   # --parallel with no number expands to `make -j`, unbounded, so name a count.
   BUILD_COMMAND ${_mlx_build_command}
   # ExternalProject stamps its build, so a bare MLX submodule bump (git
@@ -312,13 +312,13 @@ ExternalProject_Add(
 # ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so
 # a reused build directory whose MLX source was reset (patches reverted) would
 # recompile an unpatched MLX and silently drop the iOS Metal SDK selection and
-# the SwiftPM metallib name.
-# Re-apply the patches on every build; apply.sh is idempotent (it reverse-checks
-# each patch, skipping those already applied). DEPENDERS configure, not build:
-# mlx_metal_sdk_per_platform.patch edits the sub-project's own CMake to pick the
-# Metal SDK from PLATFORM, so it must land before the sub-configure runs, or the
-# shaders are built against the macOS SDK for every slice. That does mean the
-# sub-configure re-runs on each build, which is the price of the ordering.
+# the SwiftPM metallib name. Re-apply the patches on every build; apply.sh is
+# idempotent (it reverse-checks each patch, skipping those already applied).
+# DEPENDERS configure, not build: mlx_metal_sdk_per_platform.patch edits the
+# sub-project's own CMake to pick the Metal SDK from PLATFORM, so it must land
+# before the sub-configure runs, or the shaders are built against the macOS SDK
+# for every slice. That does mean the sub-configure re-runs on each build, which
+# is the price of the ordering.
 ExternalProject_Add_Step(
   mlx_external reapply_patches
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
