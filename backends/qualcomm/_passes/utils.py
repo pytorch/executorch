@@ -150,7 +150,18 @@ def get_quant_attrs(
     # on the presence of the key: quantize_per_channel.default also has a
     # "scales" argument but is consumed as a per-channel (not per-block) config.
     if quant_node.target in PER_CHANNEL_GROUP_ENCODING:
-        quant_attrs[QCOM_SCALE] = quant_attrs[QCOM_SCALES]
+        scales = quant_attrs[QCOM_SCALES]
+        group_size = quant_attrs["group_size"]
+        num_input_features = quant_node.args[0].meta["val"].shape[-1]
+        # make_qnn_per_block_config infers blocks-per-axis from the scale
+        # shape; a mismatched checkpoint would otherwise lower silently wrong
+        if scales.shape[-1] * group_size != num_input_features:
+            raise ValueError(
+                f"group-wise scale shape {tuple(scales.shape)} is inconsistent "
+                f"with group_size {group_size} for weight with "
+                f"{num_input_features} input features"
+            )
+        quant_attrs[QCOM_SCALE] = scales
 
     quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs

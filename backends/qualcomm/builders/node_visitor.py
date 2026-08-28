@@ -180,6 +180,17 @@ class NodeVisitor:
     def make_qnn_per_block_config(self, node: torch.fx.Node, quant_attrs: Dict):
         import math
 
+        # blockwise expansion hardcodes a per-channel offset of 0, so an
+        # asymmetric weight would silently lower to a symmetric encoding
+        zero_points = quant_attrs.get(QCOM_ZERO_POINTS)
+        if zero_points is None:
+            zero_points = quant_attrs.get(QCOM_ZERO_POINT)
+        if zero_points is not None and torch.any(torch.as_tensor(zero_points) != 0):
+            raise ValueError(
+                "per-block quantization with non-zero zero_points is not supported; "
+                "QNN blockwise expansion requires symmetric quantization"
+            )
+
         quant_config = {
             QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
             QCOM_QUANT_MIN: quant_attrs[QCOM_QUANT_MIN],

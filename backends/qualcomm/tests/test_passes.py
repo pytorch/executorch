@@ -14,6 +14,7 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
+from executorch.backends.qualcomm.builders.node_visitor import NodeVisitor
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
@@ -262,6 +263,19 @@ class TestPasses(unittest.TestCase):
             and any(u.op == "output" for u in n.users.keys())
         ]
         self.assertEqual(len(dq_nodes), 1)
+
+    def test_make_qnn_per_block_config_rejects_asymmetric(self):
+        """QNN blockwise expansion is symmetric-only; non-zero zero_points must
+        raise instead of silently lowering to a symmetric encoding."""
+        gm, ep = self._build_quantized_graph()
+        param_node = next(
+            n for n in gm.graph.nodes if n.op == "placeholder" and is_parameter(n, ep)
+        )
+
+        visitor = NodeVisitor({}, ep, enable_tensor_dump=False)
+        quant_attrs = {"zero_points": torch.tensor([0, 1, 0, 0])}
+        with self.assertRaisesRegex(ValueError, "symmetric"):
+            visitor.make_qnn_per_block_config(param_node, quant_attrs)
 
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
