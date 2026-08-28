@@ -7,7 +7,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 #include <variant>
 
 namespace ptn {
@@ -57,8 +56,6 @@ class Scalar {
   constexpr T to() const {
     return std::visit([](auto v) { return static_cast<T>(v); }, value_);
   }
-
-  std::string to_string() const;
 };
 
 } // namespace ptn

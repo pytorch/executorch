@@ -22,7 +22,6 @@ from executorch.exir.banked_memory_planning import (
 from executorch.exir.memory_planning import (
     collect_specs_from_nodes,
     greedy,
-    materialize_buffer,
     MemoryPlanningAlgorithmSuite,
     pick_shared_obj,
     update_all_tensors_lifetime,
@@ -118,7 +117,7 @@ def packed_size(specs: Sequence[TensorSpec]) -> int:
     ordered = sorted(specs, key=lambda s: s.allocated_memory, reverse=True)
     for spec in ordered:
         pick_shared_obj(objects, spec, True)
-    return materialize_buffer(objects)
+    return sum(sobj.size for sobj in objects)
 
 
 def assert_no_free_readmission(
@@ -658,6 +657,20 @@ class TestInPlaceSpecs(unittest.TestCase):
         aliased = make_spec(1024, (0, 10))
         aliased.inplace_base = base
         bufsizes, _ = plan(BankedGreedy(two_banks(1 * KiB, 64 * KiB)), [base, aliased])
+        self.assertEqual(bufsizes[1], 1024)
+        self.assertEqual(bufsizes[2], 0)
+
+    def test_storage_backed_spec_sits_at_its_offset_inside_the_base(self) -> None:
+        base = make_spec(1024, (0, 10))
+        aliased = make_spec(256, (0, 10))
+        aliased.storage_base = base
+        aliased.storage_base_offset = 512
+
+        bufsizes, alloc = plan(
+            BankedGreedy(two_banks(1 * KiB, 64 * KiB)), [base, aliased]
+        )
+        self.assertEqual(alloc[id(aliased)][0], alloc[id(base)][0])
+        self.assertEqual(alloc[id(aliased)][1], alloc[id(base)][1] + 512)
         self.assertEqual(bufsizes[1], 1024)
         self.assertEqual(bufsizes[2], 0)
 

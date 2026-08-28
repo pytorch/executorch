@@ -8,8 +8,6 @@
 
 #include <stdexcept>
 
-#include <executorch/backends/native/runtime/graph/Format.h>
-
 namespace ptn {
 
 int64_t Scalar::to_int() const {
@@ -34,16 +32,6 @@ bool Scalar::to_bool() const {
     throw std::runtime_error("Scalar::to_bool: scalar is not a Bool");
   }
   return *v;
-}
-
-std::string Scalar::to_string() const {
-  if (is_bool()) {
-    return to_bool() ? "true" : "false";
-  }
-  if (is_int()) {
-    return std::to_string(to_int());
-  }
-  return format_double(to_double());
 }
 
 } // namespace ptn

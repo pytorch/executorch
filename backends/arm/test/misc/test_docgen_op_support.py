@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ast
 from pathlib import Path
 from textwrap import dedent
 
@@ -80,11 +81,57 @@ def test_sort_items_respects_preferred_order_and_deduplicates() -> None:
 def _write_test_module(repo_root: Path, relative_path: str, source: str) -> Path:
     path = repo_root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(dedent(source), encoding="utf-8")
+    pipeline_name = sorted(docgen.BACKEND_PIPELINE_CLASS_NAMES)[0]
+    rendered_source = dedent(source).replace("BackendPipeline", pipeline_name)
+    path.write_text(rendered_source, encoding="utf-8")
     return path
 
 
-def test_scan_vgf_pipeline_tests_collects_fp_and_int_coverage(tmp_path: Path) -> None:
+def test_scan_backend_pipeline_tests_uses_configured_pipeline_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        docgen, "BACKEND_PIPELINE_CLASS_NAMES", frozenset({"CustomBackendPipeline"})
+    )
+    _write_test_module(
+        tmp_path,
+        "backends/arm/test/ops/test_custom_backend.py",
+        """
+        def test_custom_backend():
+            BackendPipeline(
+                object(),
+                test_data,
+                aten_op="torch.ops.aten.relu.default",
+                exir_op=[],
+                quantize=False,
+            )
+        """,
+    )
+
+    rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
+
+    assert unresolved == []
+    assert diagnostics == []
+    assert rows["torch.ops.aten.relu.default"].support_profiles == {"FP"}
+
+
+def test_pipeline_profile_uses_configured_quantize_keyword(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stmt = ast.parse("BackendPipeline(quantize=False)").body[0]
+    assert isinstance(stmt, ast.Expr)
+    call = stmt.value
+    assert isinstance(call, ast.Call)
+    assert docgen._pipeline_profile(call) == "FP"
+
+    monkeypatch.setattr(docgen, "PIPELINE_QUANTIZE_KEYWORD", None)
+    monkeypatch.setattr(docgen, "PIPELINE_DEFAULT_PROFILE", "INT")
+    assert docgen._pipeline_profile(call) == "INT"
+
+
+def test_scan_backend_pipeline_tests_collects_fp_and_int_coverage(
+    tmp_path: Path,
+) -> None:
     _write_test_module(
         tmp_path,
         "backends/arm/test/ops/test_add.py",
@@ -92,7 +139,7 @@ def test_scan_vgf_pipeline_tests_collects_fp_and_int_coverage(tmp_path: Path) ->
         aten_op = "torch.ops.aten.add.Tensor"
 
         def test_add_vgf_no_quant():
-            VgfPipeline(
+            BackendPipeline(
                 object(),
                 test_data,
                 aten_op=aten_op,
@@ -101,7 +148,7 @@ def test_scan_vgf_pipeline_tests_collects_fp_and_int_coverage(tmp_path: Path) ->
             )
 
         def test_add_vgf_quant():
-            VgfPipeline(
+            BackendPipeline(
                 object(),
                 test_data,
                 aten_op=aten_op,
@@ -111,7 +158,7 @@ def test_scan_vgf_pipeline_tests_collects_fp_and_int_coverage(tmp_path: Path) ->
         """,
     )
 
-    rows, unresolved, diagnostics = docgen._scan_vgf_pipeline_tests(tmp_path)
+    rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
 
     assert unresolved == []
     assert diagnostics == []
@@ -127,7 +174,9 @@ def test_scan_vgf_pipeline_tests_collects_fp_and_int_coverage(tmp_path: Path) ->
     }
 
 
-def test_scan_vgf_pipeline_tests_resolves_parametrized_operator(tmp_path: Path) -> None:
+def test_scan_backend_pipeline_tests_resolves_parametrized_operator(
+    tmp_path: Path,
+) -> None:
     _write_test_module(
         tmp_path,
         "backends/arm/test/ops/test_parametrized.py",
@@ -141,11 +190,17 @@ def test_scan_vgf_pipeline_tests_resolves_parametrized_operator(tmp_path: Path) 
 
         @pytest.mark.parametrize("aten_op", cases)
         def test_vgf(aten_op):
-            VgfPipeline(object(), test_data, aten_op=aten_op, exir_op=[], quantize=False)
+            BackendPipeline(
+                object(),
+                test_data,
+                aten_op=aten_op,
+                exir_op=[],
+                quantize=False,
+            )
         """,
     )
 
-    rows, unresolved, diagnostics = docgen._scan_vgf_pipeline_tests(tmp_path)
+    rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
 
     assert unresolved == []
     assert diagnostics == []
@@ -156,7 +211,7 @@ def test_scan_vgf_pipeline_tests_resolves_parametrized_operator(tmp_path: Path) 
     assert all(row.support_profiles == {"FP"} for row in rows.values())
 
 
-def test_scan_vgf_pipeline_tests_infers_runtime_coverage_for_empty_ops(
+def test_scan_backend_pipeline_tests_infers_runtime_coverage_for_empty_ops(
     tmp_path: Path,
 ) -> None:
     _write_test_module(
@@ -166,11 +221,11 @@ def test_scan_vgf_pipeline_tests_infers_runtime_coverage_for_empty_ops(
         aten_op = "torch.ops.aten.alias_copy.default"
 
         def test_alias_copy_vgf_no_quant():
-            VgfPipeline(object(), test_data, aten_op=[], exir_op=[], quantize=False)
+            BackendPipeline(object(), test_data, aten_op=[], exir_op=[], quantize=False)
         """,
     )
 
-    rows, unresolved, _diagnostics = docgen._scan_vgf_pipeline_tests(tmp_path)
+    rows, unresolved, _diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
 
     assert unresolved == []
     row = rows["torch.ops.aten.alias_copy.default"]
@@ -178,17 +233,17 @@ def test_scan_vgf_pipeline_tests_infers_runtime_coverage_for_empty_ops(
     assert row.classifications == {docgen.INFERRED}
 
 
-def test_scan_vgf_pipeline_tests_reports_unattributed_call(tmp_path: Path) -> None:
+def test_scan_backend_pipeline_tests_reports_unattributed_call(tmp_path: Path) -> None:
     _write_test_module(
         tmp_path,
         "backends/arm/test/models/test_model.py",
         """
         def test_model_vgf():
-            VgfPipeline(object(), test_data, aten_op=[], exir_op=[], quantize=False)
+            BackendPipeline(object(), test_data, aten_op=[], exir_op=[], quantize=False)
         """,
     )
 
-    rows, unresolved, _diagnostics = docgen._scan_vgf_pipeline_tests(tmp_path)
+    rows, unresolved, _diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
 
     assert rows == {}
     assert len(unresolved) == 1
@@ -197,7 +252,7 @@ def test_scan_vgf_pipeline_tests_reports_unattributed_call(tmp_path: Path) -> No
     assert unresolved[0].reason == "no statically attributable ATen or Edge operator"
 
 
-def test_scan_vgf_pipeline_tests_skips_function_level_xfail(tmp_path: Path) -> None:
+def test_scan_backend_pipeline_tests_skips_function_level_xfail(tmp_path: Path) -> None:
     _write_test_module(
         tmp_path,
         "backends/arm/test/ops/test_xfail.py",
@@ -206,7 +261,7 @@ def test_scan_vgf_pipeline_tests_skips_function_level_xfail(tmp_path: Path) -> N
 
         @pytest.mark.xfail(reason="unsupported")
         def test_xfailed_vgf():
-            VgfPipeline(
+            BackendPipeline(
                 object(),
                 test_data,
                 aten_op="torch.ops.aten.relu.default",
@@ -216,15 +271,15 @@ def test_scan_vgf_pipeline_tests_skips_function_level_xfail(tmp_path: Path) -> N
         """,
     )
 
-    rows, unresolved, diagnostics = docgen._scan_vgf_pipeline_tests(tmp_path)
+    rows, unresolved, diagnostics = docgen._scan_backend_pipeline_tests(tmp_path)
 
     assert rows == {}
     assert unresolved == []
     assert diagnostics == []
 
 
-def _coverage_row() -> docgen.VgfPipelineCoverage:
-    return docgen.VgfPipelineCoverage(
+def _coverage_row() -> docgen.PipelineCoverage:
+    return docgen.PipelineCoverage(
         exported_op="torch.ops.aten.add.Tensor",
         pytorch_apis=("torch.add", "+"),
         support_profiles={"FP", "INT"},
@@ -242,14 +297,14 @@ def test_generate_markdown_public_and_debug_views(
     row = _coverage_row()
     monkeypatch.setattr(
         docgen,
-        "_scan_vgf_pipeline_tests",
+        "_scan_backend_pipeline_tests",
         lambda _repo_root: ({row.exported_op: row}, [], []),
     )
 
     public = docgen.generate_markdown(Path("/repo"))
     debug = docgen.generate_markdown(Path("/repo"), debug=True)
 
-    assert "# PyTorch operator support for the VGF backend" in public
+    assert f"# {docgen.PAGE_TITLE}" in public
     assert "Total supported PyTorch APIs: **1**." in public
     assert "`torch.add` / `+` | FP, INT | `FP32`, `INT8` | 8x8" in public
     assert "Exported operator" not in public
@@ -261,7 +316,7 @@ def test_generate_markdown_public_and_debug_views(
 
 
 def test_generate_html_escapes_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    row = docgen.VgfPipelineCoverage(
+    row = docgen.PipelineCoverage(
         exported_op="torch.ops.aten.fake.default",
         pytorch_apis=("torch.fake<unsafe>",),
         support_profiles={"FP"},
@@ -269,7 +324,7 @@ def test_generate_html_escapes_values(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         docgen,
-        "_scan_vgf_pipeline_tests",
+        "_scan_backend_pipeline_tests",
         lambda _repo_root: ({row.exported_op: row}, [], []),
     )
 
@@ -283,7 +338,7 @@ def test_generate_html_escapes_values(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_matching_evidence_accepts_stage_equivalent_alias() -> None:
     alias = "torch.ops.aten.conv2d.default"
     tested = {
-        alias: docgen.VgfPipelineCoverage(
+        alias: docgen.PipelineCoverage(
             exported_op=alias,
             pytorch_apis=("torch.nn.Conv2d",),
             support_profiles={"FP"},
@@ -314,7 +369,7 @@ def test_run_check_reports_missing_profile(
 ) -> None:
     op = "torch.ops.aten.add.Tensor"
     tested = {
-        op: docgen.VgfPipelineCoverage(
+        op: docgen.PipelineCoverage(
             exported_op=op,
             pytorch_apis=("torch.add", "+"),
             support_profiles={"FP"},
@@ -340,7 +395,7 @@ def test_run_check_reports_missing_profile(
     }
     monkeypatch.setattr(docgen, "_validate_configuration", lambda _root: [])
     monkeypatch.setattr(
-        docgen, "_scan_vgf_pipeline_tests", lambda _root: (tested, [], [])
+        docgen, "_scan_backend_pipeline_tests", lambda _root: (tested, [], [])
     )
     monkeypatch.setattr(
         docgen, "_collect_backend_supported_ops", lambda _root: expected
@@ -350,7 +405,7 @@ def test_run_check_reports_missing_profile(
     output = capsys.readouterr().out
 
     assert result == 1
-    assert "missing VgfPipeline coverage" in output
+    assert f"missing {docgen.BACKEND_PIPELINE_LABEL} coverage" in output
     assert "`torch.ops.aten.add.Tensor` | INT" in output
 
 
@@ -370,7 +425,7 @@ def test_run_check_strict_ast_fails_on_unresolved_attribution(
     monkeypatch.setattr(docgen, "_validate_configuration", lambda _root: [])
     monkeypatch.setattr(
         docgen,
-        "_scan_vgf_pipeline_tests",
+        "_scan_backend_pipeline_tests",
         lambda _root: ({}, unresolved, []),
     )
     monkeypatch.setattr(docgen, "_collect_backend_supported_ops", lambda _root: {})
