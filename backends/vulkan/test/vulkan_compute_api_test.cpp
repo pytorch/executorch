@@ -117,7 +117,7 @@ TEST_F(VulkanComputeAPITest, device_to_host_staging_prefers_cached_memory) {
       context()->adapter_ptr()->vma().create_staging_buffer(
           4096, vkapi::CopyDirection::DEVICE_TO_HOST);
   const VmaAllocator allocator = staging_buffer.vma_allocator();
-  ASSERT_NE(allocator, VK_NULL_HANDLE);
+  ASSERT_NE(allocator, nullptr);
 
   const VkPhysicalDeviceMemoryProperties* memory_properties = nullptr;
   vmaGetMemoryProperties(allocator, &memory_properties);
@@ -136,7 +136,7 @@ TEST_F(VulkanComputeAPITest, device_to_host_staging_prefers_cached_memory) {
   }
 
   const VmaAllocation allocation = staging_buffer.allocation();
-  ASSERT_NE(allocation, VK_NULL_HANDLE);
+  ASSERT_NE(allocation, nullptr);
 
   VkMemoryPropertyFlags selected_flags = 0;
   vmaGetAllocationMemoryProperties(allocator, allocation, &selected_flags);
