@@ -8,13 +8,14 @@
 
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
-from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (  # noqa
-    CanonicalizeViewCopyPermutePass,
+from executorch.backends.transforms.fuse_identical_input_transforms_pass import (  # noqa
+    NormalizeTransformInputPlaceholdersPass,
 )
 
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
+from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
@@ -139,7 +140,6 @@ from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_identical_input_transforms_pass import (  # noqa
     FuseIdenticalInputTransformsPass,
-    NormalizeTransformInputPlaceholdersPass,
 )
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
@@ -180,6 +180,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .remove_permutes_around_elementwise_tosa_ops import (  # noqa
     RemovePermutesAroundElementwiseTosaOps,
 )
+from .remove_safe_softmax_guard_pass import RemoveSafeSoftmaxGuardPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
