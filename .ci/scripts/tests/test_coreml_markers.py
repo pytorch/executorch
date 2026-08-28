@@ -218,15 +218,20 @@ def test_conftest_matches_the_coremltools_marker(system, machine, sys_platform, 
     )
 
 
-def test_scikit_learn_is_not_a_base_dependency():
-    # scikit-learn was declared here to follow coremltools, on the understanding that
-    # coremltools needed it for palettization. It does not: the flag it sets, _HAS_SKLEARN,
-    # gates coremltools' converter for scikit-learn's own model types, which nothing here
-    # converts. The declared floor was also above the ceiling coremltools accepts, so the
-    # resolved version was always rejected. requirements-examples.txt declares it for the
-    # example scripts that really do import it.
-    with pytest.raises(AssertionError):
-        _base_dependency("scikit-learn")
+@pytest.mark.parametrize("system,machine,sys_platform", PLATFORMS)
+@pytest.mark.parametrize("python", PYTHONS)
+def test_scikit_learn_follows_coremltools(system, machine, sys_platform, python):
+    # coremltools needs scikit-learn to palettize weights, so it is only useful where
+    # coremltools is. Nothing here imports scikit-learn directly, and coremltools does not
+    # reach it through the _HAS_SKLEARN flag either: quantization_utils.py imports
+    # sklearn.cluster.KMeans at the point of use, on the default clustering path. So the
+    # CODEBOOK_WEIGHT_ONLY recipe fails without this entry even though _HAS_SKLEARN is False,
+    # and the two must stay tied together.
+    assert _marker_says_installed(
+        _base_dependency("scikit-learn"), system, machine, sys_platform, python
+    ) == _marker_says_installed(
+        _base_dependency("coremltools"), system, machine, sys_platform, python
+    )
 
 
 def test_the_platforms_core_ml_is_used_on_are_still_covered():

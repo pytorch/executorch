@@ -696,6 +696,22 @@ def _base_dependencies() -> List[str]:
         # with coremltools 9.0 on a Linux aarch64 machine. Keep this in sync with the condition
         # in conftest.py; .ci/scripts/tests/test_coreml_markers.py checks that the two agree.
         "coremltools==9.0; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
+        # coremltools needs scikit-learn to palettize weights, so it follows coremltools.
+        # Without a marker it also installed where coremltools does not, most visibly on
+        # Windows, and brought scipy with it.
+        #
+        # Nothing here imports scikit-learn directly. coremltools does, and not through the
+        # _HAS_SKLEARN flag it sets: quantization_utils.py imports sklearn.cluster.KMeans at the
+        # point of use, and that is the default clustering path, taken unless the weight is a
+        # single column of at least ten thousand float16 values. So the CODEBOOK_WEIGHT_ONLY
+        # recipe raises ModuleNotFoundError without this, whatever _HAS_SKLEARN says.
+        #
+        # The floor is above the version coremltools accepts for its own scikit-learn model
+        # converter, which is why that converter reports itself disabled. That is a separate
+        # feature nothing here uses, and palettization does not check the version, so the two
+        # are unrelated. Measured with coremltools 9.0 and scikit-learn 1.9.0: the converter is
+        # off and palettization works.
+        "scikit-learn>=1.7.1; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]
