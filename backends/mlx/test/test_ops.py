@@ -8587,3 +8587,41 @@ class UpdateAndAttendTest(OpTestCase):
                 return model(*test_inputs)
         finally:
             REGISTRY.uninstall(key)
+
+
+class FlipModel(nn.Module):
+    def __init__(self, dims: List[int]):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.flip(x, self.dims)
+
+
+@register_test
+class FlipTest(OpTestCase):
+    name = "flip"
+
+    def __init__(self, shape: Tuple[int, ...], dims: List[int]):
+        self.shape = shape
+        self.dims = dims
+        dims_str = "_".join(str(d) for d in dims)
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"flip_{shape_str}_dims{dims_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["FlipTest"]:
+        return [
+            cls(shape=(4, 5), dims=[0]),
+            cls(shape=(4, 5), dims=[1]),
+            cls(shape=(4, 5), dims=[0, 1]),
+            cls(shape=(3, 4, 5), dims=[-1]),
+            cls(shape=(3, 4, 5), dims=[0, 2]),
+            cls(shape=(3, 4, 5), dims=[0, 1, 2]),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return FlipModel(self.dims)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
