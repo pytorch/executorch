@@ -80,8 +80,8 @@ target_link_libraries(
 )
 
 set_source_files_properties(
-  ${OBJC_SOURCES} PROPERTIES COMPILE_FLAGS "-fobjc-arc" "-fno-exceptions"
-                                                        "-fno-rtti"
+  ${OBJC_SOURCES} PROPERTIES COMPILE_FLAGS
+                             "-fobjc-arc -fno-exceptions -fno-rtti"
 )
 
 set_target_properties(
