@@ -1187,10 +1187,17 @@ TEST_P(ProcessTest, YuvShortChromaPlaneSubstitutesOnlyTheMissingByte) {
   // full-range decode of (Y=150, Cb=100, Cr) for Cr=200 and Cr=128.
   expect_rgb(c, h, w, 3, 3, 251 / 255.0f, 108 / 255.0f, 100 / 255.0f);
   expect_rgb(s, h, w, 3, 3, 150 / 255.0f, 160 / 255.0f, 100 / 255.0f);
-  // Away from the final pair the two runs read identical bytes.
+  // Away from the final pair the two runs read identical bytes. How far the
+  // pair reaches depends on the backend's chroma upsampling: the portable
+  // decoder replicates each sample across its co-sited 2x2 block, while the
+  // Apple GPU path interpolates between samples, which carries the final
+  // sample one pixel further toward the interior. (Where no platform backend
+  // provides a GPU, kGpuAlways runs the portable decoder too, and the wider
+  // exclusion just checks fewer pixels.)
+  const int32_t reach = GetParam() == ImageProcessorConfig::kGpuAlways ? 1 : 2;
   for (int32_t row = 0; row < h; ++row) {
     for (int32_t col = 0; col < w; ++col) {
-      if (row >= 2 && col >= 2) {
+      if (row >= reach && col >= reach) {
         continue;
       }
       for (int32_t ch = 0; ch < 3; ++ch) {
