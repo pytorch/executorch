@@ -217,13 +217,9 @@ fi
 # copy is enough and re-copying per mode would only rewrite an identical file.
 capture_mlx_metallib() {
   local preset_out_dir="$1"
-  # Read the decision the preset actually made, not the command-line flags. The
-  # Apple presets probe for the Metal compiler and leave EXECUTORCH_BUILD_MLX OFF
-  # when it is missing, and CMAKE_OPTIONS_OVERRIDE is empty unless the caller
-  # passed a --<backend> flag, so testing that array alone would hard-fail a
-  # plain no-flag build on a machine without the Metal toolchain. Do not name a
-  # cache type: set_overridable_option writes STRING, define_overridable_option
-  # writes BOOL, and the preset path produces the former.
+  # Ask the configure that just ran, not the command-line flags: the Apple presets
+  # probe for the Metal compiler and leave MLX off when it is missing, while
+  # CMAKE_OPTIONS_OVERRIDE is empty unless the caller passed a --<backend> flag.
   local cache="${OUTPUT_DIR}/${preset_out_dir}/CMakeCache.txt"
   if [[ -f "${cache}" ]] &&
     ! grep -qE "^EXECUTORCH_BUILD_MLX:[A-Z]+=(ON|1|TRUE|YES)$" "${cache}"; then
@@ -232,8 +228,6 @@ capture_mlx_metallib() {
   if [[ " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
     return
   fi
-  local mlx_resources_dir="$SOURCE_ROOT_DIR/.Package.swift/backend_mlx_resources"
-  mkdir -p "${mlx_resources_dir}"
   local mlx_metallib="${OUTPUT_DIR}/${preset_out_dir}/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
   # The simulator preset dir is "simulator" but the compiled-in slice name is "ios-simulator".
   local slice
@@ -246,6 +240,12 @@ capture_mlx_metallib() {
     echo "error: MLX is enabled but ${mlx_metallib} was not produced for the ${slice} slice" >&2
     exit 1
   fi
+  # Create the directory only once there is something to put in it. Creating it
+  # earlier would leave an empty directory behind on the paths that return above,
+  # and the workflow tests for the directory to decide whether to publish
+  # metallibs, so an empty one makes that test pass and the copy silently no-op.
+  local mlx_resources_dir="$SOURCE_ROOT_DIR/.Package.swift/backend_mlx_resources"
+  mkdir -p "${mlx_resources_dir}"
   # The destination lives outside OUTPUT_DIR, so the top-level rm -rf does not
   # reach it; drop any previous copy so a stale metallib cannot survive into this
   # build and ship.
@@ -344,11 +344,23 @@ EOF
 
 echo "Creating frameworks"
 
+# Whether a build option ended up ON according to the configure that just ran,
+# rather than according to the command-line flags. A preset can switch an option
+# off on its own (the Apple presets probe for the Metal compiler), so the flags
+# the caller passed are not the whole story. Do not name a cache type:
+# set_overridable_option writes STRING, define_overridable_option writes BOOL,
+# and the preset path produces the former.
+option_is_on_in_cache() {
+  local option_name="$1"
+  local cache="${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[0]}/CMakeCache.txt"
+  [[ -f "${cache}" ]] || return 0
+  grep -qE "^${option_name}:[A-Z]+=(ON|1|TRUE|YES)$" "${cache}"
+}
+
 append_framework_flag() {
   local option_name="$1"
   local framework="$2"
   local mode="$3"
-
   if [[ ${#CMAKE_OPTIONS_OVERRIDE[@]} -gt 0 && -n "$option_name" ]]; then
     for cmake_option in "${CMAKE_OPTIONS_OVERRIDE[@]}"; do
       if [[ "$cmake_option" =~ "-D${option_name}=OFF" ]]; then
@@ -356,6 +368,13 @@ append_framework_flag() {
         return
       fi
     done
+  fi
+  # A preset can disable an option with no flag passed, in which case those
+  # libraries were never built and asking for them here makes
+  # create_frameworks.sh exit 1 on a missing input.
+  if [[ -n "$option_name" ]] && ! option_is_on_in_cache "$option_name"; then
+    echo "Skipping framework: ${framework} (disabled by the preset)"
+    return
   fi
 
   if [[ -n "$mode" && "$mode" != "Release" ]]; then

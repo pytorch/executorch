@@ -336,6 +336,28 @@ jobs:
                 exit 1
               fi
             done < "${RUNNER_TEMP}/checksums.txt"
+            # If MLX is being published, its Metal kernels have to come with it.
+            # The copy below is conditional and the capture upstream is best
+            # effort, so without this an incomplete set publishes a manifest
+            # declaring three resources that are not on the branch, and the
+            # consumer only finds out at Metal device init.
+            if grep -q "^backend_mlx " "${RUNNER_TEMP}/checksums.txt"; then
+              for SLICE in mlx-ios mlx-ios-simulator mlx-macos; do
+                METALLIB="${RUNNER_TEMP}/frameworks-ios/backend_mlx_resources/${SLICE}.metallib"
+                if [ ! -s "${METALLIB}" ]; then
+                  echo "::error::backend_mlx is being published but ${SLICE}.metallib is missing or empty"
+                  exit 1
+                fi
+              done
+            fi
+            # Nothing else evaluates this manifest before consumers do: the checks
+            # above are text greps, the swiftpm branch has no CI of its own, and a
+            # .template is not a manifest. Resolve it here so a Swift-level defect
+            # fails this run rather than every consumer of the published branch.
+            if ! swift package dump-package > /dev/null; then
+              echo "::error::the substituted Package.swift does not evaluate"
+              exit 1
+            fi
 
             git config --global user.name "PyTorch Bot"
             git config --global user.email "pytorchbot@users.noreply.github.com"
