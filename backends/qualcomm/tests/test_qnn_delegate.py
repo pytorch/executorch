@@ -4460,19 +4460,20 @@ class TestQNNQuantizedOperator(TestQNN):
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
                     adb = self.get_adb_tool(pte_path)
-                    binaries_trace = generate_htp_profile_result(
-                        tmp_dir,
-                        self.chipset_table[TestQNN.soc_model],
-                        pte_path,
-                        [sample_input],
-                        adb,
+                    artifacts = generate_htp_profile_result(
+                        artifact_dir=tmp_dir,
+                        soc_id=self.chipset_table[TestQNN.soc_model],
+                        pte_path=pte_path,
+                        inputs=[sample_input],
+                        adb=adb,
                     )
                     htp_ops = []
-                    for _, (_, qhas) in binaries_trace.items():
-                        with open(qhas, "r") as qhas_file:
+                    for artifact in artifacts:
+                        self.assertIsNotNone(artifact.qhas_json)
+                        with open(artifact.qhas_json, "r") as qhas_file:
                             qhas_data = json.load(qhas_file)
-                            for row in qhas_data["data"]["qnn_op_types"]["data"]:
-                                htp_ops.append(row["op"])
+                        for row in qhas_data["data"]["qnn_op_types"]["data"]:
+                            htp_ops.append(row["op"])
                     self.assertTrue(
                         any("HadamardTransform" in op for op in htp_ops),
                         "Expected linear to be lowered to HadamardTransform "
@@ -4520,19 +4521,20 @@ class TestQNNQuantizedOperator(TestQNN):
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
                     adb = self.get_adb_tool(pte_path)
-                    binaries_trace = generate_htp_profile_result(
-                        tmp_dir,
-                        self.chipset_table[TestQNN.soc_model],
-                        adb,
-                        pte_path,
-                        [sample_input],
+                    artifacts = generate_htp_profile_result(
+                        artifact_dir=tmp_dir,
+                        soc_id=self.chipset_table[TestQNN.soc_model],
+                        pte_path=pte_path,
+                        inputs=[sample_input],
+                        adb=adb,
                     )
                     htp_ops = []
-                    for _, (_, qhas) in binaries_trace.items():
-                        with open(qhas, "r") as qhas_file:
+                    for artifact in artifacts:
+                        self.assertIsNotNone(artifact.qhas_json)
+                        with open(artifact.qhas_json, "r") as qhas_file:
                             qhas_data = json.load(qhas_file)
-                            for row in qhas_data["data"]["qnn_op_types"]["data"]:
-                                htp_ops.append(row["op"])
+                        for row in qhas_data["data"]["qnn_op_types"]["data"]:
+                            htp_ops.append(row["op"])
                     self.assertTrue(
                         any("HadamardTransform" in op for op in htp_ops),
                         "Expected matmul to be lowered to HadamardTransform "
@@ -4574,19 +4576,20 @@ class TestQNNQuantizedOperator(TestQNN):
             with open(pte_path, "wb") as f:
                 edge_prog_mgr.write_to_file(f)
             adb = self.get_adb_tool(pte_path)
-            binaries_trace = generate_htp_profile_result(
-                tmp_dir,
-                self.chipset_table[TestQNN.soc_model],
-                pte_path,
-                [sample_input],
-                adb,
+            artifacts = generate_htp_profile_result(
+                artifact_dir=tmp_dir,
+                soc_id=self.chipset_table[TestQNN.soc_model],
+                pte_path=pte_path,
+                inputs=[sample_input],
+                adb=adb,
             )
             htp_ops = []
-            for _, (_, qhas) in binaries_trace.items():
-                with open(qhas, "r") as qhas_file:
+            for artifact in artifacts:
+                self.assertIsNotNone(artifact.qhas_json)
+                with open(artifact.qhas_json, "r") as qhas_file:
                     qhas_data = json.load(qhas_file)
-                    for row in qhas_data["data"]["qnn_op_types"]["data"]:
-                        htp_ops.append(row["op"])
+                for row in qhas_data["data"]["qnn_op_types"]["data"]:
+                    htp_ops.append(row["op"])
             self.assertTrue(
                 any("HadamardTransform" in op for op in htp_ops),
                 "Expected conv to be lowered to HadamardTransform "

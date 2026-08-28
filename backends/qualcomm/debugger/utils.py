@@ -631,13 +631,13 @@ def _generate_htp_analysis_result(
 
 # backward compatibility shim
 def generate_optrace(
-    artifact,
+    artifact: str,
     soc_id: QcomChipset,
     adb,
     pte_path: str,
     inputs: Sequence[Tuple[torch.Tensor]],
-):
-    """see generate_htp_profile_result()"""
+) -> List[QnnHtpProfileArtifacts]:
+    """Legacy positional wrapper for generate_htp_profile_result()."""
     return generate_htp_profile_result(artifact, soc_id, pte_path, inputs, adb)
 
 
