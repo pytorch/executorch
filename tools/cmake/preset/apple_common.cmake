@@ -51,7 +51,13 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 # Core ML delegate into its protobuf path, which the shipped Core ML framework
 # does not bundle. The wheel's pybind preset configures profiling the same way.
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
-set_overridable_option(EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE ON)
+# The ETDump Apple wrapper needs the event tracer, so default it to follow the
+# tracer's resolved value rather than force it on: turning the tracer off with
+# -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF then turns this off too instead of
+# hitting the requires-check with an option the user never set.
+set_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE ${EXECUTORCH_ENABLE_EVENT_TRACER}
+)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_IMAGE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
