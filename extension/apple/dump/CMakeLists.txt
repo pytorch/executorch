@@ -31,14 +31,20 @@ target_sources(extension_etdump_apple PRIVATE ${OBJC_SOURCES})
 # import of "ExecuTorchModule.h" find its sibling, and keeps the module header
 # reachable by a single path so it is not seen as two conflicting definitions.
 set(_etdump_core_headers_dir ${CMAKE_CURRENT_BINARY_DIR}/include)
-file(MAKE_DIRECTORY ${_etdump_core_headers_dir}/ExecuTorch)
 file(GLOB _etdump_core_headers
      ${EXECUTORCH_ROOT}/extension/apple/ExecuTorch/Exported/*.h
      ${EXECUTORCH_ROOT}/extension/apple/ExecuTorch/Internal/*.h
 )
-file(COPY ${_etdump_core_headers}
-     DESTINATION ${_etdump_core_headers_dir}/ExecuTorch
-)
+# configure_file(... COPYONLY) rather than file(COPY): it registers each source
+# header as a reconfigure dependency, so editing a core header re-stages it. A
+# plain file(COPY) runs once at configure and would leave a stale staged copy.
+foreach(_etdump_core_header ${_etdump_core_headers})
+  get_filename_component(_etdump_core_header_name ${_etdump_core_header} NAME)
+  configure_file(
+    ${_etdump_core_header}
+    ${_etdump_core_headers_dir}/ExecuTorch/${_etdump_core_header_name} COPYONLY
+  )
+endforeach()
 
 target_include_directories(
   extension_etdump_apple
