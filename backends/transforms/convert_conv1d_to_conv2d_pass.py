@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,8 +20,11 @@ from executorch.exir.pass_base import ExportPass, PassResult
 class ConvertConv1dToConv2dPass(ExportPass):
     """Express Conv1d as Conv2d with a unit-height spatial dimension.
 
-    Only convolutions with lifted parameter, buffer, or constant weights are
-    converted. Dynamic weights and unfolded QDQ weights are left unchanged.
+    At the top level, only convolutions with lifted parameter, buffer, or
+    constant weights are converted. Dynamic weights and unfolded QDQ weights
+    are left unchanged.
+    Weights passed across control-flow boundaries are unsqueezed inside the
+    nested graph so its input signature remains unchanged.
     The pass emits squeeze and unsqueeze boundaries for each converted
     convolution; downstream view cleanup can fold adjacent boundaries.
     """
@@ -66,14 +70,137 @@ class ConvertConv1dToConv2dPass(ExportPass):
             return None
         return weight_node
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    @staticmethod
+    def _is_conv1d(node: torch.fx.Node) -> bool:
+        return (
+            node.op == "call_function"
+            and node.target == exir_ops.edge.aten.convolution.default
+            and len(node.args) == 9
+            and len(node.args[3]) == 1
+        )
+
+    @staticmethod
+    def _convert_node(
+        graph: torch.fx.Graph,
+        node: torch.fx.Node,
+        input_node: torch.fx.Node,
+        weight_node: torch.fx.Node,
+        unsqueeze_weight: bool,
+    ) -> None:
+        """Rewrite one Conv1d node as an equivalent Conv2d operation.
+
+        The rewrite adds a unit-height dimension to the input, expands the
+        convolution attributes to two spatial dimensions, and removes the
+        unit-height dimension from the output. When requested, it also inserts
+        an unsqueeze that produces a weight with shape ``[O, I, 1, K]`` from
+        the original ``[O, I, K]`` weight.
+
+        Args:
+            graph (torch.fx.Graph): Graph containing the convolution.
+            node (torch.fx.Node): Conv1d node to rewrite.
+            input_node (torch.fx.Node): Convolution input node.
+            weight_node (torch.fx.Node): Convolution weight node.
+            unsqueeze_weight (bool): Whether to add a graph-local weight
+                unsqueeze. Nested control-flow graphs require this to preserve
+                their input signatures.
+        """
+        with graph.inserting_before(node):
+            input_2d = graph.call_function(
+                exir_ops.edge.aten.unsqueeze_copy.default,
+                args=(input_node, 2),
+            )
+            weight_2d = (
+                graph.call_function(
+                    exir_ops.edge.aten.unsqueeze_copy.default,
+                    args=(weight_node, 2),
+                )
+                if unsqueeze_weight
+                else weight_node
+            )
+
+        args = list(node.args)
+        args[0] = input_2d
+        args[1] = weight_2d
+        args[3] = [1, *list(args[3])]  # stride
+        args[4] = [0, *list(args[4])]  # padding
+        args[5] = [1, *list(args[5])]  # dilation
+        args[7] = [0, *list(args[7])]  # output padding
+        node.args = tuple(args)
+
+        with graph.inserting_after(node):
+            output_1d = graph.call_function(
+                exir_ops.edge.aten.squeeze_copy.dim,
+                args=(node, 2),
+            )
+        for user in list(node.users):
+            if user is not output_1d:
+                user.replace_input_with(node, output_1d)
+
+    def _convert_nested_graph(self, graph_module: torch.fx.GraphModule) -> bool:
+        """Convert Conv1d nodes in a control-flow subgraph and its children.
+
+        Each conversion unsqueezes the weight inside the subgraph, preserving
+        the 3D weight expected at the control-flow boundary.
+
+        Args:
+            graph_module (torch.fx.GraphModule): Subgraph to convert.
+
+        Returns:
+            bool: True if this subgraph or one of its children was modified.
+        """
         graph = graph_module.graph
         modified = False
-        candidates = {
-            node: weight_node
-            for node in graph.nodes
-            if (weight_node := self._conv1d_weight_node(node)) is not None
-        }
+        for node in list(graph.nodes):
+            if not self._is_conv1d(node):
+                continue
+            input_node, weight_node = node.args[:2]
+            if not isinstance(input_node, torch.fx.Node) or not isinstance(
+                weight_node, torch.fx.Node
+            ):
+                continue
+            weight_meta = weight_node.meta.get("val")
+            if not isinstance(weight_meta, torch.Tensor) or weight_meta.dim() != 3:
+                continue
+            # A nested graph receives its weight through the control-flow
+            # interface. Keep that interface 3D and create the 4D Conv2d
+            # weight locally instead of changing the value supplied by its
+            # parent graph.
+            self._convert_node(
+                graph,
+                node,
+                input_node,
+                weight_node,
+                unsqueeze_weight=True,
+            )
+            modified = True
+
+        for child in graph_module.children():
+            if isinstance(child, torch.fx.GraphModule):
+                modified = self._convert_nested_graph(child) or modified
+
+        if modified:
+            graph_module.recompile()
+        return modified
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        graph = graph_module.graph
+        is_root = graph_module is self.exported_program.graph_module
+
+        # Preserve the signature through which a parent supplies parameters to
+        # a nested graph by using graph-local weight unsqueezes.
+        modified = not is_root and self._convert_nested_graph(graph_module)
+
+        # At the root, lifted weights belong to the exported program and can be
+        # changed to 4D once instead of being unsqueezed while the model runs.
+        candidates = (
+            {
+                node: weight_node
+                for node in graph.nodes
+                if (weight_node := self._conv1d_weight_node(node)) is not None
+            }
+            if is_root
+            else {}
+        )
 
         for node, weight_node in candidates.items():
             if any(
@@ -93,30 +220,21 @@ class ConvertConv1dToConv2dPass(ExportPass):
                 continue
             if not self._unsqueeze_weight(weight_node):
                 continue
-            with graph.inserting_before(node):
-                input_2d = graph.call_function(
-                    exir_ops.edge.aten.unsqueeze_copy.default,
-                    args=(input_node, 2),
-                )
-
-            args = list(node.args)
-            args[0] = input_2d
-            args[3] = [1, *list(args[3])]  # stride
-            args[4] = [0, *list(args[4])]  # padding
-            args[5] = [1, *list(args[5])]  # dilation
-            args[7] = [0, *list(args[7])]  # output padding
-            node.args = tuple(args)
-
-            with graph.inserting_after(node):
-                output_1d = graph.call_function(
-                    exir_ops.edge.aten.squeeze_copy.dim,
-                    args=(node, 2),
-                )
-            for user in list(node.users):
-                if user is not output_1d:
-                    user.replace_input_with(node, output_1d)
-
+            self._convert_node(
+                graph,
+                node,
+                input_node,
+                weight_node,
+                unsqueeze_weight=False,
+            )
             modified = True
+
+        # The normal entry point invokes this call method for the root graph.
+        # Explicitly apply the rewrite to its child control-flow GraphModules.
+        if is_root:
+            for child in graph_module.children():
+                if isinstance(child, torch.fx.GraphModule):
+                    modified = self._convert_nested_graph(child) or modified
 
         if not modified:
             return PassResult(graph_module, False)
