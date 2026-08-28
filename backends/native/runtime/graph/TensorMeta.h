@@ -8,7 +8,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <vector>
 
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
@@ -63,10 +62,6 @@ struct TensorMeta {
   // Element count from each dim's upper bound. Throws std::runtime_error on an
   // unbounded dynamic dim (max < 0), which has no finite count.
   int64_t numel() const;
-
-  // e.g. "Float[16,16]", "Float[1..8,16]" (bounded dynamic), "Float[0..?,16]"
-  // (unbounded).
-  std::string to_string() const;
 
   // Exact on dim_order_hint: an empty hint and a spelled-out identity
   // permutation compare unequal though they mean the same layout.

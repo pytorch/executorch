@@ -61,10 +61,17 @@ class CortexMTensorAdd(Model):
 
 
 class CortexMIntAlphaAdd(ModelAlpha):
-    """An integer alpha is the case that was silently miscompiled.
+    """An integer alpha folds into the second operand's multiplier, so this
+    lowers like any other add."""
 
-    ModelAlpha(0.5) below is caught anyway, by "alpha argument of type float
-    cannot be safely cast", so it never exercised the silent path.
+    ops_before_transforms = CortexMTensorAdd.ops_before_transforms
+    ops_after_transforms = CortexMTensorAdd.ops_after_transforms
+
+
+class CortexMAlphaAdd(ModelAlpha):
+    """A float alpha never reaches the lowering: FoldAndAnnotateQParamsPass
+    re-traces with the dequantize nodes gone and aten refuses it on an int8
+    add, so the quantizer declines it and the op stays in fp32.
 
     The boundary quant/dequant pairs are pinned so that a quantizer which
     stopped annotating anything at all would not read as a successful decline.
@@ -81,13 +88,6 @@ class CortexMIntAlphaAdd(ModelAlpha):
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 3,
         "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 3,
     }
-
-
-class CortexMAlphaAdd(ModelAlpha):
-    """A float alpha is declined by the same guard, and stays in fp32."""
-
-    ops_before_transforms = CortexMIntAlphaAdd.ops_before_transforms
-    ops_after_transforms = CortexMIntAlphaAdd.ops_after_transforms
 
 
 class CortexMAddReLU(torch.nn.Module):
