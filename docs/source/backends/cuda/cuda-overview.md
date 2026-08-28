@@ -215,12 +215,12 @@ video decoder that writes to the GPU, or an earlier model whose output you kept 
 `from_blob` does not allocate or migrate anything, so the pointer has to be genuinely valid
 on the device you name, and it has to outlive the tensor.
 
-If the data starts on the host, `clone_tensor_ptr_to` allocates on the device and copies it
+If the data starts on the host, `clone_tensor_ptr` with a device target allocates on the device and copies it
 across, which costs one transfer:
 
 ```cpp
 auto host_input = make_tensor_ptr({rows, columns}, std::move(data));
-auto input = clone_tensor_ptr_to(host_input, DeviceType::CUDA);
+auto input = clone_tensor_ptr(host_input, DeviceType::CUDA);
 auto result = module.forward(input);
 ```
 

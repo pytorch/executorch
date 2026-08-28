@@ -577,11 +577,11 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt32) {
   EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Int);
 }
 
-TEST_F(TensorPtrTest, CloneTensorPtrCastInt32ToFloat) {
+TEST_F(TensorPtrTest, ConvertTensorPtrInt32ToFloat) {
   std::vector<int32_t> data = {1, 2, 3, 4};
   auto tensor = make_tensor_ptr({2, 2}, std::move(data));
   auto cloned_tensor =
-      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Float);
+      convert_tensor_ptr(tensor, executorch::aten::ScalarType::Float);
 
   EXPECT_EQ(cloned_tensor->dim(), 2);
   EXPECT_EQ(cloned_tensor->size(0), 2);
@@ -594,11 +594,11 @@ TEST_F(TensorPtrTest, CloneTensorPtrCastInt32ToFloat) {
   EXPECT_FLOAT_EQ(ptr[3], 4.0f);
 }
 
-TEST_F(TensorPtrTest, CloneTensorPtrCastFloatToBFloat16) {
+TEST_F(TensorPtrTest, ConvertTensorPtrFloatToBFloat16) {
   std::vector<float> data = {1.0f, 2.0f, 3.5f};
   auto tensor = make_tensor_ptr({3}, std::move(data));
   auto cloned_tensor =
-      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::BFloat16);
+      convert_tensor_ptr(*tensor, executorch::aten::ScalarType::BFloat16);
 
   EXPECT_EQ(cloned_tensor->dim(), 1);
   EXPECT_EQ(cloned_tensor->size(0), 3);
@@ -610,22 +610,26 @@ TEST_F(TensorPtrTest, CloneTensorPtrCastFloatToBFloat16) {
   EXPECT_NEAR(static_cast<float>(ptr[2]), 3.5f, 0.01f);
 }
 
-TEST_F(TensorPtrTest, CloneTensorPtrCastKeepsMetadata) {
-  std::vector<uint8_t> data(
-      6 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
+TEST_F(TensorPtrTest, ConvertTensorPtrKeepsMetadata) {
+  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
   auto tensor = make_tensor_ptr({2, 3}, std::move(data));
   auto cloned_tensor =
-      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Float);
+      convert_tensor_ptr(*tensor, executorch::aten::ScalarType::Double);
 
   EXPECT_EQ(cloned_tensor->dim(), 2);
   EXPECT_EQ(cloned_tensor->size(0), 2);
   EXPECT_EQ(cloned_tensor->size(1), 3);
   EXPECT_EQ(cloned_tensor->strides()[0], 3);
   EXPECT_EQ(cloned_tensor->strides()[1], 1);
-  EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Float);
+  EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Double);
+  EXPECT_NE(cloned_tensor->const_data_ptr(), tensor->const_data_ptr());
+  auto ptr = cloned_tensor->const_data_ptr<double>();
+  for (int i = 0; i < 6; ++i) {
+    EXPECT_DOUBLE_EQ(ptr[i], static_cast<double>(i + 1));
+  }
 }
 
-TEST_F(TensorPtrTest, CloneTensorPtrCastNullData) {
+TEST_F(TensorPtrTest, ConvertTensorPtrNullData) {
   auto tensor = make_tensor_ptr(
       {2, 2},
       nullptr,
@@ -635,7 +639,7 @@ TEST_F(TensorPtrTest, CloneTensorPtrCastNullData) {
       executorch::aten::DeviceType::CPU,
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
   auto cloned_tensor =
-      clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Int);
+      convert_tensor_ptr(*tensor, executorch::aten::ScalarType::Int);
 
   EXPECT_EQ(cloned_tensor->dim(), 2);
   EXPECT_EQ(cloned_tensor->size(0), 2);
@@ -644,15 +648,93 @@ TEST_F(TensorPtrTest, CloneTensorPtrCastNullData) {
   EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Int);
 }
 
-TEST_F(TensorPtrTest, CloneTensorPtrCastInvalidExpectDeath) {
+TEST_F(TensorPtrTest, ConvertTensorPtrInvalidExpectDeath) {
   std::vector<float> data = {1.0f, 2.0f};
   auto tensor = make_tensor_ptr({2}, std::move(data));
   ET_EXPECT_DEATH(
       {
-        auto _ = clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Int);
+        auto _ = convert_tensor_ptr(*tensor, executorch::aten::ScalarType::Int);
       },
       "");
 }
+
+TEST_F(TensorPtrTest, ConvertTensorPtrSameTypeCopiesData) {
+  std::vector<float> data = {1.0f, 2.0f, 3.0f};
+  auto tensor = make_tensor_ptr({3}, std::move(data));
+  auto cloned_tensor =
+      convert_tensor_ptr(*tensor, executorch::aten::ScalarType::Float);
+
+  EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Float);
+  ASSERT_NE(cloned_tensor->const_data_ptr(), nullptr);
+  EXPECT_NE(cloned_tensor->const_data_ptr(), tensor->const_data_ptr());
+  auto ptr = cloned_tensor->const_data_ptr<float>();
+  EXPECT_FLOAT_EQ(ptr[0], 1.0f);
+  EXPECT_FLOAT_EQ(ptr[1], 2.0f);
+  EXPECT_FLOAT_EQ(ptr[2], 3.0f);
+
+  // A dtype the cast itself does not handle still copies, because asking for
+  // the type the tensor already has never reaches the cast.
+  std::vector<float> complex_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  auto complex_tensor = make_tensor_ptr(
+      {2},
+      complex_data.data(),
+      {},
+      {},
+      executorch::aten::ScalarType::ComplexFloat);
+  auto complex_clone = convert_tensor_ptr(
+      complex_tensor, executorch::aten::ScalarType::ComplexFloat);
+
+  EXPECT_EQ(
+      complex_clone->scalar_type(), executorch::aten::ScalarType::ComplexFloat);
+  EXPECT_NE(complex_clone->const_data_ptr(), complex_tensor->const_data_ptr());
+}
+
+#ifndef USE_ATEN_LIB
+TEST_F(TensorPtrTest, ConvertTensorPtrKeepsShapeDynamism) {
+  std::vector<float> data = {1.0f, 2.0f, 3.0f};
+  auto tensor = make_tensor_ptr(
+      {3},
+      std::move(data),
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::STATIC);
+  auto cloned_tensor =
+      convert_tensor_ptr(*tensor, executorch::aten::ScalarType::Double);
+
+  EXPECT_EQ(
+      cloned_tensor->shape_dynamism(),
+      executorch::aten::TensorShapeDynamism::STATIC);
+}
+#endif // USE_ATEN_LIB
+
+#ifdef __GNUC__
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'. These two
+// tests exist to keep the deprecated spellings working until they are removed.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
+TEST_F(TensorPtrTest, DeprecatedCloneWithScalarTypeStillConverts) {
+  std::vector<float> data = {1.0f, 2.0f};
+  auto tensor = make_tensor_ptr({2}, std::move(data));
+
+  for (const auto& cloned_tensor :
+       {clone_tensor_ptr(*tensor, executorch::aten::ScalarType::Double),
+        clone_tensor_ptr(tensor, executorch::aten::ScalarType::Double)}) {
+    ASSERT_NE(cloned_tensor, nullptr);
+    EXPECT_EQ(
+        cloned_tensor->scalar_type(), executorch::aten::ScalarType::Double);
+    ASSERT_NE(cloned_tensor->const_data_ptr(), nullptr);
+    auto ptr = cloned_tensor->const_data_ptr<double>();
+    EXPECT_DOUBLE_EQ(ptr[0], 1.0);
+    EXPECT_DOUBLE_EQ(ptr[1], 2.0);
+  }
+}
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrInt32) {
   std::vector<int32_t> data = {1, 2, 3, 4};

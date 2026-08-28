@@ -314,7 +314,7 @@ MuseGlimmerVisionRuntime::prepare_decoded_image(
       executorch::aten::DeviceType::CUDA, 0);
   const auto stage_input = [&](const auto& input) {
     device_inputs.push_back(
-        ::executorch::extension::clone_tensor_ptr_to(input, cuda_device));
+        ::executorch::extension::clone_tensor_ptr(input, cuda_device));
     encoder_inputs.emplace_back(device_inputs.back());
   };
   stage_input(inputs.patches);
