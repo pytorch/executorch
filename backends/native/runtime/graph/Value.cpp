@@ -26,13 +26,12 @@ const Scalar& Value::scalar() const {
   return *s;
 }
 
-const std::vector<ValueRef>& Value::content_refs() const {
-  const std::vector<ValueRef>* refs =
-      std::get_if<std::vector<ValueRef>>(&value_);
-  if (refs == nullptr) {
-    throw std::runtime_error("Value::content_refs: value is not a List");
+const std::vector<ValueId>& Value::content_ids() const {
+  const std::vector<ValueId>* ids = std::get_if<std::vector<ValueId>>(&value_);
+  if (ids == nullptr) {
+    throw std::runtime_error("Value::content_ids: value is not a List");
   }
-  return *refs;
+  return *ids;
 }
 
 } // namespace ptn

@@ -12,22 +12,22 @@
 
 namespace ptn {
 
-// Index-arena handles: a NodeRef indexes the graph's node arena, a ValueRef
+// Index-arena handles: a NodeId indexes the graph's node arena, a ValueId
 // its value arena. Plain int32_t aliases — they index, compare, and hash
-// directly, at the cost of no NodeRef/ValueRef type distinction. kInvalid marks
-// "no ref".
-using NodeRef = int32_t;
-using ValueRef = int32_t;
+// directly, at the cost of no NodeId/ValueId type distinction. kInvalid marks
+// "no id".
+using NodeId = int32_t;
+using ValueId = int32_t;
 inline constexpr int32_t kInvalid = -1;
 
-constexpr bool valid(int32_t ref) {
-  return ref >= 0;
+constexpr bool valid(int32_t id) {
+  return id >= 0;
 }
 
-// std::cmp_less compares the signed ref against the unsigned size without
+// std::cmp_less compares the signed id against the unsigned size without
 // casting either side.
-constexpr bool in_bounds(int32_t ref, size_t size) {
-  return valid(ref) && std::cmp_less(ref, size);
+constexpr bool in_bounds(int32_t id, size_t size) {
+  return valid(id) && std::cmp_less(id, size);
 }
 
 } // namespace ptn
