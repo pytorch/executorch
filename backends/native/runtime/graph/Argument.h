@@ -21,29 +21,29 @@ namespace ptn {
 
 // One payload struct per kind of value an fx arg/kwarg can hold; the same set
 // of kinds as the schema ArgumentValue union, but in-graph references are
-// resolved to ValueRefs (the deserializer turns SSA names into arena indices).
+// resolved to ValueIds (the deserializer turns SSA names into arena indices).
 
 struct NoneArg {};
 
 struct TensorArg {
-  ValueRef ref = kInvalid;
+  ValueId id = kInvalid;
 };
 
-// A scalar int operand: a literal `value`, or (when `ref` is valid) a reference
+// A scalar int operand: a literal `value`, or (when `id` is valid) a reference
 // to an in-graph int value — a sym_size / arith node — with `value` ignored.
 struct IntArg {
   int64_t value = 0;
-  ValueRef ref = kInvalid;
+  ValueId id = kInvalid;
 };
 
 struct FloatArg {
   double value = 0.0;
-  ValueRef ref = kInvalid;
+  ValueId id = kInvalid;
 };
 
 struct BoolArg {
   bool value = false;
-  ValueRef ref = kInvalid;
+  ValueId id = kInvalid;
 };
 
 struct StringArg {
@@ -55,12 +55,12 @@ struct ScalarTypeArg {
 };
 
 // A list of ints. Element i is a literal (values[i]), or a symbolic reference
-// when `refs` is non-empty and refs[i] is valid (values[i] ignored). Empty
-// `refs` means all literal; otherwise refs.size() == values.size(). E.g. a
-// dynamic view size [s0, -1] is values={0, -1}, refs={<sym>, kInvalid}.
+// when `ids` is non-empty and ids[i] is valid (values[i] ignored). Empty `ids`
+// means all literal; otherwise ids.size() == values.size(). E.g. a dynamic view
+// size [s0, -1] is values={0, -1}, ids={<sym>, kInvalid}.
 struct IntListArg {
   std::vector<int64_t> values;
-  std::vector<ValueRef> refs;
+  std::vector<ValueId> ids;
 };
 
 struct FloatListArg {
@@ -72,19 +72,19 @@ struct BoolListArg {
 };
 
 struct TensorListArg {
-  std::vector<ValueRef> refs;
+  std::vector<ValueId> ids;
 };
 
 // A list of optional tensor references (Tensor?[]); a kInvalid entry is None.
 struct OptionalTensorListArg {
-  std::vector<ValueRef> refs;
+  std::vector<ValueId> ids;
 };
 
 // A subgraph passed to a higher-order op (torch.cond / while_loop / map).
 // `name` is the original submodule attr label, for debug output only.
 struct GraphArg {
   std::string name;
-  GraphRef subgraph_ref = kInvalid;
+  GraphId subgraph_id = kInvalid;
 };
 
 // Same order as the schema ArgumentValue union, with every id one lower:

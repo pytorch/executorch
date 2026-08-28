@@ -11,7 +11,7 @@
 #include <vector>
 
 #include <executorch/backends/native/runtime/Program.h>
-#include <executorch/backends/native/runtime/graph/Format.h>
+#include <executorch/backends/native/runtime/graph/StringFormat.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
 
 // Everything below runs on a buffer that Program::load() has already put
