@@ -8,6 +8,7 @@
 
 #include <string>
 
+#include <executorch/backends/native/runtime/graph/Argument.h>
 #include <executorch/backends/native/runtime/graph/Scalar.h>
 #include <executorch/backends/native/runtime/graph/TensorMeta.h>
 
@@ -24,5 +25,9 @@ std::string to_string(const TensorMeta& meta);
 
 // The live alternative only: "true", "-3", "1.5e-08".
 std::string to_string(const Scalar& scalar);
+
+// Compact one-line form. A symbolic operand (one carrying a valid id) renders
+// as "%<id>"; a literal renders as its value.
+std::string to_string(const Argument& arg);
 
 } // namespace ptn
