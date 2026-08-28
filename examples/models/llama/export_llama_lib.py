@@ -1344,6 +1344,52 @@ def _to_edge_and_lower_llama_mlx(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _to_edge_and_lower_llama_coreml(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    embedding_quantize: Optional[str] = None,
+    pt2e_quantize: Optional[str] = None,
+    coreml_ios: int = 15,
+    coreml_quantize: Optional[str] = None,
+    coreml_compute_units: str = "cpu_only",
+    generate_etrecord: bool = False,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    """
+    Lower Llama model to Core ML using to_edge_transform_and_lower.
+
+    The deprecated export_to_edge() + to_backend() split decomposes the graph
+    before the partitioner runs, so the ops Core ML has its own implementations
+    for are already broken into primitives by the time it sees them.
+    CoreMLPartitioner.ops_to_not_decompose() asks to keep every op Core ML
+    supports, and only to_edge_transform_and_lower honours that request.
+    """
+    logging.info("Lowering model using Core ML partitioner")
+
+    partitioners = [
+        get_coreml_partitioner(
+            coreml_ios,
+            embedding_quantize,
+            pt2e_quantize,
+            coreml_quantize,
+            coreml_compute_units,
+        )
+    ]
+
+    builder_exported.generate_etrecord = generate_etrecord
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
 def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
@@ -1744,6 +1790,32 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             modelname,
             quantizers,
             additional_passes,
+            verbose=llm_config.debug.verbose,
+        )
+    elif llm_config.backend.coreml.enabled and not (
+        llm_config.backend.vulkan.enabled
+        or llm_config.backend.mps.enabled
+        or llm_config.backend.qnn.enabled
+    ):
+        builder = _to_edge_and_lower_llama_coreml(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            embedding_quantize=llm_config.quantization.embedding_quantize,
+            pt2e_quantize=(
+                llm_config.quantization.pt2e_quantize.value
+                if llm_config.quantization.pt2e_quantize
+                else None
+            ),
+            coreml_ios=llm_config.backend.coreml.ios,
+            coreml_quantize=(
+                llm_config.backend.coreml.quantize.value
+                if llm_config.backend.coreml.quantize
+                else None
+            ),
+            coreml_compute_units=llm_config.backend.coreml.compute_units.value,
+            generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
         )
     else:
