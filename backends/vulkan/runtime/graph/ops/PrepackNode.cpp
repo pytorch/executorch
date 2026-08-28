@@ -18,16 +18,16 @@ namespace vkcompute {
 PrepackNode::PrepackNode(
     ComputeGraph& graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const utils::uvec3& local_workgroup_size,
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg,
     const ValueRef tref,
     const ValueRef packed,
     const vkapi::ParamsBindList& params,
     const vkapi::SpecVarList& spec_vars,
     const std::vector<PushConstantDataInfo>& push_constants)
     : shader_(shader),
-      global_workgroup_size_(global_workgroup_size),
-      local_workgroup_size_(local_workgroup_size),
+      gwg_(gwg),
+      lwg_(gwg.required_lwg_size().is_valid() ? gwg.required_lwg_size() : lwg),
       tref_(tref),
       packed_(packed),
       params_(params),
@@ -102,7 +102,7 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
 
 void PrepackNode::prepare_pipelines(ComputeGraph* graph) {
   graph->register_pipeline_to_create(
-      shader_, local_workgroup_size_, spec_vars_, push_constants_);
+      shader_, lwg_, spec_vars_, push_constants_);
 }
 
 void PrepackNode::encode(ComputeGraph* graph) {
@@ -131,7 +131,7 @@ void PrepackNode::encode(ComputeGraph* graph) {
 
     vkapi::PipelineBarrier pipeline_barrier{};
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
-        shader_, local_workgroup_size_, spec_vars_, push_constants_offset);
+        shader_, lwg_, spec_vars_, push_constants_offset);
 
     uint32_t idx = 0;
     graph->bind_tensor_to_descriptor_set(
@@ -147,7 +147,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
         descriptor_set,
         pipeline_barrier,
         shader_,
-        global_workgroup_size_,
+        gwg_,
+        lwg_,
         push_constants_data.data(),
         push_constants_offset);
   }

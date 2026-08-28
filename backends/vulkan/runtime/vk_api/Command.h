@@ -51,19 +51,19 @@ class CommandBuffer final {
   struct Bound {
     VkPipeline pipeline;
     VkPipelineLayout pipeline_layout;
-    LocalWorkGroup local_workgroup_size;
+    LocalWorkGroup lwg;
     VkDescriptorSet descriptors;
 
     explicit Bound()
         : pipeline{VK_NULL_HANDLE},
           pipeline_layout{VK_NULL_HANDLE},
-          local_workgroup_size{0u, 0u, 0u},
+          lwg{0u, 0u, 0u},
           descriptors{VK_NULL_HANDLE} {}
 
     inline void reset() {
       pipeline = VK_NULL_HANDLE;
       pipeline_layout = VK_NULL_HANDLE;
-      local_workgroup_size = LocalWorkGroup{0u, 0u, 0u};
+      lwg = LocalWorkGroup{0u, 0u, 0u};
       descriptors = VK_NULL_HANDLE;
     }
   };
@@ -95,7 +95,7 @@ class CommandBuffer final {
 
   void insert_barrier(PipelineBarrier& pipeline_barrier);
   void insert_barrier_only(PipelineBarrier& pipeline_barrier);
-  void dispatch(const utils::uvec3&);
+  void dispatch(const GlobalWorkGrid&, const LocalWorkGroup&);
   void blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst);
 
   void write_timestamp(VkQueryPool, const uint32_t) const;

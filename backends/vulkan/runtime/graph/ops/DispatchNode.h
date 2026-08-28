@@ -31,8 +31,8 @@ class DispatchNode : public ExecuteNode {
   explicit DispatchNode(
       ComputeGraph& graph,
       const vkapi::ShaderInfo& shader,
-      const utils::uvec3& global_workgroup_size,
-      const utils::uvec3& local_workgroup_size,
+      const GlobalWorkGrid& gwg,
+      const LocalWorkGroup& lwg,
       const std::vector<ArgGroup>& args,
       const vkapi::ParamsBindList& params,
       const std::vector<PushConstantDataInfo>& push_constants = {},
@@ -50,8 +50,8 @@ class DispatchNode : public ExecuteNode {
 
  protected:
   vkapi::ShaderInfo shader_;
-  utils::uvec3 global_workgroup_size_;
-  LocalWorkGroup local_workgroup_size_;
+  GlobalWorkGrid gwg_;
+  LocalWorkGroup lwg_;
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
   const std::vector<PushConstantDataInfo> push_constants_;
