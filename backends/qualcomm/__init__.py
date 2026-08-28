@@ -1,4 +1,5 @@
 import os
+import threading
 
 # The Qualcomm SDK setup below is deferred rather than run here, so that importing this
 # package has no side effects. It used to run at import time, which meant that merely
@@ -17,17 +18,31 @@ from .scripts.download_qnn_sdk import (  # noqa: F401
 )
 
 _sdk_ready = False
+# Guards the flag above. Python's import lock does not, because the setup is now called from
+# several modules rather than from one package __init__, and two threads importing two of them
+# concurrently would otherwise both run an installer that downloads and rewrites the
+# environment.
+_sdk_lock = threading.Lock()
 
 
 def setup_qnn_sdk() -> None:
     """Make the Qualcomm SDK usable in this process, once.
 
-    Safe to call repeatedly: the work happens on the first call and later calls return
-    immediately. Called by the code paths that need the SDK, so a caller does not have to.
+    Safe to call repeatedly and from more than one thread: the work happens on the first call and
+    later calls return immediately. Called by the code paths that need the SDK, so a caller does
+    not have to.
     """
-    global _sdk_ready
     if _sdk_ready:
         return
+    with _sdk_lock:
+        # Another thread may have finished while this one waited.
+        if _sdk_ready:
+            return
+        _setup_qnn_sdk_locked()
+
+
+def _setup_qnn_sdk_locked() -> None:
+    global _sdk_ready
 
     # The wheel build imports this package to collect its files, and has no use for an SDK.
     if os.getenv("EXECUTORCH_BUILDING_WHEEL", "0").lower() in ("1", "true", "yes"):

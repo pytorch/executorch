@@ -90,6 +90,40 @@ def test_setup_honours_a_preinstalled_sdk(monkeypatch):
     assert not calls
 
 
+def test_setup_runs_once_under_concurrent_callers(monkeypatch):
+    """Several modules call it, so two threads can reach it at the same time.
+
+    Without a lock they both see the flag unset and both run the installer, which downloads an
+    SDK and rewrites the environment. The import lock does not cover this, because the calls
+    come from different modules rather than from one package __init__.
+    """
+    import threading
+    import time
+
+    calls = []
+
+    def slow_install():
+        # Widen the window between the check and the flag being set, so an unlocked version
+        # fails reliably rather than occasionally.
+        time.sleep(0.2)
+        calls.append(1)
+        return True
+
+    monkeypatch.setattr(qnn, "install_qnn_sdk", slow_install)
+    monkeypatch.setattr(qnn, "is_linux_x86", lambda: True)
+    monkeypatch.setattr(qnn, "_sdk_ready", False)
+    monkeypatch.delenv("QNN_SDK_ROOT", raising=False)
+    monkeypatch.delenv("EXECUTORCH_BUILDING_WHEEL", raising=False)
+
+    threads = [threading.Thread(target=qnn.setup_qnn_sdk) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert len(calls) == 1
+
+
 def test_setup_reports_a_failed_install(monkeypatch):
     """A failure has to name the two ways out, since it cannot be resolved automatically."""
     monkeypatch.setattr(qnn, "install_qnn_sdk", lambda: False)

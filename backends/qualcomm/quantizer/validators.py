@@ -8,6 +8,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import cast, Dict, List, Optional, Set, Tuple
 
+# Loading the native adaptor below needs the SDK reachable. See node_visitor.py for why this
+# is here rather than in the package's __init__. Ahead of the adaptor import specifically:
+# this module imports it before it imports node_visitor, so it cannot rely on that.
+from executorch.backends.qualcomm import setup_qnn_sdk
+
+setup_qnn_sdk()
+
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
