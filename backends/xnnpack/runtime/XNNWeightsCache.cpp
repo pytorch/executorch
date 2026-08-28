@@ -338,6 +338,7 @@ size_t XNNWeightsCache::look_up(
     const xnn_weights_cache_look_up_key* cache_key) {
   const void* unpacked_weights_ptr = cache_key->kernel;
   const void* unpacked_bias_ptr = cache_key->bias;
+  context->last_lookup_seed_mismatch_ = false;
   auto entry = context->unpacked_data_to_name_.find(unpacked_weights_ptr);
   if (entry == context->unpacked_data_to_name_.end()) {
     context->last_lookup_unnamed_ = true;
@@ -369,6 +370,7 @@ size_t XNNWeightsCache::look_up(
         weight_bias_name.c_str(),
         packed_weight_entry->second.seed,
         cache_key->seed);
+    context->last_lookup_seed_mismatch_ = true;
     return SIZE_MAX;
   }
   packed_weight_entry->second.in_current_runtime = true;
@@ -377,7 +379,21 @@ size_t XNNWeightsCache::look_up(
 
 void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
 #ifndef _WIN32
-  if (context->last_lookup_unnamed_ || context->loaded_from_disk_) {
+  // XNNPACK also re-packs for a different runtime context by calling
+  // reserve_space with no preceding look_up, so consume the flag here:
+  // only the re-pack directly following a seed-mismatch look_up may take
+  // the file-backed path.
+  const bool seed_mismatch_repack = context->last_lookup_seed_mismatch_;
+  context->last_lookup_seed_mismatch_ = false;
+
+  // Unnamed constants never reload by name, and an incidental re-pack of an
+  // already-valid loaded cache needn't persist — both go to heap. A
+  // seed-mismatch re-pack is different: the loaded entry is stale (XNNPACK
+  // upgrade), so it must take the file-backed path below, letting
+  // save_packed_index persist the refreshed seed so the next launch hits
+  // instead of re-packing into heap (dirty memory) every time.
+  if (context->last_lookup_unnamed_ ||
+      (context->loaded_from_disk_ && !seed_mismatch_repack)) {
     return context->reserve_space_heap(n);
   }
   if (context->packed_file_fd_ >= 0) {
@@ -670,6 +686,13 @@ bool XNNWeightsCache::load_packed_cache() {
   const size_t index_region_end = file_size - 20;
 
   void* map = mmap(nullptr, file_size, PROT_READ, MAP_SHARED, fd, 0);
+  // The live MAP_SHARED mapping keeps this open file description — and with
+  // it the flock — alive for as long as the mapping exists, so close() alone
+  // does NOT drop the lock. Without the explicit LOCK_UN the O_RDWR reopen in
+  // initialize_for_runtime always fails with EWOULDBLOCK, leaving
+  // packed_file_fd_ == -1, which silently disables every write path (new
+  // packs, seed-mismatch re-packs, save_packed_index) after a warm load.
+  flock(fd, LOCK_UN);
   close(fd);
   if (map == MAP_FAILED) {
     return false;
