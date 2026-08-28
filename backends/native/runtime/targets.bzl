@@ -69,7 +69,7 @@ def define_common_targets():
         deps = [
             ":native_graph_schema",
             ":runtime",
-            "//executorch/backends/native/runtime/graph:format",
+            "//executorch/backends/native/runtime/graph:string_format",
         ],
         visibility = ["PUBLIC"],
     )

@@ -14,16 +14,23 @@ in its own module; this package aggregates them and exposes the default pass lis
 
 from typing import List, Union
 
+from executorch.backends.transforms.collapse_view_copy import CollapseViewCopyPass
+
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportPass
 from executorch.exir.passes.cse_pass import CSEPass
 
 __all__ = [
+    "CollapseViewCopyPass",
     "get_default_passes",
 ]
 
 
 def get_default_passes() -> List[Union[ExportPass, ExportedProgramPassBase]]:
-    """Passes enabled by default for the native backend."""
+    """Passes enabled by default for the native backend.
+
+    CSE runs after view_copy collapsing to dedupe the settled graph.
+    """
     return [
+        CollapseViewCopyPass(),
         CSEPass(),
     ]

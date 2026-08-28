@@ -241,7 +241,7 @@ TEST_F(MLXSequenceCacheTest, GrowthPreservesExistingCells) {
 TEST_F(MLXSequenceCacheTest, PoolDoublesAndClampsToMaxSlots) {
   using namespace ::mlx::core;
   Pool p(/*initial_slots=*/2, /*max_slots=*/32, H, D, float16);
-  EXPECT_EQ(p.slots(), 2);
+  EXPECT_EQ(p.slots(), 0) << "a pool holds no slots until its first write";
   p.write(0, 5, randn(5, float16), s); // 2 -> 4 -> 8
   EXPECT_EQ(p.slots(), 8);
 
@@ -250,8 +250,9 @@ TEST_F(MLXSequenceCacheTest, PoolDoublesAndClampsToMaxSlots) {
   q.write(0, 17, randn(17, float16), s);
   EXPECT_EQ(q.slots(), 20);
 
-  // initial_slots above the cap is clamped at construction.
+  // initial_slots above the cap is clamped when the pool allocates.
   Pool r(/*initial_slots=*/512, /*max_slots=*/4, H, D, float16);
+  r.write(0, 1, randn(1, float16), s);
   EXPECT_EQ(r.slots(), 4);
 }
 
