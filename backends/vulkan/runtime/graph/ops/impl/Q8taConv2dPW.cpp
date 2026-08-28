@@ -20,7 +20,7 @@ namespace vkcompute {
 // Shader dispatch utilities
 //
 
-utils::uvec3 pick_q8ta_conv2d_pw_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_pw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -46,24 +46,25 @@ utils::uvec3 pick_q8ta_conv2d_pw_global_wg_size(
   // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4 = C4
   // y = width / (TILE_M4 * 4) = W4 / TILE_M4 = W4
   // z = height
-  return {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H};
+  return GlobalWorkGrid(
+      {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H},
+      kTiledWorkGrid);
 }
 
-utils::uvec3 pick_q8ta_conv2d_pw_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_pw_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return pick_hw_square_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
 //
 // 4W4C shader dispatch utilities
 //
 
-utils::uvec3 pick_q8ta_conv2d_pw_4w4c_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_pw_4w4c_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -91,17 +92,18 @@ utils::uvec3 pick_q8ta_conv2d_pw_4w4c_global_wg_size(
   // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4
   // y = width / (TILE_M4 * 4) = W4 / TILE_M4
   // z = height
-  return {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H};
+  return GlobalWorkGrid(
+      {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H},
+      kTiledWorkGrid);
 }
 
-utils::uvec3 pick_q8ta_conv2d_pw_4w4c_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_pw_4w4c_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return pick_hw_square_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
 //
@@ -155,10 +157,11 @@ ValueRef prepack_quantized_conv2d_pw_weight(
       storage_type,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(num_blocks_x),
-      utils::safe_downcast<uint32_t>(num_blocks_y),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(num_blocks_x),
+       utils::safe_downcast<uint32_t>(num_blocks_y),
+       1u},
+      kTiledWorkGrid);
 
   std::string kernel_name = "pack_q8_conv2d_weights";
   add_storage_type_suffix(kernel_name, storage_type);
@@ -166,8 +169,8 @@ ValueRef prepack_quantized_conv2d_pw_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       // Inputs and Outputs
       weight_data,
       packed_weight,
@@ -338,8 +341,8 @@ void add_q8ta_conv2d_pw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_pw_global_wg_size,
-      pick_q8ta_conv2d_pw_local_wg_size,
+      pick_q8ta_conv2d_pw_gwg,
+      pick_q8ta_conv2d_pw_lwg,
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
          packed_weight,
