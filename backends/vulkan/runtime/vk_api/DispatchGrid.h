@@ -108,6 +108,7 @@ class GlobalWorkGrid final {
   bool operator!=(const GlobalWorkGrid& other) const;
 
   const utils::uvec3& extents() const;
+  uint32_t operator[](int idx) const;
   const LocalWorkGroup& required_lwg_size() const;
   DispatchGridIntent intent() const;
   bool is_linear() const;
@@ -115,6 +116,14 @@ class GlobalWorkGrid final {
   void wrap_linear_dispatch(
       const utils::uvec3& max_wg_count,
       uint32_t target_total_nthreads = 64u);
+  void wrap_linear_dispatch(
+      const utils::uvec3& max_wg_count,
+      const LocalWorkGroup& required_lwg);
+
+  void validate(
+      const LocalWorkGroup& lwg,
+      const utils::uvec3& max_wg_count,
+      const LocalWorkGroup& output_tile = LocalWorkGroup(1u, 1u, 1u)) const;
 };
 
 } // namespace vkcompute

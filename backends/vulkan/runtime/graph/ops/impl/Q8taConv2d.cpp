@@ -57,7 +57,7 @@ bool q8ta_conv2d_check_4w4c_packed_dim_info(const api::PackedDimInfo& info) {
  *
  * Each thread processes a 4Wx4C tile of output elements.
  */
-utils::uvec3 pick_q8ta_conv2d_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -76,7 +76,7 @@ utils::uvec3 pick_q8ta_conv2d_global_wg_size(
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid({W4, H, C4}, kTiledWorkGrid);
 }
 
 /**
@@ -86,10 +86,10 @@ utils::uvec3 pick_q8ta_conv2d_global_wg_size(
  *   - {8, 1, 8} for very large tensors: best baseline performance
  *   - {64, 1, 1} for narrow channel dimensions: minimize inactive invocations
  */
-utils::uvec3 pick_q8ta_conv2d_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
@@ -102,34 +102,32 @@ utils::uvec3 pick_q8ta_conv2d_local_wg_size(
 
   // For very large tensors (H >= 100 and large x/z), use {8, 1, 8}
   // This configuration performed best for 128x128 tensors in experiments
-  if (H >= 100 && global_workgroup_size[0u] >= 24 &&
-      global_workgroup_size[2u] >= 24) {
-    return {8u, 1u, 8u};
+  if (H >= 100 && gwg[0u] >= 24 && gwg[2u] >= 24) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
 
   // For medium-sized tensors, use {4, 2, 8} for better height parallelism
   // This configuration showed +57% improvement on 81x81 tensors
-  if (global_workgroup_size[0u] >= 4 && global_workgroup_size[1u] >= 2 &&
-      global_workgroup_size[2u] >= 8) {
-    return {4u, 2u, 8u};
+  if (gwg[0u] >= 4 && gwg[1u] >= 2 && gwg[2u] >= 8) {
+    return LocalWorkGroup(4u, 2u, 8u);
   }
 
   // For tensors with sufficient x and z dimensions, use square configuration
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
+  if (gwg[0u] >= 6 && gwg[2u] >= 6) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
 
   // If x dimension is very small, bias towards z dimension
-  if (global_workgroup_size[0u] < 2u) {
-    return {1u, 1u, 64u};
+  if (gwg[0u] < 2u) {
+    return LocalWorkGroup(1u, 1u, 64u);
   }
 
   // If z dimension is very small, bias towards x dimension
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
+  if (gwg[2u] < 2u) {
+    return LocalWorkGroup(64u, 1u, 1u);
   }
 
-  return {16u, 1u, 4u};
+  return LocalWorkGroup(16u, 1u, 4u);
 }
 
 //
@@ -192,10 +190,11 @@ ValueRef prepack_quantized_conv2d_weight(
       storage_type,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(num_blocks_x),
-      utils::safe_downcast<uint32_t>(num_blocks_y),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(num_blocks_x),
+       utils::safe_downcast<uint32_t>(num_blocks_y),
+       1u},
+      kTiledWorkGrid);
 
   std::string kernel_name = "pack_q8_conv2d_weights";
   add_storage_type_suffix(kernel_name, storage_type);
@@ -203,8 +202,8 @@ ValueRef prepack_quantized_conv2d_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       // Inputs and Outputs
       weight_data,
       packed_weight,
@@ -357,8 +356,8 @@ void add_q8ta_conv2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_global_wg_size,
-      pick_q8ta_conv2d_local_wg_size,
+      pick_q8ta_conv2d_gwg,
+      pick_q8ta_conv2d_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
