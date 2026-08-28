@@ -119,10 +119,6 @@ for (key, value) in products {
     key.hasSuffix(debug_suffix) ? $0 + debug_suffix : $0
   }
   let dependencies: [Target.Dependency] = targetNames.map { .target(name: $0) }
-  let resources: [Resource] = (value["resources"] as? [String] ?? []).filter {
-    // Gitignored until the build script produces them; skip a missing one so resolve does not fail.
-    FileManager.default.fileExists(atPath: ".Package.swift/\(key)/\($0)")
-  }.map { .copy($0) }
   let frameworks: [LinkerSetting] =
     (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) }
   let libraries: [LinkerSetting] =
@@ -131,7 +127,6 @@ for (key, value) in products {
     name: "\(key)\(dependencies_suffix)",
     dependencies: dependencies,
     path: ".Package.swift/\(key)",
-    resources: resources,
     linkerSettings: frameworks + libraries
   ))
 }
