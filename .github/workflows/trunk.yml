@@ -19,6 +19,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   # Emits the list of changed files for the current PR or push commit.
   # On PR: PR diff. On push: diff against `github.event.before`.
   # On events without a diff base (workflow_dispatch, tag creation,
@@ -81,8 +85,12 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-arm-backend-zephyr:
+    needs: docker-image
     name: test-arm-backend-zephyr
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         include:
@@ -93,8 +101,8 @@ jobs:
           - { readme: zephyr/samples/mv2-ethosu/README.md, target: ethos-u85 }
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-zephyr-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -119,8 +127,9 @@ jobs:
           --zephyr-samples-readme-path "${{ matrix.readme }}"
 
   test-models-linux-aarch64:
+    needs: docker-image
     name: test-models-linux-aarch64
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -128,30 +137,30 @@ jobs:
       matrix:
         model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
         backend: [portable, xnnpack-quantization-delegation]
-        runner: [linux.arm64.2xlarge]
+        runner: [mt-l-arm64g4-16-62]
         include:
           - model: lstm
             backend: portable
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
           - model: mul
             backend: portable
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
           - model: softmax
             backend: portable
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
           - model: phi_4_mini
             backend: portable
-            runner: linux.arm64.m7g.4xlarge
+            runner: mt-l-arm64g4-16-62
           - model: qwen2_5_1_5b
             backend: portable
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
           - model: llama3_2_vision_encoder
             backend: portable
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-aarch64-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -223,8 +232,9 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
   test-demo-backend-delegation:
+    needs: docker-image
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -235,8 +245,8 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -250,8 +260,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
   test-arm-backend-ethos-u:
+    needs: docker-image
     name: test-arm-backend-ethos-u
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -273,8 +284,8 @@ jobs:
           - test_arm_backend: test_deit_e2e_ethos_u
       fail-fast: false
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -290,7 +301,8 @@ jobs:
 
         # Increase number of files user can monitor to bypass buck failures.
         # Hopefully this is high enough for this setup.
-        sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
+        # Node-level, so an unprivileged pod cannot change it.
+        sudo sysctl fs.inotify.max_user_watches=1048576 2>/dev/null || true
 
         ARM_TEST=${{ matrix.test_arm_backend }}
 
@@ -303,8 +315,9 @@ jobs:
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-vkml:
+    needs: docker-image
     name: test-arm-backend-vkml
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -317,8 +330,8 @@ jobs:
           - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-24.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -333,7 +346,8 @@ jobs:
 
         # Increase number of files user can monitor to bypass buck failures.
         # Hopefully this is high enough for this setup.
-        sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
+        # Node-level, so an unprivileged pod cannot change it.
+        sudo sysctl fs.inotify.max_user_watches=1048576 2>/dev/null || true
 
         ARM_TEST=${{ matrix.test_arm_backend }}
 
@@ -432,9 +446,10 @@ jobs:
         ${CONDA_RUN} sh .ci/scripts/test_llama_torchao_lowbit.sh
 
   test-llama-runner-linux:
+    needs: docker-image
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -442,33 +457,33 @@ jobs:
       matrix:
         dtype: [fp32]
         mode: [portable, xnnpack+custom]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
+        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g4-16-62]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         include:
           - dtype: bf16
             mode: portable
-            runner: linux.2xlarge
+            runner: mt-l-x86iavx512-8-64
             docker-image: executorch-ubuntu-22.04-clang12
           - dtype: bf16
             mode: portable
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
           - dtype: bf16
             mode: custom
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
         # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+        #   - Excluding the ARM64 gcc image on the x86 runner
+        #   - Excluding the x86 clang image on the ARM64 runner
         exclude:
-          - runner: linux.2xlarge
+          - runner: mt-l-x86iavx512-8-64
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
+          - runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -543,34 +558,35 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
   test-torchao-huggingface-checkpoints:
+    needs: docker-image
     name: test-torchao-huggingface-checkpoints
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       matrix:
         model: [qwen3_4b, phi_4_mini, lfm2_5_1_2b]
-        runner: [linux.2xlarge]
+        runner: [mt-l-x86iavx512-8-64]
         docker-image: [executorch-ubuntu-22.04-clang12]
         backend: [xnnpack]
         include:
           - model: qwen3_4b
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao
           - model: phi_4_mini
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao
           - model: lfm2_5_1_2b
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -637,8 +653,9 @@ jobs:
         echo "::endgroup::"
 
   test-qnn-model:
+    needs: docker-image
     name: test-qnn-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -648,8 +665,8 @@ jobs:
         model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l, conv_former]
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -663,8 +680,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
   test-qnn-optimum-model:
+    needs: docker-image
     name: test-qnn-optimum-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -674,8 +692,8 @@ jobs:
         model: [cvt, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -740,10 +758,11 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-huggingface-transformers-xnnpack:
+    needs: docker-image
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers-xnnpack
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -763,8 +782,8 @@ jobs:
       fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -905,8 +924,9 @@ jobs:
         ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE}
 
   test-llama-runner-qnn-linux:
+    needs: docker-image
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -917,8 +937,8 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
