@@ -41,17 +41,24 @@ if TYPE_CHECKING:
     from transformers.feature_extraction_utils import BatchFeature
 
 
-def _batch_feature_type():
-    """The HuggingFace BatchFeature class, imported on use.
+def _is_batch_feature(inputs) -> bool:
+    """Whether `inputs` is a HuggingFace BatchFeature.
 
-    transformers is not a dependency of this package, and only the generate_hf helpers
-    below need it, so importing it at module scope made the whole runner unimportable on
-    an install that has no transformers, including the compiled extension imported above
-    that has nothing to do with HuggingFace.
+    transformers is not a dependency of this package, and only the generate_hf helpers below
+    need it, so importing it at module scope made the whole runner unimportable on an install
+    that has no transformers, including the compiled extension imported above that has nothing
+    to do with HuggingFace.
+
+    A missing transformers answers no rather than raising. Nothing can be a BatchFeature when
+    the class does not exist, and raising here would turn "this input is the wrong type" into a
+    missing dependency error for a caller who never intended to use HuggingFace at all.
     """
-    from transformers.feature_extraction_utils import BatchFeature
+    try:
+        from transformers.feature_extraction_utils import BatchFeature
+    except ImportError:
+        return False
 
-    return BatchFeature
+    return isinstance(inputs, BatchFeature)
 
 
 def _find_image_token_runs(
@@ -192,15 +199,16 @@ def generate_hf(
     stats_callback: Optional[Callable[[Stats], None]] = None,
 ) -> None:
     """Generate using an BatchFeature by converting to multimodal inputs internally, or using a list of MultimodalInput."""
-    if isinstance(inputs, _batch_feature_type()):
+    # The list form is tested first because it needs nothing from HuggingFace. Resolving
+    # BatchFeature to compare against it would import transformers, which this package does not
+    # declare, so a caller passing a list would fail on a dependency its own input never needs.
+    if isinstance(inputs, list) and all(isinstance(i, MultimodalInput) for i in inputs):
+        converted = inputs
+    elif _is_batch_feature(inputs):
         logging.info(
             "Input is a BatchFeature, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
         )
         converted = _hf_to_multimodal_inputs(inputs, image_token_id=image_token_id)
-    elif isinstance(inputs, list) and all(
-        isinstance(i, MultimodalInput) for i in inputs
-    ):
-        converted = inputs
     else:
         raise RuntimeError(
             "inputs must be either a BatchFeature (from HF AutoProcessor) or a list of MultimodalInput"
@@ -216,15 +224,16 @@ def generate_text_hf(
     image_token_id: Optional[int] = None,
 ) -> str:
     """Generate using an BatchFeature by converting to multimodal inputs internally, or using a list of MultimodalInput."""
-    if isinstance(inputs, _batch_feature_type()):
+    # The list form is tested first because it needs nothing from HuggingFace. Resolving
+    # BatchFeature to compare against it would import transformers, which this package does not
+    # declare, so a caller passing a list would fail on a dependency its own input never needs.
+    if isinstance(inputs, list) and all(isinstance(i, MultimodalInput) for i in inputs):
+        converted = inputs
+    elif _is_batch_feature(inputs):
         logging.info(
             "Input is a BatchFeature, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
         )
         converted = _hf_to_multimodal_inputs(inputs, image_token_id=image_token_id)
-    elif isinstance(inputs, list) and all(
-        isinstance(i, MultimodalInput) for i in inputs
-    ):
-        converted = inputs
     else:
         raise RuntimeError(
             "inputs must be either a BatchFeature (from HF AutoProcessor) or a list of MultimodalInput"
