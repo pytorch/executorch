@@ -149,16 +149,9 @@ for (key, value) in products {
 // separate debug copy, and so the release and debug delegates resolve the same
 // name. Each slice's MLX binary asks for its own mlx-<slice>.metallib.
 //
-// The release job commits all three files to this branch before publishing, so
-// there is no need to probe for them: they are declared unconditionally. A slice
-// that failed to arrive then shows up as an "Invalid Resource ... File not found"
-// warning when a consumer builds. That is a warning and the build still succeeds,
-// so it makes the absence visible rather than fatal; the release job is the place
-// to assert the files arrived.
-// If a probe is ever added here, anchor it to this file's own directory the way
-// the main-side manifest does, with URL(fileURLWithPath: #filePath). A bare
-// relative path is resolved against the process working directory, which for a
-// dependency is the consumer's root, so every slice would appear missing.
+// The release job commits all three files before publishing, so they are declared
+// unconditionally. A missing one is only reported at package-resolution time and
+// does not fail the build, so the release job has to assert they arrived.
 let mlxMetallibSlices = ["mlx-ios", "mlx-ios-simulator", "mlx-macos"]
 if products.keys.contains("backend_mlx") {
   packageTargets.append(.target(
