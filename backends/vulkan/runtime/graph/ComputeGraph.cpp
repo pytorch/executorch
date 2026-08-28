@@ -845,7 +845,7 @@ void ComputeGraph::update_descriptor_counts(
 
 void ComputeGraph::register_pipeline_to_create(
     const vkapi::ShaderInfo& shader_info,
-    const utils::WorkgroupSize& local_workgroup_size,
+    const LocalWorkGroup& local_workgroup_size,
     const vkapi::SpecVarList& spec_vars,
     const std::vector<PushConstantDataInfo>& push_constants) {
   VkDescriptorSetLayout shader_layout =
@@ -921,8 +921,10 @@ utils::uvec3 ComputeGraph::create_local_wg_size(
 
   utils::uvec3 local_group_size = {
       8,
-      std::max(1u, std::min(4u, global_wg_size_desc[1].second)),
-      std::max(1u, std::min(2u, global_wg_size_desc[2].second))};
+      global_wg_size_desc[1].second >= 4u       ? 4u
+          : global_wg_size_desc[1].second >= 2u ? 2u
+                                                : 1u,
+      global_wg_size_desc[2].second >= 2u ? 2u : 1u};
 
   if (global_wg_size_desc[2u].second == 1) {
     if (global_wg_size_desc[1u].second == 1) {
