@@ -76,7 +76,7 @@ if _spec.loader is None:
     raise ImportError(f"Module spec has no loader for {_install_utils_path}")
 _spec.loader.exec_module(install_utils)
 
-from setuptools import Extension, find_namespace_packages, setup
+from setuptools import Distribution, Extension, find_namespace_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
@@ -853,6 +853,12 @@ def get_executable_name(name: str) -> str:
 class _BaseExtension(Extension):
     """A base class that maps an abstract source to an abstract destination."""
 
+    # Prefix of the synthetic name a BuiltFile carries. A built file is not a Python
+    # module, so its name is deliberately not a module path, and setuptools has to be
+    # able to tell it apart from a real extension. See _ExecuTorchDistribution, which
+    # keeps these names out of the metadata setuptools derives from ext_modules.
+    SYNTHETIC_NAME_PREFIX = "@EXECUTORCH_BuiltFile_"
+
     def __init__(
         self,
         src: str,
@@ -1008,7 +1014,7 @@ class BuiltFile(_BaseExtension):
         super().__init__(
             src=src,
             dst=dst,
-            name=f"@EXECUTORCH_BuiltFile_{src}:{dst}",
+            name=f"{_BaseExtension.SYNTHETIC_NAME_PREFIX}{src}:{dst}",
             dependent_cmake_flags=dependent_cmake_flags,
         )
 
@@ -2208,6 +2214,24 @@ class CustomBuild(build):
         build.run(self)
 
 
+class _ExecuTorchDistribution(Distribution):
+    """A Distribution that hides the synthetic BuiltFile names from metadata.
+
+    A prebuilt file that the wheel merely copies is declared as an Extension, because
+    a non-empty ext_modules is how setuptools decides a wheel is platform specific.
+    Those entries are not Python modules, so they carry a synthetic name rather than a
+    module path. setuptools does not know that: it derives top_level.txt from every
+    ext_modules entry's name, so each recipe string was landing in the published
+    metadata as a top level import name.
+    """
+
+    def iter_distribution_names(self):
+        for name in super().iter_distribution_names():
+            if name.startswith(_BaseExtension.SYNTHETIC_NAME_PREFIX):
+                continue
+            yield name
+
+
 setup_kwargs = {}
 if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
@@ -2220,6 +2244,7 @@ else:
 
 setup(
     version=Version.string(),
+    distclass=_ExecuTorchDistribution,
     cmdclass={
         "build": CustomBuild,
         "build_ext": InstallerBuildExt,
