@@ -22,6 +22,29 @@ NS_SWIFT_NAME(DumpTracer)
 
 - (instancetype)init;
 
+/**
+ * Takes the trace recorded so far, in the ETDump format.
+ *
+ * Completing the trace ends it, so this returns each recorded span once and a
+ * subsequent call reports that there is nothing new. Run a method on the module
+ * this tracer was given to first.
+ *
+ * @param error On failure, describes why, most often that nothing has run yet.
+ * @return The trace, or nil.
+ */
+- (nullable NSData *)takeDataWithError:(NSError **)error
+    NS_SWIFT_NAME(takeData());
+
+/**
+ * Takes the trace recorded so far and writes it to a file.
+ *
+ * @param path The file to write. An existing file is replaced.
+ * @param error On failure, describes why.
+ * @return YES if a trace was written.
+ */
+- (BOOL)takeDataToFile:(NSString *)path
+                 error:(NSError **)error NS_SWIFT_NAME(takeData(toFile:));
+
 @end
 
 NS_ASSUME_NONNULL_END

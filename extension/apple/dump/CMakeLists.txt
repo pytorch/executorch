@@ -55,6 +55,10 @@ target_include_directories(
           ${EXECUTORCH_ROOT}/..
           # For the c10 portable types those headers pull in.
           ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+          # For <flatcc/...>, used directly by the wrapper. It also arrives
+          # transitively through the etdump target, but name it here so the
+          # dependency is explicit and does not rely on that export.
+          ${EXECUTORCH_ROOT}/third-party/flatcc/include
 )
 
 # The wrapper pulls in the core tensor headers through etdump_flatcc.h, which
