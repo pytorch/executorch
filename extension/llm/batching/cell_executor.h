@@ -30,9 +30,18 @@
 namespace executorch {
 namespace extension {
 namespace llm {
+
+class Sampler;
+
 namespace batching {
 
 namespace cache = ::executorch::extension::llm::cache;
+
+// A session's cache sequence and the sampler its generation draws from.
+struct SessionInfo {
+  std::int32_t seq;
+  std::unique_ptr<Sampler> sampler;
+};
 
 // One forward's inputs, flattened across the batch. `tokens` and `positions`
 // are filled in one pass so entry i of each names the same token, which is how
@@ -60,41 +69,41 @@ struct Step {
 std::optional<Step> build_step(
     cache::BatchControl& ctl,
     const BatchInput& batch,
-    const std::unordered_map<SessionId, std::int32_t>& seqs,
+    const std::unordered_map<SessionId, SessionInfo>& sessions,
     int max_session_tokens);
 
 class CellExecutor : public Executor {
  public:
-  struct Config {
-    cache::CacheConfig cache;
-    // Sessions open at once, and the cells each may hold. A short table refuses
-    // the whole batch and takes every session in it down, so create() rejects
-    // limits the table cannot honor and open_session() holds the count --
-    // exhaustion is kept unreachable rather than handled.
-    int max_sessions = 0;
-    int max_session_tokens = 0;
-    std::string backend_id;
-    std::string cache_kind = "cell";
-    // Backend-load option through which the delegate finds the cache.
-    std::string cache_key_option = "cache_key";
-    std::string method = "forward";
-  };
-
   ~CellExecutor() override;
 
-  // Takes the program loaded but its method not. The cache is sized from a
-  // layout the program publishes, so the program has to be readable first.
+  // Builds the cell cache from the layout `module` publishes and binds it to
+  // the backend. The program must be loaded; its method must not be, since the
+  // method load is left until the first batch -- a delegate may bind per-thread
+  // state as it initializes, and construction is the only entry point that does
+  // not run on the engine thread.
   //
-  // The method is left for the first execute(). A delegate may bind per-thread
-  // state as it initializes, which happens during that load, and construction
-  // is the only entry point that does not run on the engine thread. So a
-  // method that will not load fails a batch rather than this call.
+  // The table holds `max_sessions` sessions of `max_session_tokens` cells. A
+  // short table refuses the whole batch and takes every session in it down, so
+  // capacity is that product exactly and open_session() holds the count --
+  // exhaustion is kept unreachable rather than handled.
   //
-  // nullptr = limits the cell table cannot honor, or an unregistered
-  // (backend_id, cache_kind).
+  // `kv_dtype` is the ET ScalarType the cache stores K/V in; a negative
+  // `initial_capacity` leaves the pools to grow from their own default.
+  //
+  // nullptr = unusable limits, a program publishing no KV layout, or no cell
+  // cache registered for `backend_id`.
   static std::unique_ptr<CellExecutor> create(
       std::unique_ptr<Module> module,
-      Config config);
+      int max_sessions,
+      int max_session_tokens,
+      int kv_dtype,
+      std::string backend_id,
+      int initial_capacity = -1,
+      std::string method = "forward");
+
+  // Loads the method, naming the cache to the backend. The delegate binds
+  // per-thread state as it initializes, which happens during that load.
+  bool start() override;
 
   std::optional<SessionId> open_session() override;
   void close_session(SessionId session) override;
@@ -105,41 +114,37 @@ class CellExecutor : public Executor {
   bool execute(const BatchInput& batch, BatchOutput& out) override;
 
  private:
-  struct Sampling {
-    SamplingParams params;
-    std::uint64_t seed;
-  };
-
   CellExecutor(
-      Config config,
       std::unique_ptr<Module> module,
       std::shared_ptr<cache::CacheBase> cache,
-      std::unique_ptr<cache::CacheSession> session);
+      std::unique_ptr<cache::CacheSession> session,
+      int max_sessions,
+      int max_session_tokens,
+      std::string backend_id,
+      std::string method,
+      std::int32_t vocab_size);
 
-  // Load the method, naming the cache to the backend, on first use. Runs on
-  // the execute() thread so what the delegate binds there is reachable later.
-  bool ensure_method_loaded();
+  // Draw the token an input produced from its row of `logits`, which the
+  // session's sampler consumes in place.
+  std::optional<Token>
+  sample_row(::executorch::aten::Tensor& logits, int row, SessionId session);
 
-  // Draw from one logits row. Randomness comes from the session's seed and the
-  // position the token will occupy, so it does not follow how batches formed.
-  std::optional<Token> sample_row(
-      const ::executorch::aten::Tensor& logits,
-      int row,
-      SessionId session,
-      std::int64_t position) const;
-
-  Config config_;
   // Ordered so the module dies first, releasing the delegate that resolved the
   // cache before the registry entry naming it goes.
   std::unique_ptr<cache::CacheSession> session_;
   std::shared_ptr<cache::CacheBase> cache_;
   std::unique_ptr<Module> module_;
   cache::BatchControl* ctl_;
+  int max_sessions_;
+  int max_session_tokens_;
+  std::string backend_id_;
+  std::string method_;
+  // The method's logits width, so a sampler can be built by its policy.
+  std::int32_t vocab_size_;
 
   bool method_loaded_ = false;
   SessionId next_session_ = 1; // never reused, unlike the cache's sequence ids
-  std::unordered_map<SessionId, std::int32_t> seqs_;
-  std::unordered_map<SessionId, Sampling> sampling_;
+  std::unordered_map<SessionId, SessionInfo> sessions_;
 };
 
 } // namespace batching

@@ -14,7 +14,9 @@
 #include <random>
 #include <utility>
 
+#include <executorch/extension/llm/cache/cache_et.h>
 #include <executorch/extension/llm/sampler/sampler.h>
+#include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -30,15 +32,9 @@ using ::executorch::runtime::Error;
 
 namespace {
 
-// Spread one seed over positions so a session's neighbouring tokens draw
-// unrelated streams.
-std::uint64_t mix(std::uint64_t seed, std::int64_t position) {
-  std::uint64_t x =
-      seed + 0x9e3779b97f4a7c15ULL * static_cast<std::uint64_t>(position + 1);
-  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
-  x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
-  return x ^ (x >> 31);
-}
+// The backend-load option the delegate resolves the cache through; the
+// registry's rendezvous convention, not a per-backend name.
+constexpr char kCacheKeyOption[] = "cache_key";
 
 std::uint64_t nondeterministic_seed() {
   std::random_device device;
@@ -50,7 +46,7 @@ std::uint64_t nondeterministic_seed() {
 std::optional<Step> build_step(
     cache::BatchControl& ctl,
     const BatchInput& batch,
-    const std::unordered_map<SessionId, std::int32_t>& seqs,
+    const std::unordered_map<SessionId, SessionInfo>& sessions,
     int max_session_tokens) {
   Step step;
   const std::size_t total = batch.size();
@@ -67,12 +63,12 @@ std::optional<Step> build_step(
   std::unordered_map<std::int32_t, int> cursor;
 
   for (const Input& input : batch.inputs) {
-    const auto seq_it = seqs.find(input.sid);
-    if (seq_it == seqs.end()) {
+    const auto seq_it = sessions.find(input.sid);
+    if (seq_it == sessions.end()) {
       ET_LOG(Error, "build_step: session %" PRId64 " is not open", input.sid);
       return std::nullopt;
     }
-    const std::int32_t seq = seq_it->second;
+    const std::int32_t seq = seq_it->second.seq;
     if (input.size == 0 || !input.tokens ||
         input.offset + input.size > input.tokens->size()) {
       ET_LOG(
@@ -146,62 +142,68 @@ std::optional<Step> build_step(
 }
 
 CellExecutor::CellExecutor(
-    Config config,
     std::unique_ptr<Module> module,
     std::shared_ptr<cache::CacheBase> cache,
-    std::unique_ptr<cache::CacheSession> session)
-    : config_(std::move(config)),
-      session_(std::move(session)),
+    std::unique_ptr<cache::CacheSession> session,
+    int max_sessions,
+    int max_session_tokens,
+    std::string backend_id,
+    std::string method,
+    std::int32_t vocab_size)
+    : session_(std::move(session)),
       cache_(std::move(cache)),
       module_(std::move(module)),
-      ctl_(cache_->as_batch_control()) {}
+      ctl_(cache_->as_batch_control()),
+      max_sessions_(max_sessions),
+      max_session_tokens_(max_session_tokens),
+      backend_id_(std::move(backend_id)),
+      method_(std::move(method)),
+      vocab_size_(vocab_size) {}
 
 CellExecutor::~CellExecutor() = default;
 
 std::unique_ptr<CellExecutor> CellExecutor::create(
     std::unique_ptr<Module> module,
-    Config config) {
+    int max_sessions,
+    int max_session_tokens,
+    int kv_dtype,
+    std::string backend_id,
+    int initial_capacity,
+    std::string method) {
   if (module == nullptr) {
     ET_LOG(Error, "CellExecutor: no program");
     return nullptr;
   }
-  if (config.max_sessions <= 0 || config.max_session_tokens <= 0) {
+  if (max_sessions <= 0 || max_session_tokens <= 0) {
     ET_LOG(Error, "CellExecutor: session limits must be positive");
     return nullptr;
   }
-  // A batch cannot be refused in part, so the table must hold every session at
-  // its bound rather than discover it is short mid-run.
-  const std::int64_t needed = static_cast<std::int64_t>(config.max_sessions) *
-      config.max_session_tokens;
-  if (needed > config.cache.capacity) {
-    ET_LOG(
-        Error,
-        "CellExecutor: %d sessions of %d cells need %" PRId64
-        ", capacity is %d",
-        config.max_sessions,
-        config.max_session_tokens,
-        needed,
-        config.cache.capacity);
-    return nullptr;
-  }
-  if (!cache::valid(config.cache)) {
-    ET_LOG(Error, "CellExecutor: invalid cache config");
-    return nullptr;
-  }
-
   if (module->load() != Error::Ok) { // a no-op once the caller has loaded it
     ET_LOG(Error, "CellExecutor: the program did not load");
     return nullptr;
   }
 
-  auto built = cache::CacheBuilderRegistry::global().build(
-      config.backend_id, config.cache_kind, config.cache);
+  auto cfg = cache::et::config_from_program(*module);
+  if (!cfg.ok()) {
+    return nullptr;
+  }
+  cfg->capacity = max_sessions * max_session_tokens;
+  cfg->kv_dtype = kv_dtype;
+  if (initial_capacity >= 0) {
+    cfg->initial_capacity = initial_capacity;
+  }
+  if (!cache::valid(*cfg)) {
+    ET_LOG(Error, "CellExecutor: the program's layout is unusable");
+    return nullptr;
+  }
+
+  auto built =
+      cache::CacheBuilderRegistry::global().build(backend_id, "cell", *cfg);
   if (!built.ok()) {
     ET_LOG(
         Error,
-        "CellExecutor: no %s cache for backend %s",
-        config.cache_kind.c_str(),
-        config.backend_id.c_str());
+        "CellExecutor: no cell cache for backend %s",
+        backend_id.c_str());
     return nullptr;
   }
   std::shared_ptr<cache::CacheBase> cache = built.get();
@@ -210,48 +212,53 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
     return nullptr;
   }
 
-  // Checked here rather than at the deferred load: it needs only the config.
-  if (config.cache_key_option.size() >=
-      ::executorch::runtime::kMaxOptionKeyLength) {
-    ET_LOG(
-        Error,
-        "CellExecutor: option key %s is too long",
-        config.cache_key_option.c_str());
+  const auto meta = module->method_meta(method);
+  if (!meta.ok() || meta->num_outputs() == 0) {
+    ET_LOG(Error, "CellExecutor: %s publishes no outputs", method.c_str());
     return nullptr;
   }
+  const auto logits_info = meta->output_tensor_meta(0);
+  if (!logits_info.ok() || logits_info->sizes().empty()) {
+    ET_LOG(Error, "CellExecutor: %s has no logits shape", method.c_str());
+    return nullptr;
+  }
+  const auto logits_sizes = logits_info->sizes();
 
   auto session =
       std::make_unique<cache::CacheSession>(cache::make_unique_key(), cache);
   return std::unique_ptr<CellExecutor>(new CellExecutor(
-      std::move(config),
       std::move(module),
       std::move(cache),
-      std::move(session)));
+      std::move(session),
+      max_sessions,
+      max_session_tokens,
+      std::move(backend_id),
+      std::move(method),
+      logits_sizes[logits_sizes.size() - 1]));
 }
 
-bool CellExecutor::ensure_method_loaded() {
+bool CellExecutor::start() {
   if (method_loaded_) {
     return true;
   }
   // The key is taken as a fixed-width array; create() bounded its length.
   char key[::executorch::runtime::kMaxOptionKeyLength] = {};
-  std::memcpy(
-      key, config_.cache_key_option.data(), config_.cache_key_option.size());
+  std::memcpy(key, kCacheKeyOption, sizeof(kCacheKeyOption) - 1);
 
   ::executorch::runtime::BackendOptions<1> options;
   ::executorch::runtime::LoadBackendOptionsMap options_map;
   if (options.set_option(key, session_->key().c_str()) != Error::Ok ||
-      options_map.set_options(config_.backend_id.c_str(), options.view()) !=
+      options_map.set_options(backend_id_.c_str(), options.view()) !=
           Error::Ok) {
     ET_LOG(Error, "CellExecutor: could not name the cache to the backend");
     return false;
   }
   if (module_->load_method(
-          config_.method,
+          method_,
           /*planned_memory=*/nullptr,
           /*event_tracer=*/nullptr,
           &options_map) != Error::Ok) {
-    ET_LOG(Error, "CellExecutor: could not load %s", config_.method.c_str());
+    ET_LOG(Error, "CellExecutor: could not load %s", method_.c_str());
     return false;
   }
   method_loaded_ = true;
@@ -259,7 +266,7 @@ bool CellExecutor::ensure_method_loaded() {
 }
 
 std::optional<SessionId> CellExecutor::open_session() {
-  if (static_cast<int>(seqs_.size()) >= config_.max_sessions) {
+  if (static_cast<int>(sessions_.size()) >= max_sessions_) {
     return std::nullopt;
   }
   const std::optional<std::int32_t> seq = ctl_->seq_new();
@@ -267,43 +274,48 @@ std::optional<SessionId> CellExecutor::open_session() {
     return std::nullopt;
   }
   const SessionId session = next_session_++;
-  seqs_.emplace(session, *seq);
+  sessions_.emplace(session, SessionInfo{*seq, nullptr});
   return session;
 }
 
 void CellExecutor::close_session(SessionId session) {
-  const auto it = seqs_.find(session);
-  if (it == seqs_.end()) {
+  const auto it = sessions_.find(session);
+  if (it == sessions_.end()) {
     return;
   }
   // Frees the cells and hands the sequence id back. The session id is not.
-  ctl_->seq_rm(it->second, 0, std::nullopt);
-  seqs_.erase(it);
-  sampling_.erase(session);
+  ctl_->seq_rm(it->second.seq, 0, std::nullopt);
+  sessions_.erase(it);
 }
 
 void CellExecutor::set_sampling(
     SessionId session,
     const SamplingParams& params,
     std::optional<std::uint64_t> seed) {
-  if (seqs_.count(session) == 0) {
+  const auto it = sessions_.find(session);
+  if (it == sessions_.end()) {
     return;
   }
-  sampling_.insert_or_assign(
-      session, Sampling{params, seed.value_or(nondeterministic_seed())});
+  // One sampler per generation, carrying its own generator state from here on.
+  it->second.sampler = std::make_unique<Sampler>(
+      vocab_size_,
+      params.temperature,
+      params.top_p,
+      seed.value_or(nondeterministic_seed()));
+  it->second.sampler->set_topk(params.top_k);
 }
 
 bool CellExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
 
-  // Ahead of the step: a refused load must claim no cell.
-  if (!ensure_method_loaded()) {
+  if (!method_loaded_) {
+    ET_LOG(Error, "CellExecutor: execute() before start()");
     return false;
   }
 
   const std::optional<Step> step =
-      build_step(*ctl_, batch, seqs_, config_.max_session_tokens);
+      build_step(*ctl_, batch, sessions_, max_session_tokens_);
   if (!step) {
     return false;
   }
@@ -312,21 +324,21 @@ bool CellExecutor::execute(const BatchInput& batch, BatchOutput& out) {
       make_tensor_ptr({1, static_cast<int>(step->tokens.size())}, step->tokens);
   auto positions = make_tensor_ptr(
       {static_cast<int>(step->positions.size())}, step->positions);
-  const auto result = module_->execute(config_.method, {tokens, positions});
+  auto result = module_->execute(method_, {tokens, positions});
   if (!result.ok()) {
     ET_LOG(
         Error,
         "CellExecutor: %s failed with 0x%x",
-        config_.method.c_str(),
+        method_.c_str(),
         static_cast<unsigned>(result.error()));
     return false;
   }
   if (result->empty() || !result->at(0).isTensor()) {
-    ET_LOG(
-        Error, "CellExecutor: %s returned no logits", config_.method.c_str());
+    ET_LOG(Error, "CellExecutor: %s returned no logits", method_.c_str());
     return false;
   }
-  const auto logits = result->at(0).toTensor();
+  // Non-const: the sampler reduces each row in place. Each is read once.
+  auto logits = result->at(0).toTensor();
 
   for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
     const int row = step->logit_indices[i];
@@ -334,9 +346,7 @@ bool CellExecutor::execute(const BatchInput& batch, BatchOutput& out) {
       continue; // a chunk whose prediction is discarded
     }
     const SessionId session = batch.inputs[i].sid;
-    // The drawn token lands one past the row that predicted it.
-    const std::optional<Token> token =
-        sample_row(logits, row, session, step->positions[row] + 1);
+    const std::optional<Token> token = sample_row(logits, row, session);
     if (!token) {
       return false;
     }
@@ -346,58 +356,30 @@ bool CellExecutor::execute(const BatchInput& batch, BatchOutput& out) {
 }
 
 std::optional<Token> CellExecutor::sample_row(
-    const ::executorch::aten::Tensor& logits,
+    ::executorch::aten::Tensor& logits,
     int row,
-    SessionId session,
-    std::int64_t position) const {
-  const auto policy = sampling_.find(session);
-  if (policy == sampling_.end()) {
+    SessionId session) {
+  const auto it = sessions_.find(session);
+  if (it == sessions_.end() || it->second.sampler == nullptr) {
     ET_LOG(
         Error,
         "CellExecutor: session %" PRId64 " has no sampling policy",
         session);
     return std::nullopt;
   }
-  const SamplingParams& params = policy->second.params;
-  const auto vocab = logits.size(logits.dim() - 1);
-  if (row >= logits.numel() / vocab) {
+  if (row >= logits.numel() / vocab_size_) {
     ET_LOG(Error, "CellExecutor: logits hold no row %d", row);
     return std::nullopt;
   }
-
-  std::optional<Token> drawn;
-  struct {
-    [[noreturn]] void fail(Error) {
-      ET_CHECK_MSG(false, "CellExecutor: unsupported logits dtype");
-    }
-  } ctx;
-  ET_SWITCH_THREE_TYPES(
-      Float,
-      Half,
-      BFloat16,
-      logits.scalar_type(),
-      ctx,
-      "sample_row",
-      CTYPE,
-      [&] {
-        const CTYPE* begin = logits.const_data_ptr<CTYPE>() + row * vocab;
-        if (params.temperature <= 0.0f) {
-          drawn = static_cast<Token>(
-              std::max_element(begin, begin + vocab) - begin);
-          return;
-        }
-        // The sampler reduces in place, so copy rather than overwrite the
-        // model's output.
-        std::vector<float> scores(begin, begin + vocab);
-        Sampler sampler(
-            static_cast<std::int32_t>(vocab),
-            params.temperature,
-            params.top_p,
-            mix(policy->second.seed, position));
-        sampler.set_topk(params.top_k);
-        drawn = static_cast<Token>(sampler.sample(scores.data()));
-      });
-  return drawn;
+  // A one-row view over the model's own output: sample_from_logits reduces in
+  // place and reads the last dimension.
+  auto one_row = make_tensor_ptr(
+      {vocab_size_},
+      static_cast<std::uint8_t*>(logits.mutable_data_ptr()) +
+          static_cast<std::size_t>(row) * vocab_size_ *
+              ::executorch::runtime::elementSize(logits.scalar_type()),
+      logits.scalar_type());
+  return static_cast<Token>(sample_from_logits(*one_row, *it->second.sampler));
 }
 
 } // namespace batching

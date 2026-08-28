@@ -15,7 +15,9 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 add_library(extension_llm_cache cache_registry.cpp cell_cache.cpp)
-target_link_libraries(extension_llm_cache executorch_core)
+# cache_et.h reads a program's published KV layout, so the ET adapter needs
+# Module even though the neutral core (cache.h) stays ET-independent.
+target_link_libraries(extension_llm_cache executorch_core extension_module)
 target_include_directories(
   extension_llm_cache PUBLIC ${_common_include_directories}
 )

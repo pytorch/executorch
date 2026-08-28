@@ -17,8 +17,10 @@
 // adapter.)
 
 #include <optional>
+#include <vector>
 
 #include <executorch/extension/llm/cache/cache.h>
+#include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 
@@ -55,6 +57,68 @@ inline Error rewind(SequenceControl& control, int new_len) {
       "rewind: cannot grow to %d",
       new_len);
   return Error::Ok;
+}
+
+// A CacheConfig's geometry is a property of the model, not a choice: how many
+// caches, and each one's heads, head dim, and attention window. An off-graph
+// export publishes those as constant methods, which carry no delegate, so
+// reading them needs only the program loaded.
+//
+// The sizing left unset -- capacity, kv_dtype, initial_capacity -- is the
+// caller's policy, and the same program runs under any of it.
+//
+// InvalidArgument if the program publishes no layout, so it is not an
+// off-graph model.
+inline Result<CacheConfig> config_from_program(Module& module) {
+  const auto read_int = [&module](const char* name) -> std::optional<int64_t> {
+    const auto r = module.execute(name);
+    if (!r.ok() || r->empty() || !r->at(0).isInt()) {
+      return std::nullopt;
+    }
+    return r->at(0).toInt();
+  };
+  const auto read_ints =
+      [&module](const char* name) -> std::optional<std::vector<int>> {
+    const auto r = module.execute(name);
+    if (!r.ok() || r->empty() || !r->at(0).isTensor()) {
+      return std::nullopt;
+    }
+    const auto t = r->at(0).toTensor();
+    if (t.scalar_type() != ::executorch::aten::ScalarType::Int) {
+      return std::nullopt;
+    }
+    const int32_t* p = t.const_data_ptr<int32_t>();
+    return std::vector<int>(p, p + t.numel());
+  };
+
+  const auto n_caches = read_int("get_n_caches");
+  const auto kv_heads = read_ints("get_kv_heads");
+  const auto head_dims = read_ints("get_head_dims");
+  const auto windows = read_ints("get_windows");
+  ET_CHECK_OR_RETURN_ERROR(
+      n_caches && kv_heads && head_dims && windows,
+      InvalidArgument,
+      "cache: the program publishes no KV layout");
+  const auto n = static_cast<size_t>(*n_caches);
+  ET_CHECK_OR_RETURN_ERROR(
+      kv_heads->size() == n && head_dims->size() == n && windows->size() == n,
+      InvalidArgument,
+      "cache: the published KV layout names %zu caches inconsistently",
+      n);
+
+  CacheConfig cfg{};
+  cfg.n_layers = static_cast<int>(n);
+  cfg.layers.reserve(n);
+  for (size_t l = 0; l < n; ++l) {
+    LayerConfig lc{};
+    lc.n_kv_heads = (*kv_heads)[l];
+    lc.head_dim = (*head_dims)[l];
+    lc.policy = (*windows)[l] > 0
+        ? LayerPolicy{LayerPolicy::Kind::Ring, (*windows)[l]}
+        : LayerPolicy{LayerPolicy::Kind::Flat, 0};
+    cfg.layers.push_back(lc);
+  }
+  return cfg;
 }
 
 } // namespace et

@@ -67,6 +67,14 @@ class Executor {
  public:
   virtual ~Executor() = default;
 
+  // Bind whatever must live on the thread that will run the batches. Called
+  // once before any other call, on that thread.
+  //
+  // false = the executor cannot run.
+  virtual bool start() {
+    return true;
+  }
+
   // A session to route tasks to. nullopt = at capacity. Every successful id
   // must be unique for the lifetime of the consuming Runner, even after close.
   virtual std::optional<SessionId> open_session() = 0;
