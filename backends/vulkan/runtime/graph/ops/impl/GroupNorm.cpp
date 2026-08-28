@@ -29,13 +29,15 @@ utils::uvec3 group_norm_local_wg_size(
   (void)args;
   (void)resize_args;
 
-  return {1, 64, 1};
+  return {1u, 1u, 64u};
 }
 
 void resize_group_norm_texture_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  VK_CHECK_COND(graph != nullptr);
+
   // Extract tensor references from args
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef in = args.at(1).refs.at(0);
