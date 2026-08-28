@@ -17,8 +17,11 @@ These are unit tests because the behaviour under test is what happens during imp
 is observable without a Qualcomm SDK or a Qualcomm device.
 """
 
+import ast
+import importlib
 import sys
 import types
+from pathlib import Path
 
 import executorch.backends.qualcomm as qnn
 import pytest
@@ -40,28 +43,45 @@ def fake_cpuinfo(monkeypatch):
 def test_importing_the_package_leaves_mkldnn_alone(monkeypatch, fake_cpuinfo):
     """Import must not change a global PyTorch setting, even on an AMD host.
 
-    The setting affects every model in the interpreter, not just a Qualcomm one, so an
-    import that flips it changes how unrelated code runs.
+    The setting affects every model in the interpreter, not just a Qualcomm one, so an import
+    that flips it changes how unrelated code runs.
+
+    A reload is used deliberately: it re-executes every module level statement, which is exactly
+    what an import does, and the stubbed cpuinfo is read inside those statements rather than
+    bound at import, so unlike a stubbed installer it survives.
     """
     fake_cpuinfo("AuthenticAMD")
     monkeypatch.setattr(torch.backends.mkldnn, "enabled", True)
 
-    importlib = pytest.importorskip("importlib")
     importlib.reload(qnn)
 
     assert torch.backends.mkldnn.enabled
 
 
-def test_importing_the_package_does_not_set_up_the_sdk(monkeypatch):
-    """Import must not run the installer, which downloads and rewrites the environment."""
-    calls = []
-    monkeypatch.setattr(qnn, "install_qnn_sdk", lambda: calls.append(1) or True)
-    monkeypatch.setattr(qnn, "_sdk_ready", False)
+def test_importing_the_package_does_not_set_up_the_sdk():
+    """Import must not run the installer, which downloads and rewrites the environment.
 
-    importlib = pytest.importorskip("importlib")
-    importlib.reload(qnn)
+    Asserted against the module source rather than by importing with a stub in place. A reload
+    re-executes the module, which rebinds the real installer and discards any stub, so a stubbed
+    reload can only ever observe an empty call list and would pass even if the call came back.
+    What actually matters is that no module level statement calls it.
+    """
+    module = ast.parse(Path(qnn.__file__).read_text())
+    called_at_module_level = {
+        node.func.id
+        for statement in module.body
+        if isinstance(statement, ast.Expr)
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
 
-    assert not calls
+    assert "install_qnn_sdk" not in called_at_module_level
+    assert "setup_qnn_sdk" not in called_at_module_level
+    # A guard on the two above, which would pass just as happily if the parse found nothing.
+    assert any(
+        isinstance(statement, ast.FunctionDef) and statement.name == "setup_qnn_sdk"
+        for statement in module.body
+    )
 
 
 def test_setup_is_idempotent(monkeypatch):
@@ -121,6 +141,9 @@ def test_setup_runs_once_under_concurrent_callers(monkeypatch):
     for thread in threads:
         thread.join(timeout=30)
 
+    # Reported before the count, so a hung thread says so rather than showing a confusing
+    # number of installer calls.
+    assert not any(thread.is_alive() for thread in threads)
     assert len(calls) == 1
 
 
