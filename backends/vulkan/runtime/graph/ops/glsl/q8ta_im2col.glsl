@@ -50,15 +50,19 @@ void main() {
   const int im2col_W4 = div_up_4(im2col_sizes.x);
   const int im2col_H = im2col_sizes.y;
   const int im2col_Z4 = div_up_4(im2col_sizes.z);
+  const int im2col_N = im2col_sizes.w;
 
   // im2col block index from linear output buffer index
   const int c4_idx = out_buf_idx % im2col_Z4;
   const int row = out_buf_idx / im2col_Z4;
   const int w4_idx = row % im2col_W4;
-  const int h_idx = row / im2col_W4;
+  const int hn_idx = row / im2col_W4;
+  const int h_idx = hn_idx % im2col_H;
+  const int n_idx = hn_idx / im2col_H;
 
   // out of bounds check
-  if (w4_idx >= im2col_W4 || h_idx >= im2col_H || c4_idx >= im2col_Z4) {
+  if (w4_idx >= im2col_W4 || h_idx >= im2col_H ||
+      c4_idx >= im2col_Z4 || n_idx >= im2col_N) {
     return;
   }
 
@@ -108,12 +112,14 @@ void main() {
       const int x_mod = mod_4(x);
       int scalar_idx;
       if (get_outer_packed_dim_block_size(inp_layout) == 1) {
-        scalar_idx = input_y * int(inp.strides[0][1])
+        scalar_idx = n_idx * int(inp.strides[0][3])
+                     + input_y * int(inp.strides[0][1])
                      + x * int(inp.strides[0][0])
                      + z4 * int(inp.strides[0][2]);
       } else {
         scalar_idx = mul_4(
-            input_y * int(inp.strides[0][1])
+            n_idx * int(inp.strides[0][3])
+            + input_y * int(inp.strides[0][1])
             + x4 * int(inp.strides[0][0])
             + z4) + x_mod;
       }
@@ -122,7 +128,8 @@ void main() {
   }
 
   // store_packed_int8_output_tile (with TILE_M4=1, TILE_N4=1)
-  const int buffer_idx = h_idx * int(im2col_outp.strides[0][1])
+  const int buffer_idx = n_idx * int(im2col_outp.strides[0][3])
+                         + h_idx * int(im2col_outp.strides[0][1])
                          + w4_idx * int(im2col_outp.strides[0][0])
                          + c4_idx;
 
