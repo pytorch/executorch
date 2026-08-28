@@ -41,6 +41,7 @@
 #include <executorch/extension/llm/batching/executor.h>
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/batching/types.h>
+#include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
 namespace executorch {
 namespace extension {
@@ -48,7 +49,7 @@ namespace llm {
 namespace batching {
 
 // Why a generation stopped.
-enum class FinishReason {
+enum class ET_EXPERIMENTAL FinishReason {
   StopToken, // a token in GenConfig::stop_tokens was produced
   NewTokenLimit, // GenConfig::max_new_tokens reached
   Cancelled, // cancelled explicitly, by Session closure, or by shutdown
@@ -75,7 +76,7 @@ enum class FinishReason {
 using GenerationCallback =
     std::function<void(const std::vector<Token>&, std::optional<FinishReason>)>;
 
-struct GenConfig {
+struct ET_EXPERIMENTAL GenConfig {
   std::int32_t max_new_tokens = 256;
   SamplingParams sampling;
   // Ends the generation with FinishReason::StopToken. The token is not
@@ -98,7 +99,7 @@ class RunnerImpl;
 //
 // Copyable and safe from any thread: it holds only shared state, never the
 // runner, so it may outlive it.
-class GenerationHandle {
+class ET_EXPERIMENTAL GenerationHandle {
  public:
   GenerationHandle() = default;
 
@@ -129,7 +130,7 @@ class GenerationHandle {
 //
 // The close request never waits for the engine thread. Runner::shutdown()
 // remains the deterministic boundary for executor cleanup.
-class Session {
+class ET_EXPERIMENTAL Session {
  public:
   Session();
   ~Session();
@@ -176,7 +177,7 @@ class Session {
   std::unique_ptr<SessionState> state_;
 };
 
-class Runner {
+class ET_EXPERIMENTAL Runner {
  public:
   // Takes the scheduler, one per runner, which also supplies the prefill chunk
   // size prompts are split to. Owned rather than borrowed because a Session
