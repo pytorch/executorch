@@ -534,9 +534,7 @@ def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
 
 
 @pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
-def test_fold_and_annotate_q_params_vgf_quant_tracks_fused_relu_qparams() -> (
-    None
-):
+def test_fold_and_annotate_q_params_vgf_quant_tracks_fused_relu_qparams() -> None:
     exported_program = _export_quantized(TinyConvReluCat())
     gm = _run_pre_rewrite_passes(to_edge(exported_program).exported_program())
 
