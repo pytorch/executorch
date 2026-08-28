@@ -69,9 +69,9 @@ let products = deliverables([
       "c++",
     ],
   ],
-  "executorch_etdump": [
-    "sha256": "__SHA256_executorch_etdump__",
-    "sha256" + debug_suffix: "__SHA256_executorch_etdump_debug__",
+  "executorch_dump": [
+    "sha256": "__SHA256_executorch_dump__",
+    "sha256" + debug_suffix: "__SHA256_executorch_dump_debug__",
     "targets": [
       "executorch",
     ],
