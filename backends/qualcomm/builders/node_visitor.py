@@ -4,10 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# The SDK has to be reachable before the native adaptor below is loaded, and every builder
+# in this package imports this module, so this is where it is ensured. It is not done in
+# the package's __init__, because that made simply importing the package fetch an SDK over
+# the network and change a global PyTorch setting.
+from executorch.backends.qualcomm import disable_mkldnn_on_amd, setup_qnn_sdk
+
+setup_qnn_sdk()
+disable_mkldnn_on_amd()
+
 from typing import Any, Dict, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import (
@@ -33,7 +41,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .utils import (
@@ -45,7 +52,6 @@ from .utils import (
     is_mutable_buffer_output,
     is_parameter,
 )
-
 
 QNN_QUANT_TYPE_MAP = {
     torch.int8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8,

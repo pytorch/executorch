@@ -3,8 +3,13 @@ import logging
 import threading
 from typing import Dict, List
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+# Loading the native adaptor below needs the SDK reachable. See node_visitor.py for why
+# this is here rather than in the package's __init__.
+from executorch.backends.qualcomm import setup_qnn_sdk
 
+setup_qnn_sdk()
+
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
