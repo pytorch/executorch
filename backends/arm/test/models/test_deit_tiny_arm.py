@@ -10,6 +10,10 @@ import timm  # type: ignore[import-untyped]
 
 import torch
 
+from executorch.backends.arm.common.pipeline_config import (  # type: ignore[attr-defined]
+    ArmPassPipelineConfig,
+    SDPASafeSoftmaxGuardPolicy,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -81,6 +85,36 @@ def test_deit_tiny_tosa_FP(dtype, inputs, pipeline_kwargs, get_deit_model):
         exir_op=[],
         use_to_edge_transform_and_lower=True,
         **pipeline_kwargs,
+    )
+    pipeline.count_tosa_ops(
+        {
+            "EQUAL": 12,
+            "LOGICAL_NOT": 24,
+            "REDUCE_ANY": 12,
+            "SELECT": 12,
+        }
+    )
+    pipeline.run()
+
+
+def test_deit_tiny_tosa_FP_remove_sdpa_safe_softmax_guard(deit_tiny):
+    pipeline = TosaPipelineFP[input_t](
+        deit_tiny,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.tester.compile_spec.set_pass_pipeline_config(
+        ArmPassPipelineConfig(sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.REMOVE)
+    )
+    pipeline.count_tosa_ops(
+        {
+            "EQUAL": 0,
+            "LOGICAL_NOT": 0,
+            "REDUCE_ANY": 0,
+            "SELECT": 0,
+        }
     )
     pipeline.run()
 

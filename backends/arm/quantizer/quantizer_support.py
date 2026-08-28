@@ -221,7 +221,10 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.ge.Scalar,),
         (torch.ops.aten.eq.Scalar,),
         (torch.ops.aten.ne.Scalar,),
+        # TFA decomposes these recurrent ops after quantization support is
+        # selected, so the original operators must be admitted here.
         (torch.ops.aten.lstm.input,),
+        (torch.ops.aten.lstm_cell.default,),
         (torch.ops.aten.rnn_tanh.input,),
         (torch.ops.aten.rnn_relu.input,),
         (torch.ops.aten.gru.input,),
