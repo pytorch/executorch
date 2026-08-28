@@ -168,7 +168,7 @@ OTHER_LDFLAGS = $(inherited) \
 
 **Note:** In the example above, we link against the Debug version of the ExecuTorch runtime (`libexecutorch_debug`) to preserve the logs. Normally, that does not impact the performance too much. Nevertheless, remember to link against the release version of the runtime (`libexecutorch`) for the best performance and no logs.
 
-**Note:** The MLX backend loads its Metal kernels at runtime from an `mlx.metallib` file. That file is not part of the frameworks in `cmake-out`; the build writes it under the MLX subdirectory of the build tree. If you integrate MLX from a source build, copy that `mlx.metallib` into your app bundle as well, or MLX links and registers but has no kernels to run.
+**Note:** The MLX backend loads its Metal kernels at runtime from a per-slice metallib inside a resource bundle named `executorch_backend_mlx_resources`, not from the frameworks in `cmake-out`. The build stages the correctly named files (`mlx-ios.metallib`, `mlx-ios-simulator.metallib`, `mlx-macos.metallib`) under `.Package.swift/backend_mlx_resources/`. If you integrate MLX from a source build, ship those files in a bundle of that name for the slices you use, or MLX links and registers but has no kernels to run.
 
 You can assign such a config file to your target in Xcode:
 
