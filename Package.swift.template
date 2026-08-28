@@ -160,11 +160,10 @@ for (key, value) in products {
 // that is the consumer's root, so every slice would appear missing and the
 // bundle would ship empty.
 let mlxMetallibSlices = ["mlx-ios", "mlx-ios-simulator", "mlx-macos"]
-let mlxResourcesDir = ".Package.swift/backend_mlx_resources"
 if products.keys.contains("backend_mlx") {
   packageTargets.append(.target(
     name: "backend_mlx_resources",
-    path: mlxResourcesDir,
+    path: ".Package.swift/backend_mlx_resources",
     resources: mlxMetallibSlices.map { .copy("\($0).metallib") }
   ))
   for suffix in ["", debug_suffix] {
