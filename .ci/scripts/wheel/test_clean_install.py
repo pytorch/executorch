@@ -98,34 +98,54 @@ def _allowed_distributions() -> Set[str]:
     return allowed
 
 
-def _top_level_modules(distribution: str) -> Set[str]:
+def _import_names(distribution: str) -> Set[str]:
     """The import names a distribution provides.
 
-    Needed because an import name often differs from the project name, as with `ruamel.yaml`
-    against `ruamel`, or `pytorch_tokenizers` against `pytorch-tokenizers`.
+    Read from the installed file list rather than top_level.txt, because most distributions
+    built by a modern backend no longer write that file, and the ones that matter here are
+    exactly the ones whose import name differs from their project name. `protobuf` provides
+    `google`, `scikit-learn` provides `sklearn`, `attrs` provides `attr`, and `torch` also
+    provides `functorch` and `torchgen`. Guessing from the project name would leave all of
+    those unrecognised, and a name left unrecognised on the permitted side gets hidden, which
+    fails a correct wheel.
     """
     import importlib.metadata as metadata
 
     try:
-        text = metadata.distribution(distribution).read_text("top_level.txt") or ""
+        files = metadata.distribution(distribution).files or []
     except metadata.PackageNotFoundError:
         return set()
-    return {line.strip() for line in text.splitlines() if line.strip()}
+
+    names = set()
+    for entry in files:
+        path = str(entry)
+        # Outside the site directory, or not importable.
+        if path.startswith("..") or path.startswith("__pycache__"):
+            continue
+        head = path.split("/")[0]
+        if head.endswith((".dist-info", ".egg-info", ".data")):
+            continue
+        if head.endswith(".py"):
+            names.add(head[: -len(".py")])
+        elif head.endswith((".so", ".dylib", ".pyd")):
+            # An extension module carries a platform tag, as in _foo.cpython-312-darwin.so.
+            names.add(head.split(".")[0])
+        elif "." not in head:
+            names.add(head)
+    return names
 
 
 def _blocked_modules(allowed: Set[str]) -> Set[str]:
     """Import names in this environment that a clean install would not have.
 
-    Built by elimination rather than by listing what to hide, and then narrowed by two rules,
-    because a wrong entry here fails a correct wheel. A distribution's import names come from
-    its own metadata where it publishes them, and a distribution that publishes none is only
-    hidden under its own normalised name.
+    Built by elimination rather than by listing what to hide, then narrowed, because a wrong
+    entry here fails a correct wheel rather than catching anything.
     """
     import importlib.metadata as metadata
 
     allowed_modules = set()
     for name in allowed:
-        allowed_modules |= _top_level_modules(name)
+        allowed_modules |= _import_names(name)
         allowed_modules.add(name)
 
     blocked = set()
@@ -133,10 +153,11 @@ def _blocked_modules(allowed: Set[str]) -> Set[str]:
         name = distribution.metadata["Name"]
         if not name or _normalise(name) in allowed:
             continue
-        blocked |= _top_level_modules(name) or {_normalise(name)}
+        blocked |= _import_names(name) or {_normalise(name)}
 
     # Never hide a name a permitted distribution also provides. Two distributions can share a
-    # namespace package, and blocking the shared name would break the permitted one.
+    # namespace package, `google` being the common one, and blocking the shared name would
+    # break the permitted one.
     blocked -= allowed_modules
 
     # Never hide anything the standard library provides, whatever a distribution claims. A
