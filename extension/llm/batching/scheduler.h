@@ -20,13 +20,14 @@
 #include <vector>
 
 #include <executorch/extension/llm/batching/types.h>
+#include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
 namespace executorch {
 namespace extension {
 namespace llm {
 namespace batching {
 
-class Scheduler {
+class ET_EXPERIMENTAL Scheduler {
  public:
   virtual ~Scheduler() = default;
 
