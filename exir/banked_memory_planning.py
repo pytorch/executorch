@@ -34,7 +34,7 @@ from executorch.exir.memory_planning import (
     _compute_total_sizes,
     _does_not_overlap,
     _find_max_overlapping_allocations_offset,
-    _resolve_inplace_specs,
+    _resolve_storage_base_specs,
     AllocationSpec,
     get_node_tensor_specs,
     MemoryAlgoResult,
@@ -181,11 +181,13 @@ class BankedGreedy:
         self._check_bank_alignments(alignment)
         all_specs = list(specs)
 
-        # In-place outputs share their base's storage, so they inherit its bank
-        # rather than being placed or counted against capacity.
-        planned = [spec for spec in all_specs if spec.inplace_base is None]
-        deferred_inplace = [spec for spec in all_specs if spec.inplace_base is not None]
-        for spec in deferred_inplace:
+        # Storage-backed specs live inside another spec's allocation, so they
+        # inherit its bank rather than being placed or counted against capacity.
+        planned = [spec for spec in all_specs if spec.storage_base is None]
+        deferred_storage_base = [
+            spec for spec in all_specs if spec.storage_base is not None
+        ]
+        for spec in deferred_storage_base:
             spec.realign(alignment)
 
         self._reject_non_cpu(all_specs)
@@ -236,9 +238,9 @@ class BankedGreedy:
             result.spec_dict[spec] = SpecAllocResult(mem_id, 0, 0)
             spec2obj[spec] = sobj
 
-        for spec in deferred_inplace:
+        for spec in deferred_storage_base:
             result.spec_dict[spec] = SpecAllocResult(0, 0, 0)
-        _resolve_inplace_specs(deferred_inplace, spec2obj, result)
+        _resolve_storage_base_specs(deferred_storage_base, spec2obj, result)
 
         result.bufsizes = _compute_total_sizes(
             objects, graph_module, 0, result, len(spec2obj)
