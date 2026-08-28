@@ -35,10 +35,16 @@ except ImportError:
 
 
 import logging
-from typing import Callable, List, Optional, TYPE_CHECKING, Union
+from typing import Any, Callable, List, Optional, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from transformers.feature_extraction_utils import BatchFeature
+else:
+    # A runtime stand-in, so the annotations below stay resolvable without transformers. They
+    # name BatchFeature as a string, and typing.get_type_hints evaluates those strings in this
+    # module's namespace, so a name that only exists under TYPE_CHECKING makes that call raise
+    # NameError, even on an install that has transformers.
+    BatchFeature = Any
 
 
 def _is_batch_feature(inputs) -> bool:
