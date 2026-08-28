@@ -34,13 +34,16 @@ GlobalWorkGrid pick_q8ta_conv2d_dw_gwg(
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
+  const uint32_t N = graph->size_at<uint32_t>(-4, output);
 
   // Each thread processes 4 adjacent width positions and 4 channels (4Wx4C
   // tile)
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return GlobalWorkGrid({W4, H, C4}, kTiledWorkGrid);
+  return GlobalWorkGrid(
+      {W4, utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N), C4},
+      kTiledWorkGrid);
 }
 
 LocalWorkGroup pick_q8ta_conv2d_dw_lwg(
