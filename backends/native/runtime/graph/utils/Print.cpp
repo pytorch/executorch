@@ -31,6 +31,13 @@ std::string id_list_str(const std::vector<ValueId>& ids) {
   return s + "]";
 }
 
+std::string output_str(const Output& out) {
+  if (out.kind == OutputValueKind::TensorList) {
+    return id_list_str(out.elem_ids);
+  }
+  return id_str(out.value_id);
+}
+
 } // namespace
 
 std::string to_string(const TensorMeta& meta) {
@@ -127,6 +134,47 @@ std::string to_string(const Argument& arg) {
       return "graph(" + arg.as_graph().name + ")";
   }
   return "?";
+}
+
+std::string to_string(const Node& node) {
+  std::string s = node.name.empty() ? "_" : node.name;
+  s += " = ";
+  switch (node.op_kind) {
+    case OpKind::CallFunction:
+      s += node.target;
+      break;
+    case OpKind::Placeholder:
+      s += "<placeholder>";
+      break;
+    case OpKind::Output:
+      s += "<output>";
+      break;
+  }
+  s += "(";
+  for (size_t i = 0; i < node.inputs.size(); ++i) {
+    if (i) {
+      s += ", ";
+    }
+    const NamedArgument& named = node.inputs[i];
+    if (!named.name.empty()) {
+      s += named.name + "=";
+    }
+    s += to_string(named.arg);
+    if (named.mutated) {
+      s += "!";
+    }
+  }
+  s += ")";
+  if (!node.outputs.empty()) {
+    s += " -> ";
+    for (size_t i = 0; i < node.outputs.size(); ++i) {
+      if (i) {
+        s += ", ";
+      }
+      s += output_str(node.outputs[i]);
+    }
+  }
+  return s;
 }
 
 } // namespace ptn
