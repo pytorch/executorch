@@ -48,6 +48,25 @@ from .utils import filter_fn, generate_qnn_executorch_option, get_skip_decomp_ta
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+# Highest tensor rank the QNN HTP backend accepts; ranks above this are rejected
+# at graph-prepare, so such nodes must not be delegated.
+QNN_TENSOR_RANK_LIMIT = 5
+
+
+def _max_io_tensor_rank(node: torch.fx.Node) -> int:
+    """Largest tensor rank among a node's output and tensor-valued inputs."""
+
+    def _ranks(val):
+        if isinstance(val, (list, tuple)):
+            return [len(v.shape) for v in val if hasattr(v, "shape")]
+        return [len(val.shape)] if hasattr(val, "shape") else []
+
+    ranks = _ranks(node.meta.get("val"))
+    for arg in node.args:
+        if isinstance(arg, torch.fx.Node):
+            ranks += _ranks(arg.meta.get("val"))
+    return max(ranks, default=0)
+
 
 class QnnOperatorSupport(OperatorSupportBase):
     def __init__(
@@ -107,6 +126,17 @@ class QnnOperatorSupport(OperatorSupportBase):
             or node.target.__name__ in self.skip_node_op_set
         ):
             logger.info(f"[{self.phase}] {node.target.__name__} | Skipped")
+            return False
+
+        # The HTP backend rejects tensors with rank > QNN_TENSOR_RANK_LIMIT at
+        # graph-prepare (QnnBackend_validateOpConfig 3110, "incorrect Rank"). Left
+        # in a partition, one such op aborts the whole context binary. Detect it
+        # here so the op falls back to CPU instead of failing the entire build.
+        if _max_io_tensor_rank(node) > QNN_TENSOR_RANK_LIMIT:
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | "
+                f"Unsupported: tensor rank exceeds {QNN_TENSOR_RANK_LIMIT}"
+            )
             return False
 
         supported = False

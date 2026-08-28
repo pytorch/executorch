@@ -98,6 +98,44 @@ class TestPasses(unittest.TestCase):
             QnnOperatorSupport.is_node_supported(support, None, context_loader_nodes[0])
         )
 
+    def test_partitioner_falls_back_on_rank_above_htp_limit(self):
+        # The HTP backend rejects tensors with rank > 5 at graph-prepare; the
+        # partitioner must report such ops as unsupported so they fall back to CPU
+        # instead of aborting the whole context binary.
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x.unsqueeze(0) + 1  # rank-5 input -> rank-6 output
+
+        exported_program = torch.export.export(
+            Model(), (torch.randn(1, 1, 1, 1, 4),), strict=True
+        )
+        edge_program = to_edge(
+            {"forward": exported_program},
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )._edge_programs["forward"]
+        rank6_nodes = [
+            node
+            for node in edge_program.graph.nodes
+            if node.op == "call_function"
+            and getattr(node.meta.get("val", None), "ndim", 0) == 6
+        ]
+        self.assertTrue(rank6_nodes, "expected a rank-6 node in the graph")
+
+        # Drive is_node_supported with a mock self. node_visitors is populated so
+        # the over-rank node passes the visitor-existence checks and reaches the
+        # rank guard; without the guard it would fall through to the (mocked) live
+        # backend and be reported supported.
+        support = MagicMock()
+        support.phase = "QnnPartitioner"
+        support.skip_node_id_set = set()
+        support.skip_node_op_set = set()
+        support.nodes_to_wrappers = {}
+        support.node_visitors = {
+            node.target.__name__: MagicMock() for node in rank6_nodes
+        }
+        for node in rank6_nodes:
+            self.assertFalse(QnnOperatorSupport.is_node_supported(support, None, node))
+
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
         ctx_bin = b"qnn_context_binary"
