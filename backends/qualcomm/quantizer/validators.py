@@ -8,9 +8,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import cast, Dict, List, Optional, Set, Tuple
 
-# Loading the native adaptor below needs the SDK reachable. See node_visitor.py for why this
-# is here rather than in the package's __init__. Ahead of the adaptor import specifically:
-# this module imports it before it imports node_visitor, so it cannot rely on that.
+# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
+# here rather than in the package's __init__. Called from this module too because it does not
+# import node_visitor before the adaptor, so it cannot leave the call to that module.
 from executorch.backends.qualcomm import setup_qnn_sdk
 
 setup_qnn_sdk()

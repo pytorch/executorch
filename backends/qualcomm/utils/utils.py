@@ -9,8 +9,8 @@ from collections import defaultdict, OrderedDict
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-# Loading the native adaptor below needs the SDK reachable. See node_visitor.py for why
-# this is here rather than in the package's __init__.
+# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
+# here rather than in the package's __init__.
 from executorch.backends.qualcomm import setup_qnn_sdk
 
 setup_qnn_sdk()

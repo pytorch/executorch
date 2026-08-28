@@ -4,10 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# The SDK has to be reachable before the native adaptor below is loaded, and every builder
-# in this package imports this module, so this is where it is ensured. It is not done in
-# the package's __init__, because that made simply importing the package fetch an SDK over
-# the network and change a global PyTorch setting.
+# The SDK has to be usable before a model is compiled, and every builder in this package
+# imports this module, so this is where it is arranged. Not in the package's __init__, because
+# that made simply importing the package fetch an SDK over the network and change a global
+# PyTorch setting.
+#
+# The adaptor imported below does not itself need the SDK to load: it links no QNN library and
+# resolves those symbols with dlopen when a backend is started. Placing the call here is about
+# covering the compile paths, not about ordering against that import.
 from executorch.backends.qualcomm import disable_mkldnn_on_amd, setup_qnn_sdk
 
 setup_qnn_sdk()

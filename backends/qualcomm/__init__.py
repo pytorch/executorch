@@ -80,9 +80,12 @@ def _setup_qnn_sdk_locked() -> None:
 def disable_mkldnn_on_amd() -> None:
     """Turn off PyTorch's MKLDNN backend on an AMD host.
 
-    Compiling for QNN produces wrong results on AMD with MKLDNN enabled. This changes a
-    global PyTorch setting, so it is applied by the QNN compile paths rather than at import,
-    where it would also change how unrelated models run in the same interpreter.
+    MKLDNN crashes on some AMD hosts, which is why this exists. The original comment described
+    it as producing wrong results; what was measured is a core dump, from a plain convolution
+    with nothing from this backend involved.
+
+    This changes a global PyTorch setting, so it is applied by the QNN compile paths rather than
+    at import, where it would also change how unrelated models run in the same interpreter.
     """
     import torch
 
