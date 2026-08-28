@@ -50,6 +50,11 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
 @implementation ExecuTorchDump {
   ExecuTorchModule *_module;
   ExecuTorchDumpTracer *_tracer;
+  // Holds a trace that was extracted from the generator but not yet handed to the
+  // caller, so a write that fails does not lose it: extracting finalises and
+  // resets the generator and cannot be undone, so the bytes are kept here and
+  // returned on the next take instead of reporting nothing recorded.
+  NSData *_pendingData;
   // Serialises one take against another. Completing a trace finalises the buffer
   // and resets the generator, so two takes must not overlap. This does not guard
   // a take against a concurrent run: the caller must not take while a method is
@@ -104,6 +109,14 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
 
 - (nullable NSData *)takeDataWithError:(NSError **)error {
   [_lock lock];
+  // A previous takeDataToFile: may have extracted a trace and then failed to
+  // write it. Hand that back rather than reporting nothing recorded.
+  if (_pendingData != nil) {
+    NSData *pending = _pendingData;
+    _pendingData = nil;
+    [_lock unlock];
+    return pending;
+  }
   ETDumpGen *generator = _tracer.generator;
   // get_etdump_data() finalises the builder and leaves the generator in its
   // Done state, which a second call does not handle and would abort on. Reset
@@ -135,7 +148,15 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
   if (data == nil) {
     return NO;
   }
-  return [data writeToFile:path options:NSDataWritingAtomic error:error];
+  if (![data writeToFile:path options:NSDataWritingAtomic error:error]) {
+    // Extracting the trace finalised and reset the generator, so it is gone from
+    // there. Keep it so the caller can retry the write rather than lose it.
+    [_lock lock];
+    _pendingData = data;
+    [_lock unlock];
+    return NO;
+  }
+  return YES;
 }
 
 @end

@@ -73,6 +73,12 @@ if(NOT TARGET extension_apple)
   )
 endif()
 
+if(NOT TARGET extension_module_static)
+  message(FATAL_ERROR "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE requires "
+                      "EXECUTORCH_BUILD_EXTENSION_MODULE."
+  )
+endif()
+
 find_library(FOUNDATION_FRAMEWORK Foundation)
 target_link_libraries(
   extension_etdump_apple PRIVATE etdump extension_apple extension_module_static

@@ -254,6 +254,7 @@ let package = Package(
       dependencies: [
         .target(name: "executorch_dump\(debug_suffix)\(dependencies_suffix)"),
         .target(name: "kernels_optimized\(dependencies_suffix)"),
+        .target(name: "backend_coreml\(dependencies_suffix)"),
       ],
       path: "extension/apple/dump/ExecuTorchDump/__tests__",
       resources: dumpTestResources,

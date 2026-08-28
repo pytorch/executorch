@@ -19,11 +19,23 @@ class DumpTest: XCTestCase {
 #endif
   }
 
+  /// Resolves a committed fixture by name. In CI (the `CI` env var is set),
+  /// absence is a hard failure (a thrown non-`XCTSkip` error, so the test is
+  /// reported as failed, not skipped), which is what catches a break in the
+  /// resource wiring. Locally, absence is a soft skip for convenience.
   private func modelPath() throws -> String {
     if let path = resourceBundle.path(forResource: "add", ofType: "pte") {
       return path
     }
-    throw XCTSkip("add.pte not bundled.")
+    let message = "add.pte not bundled."
+    if ProcessInfo.processInfo.environment["CI"] != nil {
+      throw NSError(
+        domain: "DumpTest.FixtureMissing",
+        code: -1,
+        userInfo: [NSLocalizedDescriptionKey: "[CI] \(message)"]
+      )
+    }
+    throw XCTSkip(message)
   }
 
   func testAvailable() throws {
