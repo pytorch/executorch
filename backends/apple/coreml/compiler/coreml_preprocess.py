@@ -36,6 +36,37 @@ logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.WARNING))
 
 
+def _gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
+    """
+    Names of gather ops whose table is also consumed by an op of another type.
+
+    Such a constant reaches the compressor under two different configurations at once,
+    which it rejects rather than resolves. Naming these gathers lets them be configured
+    the same way as the op they share the constant with; every other gather keeps the
+    opt-out. Returns nothing for a model whose program is not available, which leaves
+    the behaviour as it was.
+    """
+    program = getattr(mlmodel, "_mil_program", None)
+    if program is None:
+        return []
+
+    consumers: Dict[str, List[Any]] = {}
+    for function in program.functions.values():
+        for op in function.operations:
+            for value in op.inputs.values():
+                for var in value if isinstance(value, (list, tuple)) else [value]:
+                    source = getattr(var, "op", None)
+                    if source is not None and source.op_type == "const":
+                        consumers.setdefault(var.name, []).append(op)
+
+    shared: List[str] = []
+    for ops in consumers.values():
+        gathers = [op for op in ops if op.op_type == "gather"]
+        if gathers and len(gathers) < len(ops):
+            shared += [op.name for op in gathers]
+    return shared
+
+
 class COMPILE_SPEC_KEYS(Enum):
     COMPUTE_UNITS = "compute_units"
     MODEL_TYPE = "model_type"
@@ -584,7 +615,7 @@ class CoreMLBackend(BackendDetails):
             # embedding is one constant feeding both a gather and a linear, and coremltools
             # refuses to compress a constant its consumers disagree about, so opting the
             # gather out there does not skip the table, it fails the whole lowering.
-            tied = CoreMLBackend._gathers_sharing_a_weight(mlmodel)
+            tied = _gathers_sharing_a_weight(mlmodel)
             config = cto.coreml.OptimizationConfig(
                 global_config=op_linear_quantizer_config,
                 op_type_configs={"gather": None},
@@ -593,37 +624,6 @@ class CoreMLBackend(BackendDetails):
             mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
 
         return mlmodel
-
-    @staticmethod
-    def _gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
-        """
-        Names of gather ops whose table is also consumed by an op of another type.
-
-        Such a constant reaches the compressor under two different configurations at once,
-        which it rejects rather than resolves. Naming these gathers lets them be configured
-        the same way as the op they share the constant with; every other gather keeps the
-        opt-out. Returns nothing for a model whose program is not available, which leaves
-        the behaviour as it was.
-        """
-        program = getattr(mlmodel, "_mil_program", None)
-        if program is None:
-            return []
-
-        consumers: Dict[str, List[Any]] = {}
-        for function in program.functions.values():
-            for op in function.operations:
-                for value in op.inputs.values():
-                    for var in value if isinstance(value, (list, tuple)) else [value]:
-                        source = getattr(var, "op", None)
-                        if source is not None and source.op_type == "const":
-                            consumers.setdefault(var.name, []).append(op)
-
-        shared: List[str] = []
-        for ops in consumers.values():
-            gathers = [op for op in ops if op.op_type == "gather"]
-            if gathers and len(gathers) < len(ops):
-                shared += [op.name for op in gathers]
-        return shared
 
     @staticmethod
     def preprocess_model(
