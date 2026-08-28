@@ -227,10 +227,11 @@ endif()
 
 # The sub-build is forced to a single-config generator (Unix Makefiles), which
 # reads CMAKE_BUILD_TYPE, not the --config passed to the parent. Follow the
-# active configuration through $<CONFIG>, which resolves to the config being built
-# under a multi-config parent (Xcode) and to CMAKE_BUILD_TYPE under a single-config
-# one. It is empty only for a bare single-config parent that set no type, so
-# default that case to Release rather than compile MLX with no optimization.
+# active configuration through $<CONFIG>, which resolves to the config being
+# built under a multi-config parent (Xcode) and to CMAKE_BUILD_TYPE under a
+# single-config one. It is empty only for a bare single-config parent that set
+# no type, so default that case to Release rather than compile MLX with no
+# optimization.
 set(_mlx_build_type "$<IF:$<BOOL:$<CONFIG>>,$<CONFIG>,Release>")
 
 ExternalProject_Add(
@@ -273,6 +274,11 @@ ExternalProject_Add(
   # MLX's own install() does not emit libmlx.a where we consume it or the
   # metallib at all, so skip the install step and read both from the build tree.
   INSTALL_COMMAND ""
+  # Build in parallel. Under the multi-config Xcode parent the generated
+  # sub-build step is `cmake --build . --config <cfg>` with no -j and no
+  # jobserver to inherit, so MLX would compile fully serially; pass --parallel
+  # explicitly.
+  BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
   # ExternalProject stamps its build, so a bare MLX submodule bump (git
   # submodule update) would not invalidate the stamp and we'd link a stale
   # libmlx.a with no signal. BUILD_ALWAYS reruns the build step every configure;
@@ -282,16 +288,19 @@ ExternalProject_Add(
   BUILD_BYPRODUCTS ${_mlx_static_lib} ${_mlx_metallib}
 )
 
-# ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so a
-# reused build directory whose MLX source was reset (patches reverted) would
-# recompile an unpatched MLX and silently drop the iOS Metal SDK selection and the
-# SwiftPM metallib name. Re-apply the patches on every configure; apply.sh is
-# idempotent (it reverse-checks each patch and skips the ones already applied).
+# ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so
+# a reused build directory whose MLX source was reset (patches reverted) would
+# recompile an unpatched MLX and silently drop the iOS Metal SDK selection and
+# the SwiftPM metallib name. Re-apply the patches on every configure; apply.sh
+# is idempotent (it reverse-checks each patch and skips the ones already
+# applied). Depend on the built-in patch step, not download: both call apply.sh
+# on the same checkout, so ordering after patch keeps a parallel build from
+# running the two concurrently against one source tree.
 ExternalProject_Add_Step(
   mlx_external reapply_patches
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
           ${_mlx_patches}
-  DEPENDEES download
+  DEPENDEES patch
   DEPENDERS configure
   ALWAYS 1
 )

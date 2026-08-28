@@ -18,7 +18,27 @@ add_compile_options(
 set_overridable_option(BUILD_TESTING OFF)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_COREML ON)
-set_overridable_option(EXECUTORCH_BUILD_MLX ON)
+# MLX is Apple Silicon only and needs the Metal compiler (xcrun -sdk macosx
+# metal), which ships with Xcode, not the Command Line Tools. Probe for it and
+# degrade gracefully rather than force MLX on for every Apple preset, which
+# would hard-fail a plain `cmake --preset ios` on a machine without the Metal
+# toolchain or the MLX submodule. This mirrors how the wheel's pybind preset
+# gates MLX.
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  execute_process(
+    COMMAND xcrun -sdk macosx --find metal
+    RESULT_VARIABLE _metal_compiler_result
+    OUTPUT_QUIET ERROR_QUIET
+  )
+  if(_metal_compiler_result EQUAL 0)
+    set_overridable_option(EXECUTORCH_BUILD_MLX ON)
+  else()
+    message(
+      STATUS
+        "Metal compiler not found, disabling MLX backend. Install Xcode to enable MLX."
+    )
+  endif()
+endif()
 set_overridable_option(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE ON)
 set_overridable_option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_APPLE ON)
