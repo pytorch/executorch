@@ -89,6 +89,19 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "collapse_view_copy",
+        srcs = ["collapse_view_copy.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fuse_view_copy",
         srcs = ["fuse_view_copy.py"],
         visibility = [
@@ -202,6 +215,46 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":dim_maps",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_duplicate_users_pass",
+        srcs = ["fuse_duplicate_users_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_identical_input_transforms_pass",
+        srcs = ["fuse_identical_input_transforms_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            ":dim_maps",
+            ":permute_view_meta",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "propagate_view_copy_permute_pass",
+        srcs = ["propagate_view_copy_permute_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            ":canonicalize_view_copy_permute_pass",
+            ":dim_maps",
+            ":fuse_duplicate_users_pass",
+            ":fuse_identical_input_transforms_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
         ],
     )
@@ -400,6 +453,18 @@ def define_common_targets():
             "//executorch/exir:lib",
             "//executorch/extension/pybindings:portable_lib",
             "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_collapse_view_copy",
+        srcs = [
+            "test/test_collapse_view_copy.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":collapse_view_copy",
         ],
     )
 

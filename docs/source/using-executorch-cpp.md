@@ -182,6 +182,7 @@ These are the components the package provides:
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
+| `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
 | `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
 
 To see what your own install offers, ask CMake:
@@ -190,7 +191,7 @@ To see what your own install offers, ask CMake:
 find_package(executorch REQUIRED)
 foreach(_component
         runtime kernels_optimized kernels_quantized kernels_torchao
-        backend_xnnpack backend_mlx backend_cuda extension_cuda
+        backend_xnnpack backend_coreml backend_mlx backend_cuda extension_cuda
         backend_openvino threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
@@ -198,9 +199,20 @@ foreach(_component
 endforeach()
 ```
 
-On macOS the Core ML delegate is registered inside the Python extension rather than shipped as a
-separate C++ library, so a C++ application there cannot link it as a component; use it from
-Python, or build from source if you need it in C++.
+On macOS the Core ML and MLX delegates link the same way, by naming their
+component. Registration is handled for you: each backend registers itself through
+a static initializer, and the imported target carries the link options that keep
+that initializer from being dropped, so you do not need `-force_load` or any
+whole-archive flag of your own.
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_coreml backend_mlx)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_coreml
+                                  executorch::backend_mlx)
+```
 
 Profiling a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in
 total. It does not record the individual operators inside the delegate, because that detail comes
