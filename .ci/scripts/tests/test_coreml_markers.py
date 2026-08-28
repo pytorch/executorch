@@ -218,18 +218,15 @@ def test_conftest_matches_the_coremltools_marker(system, machine, sys_platform, 
     )
 
 
-@pytest.mark.parametrize("system,machine,sys_platform", PLATFORMS)
-@pytest.mark.parametrize("python", PYTHONS)
-def test_scikit_learn_follows_coremltools(system, machine, sys_platform, python):
-    # scikit-learn is there for coremltools' palettization, so it is only useful where
-    # coremltools is. Nothing else in the wheel imports scikit-learn itself; scipy, which
-    # used to arrive as its transitive dependency, is declared in requirements-examples.txt
-    # for the code that does import it.
-    assert _marker_says_installed(
-        _base_dependency("scikit-learn"), system, machine, sys_platform, python
-    ) == _marker_says_installed(
-        _base_dependency("coremltools"), system, machine, sys_platform, python
-    )
+def test_scikit_learn_is_not_a_base_dependency():
+    # scikit-learn was declared here to follow coremltools, on the understanding that
+    # coremltools needed it for palettization. It does not: the flag it sets, _HAS_SKLEARN,
+    # gates coremltools' converter for scikit-learn's own model types, which nothing here
+    # converts. The declared floor was also above the ceiling coremltools accepts, so the
+    # resolved version was always rejected. requirements-examples.txt declares it for the
+    # example scripts that really do import it.
+    with pytest.raises(AssertionError):
+        _base_dependency("scikit-learn")
 
 
 def test_the_platforms_core_ml_is_used_on_are_still_covered():

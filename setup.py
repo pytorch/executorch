@@ -696,12 +696,6 @@ def _base_dependencies() -> List[str]:
         # with coremltools 9.0 on a Linux aarch64 machine. Keep this in sync with the condition
         # in conftest.py; .ci/scripts/tests/test_coreml_markers.py checks that the two agree.
         "coremltools==9.0; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
-        # coremltools uses scikit-learn for palettization, so it follows coremltools. Without a
-        # marker it also installed where coremltools does not, most visibly on Windows, and
-        # brought scipy with it. Nothing in this repository imports scikit-learn from the Core
-        # ML backend; the example scripts that do import it, and the scripts that import scipy,
-        # now name both in requirements-examples.txt rather than relying on this entry.
-        "scikit-learn>=1.7.1; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]
