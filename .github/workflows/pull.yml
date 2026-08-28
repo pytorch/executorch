@@ -1255,7 +1255,7 @@ jobs:
   #   strategy:
   #     fail-fast: false
   #   with:
-  #     runner: linux.24xlarge
+  #     runner: mt-l-x86iavx512-94-192
   #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
   #     submodules: 'recursive'
   #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
