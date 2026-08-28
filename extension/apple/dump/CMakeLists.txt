@@ -43,7 +43,8 @@ file(COPY ${_etdump_core_headers}
 target_include_directories(
   extension_etdump_apple
   PUBLIC ExecuTorchDump/Exported
-  PRIVATE ${_etdump_core_headers_dir}
+  PRIVATE ExecuTorchDump/Internal
+          ${_etdump_core_headers_dir}
           # For <executorch/...> includes reached through etdump_flatcc.h.
           ${EXECUTORCH_ROOT}/..
           # For the c10 portable types those headers pull in.

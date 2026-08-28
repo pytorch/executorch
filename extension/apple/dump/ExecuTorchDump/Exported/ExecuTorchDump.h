@@ -11,6 +11,7 @@
 #import <ExecuTorch/ExecuTorchModule.h>
 
 #import "ExecuTorchDumpError.h"
+#import "ExecuTorchDumpTracer.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

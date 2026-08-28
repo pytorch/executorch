@@ -9,11 +9,10 @@
 #import "ExecuTorchDump.h"
 
 #import "ExecuTorchDumpError.h"
+#import "ExecuTorchDumpTracer+Internal.h"
 
 #import <executorch/devtools/etdump/etdump_flatcc.h>
 #import <executorch/runtime/core/event_tracer_hooks.h>
-
-#import <ExecuTorch/ExecuTorchEventTracer+Internal.h>
 
 #import <flatcc/flatcc_builder.h>
 
@@ -27,25 +26,6 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
                              code:code
                          userInfo:@{NSLocalizedDescriptionKey : message}];
 }
-
-// A concrete event tracer backed by an ETDumpGen. The base class owns the
-// generator through its C++ tracer; this subclass keeps a typed pointer to the
-// same object so the recorder can read the trace back without a downcast. The
-// pointer stays valid for as long as the module the tracer was given to lives.
-@interface ExecuTorchDumpTracer : ExecuTorchEventTracer
-- (instancetype)init;
-@property(nonatomic, readonly) ETDumpGen *generator;
-@end
-
-@implementation ExecuTorchDumpTracer
-
-- (instancetype)init {
-  auto generator = std::make_unique<ETDumpGen>();
-  _generator = generator.get();
-  return [super initWithCppTracer:std::move(generator)];
-}
-
-@end
 
 @implementation ExecuTorchDump {
   ExecuTorchModule *_module;
