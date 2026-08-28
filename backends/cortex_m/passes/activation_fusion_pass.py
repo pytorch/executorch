@@ -49,6 +49,7 @@ class ActivationFusionPass(ExportPass):
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
     }
