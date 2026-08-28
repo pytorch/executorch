@@ -30,12 +30,14 @@ ${layout_declare_ubo(B, "BufferMetadata", "index")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 // Implements aten.index.Tensor for the case where self is 1D and there is
 // exactly one index tensor. Each output element is:
 //   output[...] = self[index[...]]
 
 void main() {
-  const uint out_bufi = gl_GlobalInvocationID.x;
+  const uint out_bufi = linear_idx_from_gid();
   if (out_of_bounds(out_bufi, outp)) {
     return;
   }
