@@ -33,6 +33,7 @@ GlobalWorkGrid pick_q8ta_conv2d_pw_gwg(
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
+  const uint32_t N = graph->size_at<uint32_t>(-4, output);
 
   // Each thread covers a 4-width x 4-channel output block.
   // Tile constants must match TILE_M4 / TILE_N4 in q8ta_conv2d_pw.glsl.
@@ -45,9 +46,11 @@ GlobalWorkGrid pick_q8ta_conv2d_pw_gwg(
   // Global workgroup size:
   // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4 = C4
   // y = width / (TILE_M4 * 4) = W4 / TILE_M4 = W4
-  // z = height
+  // z = height * batch
   return GlobalWorkGrid(
-      {utils::div_up(C4, TILE_N4), utils::div_up(W4, TILE_M4), H},
+      {utils::div_up(C4, TILE_N4),
+       utils::div_up(W4, TILE_M4),
+       utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N)},
       kTiledWorkGrid);
 }
 
