@@ -1256,10 +1256,13 @@ class InstallerBuildExt(build_ext):
             self.get_finalized_command("build"), "cmake_cache_dir", None
         )
         _strip_absolute_runtime_paths(dst_file, _cuda_libraries_built(cmake_cache_dir))
-        # After the rewrite, since it opens the file for writing and would otherwise be
-        # rewriting a file whose symbol table just moved. Only the wheel copy is stripped;
-        # the editable copy above is a developer's own build output, where the local symbols
-        # are what a debugger and a profiler read.
+        # After the rewrite rather than before it, because each tool re-signs the file ad hoc when
+        # it finishes, so whichever runs last owns the signature. Running strip last keeps the
+        # signature over the bytes that ship. Functionally either order works: measured, the two
+        # produce the same size, the same exported symbols, the same rpaths, and both verify.
+        #
+        # Only the wheel copy is stripped; the editable copy above is a developer's own build
+        # output, where the local symbols are what a debugger and a profiler read.
         _strip_local_symbols(dst_file)
 
 
@@ -1346,17 +1349,19 @@ def _run_install_name_tool(command: List[str], library: Path) -> None:
 def _strip_local_symbols(library: Path) -> None:
     """Discard the local symbol table from a Mach-O file the wheel ships.
 
-    Only on macOS, and only because its linker keeps these where the GNU one does not. The
-    Linux libraries ship with no .symtab at all, while the macOS ones carried a local symbol
-    for every internal function: 448 in the runtime, 4190 in the merged kernels, and 35496 in
-    flatc, which alone was 6 MB of the 7 MB this removes.
+    Only on macOS, and only because its linker keeps these where the GNU one does not. The Linux
+    shared libraries ship with no .symtab section, while the macOS ones carried a local symbol for
+    every internal function: 448 in the runtime, 4190 in the merged kernels, and 35496 in flatc,
+    which alone was 6 MB of the 7 MB this removes.
 
-    `-x` removes local symbols and keeps every external one, so what a consumer can link
-    against does not change. Anything beyond that would strip exported symbols and break
-    linking, so the flag matters.
+    `-x` removes local symbols and keeps every external one, so what a consumer can link against
+    does not change. Anything beyond that would strip exported symbols and break linking, so the
+    flag matters.
 
-    A failure here is not fatal. The file is correct either way, and a wheel that is larger
-    than intended is better than a build that stops.
+    A failure here is not fatal. The file is correct either way, and a wheel that is larger than
+    intended is better than a build that stops. That also covers the files this runs on that are
+    not Mach-O at all, such as the Metal library and a template: strip declines them, and on BSD
+    it declines them with a zero exit, leaving the file byte for byte as it was.
     """
     if not _is_macos():
         return
