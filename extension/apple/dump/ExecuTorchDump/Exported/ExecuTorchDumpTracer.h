@@ -20,7 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 NS_SWIFT_NAME(DumpTracer)
 @interface ExecuTorchDumpTracer : ExecuTorchEventTracer
 
-- (instancetype)init NS_DESIGNATED_INITIALIZER;
+- (instancetype)init;
 
 @end
 
