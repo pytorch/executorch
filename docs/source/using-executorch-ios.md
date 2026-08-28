@@ -9,7 +9,7 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 * `executorch` - Core runtime components
 * `executorch_llm` - LLM-specific runtime components
 * `backend_coreml` - Core ML backend
-* `backend_mlx` - MLX backend (macOS on Apple Silicon)
+* `backend_mlx` - MLX backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels

@@ -217,6 +217,16 @@ fi
 # copy is enough and re-copying per mode would only rewrite an identical file.
 capture_mlx_metallib() {
   local preset_out_dir="$1"
+  # Read the decision the preset actually made, not the command-line flags. The
+  # Apple presets probe for the Metal compiler and leave EXECUTORCH_BUILD_MLX OFF
+  # when it is missing, and CMAKE_OPTIONS_OVERRIDE is empty unless the caller
+  # passed a --<backend> flag, so testing that array alone would hard-fail a
+  # plain no-flag build on a machine without the Metal toolchain.
+  local cache="${OUTPUT_DIR}/${preset_out_dir}/CMakeCache.txt"
+  if [[ -f "${cache}" ]] &&
+    ! grep -q "^EXECUTORCH_BUILD_MLX:BOOL=ON" "${cache}"; then
+    return
+  fi
   if [[ " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
     return
   fi
