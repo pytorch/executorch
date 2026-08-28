@@ -308,6 +308,10 @@ const utils::uvec3& GlobalWorkGrid::extents() const {
   return extents_;
 }
 
+uint32_t GlobalWorkGrid::operator[](const int idx) const {
+  return extents_[idx];
+}
+
 const LocalWorkGroup& GlobalWorkGrid::required_lwg_size() const {
   return required_lwg_;
 }
@@ -323,7 +327,20 @@ bool GlobalWorkGrid::is_linear() const {
 void GlobalWorkGrid::wrap_linear_dispatch(
     const utils::uvec3& max_wg_count,
     const uint32_t target_total_nthreads) {
-  if (!is_linear() || required_lwg_.is_valid()) {
+  wrap_linear_dispatch(
+      max_wg_count, LocalWorkGroup(kLinearLwg, target_total_nthreads));
+}
+
+void GlobalWorkGrid::wrap_linear_dispatch(
+    const utils::uvec3& max_wg_count,
+    const LocalWorkGroup& required_lwg) {
+  if (!is_linear()) {
+    return;
+  }
+  if (required_lwg_.is_valid()) {
+    VK_CHECK_COND(
+        required_lwg_ == required_lwg,
+        "Linear dispatch local workgroup size must match its wrapping hint");
     return;
   }
 
@@ -331,33 +348,70 @@ void GlobalWorkGrid::wrap_linear_dispatch(
       extents_[1] == 1u && extents_[2] == 1u,
       "Linear dispatch wrapping requires one-dimensional input extents");
   VK_CHECK_COND(
-      max_wg_count[0] > 0u && max_wg_count[1] > 0u,
-      "Linear dispatch requires nonzero X and Y workgroup limits");
+      required_lwg.is_valid(),
+      "Linear dispatch requires nonzero local workgroup dimensions");
+  VK_CHECK_COND(
+      max_wg_count[0] > 0u && max_wg_count[1] > 0u && max_wg_count[2] > 0u,
+      "Linear dispatch requires nonzero workgroup limits");
 
-  const LocalWorkGroup required_lwg(kLinearLwg, target_total_nthreads);
   const uint64_t lwg_x = required_lwg.x();
-  const uint64_t required_workgroups =
-      utils::div_up(uint64_t(extents_[0]), lwg_x);
-  if (required_workgroups <= max_wg_count[0]) {
+  const uint64_t lwg_y = required_lwg.y();
+  const uint64_t lwg_plane = lwg_x * lwg_y;
+  const uint64_t required_wgs = utils::div_up(uint64_t(extents_[0]), lwg_plane);
+  if (required_wgs <= max_wg_count[0]) {
+    extents_ = {
+        utils::safe_downcast<uint32_t>(
+            utils::div_up(uint64_t(extents_[0]), lwg_y)),
+        utils::safe_downcast<uint32_t>(lwg_y),
+        1u};
     required_lwg_ = required_lwg;
     return;
   }
 
   const uint64_t square_width = static_cast<uint64_t>(
-      std::ceil(std::sqrt(static_cast<double>(required_workgroups))));
+      std::ceil(std::sqrt(static_cast<double>(required_wgs))));
+  const uint64_t min_width =
+      utils::div_up(required_wgs, uint64_t(max_wg_count[1]));
   const uint64_t workgroups_x =
-      std::min<uint64_t>(square_width, max_wg_count[0]);
-  const uint64_t workgroups_y =
-      utils::div_up(required_workgroups, workgroups_x);
+      std::min<uint64_t>(std::max(square_width, min_width), max_wg_count[0]);
+  const uint64_t workgroups_y = utils::div_up(required_wgs, workgroups_x);
   VK_CHECK_COND(
       workgroups_y <= max_wg_count[1],
       "Linear dispatch exceeds two-dimensional workgroup limits");
 
   extents_ = {
       utils::safe_downcast<uint32_t>(workgroups_x * lwg_x),
-      utils::safe_downcast<uint32_t>(workgroups_y),
+      utils::safe_downcast<uint32_t>(workgroups_y * lwg_y),
       1u};
   required_lwg_ = required_lwg;
+}
+
+void GlobalWorkGrid::validate(
+    const LocalWorkGroup& lwg,
+    const utils::uvec3& max_wg_count,
+    const LocalWorkGroup& output_tile) const {
+  VK_CHECK_COND(output_tile.is_valid(), "Dispatch dimensions must be nonzero");
+  VK_CHECK_COND(
+      !required_lwg_.is_valid() || required_lwg_ == lwg,
+      "Linear dispatch local workgroup size does not match wrapping hint");
+
+  utils::uvec3 effective_extents = {
+      utils::div_up(extents_[0], output_tile[0]),
+      utils::div_up(extents_[1], output_tile[1]),
+      utils::div_up(extents_[2], output_tile[2])};
+  if (effective_extents[0] == 0u || effective_extents[1] == 0u ||
+      effective_extents[2] == 0u) {
+    effective_extents = {1u, 1u, 1u};
+  }
+
+  const utils::uvec3 wg_count = {
+      utils::div_up(effective_extents[0], lwg[0]),
+      utils::div_up(effective_extents[1], lwg[1]),
+      utils::div_up(effective_extents[2], lwg[2])};
+  VK_CHECK_COND(
+      wg_count[0] <= max_wg_count[0] && wg_count[1] <= max_wg_count[1] &&
+          wg_count[2] <= max_wg_count[2],
+      "Shader dispatch exceeds device workgroup count limits");
 }
 
 } // namespace vkcompute

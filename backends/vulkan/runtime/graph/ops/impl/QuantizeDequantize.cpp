@@ -44,7 +44,7 @@ std::tuple<int64_t, int64_t> get_quantized_input_num_blocks(
   return std::make_tuple(num_blocks_M, num_blocks_K);
 }
 
-utils::uvec3 quantize_and_pack_4h4w_global_wg_size(
+GlobalWorkGrid quantize_and_pack_4h4w_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -54,10 +54,11 @@ utils::uvec3 quantize_and_pack_4h4w_global_wg_size(
   std::tie(num_blocks_M, num_blocks_K) =
       get_quantized_input_num_blocks(*graph, input);
 
-  return {
-      utils::safe_downcast<uint32_t>(num_blocks_K),
-      utils::safe_downcast<uint32_t>(num_blocks_M),
-      1u};
+  return GlobalWorkGrid(
+      {utils::safe_downcast<uint32_t>(num_blocks_K),
+       utils::safe_downcast<uint32_t>(num_blocks_M),
+       1u},
+      kTiledWorkGrid);
 }
 
 vkapi::ShaderInfo pick_quantize_and_pack_4h4w_with_group_sums_shader(
@@ -87,7 +88,7 @@ vkapi::ShaderInfo pick_quantize_and_pack_4h4w_with_group_sums_shader(
   return VK_KERNEL_FROM_STR(shader_name);
 }
 
-utils::uvec3 pick_quantize_and_pack_4h4w_with_group_sums_global_wg_size(
+GlobalWorkGrid pick_quantize_and_pack_4h4w_with_group_sums_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -98,8 +99,12 @@ utils::uvec3 pick_quantize_and_pack_4h4w_with_group_sums_global_wg_size(
   // rationale for this is that gemv is a memory bound operation and may not
   // necessarily benefit from quantizing the input and computing with integer
   // accumulation.
+  const LocalWorkGroup required_lwg =
+      shader.kernel_name.find("o4w16") != std::string::npos
+      ? LocalWorkGroup(4u, 1u, 16u)
+      : LocalWorkGroup(2u, 1u, 32u);
   if (is_gemv(graph, fp_input)) {
-    return {0u, 0u, 0u};
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid, required_lwg);
   }
 
   const ValueRef group_size = resize_args.at(0);
@@ -112,37 +117,12 @@ utils::uvec3 pick_quantize_and_pack_4h4w_with_group_sums_global_wg_size(
 
   const int64_t num_groups = num_blocks_K / blocks_per_group;
 
-  return {
-      utils::safe_downcast<uint32_t>(num_groups),
-      utils::safe_downcast<uint32_t>(num_blocks_M),
-      1u};
-}
-
-utils::uvec3 pick_quantize_and_pack_4h4w_with_group_sums_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  // For gemv, skip the quantize input step since the quantized linear is
-  // computed as a weight only quantized linear operation.
-  if (is_gemv(graph, fp_input)) {
-    return {1u, 1u, 1u};
-  }
-
-  uint32_t groups_per_wg = 2u;
-  uint32_t workers_per_group = 32u;
-
-  if (shader.kernel_name.find("o4w16") != std::string::npos) {
-    groups_per_wg = 4u;
-    workers_per_group = 16u;
-  }
-
-  return {groups_per_wg, 1u, workers_per_group};
+  return GlobalWorkGrid(
+      {utils::safe_downcast<uint32_t>(num_groups),
+       utils::safe_downcast<uint32_t>(num_blocks_M),
+       1u},
+      kTiledWorkGrid,
+      required_lwg);
 }
 
 //
@@ -184,8 +164,8 @@ void add_quantize_and_pack_4h4w_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(shader_name),
-      quantize_and_pack_4h4w_global_wg_size,
-      default_pick_local_wg_size,
+      quantize_and_pack_4h4w_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{packed_int_input, vkapi::kWrite}, {fp_input, vkapi::kRead}},
       // Shader params buffers
@@ -222,8 +202,8 @@ void add_quantize_and_pack_4h4w_with_group_sums_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_quantize_and_pack_4h4w_with_group_sums_shader,
-      pick_quantize_and_pack_4h4w_with_group_sums_global_wg_size,
-      pick_quantize_and_pack_4h4w_with_group_sums_local_wg_size,
+      pick_quantize_and_pack_4h4w_with_group_sums_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{{packed_int_input, int_input_sums}, vkapi::kWrite},
        {{fp_input, packed_input_scales, packed_input_zps}, vkapi::kRead}},
@@ -241,7 +221,7 @@ void add_quantize_and_pack_4h4w_with_group_sums_node(
 // Dispatch utilities (Conv2d)
 //
 
-utils::uvec3 pick_quantize_and_pack_4w4c_global_wg_size(
+GlobalWorkGrid pick_quantize_and_pack_4w4c_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -255,10 +235,10 @@ utils::uvec3 pick_quantize_and_pack_4w4c_global_wg_size(
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid({W4, H, C4}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_unpack_4w4c_and_dequantize_global_wg_size(
+GlobalWorkGrid pick_unpack_4w4c_and_dequantize_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -272,7 +252,7 @@ utils::uvec3 pick_unpack_4w4c_and_dequantize_global_wg_size(
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid({W4, H, C4}, kTiledWorkGrid);
 }
 
 //
@@ -307,8 +287,8 @@ void add_quantize_and_pack_4w4c_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_quantize_and_pack_4w4c_global_wg_size,
-      pick_wc_square_wg_size,
+      pick_quantize_and_pack_4w4c_gwg,
+      pick_xz_square_lwg,
       // Inputs and Outputs
       {{packed_int8_input, vkapi::kWrite}, {fp_input, vkapi::kRead}},
       // Shader params buffers
@@ -351,8 +331,8 @@ void add_unpack_4w4c_and_dequantize_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_unpack_4w4c_and_dequantize_global_wg_size,
-      default_pick_local_wg_size,
+      pick_unpack_4w4c_and_dequantize_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{fp_output, vkapi::kWrite}, {packed_int8_output, vkapi::kRead}},
       // Shader params buffers

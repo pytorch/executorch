@@ -1012,7 +1012,7 @@ class ComputeGraph final {
 
   void register_pipeline_to_create(
       const vkapi::ShaderInfo& shader_info,
-      const LocalWorkGroup& local_workgroup_size,
+      const LocalWorkGroup& lwg,
       const vkapi::SpecVarList& spec_vars,
       const std::vector<PushConstantDataInfo>& push_constants);
 
@@ -1025,37 +1025,36 @@ class ComputeGraph final {
   //
 
   /*
-   * Create a global workgroup size for a given `api::vTensor` value assuming
-   * that every shader invocation calculates one texel element of the output
-   * tensor.
+   * Create a global invocation size for a given `api::vTensor` value assuming
+   * that every shader invocation calculates one element of the output tensor.
    *
    * For tensors that use texture storage, the image extents of the
    * `api::vTensor` will be used to set the global workgroup size.
    *
-   * For tensor that use buffer storage, the number of texels in the texel
-   * buffer will be used to set the x component of the global workgroup size.
-   * All other components will be set to 1 (i.e. {ntexels, 1, 1} will be
-   * returned).
+   * Buffer tensors use linear dispatch intent. Oversized X dimensions are
+   * wrapped across X and Y according to device workgroup-count limits.
    */
-  utils::uvec3 create_global_wg_size(const ValueRef idx);
+  GlobalWorkGrid create_gwg(const ValueRef idx);
+
+  GlobalWorkGrid create_linear_gwg(const uint64_t numel);
 
   /*
-   * Suggest a local workgroup size for a given global workgroup size.
+   * Suggest a local workgroup size for a given global invocation size.
    *
    * The local workgroup size will be formed to try and minimize the number of
    * inactive invocations.
    *
-   * Currently, the local workgroup size is hard-coded to contain a total of 64
-   * shader invocations. In the future, this value can be configured.
+   * Linear dispatches return their binding hint. Other dispatches use a shape
+   * heuristic targeting the adapter's recommended thread count.
    */
-  utils::uvec3 create_local_wg_size(const utils::uvec3 global_wg_size);
+  LocalWorkGroup create_lwg(const GlobalWorkGrid& gwg);
 
   /*
    * Convenience function to suggest a local workgroup size for a given
    * `api::vTensor` value, assuming that every shader invocation calculates one
    * texel element of the output tensor.
    */
-  utils::uvec3 create_local_wg_size(const ValueRef idx);
+  LocalWorkGroup create_lwg(const ValueRef idx);
 
   void bind_tensor_to_descriptor_set(
       const ValueRef ref,
