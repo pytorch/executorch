@@ -117,6 +117,33 @@ def test_publishes_only_the_package_name():
     assert _top_level_names(_ExecuTorchDistribution) == ["executorch"]
 
 
+def test_setup_is_told_to_use_the_distribution():
+    """The filter only takes effect if setup() is actually given the class.
+
+    Without this, deleting the `distclass=` argument leaves the test above green while the
+    published metadata goes back to listing every recipe, which is the whole defect.
+    """
+    module = ast.parse(SETUP_PY.read_text())
+    setup_calls = [
+        node
+        for statement in module.body
+        if isinstance(statement, ast.Expr)
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "setup"
+    ]
+    assert len(setup_calls) == 1, "expected exactly one module level setup() call"
+    distclass = [
+        keyword.value
+        for keyword in setup_calls[0].keywords
+        if keyword.arg == "distclass"
+    ]
+    assert distclass, "setup() is not given a distclass, so the filter never runs"
+    assert isinstance(distclass[0], ast.Name)
+    assert distclass[0].id == "_ExecuTorchDistribution"
+
+
 def test_plain_distribution_publishes_the_recipes():
     """Guards the test above, which passes trivially if the filter is unnecessary.
 
