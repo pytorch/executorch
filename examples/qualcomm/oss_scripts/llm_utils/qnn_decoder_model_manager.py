@@ -6,7 +6,7 @@
 
 import logging
 from functools import partial
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
@@ -31,10 +31,9 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.qualcomm.oss_scripts.llm_utils.decoder_model_wrapper import (
     QnnCausalLMExportableModule,
 )
-from executorch.examples.qualcomm.oss_scripts.llm_utils.hf_llm_quant_recipe import (
+from executorch.examples.qualcomm.oss_scripts.llm_utils.llm_quant_recipe import (
     DefaultQuantRecipe,
     Granite_3_3_2B_Instruct_HFQuantRecipe,
-    HFLLMQuantRecipe,
     Llama3_2_1B_HFQuantRecipe,
     Qwen2_5_0_5B_HFQuantRecipe,
     Qwen2_5_1_5B_HFQuantRecipe,
@@ -135,9 +134,7 @@ class QnnLLMEdgeManager:
             logging.warning(
                 f"{model_name} does not have customized quant recipe using default quant recipe."
             )
-        self.quant_recipe: Optional[HFLLMQuantRecipe] = (
-            recipe_cls(verbose) if recipe_cls else None
-        )
+        self.quant_recipe = recipe_cls(verbose)
 
     def source_transform(
         self, transforms: List[Callable[[torch.nn.Module], torch.nn.Module]]
