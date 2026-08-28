@@ -212,9 +212,9 @@ fi
 
 # The MLX Metal kernels ship as a per-slice metallib in a shared SwiftPM resource
 # bundle, not merged into the xcframework, since MLX loads them at runtime by name.
-# Capture it during the build loop: both modes build into the same directory, so
-# the Debug pass overwrites the Release metallib, and the shipped kernels should be
-# the Release build.
+# Capture it during the build loop, from one pass per slice: both modes build into
+# the same directory and the metallib does not depend on the build type, so one
+# copy is enough and re-copying per mode would only rewrite an identical file.
 capture_mlx_metallib() {
   local preset_out_dir="$1"
   if [[ " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
@@ -243,9 +243,9 @@ capture_mlx_metallib() {
 
 echo "Building libraries"
 
-# The MLX metallib should be captured from the Release build. Both modes build
-# into the same directory, so a later Debug pass would overwrite it. Prefer
-# Release; if it is not being built, fall back to the last mode in the list.
+# Capture the metallib from a single deterministic pass. The metallib does not
+# depend on the build type, so any one mode's is fine; prefer Release when it is
+# being built, otherwise fall back to the last mode in the list.
 MLX_CAPTURE_MODE="${MODES[0]}"
 for mode in "${MODES[@]}"; do
   if [[ "${mode}" == "Release" ]]; then
@@ -275,8 +275,8 @@ for preset_index in "${!PRESETS[@]}"; do
     cmake --build "${preset_output_dir}" \
           --config "${mode}"
 
-    # Capture the metallib on the chosen pass, before a later pass building into
-    # the same directory overwrites it.
+    # Capture the metallib on the chosen pass only, so it is copied once rather
+    # than rewritten by every mode.
     if [[ "${mode}" == "${MLX_CAPTURE_MODE}" ]]; then
       capture_mlx_metallib "${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
     fi
