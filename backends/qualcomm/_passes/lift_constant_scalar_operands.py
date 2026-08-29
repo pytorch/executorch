@@ -184,6 +184,10 @@ class LiftConstantScalarOperands(ExportPass):
             if (
                 n.op != "call_function"
                 or isinstance(n.target, (BuiltinMethodType, BuiltinFunctionType))
+                # higher-order ops (e.g. wrap_with_set_grad_enabled) have no
+                # OpOverload schema; lifting inspects node.target._schema, so skip
+                # them instead of crashing on the missing attribute.
+                or not isinstance(n.target, torch._ops.OpOverload)
                 or n.target in SKIP_LIFT_OPS
             ):
                 continue
