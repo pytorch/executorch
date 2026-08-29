@@ -76,11 +76,9 @@ class CellExecutor : public Executor {
  public:
   ~CellExecutor() override;
 
-  // Builds the cell cache from the layout `module` publishes and binds it to
-  // the backend. The program must be loaded; its method must not be, since the
-  // method load is left until the first batch -- a delegate may bind per-thread
-  // state as it initializes, and construction is the only entry point that does
-  // not run on the engine thread.
+  // Builds the cell cache from the layout `module` publishes, binds it to the
+  // backend, and loads the method. The program must be loaded; its method must
+  // not be, since the delegate resolves the cache while that load runs.
   //
   // The table holds `max_sessions` sessions of `max_session_tokens` cells. A
   // short table refuses the whole batch and takes every session in it down, so
@@ -90,20 +88,19 @@ class CellExecutor : public Executor {
   // `kv_dtype` is the ET ScalarType the cache stores K/V in; a negative
   // `initial_capacity` leaves the pools to grow from their own default.
   //
-  // nullptr = unusable limits, a program publishing no KV layout, or no cell
-  // cache registered for `backend_id`.
+  // The backend is read from the program: the executor drives one cache, so
+  // the method's attention must be delegated to a single backend.
+  //
+  // nullptr = unusable limits, a program publishing no KV layout, a method
+  // spanning several backends, or no cell cache registered for the one it
+  // names.
   static std::unique_ptr<CellExecutor> create(
       std::unique_ptr<Module> module,
       int max_sessions,
       int max_session_tokens,
       int kv_dtype,
-      std::string backend_id,
       int initial_capacity = -1,
       std::string method = "forward");
-
-  // Loads the method, naming the cache to the backend. The delegate binds
-  // per-thread state as it initializes, which happens during that load.
-  bool start() override;
 
   std::optional<SessionId> open_session() override;
   void close_session(SessionId session) override;
@@ -142,7 +139,6 @@ class CellExecutor : public Executor {
   // The method's logits width, so a sampler can be built by its policy.
   std::int32_t vocab_size_;
 
-  bool method_loaded_ = false;
   SessionId next_session_ = 1; // never reused, unlike the cache's sequence ids
   std::unordered_map<SessionId, SessionInfo> sessions_;
 };

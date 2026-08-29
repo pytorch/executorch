@@ -167,7 +167,6 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
     int max_sessions,
     int max_session_tokens,
     int kv_dtype,
-    std::string backend_id,
     int initial_capacity,
     std::string method) {
   if (module == nullptr) {
@@ -197,6 +196,35 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
     return nullptr;
   }
 
+  const auto meta = module->method_meta(method);
+  if (!meta.ok()) {
+    ET_LOG(Error, "CellExecutor: %s has no metadata", method.c_str());
+    return nullptr;
+  }
+
+  std::string backend_id;
+  for (std::size_t i = 0; i < meta->num_backends(); ++i) {
+    const auto name = meta->get_backend_name(i);
+    if (!name.ok()) {
+      ET_LOG(Error, "CellExecutor: %s has an unnamed delegate", method.c_str());
+      return nullptr;
+    }
+    if (backend_id.empty()) {
+      backend_id = name.get();
+    } else if (backend_id != name.get()) {
+      ET_LOG(
+          Error,
+          "CellExecutor: %s spans more than one backend, so which holds the "
+          "cache is ambiguous",
+          method.c_str());
+      return nullptr;
+    }
+  }
+  if (backend_id.empty()) {
+    ET_LOG(Error, "CellExecutor: %s delegates to nothing", method.c_str());
+    return nullptr;
+  }
+
   auto built =
       cache::CacheBuilderRegistry::global().build(backend_id, "cell", *cfg);
   if (!built.ok()) {
@@ -212,8 +240,7 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
     return nullptr;
   }
 
-  const auto meta = module->method_meta(method);
-  if (!meta.ok() || meta->num_outputs() == 0) {
+  if (meta->num_outputs() == 0) {
     ET_LOG(Error, "CellExecutor: %s publishes no outputs", method.c_str());
     return nullptr;
   }
@@ -226,6 +253,26 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
 
   auto session =
       std::make_unique<cache::CacheSession>(cache::make_unique_key(), cache);
+  // The delegate resolves the cache from this key while the method loads.
+  char key[::executorch::runtime::kMaxOptionKeyLength] = {};
+  std::memcpy(key, kCacheKeyOption, sizeof(kCacheKeyOption) - 1);
+  ::executorch::runtime::BackendOptions<1> options;
+  ::executorch::runtime::LoadBackendOptionsMap options_map;
+  if (options.set_option(key, session->key().c_str()) != Error::Ok ||
+      options_map.set_options(backend_id.c_str(), options.view()) !=
+          Error::Ok) {
+    ET_LOG(Error, "CellExecutor: could not name the cache to the backend");
+    return nullptr;
+  }
+  if (module->load_method(
+          method,
+          /*planned_memory=*/nullptr,
+          /*event_tracer=*/nullptr,
+          &options_map) != Error::Ok) {
+    ET_LOG(Error, "CellExecutor: could not load %s", method.c_str());
+    return nullptr;
+  }
+
   return std::unique_ptr<CellExecutor>(new CellExecutor(
       std::move(module),
       std::move(cache),
@@ -235,34 +282,6 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
       std::move(backend_id),
       std::move(method),
       logits_sizes[logits_sizes.size() - 1]));
-}
-
-bool CellExecutor::start() {
-  if (method_loaded_) {
-    return true;
-  }
-  // The key is taken as a fixed-width array; create() bounded its length.
-  char key[::executorch::runtime::kMaxOptionKeyLength] = {};
-  std::memcpy(key, kCacheKeyOption, sizeof(kCacheKeyOption) - 1);
-
-  ::executorch::runtime::BackendOptions<1> options;
-  ::executorch::runtime::LoadBackendOptionsMap options_map;
-  if (options.set_option(key, session_->key().c_str()) != Error::Ok ||
-      options_map.set_options(backend_id_.c_str(), options.view()) !=
-          Error::Ok) {
-    ET_LOG(Error, "CellExecutor: could not name the cache to the backend");
-    return false;
-  }
-  if (module_->load_method(
-          method_,
-          /*planned_memory=*/nullptr,
-          /*event_tracer=*/nullptr,
-          &options_map) != Error::Ok) {
-    ET_LOG(Error, "CellExecutor: could not load %s", method_.c_str());
-    return false;
-  }
-  method_loaded_ = true;
-  return true;
 }
 
 std::optional<SessionId> CellExecutor::open_session() {
@@ -308,11 +327,6 @@ void CellExecutor::set_sampling(
 bool CellExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
-
-  if (!method_loaded_) {
-    ET_LOG(Error, "CellExecutor: execute() before start()");
-    return false;
-  }
 
   const std::optional<Step> step =
       build_step(*ctl_, batch, sessions_, max_session_tokens_);

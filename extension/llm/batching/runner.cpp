@@ -454,11 +454,6 @@ void RunnerImpl::notify_engine_() {
 // --- engine thread ---------------------------------------------------------
 
 void RunnerImpl::run_() {
-  // Start before anything is admitted, and on this thread.
-  if (!executor_.start()) {
-    lifecycle_.store(Lifecycle::Stopping, std::memory_order_release);
-  }
-
   while (is_running_()) {
     process_pending_commands_();
     reap_cancelled_();
