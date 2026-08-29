@@ -1293,28 +1293,27 @@ def naive(
     return naive_result
 
 
-def get_cond_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
-    for nd in graph_module.graph.nodes:
-        if nd.target is torch.ops.higher_order.cond:
-            yield nd
+def _hop_output_last_use(
+    hop_node: torch.fx.Node, hop_idx: int, node_index: dict[torch.fx.Node, int]
+) -> int:
+    """Return the max node index at which any output of a HOP node is last consumed.
 
-
-def get_while_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
-    for nd in graph_module.graph.nodes:
-        if nd.target is exir_while:
-            yield nd
-
-
-def get_map_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
-    for nd in graph_module.graph.nodes:
-        if nd.target is torch.ops.higher_order.map_impl:
-            yield nd
-
-
-def get_scan_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
-    for nd in graph_module.graph.nodes:
-        if nd.target is torch.ops.higher_order.scan:
-            yield nd
+    HOP outputs are accessed via getitem nodes. We find the last consumer of
+    any getitem user of the HOP node.
+    """
+    last_use = hop_idx
+    for user in hop_node.users:
+        spec = user.meta.get("spec")
+        if isinstance(spec, TensorSpec) and spec.lifetime[1] is not None:
+            last_use = max(last_use, spec.lifetime[1])
+        elif isinstance(spec, (list, tuple)):
+            for s in spec:
+                if isinstance(s, TensorSpec) and s.lifetime[1] is not None:
+                    last_use = max(last_use, s.lifetime[1])
+        else:
+            for consumer in user.users:
+                last_use = max(last_use, node_index[consumer])
+    return last_use
 
 
 def get_return_specs(graph_module: fx.GraphModule) -> Set[TensorSpec]:
@@ -1394,10 +1393,14 @@ def _handle_submodule(
     submodule_node: torch.fx.Node,
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = False,
+    input_mem_buffer_sizes: Optional[list[int]] = None,
 ) -> list[int]:
     """Apply algo to nodes in a submodule of the graph module."""
     assert submodule_node.op == "get_attr"
     submodule = getattr(parent_graph_module, submodule_node.target)
+
+    if input_mem_buffer_sizes is not None:
+        submodule.input_mem_buffer_sizes = input_mem_buffer_sizes
 
     logging.debug(f"Planning memory for submodule {submodule_node.name}...")
     bufsizes = apply_algo(
@@ -1421,42 +1424,86 @@ def _apply_algo_to_submodules(
 ) -> list[int]:
     """Apply algo to map/cond/while/scan nodes in the graph module.
 
-    This method will popuate graph_module.meta["non_const_buffer_sizes"] for
-    all submodules and return a bufsizes list that is the maximum size of all
-    buffers.
-    """
+    Processes HOP nodes in graph order, tracking output lifetimes. When a later
+    HOP's execution start falls within an earlier HOP's output lifetime, the
+    later HOP's submodules allocate at offsets AFTER the earlier HOP's memory
+    to prevent overwriting still-live outputs.
 
-    # Bufsizes for submodules.
+    Branches within the SAME HOP (e.g. true/false of one cond) are mutually
+    exclusive and safely share memory (merged via max).
+    """
     bufsizes: list[int] = []
 
-    def _handle(
-        submodule_node: torch.fx.Node,
-        alloc_graph_input: bool = False,
-    ) -> None:
-        current_bufsizes = _handle_submodule(
-            algo,
-            graph_module,
-            alignment,
-            submodule_node,
-            graph_signature,
-            alloc_graph_input=alloc_graph_input,
-        )
-        nonlocal bufsizes
-        _merge_bufsizes(bufsizes, current_bufsizes)
+    parent_offset = getattr(graph_module, "input_mem_buffer_sizes", None)
 
-    for cond_node in get_cond_nodes(graph_module):
-        _handle(cast(torch.fx.Node, cond_node.args[1]))
-        _handle(cast(torch.fx.Node, cond_node.args[2]))
+    # (submodule_arg_indices, alloc_graph_input, outputs_in_arena)
+    # outputs_in_arena: cond/while outputs live in the submodule arena (via
+    # MoveCall), so a later HOP sharing that arena would corrupt them.
+    # map/scan outputs are allocated in the parent graph — no conflict.
+    hop_targets: dict = {
+        torch.ops.higher_order.cond: ((1, 2), False, True),
+        exir_while: ((0, 1), False, True),
+        torch.ops.higher_order.map_impl: ((0,), True, False),
+        torch.ops.higher_order.scan: ((0,), True, False),
+    }
 
-    for while_node in get_while_nodes(graph_module):
-        _handle(cast(torch.fx.Node, while_node.args[0]))
-        _handle(cast(torch.fx.Node, while_node.args[1]))
+    # Track HOPs whose outputs live in the arena:
+    # (bufsizes_for_this_hop, hop_start_idx, hop_output_last_use)
+    hop_allocs: list[tuple[list[int], int, int]] = []
 
-    for map_node in get_map_nodes(graph_module):
-        _handle(cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True)
+    node_index: Optional[Dict[torch.fx.Node, int]] = None
 
-    for scan_node in get_scan_nodes(graph_module):
-        _handle(cast(torch.fx.Node, scan_node.args[0]), alloc_graph_input=True)
+    for node in graph_module.graph.nodes:
+        if node.op != "call_function" or node.target not in hop_targets:
+            continue
+
+        if node_index is None:
+            node_index = {n: i for i, n in enumerate(graph_module.graph.nodes)}
+
+        submodule_arg_indices, alloc_graph_input, outputs_in_arena = hop_targets[
+            node.target
+        ]
+        hop_start_idx = node_index[node]
+        hop_end_idx = _hop_output_last_use(node, hop_start_idx, node_index)
+
+        # Check if this HOP overlaps with any prior HOP's live arena outputs.
+        overlap_bufsizes: list[int] = []
+        for prior_bufsizes, _prior_start, prior_end in hop_allocs:
+            if hop_start_idx <= prior_end:
+                _merge_bufsizes(overlap_bufsizes, prior_bufsizes)
+
+        if parent_offset:
+            if overlap_bufsizes:
+                _merge_bufsizes(overlap_bufsizes, parent_offset)
+            else:
+                overlap_bufsizes = list(parent_offset)
+
+        input_mem_buffer_sizes = overlap_bufsizes if overlap_bufsizes else None
+
+        # Plan all branches of this HOP, taking the max (they're mutually exclusive)
+        this_hop_bufsizes: list[int] = []
+        for arg_idx in submodule_arg_indices:
+            submodule_node = cast(torch.fx.Node, node.args[arg_idx])
+            branch_bufsizes = _handle_submodule(
+                algo,
+                graph_module,
+                alignment,
+                submodule_node,
+                graph_signature,
+                alloc_graph_input=alloc_graph_input,
+                input_mem_buffer_sizes=input_mem_buffer_sizes,
+            )
+            _merge_bufsizes(this_hop_bufsizes, branch_bufsizes)
+
+        # Record this HOP's allocation for future overlap checks, but only
+        # if its outputs live in the submodule arena.
+        effective_bufsizes = list(overlap_bufsizes) if overlap_bufsizes else []
+        _merge_bufsizes(effective_bufsizes, this_hop_bufsizes)
+        if outputs_in_arena:
+            hop_allocs.append((effective_bufsizes, hop_start_idx, hop_end_idx))
+
+        # Merge into the global submodule bufsizes (the max across all HOPs)
+        _merge_bufsizes(bufsizes, effective_bufsizes)
 
     # TODO: We can handle delegates the same way as map/cond/while.
     # Maybe populate the graph_module.meta["non_const_buffer_sizes"] for delegates.
@@ -1624,10 +1671,13 @@ def apply_algo(
 
         # Only apply submodule pre-allocation for CPU specs; device buffers
         # do not share memory space with CPU submodule arenas.
+        effective_bufsizes = submodule_bufsizes if device_key == _CPU_KEY else []
+        pre_existing = getattr(graph_module, "input_mem_buffer_sizes", None)
+        if pre_existing:
+            effective_bufsizes = list(effective_bufsizes) if effective_bufsizes else []
+            _merge_bufsizes(effective_bufsizes, pre_existing)
         # pyre-ignore[16]: `torch.fx.GraphModule` has no attribute `input_mem_buffer_sizes`.
-        graph_module.input_mem_buffer_sizes = (
-            submodule_bufsizes if device_key == _CPU_KEY else []
-        )
+        graph_module.input_mem_buffer_sizes = effective_bufsizes
 
         # Run algorithm independently on this device's specs
         device_bufsizes = algo(
