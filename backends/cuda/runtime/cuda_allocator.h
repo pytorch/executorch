@@ -69,6 +69,50 @@ class CudaAllocator final : public executorch::runtime::DeviceAllocator {
       cudaStream_t stream);
 
   /**
+   * Return memory this backend's device pool is holding for reuse back to the
+   * driver.
+   *
+   * The pool keeps freed memory so that repeated allocations do not have to map
+   * it again, which is what makes delegate execution cheap, so a long-lived
+   * process should call this once its work on the device is finished. Only
+   * frees the driver has already observed can be released, so a caller that has
+   * not synchronized simply gets less back. Allocations that are still live are
+   * unaffected either way.
+   *
+   * The pool belongs to this backend rather than being the device default pool,
+   * so the pool trim never affects memory another user of the async allocator
+   * is holding. The graph memory trim is the exception: it is scoped to the
+   * device, so it also releases unused graph memory cached by other users in
+   * this process.
+   *
+   * Does nothing on ROCm. HIP has equivalents for all of these calls; this
+   * repository's CUDA-to-HIP compatibility header does not alias them yet.
+   *
+   * @param index Device to release on, or a negative value to release every
+   *     device this backend has allocated on. Note that means every device, not
+   *     the current one, which is what a negative value means elsewhere in this
+   *     class: a delegate is often torn down from a thread that is not current
+   * on the device it ran on, so releasing only the current device would leave
+   *     that memory held.
+   */
+  static void release_cached_memory(
+      executorch::runtime::etensor::DeviceIndex index);
+
+  /**
+   * The memory pool this backend allocates from on a device, or nullptr if it
+   * has not allocated there or the pool could not be created.
+   *
+   * Exposed so a test can observe what the pool is holding, which is not
+   * visible through the device default pool. No production caller; a test
+   * friend would be the tidier shape and would also let the HIP alias for the
+   * pool type go.
+   *
+   * @param index Device to query, or a negative value for the current one.
+   */
+  static cudaMemPool_t pool_for_device(
+      executorch::runtime::etensor::DeviceIndex index);
+
+  /**
    * Copy memory asynchronously on the given CUDA stream.
    * Supports H2D, D2H, and D2D based on src/dst device types.
    */

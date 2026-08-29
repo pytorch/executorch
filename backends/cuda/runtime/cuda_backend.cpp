@@ -470,6 +470,8 @@ class ET_EXPERIMENTAL CudaBackend final
 
     mutable_state_note_handle(handle);
 
+    live_handles_.fetch_add(1, std::memory_order_acq_rel);
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -892,6 +894,14 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     delete handle;
+
+    // The allocator lets the device pool keep freed memory so that repeated
+    // delegate execution does not pay to map it again. Nothing is running on
+    // this backend once the last handle is gone, so hand that memory back
+    // rather than hold it for the life of the process.
+    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      CudaAllocator::release_cached_memory(-1);
+    }
   }
 
  private:
@@ -905,6 +915,10 @@ class ET_EXPERIMENTAL CudaBackend final
   // it's automatically cleaned up when last handle is destroyed.
   mutable std::mutex cuda_stream_mutex_;
   std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
+
+  // Delegates alive right now. The device memory pool is shared, so it can only
+  // be released once none of them are left.
+  mutable std::atomic<size_t> live_handles_{0};
 
   // Whether to enable cross-method caching for legacy dense-blob artifacts.
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default

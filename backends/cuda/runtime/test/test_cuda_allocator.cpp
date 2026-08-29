@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
 
 #include <cstdint>
@@ -181,3 +182,180 @@ TEST_F(CudaAllocatorTest, CopyDeviceToHostOnMissingDeviceFails) {
 
   a.deallocate(dptr, 0);
 }
+
+// The pool attributes these exercise have no HIP equivalent in the
+// compatibility header, and the allocator's pool code is compiled out on ROCm
+// for the same reason, so there is nothing to test there.
+#if !defined(EXECUTORCH_USE_HIP)
+
+namespace {
+uint64_t reserved_bytes(cudaMemPool_t pool) {
+  uint64_t reserved = 0;
+  EXPECT_EQ(
+      cudaMemPoolGetAttribute(
+          pool, cudaMemPoolAttrReservedMemCurrent, &reserved),
+      cudaSuccess);
+  return reserved;
+}
+} // namespace
+
+// The delegate allocates from a pool it owns, so its retained memory must not
+// land in the device default pool that other users of the async allocator
+// share.
+TEST_F(CudaAllocatorTest, AllocatesFromItsOwnPool) {
+  cudaStream_t stream;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  constexpr size_t kBytes = 8u << 20;
+  auto res = CudaAllocator::allocate_async(kBytes, 0, stream);
+  ASSERT_TRUE(res.ok());
+
+  cudaMemPool_t owned = CudaAllocator::pool_for_device(0);
+  ASSERT_NE(owned, nullptr) << "the allocator should have created its own pool";
+  cudaMemPool_t default_pool = nullptr;
+  ASSERT_EQ(cudaDeviceGetMemPool(&default_pool, 0), cudaSuccess);
+  EXPECT_NE(owned, default_pool) << "the pool must not be the device default";
+
+  // The live block is reserved in the owned pool, which is what identifies it
+  // as the pool actually serving this allocation.
+  EXPECT_GE(reserved_bytes(owned), kBytes);
+
+  CudaAllocator::deallocate_async(res.get(), 0, stream);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
+// Freed memory is kept so repeated allocation stays cheap, which means a plain
+// free no longer shrinks the pool. Without an explicit release a long lived
+// process would hold that memory after every program was gone.
+TEST_F(CudaAllocatorTest, ReleaseCachedMemoryReturnsPoolMemory) {
+  cudaStream_t stream;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  constexpr size_t kBytes = 8u << 20;
+  auto res = CudaAllocator::allocate_async(kBytes, 0, stream);
+  ASSERT_TRUE(res.ok());
+  CudaAllocator::deallocate_async(res.get(), 0, stream);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+
+  cudaMemPool_t owned = CudaAllocator::pool_for_device(0);
+  ASSERT_NE(owned, nullptr);
+  // Freed and synchronized, and still held, which is the point of the change.
+  ASSERT_GT(reserved_bytes(owned), 0u)
+      << "the pool should hold the freed block for reuse";
+
+  CudaAllocator::release_cached_memory(0);
+
+  EXPECT_EQ(reserved_bytes(owned), 0u)
+      << "released memory should go back to the driver";
+
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
+// Releasing must not disturb allocations that are still in use.
+TEST_F(CudaAllocatorTest, ReleaseCachedMemoryKeepsLiveAllocations) {
+  cudaStream_t stream;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  // Large enough that the two blocks land in separate driver reservations. At a
+  // few megabytes they share one, so nothing can be released while either is
+  // live.
+  constexpr size_t kBytes = 64u << 20;
+  auto live = CudaAllocator::allocate_async(kBytes, 0, stream);
+  ASSERT_TRUE(live.ok());
+  auto temp = CudaAllocator::allocate_async(kBytes, 0, stream);
+  ASSERT_TRUE(temp.ok());
+  CudaAllocator::deallocate_async(temp.get(), 0, stream);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+
+  cudaMemPool_t owned = CudaAllocator::pool_for_device(0);
+  ASSERT_NE(owned, nullptr);
+  const uint64_t before = reserved_bytes(owned);
+
+  CudaAllocator::release_cached_memory(0);
+
+  // The freed block goes back and the live one stays reserved, so the pool
+  // gives up only what is not in use.
+  const uint64_t after = reserved_bytes(owned);
+  EXPECT_LT(after, before) << "the freed block should have been released";
+  EXPECT_GE(after, kBytes) << "the live block must still be reserved";
+
+  EXPECT_EQ(cudaMemsetAsync(live.get(), 0, kBytes, stream), cudaSuccess);
+  EXPECT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+
+  CudaAllocator::deallocate_async(live.get(), 0, stream);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
+// A negative index releases every device this backend has allocated on, not the
+// current one. This runner has a single GPU, so the two cannot be told apart
+// here; what it pins is that the sentinel is resolved rather than passed to the
+// driver.
+TEST_F(CudaAllocatorTest, ReleaseCachedMemoryAcceptsTheAllDevicesSentinel) {
+  cudaStream_t stream;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  constexpr size_t kBytes = 8u << 20;
+  auto res = CudaAllocator::allocate_async(kBytes, 0, stream);
+  ASSERT_TRUE(res.ok());
+  CudaAllocator::deallocate_async(res.get(), 0, stream);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+
+  cudaMemPool_t owned = CudaAllocator::pool_for_device(-1);
+  ASSERT_NE(owned, nullptr) << "the sentinel should resolve to this device";
+  ASSERT_GT(reserved_bytes(owned), 0u)
+      << "the pool should hold the freed block for reuse";
+
+  CudaAllocator::release_cached_memory(-1);
+
+  EXPECT_EQ(reserved_bytes(owned), 0u);
+
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
+// Memory allocated during a graph capture goes to the device graph pool, which
+// the pool trim cannot reach, so releasing has to trim that too. Without the
+// graph trim this is the only new test that fails.
+TEST_F(CudaAllocatorTest, ReleaseCachedMemoryReturnsGraphMemory) {
+  cudaStream_t stream;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  constexpr size_t kBytes = 64u << 20;
+  cudaGraph_t graph = nullptr;
+  cudaGraphExec_t graph_exec = nullptr;
+  ASSERT_EQ(
+      cudaStreamBeginCapture(stream, cudaStreamCaptureModeRelaxed),
+      cudaSuccess);
+  auto captured = CudaAllocator::allocate_async(kBytes, 0, stream);
+  ASSERT_TRUE(captured.ok());
+  CudaAllocator::deallocate_async(captured.get(), 0, stream);
+  ASSERT_EQ(cudaStreamEndCapture(stream, &graph), cudaSuccess);
+  ASSERT_EQ(
+      cudaGraphInstantiate(&graph_exec, graph, nullptr, nullptr, 0),
+      cudaSuccess);
+  ASSERT_EQ(cudaGraphLaunch(graph_exec, stream), cudaSuccess);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+
+  size_t reserved = 0;
+  ASSERT_EQ(
+      cudaDeviceGetGraphMemAttribute(
+          0, cudaGraphMemAttrReservedMemCurrent, &reserved),
+      cudaSuccess);
+  ASSERT_GT(reserved, 0u) << "the capture should have reserved graph memory";
+
+  ASSERT_EQ(cudaGraphExecDestroy(graph_exec), cudaSuccess);
+  ASSERT_EQ(cudaGraphDestroy(graph), cudaSuccess);
+
+  CudaAllocator::release_cached_memory(0);
+
+  ASSERT_EQ(
+      cudaDeviceGetGraphMemAttribute(
+          0, cudaGraphMemAttrReservedMemCurrent, &reserved),
+      cudaSuccess);
+  EXPECT_EQ(reserved, 0u) << "graph memory should go back to the driver";
+
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
+#endif // !EXECUTORCH_USE_HIP
