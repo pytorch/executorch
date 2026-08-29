@@ -162,8 +162,8 @@ _COREML_SYMBOLS = (
     "executorch::backends::coreml::CoreMLBackendDelegate::get_registered_delegate()",
 )
 
-# A representative symbol from the TorchAO kernels. These are Apple Silicon only, so
-# most wheels ship no such library and the row below is not required.
+# A representative symbol from the TorchAO kernels. These need aarch64, so the x86 and Windows
+# wheels ship no such library and the row below is not required.
 _TORCHAO_KERNEL_SYMBOLS = ("torchao::quantization::get_qvals_range",)
 
 # A representative symbol from the profiler. A second definer means two event
