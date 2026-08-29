@@ -24,7 +24,7 @@ from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.program import to_edge
-from torch._subclasses.fake_tensor import FakeTensor
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -191,6 +191,50 @@ class TestPassInfra(unittest.TestCase):
         for node in new_gm.graph.nodes:
             if node.target != "output":
                 self.assertIn("val", node.meta)
+
+
+    def test_export_pass_reuses_graph_fake_mode(self) -> None:
+        """A graph whose placeholders are all constant-carrying fake tensors.
+
+        inputs() unwraps such a placeholder to its real .constant tensor, so
+        the fake-mode scan in _ExportPassBase.call finds no FakeTensor at all.
+        Opening a fresh mode there splits the graph in two: the retraced nodes
+        land in the new mode while the untouched placeholders keep the old one,
+        and detect_fake_mode() rejects the result downstream.
+        """
+        mode = FakeTensorMode(allow_non_fake_inputs=True)
+
+        def const_fake(value: float) -> FakeTensor:
+            real = torch.tensor(value)
+            with mode:
+                meta = torch.empty(real.shape, dtype=real.dtype, device="meta")
+            return FakeTensor(mode, meta, torch.device("cpu"), constant=real)
+
+        graph = torch.fx.Graph()
+        lhs = graph.placeholder("c_lhs")
+        rhs = graph.placeholder("c_rhs")
+        lhs.meta["val"] = const_fake(2.0)
+        rhs.meta["val"] = const_fake(3.0)
+        mul = graph.call_function(torch.ops.aten.mul.Tensor, (lhs, rhs))
+        with mode:
+            mul.meta["val"] = torch.ops.aten.mul.Tensor(
+                lhs.meta["val"], rhs.meta["val"]
+            )
+        out = graph.output((mul,))
+        out.meta["val"] = (mul.meta["val"],)
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        result = ExportPass()(gm)
+        self.assertIsNotNone(result)
+
+        fake_modes = set()
+        for node in result.graph_module.graph.nodes:
+            val = node.meta.get("val")
+            for tensor in val if isinstance(val, (list, tuple)) else [val]:
+                if isinstance(tensor, FakeTensor):
+                    fake_modes.add(id(tensor.fake_mode))
+
+        self.assertEqual(len(fake_modes), 1)
 
 
 class TestProxyValueSymbolicCoercions(unittest.TestCase):
