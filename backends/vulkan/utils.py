@@ -1442,8 +1442,15 @@ class OpRepSets:
         outs_repset_list = TensorRepSetList([])
         common_out_repset = ANY_STORAGE_INCL_PACKED_INT8
         if num_tensors_in_node(op_node) == 1:
+            out_val = op_node.meta["val"]
+            # num_tensors_in_node counts tensors, not nesting: an op declared
+            # to return Tensor[] still lands here when it happens to produce
+            # exactly one, and meta["val"] is then a one-element list rather
+            # than a bare FakeTensor.
+            if isinstance(out_val, (list, tuple)):
+                out_val = out_val[0]
             common_out_repset = filter_invalid_reprs(
-                op_node.meta["val"], outputs_repsets[0], texture_limits
+                out_val, outputs_repsets[0], texture_limits
             )
             outs_repset_list.append(common_out_repset)
         # Multiple output tensors
