@@ -355,7 +355,11 @@ jobs:
             # above are text greps, the swiftpm branch has no CI of its own, and a
             # .template is not a manifest. Resolve it here so a Swift-level defect
             # fails this run rather than every consumer of the published branch.
-            if ! swift package dump-package > /dev/null; then
+            # Use describe, not dump-package: dump-package parses the manifest but
+            # returns 0 even when a target's directory is absent, while describe
+            # loads the package and fails, which is the case that reaches
+            # consumers when a stub directory is missed.
+            if ! swift package describe > /dev/null; then
               echo "::error::the substituted Package.swift does not evaluate"
               exit 1
             fi

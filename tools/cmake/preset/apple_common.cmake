@@ -53,8 +53,10 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
 # The ETDump Apple wrapper needs the event tracer, so default it to follow the
 # tracer's resolved value rather than force it on: turning the tracer off with
-# -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF then turns this off too instead of
-# hitting the requires-check with an option the user never set.
+# -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF then turns this off too. Turning only
+# this extension off works as well, because the tracer's devtools requirement in
+# default.cmake is skipped for any Apple extension build, so neither direction
+# trips a requires-check on an option the user never set.
 set_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE ${EXECUTORCH_ENABLE_EVENT_TRACER}
 )

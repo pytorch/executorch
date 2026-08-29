@@ -358,10 +358,14 @@ define_overridable_option(
 # The tracer needs the etdump target, not the whole devtools umbrella. A pybind,
 # shared, or Apple ETDump build adds that target on its own, so accept any of
 # those routes rather than forcing an option that also pulls in submodules a
-# wheel does not check out.
+# wheel does not check out. Skip the check whenever the caller asked for the
+# tracer explicitly too: an Apple preset turns the tracer on for the whole
+# runtime, so someone switching only the Apple ETDump extension off would
+# otherwise trip a devtools requirement they never asked about.
 if(NOT EXECUTORCH_BUILD_PYBIND
    AND NOT EXECUTORCH_BUILD_SHARED
    AND NOT EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE
+   AND NOT EXECUTORCH_BUILD_EXTENSION_APPLE
 )
   check_required_options_on(
     IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
