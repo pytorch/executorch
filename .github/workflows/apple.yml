@@ -299,7 +299,15 @@ jobs:
             git checkout -b "${BRANCH}"
           fi
 
-          [[ -f Package.swift ]] || mv Package.swift.template Package.swift
+          # Always substitute from the template on the swiftpm branch, never from
+          # a Package.swift left behind by an earlier run for this same version.
+          # Nightly versions carry a date, so two runs in one day land on the same
+          # branch, and a release re-run reuses the version exactly; reusing the
+          # old file there would publish a manifest missing whatever the template
+          # gained since, and the failure surfaces as a product that is built but
+          # has no entry, with nothing pointing at the stale file.
+          git checkout swiftpm -- Package.swift.template
+          mv -f Package.swift.template Package.swift
 
           sed -i "s/__VERSION__/${VERSION}/g" Package.swift
 
