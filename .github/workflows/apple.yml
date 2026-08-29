@@ -16,6 +16,7 @@ on:
       - scripts/build_apple_frameworks.sh
       - scripts/build_apple_llm_demo.sh
       - scripts/create_frameworks.sh
+      - Package.swift
       - .ci/scripts/test_ios_ci.sh
       - extension/apple/**
       - extension/benchmark/apple/**
