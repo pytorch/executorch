@@ -19,6 +19,7 @@ from executorch.backends.vulkan.serialization import (
 )
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    Double,
     IntList,
     OperatorCall,
     String,
@@ -267,5 +268,61 @@ class TestSerialization(unittest.TestCase):
 
         bs = convert_to_flatbuffer(in_vk_graph)
         out_vk_graph = flatbuffer_to_vk_graph(bs)
+
+        self.assertEqual(in_vk_graph, out_vk_graph)
+
+    def test_serialize_deserialize_non_finite_floats(self) -> None:
+        # flatc's JSON dialect spells the infinities "inf" / "-inf" while
+        # Python's json module spells them "Infinity" / "-Infinity" and rejects
+        # flatc's spelling, so both directions need translating. A graph picks
+        # up a non-finite scalar whenever the model has one -- the -inf fill
+        # value of a transformer attention mask being the usual source.
+        in_vk_graph = VkGraph(
+            version="1",
+            chain=[],
+            values=[
+                VkValue(value=Double(double_val=float("-inf"))),
+                VkValue(value=Double(double_val=float("inf"))),
+                VkValue(value=Double(double_val=1.5)),
+            ],
+            input_ids=[],
+            output_ids=[],
+            constants=[],
+            shaders=[],
+        )
+
+        out_vk_graph = flatbuffer_to_vk_graph(convert_to_flatbuffer(in_vk_graph))
+
+        self.assertEqual(in_vk_graph, out_vk_graph)
+
+    def test_serialize_nan_float_raises(self) -> None:
+        # FlatBuffers JSON has no spelling for NaN at all, so report it rather
+        # than emitting JSON that flatc cannot parse.
+        vk_graph = VkGraph(
+            version="1",
+            chain=[],
+            values=[VkValue(value=Double(double_val=float("nan")))],
+            input_ids=[],
+            output_ids=[],
+            constants=[],
+            shaders=[],
+        )
+
+        with self.assertRaisesRegex(ValueError, "NaN"):
+            convert_to_flatbuffer(vk_graph)
+
+    def test_deserialize_leaves_inf_inside_strings_alone(self) -> None:
+        # The inf-token rewrite must not reach into string literals.
+        in_vk_graph = VkGraph(
+            version="1",
+            chain=[OperatorCall(node_id=1, name="inf_shader", args=[])],
+            values=[VkValue(value=String(string_val="value: inf, -inf"))],
+            input_ids=[],
+            output_ids=[],
+            constants=[],
+            shaders=[],
+        )
+
+        out_vk_graph = flatbuffer_to_vk_graph(convert_to_flatbuffer(in_vk_graph))
 
         self.assertEqual(in_vk_graph, out_vk_graph)

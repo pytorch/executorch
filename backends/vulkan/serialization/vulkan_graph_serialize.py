@@ -11,6 +11,7 @@ import ctypes
 import importlib.resources as _resources
 import json
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from typing import ClassVar, List
@@ -27,8 +28,64 @@ from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_da
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 
+# flatc's JSON dialect spells the non-finite floats "inf" / "-inf"; Python's
+# json module spells them "Infinity" / "-Infinity" and rejects flatc's spelling.
+# Neither side has a spelling the other accepts, so both directions are
+# translated below. A graph carries a non-finite scalar whenever the model
+# does -- the -inf fill value of a transformer attention mask is the common
+# case -- and without this the failure surfaces as a flatc byte offset into a
+# temporary file rather than anything pointing at the graph.
+_JSON_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_FLATC_INF_RE = re.compile(r"(?<![\w.])(-?)inf(?![\w.])")
+
+
+class _VkGraphEncoder(_DataclassEncoder):
+    """Emit non-finite floats using flatc's spelling instead of Python's.
+
+    flatc has no spelling at all for NaN, so that case is reported directly
+    rather than emitting JSON that flatc cannot read.
+    """
+
+    def iterencode(self, o, _one_shot=False):
+        # Force the pure-Python encoder: the C encoder emits containers as
+        # single pre-joined chunks, so the float tokens could not be
+        # substituted here.
+        for chunk in super().iterencode(o, _one_shot=False):
+            if chunk == "Infinity":
+                yield "inf"
+            elif chunk == "-Infinity":
+                yield "-inf"
+            elif chunk == "NaN":
+                raise ValueError(
+                    "Cannot serialize a NaN float value into a Vulkan graph: "
+                    "the FlatBuffers JSON format has no spelling for NaN."
+                )
+            else:
+                yield chunk
+
+
+def _flatc_json_to_python_json(text: str) -> str:
+    """Rewrite flatc's bare ``inf`` / ``-inf`` tokens so json.load accepts them.
+
+    String literals are copied through untouched so that a shader or key name
+    containing "inf" is never rewritten.
+    """
+
+    def sub(segment: str) -> str:
+        return _FLATC_INF_RE.sub(lambda m: m.group(1) + "Infinity", segment)
+
+    out = []
+    last = 0
+    for m in _JSON_STRING_RE.finditer(text):
+        out.append(sub(text[last : m.start()]))
+        out.append(m.group(0))
+        last = m.end()
+    out.append(sub(text[last:]))
+    return "".join(out)
+
+
 def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
-    vk_graph_json = json.dumps(vk_graph, cls=_DataclassEncoder)
+    vk_graph_json = json.dumps(vk_graph, cls=_VkGraphEncoder)
 
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
@@ -63,7 +120,8 @@ def flatbuffer_to_vk_graph(flatbuffers: bytes) -> VkGraph:
 
         json_path = os.path.join(d, "schema.json")
         with open(json_path, "rb") as output_file:
-            return _json_to_dataclass(json.load(output_file), VkGraph)
+            raw = output_file.read().decode("utf-8")
+        return _json_to_dataclass(json.loads(_flatc_json_to_python_json(raw)), VkGraph)
 
 
 def extract_vk_flatbuffer(data: bytes) -> bytes:
