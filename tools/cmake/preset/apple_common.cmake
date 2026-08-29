@@ -58,7 +58,7 @@ set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
 # default.cmake is skipped for any Apple extension build, so neither direction
 # trips a requires-check on an option the user never set.
 set_overridable_option(
-  EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE ${EXECUTORCH_ENABLE_EVENT_TRACER}
+  EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE "${EXECUTORCH_ENABLE_EVENT_TRACER}"
 )
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_IMAGE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE ON)
