@@ -59,9 +59,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
-  # MLX needs the Metal compiler (xcrun -sdk macosx metal), which comes with Xcode and not with
-  # the Command Line Tools, so it is probed rather than assumed. The TorchAO kernels are enabled
-  # on every aarch64 row, here and under Linux below, since aarch64 is what they require.
+  # MLX needs the Metal compiler (xcrun -sdk macosx metal), which comes with
+  # Xcode and not with the Command Line Tools, so it is probed rather than
+  # assumed. The TorchAO kernels are enabled on every aarch64 row, here and
+  # under Linux below, since aarch64 is what they require.
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     set_overridable_option(EXECUTORCH_BUILD_KERNELS_TORCHAO ON)
     execute_process(
@@ -87,9 +88,10 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
-  # The same aarch64 kernels the macOS arm64 wheel gets above. The hardware is what these
-  # need, not Apple: they are selected by TORCHAO_BUILD_CPU_AARCH64 and reach their NEON
-  # paths through TORCHAO_ENABLE_ARM_NEON_DOT, both of which hold here too.
+  # The same aarch64 kernels the macOS arm64 wheel gets above. The hardware is
+  # what these need, not Apple: they are selected by TORCHAO_BUILD_CPU_AARCH64
+  # and reach their NEON paths through TORCHAO_ENABLE_ARM_NEON_DOT, both of
+  # which hold here too.
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
     set_overridable_option(EXECUTORCH_BUILD_KERNELS_TORCHAO ON)
   endif()
