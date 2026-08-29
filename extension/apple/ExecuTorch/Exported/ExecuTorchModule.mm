@@ -327,10 +327,20 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value)
     // nothing has been read yet. Replace it with one that owns the tracer,
     // taking the C++ tracer out of the ObjC handle, which the module now keeps
     // alive through the eventTracer property.
+    // Taking it empties the handle, so a tracer handed to a second module would
+    // yield nothing and that module would run and record silently into nowhere.
+    // Catch it here rather than letting it surface as an empty profile.
+    auto cppTracer = [eventTracer takeCppTracer];
+    NSAssert(cppTracer != nullptr,
+             @"This event tracer was already given to another module. Create one "
+             @"tracer per module.");
+    if (!cppTracer) {
+      return nil;
+    }
     _module = std::make_unique<Module>(filePath.UTF8String,
                                        dataFilePathsVector,
                                        static_cast<Module::LoadMode>(loadMode),
-                                       [eventTracer takeCppTracer]);
+                                       std::move(cppTracer));
   }
   return self;
 }

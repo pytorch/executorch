@@ -16,6 +16,11 @@ NS_ASSUME_NONNULL_BEGIN
  * Pass one to a `Module` at creation to have that module record through it, then
  * read the trace back with `Dump`. `Dump` uses this internally; construct one
  * directly only to attach ETDump recording to a `Module` you build yourself.
+ *
+ * A tracer records for exactly one module, and the module owns the recording
+ * state, so keep that module alive for as long as you intend to read from the
+ * tracer. Reading after the module is gone is undefined; `Dump` holds both for
+ * you, which is why it is the easier route.
  */
 NS_SWIFT_NAME(DumpTracer)
 @interface ExecuTorchDumpTracer : ExecuTorchEventTracer
