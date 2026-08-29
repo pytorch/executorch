@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from unittest.mock import patch
 
 from executorch.devtools.backend_debug import get_delegation_info
 
@@ -41,6 +42,36 @@ UNWANTED_OPS = [
 
 
 class ExportLlamaLibTest(unittest.TestCase):
+    def test_core_ml_export_reaches_its_lowering(self):
+        """The Core ML branch must be reachable, not stopped by its own guard.
+
+        The guard used to read a backend config field that no longer existed, so any Core ML
+        export raised AttributeError before reaching the lowering. Patching the lowering to raise
+        a marker keeps this off macOS and away from coremltools: what is asserted is that control
+        arrives there at all.
+
+        The macOS Core ML llama job that would otherwise catch this lives in the trunk workflow,
+        which does not start for a change to this file, so without this test nothing on a pull
+        request notices the field coming back.
+        """
+        llm_config = LlmConfig()
+        llm_config.backend.coreml.enabled = True
+        # The Core ML recipe rejects dynamic shapes, and that validation runs first.
+        llm_config.model.enable_dynamic_shape = False
+
+        class _ReachedCoreMLLowering(Exception):
+            pass
+
+        def _marker(*args, **kwargs):
+            raise _ReachedCoreMLLowering
+
+        with patch(
+            "executorch.examples.models.llama.export_llama_lib._to_edge_and_lower_llama_coreml",
+            _marker,
+        ):
+            with self.assertRaises(_ReachedCoreMLLowering):
+                _export_llama(llm_config)
+
     def test_has_expected_ops_and_op_counts(self):
         """
         Checks the presence of unwanted expensive ops.
