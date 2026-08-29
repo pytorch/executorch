@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 import copy
 import dataclasses
+import logging
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
@@ -295,6 +296,37 @@ class ExportRecipe:
         """
         Util to combine multiple backend recipes into a single multi-backend recipe.
 
+        How the edge_compile_configs are resolved::
+
+            collect each recipe's edge_compile_config, deduped by value
+               |
+               |- two recipes partition, configs disagree ------> refuse
+               |     no precedence between two delegates
+               |
+               |- configs all agree (0 or 1 distinct) ---------> use it
+               |
+               `- configs disagree --|- none partitions -------> refuse
+                                     |     nothing to appeal to
+                                     |
+                                     `- one partitions --------> the delegate's
+                                           config wins, with a warning naming
+                                           the fields it overrode -- except
+                                           preserve_ops, which it only takes
+                                           when it filled the field itself
+
+            finally, if any op_backends: _check_ir_validity = False
+                                         (not a decomposition decision)
+
+        A delegate outranks an operator backend because it partitions first and
+        the backend lowers what it declined. `preserve_ops` is the exception:
+        a delegate states what it needs kept whole through its partitioner's
+        `ops_to_not_decompose`, so an empty field here is no opinion rather
+        than a request to decompose.
+
+        Operator backends are ordered so a delegate's own run last: theirs tidy
+        up the boundary the partitioner left, which the others' passes still
+        need intact.
+
         Args:
             backend_recipes: List of ExportRecipe objects to combine
             recipe_name: Optional name for the combined recipe
@@ -321,6 +353,7 @@ class ExportRecipe:
         all_pre_edge_passes = []
         all_transform_passes = []
         all_op_backends = []
+        delegate_op_backends = []
         combined_backend_config = None
 
         for recipe in backend_recipes:
@@ -346,7 +379,14 @@ class ExportRecipe:
                 )
 
             if recipe.lowering_recipe and recipe.lowering_recipe.op_backends:
-                all_op_backends.extend(recipe.lowering_recipe.op_backends)
+                # Partitioning is the proxy for "tidies up its own boundary",
+                # which has to happen after the main lowering.
+                target = (
+                    delegate_op_backends
+                    if recipe.lowering_recipe.partitioners
+                    else all_op_backends
+                )
+                target.extend(recipe.lowering_recipe.op_backends)
 
             # Collect for quantize stage
             if quantization_recipe := recipe.quantization_recipe:
@@ -383,27 +423,80 @@ class ExportRecipe:
             )
         combined_partitioners = all_partitioners_by_method or all_partitioners
 
+        all_op_backends.extend(delegate_op_backends)
+
         # By value, not identity: every provider builds a fresh config object,
         # so asking for the same thing twice is not a conflict.
         distinct: List[tuple[str, EdgeCompileConfig]] = []
+        delegating: Optional[tuple[str, EdgeCompileConfig]] = None
         for i, recipe in enumerate(backend_recipes):
-            config = (
-                recipe.lowering_recipe.edge_compile_config
-                if recipe.lowering_recipe
-                else None
-            )
-            if config is None or any(
+            lowering = recipe.lowering_recipe
+            config = lowering.edge_compile_config if lowering else None
+            if config is None:
+                continue
+            named = (recipe.name or f"recipes[{i}]", config)
+            if lowering and lowering.partitioners:
+                if delegating is not None and not _edge_compile_configs_agree(
+                    config, delegating[1]
+                ):
+                    raise ValueError(
+                        "Cannot combine recipes: "
+                        f"'{delegating[0]}' and '{named[0]}' both partition and "
+                        "their edge_compile_configs disagree on "
+                        + _edge_compile_config_conflict([delegating, named])
+                        + ". Precedence is only defined between a delegate and "
+                        "an operator backend, not between two delegates."
+                    )
+                delegating = named
+            if not any(
                 _edge_compile_configs_agree(config, seen) for _, seen in distinct
             ):
-                continue
-            distinct.append((recipe.name or f"recipes[{i}]", config))
+                distinct.append(named)
 
-        if len(distinct) > 1:
+        if len(distinct) > 1 and delegating is None:
             raise ValueError(
                 "Cannot combine recipes whose edge_compile_configs disagree on "
                 + _edge_compile_config_conflict(distinct)
             )
-        edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
+
+        edge_compile_config = None
+        if delegating is not None and len(distinct) > 1:
+            name, config = delegating
+            others = [cfg for other, cfg in distinct if other != name]
+            # Empty means no opinion, not "decompose everything": a delegate
+            # asks through its partitioner's ops_to_not_decompose instead.
+            if not config.preserve_ops:
+                inherited = list(
+                    dict.fromkeys(op for cfg in others for op in cfg.preserve_ops or [])
+                )
+                config = dataclasses.replace(config, preserve_ops=inherited)
+
+            overridden = sorted(
+                {
+                    field.name
+                    for cfg in others
+                    for field in dataclasses.fields(cfg)
+                    if getattr(cfg, field.name) != getattr(config, field.name)
+                }
+            )
+            if overridden:
+                logging.warning(
+                    "Combining with '%s', which partitions: where the recipes "
+                    "disagree its edge_compile_config wins, overriding %s "
+                    "requested by the others.",
+                    name,
+                    overridden,
+                )
+            edge_compile_config = copy.deepcopy(config)
+        elif distinct:
+            edge_compile_config = copy.deepcopy(distinct[0][1])
+
+        # Not redundant with EdgeProgramManager.to_op_backend, which clears the
+        # flag on the manager it rebuilds: the verifier to_edge gave the program
+        # fires earlier, inside the backend's own `_transform`.
+        if all_op_backends:
+            edge_compile_config = edge_compile_config or EdgeCompileConfig()
+            edge_compile_config._check_ir_validity = False
 
         combined_lowering_recipe = None
         if (

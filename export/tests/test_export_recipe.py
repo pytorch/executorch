@@ -296,6 +296,200 @@ class TestExportRecipeCombine(unittest.TestCase):
         assert combined.lowering_recipe is not None
         self.assertEqual(combined.lowering_recipe.partitioners, [a, b])
 
+    def test_a_delegate_without_an_opinion_keeps_the_fallback_s_preserve_ops(
+        self,
+    ) -> None:
+        # A delegate states what it needs kept whole through its partitioner's
+        # ops_to_not_decompose, not through this field -- no in-tree delegate
+        # recipe fills it. Dropping the operator backend's list on the strength
+        # of an empty one breaks the backend for no gain.
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import EdgeCompileConfig
+
+        delegate = ExportRecipe(
+            name="delegate",
+            lowering_recipe=self._lowering(
+                partitioners=[XnnpackPartitioner()],
+                edge_compile_config=EdgeCompileConfig(preserve_ops=[]),
+            ),
+        )
+        fallback = ExportRecipe(
+            name="fallback",
+            lowering_recipe=self._lowering(
+                op_backends=[_StubOpBackend()],
+                edge_compile_config=EdgeCompileConfig(
+                    preserve_ops=[torch.ops.aten.linear.default]
+                ),
+            ),
+        )
+        for order in ([delegate, fallback], [fallback, delegate]):
+            combined = ExportRecipe.combine(order)
+            assert combined.lowering_recipe is not None
+            self.assertEqual(
+                combined.lowering_recipe.edge_compile_config.preserve_ops,
+                [torch.ops.aten.linear.default],
+            )
+
+    def test_a_delegate_that_states_preserve_ops_outranks_the_fallback(self) -> None:
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import EdgeCompileConfig
+
+        delegate = ExportRecipe(
+            name="delegate",
+            lowering_recipe=self._lowering(
+                partitioners=[XnnpackPartitioner()],
+                edge_compile_config=EdgeCompileConfig(
+                    preserve_ops=[torch.ops.aten.silu.default]
+                ),
+            ),
+        )
+        fallback = ExportRecipe(
+            name="fallback",
+            lowering_recipe=self._lowering(
+                op_backends=[_StubOpBackend()],
+                edge_compile_config=EdgeCompileConfig(
+                    preserve_ops=[torch.ops.aten.linear.default]
+                ),
+            ),
+        )
+        for order in ([delegate, fallback], [fallback, delegate]):
+            with self.assertLogs(level="WARNING") as logs:
+                combined = ExportRecipe.combine(order)
+            assert combined.lowering_recipe is not None
+            self.assertEqual(
+                combined.lowering_recipe.edge_compile_config.preserve_ops,
+                [torch.ops.aten.silu.default],
+            )
+            self.assertIn("preserve_ops", "".join(logs.output))
+            self.assertIn("delegate", "".join(logs.output))
+
+    def test_the_delegate_s_operator_backend_runs_last(self) -> None:
+        # Arm's rewrites the boundary quantize/dequantize the partitioner left;
+        # a fallback's passes still need those pairs intact, so it must go
+        # first whichever order the caller passed the recipes in.
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+
+        boundary, lowering = _StubOpBackend(), _StubOpBackend()
+        delegate = ExportRecipe(
+            name="delegate",
+            lowering_recipe=self._lowering(
+                partitioners=[XnnpackPartitioner()], op_backends=[boundary]
+            ),
+        )
+        fallback = ExportRecipe(
+            name="fallback", lowering_recipe=self._lowering(op_backends=[lowering])
+        )
+        for order in ([delegate, fallback], [fallback, delegate]):
+            combined = ExportRecipe.combine(order)
+            assert combined.lowering_recipe is not None
+            self.assertEqual(combined.lowering_recipe.op_backends, [lowering, boundary])
+
+    def test_an_operator_backend_turns_off_ir_validation(self) -> None:
+        # Its kernels are outside the edge dialect whatever the delegate asked
+        # for, and programs keep the verifier to_edge gave them.
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import EdgeCompileConfig
+
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(
+                    name="delegate",
+                    lowering_recipe=self._lowering(
+                        partitioners=[XnnpackPartitioner()],
+                        edge_compile_config=EdgeCompileConfig(
+                            _check_ir_validity=True, preserve_ops=[]
+                        ),
+                    ),
+                ),
+                ExportRecipe(
+                    name="fallback",
+                    lowering_recipe=self._lowering(
+                        op_backends=[_StubOpBackend()],
+                        edge_compile_config=EdgeCompileConfig(
+                            _check_ir_validity=False,
+                            preserve_ops=[torch.ops.aten.linear.default],
+                        ),
+                    ),
+                ),
+            ]
+        )
+        assert combined.lowering_recipe is not None
+        self.assertFalse(
+            combined.lowering_recipe.edge_compile_config._check_ir_validity
+        )
+
+    def test_two_delegates_that_disagree_are_refused(self) -> None:
+        # Precedence orders a delegate above an operator backend. It says
+        # nothing about two delegates, so the last one listed must not win by
+        # accident.
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import EdgeCompileConfig
+
+        def delegate(name, preserve):
+            return ExportRecipe(
+                name=name,
+                lowering_recipe=self._lowering(
+                    partitioners=[XnnpackPartitioner()],
+                    edge_compile_config=EdgeCompileConfig(preserve_ops=preserve),
+                ),
+            )
+
+        recipes = [
+            delegate("delegate_a", [torch.ops.aten.linear.default]),
+            delegate("delegate_b", []),
+        ]
+        for order in (recipes, list(reversed(recipes))):
+            with self.assertRaisesRegex(ValueError, "both partition"):
+                ExportRecipe.combine(order)
+
+    def test_two_delegates_that_agree_are_fine(self) -> None:
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+        from executorch.exir import EdgeCompileConfig
+
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(
+                    name=name,
+                    lowering_recipe=self._lowering(
+                        partitioners=[XnnpackPartitioner()],
+                        edge_compile_config=EdgeCompileConfig(preserve_ops=[]),
+                    ),
+                )
+                for name in ("delegate_a", "delegate_b")
+            ]
+        )
+        assert combined.lowering_recipe is not None
+        self.assertEqual(len(combined.lowering_recipe.partitioners), 2)
+
+    def test_configs_still_conflict_without_a_delegate(self) -> None:
+        # With nothing partitioning there is no precedence to appeal to.
+        from executorch.exir import EdgeCompileConfig
+
+        with self.assertRaisesRegex(ValueError, "disagree on"):
+            ExportRecipe.combine(
+                [
+                    ExportRecipe(
+                        name=name,
+                        lowering_recipe=self._lowering(
+                            edge_compile_config=EdgeCompileConfig(_skip_dim_order=skip)
+                        ),
+                    )
+                    for name, skip in (("a", True), ("b", False))
+                ]
+            )
+
     def test_combine_rejects_pipeline_stages(self) -> None:
         from executorch.export.types import StageType
 
