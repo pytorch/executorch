@@ -2,6 +2,9 @@ $dokka.format:javadoc-v1
 $dokka.linkExtension:html
 $dokka.location:org.pytorch.executorch.extension.asr/AsrModule.Companion///PointingToDeclaration/org/pytorch/executorch/extension/asr/AsrModule.Companion.html
 $dokka.location:org.pytorch.executorch.extension.asr/AsrTranscribeConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/asr/AsrTranscribeConfig.Builder.html
+$dokka.location:org.pytorch.executorch.extension.image/ImageProcessor.Companion///PointingToDeclaration/org/pytorch/executorch/extension/image/ImageProcessor.Companion.html
+$dokka.location:org.pytorch.executorch.extension.image/ImageProcessorConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/image/ImageProcessorConfig.Builder.html
+$dokka.location:org.pytorch.executorch.extension.image/Normalization.Companion///PointingToDeclaration/org/pytorch/executorch/extension/image/Normalization.Companion.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmGenerationConfig.Builder///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmGenerationConfig.Builder.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmGenerationConfig.Companion///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmGenerationConfig.Companion.html
 $dokka.location:org.pytorch.executorch.extension.llm/LlmModule.Companion///PointingToDeclaration/org/pytorch/executorch/extension/llm/LlmModule.Companion.html
@@ -19,6 +22,7 @@ $dokka.location:org.pytorch.executorch/Tensor.Companion///PointingToDeclaration/
 org.pytorch.executorch
 org.pytorch.executorch.annotations
 org.pytorch.executorch.extension.asr
+org.pytorch.executorch.extension.image
 org.pytorch.executorch.extension.llm
 org.pytorch.executorch.training
 

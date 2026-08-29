@@ -1,0 +1,995 @@
+<!DOCTYPE HTML>
+<!-- NewPage -->
+<html lang="en"><head>
+    <title>ImageProcessor </title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="dc.created" content="2020-03-25">
+    <link rel="stylesheet" type="text/css" href="../../../../../stylesheet.css" title="Style">
+    <link rel="stylesheet" type="text/css" href="../../../../../dokka-javadoc-stylesheet.css" title="Style">
+    <link rel="stylesheet" type="text/css" href="../../../../../jquery/jquery-ui.css" title="Style">
+    <script type="text/javascript" src="../../../../../jquery/jquery-3.3.1.js"></script>
+    <script type="text/javascript" src="../../../../../jquery/jquery-migrate-3.0.1.js"></script>
+    <script type="text/javascript" src="../../../../../jquery/jquery-ui.js"></script>
+
+    <script type="text/javascript" src="../../../../../search.js"></script>
+    <script async type="text/javascript" src="../../../../../module-search-index.js"></script>
+    <script async type="text/javascript" src="../../../../../package-search-index.js"></script>
+    <script async type="text/javascript" src="../../../../../type-search-index.js"></script>
+    <script async type="text/javascript" src="../../../../../member-search-index.js"></script>
+    <script async type="text/javascript" src="../../../../../tag-search-index.js"></script>
+</head><body>
+<script type="text/javascript">
+var pathtoroot = "../../../../../";
+</script>
+<noscript>
+    <div>JavaScript is disabled on your browser.</div>
+</noscript><header role="banner">
+    <nav role="navigation">
+        <div class="fixedNav">
+            <!-- ========= START OF TOP NAVBAR ======= -->
+            <div class="topNav"><a id="navbar.top">
+                <!--   -->
+            </a>
+                <div class="skipNav"><a href="#skip.navbar.top" title="Skip navigation links">Skip navigation links</a>
+                </div>
+                <a id="navbar.top.firstrow">
+                    <!--   -->
+                </a>
+                <ul class="navList" title="Navigation">
+    <li><a href="../../../../../index.html">Overview</a></li>
+    
+    <li><a href="package-summary.html">Package</a></li>
+    
+    <li class="navBarCell1Rev">Class</li>
+    
+    <li><a href="package-tree.html">Tree</a></li>
+    
+    <li><a href="../../../../../deprecated.html">Deprecated</a></li>
+    <li><a href="../../../../../index-files/index-1.html">Index</a></li>
+    <li>Help</li>
+</ul></div>
+            <div class="subNav">
+<ul class="navList" id="allclasses_navbar_top" style="display: block;">
+    <li><a href="../../../../../allclasses.html">All&nbsp;Classes</a></li>
+</ul>
+
+<ul class="navListSearch">
+<li><label for="search">SEARCH:</label>
+<input type="text" id="search" value="search" class="ui-autocomplete-input" autocomplete="off" placeholder="Search">
+<input type="reset" id="reset" value="reset">
+</li>
+</ul>
+<div>
+<script type="text/javascript"><!--
+  allClassesLink = document.getElementById("allclasses_navbar_top");
+  if(window==top) {
+    allClassesLink.style.display = "block";
+  }
+  else {
+    allClassesLink.style.display = "none";
+  }
+  //-->
+</script>
+<noscript>
+<div>JavaScript is disabled on your browser.</div>
+</noscript>
+</div>
+<a id="skip.navbar.top">
+<!--   -->
+</a></div><!-- ========= END OF TOP NAVBAR ========= -->
+        </div>
+        <div class="navPadding">&nbsp;</div>
+        <script type="text/javascript"><!--
+        $('.navPadding').css('padding-top', $('.fixedNav').css("height"));
+        //-->
+        </script>
+    </nav>
+</header>
+
+<main role="main">
+    <div class="header">
+        <div class="subTitle"><span class="packageLabelInType">Package</span>&nbsp;<a href="package-summary.html"></a></div>
+        <h2 title="Class ImageProcessor" class="title">Class ImageProcessor</h2>
+    </div>
+    <div class="contentContainer">
+        <!-- <ul class="inheritance">
+            <li>java.lang.Object</li>
+            <li>
+                <ul class="inheritance">
+                    <li>adaptation.Adaptation</li>
+                </ul>
+            </li>
+        </ul> TODO inheritance tree -->
+        <div class="description">
+            <ul class="blockList">
+                <li class="blockList">
+                    
+                    <dl>
+                        <dt>All Implemented Interfaces:</dt>
+                        <dd>
+                            
+                            <code>java.io.Closeable</code>
+                            
+                            ,
+                            
+                            
+                            <code>java.lang.AutoCloseable</code>
+                            
+                            
+                        </dd>
+                    </dl>
+                    
+                    <hr>
+                    <pre class="wrap-overflow">
+
+public final class <span class="typeNameLabel"><a href=ImageProcessor.html>ImageProcessor</a></span>
+ implements <a href=https://developer.android.com/reference/kotlin/java/io/Closeable.html>Closeable</a>
+                    </pre>
+                    <div class="block"><p>Converts camera frames and bitmaps into the normalized <code>[1, 3, H, W]</code> float tensors vision models expect, replacing the hand-rolled resize/normalize loops apps otherwise write per model.</p><p>The pipeline rotates the source upright according to the supplied <a href=ImageOrientation.html>ImageOrientation</a>, resizes it per <a href=ImageProcessorConfig.html#resizeMode>ImageProcessorConfig.resizeMode</a>, and normalizes it per <a href=ImageProcessorConfig.html#normalization>ImageProcessorConfig.normalization</a>. The resize and normalize steps use NEON where available.</p><p>Warning: These APIs are experimental and subject to change without notice</p><p>Thread-safety: an ImageProcessor is NOT thread-safe. Internal scratch buffers are reused across calls, so concurrent calls on one instance are unsafe. Use one instance per thread; separate instances are independent.</p></div>
+                </li>
+            </ul>
+        </div>
+        <div class="summary">
+            <ul class="blockList">
+                <li class="blockList">
+                <!-- ======== NESTED CLASS SUMMARY ======== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="nested.class.summary">
+                                <!--   -->
+                            </a>
+                                <h3>Nested Class Summary</h3>
+                                <div class="memberSummary">
+                                    <table>
+                                        <caption><span>Nested Classes</span><span class="tabEnd">&nbsp;</span></caption>
+                                        <tr>
+                                            <th class="colFirst" scope="col">Modifier and Type</th>
+                                            <th class="colSecond" scope="col">Class</th>
+                                            <th class="colLast" scope="col">Description</th>
+                                        </tr>
+                                        
+                                        <tr class="altColor">
+                                            <td class="colFirst"><code>public class</code></td>
+                                            <th class="colSecond" scope="row"><code><a href="ImageProcessor.Companion.html">ImageProcessor.Companion</a></span></code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                    </table>
+                                </div>
+                            </li>
+                        </ul>
+                    </section>
+                    
+                    <!-- =========== FIELD SUMMARY =========== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="field.summary">
+                                <!--   -->
+                            </a>
+                                <h3>Field Summary</h3>
+                                <div class="memberSummary">
+                                    <table>
+                                        <caption><span>Fields</span><span class="tabEnd">&nbsp;</span></caption>
+                                        <tr>
+                                            <th class="colFirst" scope="col">Modifier and Type</th>
+                                            <th class="colSecond" scope="col">Field</th>
+                                            <th class="colLast" scope="col">Description</th>
+                                        </tr>
+                                        
+                                        <tr class="altColor">
+                                            <td class="colFirst"><code>private final <a href=https://developer.android.com/reference/kotlin/java/lang/Boolean.html>Boolean</a></code></td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#isValid>isValid</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr class="rowColor">
+                                            <td class="colFirst"><code>private final <a href=ImageProcessorConfig.html>ImageProcessorConfig</a></code></td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#config>config</a></code></th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                    </table>
+                                </div>
+                            </li>
+                        </ul>
+                    </section>
+                    
+                    <!-- ======== CONSTRUCTOR SUMMARY ======== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="constructor.summary">
+                                <!--   -->
+                            </a>
+                                <h3>Constructor Summary</h3>
+                                <div class="memberSummary">
+                                    <table>
+                                        <caption><span>Constructors</span><span class="tabEnd">&nbsp;</span></caption>
+                                        <tbody>
+                                        <tr>
+                                            <th class="colFirst" scope="col">Constructor</th>
+                                            <th class="colLast" scope="col">Description</th>
+                                        </tr>
+
+                                        
+                                            <tr class="altColor">
+                                                <th class="colConstructorName" scope="row"><code><span class="memberNameLink"><a
+                                                        href="#ImageProcessor(ImageProcessorConfig)">ImageProcessor</a></span>(<a href=ImageProcessorConfig.html>ImageProcessorConfig</a> config)</code></th>
+                                                <td class="colLast"></td>
+                                            </tr>
+                                        
+
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </li>
+                        </ul>
+                    </section>
+                    
+                    <!-- =========== ENUM CONSTANT SUMMARY =========== -->
+                    
+                    <!-- ========== METHOD SUMMARY =========== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="method.summary">
+                                <!--   -->
+                            </a>
+                                <h3>Method Summary</h3>
+                                <div class="memberSummary">
+                                    <div role="tablist" aria-orientation="horizontal">
+                                        <button role="tab" aria-selected="true" aria-controls="memberSummary_tabpanel" tabindex="0" onkeydown="switchTab(event)" id="t0" class="activeTableTab">All Methods</button>
+                                        <!-- TODO: Instance and Concrete Methods #1118 -->
+                                    </div>
+                                    <div id="memberSummary_tabpanel" role="tabpanel">
+                                    <table aria-labelledby="t0">
+                                        <tr>
+                                            <th class="colFirst" scope="col">Modifier and Type</th>
+                                            <th class="colSecond" scope="col">Method</th>
+                                            <th class="colLast" scope="col">Description</th>
+                                        </tr>
+                                        
+                                        <tr id="i0" class="altColor">
+                                            <td class="colFirst"><code>final <a href=https://developer.android.com/reference/kotlin/java/lang/Boolean.html>Boolean</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#getIsValid()>getIsValid</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i1" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=ImageProcessorConfig.html>ImageProcessorConfig</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#getConfig()>getConfig</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i2" class="altColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#close()>close</a>() </code>
+                                            </th>
+                                            <td class="colLast">Releases native resources.</td>
+                                        </tr>
+                                        
+                                        <tr id="i3" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=../../Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#process(Bitmap,ImageOrientation)>process</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap, <a href=ImageOrientation.html>ImageOrientation</a> orientation) </code>
+                                            </th>
+                                            <td class="colLast">Process an ARGB_8888 bitmap into a normalized float tensor.</td>
+                                        </tr>
+                                        
+                                        <tr id="i4" class="altColor">
+                                            <td class="colFirst"><code>final <a href=../../Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#process(Bitmap,ImageOrientation)>process</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap) </code>
+                                            </th>
+                                            <td class="colLast">Process an ARGB_8888 bitmap into a normalized float tensor.</td>
+                                        </tr>
+                                        
+                                        <tr id="i5" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processInto(Bitmap,Tensor,ImageOrientation)>processInto</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap, <a href=../../Tensor.html>Tensor</a> tensor, <a href=ImageOrientation.html>ImageOrientation</a> orientation) </code>
+                                            </th>
+                                            <td class="colLast">Process an ARGB_8888 bitmap into a caller-provided tensor, reusing its storage.</td>
+                                        </tr>
+                                        
+                                        <tr id="i6" class="altColor">
+                                            <td class="colFirst"><code>final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processInto(Bitmap,Tensor,ImageOrientation)>processInto</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap, <a href=../../Tensor.html>Tensor</a> tensor) </code>
+                                            </th>
+                                            <td class="colLast">Process an ARGB_8888 bitmap into a caller-provided tensor, reusing its storage.</td>
+                                        </tr>
+                                        
+                                        <tr id="i7" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=../../Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=ImageOrientation.html>ImageOrientation</a> orientation, <a href=YuvRange.html>YuvRange</a> range) </code>
+                                            </th>
+                                            <td class="colLast">Process semi-planar YUV (NV12/NV21) camera planes into a normalized float tensor.</td>
+                                        </tr>
+                                        
+                                        <tr id="i8" class="altColor">
+                                            <td class="colFirst"><code>final <a href=../../Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=ImageOrientation.html>ImageOrientation</a> orientation) </code>
+                                            </th>
+                                            <td class="colLast">Process semi-planar YUV (NV12/NV21) camera planes into a normalized float tensor.</td>
+                                        </tr>
+                                        
+                                        <tr id="i9" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=../../Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format) </code>
+                                            </th>
+                                            <td class="colLast">Process semi-planar YUV (NV12/NV21) camera planes into a normalized float tensor.</td>
+                                        </tr>
+                                        
+                                        <tr id="i10" class="altColor">
+                                            <td class="colFirst"><code>final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation,YuvRange)>processYuvInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=../../Tensor.html>Tensor</a> tensor, <a href=ImageOrientation.html>ImageOrientation</a> orientation, <a href=YuvRange.html>YuvRange</a> range) </code>
+                                            </th>
+                                            <td class="colLast">Process semi-planar YUV camera planes into a caller-provided tensor, reusing its storage.</td>
+                                        </tr>
+                                        
+                                        <tr id="i11" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation,YuvRange)>processYuvInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=../../Tensor.html>Tensor</a> tensor, <a href=ImageOrientation.html>ImageOrientation</a> orientation) </code>
+                                            </th>
+                                            <td class="colLast">Process semi-planar YUV camera planes into a caller-provided tensor, reusing its storage.</td>
+                                        </tr>
+                                        
+                                        <tr id="i12" class="altColor">
+                                            <td class="colFirst"><code>final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation,YuvRange)>processYuvInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=../../Tensor.html>Tensor</a> tensor) </code>
+                                            </th>
+                                            <td class="colLast">Process semi-planar YUV camera planes into a caller-provided tensor, reusing its storage.</td>
+                                        </tr>
+                                        
+                                        <tr id="i13" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-long-array/index.html>LongArray</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#computeOutputShape(Integer,Integer,ImageOrientation)>computeOutputShape</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight, <a href=ImageOrientation.html>ImageOrientation</a> orientation) </code>
+                                            </th>
+                                            <td class="colLast">Shape of the tensor this processor produces for the given source.</td>
+                                        </tr>
+                                        
+                                        <tr id="i14" class="altColor">
+                                            <td class="colFirst"><code>final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-long-array/index.html>LongArray</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#computeOutputShape(Integer,Integer,ImageOrientation)>computeOutputShape</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight) </code>
+                                            </th>
+                                            <td class="colLast">Shape of the tensor this processor produces for the given source.</td>
+                                        </tr>
+                                        
+                                        <tr id="i15" class="rowColor">
+                                            <td class="colFirst"><code>final <a href=LetterboxPadding.html>LetterboxPadding</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#computeLetterboxPadding(Integer,Integer,ImageOrientation)>computeLetterboxPadding</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight, <a href=ImageOrientation.html>ImageOrientation</a> orientation) </code>
+                                            </th>
+                                            <td class="colLast">Left and top offsets (in pixels) of the resized content within the letterboxed output, letting callers map model output back to source coordinates without replicating the resize geometry.</td>
+                                        </tr>
+                                        
+                                        <tr id="i16" class="altColor">
+                                            <td class="colFirst"><code>final <a href=LetterboxPadding.html>LetterboxPadding</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=ImageProcessor.html#computeLetterboxPadding(Integer,Integer,ImageOrientation)>computeLetterboxPadding</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight) </code>
+                                            </th>
+                                            <td class="colLast">Left and top offsets (in pixels) of the resized content within the letterboxed output, letting callers map model output back to source coordinates without replicating the resize geometry.</td>
+                                        </tr>
+                                        
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <ul class="blockList">
+                                
+                                    <li class="blockList"><a id="methods.inherited.from.class.java.lang.Object">
+                                        <!--   -->
+                                    </a>
+                                        <h3>Methods inherited from class&nbsp;java.lang.Object</h3>
+                                        <code>clone, equals, finalize, getClass, hashCode, notify, notifyAll, toString,
+                                            wait, wait, wait</code></li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </section>
+                    
+                </li>
+            </ul>
+        </div>
+        <div class="details">
+            <ul class="blockList">
+                <li class="blockList">
+                    <!-- ========= CONSTRUCTOR DETAIL ======== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="constructor.detail">
+                                <!--   -->
+                            </a>
+                                <h3>Constructor Detail</h3>
+                                
+                                <a name="ImageProcessor(ImageProcessorConfig)"></a>
+                                <ul class="blockList">
+                                    <li class="blockList">
+                                        <h4>ImageProcessor</h4>
+                                        <pre>ImageProcessor(<a href=ImageProcessorConfig.html>ImageProcessorConfig</a> config)</pre>
+                                        <div class="block"></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>config</code> - The target size, resize mode, and normalization to apply.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                    </li>
+                                </ul>
+                                
+                            </li>
+                        </ul>
+                    </section>
+                    
+                    <!-- ============ METHOD DETAIL ========== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="method.detail">
+                                <!--   -->
+                            </a>
+                                <h3>Method Detail</h3>
+                                
+                                <a id="getIsValid()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getIsValid</h4>
+                                        <pre class="methodSignature"> final <a href=https://developer.android.com/reference/kotlin/java/lang/Boolean.html>Boolean</a> <a href=ImageProcessor.html#getIsValid()>getIsValid</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getConfig()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getConfig</h4>
+                                        <pre class="methodSignature"> final <a href=ImageProcessorConfig.html>ImageProcessorConfig</a> <a href=ImageProcessor.html#getConfig()>getConfig</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="close()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>close</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=ImageProcessor.html#close()>close</a>()</pre>
+                                        <div class="block"><p>Releases native resources. Call this when done with the processor.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="process(Bitmap,ImageOrientation)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>process</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=../../Tensor.html>Tensor</a> <a href=ImageProcessor.html#process(Bitmap,ImageOrientation)>process</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap, <a href=ImageOrientation.html>ImageOrientation</a> orientation)</pre>
+                                        <div class="block"><p>Process an ARGB_8888 bitmap into a normalized float tensor.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>bitmap</code> - The source bitmap.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>orientation</code> - The EXIF orientation of the bitmap's contents.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="process(Bitmap)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>process</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=../../Tensor.html>Tensor</a> <a href=ImageProcessor.html#process(Bitmap,ImageOrientation)>process</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap)</pre>
+                                        <div class="block"><p>Process an ARGB_8888 bitmap into a normalized float tensor.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>bitmap</code> - The source bitmap.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processInto(Bitmap,Tensor,ImageOrientation)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processInto</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=ImageProcessor.html#processInto(Bitmap,Tensor,ImageOrientation)>processInto</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap, <a href=../../Tensor.html>Tensor</a> tensor, <a href=ImageOrientation.html>ImageOrientation</a> orientation)</pre>
+                                        <div class="block"><p>Process an ARGB_8888 bitmap into a caller-provided tensor, reusing its storage.</p><p>Avoids the per-call allocation of <a href=ImageProcessor.html#process(Bitmap,ImageOrientation)>process</a>, which matters for sustained video. <code>tensor</code> must be a float Tensor shaped <code>[1, 3, targetHeight, targetWidth]</code>; its storage is overwritten, so the caller must finish using the previous contents before calling again.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>bitmap</code> - The source bitmap.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>tensor</code> - The output tensor to fill.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>orientation</code> - The EXIF orientation of the bitmap's contents.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processInto(Bitmap,Tensor)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processInto</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=ImageProcessor.html#processInto(Bitmap,Tensor,ImageOrientation)>processInto</a>(<a href=https://developer.android.com/reference/kotlin/android/graphics/Bitmap.html>Bitmap</a> bitmap, <a href=../../Tensor.html>Tensor</a> tensor)</pre>
+                                        <div class="block"><p>Process an ARGB_8888 bitmap into a caller-provided tensor, reusing its storage.</p><p>Avoids the per-call allocation of <a href=ImageProcessor.html#process(Bitmap,ImageOrientation)>process</a>, which matters for sustained video. <code>tensor</code> must be a float Tensor shaped <code>[1, 3, targetHeight, targetWidth]</code>; its storage is overwritten, so the caller must finish using the previous contents before calling again.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>bitmap</code> - The source bitmap.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>tensor</code> - The output tensor to fill.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processYuv</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=../../Tensor.html>Tensor</a> <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=ImageOrientation.html>ImageOrientation</a> orientation, <a href=YuvRange.html>YuvRange</a> range)</pre>
+                                        <div class="block"><p>Process semi-planar YUV (NV12/NV21) camera planes into a normalized float tensor.</p><p>For a CameraX <code>ImageProxy</code> in <code>YUV_420_888</code>, pass <code>planes[0].buffer</code> as <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>yPlane</a> and the interleaved chroma plane as <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>uvPlane</a>: <code>planes[1].buffer</code> for <a href=YuvFormat.html#NV12>YuvFormat.NV12</a>, or <code>planes[2].buffer</code> for <a href=YuvFormat.html#NV21>YuvFormat.NV21</a>. Both buffers must be direct.</p><p>Only semi-planar chroma is supported. Check <code>planes[1].pixelStride == 2</code> before calling; a stride of 1 means fully planar I420, which this path cannot consume.</p><p>Both buffers are bounds-checked against the strides and dimensions given here, so a plane a camera HAL trimmed short is rejected rather than read past its end. A complete chroma plane is decoded exactly. The one allowance is the plane's final byte: a CameraX plane ends one byte short of it (<code>planes[1]</code> and <code>planes[2]</code> are views one byte apart into the same allocation), so a buffer missing exactly that byte is accepted, and the decode fills that one sample in from the neighboring pair.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>yPlane</code> - Direct buffer holding the luma plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>yStride</code> - Row stride of the luma plane, in bytes.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>uvPlane</code> - Direct buffer holding the interleaved chroma plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>uvStride</code> - Row stride of the chroma plane, in bytes.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>width</code> - Source width in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>height</code> - Source height in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>format</code> - Chroma order of the interleaved plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>orientation</code> - The EXIF orientation of the frame's contents.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>range</code> - Quantization range of the samples.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processYuv</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=../../Tensor.html>Tensor</a> <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=ImageOrientation.html>ImageOrientation</a> orientation)</pre>
+                                        <div class="block"><p>Process semi-planar YUV (NV12/NV21) camera planes into a normalized float tensor.</p><p>For a CameraX <code>ImageProxy</code> in <code>YUV_420_888</code>, pass <code>planes[0].buffer</code> as <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>yPlane</a> and the interleaved chroma plane as <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>uvPlane</a>: <code>planes[1].buffer</code> for <a href=YuvFormat.html#NV12>YuvFormat.NV12</a>, or <code>planes[2].buffer</code> for <a href=YuvFormat.html#NV21>YuvFormat.NV21</a>. Both buffers must be direct.</p><p>Only semi-planar chroma is supported. Check <code>planes[1].pixelStride == 2</code> before calling; a stride of 1 means fully planar I420, which this path cannot consume.</p><p>Both buffers are bounds-checked against the strides and dimensions given here, so a plane a camera HAL trimmed short is rejected rather than read past its end. A complete chroma plane is decoded exactly. The one allowance is the plane's final byte: a CameraX plane ends one byte short of it (<code>planes[1]</code> and <code>planes[2]</code> are views one byte apart into the same allocation), so a buffer missing exactly that byte is accepted, and the decode fills that one sample in from the neighboring pair.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>yPlane</code> - Direct buffer holding the luma plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>yStride</code> - Row stride of the luma plane, in bytes.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>uvPlane</code> - Direct buffer holding the interleaved chroma plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>uvStride</code> - Row stride of the chroma plane, in bytes.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>width</code> - Source width in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>height</code> - Source height in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>format</code> - Chroma order of the interleaved plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>orientation</code> - The EXIF orientation of the frame's contents.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processYuv</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=../../Tensor.html>Tensor</a> <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format)</pre>
+                                        <div class="block"><p>Process semi-planar YUV (NV12/NV21) camera planes into a normalized float tensor.</p><p>For a CameraX <code>ImageProxy</code> in <code>YUV_420_888</code>, pass <code>planes[0].buffer</code> as <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>yPlane</a> and the interleaved chroma plane as <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>uvPlane</a>: <code>planes[1].buffer</code> for <a href=YuvFormat.html#NV12>YuvFormat.NV12</a>, or <code>planes[2].buffer</code> for <a href=YuvFormat.html#NV21>YuvFormat.NV21</a>. Both buffers must be direct.</p><p>Only semi-planar chroma is supported. Check <code>planes[1].pixelStride == 2</code> before calling; a stride of 1 means fully planar I420, which this path cannot consume.</p><p>Both buffers are bounds-checked against the strides and dimensions given here, so a plane a camera HAL trimmed short is rejected rather than read past its end. A complete chroma plane is decoded exactly. The one allowance is the plane's final byte: a CameraX plane ends one byte short of it (<code>planes[1]</code> and <code>planes[2]</code> are views one byte apart into the same allocation), so a buffer missing exactly that byte is accepted, and the decode fills that one sample in from the neighboring pair.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>yPlane</code> - Direct buffer holding the luma plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>yStride</code> - Row stride of the luma plane, in bytes.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>uvPlane</code> - Direct buffer holding the interleaved chroma plane.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>uvStride</code> - Row stride of the chroma plane, in bytes.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>width</code> - Source width in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>height</code> - Source height in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>format</code> - Chroma order of the interleaved plane.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation,YuvRange)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processYuvInto</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=ImageProcessor.html#processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation,YuvRange)>processYuvInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=../../Tensor.html>Tensor</a> tensor, <a href=ImageOrientation.html>ImageOrientation</a> orientation, <a href=YuvRange.html>YuvRange</a> range)</pre>
+                                        <div class="block"><p>Process semi-planar YUV camera planes into a caller-provided tensor, reusing its storage.</p><p>See <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a> for the plane contract and <a href=ImageProcessor.html#processInto(Bitmap,Tensor,ImageOrientation)>processInto</a> for the reuse contract.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processYuvInto</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=ImageProcessor.html#processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation,YuvRange)>processYuvInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=../../Tensor.html>Tensor</a> tensor, <a href=ImageOrientation.html>ImageOrientation</a> orientation)</pre>
+                                        <div class="block"><p>Process semi-planar YUV camera planes into a caller-provided tensor, reusing its storage.</p><p>See <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a> for the plane contract and <a href=ImageProcessor.html#processInto(Bitmap,Tensor,ImageOrientation)>processInto</a> for the reuse contract.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>processYuvInto</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-unit/index.html>Unit</a> <a href=ImageProcessor.html#processYuvInto(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,Tensor,ImageOrientation,YuvRange)>processYuvInto</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> yPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> yStride, <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> uvPlane, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> uvStride, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> width, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> height, <a href=YuvFormat.html>YuvFormat</a> format, <a href=../../Tensor.html>Tensor</a> tensor)</pre>
+                                        <div class="block"><p>Process semi-planar YUV camera planes into a caller-provided tensor, reusing its storage.</p><p>See <a href=ImageProcessor.html#processYuv(ByteBuffer,Integer,ByteBuffer,Integer,Integer,Integer,YuvFormat,ImageOrientation,YuvRange)>processYuv</a> for the plane contract and <a href=ImageProcessor.html#processInto(Bitmap,Tensor,ImageOrientation)>processInto</a> for the reuse contract.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="computeOutputShape(Integer,Integer,ImageOrientation)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>computeOutputShape</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-long-array/index.html>LongArray</a> <a href=ImageProcessor.html#computeOutputShape(Integer,Integer,ImageOrientation)>computeOutputShape</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight, <a href=ImageOrientation.html>ImageOrientation</a> orientation)</pre>
+                                        <div class="block"><p>Shape of the tensor this processor produces for the given source.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>inputWidth</code> - Source width in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>inputHeight</code> - Source height in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>orientation</code> - The EXIF orientation of the source.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="computeOutputShape(Integer,Integer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>computeOutputShape</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-long-array/index.html>LongArray</a> <a href=ImageProcessor.html#computeOutputShape(Integer,Integer,ImageOrientation)>computeOutputShape</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight)</pre>
+                                        <div class="block"><p>Shape of the tensor this processor produces for the given source.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>inputWidth</code> - Source width in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>inputHeight</code> - Source height in pixels.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="computeLetterboxPadding(Integer,Integer,ImageOrientation)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>computeLetterboxPadding</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=LetterboxPadding.html>LetterboxPadding</a> <a href=ImageProcessor.html#computeLetterboxPadding(Integer,Integer,ImageOrientation)>computeLetterboxPadding</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight, <a href=ImageOrientation.html>ImageOrientation</a> orientation)</pre>
+                                        <div class="block"><p>Left and top offsets (in pixels) of the resized content within the letterboxed output, letting callers map model output back to source coordinates without replicating the resize geometry. Returns <code>(0, 0)</code> for <a href=ResizeMode.html#STRETCH>ResizeMode.STRETCH</a> or <a href=LetterboxAnchor.html#TOP_LEFT>LetterboxAnchor.TOP_LEFT</a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>inputWidth</code> - Source width in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>inputHeight</code> - Source height in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>orientation</code> - The EXIF orientation of the source.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="computeLetterboxPadding(Integer,Integer)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockListLast"
+                                          >
+                                    <li class="blockList">
+                                        <h4>computeLetterboxPadding</h4>
+                                        <pre class="methodSignature">@<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-jvm-overloads/index.html>JvmOverloads</a>() final <a href=LetterboxPadding.html>LetterboxPadding</a> <a href=ImageProcessor.html#computeLetterboxPadding(Integer,Integer,ImageOrientation)>computeLetterboxPadding</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputWidth, <a href=https://developer.android.com/reference/kotlin/java/lang/Integer.html>Integer</a> inputHeight)</pre>
+                                        <div class="block"><p>Left and top offsets (in pixels) of the resized content within the letterboxed output, letting callers map model output back to source coordinates without replicating the resize geometry. Returns <code>(0, 0)</code> for <a href=ResizeMode.html#STRETCH>ResizeMode.STRETCH</a> or <a href=LetterboxAnchor.html#TOP_LEFT>LetterboxAnchor.TOP_LEFT</a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>inputWidth</code> - Source width in pixels.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>inputHeight</code> - Source height in pixels.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                            </li>
+                        </ul>
+                    </section>
+                    
+                </li>
+            </ul>
+        </div>
+    </div>
+</main>
+<footer role="contentinfo">
+    <nav role="navigation">
+        <!-- ======= START OF BOTTOM NAVBAR ====== -->
+        <div class="bottomNav"><a id="navbar.bottom">
+            <!--   -->
+        </a>
+            <div class="skipNav"><a href="#skip.navbar.bottom" title="Skip navigation links">Skip navigation links</a>
+            </div>
+            <a id="navbar.bottom.firstrow">
+                <!--   -->
+            </a>
+            <ul class="navList" title="Navigation">
+    <li><a href="../../../../../index.html">Overview</a></li>
+    
+    <li><a href="package-summary.html">Package</a></li>
+    
+    <li class="navBarCell1Rev">Class</li>
+    
+    <li><a href="package-tree.html">Tree</a></li>
+    
+    <li><a href="../../../../../deprecated.html">Deprecated</a></li>
+    <li><a href="../../../../../index-files/index-1.html">Index</a></li>
+    <li>Help</li>
+</ul></div>
+        <a id="skip.navbar.bottom">
+            <!--   -->
+        </a>
+        <div class="subNav">
+<ul class="navList" id="allclasses_navbar_top" style="display: block;">
+    <li><a href="../../../../../allclasses.html">All&nbsp;Classes</a></li>
+</ul>
+<div>
+<script type="text/javascript"><!--
+  allClassesLink = document.getElementById("allclasses_navbar_top");
+  if(window==top) {
+    allClassesLink.style.display = "block";
+  }
+  else {
+    allClassesLink.style.display = "none";
+  }
+  //-->
+</script>
+<noscript>
+<div>JavaScript is disabled on your browser.</div>
+</noscript>
+</div>
+<a id="skip.navbar.top">
+<!--   -->
+</a></div><!-- ======== END OF BOTTOM NAVBAR ======= -->
+    </nav>
+</footer><ul class="ui-autocomplete ui-front ui-menu ui-widget ui-widget-content" id="ui-id-1" tabindex="0"
+    style="display: none;"></ul>
+<span role="status" aria-live="assertive" aria-relevant="additions" class="ui-helper-hidden-accessible"></span>
+</body>
+</html>
