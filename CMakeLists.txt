@@ -1172,9 +1172,12 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
 endif()
 
 # The shared build ships the profiler as one of its libraries, and the Python
-# extension records a hard dependency on it, so the target has to exist whenever
-# either of those is being built rather than only when devtools is asked for.
-if((EXECUTORCH_BUILD_PYBIND OR EXECUTORCH_BUILD_SHARED)
+# extension records a hard dependency on it, and the Apple ETDump extension
+# links it, so the target has to exist whenever any of those is being built
+# rather than only when devtools is asked for.
+if((EXECUTORCH_BUILD_PYBIND
+    OR EXECUTORCH_BUILD_SHARED
+    OR EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE)
    AND NOT EXECUTORCH_BUILD_DEVTOOLS
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
@@ -1534,6 +1537,10 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/asr/runner)
   list(APPEND _executorch_extensions extension_asr_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple/dump)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)

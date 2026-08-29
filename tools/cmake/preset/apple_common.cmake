@@ -43,6 +43,23 @@ set_overridable_option(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE ON)
 set_overridable_option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+# The profiler records events through the runtime's event tracer, which is a
+# compile-time choice for the whole runtime, so the tracer stays on here. The
+# etdump C++ library the wrapper links is pulled in on its own by the condition
+# in the root CMakeLists that builds devtools for this case, so the full
+# devtools umbrella is deliberately NOT turned on: that umbrella also flips the
+# Core ML delegate into its protobuf path, which the shipped Core ML framework
+# does not bundle. The wheel's pybind preset configures profiling the same way.
+set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
+# The ETDump Apple wrapper needs the event tracer, so default it to follow the
+# tracer's resolved value rather than force it on: turning the tracer off with
+# -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF then turns this off too. Turning only
+# this extension off works as well, because the tracer's devtools requirement in
+# default.cmake is skipped for any Apple extension build, so neither direction
+# trips a requires-check on an option the user never set.
+set_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE "${EXECUTORCH_ENABLE_EVENT_TRACER}"
+)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_IMAGE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
