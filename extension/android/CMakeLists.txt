@@ -180,6 +180,15 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
   )
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_IMAGE)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_image.cpp)
+  # jnigraphics provides AndroidBitmap_lockPixels, used to read Bitmap storage.
+  list(APPEND link_libraries extension_image jnigraphics)
+  target_compile_definitions(
+    executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_IMAGE=1
+  )
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp)
   list(APPEND link_libraries extension_training)

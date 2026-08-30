@@ -126,8 +126,8 @@ ValueRef prepack_biases(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(v),
-      graph.create_local_wg_size(v),
+      graph.create_gwg(v),
+      graph.create_lwg(v),
       vref,
       v,
       param_buffers,
@@ -224,8 +224,8 @@ ValueRef prepack_weights(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(v),
-      graph.create_local_wg_size(v),
+      graph.create_gwg(v),
+      graph.create_lwg(v),
       vref,
       v,
       {},
@@ -332,7 +332,7 @@ bool should_use_conv2d_im2col(
   return graph.device_is_mali() || c_out >= kIm2colMinCOut;
 }
 
-utils::uvec3 create_conv2d_global_wg_size(
+GlobalWorkGrid create_conv2d_gwg(
     ComputeGraph& graph,
     const Conv2dMethod method,
     const ValueRef out,
@@ -340,17 +340,18 @@ utils::uvec3 create_conv2d_global_wg_size(
     const bool stride_equals_dilation) {
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
-    return {
-        utils::div_up(image_extents[0u], 1u),
-        utils::div_up(image_extents[1u], 4u),
-        image_extents[2u]};
+    return GlobalWorkGrid(
+        {utils::div_up(image_extents[0u], 1u),
+         utils::div_up(image_extents[1u], 4u),
+         image_extents[2u]},
+        kTiledWorkGrid);
   } else {
-    return graph.create_global_wg_size(out);
+    return graph.create_gwg(out);
   }
 }
 
 // Custom global workgroup size function for conv2d
-utils::uvec3 conv2d_global_wg_size(
+GlobalWorkGrid conv2d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -380,25 +381,26 @@ utils::uvec3 conv2d_global_wg_size(
   bool stride_equals_dilation =
       shader.kernel_name.find("_sned") == std::string::npos;
 
-  utils::uvec3 wg_size = create_conv2d_global_wg_size(
+  const GlobalWorkGrid wg_size = create_conv2d_gwg(
       *graph, method, out, weight_data, stride_equals_dilation);
 
   if (method == Conv2dMethod::Pointwise) {
-    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+    utils::uvec3 pointwise_wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1u};
 
     if (shader.kernel_name.find("s1p0") != std::string::npos) {
-      wg_size[0] *= 4;
+      pointwise_wg_size[0] *= 4;
     }
+    return GlobalWorkGrid(pointwise_wg_size, kTiledWorkGrid);
   }
 
   return wg_size;
 }
 
 // Custom local workgroup size function for conv2d
-utils::uvec3 conv2d_local_wg_size(
+LocalWorkGroup conv2d_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)args;
@@ -415,22 +417,22 @@ utils::uvec3 conv2d_local_wg_size(
   }
 
   if (method == Conv2dMethod::Pointwise) {
-    uint32_t local_wg_size_y = 1;
-    if (global_workgroup_size[1] % 8 == 0) {
-      local_wg_size_y = 8;
-    } else if (global_workgroup_size[1] % 4 == 0) {
-      local_wg_size_y = 4;
-    } else if (global_workgroup_size[1] % 2 == 0) {
-      local_wg_size_y = 2;
+    uint32_t lwg_y = 1;
+    if (gwg[1] % 8 == 0) {
+      lwg_y = 8;
+    } else if (gwg[1] % 4 == 0) {
+      lwg_y = 4;
+    } else if (gwg[1] % 2 == 0) {
+      lwg_y = 2;
     }
-    return {64 / local_wg_size_y, local_wg_size_y, 1};
+    return LocalWorkGroup(64u / lwg_y, lwg_y, 1u);
   } else {
-    return graph->create_local_wg_size(global_workgroup_size);
+    return graph->create_lwg(gwg);
   }
 }
 
 // Custom global workgroup size function for conv1d
-utils::uvec3 conv1d_global_wg_size(
+GlobalWorkGrid conv1d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -439,12 +441,14 @@ utils::uvec3 conv1d_global_wg_size(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
 
-  return {// out length
-          graph->size_at<uint32_t>(-1, out),
-          // out channels
-          static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
-          // out batches
-          utils::div_up_4(graph->size_at<uint32_t>(-3, out))};
+  return GlobalWorkGrid(
+      {// out length
+       graph->size_at<uint32_t>(-1, out),
+       // out channels
+       static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
+       // out batches
+       utils::div_up_4(graph->size_at<uint32_t>(-3, out))},
+      kTiledWorkGrid);
 }
 
 void add_conv2d_node(
@@ -593,8 +597,8 @@ void add_conv2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      conv2d_global_wg_size,
-      conv2d_local_wg_size,
+      conv2d_gwg,
+      conv2d_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
@@ -684,8 +688,8 @@ void add_conv1d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      conv1d_global_wg_size,
-      default_pick_local_wg_size,
+      conv1d_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
