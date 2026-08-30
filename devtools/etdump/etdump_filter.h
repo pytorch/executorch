@@ -18,7 +18,6 @@
 namespace executorch::etdump {
 
 using ::executorch::runtime::Result;
-using std::string_view;
 
 /**
  * ETDumpFilter is a class that filters intermediate output based on output's
@@ -46,7 +45,7 @@ class ETDumpFilter : public ::executorch::runtime::EventTracerFilterBase {
    *         - An error code if number of pattern has reached to cap, or any
    * error occurs during regex compilation.
    */
-  Result<bool> add_regex(string_view pattern);
+  Result<bool> add_regex(std::string_view pattern);
   /**
    * Sets the range for the delegate debug index filtering as [start, end).
    * Note that this function will flush the existing range.

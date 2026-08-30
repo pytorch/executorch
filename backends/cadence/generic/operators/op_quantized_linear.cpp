@@ -22,7 +22,6 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::executorch::runtime::toString;
-using std::optional;
 
 Tensor& quantized_linear_out(
     ET_UNUSED KernelRuntimeContext& ctx,
@@ -34,7 +33,7 @@ Tensor& quantized_linear_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype)              \
   case ScalarType::dtype: {                               \
@@ -88,7 +87,7 @@ Tensor& quantized_linear_per_tensor_out(
     const int64_t out_multiplier,
     const int64_t out_shift,
     const int64_t out_zero_point,
-    ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear_per_tensor(ctype, dtype)              \
   case ScalarType::dtype: {                                          \

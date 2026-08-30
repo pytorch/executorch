@@ -24,7 +24,6 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::quantize;
-using std::optional;
 
 // The quantized matmul. The quantized matmul accumulates in a wider register,
 // whose type is TA.
@@ -69,7 +68,7 @@ Tensor& quantized_matmul_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    ET_UNUSED const optional<Tensor>& bias,
+    ET_UNUSED const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -179,7 +178,7 @@ void _typed_quantized_matmul(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    ET_UNUSED const optional<Tensor>& bias,
+    ET_UNUSED const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -233,7 +232,7 @@ Tensor& quantized_matmul_asym8sxasym8s_asym8s_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -259,7 +258,7 @@ Tensor& quantized_matmul_asym8uxasym8u_asym8u_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,

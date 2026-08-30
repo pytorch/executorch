@@ -17,7 +17,6 @@ namespace executor {
 namespace native {
 
 using executorch::aten::ArrayRef;
-using std::optional;
 
 namespace {
 

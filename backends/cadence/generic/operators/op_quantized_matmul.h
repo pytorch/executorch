@@ -17,7 +17,6 @@ namespace native {
 
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 Tensor& quantized_matmul_out(
     KernelRuntimeContext& ctx,
@@ -25,7 +24,7 @@ Tensor& quantized_matmul_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -38,7 +37,7 @@ Tensor& quantized_matmul_asym8sxasym8s_asym8s_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -51,7 +50,7 @@ Tensor& quantized_matmul_asym8uxasym8u_asym8u_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,

@@ -18,14 +18,13 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpArgminTest : public OperatorTest {
  protected:
   Tensor& op_argmin_out(
       const Tensor& in,
-      optional<int64_t> dim,
+      std::optional<int64_t> dim,
       bool keepdim,
       Tensor& out) {
     return torch::executor::aten::argmin_outf(context_, in, dim, keepdim, out);
@@ -82,7 +81,7 @@ TEST_F(OpArgminTest, SanityCheckNullDim) {
   Tensor out = tf.zeros({});
   Tensor expected = tf.make({}, {2});
 
-  optional<int64_t> dim;
+  std::optional<int64_t> dim;
   Tensor ret = op_argmin_out(in, dim, false, out);
 
   EXPECT_TENSOR_EQ(out, ret);

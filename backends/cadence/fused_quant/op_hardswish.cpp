@@ -19,7 +19,6 @@ namespace native {
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 namespace {
 
@@ -35,13 +34,13 @@ void hardswish_kernel(const float* inp, float* out, int64_t numel) {
 Tensor& hardswish_out(
     KernelRuntimeContext& ctx,
     const Tensor& inp,
-    const optional<Tensor>& inp_scale,
-    const optional<Tensor>& inp_zero_point,
+    const std::optional<Tensor>& inp_scale,
+    const std::optional<Tensor>& inp_zero_point,
     ScalarType inp_dtype,
     int64_t inp_quant_min,
     int64_t inp_quant_max,
-    const optional<Tensor>& out_scale,
-    const optional<Tensor>& out_zero_point,
+    const std::optional<Tensor>& out_scale,
+    const std::optional<Tensor>& out_zero_point,
     ScalarType out_dtype,
     int64_t out_quant_min,
     int64_t out_quant_max,
