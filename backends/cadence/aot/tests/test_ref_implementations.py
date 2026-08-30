@@ -8,7 +8,7 @@
 import typing
 import unittest
 
-import executorch.backends.cadence.aot.ops_registrations  # noqa
+import executorch.backends.cadence.aot.ops_registrations as ops_registrations
 import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import numpy as np
@@ -3152,7 +3152,7 @@ class TestRefImplementations(unittest.TestCase):
             (
                 "basic_int8_dim_1",
                 torch.tensor([[10, 20, 30]], dtype=torch.int8),
-                None,
+                torch.empty(0, dtype=torch.int8),
                 1,
                 0.1,
                 0,
@@ -3164,7 +3164,7 @@ class TestRefImplementations(unittest.TestCase):
             (
                 "uint8_with_zero_points",
                 torch.tensor([[128, 130, 132]], dtype=torch.uint8),
-                None,
+                torch.empty(0, dtype=torch.int8),
                 1,
                 0.1,
                 128,
@@ -3176,7 +3176,7 @@ class TestRefImplementations(unittest.TestCase):
             (
                 "basic_int16",
                 torch.tensor([[100, 200, 300]], dtype=torch.int16),
-                None,
+                torch.empty(0, dtype=torch.int8),
                 1,
                 0.01,
                 0,
@@ -3188,7 +3188,7 @@ class TestRefImplementations(unittest.TestCase):
             (
                 "multi_row_int8",
                 torch.tensor([[10, 20, 30], [5, 10, 15]], dtype=torch.int8),
-                None,
+                torch.empty(0, dtype=torch.int8),
                 1,
                 0.1,
                 0,
@@ -3197,25 +3197,13 @@ class TestRefImplementations(unittest.TestCase):
                 torch.int8,
                 torch.tensor([[23, 61, 127], [47, 77, 127]], dtype=torch.int8),
             ),
-            (
-                "softmax_dim_0",
-                torch.tensor([[10, 20], [30, 40]], dtype=torch.int8),
-                None,
-                0,
-                0.1,
-                0,
-                0.004,
-                0,
-                torch.int8,
-                torch.tensor([[30, 30], [127, 127]], dtype=torch.int8),
-            ),
         ]
     )
     def test_quantized_softmax_per_tensor(
         self,
         name: str,
         input_tensor: torch.Tensor,
-        mask: torch.Tensor | None,
+        mask: torch.Tensor,
         dim: int,
         in_scale: float,
         in_zero_point: int,
@@ -3265,7 +3253,7 @@ class TestRefImplementations(unittest.TestCase):
         in_zero_point = torch.tensor([0])
         output = torch.ops.cadence.quantized_softmax(
             input_tensor,
-            None,  # mask
+            torch.empty(0, dtype=torch.int8),  # unused mask
             1,  # dim
             0,  # mask_type (no masking)
             torch.zeros(1, dtype=torch.int64),  # pos
@@ -3282,6 +3270,207 @@ class TestRefImplementations(unittest.TestCase):
             input_tensor.shape,
             "Output shape should match input shape",
         )
+
+    @expand(
+        [
+            (
+                "input_dtype",
+                torch.ones((2, 4), dtype=torch.float32),
+                -1,
+                0,
+                torch.zeros(1, dtype=torch.int64),
+                "input must be int8, uint8, or int16",
+            ),
+            (
+                "input_rank",
+                torch.tensor(1, dtype=torch.int8),
+                0,
+                0,
+                torch.zeros(1, dtype=torch.int64),
+                "input must have at least one dimension",
+            ),
+            (
+                "dim",
+                torch.ones((2, 4), dtype=torch.int8),
+                0,
+                0,
+                torch.zeros(1, dtype=torch.int64),
+                "dim must be the last dimension",
+            ),
+            (
+                "mask_type",
+                torch.ones((2, 4), dtype=torch.int8),
+                -1,
+                2,
+                torch.zeros(1, dtype=torch.int64),
+                "mask_type must be 0 or 1",
+            ),
+            (
+                "pos_dtype",
+                torch.ones((2, 4), dtype=torch.int8),
+                -1,
+                1,
+                torch.zeros(1, dtype=torch.int32),
+                "pos must be int16 or int64",
+            ),
+            (
+                "pos_shape",
+                torch.ones((2, 4), dtype=torch.int8),
+                -1,
+                1,
+                torch.zeros(2, dtype=torch.int64),
+                "pos must contain exactly one element",
+            ),
+        ]
+    )
+    def test_quantized_softmax_meta_rejects_invalid_arguments(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        dim: int,
+        mask_type: int,
+        pos: torch.Tensor,
+        error: str,
+    ) -> None:
+        with self.assertRaisesRegex(AssertionError, error, msg=name):
+            ops_registrations.quantized_softmax_per_tensor_meta(
+                input_tensor,
+                torch.empty(0, dtype=torch.int8),
+                dim,
+                mask_type,
+                pos,
+                1.0,
+                0,
+                1.0,
+                0,
+            )
+
+    def test_quantized_softmax_meta_rejects_non_scalar_qparams(self) -> None:
+        with self.assertRaisesRegex(
+            AssertionError, "in_scale must contain exactly one element"
+        ):
+            ops_registrations.quantized_softmax_meta(
+                torch.ones((2, 4), dtype=torch.int8),
+                torch.empty(0, dtype=torch.int8),
+                -1,
+                0,
+                torch.zeros(1, dtype=torch.int64),
+                torch.ones(2, dtype=torch.float32),
+                torch.zeros(1, dtype=torch.int64),
+                torch.ones(1, dtype=torch.float32),
+                torch.zeros(1, dtype=torch.int64),
+            )
+
+    def test_quantized_softmax_rejects_non_scalar_pos(self) -> None:
+        with self.assertRaisesRegex(
+            AssertionError, "pos must contain exactly one element"
+        ):
+            torch.ops.cadence.quantized_softmax.per_tensor(
+                torch.ones((2, 4), dtype=torch.int8),
+                torch.empty(0, dtype=torch.int8),
+                -1,
+                1,
+                torch.zeros(2, dtype=torch.int64),
+                1.0,
+                0,
+                1.0,
+                0,
+            )
+
+    def test_quantized_softmax_per_tensor_causal(self) -> None:
+        output = torch.ops.cadence.quantized_softmax.per_tensor(
+            torch.zeros((2, 4), dtype=torch.int8),
+            torch.zeros((2, 1), dtype=torch.int32),
+            -1,
+            1,
+            torch.zeros(1, dtype=torch.int64),
+            1.0,
+            0,
+            1.0 / 128,
+            0,
+        )
+
+        self.assertTrue(
+            torch.equal(
+                output,
+                torch.tensor([[127, 0, 0, 0], [64, 64, 0, 0]], dtype=torch.int8),
+            )
+        )
+
+    def test_quantized_softmax_negative_base_pos_returns_quantized_zero(self) -> None:
+        out_zero_point = 17
+        output = torch.ops.cadence.quantized_softmax.per_tensor(
+            torch.ones((2, 4), dtype=torch.int8),
+            torch.empty(0, dtype=torch.int8),
+            -1,
+            1,
+            torch.tensor([-1], dtype=torch.int64),
+            1.0,
+            0,
+            1.0,
+            out_zero_point,
+        )
+
+        self.assertTrue(
+            torch.equal(output, torch.full_like(output, out_zero_point))
+        )
+
+    def test_quantized_softmax_causal_position_advances_across_leading_dims(
+        self,
+    ) -> None:
+        output = torch.ops.cadence.quantized_softmax.per_tensor(
+            torch.zeros((2, 2, 4), dtype=torch.int8),
+            torch.empty(0, dtype=torch.int8),
+            -1,
+            1,
+            torch.zeros(1, dtype=torch.int64),
+            1.0,
+            0,
+            1.0 / 128,
+            0,
+        )
+
+        self.assertTrue(
+            torch.equal(
+                output != 0,
+                torch.tensor(
+                    [
+                        [[True, False, False, False], [True, True, False, False]],
+                        [[True, True, True, False], [True, True, True, True]],
+                    ]
+                ),
+            )
+        )
+
+    def test_quantized_softmax_rejects_invalid_mask_type(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "mask_type must be 0 or 1"):
+            torch.ops.cadence.quantized_softmax.per_tensor(
+                torch.ones((2, 4), dtype=torch.int8),
+                torch.empty(0, dtype=torch.int8),
+                -1,
+                2,
+                torch.zeros(1, dtype=torch.int64),
+                1.0,
+                0,
+                1.0,
+                0,
+            )
+
+    def test_quantized_softmax_rejects_non_last_dim(self) -> None:
+        with self.assertRaisesRegex(
+            AssertionError, "dim must be the last dimension"
+        ):
+            torch.ops.cadence.quantized_softmax.per_tensor(
+                torch.ones((2, 4), dtype=torch.int8),
+                torch.empty(0, dtype=torch.int8),
+                0,
+                1,
+                torch.zeros(1, dtype=torch.int64),
+                1.0,
+                0,
+                1.0,
+                0,
+            )
 
     @expand(
         [

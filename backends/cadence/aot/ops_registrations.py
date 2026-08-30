@@ -3199,6 +3199,34 @@ def softmax_f32_f32_meta(
     return input_tensor.new_empty(input_tensor.size(), dtype=torch.float32)
 
 
+def _validate_quantized_softmax_args(
+    input: torch.Tensor,
+    dim: int,
+    mask_type: int,
+    pos: torch.Tensor,
+) -> None:
+    assert input.dtype in (
+        torch.int8,
+        torch.uint8,
+        torch.int16,
+    ), "input must be int8, uint8, or int16"
+    assert input.dim() > 0, "input must have at least one dimension"
+    normalized_dim = dim if dim >= 0 else dim + input.dim()
+    assert normalized_dim == input.dim() - 1, "dim must be the last dimension"
+    assert mask_type in (0, 1), "mask_type must be 0 or 1"
+    assert pos.dtype in (torch.int16, torch.int64), "pos must be int16 or int64"
+    assert pos.numel() == 1, "pos must contain exactly one element"
+
+
+def _validate_quantized_softmax_qparam(
+    value: torch.Tensor,
+    name: str,
+    dtype: torch.dtype,
+) -> None:
+    assert value.dtype == dtype, f"{name} must have dtype {dtype}"
+    assert value.numel() == 1, f"{name} must contain exactly one element"
+
+
 @register_fake("cadence::quantized_softmax")
 def quantized_softmax_meta(
     input: torch.Tensor,
@@ -3211,6 +3239,15 @@ def quantized_softmax_meta(
     out_scale: torch.Tensor,
     out_zero_point: torch.Tensor,
 ) -> torch.Tensor:
+    _validate_quantized_softmax_args(input, dim, mask_type, pos)
+    _validate_quantized_softmax_qparam(in_scale, "in_scale", torch.float32)
+    _validate_quantized_softmax_qparam(
+        in_zero_point, "in_zero_point", torch.int64
+    )
+    _validate_quantized_softmax_qparam(out_scale, "out_scale", torch.float32)
+    _validate_quantized_softmax_qparam(
+        out_zero_point, "out_zero_point", torch.int64
+    )
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
@@ -3226,6 +3263,7 @@ def quantized_softmax_per_tensor_meta(
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
+    _validate_quantized_softmax_args(input, dim, mask_type, pos)
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
