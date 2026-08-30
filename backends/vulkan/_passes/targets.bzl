@@ -94,6 +94,20 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_library(
+        name = "conv1d_as_conv2d",
+        srcs = ["conv1d_as_conv2d.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/transforms:utils",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fold_qdq",
         srcs = ["fold_qdq.py"],
         visibility = [
@@ -144,6 +158,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/examples/...",
         ],
         deps = [
+            ":conv1d_as_conv2d",
             ":fold_qdq",
             ":fuse_patterns",
             ":fuse_quantized_ops",

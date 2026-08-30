@@ -1065,6 +1065,33 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_conv1d_as_conv2d(self):
+        # Eligible for Conv1dAsConv2dPass: groups 1, unit dilation, kernel > 1,
+        # batch 1 and out_channels >= the im2col threshold, so this lowers via
+        # the conv2d im2col + GEMM path rather than conv1d.glsl.
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(
+                    in_channels=32,
+                    out_channels=128,
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv1d_module = Conv1dModule()
+        sample_inputs = (torch.randn(size=(1, 32, 64), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv1d_module,
+            sample_inputs,
+        )
+
     @disable_test("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
