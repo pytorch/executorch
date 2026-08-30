@@ -35,6 +35,18 @@ logging.getLogger().setLevel(logging.INFO)
 
 PTE_FILENAME = "hf_causal_lm_qnn"
 
+# Map the HF decoder_model keys (HUGGING_FACE_REPO_IDS) to the version strings
+# the shared qnn_llama_runner understands (see runner.cpp Runner()).
+DECODER_MODEL_VERSION = {
+    "llama3_2-1b": "llama3",
+    "qwen2_5-0_5b": "qwen2_5",
+    "qwen2_5-1_5b_instruct": "qwen2_5",
+    "qwen2_5-0_5b_instruct": "qwen2_5",
+    "qwen3-0_6b": "qwen3",
+    "smollm2_135m": "smollm2_135m",
+    "granite-3_3-2b": "granite",
+}
+
 
 def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
 
@@ -57,7 +69,8 @@ def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
             "16a16w",
         ):
             fixed_point_type["io_type"] = torch.uint16
-            fixed_point_type["kv_type"] = torch.uint16
+            # uint8 because annotate 8bit kv io
+            fixed_point_type["kv_type"] = torch.uint8
         else:
             raise ValueError(
                 f"No support for quant type {args.ptq}. Support 8a8w, 16a8w, 16a4w and 16a4w_block."
@@ -106,12 +119,29 @@ def inference(args: argparse, qnn_config: QnnConfig):
 
     def post_process():
         with open(f"{args.artifact}/outputs/result.txt", "r") as f:
-            outputs.append(f.read())
+            text = f.read()
+        # In tokenized-prompt mode the runner echoes the prompt-file path instead
+        # of the prompt text; drop it and prepend the real prompt for readability.
+        prefix = os.path.basename(tokenized_prompt_path)
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+        outputs.append(args.prompt + text)
 
     model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     tokenizer_json_path = tokenizer.save_pretrained(args.artifact)[-1]
     seq_len = args.max_seq_len
+    runner_bin = "examples/qualcomm/oss_scripts/llama/qnn_llama_runner"
+    decoder_model_version = DECODER_MODEL_VERSION[args.decoder_model]
+
+    # Using tokenized prompt as a workaround.
+    # qnn_llama_runner expects llama3 equals to instruct one while hf llama3 is not.
+    # Using tokenized prompt so qnn_llama_runner won't append sytstem prompt on user input prompt.
+    import numpy as np
+
+    prompt_token_ids = tokenizer(args.prompt)["input_ids"]
+    tokenized_prompt_path = f"{args.artifact}/tokenized_prompt.raw"
+    np.asarray(prompt_token_ids, dtype=np.uint64).tofile(tokenized_prompt_path)
     if args.enable_x86_64:
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
@@ -121,13 +151,15 @@ def inference(args: argparse, qnn_config: QnnConfig):
         runner_cmd = " ".join(
             [
                 f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
-                f"{args.build_folder}/examples/models/llama/llama_main",
-                f'--prompt "{args.prompt}"',
+                f"{args.build_folder}/{runner_bin}",
+                f"--tokenized_prompt {tokenized_prompt_path}",
+                f"--decoder_model_version {decoder_model_version}",
+                "--eval_mode 0",
                 f"--tokenizer_path {tokenizer_json_path}",
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
                 "--temperature 0",
-                f" > {output_data_folder}/result.txt",
+                f"--output_path {output_data_folder}/result.txt",
             ]
         )
         subprocess.run(
@@ -141,23 +173,25 @@ def inference(args: argparse, qnn_config: QnnConfig):
         runner_cmd = " ".join(
             [
                 f"cd {workspace} &&",
-                "./llama_main",
-                f'--prompt "{args.prompt}"',
+                "./qnn_llama_runner",
+                "--tokenized_prompt tokenized_prompt.raw",
+                f"--decoder_model_version {decoder_model_version}",
+                "--eval_mode 0",
                 "--tokenizer_path tokenizer.json",
                 f"--model_path {PTE_FILENAME}.pte",
                 f"--seq_len {seq_len}",
                 "--temperature 0",
-                " > outputs/result.txt",
+                "--output_path outputs/result.txt",
             ]
         )
         adb = SimpleADB(
             qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
-            runner="examples/models/llama/llama_main",
+            runner=runner_bin,
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], files=[tokenizer_json_path])
+        adb.push(inputs=[], files=[tokenizer_json_path, tokenized_prompt_path])
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(host_output_path=args.artifact, callback=post_process)
