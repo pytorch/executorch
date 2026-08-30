@@ -447,6 +447,7 @@ class NodeVisitor:
         self,
         node: torch.fx.Node,
         wrapper_idx: int = 0,
+        output_index: Optional[int] = None,
     ):
         tensor_name = f"{node.name}@{wrapper_idx}"
         # The `input_{id}` is utilized for sorting at runtime. Due to multiple passes in qnn_preprocess,
@@ -469,7 +470,7 @@ class NodeVisitor:
                     self.edge_program.graph_signature.buffers_to_mutate.keys()
                 ).index(node.name)
                 tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
-            elif is_graph_output(node, wrapper_idx):
+            elif is_graph_output(node, output_index):
                 tensor_name = f"output_{tensor_name}"
 
         # Only add qcom_tensor_name when enable tensor dump.
@@ -541,14 +542,18 @@ class NodeVisitor:
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
 
-        tensor_name = self.get_tensor_name(tensor_source_node, wrapper_idx)
-        dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
-        dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
         # wrapper_idx indexes a node's own outputs only when the tensor being
         # defined belongs to that node. Builders also use it to key scratch
         # tensors built from some other node (op_scatter_elements), where it
-        # carries no output meaning.
+        # carries no output meaning. The naming and the type path must agree on
+        # this, otherwise a tensor gets an `output_` name without the matching
+        # APP_READ type (or vice versa) and the QNN graph build fails.
         output_index = wrapper_idx if tensor_source_node is target_build_node else None
+        tensor_name = self.get_tensor_name(
+            tensor_source_node, wrapper_idx, output_index
+        )
+        dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
+        dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
         tensor_type = self.get_tensor_type(
             tensor_source_node, tensor_type, output_index
         )
