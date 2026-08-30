@@ -2632,7 +2632,6 @@ def softmax_f32_f32(
 
 def quantized_softmax_per_tensor_common(
     input_tensor: torch.Tensor,
-    mask: torch.Tensor | None,
     dim: int,
     mask_type: int,
     pos: torch.Tensor,
@@ -2646,7 +2645,6 @@ def quantized_softmax_per_tensor_common(
 
     Args:
         - input_tensor (Tensor): The quantized input tensor
-        - mask (Tensor): Mask tensor
         - dim (int): The dimension along which softmax is computed
         - mask_type (int): Masking strategy (0=none, 1=position-based causal)
         - pos (Tensor): Position tensor for causal masking
@@ -2655,16 +2653,17 @@ def quantized_softmax_per_tensor_common(
         - out_scale (float): The scale of the output quantization
         - out_zero_point (int): The zero point of the output quantization
     """
-    # TODO: T228751479 - Add support for mask parameter in softmax
-    assert mask is None
-    assert (
-        mask_type == 0
-    ), f"Only mask_type=0 (no masking) is supported, got {mask_type}"
-    supported_dtypes = [torch.int8, torch.uint8, torch.int16]
-    if input_tensor.dtype not in supported_dtypes:
-        raise ValueError(
-            f"Input dtype must be one of {supported_dtypes}. Got {input_tensor.dtype}"
-        )
+    assert input_tensor.dtype in (
+        torch.int8,
+        torch.uint8,
+        torch.int16,
+    ), "input must be int8, uint8, or int16"
+    assert input_tensor.dim() > 0, "input must have at least one dimension"
+    normalized_dim = dim if dim >= 0 else dim + input_tensor.dim()
+    assert normalized_dim == input_tensor.dim() - 1, "dim must be the last dimension"
+    assert mask_type in (0, 1), "mask_type must be 0 or 1"
+    assert pos.dtype in (torch.int16, torch.int64), "pos must be int16 or int64"
+    assert pos.numel() == 1, "pos must contain exactly one element"
 
     float_input_tensor = dequantize_per_tensor(
         input_tensor,
@@ -2675,7 +2674,28 @@ def quantized_softmax_per_tensor_common(
         input_tensor.dtype,
     )
 
-    softmax_output = torch.nn.functional.softmax(float_input_tensor, dim=dim)
+    if mask_type == 1:
+        row_width = input_tensor.shape[-1]
+        rows = float_input_tensor.reshape(-1, row_width)
+        base_pos = int(pos.reshape(-1)[0].item())
+        if base_pos < 0:
+            softmax_output = torch.zeros_like(float_input_tensor)
+        else:
+            row_positions = base_pos + torch.arange(
+                rows.shape[0], device=rows.device
+            ).unsqueeze(1)
+            column_positions = torch.arange(row_width, device=rows.device).unsqueeze(
+                0
+            )
+            causal_mask = column_positions > row_positions
+            softmax_output = torch.ops.aten._masked_softmax.default(
+                float_input_tensor,
+                causal_mask.reshape_as(float_input_tensor),
+                dim,
+                2,
+            )
+    else:
+        softmax_output = torch.nn.functional.softmax(float_input_tensor, dim=dim)
 
     return quantize_per_tensor(
         softmax_output,
@@ -2690,7 +2710,6 @@ def quantized_softmax_per_tensor_common(
 @impl_tracked(m, "quantized_softmax.per_tensor")
 def quantized_softmax_per_tensor(
     input_tensor: torch.Tensor,
-    mask: torch.Tensor | None,
     dim: int,
     mask_type: int,
     pos: torch.Tensor,
@@ -2701,7 +2720,6 @@ def quantized_softmax_per_tensor(
 ) -> torch.Tensor:
     return quantized_softmax_per_tensor_common(
         input_tensor,
-        mask,
         dim,
         mask_type,
         pos,
@@ -2715,7 +2733,6 @@ def quantized_softmax_per_tensor(
 @impl_tracked(m, "quantized_softmax")
 def quantized_softmax(
     input_tensor: torch.Tensor,
-    mask: torch.Tensor | None,
     dim: int,
     mask_type: int,
     pos: torch.Tensor,
@@ -2726,7 +2743,6 @@ def quantized_softmax(
 ) -> torch.Tensor:
     return quantized_softmax_per_tensor_common(
         input_tensor,
-        mask,
         dim,
         mask_type,
         pos,
