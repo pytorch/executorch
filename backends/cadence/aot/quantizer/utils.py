@@ -281,6 +281,6 @@ def check_out_zero_point_is_min_range(
         return out_zero_point == -128
     elif out_dtype == torch.int16:
         return out_zero_point == -32768
-    elif out_dtype == torch.uint8 or torch.uint16:
+    elif out_dtype == torch.uint8 or out_dtype == torch.uint16:
         return out_zero_point == 0
     return False
