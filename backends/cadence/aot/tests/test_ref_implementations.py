@@ -13,6 +13,7 @@ import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import numpy as np
 import torch
+from executorch.backends.cadence.aot.quantizer.utils import quantize_tensor_multiplier
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
 
@@ -492,6 +493,483 @@ class TestRefImplementations(unittest.TestCase):
                 torch.equal(output, expected_output),
                 f"Values don't match: got {output}, expected {expected_output}",
             )
+
+    def test_quantized_linear_per_channel(self) -> None:
+        """Per-channel requant applies a distinct scale to each output row.
+
+        Two output channels are given deliberately different multipliers, so a
+        per-tensor implementation (which would apply channel 0's scale to both)
+        cannot produce this result.
+        """
+        src = torch.tensor([[4, 8]], dtype=torch.int8)
+        weight = torch.tensor([[2, 0], [0, 2]], dtype=torch.int8)
+        bias = torch.zeros(2, dtype=torch.int32)
+        # channel 0 requantizes at half the rate of channel 1
+        out_multiplier = torch.tensor([1 << 30, 1 << 30], dtype=torch.int32)
+        out_shift = torch.tensor([0, 1], dtype=torch.int32)
+        weight_zero_point = torch.zeros(2, dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_linear(
+            src,
+            weight,
+            bias,
+            0,  # in_zero_point
+            weight_zero_point,
+            out_multiplier,
+            out_shift,
+            0,  # out_zero_point
+            typing.cast(torch.Tensor, None),
+        )
+
+        # accumulators are [8, 16]; requant scale is -m/2^31 * 2^shift, so
+        # channel 0 scales by -0.5 and channel 1 by -1.0
+        expected = torch.tensor([[-4, -16]], dtype=torch.int8)
+        self.assertEqual(output.dtype, torch.int8)
+        self.assertTrue(
+            torch.equal(output, expected),
+            f"Values don't match: got {output}, expected {expected}",
+        )
+
+    def test_quantized_linear_per_channel_zero_point(self) -> None:
+        """A per-channel weight zero point is applied down output rows."""
+        src = torch.tensor([[1, 1]], dtype=torch.int8)
+        weight = torch.zeros((2, 2), dtype=torch.int8)
+        bias = torch.zeros(2, dtype=torch.int32)
+        # subtracting these zero points turns the zero weights into -1 and -2
+        weight_zero_point = torch.tensor([1, 2], dtype=torch.int32)
+        out_multiplier = torch.tensor([1 << 30, 1 << 30], dtype=torch.int32)
+        out_shift = torch.tensor([1, 1], dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_linear(
+            src,
+            weight,
+            bias,
+            0,
+            weight_zero_point,
+            out_multiplier,
+            out_shift,
+            0,
+            typing.cast(torch.Tensor, None),
+        )
+
+        # accumulators are [-2, -4], requant scale is -1.0 for both channels
+        expected = torch.tensor([[2, 4]], dtype=torch.int8)
+        self.assertTrue(
+            torch.equal(output, expected),
+            f"Values don't match: got {output}, expected {expected}",
+        )
+
+    def test_quantized_conv2d_nchw_per_channel_bias_scale(self) -> None:
+        """A per-output-channel bias_scale is applied down the channel axis.
+
+        Both output channels share an accumulator but are given different bias
+        scales, so a per-tensor implementation (which would use channel 0's
+        scale for both) cannot produce this result.
+        """
+        # [N, C, H, W] = [1, 1, 1, 3]
+        input_tensor = torch.tensor([[[[1, 2, 3]]]], dtype=torch.int8)
+        # [OC, IC, KH, KW] = [2, 1, 1, 2], both channels sum two neighbours
+        weight = torch.tensor([[[[1, 1]]], [[[1, 1]]]], dtype=torch.int8)
+        bias = torch.zeros(2, dtype=torch.int32)
+        weight_zero_point = torch.zeros(2, dtype=torch.int32)
+        bias_scale = torch.tensor([1.0, 2.0])
+        out_multiplier = torch.tensor([1 << 30, 1 << 30], dtype=torch.int32)
+        out_shift = torch.zeros(2, dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_conv2d_nchw(
+            input_tensor,
+            weight,
+            bias,
+            (1, 1),
+            (0, 0),
+            (1, 1),
+            1,  # groups
+            0,  # in_zero_point
+            weight_zero_point,
+            bias_scale,
+            1.0,  # output_scale
+            0,  # output_zero_point
+            out_multiplier,
+            out_shift,
+        )
+
+        # accumulators are [3, 5] on both channels; channel 1 is scaled by 2
+        expected = torch.tensor([[[[3, 5]], [[6, 10]]]], dtype=torch.int8)
+        self.assertEqual(output.dtype, torch.int8)
+        self.assertTrue(
+            torch.equal(output, expected),
+            f"Values don't match: got {output}, expected {expected}",
+        )
+
+    def test_quantized_conv1d_ncl_per_channel_weight_zero_point(self) -> None:
+        """A per-channel weight zero point is subtracted per output channel."""
+        # [N, C, L] = [1, 1, 2]
+        input_tensor = torch.tensor([[[1, 1]]], dtype=torch.int8)
+        # [OC, IC, K] = [2, 1, 2], all-zero weights so only the zero point acts
+        weight = torch.zeros((2, 1, 2), dtype=torch.int8)
+        bias = torch.zeros(2, dtype=torch.int32)
+        weight_zero_point = torch.tensor([1, 2], dtype=torch.int32)
+        bias_scale = torch.ones(2)
+        out_multiplier = torch.tensor([1 << 30, 1 << 30], dtype=torch.int32)
+        out_shift = torch.zeros(2, dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_conv1d_ncl(
+            input_tensor,
+            weight,
+            bias,
+            (1,),
+            (0,),
+            (1,),
+            1,
+            0,
+            weight_zero_point,
+            bias_scale,
+            1.0,
+            0,
+            out_multiplier,
+            out_shift,
+        )
+
+        # weights become -1 and -2 after subtracting the zero points
+        expected = torch.tensor([[[-2], [-4]]], dtype=torch.int8)
+        self.assertTrue(
+            torch.equal(output, expected),
+            f"Values don't match: got {output}, expected {expected}",
+        )
+
+    def test_quantized_conv1d_nlc_per_channel_matches_ncl(self) -> None:
+        """The channel-last variant must agree with NCL on the same data."""
+        input_ncl = torch.randint(-8, 8, (1, 3, 5), dtype=torch.int8)
+        weight_ncl = torch.randint(-4, 4, (2, 3, 2), dtype=torch.int8)
+        bias = torch.zeros(2, dtype=torch.int32)
+        weight_zero_point = torch.tensor([1, -1], dtype=torch.int32)
+        bias_scale = torch.tensor([0.02, 0.05])
+        out_multiplier = torch.tensor([1 << 30, 1 << 30], dtype=torch.int32)
+        out_shift = torch.zeros(2, dtype=torch.int32)
+        common = (bias, (1,), (0,), (1,), 1, 0, weight_zero_point, bias_scale, 0.1, 0)
+
+        out_ncl = torch.ops.cadence.quantized_conv1d_ncl(
+            input_ncl, weight_ncl, *common, out_multiplier, out_shift
+        )
+        out_nlc = torch.ops.cadence.quantized_conv1d_nlc(
+            input_ncl.permute(0, 2, 1).contiguous(),
+            weight_ncl.permute(0, 2, 1).contiguous(),
+            *common,
+            out_multiplier,
+            out_shift,
+        )
+
+        self.assertTrue(
+            torch.equal(out_nlc.permute(0, 2, 1).contiguous(), out_ncl),
+            f"NLC and NCL disagree: {out_nlc} vs {out_ncl}",
+        )
+
+    def test_quantized_conv_per_channel_beats_flattened_qparams(self) -> None:
+        """Per-channel must actually track a channel-skewed weight distribution.
+
+        One output channel has a far larger dynamic range than the other. Reusing
+        channel 0's scale for both loses the small channel, so this fails if the
+        qparam vectors are ever collapsed to a scalar.
+        """
+        torch.manual_seed(0)
+        in_channels, out_channels, length, kernel = 3, 2, 8, 3
+        input_scale = 0.05
+        out_scale = 0.05
+
+        input_q = torch.randint(-32, 32, (1, in_channels, length), dtype=torch.int8)
+        weight_q = torch.randint(
+            -100, 100, (out_channels, in_channels, kernel), dtype=torch.int8
+        )
+        bias = torch.zeros(out_channels, dtype=torch.int32)
+        # channel 1's weights are 50x smaller in real terms than channel 0's
+        weight_scales = torch.tensor([0.5, 0.01])
+        bias_scales = weight_scales * input_scale
+        weight_zero_point = torch.zeros(out_channels, dtype=torch.int32)
+        multiplier, shift = quantize_tensor_multiplier(bias_scales / out_scale)
+
+        reference = torch.nn.functional.conv1d(
+            input_q.float() * input_scale,
+            weight_q.float() * weight_scales.view(-1, 1, 1),
+        )
+        conv_args = ((1,), (0,), (1,), 1, 0)
+
+        per_channel = torch.ops.cadence.quantized_conv1d_ncl(
+            input_q,
+            weight_q,
+            bias,
+            *conv_args,
+            weight_zero_point,
+            bias_scales,
+            out_scale,
+            0,
+            multiplier.to(torch.int32),
+            shift.to(torch.int32),
+        )
+        flattened = bias_scales[0].expand(out_channels).contiguous()
+        per_tensor = torch.ops.cadence.quantized_conv1d_ncl(
+            input_q,
+            weight_q,
+            bias,
+            *conv_args,
+            weight_zero_point,
+            flattened,
+            out_scale,
+            0,
+            multiplier.to(torch.int32),
+            shift.to(torch.int32),
+        )
+
+        pc_err = (per_channel.float() * out_scale - reference).abs().mean()
+        pt_err = (per_tensor.float() * out_scale - reference).abs().mean()
+        self.assertLess(
+            pc_err, pt_err, f"per-channel ({pc_err}) should beat flattened ({pt_err})"
+        )
+
+    def test_quantized_conv_per_channel_rejects_mismatched_length(self) -> None:
+        """A qparam vector that does not match the output channels is a bug."""
+        with self.assertRaisesRegex(ValueError, "expected 1 or 2"):
+            torch.ops.cadence.quantized_conv1d_ncl(
+                torch.zeros((1, 1, 4), dtype=torch.int8),
+                torch.zeros((2, 1, 2), dtype=torch.int8),
+                torch.zeros(2, dtype=torch.int32),
+                (1,),
+                (0,),
+                (1,),
+                1,
+                0,
+                torch.zeros(2, dtype=torch.int32),
+                torch.ones(3),  # three scales for two output channels
+                1.0,
+                0,
+                torch.tensor([1 << 30, 1 << 30], dtype=torch.int32),
+                torch.zeros(2, dtype=torch.int32),
+            )
+
+    def test_quantized_conv2d_nhwc_per_channel_bias_scale(self) -> None:
+        """Channel-last convs have to broadcast bias_scale over the channel axis.
+
+        The NHWC accumulator is [N, H, W, C], not [N, C, H, W], so a helper that
+        reshapes bias_scale for NCHW would pick the wrong axis and either raise
+        or silently apply the wrong scale to every channel. Distinct scales per
+        output channel make that visible.
+        """
+        # NHWC: [N=1, H=1, W=3, C=1]; single input channel so accumulators are
+        # trivially equal across the two output channels, and any per-channel
+        # scale difference in the result must come from bias_scale.
+        input_nhwc = torch.tensor([[[[1], [2], [3]]]], dtype=torch.int8)
+        # NHWC weight layout is [OC, KH, KW, IC] = [2, 1, 2, 1], all-ones so
+        # each output position sums two neighbouring input positions.
+        weight = torch.tensor(
+            [[[[1], [1]]], [[[1], [1]]]], dtype=torch.int8
+        )
+        bias = torch.zeros(2, dtype=torch.int32)
+        weight_zero_point = torch.zeros(2, dtype=torch.int32)
+        bias_scale = torch.tensor([1.0, 3.0])
+        out_multiplier = torch.tensor([1 << 30, 1 << 30], dtype=torch.int32)
+        out_shift = torch.zeros(2, dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_conv2d_nhwc(
+            input_nhwc,
+            weight,
+            bias,
+            (1, 1),
+            (0, 0),
+            (1, 1),
+            1,  # groups
+            0,  # in_zero_point
+            weight_zero_point,
+            bias_scale,
+            1.0,  # output_scale
+            0,  # output_zero_point
+            out_multiplier,
+            out_shift,
+        )
+
+        # Per position accumulators are [3, 5]; channel 1 is scaled by 3.
+        # Expected NHWC layout [N=1, H=1, W=2, C=2]:
+        #   pos 0 -> [3*1, 3*3] = [3, 9]
+        #   pos 1 -> [5*1, 5*3] = [5, 15]
+        expected = torch.tensor([[[[3, 9], [5, 15]]]], dtype=torch.int8)
+        self.assertEqual(output.dtype, torch.int8)
+        self.assertTrue(
+            torch.equal(output, expected),
+            f"Values don't match: got {output}, expected {expected}",
+        )
+
+    def test_quantized_depthwise_conv1d_ncl_per_channel(self) -> None:
+        """The new ``.default`` overload for depthwise NCL takes per-channel qparams.
+
+        Depthwise means groups == channels, so each output channel has its own
+        (weight_zero_point, bias_scale). Distinct values per channel means a
+        broadcast of channel 0 would give the wrong answer for channels 1..N.
+        """
+        channels = 3
+        # NCL: [N=1, C=3, L=2]
+        input_tensor = torch.tensor(
+            [[[1, 1], [1, 1], [1, 1]]], dtype=torch.int8
+        )
+        # Depthwise weights: [OC=3, IC/groups=1, K=2], all-zero so only the
+        # weight_zero_point drives the accumulator.
+        weight = torch.zeros((channels, 1, 2), dtype=torch.int8)
+        bias = torch.zeros(channels, dtype=torch.int32)
+        # Subtracting these zero points turns 0-valued weights into -1, -2, -3.
+        weight_zero_point = torch.tensor([1, 2, 3], dtype=torch.int32)
+        bias_scale = torch.tensor([1.0, 2.0, 3.0])
+        out_multiplier = torch.tensor(
+            [1 << 30, 1 << 30, 1 << 30], dtype=torch.int32
+        )
+        out_shift = torch.zeros(channels, dtype=torch.int32)
+
+        output = torch.ops.cadence.quantized_depthwise_conv1d_ncl(
+            input_tensor,
+            weight,
+            bias,
+            (1,),
+            (0,),
+            (1,),
+            channels,  # groups == channels for depthwise
+            0,
+            weight_zero_point,
+            bias_scale,
+            1.0,
+            0,
+            out_multiplier,
+            out_shift,
+        )
+
+        # Each output channel c contributes acc = sum(-wzp[c] * input) = -2*wzp[c],
+        # then times bias_scale[c]. Channels: [-2*1*1, -2*2*2, -2*3*3] = [-2, -8, -18]
+        expected = torch.tensor([[[-2], [-8], [-18]]], dtype=torch.int8)
+        self.assertEqual(output.dtype, torch.int8)
+        self.assertTrue(
+            torch.equal(output, expected),
+            f"Values don't match: got {output}, expected {expected}",
+        )
+
+    def test_quantized_depthwise_conv1d_nlc_per_channel_matches_ncl(self) -> None:
+        """NLC depthwise must agree with NCL depthwise on the same data."""
+        torch.manual_seed(0)
+        channels = 3
+        length = 5
+        kernel = 2
+
+        input_ncl = torch.randint(-4, 4, (1, channels, length), dtype=torch.int8)
+        # [OC, IC/groups=1, K]
+        weight_ncl = torch.randint(-3, 3, (channels, 1, kernel), dtype=torch.int8)
+        bias = torch.zeros(channels, dtype=torch.int32)
+        weight_zero_point = torch.tensor([1, -1, 2], dtype=torch.int32)
+        bias_scale = torch.tensor([0.02, 0.05, 0.1])
+        out_multiplier = torch.tensor(
+            [1 << 30, 1 << 30, 1 << 30], dtype=torch.int32
+        )
+        out_shift = torch.zeros(channels, dtype=torch.int32)
+        common = (
+            bias,
+            (1,),
+            (0,),
+            (1,),
+            channels,  # groups
+            0,
+            weight_zero_point,
+            bias_scale,
+            0.1,
+            0,
+        )
+
+        out_ncl = torch.ops.cadence.quantized_depthwise_conv1d_ncl(
+            input_ncl, weight_ncl, *common, out_multiplier, out_shift
+        )
+        # NLC layouts: input [N, L, C], weight [OC, K, IC/groups].
+        out_nlc = torch.ops.cadence.quantized_depthwise_conv1d_nlc(
+            input_ncl.permute(0, 2, 1).contiguous(),
+            weight_ncl.permute(0, 2, 1).contiguous(),
+            *common,
+            out_multiplier,
+            out_shift,
+        )
+
+        self.assertTrue(
+            torch.equal(out_nlc.permute(0, 2, 1).contiguous(), out_ncl),
+            f"NLC and NCL depthwise disagree: {out_nlc} vs {out_ncl}",
+        )
+
+    def test_quantized_conv2d_nhwc_per_channel_beats_flattened_qparams(self) -> None:
+        """The whole point of per-channel: a channel-skewed conv2d needs it.
+
+        Same reasoning as the per-channel-beats-flattened conv1d test, but along
+        the NHWC path so both channel-first and channel-last go through the
+        per-channel branch of _broadcast_over_channels with distinct scales.
+        """
+        torch.manual_seed(0)
+        in_channels, out_channels = 3, 2
+        input_scale = 0.05
+        out_scale = 0.05
+
+        input_nchw = torch.randint(
+            -32, 32, (1, in_channels, 5, 5), dtype=torch.int8
+        )
+        weight = torch.randint(
+            -100, 100, (out_channels, in_channels, 3, 3), dtype=torch.int8
+        )
+        bias = torch.zeros(out_channels, dtype=torch.int32)
+        weight_scales = torch.tensor([0.5, 0.01])
+        bias_scales = weight_scales * input_scale
+        weight_zero_point = torch.zeros(out_channels, dtype=torch.int32)
+        multiplier, shift = quantize_tensor_multiplier(bias_scales / out_scale)
+
+        reference = torch.nn.functional.conv2d(
+            input_nchw.float() * input_scale,
+            weight.float() * weight_scales.view(-1, 1, 1, 1),
+        )
+        # NHWC needs input [N, H, W, C] and weight [OC, H, W, IC].
+        input_nhwc = input_nchw.permute(0, 2, 3, 1).contiguous()
+        weight_nhwc = weight.permute(0, 2, 3, 1).contiguous()
+
+        per_channel = torch.ops.cadence.quantized_conv2d_nhwc(
+            input_nhwc,
+            weight_nhwc,
+            bias,
+            (1, 1),
+            (0, 0),
+            (1, 1),
+            1,
+            0,
+            weight_zero_point,
+            bias_scales,
+            out_scale,
+            0,
+            multiplier.to(torch.int32),
+            shift.to(torch.int32),
+        )
+        flattened = bias_scales[0].expand(out_channels).contiguous()
+        per_tensor = torch.ops.cadence.quantized_conv2d_nhwc(
+            input_nhwc,
+            weight_nhwc,
+            bias,
+            (1, 1),
+            (0, 0),
+            (1, 1),
+            1,
+            0,
+            weight_zero_point,
+            flattened,
+            out_scale,
+            0,
+            multiplier.to(torch.int32),
+            shift.to(torch.int32),
+        )
+
+        # NHWC output is [N, H, W, C]; the reference is NCHW, so bring both to
+        # NCHW before comparing.
+        per_channel_nchw = per_channel.permute(0, 3, 1, 2).contiguous()
+        per_tensor_nchw = per_tensor.permute(0, 3, 1, 2).contiguous()
+        pc_err = (per_channel_nchw.float() * out_scale - reference).abs().mean()
+        pt_err = (per_tensor_nchw.float() * out_scale - reference).abs().mean()
+        self.assertLess(
+            pc_err,
+            pt_err,
+            f"per-channel ({pc_err}) should beat flattened ({pt_err})",
+        )
 
     @expand(
         [
@@ -3631,3 +4109,4 @@ class TestRefImplementations(unittest.TestCase):
         # With padding=1, output length = (3 + 2*1 - 3) / 1 + 1 = 3
         self.assertEqual(output.shape, (batch_size, length, out_channels))
         self.assertEqual(output.dtype, torch.int8)
+
