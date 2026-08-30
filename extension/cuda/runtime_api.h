@@ -137,6 +137,8 @@ inline cudaError_t cudaStreamBeginCapture(
   return hipStreamBeginCapture(stream, mode);
 }
 
+#define cudaStreamPerThread hipStreamPerThread
+
 inline cudaError_t cudaStreamCreate(cudaStream_t* stream) {
   return hipStreamCreate(stream);
 }
