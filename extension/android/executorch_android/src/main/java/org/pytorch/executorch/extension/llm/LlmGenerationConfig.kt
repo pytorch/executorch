@@ -24,6 +24,11 @@ private constructor(
     val temperature: Float,
     val numBos: Int,
     val numEos: Int,
+    val audioFilePath: String?,
+    val audioData: FloatArray?,
+    val audioBatchSize: Int,
+    val audioNBins: Int,
+    val audioNFrames: Int,
 ) {
 
   companion object {
@@ -49,6 +54,11 @@ private constructor(
     private var temperature: Float = 0.8f
     private var numBos: Int = 0
     private var numEos: Int = 0
+    private var audioFilePath: String? = null
+    private var audioData: FloatArray? = null
+    private var audioBatchSize: Int = 1
+    private var audioNBins: Int = 0
+    private var audioNFrames: Int = 0
 
     /** Sets whether to include the input prompt in the generated output. */
     fun echo(echo: Boolean): Builder = apply { this.echo = echo }
@@ -71,8 +81,37 @@ private constructor(
     /** Sets the number of EOS tokens to append. */
     fun numEos(numEos: Int): Builder = apply { this.numEos = numEos }
 
+    /** Sets a WAV file path to prefill as audio before text generation. */
+    fun audioFilePath(path: String): Builder = apply { this.audioFilePath = path }
+
+    /** Sets pre-processed audio data (mel spectrogram) to prefill before text generation. */
+    fun audioData(
+        data: FloatArray,
+        batchSize: Int,
+        nBins: Int,
+        nFrames: Int,
+    ): Builder = apply {
+      this.audioData = data
+      this.audioBatchSize = batchSize
+      this.audioNBins = nBins
+      this.audioNFrames = nFrames
+    }
+
     /** Constructs the LlmGenerationConfig instance with the configured parameters. */
     fun build(): LlmGenerationConfig =
-        LlmGenerationConfig(echo, maxNewTokens, warming, seqLen, temperature, numBos, numEos)
+        LlmGenerationConfig(
+            echo,
+            maxNewTokens,
+            warming,
+            seqLen,
+            temperature,
+            numBos,
+            numEos,
+            audioFilePath,
+            audioData,
+            audioBatchSize,
+            audioNBins,
+            audioNFrames,
+        )
   }
 }
