@@ -33,6 +33,12 @@ VLM_SPECIAL_TOKENS = {
         "fake_wrap_start": "<fake_token_around_image>",
         "fake_wrap_end": "<fake_token_around_image>",
     },
+    "smolvlm_256m_instruct": {
+        IMG_TOKEN: "<image>",
+        "global_img": "<global-img>",
+        "fake_wrap_start": "<fake_token_around_image>",
+        "fake_wrap_end": "<fake_token_around_image>",
+    },
     "internvl3_1b": {
         IMG_TOKEN: "<IMG_CONTEXT>",
         "fake_wrap_start": "<img>",
