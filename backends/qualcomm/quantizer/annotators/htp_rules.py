@@ -10,6 +10,9 @@ import operator
 from functools import partial
 from typing import Dict, List, Optional, Sequence, Tuple
 
+# Registers torch.ops.qnn_custom.hadamard_transform used by the annotator below.
+import executorch.backends.qualcomm.builders.custom_ops  # noqa: F401
+
 import executorch.backends.qualcomm.builders.qnn_constants as QnnConstants
 import torch
 
@@ -1149,6 +1152,14 @@ class MatMul(GeneralOpDef):
 
 
 @register_annotator(
+    [torch.ops.qnn_custom.hadamard_transform.default],
+    QnnConstants.OpHadamardTransform.op_name,
+)
+class HadamardTransform(GeneralOpDef):
+    pass
+
+
+@register_annotator(
     [torch.ops.aten.max.other, torch.ops.aten.maximum.default],
     QnnConstants.OpElementWiseMaximum.op_name,
 )
@@ -1433,7 +1444,12 @@ class ScaledDotProductAttention(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.scatter.src, torch.ops.aten.scatter.value],
+    [
+        torch.ops.aten.scatter.src,
+        torch.ops.aten.scatter.value,
+        torch.ops.aten.scatter_add.default,
+        torch.ops.aten.scatter_reduce.two,
+    ],
     qnn_op=None,
 )
 class ScatterElements(GeneralOpDef):

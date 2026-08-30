@@ -7,7 +7,7 @@
  */
 
 #include <c10/util/safe_numerics.h>
-#include <cuda_runtime.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
@@ -26,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Include SlimTensor headers for CUDA backend
@@ -45,6 +46,7 @@
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
+#include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -164,8 +166,8 @@ class ET_EXPERIMENTAL CudaBackend final
     return shared_cuda_stream_ != nullptr;
   }
 
-  // Enable cross-method per-FQN weight caching. Set via the
-  // kWeightSharingAcrossMethods runtime backend option.
+  // Enable the legacy dense-blob per-FQN cache. New FQN artifacts use
+  // their FQN-addressed data keys automatically.
   void set_weight_sharing_across_methods(bool enabled) {
     weight_sharing_across_methods_.store(enabled, std::memory_order_relaxed);
   }
@@ -176,7 +178,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
   Error load_function_pointers_into_handle(
       void* so_handle,
-      AOTIDelegateHandle* handle) const {
+      cuda::CudaDelegateHandle* handle) const {
 #define LOAD_SYMBOL(member, name)                                    \
   do {                                                               \
     auto symbol_res = get_function(so_handle, #name);                \
@@ -225,6 +227,8 @@ class ET_EXPERIMENTAL CudaBackend final
     LOAD_OPTIONAL_SYMBOL(
         get_constant_original_fqn,
         AOTInductorModelContainerGetConstantOriginalFQN);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_dtype, AOTInductorModelContainerGetConstantDtype);
     LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
@@ -277,6 +281,15 @@ class ET_EXPERIMENTAL CudaBackend final
           return Error::InvalidArgument;
         }
       } else if (std::strcmp(option.key, kEnableCudaGraphForMethod) == 0) {
+#if defined(EXECUTORCH_USE_HIP)
+        // HIP ignores the graph-instantiation flag required by this path.
+        ET_LOG(
+            Error,
+            "Option %s is not supported on ROCm: HIP ignores graph "
+            "instantiation flags.",
+            kEnableCudaGraphForMethod);
+        return Error::NotSupported;
+#else
         if (auto* val = std::get_if<std::array<char, kMaxOptionValueLength>>(
                 &option.value)) {
           set_cuda_graph_method(*val);
@@ -287,6 +300,7 @@ class ET_EXPERIMENTAL CudaBackend final
               kEnableCudaGraphForMethod);
           return Error::InvalidArgument;
         }
+#endif
       }
     }
     return Error::Ok;
@@ -316,10 +330,21 @@ class ET_EXPERIMENTAL CudaBackend final
 
     std::string so_blob_key;
     std::string weights_blob_key;
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        executorch::backends::aoti::resolve_blob_keys(
-            processed, method_name, so_blob_key, weights_blob_key),
-        "Malformed named-data key payload");
+    CudaWeightCache::Metadata fqn_weights;
+    const bool has_fqn_weights =
+        CudaWeightCache::is_serialized(processed->data(), processed->size());
+    if (has_fqn_weights) {
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          CudaWeightCache::parse(
+              processed->data(), processed->size(), fqn_weights),
+          "Malformed CUDA FQN weight metadata");
+      so_blob_key = fqn_weights.so_blob_key;
+    } else {
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          executorch::backends::aoti::resolve_blob_keys(
+              processed, method_name, so_blob_key, weights_blob_key),
+          "Malformed named-data key payload");
+    }
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
     auto aoti_dso_buffer = named_data_map->get_data(so_blob_key.c_str());
@@ -393,14 +418,13 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->container_handle = container_handle;
 
-    // Load constants. When weight_sharing_across_methods is enabled (opt-in
-    // via the kWeightSharingAcrossMethods runtime backend option set by the
-    // runner), use the per-weight FQN cache so methods that share weights
-    // (e.g. prefill/decode) avoid duplicate GPU allocations. Otherwise fall
-    // back to the legacy per-method blob load — required for models whose
-    // methods are independent sub-graphs that may have FQN collisions
-    // (e.g. parakeet).
-    if (is_weight_sharing_across_methods_enabled()) {
+    // Versioned artifacts load each (device, FQN) through the same process-wide
+    // cross-method cache model used by the legacy path. The payload only adds
+    // the tensor metadata needed to reconstruct independently named PTD blobs.
+    if (has_fqn_weights) {
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          fqn_weight_cache_.load(handle, named_data_map, fqn_weights));
+    } else if (is_weight_sharing_across_methods_enabled()) {
       ET_CHECK_OK_OR_RETURN_ERROR(load_constants_with_cache(
           handle, named_data_map, method_name, weights_blob_key));
     } else {
@@ -848,19 +872,13 @@ class ET_EXPERIMENTAL CudaBackend final
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
     // which causes segmentation faults when attempting to delete other
-    // containers. As a workaround, we skip explicit container deletion
-    // and defer cleanup to the OS.
+    // containers. As a workaround, we skip explicit container deletion and
+    // defer cleanup to the OS. The corresponding shared library must remain
+    // loaded as well: the leaked container still owns objects whose code and
+    // process-wide state live in that library, so dlclose/FreeLibrary can
+    // invalidate them and crash during multi-method teardown.
     // TODO(gasoonjia): Find a proper solution for safe container deletion.
     // AOTInductorModelContainerDelete(handle->container_handle);
-
-    // Now close the shared library
-    if (handle->so_handle != nullptr) {
-      Error err = close_library(handle->so_handle);
-      ET_CHECK_OR_LOG_ERROR(
-          err == Error::Ok,
-          "Failed to close shared library for %s",
-          handle->so_path.c_str());
-    }
 
     // Remove the temporary shared library file
     if (!handle->so_path.empty()) {
@@ -888,9 +906,9 @@ class ET_EXPERIMENTAL CudaBackend final
   mutable std::mutex cuda_stream_mutex_;
   std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
 
-  // Whether to enable cross-method per-FQN weight caching at init time.
+  // Whether to enable cross-method caching for legacy dense-blob artifacts.
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
-  // OFF — see set_weight_sharing_across_methods() for safety constraints.
+  // OFF; versioned FQN artifacts do not consult this option.
   std::atomic<bool> weight_sharing_across_methods_{false};
 
   // ---------------------------------------------------------------
@@ -1051,7 +1069,17 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    // Names this method must load itself because the cached tensor under the
+    // same name belongs to a different constant.
+    std::unordered_set<std::string> not_shared;
+
     // Phase 2 (locked): pure cache lookup against shared_constant_tensors_.
+    // A cache hit here is provisional: the name matches, but whether the
+    // tensors match is only known after extraction, so a hit can still be
+    // rejected below. Only the path that loads the blob can check this. When
+    // every name is already cached there is nothing to compare against
+    // without re-uploading the blob, which costs too much device memory to
+    // do on every method, so that case still shares on the name alone.
     {
       std::lock_guard<std::mutex> guard(shared_constants_mutex_);
       for (const auto& [fqn, _] : fqn_to_name) {
@@ -1124,17 +1152,22 @@ class ET_EXPERIMENTAL CudaBackend final
           if (cached_it == shared_constant_tensors_.end()) {
             // New constant — add to cache.
             shared_constant_tensors_[fqn] = extracted_it->second;
-          } else {
-            // Same FQN seen before — verify the cached tensor is still
-            // compatible with what THIS method expects. On mismatch the
-            // helper logs the offending field and returns an error.
-            ET_CHECK_OK_OR_RETURN_ERROR(
-                check_cached_constant_match(
-                    fqn, cached_it->second, extracted_it->second),
-                "Constant '%s' in method '%s' is incompatible with the "
-                "cached version from a previous method. Refusing to share.",
+          } else if (
+              check_cached_constant_match(
+                  fqn, cached_it->second, extracted_it->second) != Error::Ok) {
+            // Same name, different tensor. AOTInductor names a lifted constant
+            // by position within one compiled module, so two methods each own a
+            // "_tensor_constant2" holding unrelated data, and a name is only
+            // evidence of sharing when the tensors agree. Sharing this pair
+            // would alias mismatched storage, so leave this method's own
+            // constant in place and keep the cached one for whoever matches it.
+            ET_LOG(
+                Info,
+                "Constant '%s' in method '%s' differs from the cached copy; "
+                "using this method's own copy instead of sharing",
                 fqn.c_str(),
                 method_name.c_str());
+            not_shared.insert(fqn);
           }
         }
         ET_LOG(
@@ -1163,6 +1196,9 @@ class ET_EXPERIMENTAL CudaBackend final
       {
         std::lock_guard<std::mutex> guard(shared_constants_mutex_);
         for (const auto& [fqn, internal_name] : fqn_to_name) {
+          if (not_shared.count(fqn) != 0) {
+            continue;
+          }
           auto it = shared_constant_tensors_.find(fqn);
           if (it != shared_constant_tensors_.end()) {
             pairs.push_back({internal_name.c_str(), it->second});
@@ -1237,6 +1273,8 @@ class ET_EXPERIMENTAL CudaBackend final
   // explicitly deleted — see destroy() comment).
   mutable std::unordered_map<std::string, AtenTensorHandle>
       shared_constant_tensors_;
+
+  mutable CudaWeightCache fqn_weight_cache_;
 };
 
 } // namespace executorch::backends::cuda

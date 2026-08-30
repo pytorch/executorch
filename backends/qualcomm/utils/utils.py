@@ -9,16 +9,19 @@ from collections import defaultdict, OrderedDict
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
+# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
+# here rather than in the package's __init__.
+from executorch.backends.qualcomm import setup_qnn_sdk
 
+setup_qnn_sdk()
+
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 import executorch.exir as exir
 import torch
-
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
-
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
     QNN_TENSOR_TYPE_MAP,
@@ -64,7 +67,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANTIZED_IO,
 )
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
-
 from executorch.exir import ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -168,11 +170,20 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
-            x = torch.transpose(x, 1, 2)
+            if rank == 3:
+                bsz, dim0, dim1 = x.size()
+                x = torch.reshape(x, (bsz, dim0, 1, dim1))
+            else:
+                dim0, dim1 = x.size()
+                x = torch.reshape(x, (1, dim0, 1, dim1))
+            x = torch.transpose(x, 1, 3)
             res = self.conv(x)
-            res = torch.transpose(res, 1, 2)
-            res = res.squeeze(-1) if rank == 3 else res.reshape(*res.shape[1:3])
+            res = res.permute(0, 3, 1, 2)
+            res = (
+                res.squeeze(-1)
+                if rank == 3
+                else res.reshape(dim0, self.conv.weight.shape[0])
+            )
             return res
 
     def replace_linear(module: torch.nn.Module):
@@ -464,10 +475,7 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(
-            ep,
-            convert_linear_to_conv2d=convert_linear_to_conv2d,
-        )
+        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(ep)
         transform_passes[graph_name] = pass_manager.get_to_edge_transform_passes(
             ep,
             passes_job=passes_job[graph_name],
@@ -475,6 +483,7 @@ def to_edge_transform_and_lower_to_qnn(
             compiler_specs=compiler_specs[graph_name],
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(

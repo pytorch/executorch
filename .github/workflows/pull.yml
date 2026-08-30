@@ -841,7 +841,7 @@ jobs:
       contents: read
     with:
       runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -1058,6 +1058,10 @@ jobs:
 
         # Run QNN pass unit tests
         pytest -xvs backends/qualcomm/tests/test_passes.py
+
+        # And the checks that importing the backend has no side effects. These need no SDK and
+        # no device, but they do need the package importable, which this job already arranges.
+        pytest -xvs backends/qualcomm/tests/test_import_side_effects.py
 
   test-qnn-delegate-linux:
     name: test-qnn-delegate-linux

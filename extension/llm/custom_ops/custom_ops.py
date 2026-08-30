@@ -291,7 +291,7 @@ def custom_sdpa(
         scale,
     )
 
-    return torch.empty_like(query)
+    return torch.empty(query.shape, dtype=query.dtype, device=query.device)
 
 
 def _validate_update_cache_params(
@@ -379,7 +379,7 @@ def update_cache_with_indices_meta(
     return torch.empty((1,), dtype=value.dtype, device="meta")
 
 
-def _validate_channelwise_gated_delta_rule_params(
+def _validate_gated_delta_rule_params(
     query,
     key,
     value,
@@ -396,9 +396,10 @@ def _validate_channelwise_gated_delta_rule_params(
     assert (
         value.dim() == 4
     ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
-    assert (
-        decay.dim() == 4
-    ), f"Expected decay to be 4 dimensional but got {decay.dim()} dimensions."
+    assert decay.dim() in (3, 4), (
+        "Expected decay to be 4 dimensional (channelwise) or 3 dimensional "
+        f"(scalar) but got {decay.dim()} dimensions."
+    )
     assert (
         beta.dim() == 3
     ), f"Expected beta to be 3 dimensional but got {beta.dim()} dimensions."
@@ -419,7 +420,7 @@ def _validate_channelwise_gated_delta_rule_params(
         ), f"Expected {name} to be float32 but got {tensor.dtype}"
 
     assert query.size(0) == key.size(0) and query.shape[2:] == key.shape[2:]
-    assert key.shape == decay.shape
+    assert decay.shape == (key.shape if decay.dim() == 4 else key.shape[:3])
     assert key.shape[:3] == value.shape[:3]
     assert beta.shape == key.shape[:3]
     assert query.size(1) % key.size(1) == 0
@@ -435,8 +436,8 @@ def _validate_channelwise_gated_delta_rule_params(
     )
 
 
-@impl(custom_ops_lib, "channelwise_gated_delta_rule", "Meta")
-def channelwise_gated_delta_rule_meta(
+@impl(custom_ops_lib, "gated_delta_rule", "Meta")
+def gated_delta_rule_meta(
     query,
     key,
     value,
@@ -444,7 +445,7 @@ def channelwise_gated_delta_rule_meta(
     beta,
     initial_state,
 ):
-    _validate_channelwise_gated_delta_rule_params(
+    _validate_gated_delta_rule_params(
         query,
         key,
         value,
@@ -454,6 +455,20 @@ def channelwise_gated_delta_rule_meta(
     )
     output_shape = (*query.shape[:3], value.size(3))
     return query.new_empty(output_shape), torch.empty_like(initial_state)
+
+
+# Deprecated alias of gated_delta_rule, kept so graphs built against the
+# pre-scalar-decay name keep tracing. Remove once those have been re-exported.
+@impl(custom_ops_lib, "channelwise_gated_delta_rule", "Meta")
+def channelwise_gated_delta_rule_meta(
+    query,
+    key,
+    value,
+    decay,
+    beta,
+    initial_state,
+):
+    return gated_delta_rule_meta(query, key, value, decay, beta, initial_state)
 
 
 def _validate_quantized_sdpa_params(

@@ -6,9 +6,9 @@
 
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassResult
 
 
 class RemoveUselessAsStridedCopyNodes(NeutronEdgePass):
@@ -57,7 +57,7 @@ class RemoveUselessAsStridedCopyNodes(NeutronEdgePass):
 
         return made_changes
 
-    def run(self, graph_module: GraphModule):
+    def run(self, graph_module: GraphModule) -> PassResult:
         made_changes = self._fold_as_strided_copy(graph_module)
 
         graph_module.recompile()

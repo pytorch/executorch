@@ -4,9 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import functools
 import os
 import platform
 import re
+
+# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
+# here rather than in the package's __init__.
+from executorch.backends.qualcomm import setup_qnn_sdk
+
+setup_qnn_sdk()
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -25,25 +32,31 @@ def _get_qnn_host_lib_dir_name() -> str:
     return "x86_64-linux-clang"
 
 
-def get_sdk_build_id():
-    qnn_sdk_root = os.environ.get("QNN_SDK_ROOT")
-    if not qnn_sdk_root:
-        raise EnvironmentError(
-            "QNN_SDK_ROOT must be set to query the QNN SDK build id."
-        )
+@functools.cache
+def _get_sdk_build_id(qnn_sdk_root: str):
     htp_library_path = os.path.join(
         qnn_sdk_root,
         "lib",
         _get_qnn_host_lib_dir_name(),
         get_qnn_lib_name("QnnHtp"),
     )
-    # The GetQnnSdkBuildId API can be used without needing to create a backend first, so it works regardless of which backend is used.
-    sdk_build_id = PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
-    return sdk_build_id
+    return PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
+
+
+def get_sdk_build_id():
+    qnn_sdk_root = os.environ.get("QNN_SDK_ROOT")
+    if not qnn_sdk_root:
+        raise EnvironmentError(
+            "QNN_SDK_ROOT must be set to query the QNN SDK build id."
+        )
+    return _get_sdk_build_id(qnn_sdk_root)
 
 
 def is_qnn_sdk_version_less_than(target_version):
-    current_version = get_sdk_build_id()
+    try:
+        current_version = get_sdk_build_id()
+    except Exception:
+        return True
 
     match = re.search(r"v(\d+)\.(\d+)", current_version)
     if match:
@@ -59,7 +72,10 @@ def is_qnn_sdk_version_less_than(target_version):
 
 
 def is_qnn_sdk_version_greater_than(target_version):
-    current_version = get_sdk_build_id()
+    try:
+        current_version = get_sdk_build_id()
+    except Exception:
+        return False
 
     match = re.search(r"v(\d+)\.(\d+)", current_version)
     if match:

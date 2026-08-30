@@ -16,8 +16,7 @@ subsequent stages (for example, JIT or hardware-specific compilers) consume.
 """
 
 import logging
-from itertools import count
-from typing import cast, Dict, final, List
+from typing import cast, final, List
 
 import torch
 
@@ -34,13 +33,14 @@ from executorch.backends.arm.process_node import (
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import (
     TOSA_CONTROL_FLOW_REGION_NAME_META,
+    TOSA_CONTROL_FLOW_SOURCE_NODE_META,
     TOSA_TENSOR_NAME_META,
 )
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
-from torch.fx import Graph, GraphModule, Node
+from torch.fx import GraphModule, Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -53,78 +53,6 @@ def _qualify_control_flow_region_name(
     if parent_region_name is None:
         return child_region_name
     return f"{parent_region_name}__{child_region_name}"
-
-
-def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
-    """Assign deterministic output IDs to leaf outputs.
-
-    Flattens the output structure and assigns the external ID
-    based on the leaf position in the exported output tuple/list.
-
-    Args:
-        ep_graph (Graph): FX graph produced by export preprocessing.
-
-    Returns:
-        dict[str, int]: Mapping from *leaf output node name* to external output index.
-
-    """
-    node2external_id = {}
-
-    def _collect_leaves(arg, nodes):
-        # Collect only FX Nodes that are actual outputs
-        # (ignore ints/None/etc inside structured outputs).
-        if isinstance(arg, Node):
-            nodes.append(arg)
-        elif isinstance(arg, (list, tuple)):
-            for a in arg:
-                _collect_leaves(a, nodes)
-
-    out = ep_graph.output_node()
-    out_leaves: list[Node] = []
-    # First argument of output is the structured container (tuple/list) of outputs
-    _collect_leaves(out.args[0], out_leaves)
-
-    # Map each output leaf's name to its position
-    node2external_id = {leaf.name: idx for idx, leaf in enumerate(out_leaves)}
-
-    return node2external_id
-
-
-def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
-    """Reorder graph outputs to match ascending external IDs.
-
-    Args:
-        graph_module (GraphModule): Graph to reorder in place.
-        node_to_id_map (dict[str, int]): Mapping from node name to output index.
-
-    Returns:
-        GraphModule: Updated graph module with deterministic output ordering.
-
-    """
-
-    def _external_id(n: Node, node_2_id, fallback: int) -> int:
-        """Return the external ID for ``n`` or ``fallback`` when absent."""
-        return node_2_id.get(n.name, fallback)
-
-    out_node = graph_module.graph.output_node()
-    out_list = cast(tuple, out_node.args[0])
-    _counter = count()
-
-    # sort nodes by the key that is id
-    def _sort_key(t: Node) -> int:
-        """Key function that orders outputs by external ID or position."""
-        return _external_id(t, node_to_id_map, next(_counter))
-
-    orig_ord = tuple(sorted(out_list, key=_sort_key))
-
-    current_order = tuple(out_list)
-    if orig_ord != current_order:
-        replacement = list(orig_ord) if isinstance(out_node.args[0], list) else orig_ord
-        out_node.args = (replacement,)
-        graph_module.graph.lint()
-        graph_module.recompile()
-
-    return graph_module
 
 
 def _get_matching_fake_tensor(node: Node):
@@ -303,6 +231,10 @@ class TOSABackend(BackendDetails):
 
         for submodule_input, submodule_arg in zip(submodule_inputs, args, strict=True):
             submodule_input.meta["val"] = _get_matching_fake_tensor(submodule_arg)
+            # Keep the parent operand reachable from the branch placeholder.
+            # Passes that must rewrite constants can then follow parameters and
+            # buffers across one or more nested control-flow boundaries.
+            submodule_input.meta[TOSA_CONTROL_FLOW_SOURCE_NODE_META] = submodule_arg
 
         output_node = submodule.graph.output_node()
         if isinstance(output_node.args[0], Node):
@@ -376,9 +308,7 @@ class TOSABackend(BackendDetails):
                     )
 
         tosa_spec = compile_spec.tosa_spec
-        node_to_id_map = _annotate_external_ids(graph_module.graph)
         artifact_path = compile_spec._get_intermediate_path()
-        output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
@@ -391,12 +321,6 @@ class TOSABackend(BackendDetails):
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
         node_visitors = get_node_visitors(tosa_spec, debug_hook)
-
-        if output_order_workaround:
-            logger.debug("Re-sorting outputs during TOSA lowering.")
-            graph_module = _sort_outputs(graph_module, node_to_id_map)
-        else:
-            logger.debug("No re-sorting outputs (workaround) during TOSA lowering.")
 
         _annotate_control_flow_region_names(graph_module, submodule_name)
 
@@ -486,6 +410,5 @@ class TOSABackend(BackendDetails):
                 compile_spec._get_intermediate_path()
             )
             .dump_debug_info(compile_spec.tosa_debug_mode)
-            .set_output_order_workaround(compile_spec.output_order_workaround)
             ._set_tosa_dev_mode(compile_spec.tosa_dev_mode)
         )

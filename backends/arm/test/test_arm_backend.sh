@@ -143,7 +143,6 @@ test_run_tosa() {
 test_pytest_ops_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
@@ -153,7 +152,6 @@ test_pytest_ops_ethos_u55() {
 test_pytest_models_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -201,7 +199,6 @@ test_run_ethos_u55() {
 test_pytest_ops_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
@@ -212,7 +209,6 @@ test_pytest_ops_ethos_u85() {
 test_pytest_models_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -343,8 +339,6 @@ test_deit_e2e_ethos_u() {
 test_model_smollm2_135M_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
-
     # Build pte for smollm2
     python3 -m extension.llm.export.export_llm \
         base.model_class=smollm2 \
@@ -418,70 +412,19 @@ test_smaller_stories_llama_vkml() {
     _test_smaller_stories_llama vgf
 }
 
-_get_required_text_section_bytes() {
-    local elf=$1
-    local size_tool="arm-none-eabi-size"
-    local value
+test_runtime_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation"
 
-    command -v "${size_tool}" >/dev/null \
-        || { echo "Could not find ${size_tool} on PATH" >&2; exit 1; }
+    local ctest_build_dir="${et_root_dir}/arm_test/ethosu_runtime_tests"
+    cmake \
+        -S "${et_root_dir}/backends/arm/runtime/tests/ethos-u" \
+        -B "${ctest_build_dir}" \
+        -DEXECUTORCH_ROOT="${et_root_dir}"
 
-    value=$("${size_tool}" -A --radix=10 "${elf}" |
-        awk '$1 == ".text" { print $2; found=1 } END { exit !found }')
-    if [[ -z "${value}" ]]; then
-        echo "Could not read .text size from ${elf}" >&2
-        exit 1
-    fi
-
-    echo "${value}"
-}
-
-_test_runner_size_optimization() {
-    local output_root="arm_test/test_run"
-    local default_output="${output_root}/runner_size_default"
-    local optimized_output="${output_root}/runner_size_optimized"
-    local min_text_saving_bytes=$((50 * 1024))
-
-    echo "${TEST_SUITE_NAME}: Compare runner text size with EXECUTORCH_OPTIMIZE_SIZE"
-    backends/arm/scripts/build_executor_runner.sh \
-        --pte=semihosting \
-        --output="${default_output}"
-
-        backends/arm/scripts/build_executor_runner.sh \
-        --pte=semihosting \
-        --output="${optimized_output}" \
-        --extra_build_flags="-DEXECUTORCH_OPTIMIZE_SIZE=ON"
-
-    local default_text
-    local optimized_text
-    local text_saving
-    default_text=$(_get_required_text_section_bytes "${default_output}/arm_executor_runner")
-    optimized_text=$(_get_required_text_section_bytes "${optimized_output}/arm_executor_runner")
-    text_saving=$((default_text - optimized_text))
-
-    echo "${TEST_SUITE_NAME}: default .text=${default_text} bytes"
-    echo "${TEST_SUITE_NAME}: optimized .text=${optimized_text} bytes"
-    if (( text_saving < min_text_saving_bytes )); then
-        echo "Expected EXECUTORCH_OPTIMIZE_SIZE to reduce .text by at least ${min_text_saving_bytes} bytes, got default=${default_text} optimized=${optimized_text} saving=${text_saving}" >&2
-        exit 1
-    fi
-}
-
-test_memory_allocation() {
-    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
-
-    mkdir -p arm_test/test_run
-    # Ethos-U85
-    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
-    python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
-            --require "model_pte_program_size" "<= 3200 B" \
-            --require "method_allocator_planned" "<= 64 B" \
-            --require "method_allocator_loaded" "<= 1024 B" \
-            --require "method_allocator_input" "<= 16 B" \
-            --require "Total DRAM used" "<= 0.06 KiB"
-
-    _test_runner_size_optimization
+    ctest --test-dir "${ctest_build_dir}" \
+        --output-on-failure \
+        --no-tests=error \
+        -L memory_allocation
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

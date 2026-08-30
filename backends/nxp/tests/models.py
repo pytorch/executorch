@@ -1,5 +1,4 @@
-# Copyright (c) 2024-2026 NXP
-# All rights reserved.
+# Copyright 2024-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -400,11 +399,11 @@ class PadConvModule(torch.nn.Module):
 
 
 class MaxPool2dModule(torch.nn.Module):
-    def __init__(self, padding=0):
+    def __init__(self, padding=0, kernel_size=3, stride=2):
         super().__init__()
 
         self.max_pool2d = torch.nn.MaxPool2d(
-            kernel_size=3, stride=2, padding=padding, dilation=1
+            kernel_size=kernel_size, stride=stride, padding=padding, dilation=1
         )
 
     def forward(self, x):
@@ -426,7 +425,7 @@ class MaxPool2dConvModule(torch.nn.Module):
 
 
 class AvgPool2dModule(torch.nn.Module):
-    def __init__(self, count_include_pad, padding=0, kernel_size=3, stride=2):
+    def __init__(self, count_include_pad=True, padding=0, kernel_size=3, stride=2):
         super().__init__()
 
         self.avg_pool = torch.nn.AvgPool2d(

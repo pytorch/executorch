@@ -14,8 +14,10 @@ ${layout_declare_ubo(2, "int", "numel")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 void main() {
-  int tid = int(gl_GlobalInvocationID.x);
+  int tid = int(linear_idx_from_gid());
   if (tid >= numel) {
     return;
   }

@@ -13,6 +13,8 @@
 #include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+
 namespace vkcompute {
 
 class ComputeGraph;
@@ -30,8 +32,8 @@ class PrepackNode final {
   PrepackNode(
       ComputeGraph& graph,
       const vkapi::ShaderInfo& shader,
-      const utils::uvec3& global_workgroup_size,
-      const utils::uvec3& local_workgroup_size,
+      const GlobalWorkGrid& gwg,
+      const LocalWorkGroup& lwg,
       const ValueRef tref,
       const ValueRef packed,
       const vkapi::ParamsBindList& params,
@@ -51,9 +53,8 @@ class PrepackNode final {
  protected:
   uint32_t node_id_;
   const vkapi::ShaderInfo shader_;
-  vkapi::ShaderInfo noop_shader_;
-  const utils::uvec3 global_workgroup_size_;
-  const utils::WorkgroupSize local_workgroup_size_;
+  GlobalWorkGrid gwg_;
+  const LocalWorkGroup lwg_;
   const ValueRef tref_;
   const ValueRef packed_;
   const vkapi::ParamsBindList params_;

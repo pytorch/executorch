@@ -101,6 +101,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE "Build the ETDump Apple extension"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM_APPLE "Build the LLM Apple extension" BOOL OFF
 )
 define_overridable_option(
@@ -123,7 +127,6 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_APPLE "Build the Apple extension" BOOL OFF
 )
-define_overridable_option(EXECUTORCH_BUILD_MPS "Build the MPS backend" BOOL OFF)
 define_overridable_option(EXECUTORCH_BUILD_MLX "Build the MLX backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" BOOL OFF
@@ -192,6 +195,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_ROCM "Build the CUDA/AOTI backend against ROCm" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
 )
 define_overridable_option(
@@ -229,8 +235,8 @@ define_overridable_option(
   ${_default_executorch_build_cpuinfo}
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_SHARED "Build a consolidated ExecuTorch shared library" BOOL
-  OFF
+  EXECUTORCH_BUILD_SHARED
+  "Build a consolidated ExecuTorch shared library (Linux and macOS)" BOOL OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default
@@ -349,9 +355,22 @@ define_overridable_option(
 # At this point all the options should be configured with their final value.
 # ------------------------------------------------------------------------------
 
-check_required_options_on(
-  IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+# The tracer needs the etdump target, not the whole devtools umbrella. A pybind,
+# shared, or Apple ETDump build adds that target on its own, so accept any of
+# those routes rather than forcing an option that also pulls in submodules a
+# wheel does not check out. Skip the check whenever the caller asked for the
+# tracer explicitly too: an Apple preset turns the tracer on for the whole
+# runtime, so someone switching only the Apple ETDump extension off would
+# otherwise trip a devtools requirement they never asked about.
+if(NOT EXECUTORCH_BUILD_PYBIND
+   AND NOT EXECUTORCH_BUILD_SHARED
+   AND NOT EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE
+   AND NOT EXECUTORCH_BUILD_EXTENSION_APPLE
 )
+  check_required_options_on(
+    IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+  )
+endif()
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
@@ -373,6 +392,16 @@ check_required_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_APPLE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+)
+
+# The wrapper links the profiler and the core Apple extension. The profiler only
+# records anything when the runtime was compiled with the tracing hooks enabled,
+# and it needs the etdump target, which the root CMakeLists adds for this build,
+# not the whole devtools umbrella.
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE REQUIRES
+  EXECUTORCH_ENABLE_EVENT_TRACER EXECUTORCH_BUILD_EXTENSION_APPLE
+  EXECUTORCH_BUILD_EXTENSION_MODULE
 )
 
 check_required_options_on(
@@ -461,6 +490,14 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_CUDA REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM CONFLICTS_WITH EXECUTORCH_BUILD_CUDA
 )
 
 check_required_options_on(

@@ -18,7 +18,7 @@ signature = "EthosUBackend.preprocess(edge_program: torch.export.exported_progra
 
 [python.EthosUCompileSpec]
 kind = "class"
-signature = "EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini')"
+signature = "EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None)"
 
 [python.EthosUCompileSpec.DebugMode]
 kind = "enum"
@@ -91,6 +91,38 @@ signature = "EthosUQuantizer.transform_for_annotation(self, model: 'GraphModule'
 [python.EthosUQuantizer.validate]
 kind = "function"
 signature = "EthosUQuantizer.validate(self, model: 'GraphModule') -> 'None'"
+
+[python.VelaExternalBlockPlacements]
+kind = "class"
+signature = "VelaExternalBlockPlacements(cmd_data: str | None = None, weight_data: str | None = None) -> None"
+
+[python.VelaExternalBlockPlacements.__delattr__]
+kind = "function"
+signature = "VelaExternalBlockPlacements.__delattr__(self, name)"
+
+[python.VelaExternalBlockPlacements.__eq__]
+kind = "function"
+signature = "VelaExternalBlockPlacements.__eq__(self, other)"
+
+[python.VelaExternalBlockPlacements.__hash__]
+kind = "function"
+signature = "VelaExternalBlockPlacements.__hash__(self)"
+
+[python.VelaExternalBlockPlacements.__post_init__]
+kind = "function"
+signature = "VelaExternalBlockPlacements.__post_init__(self) -> None"
+
+[python.VelaExternalBlockPlacements.__repr__]
+kind = "function"
+signature = "VelaExternalBlockPlacements.__repr__(self)"
+
+[python.VelaExternalBlockPlacements.__setattr__]
+kind = "function"
+signature = "VelaExternalBlockPlacements.__setattr__(self, name, value)"
+
+[python.VelaExternalBlockPlacements.to_block_placements]
+kind = "function"
+signature = "VelaExternalBlockPlacements.to_block_placements(self) -> dict[str, str]"
 
 [python.VgfBackend]
 kind = "class"

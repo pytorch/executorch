@@ -23,9 +23,27 @@ jobs:
       backend: arm
       flows: >-
         ${{ github.event_name == 'pull_request'
-            && '["arm_tosa_fp", "arm_vgf_fp"]'
-            || '["arm_tosa_fp", "arm_tosa_int", "arm_ethos_u55", "arm_ethos_u85", "arm_vgf_fp", "arm_vgf_int"]' }}
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+            && '["arm_tosa_fp"]'
+            || '["arm_tosa_fp", "arm_tosa_int",
+                 "arm_ethos_u55", "arm_ethos_u85"]' }}
+      ref: ${{ github.event_name == 'pull_request'
+               && github.event.pull_request.head.sha
+               || github.sha }}
       timeout: 120
       run-linux: true
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+
+  test-arm-vgf:
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: arm-vgf
+      flows: >-
+        ${{ github.event_name == 'pull_request'
+            && '["arm_vgf_fp"]'
+            || '["arm_vgf_fp", "arm_vgf_int"]' }}
+      ref: ${{ github.event_name == 'pull_request'
+               && github.event.pull_request.head.sha
+               || github.sha }}
+      timeout: 120
+      run-linux: true
+      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk

@@ -4,14 +4,15 @@
 # LICENSE file in the root directory of this source tree.
 
 solution:
-  created-for: CMSIS-Toolbox@2.13.0
+  created-for: CMSIS-Toolbox@2.14.1
   cdefault:
   compiler: GCC@14.3.1
 
   packs:
     - pack: ARM::CMSIS@>=6.0.0
+    - pack: ARM::CMSIS-NN@7.0.0
     - pack: ARM::Cortex_DFP@>=1.1.0
-    - pack: PyTorch::ExecuTorch@1.3.0-stage
+    - pack: PyTorch::ExecuTorch
 
   target-types:
     - type: ARMCM55
