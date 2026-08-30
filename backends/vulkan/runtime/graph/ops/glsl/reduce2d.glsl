@@ -59,23 +59,26 @@ int tid_to_smi(const ivec2 tid) {
 // with the accumulator.
 #define POSTPROCESS(accum) ${POSTPROCESS}
 
-void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
+void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos, const bool in_bounds) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
-  scan_pos[reduce_dim1] = 0;
-  scan_pos[reduce_dim2] = 0;
-  vec4 accum = INIT_ACCUM(load_texel(tin, scan_pos));
-  
-  // First dimension reduction
-  scan_pos[reduce_dim1] = tid.x;
-  for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim1);
-       i += NWORKERS, scan_pos[reduce_dim1] += NWORKERS) {
-    
-    // Second dimension reduction
+  vec4 accum = vec4(0);
+  if (in_bounds) {
+    scan_pos[reduce_dim1] = 0;
     scan_pos[reduce_dim2] = 0;
-    for (int j = 0; j < safe_idx(tin_sizes, reduce_dim2); j++, scan_pos[reduce_dim2]++) {
-      accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
+    accum = INIT_ACCUM(load_texel(tin, scan_pos));
+
+    // First dimension reduction
+    scan_pos[reduce_dim1] = tid.x;
+    for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim1);
+         i += NWORKERS, scan_pos[reduce_dim1] += NWORKERS) {
+
+      // Second dimension reduction
+      scan_pos[reduce_dim2] = 0;
+      for (int j = 0; j < safe_idx(tin_sizes, reduce_dim2); j++, scan_pos[reduce_dim2]++) {
+        accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
+      }
     }
   }
   
@@ -84,7 +87,7 @@ void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   barrier();
   
   // Main thread aggregates results
-  if (tid.x == 0) {
+  if (in_bounds && tid.x == 0) {
     // Iterate over the partial outputs to obtain the overall output
     int group_i = tid.y * NWORKERS;
     accum = shared_vecs[group_i++];
@@ -121,9 +124,10 @@ void main() {
       gl_LocalInvocationID[reduce_dim1],
       gl_LocalInvocationID[group_dim]);
 
-  if (any(greaterThanEqual(scan_pos, tin_limits))) {
-    return;
-  }
+  // Do not return early here. The routines below contain barrier() calls, and
+  // returning would leave them in non-uniform control flow, which is undefined
+  // and hangs the GPU on some drivers. Carry the bounds check instead.
+  const bool in_bounds = !any(greaterThanEqual(scan_pos, tin_limits));
 
-  reduce_2d_non_packed_dim(tid, scan_pos);
+  reduce_2d_non_packed_dim(tid, scan_pos, in_bounds);
 }
