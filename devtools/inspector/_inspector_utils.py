@@ -445,7 +445,6 @@ def calculate_mse(ref_values: ProgramOutput, values: ProgramOutput):
 
     results = []
     for ref_value, value in zip(ref_values, values):
-        # TODO T171811011: extend the implementation of each metrics function to support value types other than tensor type
         if isinstance(ref_value, torch.Tensor) and isinstance(value, torch.Tensor):
             results.append(
                 mean_squared_error(ref_value.to(torch.float32), value.to(torch.float32))
