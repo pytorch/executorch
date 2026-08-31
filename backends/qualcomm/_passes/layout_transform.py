@@ -353,6 +353,14 @@ class LayoutTransform(ExportPass):
                     self.traverse(node, graph_module)
             self.insert_permute, self.transformed_tag = True, QCOM_AXIS_ORDER
 
+            for node in graph.nodes:
+                if hasattr(node, "meta"):
+                    # Pop QCOM_AXIS_ORDER written by the to-edge LayoutTransform pass.
+                    # Without this, the main for-loop below would see is_transformed_node=True
+                    # for every sensitive node (deepcopy carries the tag from to-edge) and
+                    # skip them entirely, so no permute nodes would ever be inserted.
+                    node.meta.pop(QCOM_AXIS_ORDER, "")
+
         for node in sensitive_nodes:
             if not self.is_transformed_node(node):
                 self.mark_as_transformed(node)
