@@ -42,35 +42,35 @@ UNWANTED_OPS = [
 
 
 class ExportLlamaLibTest(unittest.TestCase):
-    def test_core_ml_export_reaches_its_lowering(self):
-        """The Core ML branch must be reachable, not stopped by its own guard.
-
-        The guard used to read a backend config field that no longer existed, so any Core ML
-        export raised AttributeError before reaching the lowering. Patching the lowering to raise
-        a marker keeps this off macOS and away from coremltools: what is asserted is that control
-        arrives there at all.
-
-        The macOS Core ML llama job that would otherwise catch this lives in the trunk workflow,
-        which does not start for a change to this file, so without this test nothing on a pull
-        request notices the field coming back.
-        """
+    def _assert_export_reaches(self, target, **backends):
+        """Run an export and assert which lowering it routes to."""
         llm_config = LlmConfig()
         llm_config.backend.coreml.enabled = True
-        # The Core ML recipe rejects dynamic shapes, and that validation runs first.
+        for name, enabled in backends.items():
+            getattr(llm_config.backend, name).enabled = enabled
+        # Core ML and QNN reject dynamic shapes, and _validate_args runs before the lowering.
         llm_config.model.enable_dynamic_shape = False
 
-        class _ReachedCoreMLLowering(Exception):
-            pass
-
-        def _marker(*args, **kwargs):
-            raise _ReachedCoreMLLowering
-
         with patch(
-            "executorch.examples.models.llama.export_llama_lib._to_edge_and_lower_llama_coreml",
-            _marker,
-        ):
-            with self.assertRaises(_ReachedCoreMLLowering):
+            f"executorch.examples.models.llama.export_llama_lib.{target}",
+            side_effect=RuntimeError("reached"),
+        ) as lowering:
+            with self.assertRaises(RuntimeError):
                 _export_llama(llm_config)
+        lowering.assert_called_once()
+
+    def test_core_ml_alone_reaches_the_core_ml_lowering(self):
+        """The guard used to read a backend config field that no longer existed, so this raised
+        AttributeError before reaching any lowering."""
+        self._assert_export_reaches("_to_edge_and_lower_llama_coreml")
+
+    def test_core_ml_with_qnn_reaches_the_combined_lowering(self):
+        """The other case the removed read broke, and the one that pins the exclusion clause.
+
+        Core ML with QNN must fall through to the combined lowering, which still lowers Core ML but
+        keeps the QNN partitioner. Without this, deleting the whole clause passes.
+        """
+        self._assert_export_reaches("_to_edge_and_lower_llama", qnn=True)
 
     def test_has_expected_ops_and_op_counts(self):
         """
