@@ -29,9 +29,11 @@ ${layout_declare_spec_const(C, "int", "concat_dim", "0")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 void main() {
   // Only one thread needs to update the offset
-  if (gl_GlobalInvocationID.x != 0) {
+  if (linear_idx_from_gid() != 0) {
     return;
   }
 

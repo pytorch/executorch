@@ -22,7 +22,7 @@ namespace vkcompute {
 // Shader dispatch utilities
 //
 
-utils::uvec3 pick_q8ta_im2col_global_wg_size(
+GlobalWorkGrid pick_q8ta_im2col_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -32,31 +32,32 @@ utils::uvec3 pick_q8ta_im2col_global_wg_size(
 
   const ValueRef im2col_output = args.at(0).refs.at(0);
 
-  std::vector<int64_t> im2col_sizes = graph->sizes_of(im2col_output);
-  const uint32_t K = utils::safe_downcast<uint32_t>(im2col_sizes[0]);
-  const uint32_t H = utils::safe_downcast<uint32_t>(im2col_sizes[1]);
-  const uint32_t W = utils::safe_downcast<uint32_t>(im2col_sizes[2]);
+  const uint32_t N = graph->size_at<uint32_t>(-4, im2col_output);
+  const uint32_t K = graph->size_at<uint32_t>(-3, im2col_output);
+  const uint32_t H = graph->size_at<uint32_t>(-2, im2col_output);
+  const uint32_t W = graph->size_at<uint32_t>(-1, im2col_output);
 
   const uint32_t K4 = utils::div_up_4(K);
   const uint32_t W4 = utils::div_up_4(W);
 
   // Each thread handles one 4x4 block in the output
-  return {K4 * W4 * H, 1, 1};
+  return graph->create_linear_gwg(
+      utils::safe_downcast<uint32_t>(static_cast<uint64_t>(K4) * W4 * H * N));
 }
 
-utils::uvec3 pick_q8ta_im2col_local_wg_size(
+LocalWorkGroup pick_q8ta_im2col_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
   (void)args;
   (void)resize_args;
-  (void)global_workgroup_size;
+  (void)gwg;
 
-  return {64, 1, 1};
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 //
@@ -70,6 +71,7 @@ std::vector<int64_t> calculate_q8ta_im2col_sizes(
     const ValueRef& kernel_size,
     const ValueRef& groups) {
   std::vector<int64_t> in_sizes = graph->sizes_of(input);
+  const int64_t batch = utils::val_at(-4, in_sizes);
   const int64_t in_channels = utils::val_at(-3, in_sizes);
 
   std::vector<int64_t> out_sizes = graph->sizes_of(output);
@@ -93,7 +95,7 @@ std::vector<int64_t> calculate_q8ta_im2col_sizes(
   const int64_t W = utils::align_up_4(out_width);
   const int64_t H = out_height;
 
-  return {K, H, W};
+  return {batch, K, H, W};
 }
 
 //
@@ -102,7 +104,7 @@ std::vector<int64_t> calculate_q8ta_im2col_sizes(
 
 // resize_args = { input, kernel_size, stride, padding, dilation, groups }
 //
-// The im2col scratch tensor is [K, H_out, align_up_4(W_out)] where K (the
+// The im2col scratch tensor is [N, K, H_out, align_up_4(W_out)] where K (the
 // flattened conv window, channel/kernel-derived) is shape-independent and
 // H_out/W_out are the conv output spatial dims. The downstream PW GEMM that
 // consumes this scratch is resized separately (it preserves H/W). Without this,
@@ -122,6 +124,7 @@ void resize_q8ta_im2col_node(
   const ValueRef groups = resize_args.at(5);
 
   const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  const int64_t batch = utils::val_at(-4, in_sizes);
 
   // Conv output H/W from the current input.
   const std::vector<int64_t> out_hw = calc_out_sizes_hw(
@@ -146,7 +149,7 @@ void resize_q8ta_im2col_node(
   const int64_t K = flattened_kernel_len * groups_val;
   const int64_t W = utils::align_up_4(out_width);
 
-  graph->virtual_resize(im2col_out, {K, out_height, W});
+  graph->virtual_resize(im2col_out, {batch, K, out_height, W});
 }
 
 //
@@ -212,8 +215,8 @@ void add_q8ta_im2col_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_im2col_global_wg_size,
-      pick_q8ta_im2col_local_wg_size,
+      pick_q8ta_im2col_gwg,
+      pick_q8ta_im2col_lwg,
       // Inputs and Outputs
       {{packed_int8_im2col, vkapi::kWrite}, {packed_int8_input, vkapi::kRead}},
       // Shader params buffers

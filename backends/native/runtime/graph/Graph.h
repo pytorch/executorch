@@ -14,7 +14,7 @@
 
 namespace ptn {
 
-// A pure function body: the index arena that owns the Nodes and Values the Id
+// A pure function body: the index lists that own the Nodes and Values the Id
 // handles point into, plus the ordered graph I/O and the subgraph storage for
 // higher-order-op branch bodies. Mirrors the schema Graph; stateful
 // method-level bindings (constants / output specs / mutable buffers) live on
@@ -41,9 +41,9 @@ namespace ptn {
 // which moves no storage and invalidates no id. Nodes are never erased, since
 // dropping one would shift every later NodeId.
 struct Graph {
-  std::vector<Node> nodes; // node arena, incl. placeholder / output nodes
+  std::vector<Node> nodes; // node list, incl. placeholder / output nodes
   std::vector<NodeId> schedule; // execution / topological order over `nodes`
-  std::vector<Value> values; // SSA-value arena; ValueId indexes this
+  std::vector<Value> values; // SSA-value list; ValueId indexes this
   std::vector<ValueId> input_ids; // graph input values, in order
   std::vector<ValueId> output_ids; // graph output values, in order
   std::vector<Graph> subgraphs; // HOP branch bodies; GraphId indexes this
@@ -61,6 +61,10 @@ struct Graph {
   // when the nodes are already in dataflow position — as they are straight off
   // the wire, before any mutation. A graph is not executable until this runs:
   // `schedule` starts empty, and an engine's work list is seeded from it.
+  //
+  // Throws std::runtime_error if `schedule` is already set. Re-running would
+  // overwrite an order that a mutation made authoritative, so this is a
+  // load-time step, not a reset.
   void initialize_schedule();
 
   // Recompute every Value's producer / consumers from the nodes, clearing the
