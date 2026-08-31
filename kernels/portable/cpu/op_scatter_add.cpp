@@ -67,9 +67,6 @@ Tensor& scatter_add_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(self, src, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(
-      ctx, tensor_is_default_dim_order(index), InvalidArgument, out);
-
   if (dim < 0) {
     dim += nonzero_dim(self);
   }

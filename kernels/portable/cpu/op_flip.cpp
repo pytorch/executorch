@@ -21,22 +21,6 @@ bool check_flip_args(const Tensor& in, IntArrayRef dims, const Tensor& out) {
   return check_dim_list_is_valid(in, dims);
 }
 
-size_t unflip_flat_ix(size_t ix, const Tensor& in, ArrayRef<bool> flip_dim) {
-  size_t ix_coord[kTensorDimensionLimit];
-  indexToCoordinate(in, ix, ix_coord);
-
-  size_t unflip_coord[kTensorDimensionLimit];
-  for (const auto d : c10::irange(in.dim())) {
-    if (flip_dim[d]) {
-      unflip_coord[d] = in.size(d) - ix_coord[d] - 1;
-    } else {
-      unflip_coord[d] = ix_coord[d];
-    }
-  }
-
-  return coordinateToIndex(in, unflip_coord);
-}
-
 } // namespace
 
 Tensor& flip_out(
@@ -72,8 +56,22 @@ Tensor& flip_out(
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
+    const bool out_is_default = executorch::runtime::is_contiguous_dim_order(
+        out.dim_order().data(), out.dim_order().size());
+
     for (const auto ix : c10::irange(in.numel())) {
-      out_data[ix] = in_data[unflip_flat_ix(ix, in, flip_dim)];
+      // @lint-ignore CLANGTIDY facebook-hte-CArray
+      size_t coord[kTensorDimensionLimit];
+      indexToCoordinate(in, ix, coord);
+
+      // @lint-ignore CLANGTIDY facebook-hte-CArray
+      size_t src_coord[kTensorDimensionLimit];
+      for (const auto d : c10::irange(in.dim())) {
+        src_coord[d] = flip_dim[d] ? in.size(d) - coord[d] - 1 : coord[d];
+      }
+
+      out_data[out_is_default ? ix : coordinateToIndex(out, coord)] =
+          in_data[coordinateToIndex(in, src_coord)];
     }
   });
 

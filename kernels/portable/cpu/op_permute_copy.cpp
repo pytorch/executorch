@@ -71,8 +71,19 @@ Tensor& permute_copy_out(
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
+    const bool out_is_default = executorch::runtime::is_contiguous_dim_order(
+        out.dim_order().data(), out.dim_order().size());
+
     for (const auto i : c10::irange(out.numel())) {
-      out_data[i] =
+      size_t out_ix = i;
+      if (!out_is_default) {
+        // @lint-ignore CLANGTIDY facebook-hte-CArray
+        size_t out_coord[kTensorDimensionLimit];
+        indexToCoordinate(out, i, out_coord);
+        out_ix = coordinateToIndex(out, out_coord);
+      }
+
+      out_data[out_ix] =
           in_data[executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
               in, in_coord, trailing_dims_memo)];
       increment_coordinate_permuted(in, in_coord, dims);
