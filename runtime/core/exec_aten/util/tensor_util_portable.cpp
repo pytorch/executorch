@@ -46,7 +46,7 @@ bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
     for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
-          "    dim_order(%zu): %zu",
+          "    dim_order(%zd): %zu",
           d,
           static_cast<size_t>(t.dim_order()[d]));
     }
@@ -67,7 +67,7 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
     for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
-          "    dim_order(%zu): %zu",
+          "    dim_order(%zd): %zu",
           d,
           static_cast<size_t>(t.dim_order()[d]));
     }
@@ -84,7 +84,7 @@ bool tensor_is_default_dim_order(torch::executor::Tensor t) {
     for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
-          "    dim_order(%zu): %zu",
+          "    dim_order(%zd): %zu",
           d,
           static_cast<size_t>(t.dim_order()[d]));
     }
@@ -101,7 +101,7 @@ bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
     for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
-          "    dim_order(%zu): %zu",
+          "    dim_order(%zd): %zu",
           d,
           static_cast<size_t>(t.dim_order()[d]));
     }
@@ -129,7 +129,7 @@ bool tensors_have_same_dim_order(
 
   ET_CHECK_OR_RETURN_FALSE(
       all_contiguous || all_channels_last,
-      "%zd input tensors have different dim orders",
+      "%zu input tensors have different dim orders",
       tensor_list.size());
 
   return true;

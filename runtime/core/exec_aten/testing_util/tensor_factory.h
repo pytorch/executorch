@@ -265,8 +265,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 
@@ -310,8 +310,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 
@@ -795,8 +795,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 
@@ -843,8 +843,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 
