@@ -9,6 +9,7 @@
 #include <string>
 
 #include <executorch/backends/native/runtime/graph/Argument.h>
+#include <executorch/backends/native/runtime/graph/Node.h>
 #include <executorch/backends/native/runtime/graph/Scalar.h>
 #include <executorch/backends/native/runtime/graph/TensorMeta.h>
 
@@ -29,5 +30,8 @@ std::string to_string(const Scalar& scalar);
 // Compact one-line form. A symbolic operand (one carrying a valid id) renders
 // as "%<id>"; a literal renders as its value.
 std::string to_string(const Argument& arg);
+
+// Single line, e.g. "a = aten.add.Tensor(x, y, alpha=1) -> %3".
+std::string to_string(const Node& node);
 
 } // namespace ptn
