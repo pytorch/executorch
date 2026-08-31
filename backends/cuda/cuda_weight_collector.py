@@ -165,6 +165,38 @@ def encode_cuda_weight_metadata(
     return bytes(output)
 
 
+def _validate_cuda_aoti_variant(
+    variant: CudaAotiVariant, has_fallback: bool, regular_sms: set[int]
+) -> None:
+    if variant.target_sm <= 0:
+        raise ValueError(f"Invalid CUDA target SM: {variant.target_sm}")
+    if variant.ptx_compute < 0 or variant.ptx_compute > variant.target_sm:
+        raise ValueError(
+            f"Invalid PTX compute target {variant.ptx_compute} for sm{variant.target_sm}"
+        )
+    if not variant.so_blob_key:
+        raise ValueError("CUDA AOTI variant is missing its shared-object key")
+    if variant.fallback_only:
+        if variant.ptx_compute == 0:
+            raise ValueError("CUDA fallback variant must contain PTX")
+        return
+    if variant.target_sm in regular_sms:
+        raise ValueError(f"Duplicate CUDA target SM: {variant.target_sm}")
+    regular_sms.add(variant.target_sm)
+    if has_fallback and variant.ptx_compute != 0:
+        raise ValueError("Regular CUDA variants cannot advertise PTX fallback")
+
+
+def _validate_cuda_aoti_variants(
+    variants: List[CudaAotiVariant], has_fallback: bool
+) -> None:
+    if sum(variant.fallback_only for variant in variants) > 1:
+        raise ValueError("CUDA AOTI metadata supports only one fallback variant")
+    regular_sms: set[int] = set()
+    for variant in variants:
+        _validate_cuda_aoti_variant(variant, has_fallback, regular_sms)
+
+
 def encode_cuda_multi_arch_metadata(
     variants: List[CudaAotiVariant], entries: List[CudaWeightEntry]
 ) -> bytes:
@@ -173,6 +205,7 @@ def encode_cuda_multi_arch_metadata(
         raise ValueError("CUDA AOTI metadata requires at least one variant")
 
     has_fallback = any(variant.fallback_only for variant in variants)
+    _validate_cuda_aoti_variants(variants, has_fallback)
     output = bytearray(
         CUDA_MULTI_ARCH_FALLBACK_MAGIC if has_fallback else CUDA_MULTI_ARCH_MAGIC
     )
@@ -182,34 +215,12 @@ def encode_cuda_multi_arch_metadata(
         output.extend(struct.pack("<I", len(encoded)))
         output.extend(encoded)
 
-    target_sms = set()
-    fallback_count = 0
     output.extend(struct.pack("<I", len(variants)))
     for variant in variants:
-        if variant.target_sm <= 0:
-            raise ValueError(f"Invalid CUDA target SM: {variant.target_sm}")
-        if not variant.fallback_only and variant.target_sm in target_sms:
-            raise ValueError(f"Duplicate CUDA target SM: {variant.target_sm}")
-        if variant.ptx_compute < 0 or variant.ptx_compute > variant.target_sm:
-            raise ValueError(
-                f"Invalid PTX compute target {variant.ptx_compute} for sm{variant.target_sm}"
-            )
-        if not variant.so_blob_key:
-            raise ValueError("CUDA AOTI variant is missing its shared-object key")
-        if variant.fallback_only:
-            fallback_count += 1
-            if variant.ptx_compute == 0:
-                raise ValueError("CUDA fallback variant must contain PTX")
-        else:
-            target_sms.add(variant.target_sm)
-            if has_fallback and variant.ptx_compute != 0:
-                raise ValueError("Regular CUDA variants cannot advertise PTX fallback")
         output.extend(struct.pack("<II", variant.target_sm, variant.ptx_compute))
         if has_fallback:
             output.extend(struct.pack("<I", int(variant.fallback_only)))
         write_string(variant.so_blob_key)
-    if fallback_count > 1:
-        raise ValueError("CUDA AOTI metadata supports only one fallback variant")
 
     output.extend(struct.pack("<I", len(entries)))
     for entry in entries:

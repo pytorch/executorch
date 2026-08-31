@@ -468,6 +468,45 @@ def _merge_delegate_variants(
     return variants
 
 
+def _load_merge_artifacts(
+    inputs: Sequence[CudaPteInput], fallback: Optional[CudaPteInput]
+) -> Tuple[List[_Artifact], Optional[_Artifact], List[Tuple[str, int]]]:
+    regular_artifacts = [_load_artifact(source) for source in inputs]
+    fallback_artifact = _load_artifact(fallback) if fallback is not None else None
+    artifacts = [*regular_artifacts]
+    if fallback_artifact is not None:
+        artifacts.append(fallback_artifact)
+
+    reference = regular_artifacts[0]
+    reference_identities = [delegate.identity for delegate in reference.delegates]
+    for candidate in artifacts[1:]:
+        _validate_programs(reference, candidate)
+        candidate_identities = [delegate.identity for delegate in candidate.delegates]
+        if candidate_identities != reference_identities:
+            raise ValueError(
+                f"CUDA delegate layout differs between {reference.source.pte_path} "
+                f"and {candidate.source.pte_path}"
+            )
+    return regular_artifacts, fallback_artifact, reference_identities
+
+
+def _prepare_merged_output(reference: _Artifact) -> Tuple[Program, NamedDataStore]:
+    merged_program = copy.deepcopy(reference.pte.program)
+    for plan in merged_program.execution_plan:
+        for delegate in plan.delegates:
+            if delegate.id == CUDA_BACKEND_ID:
+                delegate.compile_specs = [
+                    spec
+                    for spec in delegate.compile_specs
+                    if spec.key != "cuda_include_ptx"
+                ]
+
+    merged_store = NamedDataStore()
+    if reference.pte.named_data is not None:
+        merged_store.merge_named_data_store(reference.pte.named_data)
+    return merged_program, merged_store
+
+
 def merge_cuda_pte_files_with_provenance(
     inputs: Sequence[CudaPteInput], fallback: Optional[CudaPteInput] = None
 ) -> CudaPteMergeResult:
@@ -480,36 +519,11 @@ def merge_cuda_pte_files_with_provenance(
         raise ValueError("At least one regular CUDA PTE input is required")
     if len(inputs) + int(fallback is not None) < 2:
         raise ValueError("At least two CUDA PTE inputs are required")
-    regular_artifacts = [_load_artifact(source) for source in inputs]
-    fallback_artifact = _load_artifact(fallback) if fallback is not None else None
-    artifacts = [*regular_artifacts]
-    if fallback_artifact is not None:
-        artifacts.append(fallback_artifact)
+    regular_artifacts, fallback_artifact, reference_identities = _load_merge_artifacts(
+        inputs, fallback
+    )
     reference = regular_artifacts[0]
-    reference_identities = [delegate.identity for delegate in reference.delegates]
-
-    for candidate in artifacts[1:]:
-        _validate_programs(reference, candidate)
-        if [
-            delegate.identity for delegate in candidate.delegates
-        ] != reference_identities:
-            raise ValueError(
-                f"CUDA delegate layout differs between {reference.source.pte_path} "
-                f"and {candidate.source.pte_path}"
-            )
-
-    merged_program = copy.deepcopy(reference.pte.program)
-    for plan in merged_program.execution_plan:
-        for delegate in plan.delegates:
-            if delegate.id == CUDA_BACKEND_ID:
-                delegate.compile_specs = [
-                    spec
-                    for spec in delegate.compile_specs
-                    if spec.key != "cuda_include_ptx"
-                ]
-    merged_store = NamedDataStore()
-    if reference.pte.named_data is not None:
-        merged_store.merge_named_data_store(reference.pte.named_data)
+    merged_program, merged_store = _prepare_merged_output(reference)
 
     regular_delegates = [
         {delegate.identity: delegate.metadata for delegate in artifact.delegates}
@@ -585,9 +599,7 @@ def merge_cuda_pte_files(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Merge exact-SM CUDA PTEs with an optional explicit PTX fallback"
-        )
+        description=("Merge exact-SM CUDA PTEs with an optional explicit PTX fallback")
     )
     parser.add_argument(
         "--input-pte",
