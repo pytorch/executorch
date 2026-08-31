@@ -42,7 +42,7 @@ void resize_q8ta_pixel_shuffle_node(
 // Global wg picker: one thread per output int32 word. For a channels-packed
 // int8x4 output with channel block size 4, the number of output int words is
 // N * div_up_4(C_out) * H_out * W_out.
-utils::uvec3 pick_q8ta_pixel_shuffle_global_wg(
+GlobalWorkGrid pick_q8ta_pixel_shuffle_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -58,23 +58,23 @@ utils::uvec3 pick_q8ta_pixel_shuffle_global_wg(
   const int64_t c_words = utils::div_up(C, int64_t(4));
   const uint32_t total_words =
       utils::safe_downcast<uint32_t>(N * c_words * H * W);
-  return {total_words, 1u, 1u};
+  return graph->create_linear_gwg(total_words);
 }
 
-utils::uvec3 pick_q8ta_pixel_shuffle_local_wg(
+LocalWorkGroup pick_q8ta_pixel_shuffle_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
   // Linear (1D) dispatch: a flat 64-wide workgroup matches the pattern used
-  // by pick_square_local_wg_with_block_config in the linear case.
-  return {64u, 1u, 1u};
+  // by pick_square_lwg_with_block_config in the linear case.
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 } // namespace
@@ -178,8 +178,8 @@ void add_q8ta_pixel_shuffle_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_pixel_shuffle_global_wg,
-      pick_q8ta_pixel_shuffle_local_wg,
+      pick_q8ta_pixel_shuffle_gwg,
+      pick_q8ta_pixel_shuffle_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite}, {packed_int8_input, vkapi::kRead}},
       // Shader params buffers

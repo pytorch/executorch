@@ -528,10 +528,13 @@ class XNNPackConfig:
     Attributes:
         enabled: :)
         extended_ops: Whether to match more types of ops to delegates to XNNPack.
+        enable_bf16: Whether to delegate BF16 ops to XNNPack. The target runtime
+            must have hardware support for XNNPACK's BF16 kernels.
     """
 
     enabled: bool = False
     extended_ops: bool = False
+    enable_bf16: bool = False
 
 
 class CoreMLQuantize(str, Enum):
@@ -812,6 +815,8 @@ class LlmConfig:
             llm_config.backend.xnnpack.enabled = args.xnnpack
         if hasattr(args, "xnnpack_extended_ops"):
             llm_config.backend.xnnpack.extended_ops = args.xnnpack_extended_ops
+        if hasattr(args, "xnnpack_enable_bf16"):
+            llm_config.backend.xnnpack.enable_bf16 = args.xnnpack_enable_bf16
 
         # CoreML
         if hasattr(args, "coreml"):
