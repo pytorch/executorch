@@ -29,6 +29,7 @@ class TestQuantizationInputConfig(unittest.TestCase):
             soc_model=MagicMock(), backend_type=MagicMock()
         )
         self.assertIsNone(config.model_module)
+        self.assertIsNone(config.example_inputs)
         self.assertIsNone(config.calibration_data)
         self.assertIsNone(config.training_data)
         self.assertIsNone(config.quant_recipe)

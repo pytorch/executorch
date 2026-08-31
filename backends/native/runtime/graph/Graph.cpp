@@ -33,7 +33,7 @@ bool resolves(ValueId id, size_t size, const char* what) {
   if (!in_bounds(id, size)) {
     throw std::runtime_error(
         std::string("Graph::rebuild_def_use: ") + what + " id " +
-        std::to_string(id) + " does not address the value arena");
+        std::to_string(id) + " does not address the value list");
   }
   return true;
 }
@@ -62,6 +62,11 @@ const Graph& Graph::subgraph(GraphId id) const {
 }
 
 void Graph::initialize_schedule() {
+  if (!schedule.empty()) {
+    throw std::runtime_error(
+        "Graph::initialize_schedule: schedule is already set; identity order "
+        "is the execution order only before any mutation");
+  }
   schedule.resize(nodes.size());
   std::iota(schedule.begin(), schedule.end(), NodeId{0});
 }
@@ -89,7 +94,7 @@ void Graph::rebuild_def_use() {
       if (!resolves(in, values.size(), "input")) {
         continue;
       }
-      // Nodes are walked in arena order, so a repeated operand appends `ni`
+      // Nodes are walked in list order, so a repeated operand appends `ni`
       // consecutively; checking the tail is enough to keep this a set.
       std::vector<NodeId>& consumers = values[in].consumer_ids;
       if (consumers.empty() || consumers.back() != ni) {
