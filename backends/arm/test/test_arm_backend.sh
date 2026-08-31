@@ -12,6 +12,9 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 cd "${et_root_dir}"
 pwd
+
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
 scratch_dir=${et_root_dir}/examples/arm/arm-scratch
 setup_path_script=${scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
