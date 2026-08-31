@@ -40,14 +40,7 @@ std::string to_string(const TensorMeta& meta) {
     if (i != 0) {
       s += ",";
     }
-    const Dim& d = meta.sizes[i];
-    if (d.is_static()) {
-      s += std::to_string(d.min);
-    } else if (d.max < 0) {
-      s += std::to_string(d.min) + "..?";
-    } else {
-      s += std::to_string(d.min) + ".." + std::to_string(d.max);
-    }
+    s += std::to_string(meta.sizes[i]);
   }
   s += "]";
   return s;

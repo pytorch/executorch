@@ -21,7 +21,7 @@ namespace ptn {
 
 // One payload struct per kind of value an fx arg/kwarg can hold; the same set
 // of kinds as the schema ArgumentValue union, but in-graph references are
-// resolved to ValueIds (the deserializer turns SSA names into arena indices).
+// resolved to ValueIds (the deserializer turns SSA names into list indices).
 
 struct NoneArg {};
 

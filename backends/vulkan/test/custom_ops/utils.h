@@ -694,8 +694,8 @@ enum class CorrectnessStatus {
 struct ShaderTiming {
   std::string shader_name;
   std::vector<float> iter_timings_us; // Individual iteration timings
-  uint32_t global_wg_size[3] = {0, 0, 0};
-  uint32_t local_wg_size[3] = {0, 0, 0};
+  uint32_t gwg[3] = {0, 0, 0};
+  uint32_t lwg[3] = {0, 0, 0};
 
   float get_avg_time_us() const {
     if (iter_timings_us.empty()) {
@@ -730,8 +730,8 @@ class BenchmarkResult {
   void add_shader_timing(
       const std::string& shader_name,
       float time_us,
-      const uint32_t global_wg[3],
-      const uint32_t local_wg[3]);
+      const uint32_t gwg[3],
+      const uint32_t lwg[3]);
 
   // Get per-shader timing data
   const std::vector<ShaderTiming>& get_shader_timings() const {

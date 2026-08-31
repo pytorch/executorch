@@ -42,8 +42,8 @@ void add_index_select_channel_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       {{out, vkapi::kWrite}, {{in, idx}, vkapi::kRead}},
       {graph.sizes_ubo(out), graph.sizes_ubo(in)},
       // Push Constants
@@ -96,8 +96,8 @@ void add_index_select_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       {{out, vkapi::kWrite}, {{in, idx}, vkapi::kRead}},
       {graph.sizes_ubo(out), graph.create_params_buffer(params)},
       // Push Constants
