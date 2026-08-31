@@ -63,6 +63,7 @@ fbcode_target(
         "//executorch/backends/transforms:canonicalize_view_copy_permute_pass",
         "//executorch/backends/transforms:permute_view_meta",
         "//executorch/backends/transforms:fuse_duplicate_users_pass",
+        "//executorch/backends/transforms:propagate_view_copy_permute_pass",
         "//executorch/backends/transforms:fuse_identical_input_transforms_pass",
         "//executorch/backends/transforms:convert_conv1d_to_conv2d_pass",
         "//executorch/backends/transforms:fuse_view_copy",
