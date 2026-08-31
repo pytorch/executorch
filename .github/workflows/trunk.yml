@@ -261,6 +261,7 @@ jobs:
           - test_arm_backend: test_pytest_ops_ethos_u55
           - test_arm_backend: test_pytest_models_ethos_u55
           - test_arm_backend: test_run_ethos_u55
+          - test_arm_backend: test_minimal_classic_ml_ethos_u55
           - test_arm_backend: test_pytest_ops_ethos_u85
           - test_arm_backend: test_pytest_models_ethos_u85
           - test_arm_backend: test_run_ethos_u85
