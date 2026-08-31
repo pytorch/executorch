@@ -220,9 +220,11 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
   bool is_available() const override {
 #if TARGET_OS_SIMULATOR
-    // The simulator's Metal device reports no architecture and refuses a
-    // shared storage heap, and MLX requires both without checking, so it
-    // faults on its first device access rather than returning an error.
+    // The simulator's Metal device reports no architecture, which MLX reads
+    // without a null check while constructing its device. Past that, requesting
+    // a shared storage heap traps inside Metal itself, so MLX never gets a
+    // value it could fall back from. This is a build switch rather than a
+    // probe: it can go once the simulator has a usable Metal device.
     return false;
 #else
     return ::mlx::core::metal::is_available();

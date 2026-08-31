@@ -18,6 +18,8 @@ The MLX delegate is experimental and under active development.
 
 - Apple Silicon Mac (M1 or later)
 - [macOS](https://developer.apple.com/macos) >= 14.0
+- iOS and iPadOS on a real device. The iOS simulator has no Metal device MLX can use, so the
+  backend reports itself unavailable there and a model delegated to it will not load.
 
 ## Development Requirements
 
