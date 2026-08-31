@@ -10,6 +10,7 @@ solution:
 
   packs:
     - pack: ARM::CMSIS@>=6.0.0
+    - pack: ARM::CMSIS-NN@7.0.0
     - pack: ARM::Cortex_DFP@>=1.1.0
     - pack: PyTorch::ExecuTorch
 

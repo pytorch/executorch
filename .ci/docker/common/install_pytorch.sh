@@ -10,6 +10,19 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+# The compiler stubs run through sccache, which fails hard rather than
+# compiling uncached when it cannot reach its S3 bucket. Use the credentials
+# docker-builds mounts, or fall back to a local cache so a build without them
+# still works.
+SCCACHE_CREDENTIALS=/run/secrets/aws-credentials
+if [[ -s "${SCCACHE_CREDENTIALS}" ]]; then
+  export AWS_SHARED_CREDENTIALS_FILE="${SCCACHE_CREDENTIALS}"
+else
+  echo "No sccache credentials; caching compiler output locally" >&2
+  unset SCCACHE_BUCKET SCCACHE_S3_KEY_PREFIX
+  export SCCACHE_DIR=/tmp/sccache
+fi
+
 install_domains() {
   echo "Install torchvision and torchaudio"
   pip_install --no-build-isolation --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"

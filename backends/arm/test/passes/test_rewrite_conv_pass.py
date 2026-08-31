@@ -534,22 +534,22 @@ def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
 
 
 @pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
-def test_fold_and_annotate_q_params_vgf_quant_preserves_output_qparams_on_non_fuseable_clamp() -> (
-    None
-):
+def test_fold_and_annotate_q_params_vgf_quant_tracks_fused_relu_qparams() -> None:
     exported_program = _export_quantized(TinyConvReluCat())
     gm = _run_pre_rewrite_passes(to_edge(exported_program).exported_program())
 
     conv = _get_call_function_node(gm, exir_ops.edge.aten.convolution.default)
-    clamp = _get_call_function_node(gm, exir_ops.edge.aten.clamp.default)
+    output_qparams = conv.meta["output_qparams"][0]
 
     assert conv.meta["input_qparams"]
-    assert not conv.meta["output_qparams"]
-    assert clamp.meta["output_qparams"]
+    assert output_qparams.qmin == output_qparams.zp
+    assert not any(
+        node.target == exir_ops.edge.aten.clamp.default for node in gm.graph.nodes
+    )
 
 
 @pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
-def test_rewrite_conv_vgf_quant_handles_non_fuseable_conv_clamp_cat_branch() -> None:
+def test_rewrite_conv_vgf_quant_handles_fused_conv_relu_cat_branch() -> None:
     exported_program = _export_quantized(TinyConvReluCat())
     compile_spec = _compile_spec()
 

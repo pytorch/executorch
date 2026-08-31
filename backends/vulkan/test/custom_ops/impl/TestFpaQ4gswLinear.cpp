@@ -175,7 +175,7 @@ vkapi::ShaderInfo pick_forced_shader_coop_kc(
 // NUM_GROUPS). The framework computes num_WGs = div_up(global, local), so the
 // global x-axis is set to that count directly (with local.x == 1).
 template <uint32_t NUM_GROUPS, uint32_t WORKERS_PER_GROUP>
-utils::uvec3 pick_q4gsw_coop_global_wg(
+GlobalWorkGrid pick_q4gsw_coop_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -188,23 +188,27 @@ utils::uvec3 pick_q4gsw_coop_global_wg(
       utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
   const uint32_t N8 = (N + 7u) / 8u;
   const uint32_t wgs_along_x = utils::div_up(N8, NUM_GROUPS);
-  return {wgs_along_x, NUM_GROUPS, WORKERS_PER_GROUP};
+  const LocalWorkGroup lwg(1u, NUM_GROUPS, WORKERS_PER_GROUP);
+  GlobalWorkGrid gwg({wgs_along_x * NUM_GROUPS, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(
+      graph->context()->adapter_ptr()->max_compute_workgroup_count(), lwg);
+  return gwg;
 }
 
 // Local WG picker for the coop GEMV — LWG=(1, NUM_GROUPS, WORKERS_PER_GROUP).
 template <uint32_t NUM_GROUPS, uint32_t WORKERS_PER_GROUP>
-utils::uvec3 pick_q4gsw_coop_local_wg(
+LocalWorkGroup pick_q4gsw_coop_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {1u, NUM_GROUPS, WORKERS_PER_GROUP};
+  return LocalWorkGroup(1u, NUM_GROUPS, WORKERS_PER_GROUP);
 }
 
 // Spec-constant LWG values for the q4gsw_linear_gemv__w_4x8_nc[_nosg] shaders
@@ -218,7 +222,7 @@ constexpr uint32_t kGemvNumSubgroups = 4u;
 // WG pickers for the legacy sg/nosg GEMV shaders. Used only by test selectors
 // 1 (GEMV_W_4X8) and 2 (GEMV_W_4X8_NOSG); the production dispatcher never
 // references these shaders.
-utils::uvec3 pick_q4gsw_legacy_gemv_global_wg(
+GlobalWorkGrid pick_q4gsw_legacy_gemv_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -229,21 +233,21 @@ utils::uvec3 pick_q4gsw_legacy_gemv_global_wg(
   const uint32_t N =
       utils::safe_downcast<uint32_t>(utils::val_at(-1, graph->sizes_of(out)));
   // Each thread owns one row-pair along x; y-dim splits K-blocks across waves.
-  return {N / 2u, kGemvNumSubgroups, 1u};
+  return GlobalWorkGrid({N / 2u, kGemvNumSubgroups, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_q4gsw_legacy_gemv_local_wg(
+LocalWorkGroup pick_q4gsw_legacy_gemv_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {kGemvSubgroupSize, kGemvNumSubgroups, 1u};
+  return LocalWorkGroup(kGemvSubgroupSize, kGemvNumSubgroups, 1u);
 }
 
 //
@@ -285,7 +289,7 @@ void legacy_q4gsw_resize_linear_node(
   graph->virtual_resize(output, new_out_sizes);
 }
 
-utils::uvec3 legacy_q4gsw_global_wg_size(
+GlobalWorkGrid legacy_q4gsw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -311,23 +315,22 @@ utils::uvec3 legacy_q4gsw_global_wg_size(
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
-  return {num_N_tiles, num_M_tiles, 1};
+  return GlobalWorkGrid({num_N_tiles, num_M_tiles, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 legacy_q4gsw_local_wg_size(
+LocalWorkGroup legacy_q4gsw_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   const bool use_coop_algorithm =
       shader.kernel_name.find("_coop") != std::string::npos;
 
   if (use_coop_algorithm) {
-    return {1, 1, 64};
+    return LocalWorkGroup(1u, 1u, 64u);
   }
-  return pick_hw_square_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
 vkapi::ShaderInfo legacy_q4gsw_pick_shader(
@@ -407,16 +410,17 @@ ValueRef legacy_prepack_q4gsw_weight(
       qmat2_sizes, vkapi::kInt, storage_type, utils::kWidthPacked);
 
   // 4-bit prepack: each thread writes two adjacent blocks along K.
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(utils::div_up(num_blocks_K, int64_t(2))),
-      utils::safe_downcast<uint32_t>(num_blocks_N),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(utils::div_up(num_blocks_K, int64_t(2))),
+       utils::safe_downcast<uint32_t>(num_blocks_N),
+       1u},
+      kTiledWorkGrid);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       qmat2_data,
       qmat2,
       // UBOs
@@ -472,8 +476,8 @@ void add_legacy_q4gsw_linear_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       legacy_q4gsw_pick_shader,
-      legacy_q4gsw_global_wg_size,
-      legacy_q4gsw_local_wg_size,
+      legacy_q4gsw_gwg,
+      legacy_q4gsw_lwg,
       // Inputs and Outputs (legacy 5-binding layout)
       {{output, vkapi::kWrite},
        {{fp_input, packed_weight, packed_weight_scales, packed_bias},
@@ -542,21 +546,21 @@ void add_q4gsw_linear_coop_kc_forced_node(
       ComputeGraph*,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&);
-  using PickWgFn = utils::uvec3 (*)(
+  using PickGwgFn = GlobalWorkGrid (*)(
       ComputeGraph*,
       const vkapi::ShaderInfo&,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&);
-  using PickLocalWgFn = utils::uvec3 (*)(
+  using PickLwgFn = LocalWorkGroup (*)(
       ComputeGraph*,
       const vkapi::ShaderInfo&,
-      const utils::uvec3&,
+      const GlobalWorkGrid&,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&);
 
   PickShaderFn pick_shader = nullptr;
-  PickWgFn pick_global = nullptr;
-  PickLocalWgFn pick_local = nullptr;
+  PickGwgFn pick_gwg = nullptr;
+  PickLwgFn pick_lwg = nullptr;
 
   // NOLINTNEXTLINE(clang-diagnostic-switch-enum)
   switch (kind) {
@@ -564,20 +568,20 @@ void add_q4gsw_linear_coop_kc_forced_node(
     case TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER_G1W64:
       pick_shader =
           pick_forced_shader_coop_kc<TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER>;
-      pick_global = pick_q4gsw_coop_global_wg<1u, 64u>;
-      pick_local = pick_q4gsw_coop_local_wg<1u, 64u>;
+      pick_gwg = pick_q4gsw_coop_gwg<1u, 64u>;
+      pick_lwg = pick_q4gsw_coop_lwg<1u, 64u>;
       break;
     case TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER_G4W16:
       pick_shader = pick_forced_shader_coop_kc<
           TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER_G4W16>;
-      pick_global = pick_q4gsw_coop_global_wg<4u, 16u>;
-      pick_local = pick_q4gsw_coop_local_wg<4u, 16u>;
+      pick_gwg = pick_q4gsw_coop_gwg<4u, 16u>;
+      pick_lwg = pick_q4gsw_coop_lwg<4u, 16u>;
       break;
     case TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER_G8W8:
       pick_shader = pick_forced_shader_coop_kc<
           TestKernelKind::GEMV_COOP_W_4X8_NC_BUFFER_G8W8>;
-      pick_global = pick_q4gsw_coop_global_wg<8u, 8u>;
-      pick_local = pick_q4gsw_coop_local_wg<8u, 8u>;
+      pick_gwg = pick_q4gsw_coop_gwg<8u, 8u>;
+      pick_lwg = pick_q4gsw_coop_lwg<8u, 8u>;
       break;
     default:
       VK_THROW("add_q4gsw_linear_coop_kc_forced_node: non-coop kind");
@@ -586,8 +590,8 @@ void add_q4gsw_linear_coop_kc_forced_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_shader,
-      pick_global,
-      pick_local,
+      pick_gwg,
+      pick_lwg,
       {{output, vkapi::kWrite},
        {{fp_input,
          dummy_transposed_input.vref,
@@ -666,43 +670,43 @@ void add_q4gsw_linear_forced_node(
       ComputeGraph*,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&);
-  using PickWgFn = utils::uvec3 (*)(
+  using PickGwgFn = GlobalWorkGrid (*)(
       ComputeGraph*,
       const vkapi::ShaderInfo&,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&);
-  using PickLocalWgFn = utils::uvec3 (*)(
+  using PickLwgFn = LocalWorkGroup (*)(
       ComputeGraph*,
       const vkapi::ShaderInfo&,
-      const utils::uvec3&,
+      const GlobalWorkGrid&,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&);
 
   PickShaderFn pick_shader = nullptr;
-  PickWgFn pick_global = nullptr;
-  PickLocalWgFn pick_local = nullptr;
+  PickGwgFn pick_gwg = nullptr;
+  PickLwgFn pick_lwg = nullptr;
 
   // NOLINTNEXTLINE(clang-diagnostic-switch-enum)
   switch (kind) {
     case TestKernelKind::GEMM_W_4X8:
       pick_shader = pick_forced_shader<TestKernelKind::GEMM_W_4X8>;
-      pick_global = pick_q4gsw_linear_gemm_global_wg;
-      pick_local = pick_q4gsw_linear_gemm_local_wg;
+      pick_gwg = pick_q4gsw_linear_gemm_gwg;
+      pick_lwg = pick_q4gsw_linear_gemm_lwg;
       break;
     case TestKernelKind::GEMV_W_4X8:
       pick_shader = pick_forced_shader<TestKernelKind::GEMV_W_4X8>;
-      pick_global = pick_q4gsw_legacy_gemv_global_wg;
-      pick_local = pick_q4gsw_legacy_gemv_local_wg;
+      pick_gwg = pick_q4gsw_legacy_gemv_gwg;
+      pick_lwg = pick_q4gsw_legacy_gemv_lwg;
       break;
     case TestKernelKind::GEMM_TIN_W_4X8:
       pick_shader = pick_forced_shader<TestKernelKind::GEMM_TIN_W_4X8>;
-      pick_global = pick_q4gsw_linear_tin_gemm_global_wg;
-      pick_local = pick_q4gsw_linear_tin_gemm_local_wg;
+      pick_gwg = pick_q4gsw_linear_tin_gemm_gwg;
+      pick_lwg = pick_q4gsw_linear_tin_gemm_lwg;
       break;
     case TestKernelKind::GEMV_W_4X8_NOSG:
       pick_shader = pick_forced_shader<TestKernelKind::GEMV_W_4X8_NOSG>;
-      pick_global = pick_q4gsw_legacy_gemv_global_wg;
-      pick_local = pick_q4gsw_legacy_gemv_local_wg;
+      pick_gwg = pick_q4gsw_legacy_gemv_gwg;
+      pick_lwg = pick_q4gsw_legacy_gemv_lwg;
       break;
     case TestKernelKind::PROD:
     default:
@@ -712,8 +716,8 @@ void add_q4gsw_linear_forced_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_shader,
-      pick_global,
-      pick_local,
+      pick_gwg,
+      pick_lwg,
       {{output, vkapi::kWrite},
        {{fp_input,
          transposed_input_ref,

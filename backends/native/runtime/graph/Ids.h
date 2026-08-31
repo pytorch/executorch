@@ -12,8 +12,8 @@
 
 namespace ptn {
 
-// Index-arena handles: a NodeId indexes the graph's node arena, a ValueId its
-// value arena, a GraphId a subgraph arena (HOP branch bodies). Plain int32_t
+// Index-list handles: a NodeId indexes the graph's node list, a ValueId its
+// value list, a GraphId a subgraph list (HOP branch bodies). Plain int32_t
 // aliases — they index, compare, and hash directly, at the cost of no type
 // distinction between them. kInvalid marks "no id".
 using NodeId = int32_t;
