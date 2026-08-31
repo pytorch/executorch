@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +29,7 @@ except ImportError:
 from executorch.examples.models.llama import export_llama_lib
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
+    _to_edge_and_lower_llama_xnnpack,
     build_args_parser,
     get_quantizer_and_quant_params,
 )
@@ -40,6 +43,27 @@ UNWANTED_OPS = [
     "aten_permute_copy_default",
     "aten_transpose_copy_default",
 ]
+
+
+def _tiny_llm_builder():
+    """An exported LLMEdgeManager small enough to lower in a unit test.
+
+    Enough to exercise the lowering helpers without a checkpoint or a real llama model.
+    """
+    import torch
+    from executorch.extension.llm.export.builder import LLMEdgeManager
+
+    class Tiny(torch.nn.Module):
+        def forward(self, tokens):
+            return tokens.to(torch.float32) * 2.0 + 1.0
+
+    return LLMEdgeManager(
+        model=Tiny(),
+        modelname="tiny",
+        max_seq_len=4,
+        use_kv_cache=False,
+        example_inputs=(torch.ones(1, 4, dtype=torch.long),),
+    ).export()
 
 
 class ExportLlamaLibTest(unittest.TestCase):
@@ -95,6 +119,56 @@ class ExportLlamaLibTest(unittest.TestCase):
         )
         self.assertTrue(target.call_args.kwargs["coreml"])
         self.assertTrue(target.call_args.kwargs["vulkan"])
+
+    def test_xnnpack_lowering_saves_the_etrecord_it_generates(self):
+        """A lowering that generates an etrecord must also write it.
+
+        `to_edge_transform_and_lower` builds the record when asked and carries it to the ExecuTorch
+        program, but the helpers using that call never saved it, so `--generate_etrecord` produced
+        no file and no warning while still paying for the record.
+
+        Driving the real helper rather than the save step, so this fails on the missing file rather
+        than on a missing symbol.
+        """
+        builder = _tiny_llm_builder()
+
+        with tempfile.TemporaryDirectory() as directory:
+            previous = os.getcwd()
+            os.chdir(directory)
+            try:
+                _to_edge_and_lower_llama_xnnpack(
+                    builder,
+                    modelname="tiny",
+                    additional_passes=[],
+                    pt2e_quant_params=None,
+                    quantizers=[],
+                    quant_dtype=None,
+                    generate_etrecord=True,
+                )
+                self.assertEqual(os.listdir("."), ["etrecord.bin"])
+            finally:
+                os.chdir(previous)
+
+    def test_xnnpack_lowering_writes_nothing_when_not_asked(self):
+        """The common case must stay silent rather than raise or leave a stray file."""
+        builder = _tiny_llm_builder()
+
+        with tempfile.TemporaryDirectory() as directory:
+            previous = os.getcwd()
+            os.chdir(directory)
+            try:
+                _to_edge_and_lower_llama_xnnpack(
+                    builder,
+                    modelname="tiny",
+                    additional_passes=[],
+                    pt2e_quant_params=None,
+                    quantizers=[],
+                    quant_dtype=None,
+                    generate_etrecord=False,
+                )
+                self.assertEqual(os.listdir("."), [])
+            finally:
+                os.chdir(previous)
 
     def test_has_expected_ops_and_op_counts(self):
         """

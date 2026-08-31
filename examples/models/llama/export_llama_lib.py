@@ -1186,7 +1186,6 @@ def _to_edge_and_lower_llama_xnnpack(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
     if generate_etrecord:
         builder_exported.generate_etrecord = True
 
@@ -1209,9 +1208,29 @@ def _to_edge_and_lower_llama_xnnpack(
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
     # Add gen_tag_fn to tag non-delegated weights as well.
-    return builder.to_executorch(
+    builder = builder.to_executorch(
         passes=additional_passes, external_constants_tag=gen_tag_fn
     )
+    _save_etrecord_if_generated(builder)
+    return builder
+
+
+def _save_etrecord_if_generated(builder) -> None:
+    """Write the etrecord the lowering attached, if there is one.
+
+    `to_edge_transform_and_lower` builds the record when asked and carries it through to the
+    ExecuTorch program, but nothing saves it, so a caller passing --generate_etrecord got no file
+    and no warning. The combined lowering path calls `generate_etrecord` itself and writes the same
+    filename, so both paths now leave the same artifact.
+    """
+    try:
+        etrecord = builder.export_program.get_etrecord()
+    except RuntimeError:
+        # Not generated, which is the normal case.
+        return
+
+    etrecord.save("etrecord.bin")
+    logging.info("Generated etrecord.bin")
 
 
 def _to_edge_and_lower_llama_openvino(
@@ -1392,7 +1411,9 @@ def _to_edge_and_lower_llama_coreml(
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
-    return builder.to_executorch(passes=additional_passes)
+    builder = builder.to_executorch(passes=additional_passes)
+    _save_etrecord_if_generated(builder)
+    return builder
 
 
 def _to_edge_and_lower_llama(  # noqa: C901
