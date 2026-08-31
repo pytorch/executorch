@@ -97,7 +97,7 @@ Tensor& quantized_avg_pool2d_out(
           activation_min,
           activation_max,
           pool_config,
-          true,
+          ActivationLayout::NCHWLogical,
           true)) {
     return out;
   }

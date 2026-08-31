@@ -7,6 +7,8 @@
 
 #include "cortex_m_ops_common.h"
 
+#include <algorithm>
+
 namespace cortex_m {
 namespace native {
 namespace {
@@ -29,16 +31,21 @@ Tensor& quantized_mul_out(
     const int64_t output_multiplier,
     const int64_t output_shift,
     Tensor& out) {
-  // Validate tensor types and quantization parameters
-
   bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
   validate_cmsis_nn_tensor_requirements(
       input1_int8,
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
+      /*require_channels_last=*/false,
       /*require_same_sizes=*/!channel_broadcast);
+  if (channel_broadcast) {
+    const Tensor& full_input =
+        input1_int8.numel() > input2_int8.numel() ? input1_int8 : input2_int8;
+    ET_CHECK_MSG(
+        out.sizes() == full_input.sizes(),
+        "quantized_mul_out: output must have the broadcast result shape");
+  }
 
   const int32_t kIdentityMultiplier(/*value=*/1);
   const int32_t kZeroShift(/*value=*/0);
@@ -70,7 +77,10 @@ Tensor& quantized_mul_out(
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
 
-    muls_per_loop = input1_int8.size(1);
+    // The broadcast operand holds one value per channel and channels are
+    // contiguous, so its element count is the repeat length.
+    muls_per_loop = static_cast<int32_t>(
+        std::min(input1_int8.numel(), input2_int8.numel()));
   } else {
     muls_per_loop = out.numel();
   }

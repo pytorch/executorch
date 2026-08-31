@@ -37,7 +37,8 @@ Tensor& quantized_max_pool2d_out(
           ceil_mode,
           activation_min,
           activation_max,
-          pool_config)) {
+          pool_config,
+          ActivationLayout::NCHWLogical)) {
     return out;
   }
 

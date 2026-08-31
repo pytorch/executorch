@@ -409,16 +409,14 @@ def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]
     return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
 
 
-def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
-    """
-    Check if tensor1 is broadcasted to tensor2 along channel dimension.
-    Assumes tensor2 has shape [N, C, ...] and tensor1 has shape [N, 1, ...] or [1, C, ...].
-    """
-    if tensor1.dim() != tensor2.dim():
-        return False
-    if not is_channels_last(tensor1):
-        return False
-    if not is_channels_last(tensor2):
+def is_logical_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
+    """Check for a broadcast of one value per channel in logical NCHW."""
+    if (
+        tensor1.dim() != tensor2.dim()
+        or tensor1.dim() != 4
+        or tensor1.numel() == 0
+        or tensor2.numel() == 0
+    ):
         return False
 
     channel_match = tensor1.size(1) == tensor2.size(1)
@@ -426,3 +424,56 @@ def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
     tensor2_channels_only = tensor2.numel() == tensor2.size(1)
 
     return channel_match and (tensor1_channels_only or tensor2_channels_only)
+
+
+def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
+    """Check for a legacy channels-last channel broadcast."""
+    return (
+        is_logical_channel_broadcast(tensor1, tensor2)
+        and is_channels_last(tensor1)
+        and is_channels_last(tensor2)
+    )
+
+
+def is_flat_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
+    """Check that a broadcast is a flat repeat in memory, as the kernels need.
+
+    The kernels repeat the broadcast operand along the innermost axis: element
+    ``i`` of the result reads ``small[i % small.numel()]``. The operand itself is
+    a flat run whatever its dim order, since it has at most one non-unit extent.
+    What has to hold is that the *larger* operand carries that same axis
+    innermost in memory, and its dim order is what says so.
+
+    Both activation contracts satisfy this and disagree on which logical axis it
+    is -- legacy is a channels-last ``[N, C, H, W]``, explicit a contiguous
+    ``[N, H, W, C]`` -- so the axis is taken from the broadcast operand's own
+    non-unit extent rather than assumed. A genuinely contiguous ``[N, C, H, W]``
+    is refused: its innermost axis is W, and the flat repeat would stride across
+    the wrong elements.
+
+    An operand with no non-unit extent repeats a single value and is accepted
+    without consulting a dim order, which is the one case where the dim order
+    cannot identify the channel axis.
+    """
+    if tensor1.dim() != tensor2.dim() or tensor1.dim() != 4:
+        return False
+    if tensor1.numel() == tensor2.numel():
+        return False
+
+    larger, smaller = (
+        (tensor1, tensor2) if tensor1.numel() > tensor2.numel() else (tensor2, tensor1)
+    )
+    if smaller.numel() == 0:
+        return False
+    non_unit_dims = [dim for dim, size in enumerate(smaller.shape) if size != 1]
+    if len(non_unit_dims) > 1:
+        return False
+    if non_unit_dims:
+        channel_axis = non_unit_dims[0]
+        if larger.shape[channel_axis] != smaller.shape[channel_axis]:
+            return False
+        dim_order = larger.dim_order()
+        channel_position = dim_order.index(channel_axis)
+        if any(larger.shape[dim] != 1 for dim in dim_order[channel_position + 1 :]):
+            return False
+    return larger.numel() % smaller.numel() == 0

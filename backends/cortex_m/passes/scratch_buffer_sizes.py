@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any, cast
 
 import executorch.backends.cortex_m.ops.operators  # noqa
@@ -37,6 +38,7 @@ def _shape_from_node(node: torch.fx.Node) -> torch.Size:
 def _get_common_conv_buffer_size_inputs(
     conv_node: torch.fx.Node,
     *,
+    nhwc_logical: bool = False,
     stride_arg_idx: int = 3,
     padding_arg_idx: int = 4,
     dilation_arg_idx: int = 5,
@@ -54,13 +56,14 @@ def _get_common_conv_buffer_size_inputs(
     padding = cast(list[int], conv_node.args[padding_arg_idx])
     dilation = cast(list[int], conv_node.args[dilation_arg_idx])
 
-    # Input is NCHW (PyTorch); CMSIS-NN wants NHWC dims.
-    n, c_in, height, width = _shape_from_node(x)
-
     weight_shape = _shape_from_node(weight)
 
-    # Output is NCHW; convert to NHWC dims.
-    out_n, out_c, out_h, out_w = _shape_from_node(conv_node)
+    if nhwc_logical:
+        n, height, width, c_in = _shape_from_node(x)
+        out_n, out_h, out_w, out_c = _shape_from_node(conv_node)
+    else:
+        n, c_in, height, width = _shape_from_node(x)
+        out_n, out_c, out_h, out_w = _shape_from_node(conv_node)
 
     input_nhwc = [n, height, width, c_in]
     output_nhwc = [out_n, out_h, out_w, out_c]
@@ -81,6 +84,7 @@ def _get_common_conv_buffer_size_inputs(
 def cmsis_nn_conv_buffer_size(
     backend: cmsis_nn.Backend,
     conv_node: torch.fx.Node,
+    nhwc_logical: bool = False,
 ) -> list[int]:
     (
         input_nhwc,
@@ -89,7 +93,9 @@ def cmsis_nn_conv_buffer_size(
         stride_hw,
         padding_hw,
         dilation_hw,
-    ) = _get_common_conv_buffer_size_inputs(conv_node=conv_node)
+    ) = _get_common_conv_buffer_size_inputs(
+        conv_node=conv_node, nhwc_logical=nhwc_logical
+    )
     input_offset = cast(int, conv_node.args[6])
     output_offset = cast(int, conv_node.args[7])
     output_qmin = cast(int, conv_node.args[10])
@@ -122,6 +128,7 @@ def cmsis_nn_conv_buffer_size(
 def cmsis_nn_depthwise_conv_buffer_size(
     backend: cmsis_nn.Backend,
     conv_node: torch.fx.Node,
+    nhwc_logical: bool = False,
 ) -> list[int]:
     (
         input_nhwc,
@@ -130,7 +137,9 @@ def cmsis_nn_depthwise_conv_buffer_size(
         stride_hw,
         padding_hw,
         dilation_hw,
-    ) = _get_common_conv_buffer_size_inputs(conv_node=conv_node)
+    ) = _get_common_conv_buffer_size_inputs(
+        conv_node=conv_node, nhwc_logical=nhwc_logical
+    )
     depth_multiplier = cast(int, conv_node.args[6])
     input_offset = cast(int, conv_node.args[7])
     output_offset = cast(int, conv_node.args[8])
@@ -185,6 +194,7 @@ def cmsis_nn_batch_matmul_buffer_size(
 def cmsis_nn_transpose_conv_buffer_size(
     backend: cmsis_nn.Backend,
     conv_node: torch.fx.Node,
+    nhwc_logical: bool = False,
 ) -> list[int]:
     (
         input_nhwc,
@@ -195,6 +205,7 @@ def cmsis_nn_transpose_conv_buffer_size(
         dilation_hw,
     ) = _get_common_conv_buffer_size_inputs(
         conv_node=conv_node,
+        nhwc_logical=nhwc_logical,
         stride_arg_idx=3,
         padding_arg_idx=4,
         dilation_arg_idx=6,
@@ -248,13 +259,16 @@ def cmsis_nn_transpose_conv_buffer_size(
 def cmsis_nn_avgpool_buffer_size(
     backend: cmsis_nn.Backend,
     pool_node: torch.fx.Node,
+    nhwc_logical: bool = False,
 ) -> list[int]:
     x = cast(torch.fx.Node, pool_node.args[0])
 
-    # Input is NCHW (PyTorch); CMSIS-NN's avgpool buffer sizer only needs the
-    # input channel count and output width.
-    _, c_in, _, _ = _shape_from_node(x)
-    _, _, _, out_w = _shape_from_node(pool_node)
+    if nhwc_logical:
+        _, _, _, c_in = _shape_from_node(x)
+        _, _, out_w, _ = _shape_from_node(pool_node)
+    else:
+        _, c_in, _, _ = _shape_from_node(x)
+        _, _, _, out_w = _shape_from_node(pool_node)
 
     return [
         int(
@@ -270,10 +284,22 @@ def cmsis_nn_avgpool_buffer_size(
 
 _target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
+    exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: partial(
+        cmsis_nn_conv_buffer_size, nhwc_logical=True
+    ),
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
+    exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default: partial(
+        cmsis_nn_depthwise_conv_buffer_size, nhwc_logical=True
+    ),
     exir_ops.edge.cortex_m.quantized_batch_matmul.default: cmsis_nn_batch_matmul_buffer_size,
     exir_ops.edge.cortex_m.quantized_transpose_conv2d.default: cmsis_nn_transpose_conv_buffer_size,
+    exir_ops.edge.cortex_m.quantized_transpose_conv2d_nhwc.default: partial(
+        cmsis_nn_transpose_conv_buffer_size, nhwc_logical=True
+    ),
     exir_ops.edge.cortex_m.quantized_avg_pool2d.default: cmsis_nn_avgpool_buffer_size,
+    exir_ops.edge.cortex_m.quantized_avg_pool2d_nhwc.default: partial(
+        cmsis_nn_avgpool_buffer_size, nhwc_logical=True
+    ),
 }
 
 
