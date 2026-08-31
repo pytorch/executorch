@@ -72,6 +72,30 @@ void resize_reduce_per_row_node(
   graph->virtual_resize(out, new_sizes);
 }
 
+// Number of threads that co-operate on one reduction output, and how many
+// outputs one work group covers. kReduceNGroups * the returned value must stay
+// within MAX_NTHREADS (256) in the shaders, which sizes the shared array.
+//
+// The worker count used to be a flat 4 regardless of how much there was to
+// reduce. A global average pool collapses a whole HxW plane, so four threads
+// each walked thousands of elements while the dispatch ran 16 threads in total.
+constexpr uint32_t kReduceMaxNThreads = 256u;
+constexpr uint32_t kReduceNGroups = 4u;
+
+uint32_t reduce_nworkers(
+    ComputeGraph* graph,
+    const ValueRef in,
+    const int32_t reduce_dim_whcn) {
+  const uint32_t cap = kReduceMaxNThreads / kReduceNGroups;
+  const uint32_t extent = utils::safe_downcast<uint32_t>(
+      graph->logical_limits_of(in)[reduce_dim_whcn]);
+  uint32_t nworkers = 4u;
+  while (nworkers < cap && nworkers < extent) {
+    nworkers *= 2u;
+  }
+  return nworkers;
+}
+
 GlobalWorkGrid reduce_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -86,13 +110,11 @@ GlobalWorkGrid reduce_gwg(
 
   utils::uvec3 extents = graph->logical_limits_of(out);
   extents[reduce_dim_whcn] = 1;
-  constexpr uint32_t max_nthreads = 16u;
-  constexpr uint32_t nworkers_per_group = 4u;
-  constexpr uint32_t ngroups = 4u;
-  VK_CHECK_COND(nworkers_per_group * ngroups <= max_nthreads);
+  const uint32_t nworkers_per_group =
+      reduce_nworkers(graph, args.at(1).refs.at(0), reduce_dim_whcn);
   utils::uvec3 lwg_extents{1u, 1u, 1u};
   lwg_extents[reduce_dim_whcn] = nworkers_per_group;
-  lwg_extents[group_dim_whcn] = ngroups;
+  lwg_extents[group_dim_whcn] = kReduceNGroups;
   return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(lwg_extents));
 }
 
@@ -149,8 +171,12 @@ void add_reduce_node(
       {graph.logical_limits_ubo(in), graph.sizes_ubo(in)},
       // Push Constants
       {},
-      // Specialization Constants
-      {graph.packed_dim_of(out), reduce_dim, group_dim},
+      // Specialization Constants. NWORKERS must match the local work group
+      // extent reduce_gwg picks, so both go through reduce_nworkers().
+      {graph.packed_dim_of(out),
+       reduce_dim,
+       group_dim,
+       utils::safe_downcast<int32_t>(reduce_nworkers(&graph, in, reduce_dim))},
       // Resize Args
       {dim_ref, reduce_dim_whcn_ref, group_dim_whcn_ref},
       // Resizing Logic
@@ -226,8 +252,13 @@ void add_reduce2d_node(
       {graph.logical_limits_ubo(in), graph.sizes_ubo(in)},
       // Push Constants
       {},
-      // Specialization Constants
-      {graph.packed_dim_of(out), reduce_dim1, reduce_dim2, group_dim},
+      // Specialization Constants. NWORKERS must match the local work group
+      // extent reduce_gwg picks, so both go through reduce_nworkers().
+      {graph.packed_dim_of(out),
+       reduce_dim1,
+       reduce_dim2,
+       group_dim,
+       utils::safe_downcast<int32_t>(reduce_nworkers(&graph, in, reduce_dim1))},
       // Resize Args
       {dims_ref,
        reduce_dim1_whcn_ref,
