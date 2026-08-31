@@ -45,7 +45,7 @@ class TosaPropagationOverrides(_BasePass):
     ) -> bool:
         # INT48 storage is not laid out like the int32 fake tensor used for
         # metadata, so permuting it would address the packed data incorrectly.
-        return moving_node.target == self._PERMUTE_TARGET and any(
+        return moving_node.target in self._permute_targets and any(
             self._node_or_inputs_are_int48(candidate)
             for candidate in (frontier, *next_nodes)
         )
