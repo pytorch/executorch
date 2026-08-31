@@ -27,15 +27,16 @@
 // shutdown, but must not destroy the Runner or wait for work that requires the
 // engine thread.
 //
-// Generation starts from a caller-resolved delta. The session owns its logical
-// position; the runner chunks and schedules the delta but does not reconcile
-// it against session history.
+// Generation starts from a caller-resolved delta. The session owns its
+// executor-committed position; the runner chunks and schedules the delta but
+// does not reconcile it against session history.
 
 #include <cstdint>
 #include <functional>
 #include <future>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
@@ -56,31 +57,44 @@ enum class ET_EXPERIMENTAL FinishReason {
   Failed, // rejected at start, or a step failed
 };
 
+// One streaming or terminal generation event. A missing finish_reason means
+// more updates may follow. A present finish_reason marks the last update;
+// tokens may be empty when a generation fails or is cancelled. error_message
+// is non-empty only when finish_reason is Failed.
+struct ET_EXPERIMENTAL GenerationUpdate {
+  std::vector<Token> tokens;
+  std::optional<FinishReason> finish_reason;
+  std::string error_message;
+};
+
 // Reports tokens as they are produced, in order, and several at once when a
-// speculative executor accepts a run. The reason is set on the last call and
-// only then, so the final tokens and the reason arrive together and cannot be
-// reordered.
+// speculative executor accepts a run. finish_reason is set on the last call
+// and only then, so the final tokens and the reason arrive together and cannot
+// be reordered.
 //
-// Every token reported here is in the session. However a generation ends, the
-// session holds what it held before, plus the delta, plus exactly the tokens
-// delivered through this callback: nothing produced but undelivered, nothing
-// delivered but dropped. That is what lets the next delta simply append.
+// Every token reported here is retained by the session. However a generation
+// ends, its logical context holds what it held before, plus the delta, plus
+// exactly the tokens delivered through this callback: nothing produced but
+// undelivered, nothing delivered but dropped. The final delivered token may
+// remain pending rather than executor-committed; the next delta carries it.
 //
-// The one gap is a delta cancelled before it finished prefilling, which leaves
-// the session holding part of it. Session::position() reports how much
-// survived.
+// A delta cancelled before it finished prefilling leaves only its consumed
+// prefix in the session. Session::position() reports the executor-committed
+// length, excluding any pending generated token.
 //
 // Admitted generations run callbacks on the engine thread. A request rejected
 // before admission completes synchronously on the calling thread, potentially
-// before generate_async() returns. Callbacks must not block.
-using GenerationCallback =
-    std::function<void(const std::vector<Token>&, std::optional<FinishReason>)>;
+// before generate_async() returns. Callbacks must not block or wait for work
+// serviced by this runner. An exception from a callback is contained and ends
+// that generation as Failed.
+using GenerationCallback = std::function<void(const GenerationUpdate&)>;
 
 struct ET_EXPERIMENTAL GenConfig {
   std::int32_t max_new_tokens = 256;
   SamplingParams sampling;
-  // Ends the generation with FinishReason::StopToken. The token is not
-  // emitted.
+  // Ends the generation with FinishReason::StopToken. The matched token is
+  // included in the terminal GenerationUpdate::tokens and retained by the
+  // session.
   std::vector<Token> stop_tokens;
   // Fixed for the generation and installed before its tasks are submitted.
   // nullopt requests nondeterministic sampling.
@@ -102,18 +116,36 @@ class RunnerImpl;
 class ET_EXPERIMENTAL GenerationHandle {
  public:
   GenerationHandle() = default;
+  GenerationHandle(const GenerationHandle&) = default;
+  GenerationHandle& operator=(const GenerationHandle&) = default;
+  GenerationHandle(GenerationHandle&&) noexcept = default;
+  GenerationHandle& operator=(GenerationHandle&&) noexcept = default;
 
-  // Requests cancellation, which lands within one step. A no-op on a
-  // default-constructed handle.
+  // Whether this handle denotes a generation. False for default-constructed
+  // and moved-from handles.
+  bool valid() const noexcept;
+
+  // Requests cancellation, which lands within one step. A no-op on an invalid
+  // handle.
   void cancel() const;
 
+  // Becomes true after the terminal callback returns or throws. False for an
+  // invalid handle.
   bool done() const;
 
-  // Blocks until the generation ends. Returns immediately if it already has.
+  // Blocks until the generation and its terminal callback have ended. Returns
+  // immediately if both already have or the handle is invalid. Must not be
+  // called from a callback serviced by the same runner.
   void wait() const;
 
-  // Meaningful once done().
-  FinishReason finish_reason() const;
+  // The terminal reason once done. nullopt for an invalid or unfinished
+  // handle.
+  std::optional<FinishReason> finish_reason() const;
+
+  // Diagnostic for a failed generation, when one is available. In particular,
+  // preserves std::exception::what() when a callback throws. Meaningful only
+  // when valid() && done(); empty when no diagnostic is available.
+  std::string error_message() const;
 
  private:
   friend class RunnerImpl;
@@ -145,20 +177,24 @@ class ET_EXPERIMENTAL Session {
   // sessions. A concurrent close may begin immediately after a true result.
   bool valid() const noexcept;
 
-  // How many tokens the session holds. Safe from any thread.
+  // The absolute position of the next input to the executor. Safe from any
+  // thread.
   //
-  // Read as a difference across a generation: take it before starting and
-  // again once the handle reports done(). A turn that completed contributes
-  // its delta plus every token the callback delivered, so the number tells the
-  // caller nothing new. It matters after a cancellation, which can land part
-  // way through a delta and leave only some of it in the session.
+  // If the last callback delivered a token that has not yet been fed back,
+  // that token is retained internally as pending and will be the next input at
+  // this position. A subsequent generation prepends it to the caller's delta.
+  // Without a pending token, the caller's delta begins at this position.
   //
-  // 0 for a default or moved-from Session.
+  // Before each callback, position is updated to reflect all inputs committed
+  // for the updates delivered so far. It does not include in-flight or
+  // discarded executor work. Once a handle is done, the value is stable until
+  // the next generation. Returns 0 for a default or moved-from Session.
   Position position() const noexcept;
 
   // `delta` is the caller-resolved suffix to append. The session tracks its
-  // logical position and consecutive generations continue where prior executor
-  // work left it. Retain this Session until the asynchronous generation ends;
+  // committed position and any pending generated token, so consecutive
+  // generations continue where prior executor work left them. Retain this
+  // Session until the asynchronous generation ends;
   // destroying it requests close and completes active work as Cancelled.
   //
   // The delta must be non-empty and its exclusive end must fit in Position.
@@ -196,11 +232,14 @@ class ET_EXPERIMENTAL Runner {
   // Any thread; queued to the engine thread and acked.
   //
   // nullopt = the executor is at capacity, or the runner is shutting down.
-  std::future<std::optional<Session>> open_session();
+  std::future<std::optional<Session>> open_session_async();
 
   // Idempotent. External callers block until the engine is joined, every live
-  // generation has ended Cancelled, and every owned session is closed.
-  // Concurrent external callers wait for the same completion.
+  // generation has ended, and every owned session is closed. A generation that
+  // was still running ends Cancelled; one that had already reached a stop
+  // token, its token budget, or a failure keeps that reason, its tokens, and
+  // its error message. Concurrent external callers wait for the same
+  // completion.
   //
   // From a GenerationCallback, requests shutdown and returns without waiting;
   // a later external call or destructor must join. Do not destroy the Runner
