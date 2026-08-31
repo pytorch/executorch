@@ -1172,9 +1172,12 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
 endif()
 
 # The shared build ships the profiler as one of its libraries, and the Python
-# extension records a hard dependency on it, so the target has to exist whenever
-# either of those is being built rather than only when devtools is asked for.
-if((EXECUTORCH_BUILD_PYBIND OR EXECUTORCH_BUILD_SHARED)
+# extension records a hard dependency on it, and the Apple ETDump extension
+# links it, so the target has to exist whenever any of those is being built
+# rather than only when devtools is asked for.
+if((EXECUTORCH_BUILD_PYBIND
+    OR EXECUTORCH_BUILD_SHARED
+    OR EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE)
    AND NOT EXECUTORCH_BUILD_DEVTOOLS
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
@@ -1421,9 +1424,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # --no-as-needed around its own file to every consumer, so the CUDA and
   # OpenVINO backends are covered by that and are deliberately absent here. That
   # export is emitted only for NOT APPLE, so it does nothing for an Apple-only
-  # delegate like Core ML; those are covered instead by Mach-O, which keeps a
-  # named dylib's namespace-scope initializers without an --as-needed
-  # equivalent.
+  # delegate like Core ML. In the wheel's shared build that dylib is instead
+  # kept because it is named directly on the link line, which retains its
+  # namespace-scope initializers without an --as-needed equivalent; only
+  # -dead_strip_dylibs would drop it, and nothing here passes that. In a static
+  # build the delegate is an archive kept by force_load instead.
   foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend
                               extension_threadpool etdump
   )
@@ -1534,6 +1539,10 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/asr/runner)
   list(APPEND _executorch_extensions extension_asr_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple/dump)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)

@@ -9,11 +9,13 @@ project:
 
   components:
     - component: ARM::CMSIS:CORE
+    - component: ARM::CMSIS:NN Lib
     - component: ARM::Device:Startup&C Startup
     - component: Machine Learning:ExecuTorch:Runtime
     - component: Machine Learning:ExecuTorch:Kernel Utils
     - component: Machine Learning:ExecuTorch:Kernel Registration
     - component: Machine Learning:ExecuTorch Operators:Portable add
+    - component: Machine Learning:ExecuTorch Operators:Cortex-M quantized_add
 
   groups:
     - group: App

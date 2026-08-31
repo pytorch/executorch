@@ -19,9 +19,15 @@
 #include <c10/util/Unroll.h>
 #include <c10/util/irange.h>
 
+#include <algorithm>
+#include <array>
+
 #ifdef __aarch64__
 #include <arm_neon.h>
 #include <cpuinfo.h>
+#elif defined(__x86_64__) && !defined(_MSC_VER)
+#include <cpuinfo.h>
+#include <immintrin.h>
 #endif
 
 namespace vec = at::vec;
@@ -104,19 +110,33 @@ float reduce(vec::VectorizedN<float, kF32RegistersPerIteration>& x) {
 #if defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) && \
     defined(__clang__) && __clang_major__ > 15
 // https://godbolt.org/z/z8P4Yncra
-#define COMPILER_SUPPORTS_BF16_TARGET 1
+#define COMPILER_SUPPORTS_ARM_BF16_TARGET 1
 #elif defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) && \
     !defined(__clang__) && defined(__GNUC__) && __GNUC__ >= 10
 // https://gcc.gnu.org/gcc-10/changes.html
 // https://godbolt.org/z/cdGG7vn8o
-#define COMPILER_SUPPORTS_BF16_TARGET 1
+#define COMPILER_SUPPORTS_ARM_BF16_TARGET 1
 #else // defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) &&
       // defined(__clang__) && __clang_major__ > 15
-#define COMPILER_SUPPORTS_BF16_TARGET 0
+#define COMPILER_SUPPORTS_ARM_BF16_TARGET 0
 #endif // defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) &&
        // defined(__clang__) && __clang_major__ > 15
 
-#if COMPILER_SUPPORTS_BF16_TARGET
+// GCC 10 / Clang 9 are the first versions with both the target("avx512bf16")
+// function attribute and _mm512_dpbf16_ps. clang-cl does not expose the
+// AVX-512 intrinsic types unless they are enabled for the whole translation
+// unit, so use the portable path for the MSVC ABI.
+#if defined(__x86_64__) && !defined(_MSC_VER) && defined(__clang__) && \
+    __clang_major__ >= 9
+#define COMPILER_SUPPORTS_X86_BF16_TARGET 1
+#elif defined(__x86_64__) && !defined(_MSC_VER) && !defined(__clang__) && \
+    defined(__GNUC__) && __GNUC__ >= 10
+#define COMPILER_SUPPORTS_X86_BF16_TARGET 1
+#else
+#define COMPILER_SUPPORTS_X86_BF16_TARGET 0
+#endif
+
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
 #define TARGET_ARM_BF16_ATTRIBUTE __attribute__((target("arch=armv8.2-a+bf16")))
 
 TARGET_ARM_BF16_ATTRIBUTE C10_ALWAYS_INLINE void
@@ -155,7 +175,7 @@ dot_with_fp32_arith_vectorized_tail_inner_loop_bfdot(
 
 #else
 #define TARGET_ARM_BF16_ATTRIBUTE
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 namespace {
 
@@ -233,7 +253,7 @@ C10_ALWAYS_INLINE auto dot_with_fp32_arith_main_loop_no_bfdot(
   return reduce(sum);
 }
 
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
 template <int n>
 struct ForcedUnrollTargetBFloat16 {
   template <typename Func>
@@ -271,7 +291,7 @@ dot_with_fp32_arith_main_loop_bfdot(
   }
   return reduce(sum);
 }
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 static_assert(
     (vec::Vectorized<BFloat16>::size() &
@@ -308,7 +328,7 @@ static_assert(
   }                                                                            \
   return reduced_sum
 
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
 TARGET_ARM_BF16_ATTRIBUTE float dot_with_fp32_arith_bfdot(
     const BFloat16* vec1,
     const BFloat16* vec2,
@@ -316,7 +336,7 @@ TARGET_ARM_BF16_ATTRIBUTE float dot_with_fp32_arith_bfdot(
   auto reduced_sum = dot_with_fp32_arith_main_loop_bfdot(vec1, vec2, len);
   DOT_WITH_FP32_ARITH_TAIL_AFTER_MAIN_LOOP_BODY(_bfdot);
 }
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 template <typename T>
 C10_ALWAYS_INLINE float
@@ -328,17 +348,536 @@ dot_with_fp32_arith_no_bfdot(const T* vec1, const T* vec2, int64_t len) {
 
 } // namespace
 
-float bf16_dot_with_fp32_arith(
-    const at::BFloat16* vec1,
-    const at::BFloat16* vec2,
-    int64_t len) {
-#if COMPILER_SUPPORTS_BF16_TARGET
-  if (cpuinfo_has_arm_bf16()) {
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
+// Four dots against a shared vec1: the cross-lane reduction is paid once per
+// four results rather than per result, which matters when callers reduce over
+// headSize while producing a whole tile of outputs.
+TARGET_ARM_BF16_ATTRIBUTE static void dot4_with_fp32_arith_bfdot(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+  constexpr int64_t kElementsPerIteration = 8;
+  float32x4_t acc[4] = {
+      vdupq_n_f32(0.0f),
+      vdupq_n_f32(0.0f),
+      vdupq_n_f32(0.0f),
+      vdupq_n_f32(0.0f)};
+  int64_t idx = 0;
+  for (; idx + kElementsPerIteration <= len; idx += kElementsPerIteration) {
+    // See NOTE[Intrinsics in bfdot variant] above.
+    const auto v1 = vld1q_bf16(reinterpret_cast<const bfloat16_t*>(&vec1[idx]));
+    for (int64_t j = 0; j < 4; ++j) {
+      const auto v2 = vld1q_bf16(
+          reinterpret_cast<const bfloat16_t*>(&vec2[j * stride2 + idx]));
+      acc[j] = vbfdotq_f32(acc[j], v1, v2);
+    }
+  }
+  const float32x4_t sums =
+      vpaddq_f32(vpaddq_f32(acc[0], acc[1]), vpaddq_f32(acc[2], acc[3]));
+  vst1q_f32(out, sums);
+  for (; idx < len; ++idx) {
+    for (int64_t j = 0; j < 4; ++j) {
+      out[j] += static_cast<float>(vec1[idx]) *
+          static_cast<float>(vec2[j * stride2 + idx]);
+    }
+  }
+}
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
+
+#if defined(__aarch64__)
+template <int64_t kRegisterPairs>
+C10_ALWAYS_INLINE void gemv_notrans_block_neon(
+    int64_t output_offset,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  float32x4_t acc[kRegisterPairs * 2];
+#pragma unroll
+  for (int64_t r = 0; r < kRegisterPairs * 2; ++r) {
+    if (beta == 0.0f) {
+      acc[r] = vdupq_n_f32(0.0f);
+    } else {
+      acc[r] = vld1q_f32(c + output_offset + r * 4);
+      if (beta != 1.0f) {
+        acc[r] = vmulq_n_f32(acc[r], beta);
+      }
+    }
+  }
+
+  for (int64_t l = 0; l < k; ++l) {
+    const float b_val = static_cast<float>(b[l]) * alpha;
+    const auto* a_col =
+        reinterpret_cast<const uint16_t*>(a + l * lda + output_offset);
+#pragma unroll
+    for (int64_t r = 0; r < kRegisterPairs; ++r) {
+      const uint16x8_t a_bf16 = vld1q_u16(a_col + r * 8);
+      const float32x4_t a_low =
+          vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16));
+      const float32x4_t a_high =
+          vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(a_bf16), 16));
+      acc[r * 2] = vfmaq_n_f32(acc[r * 2], a_low, b_val);
+      acc[r * 2 + 1] = vfmaq_n_f32(acc[r * 2 + 1], a_high, b_val);
+    }
+  }
+
+#pragma unroll
+  for (int64_t r = 0; r < kRegisterPairs * 2; ++r) {
+    vst1q_f32(c + output_offset + r * 4, acc[r]);
+  }
+}
+
+static void gemv_notrans_neon(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  int64_t i = 0;
+  for (; i + 64 <= m; i += 64) {
+    gemv_notrans_block_neon<8>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i + 32 <= m; i += 32) {
+    gemv_notrans_block_neon<4>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i + 16 <= m; i += 16) {
+    gemv_notrans_block_neon<2>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i + 8 <= m; i += 8) {
+    gemv_notrans_block_neon<1>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i < m; ++i) {
+    float acc = beta == 0.0f ? 0.0f : beta * c[i];
+    for (int64_t l = 0; l < k; ++l) {
+      acc += static_cast<float>(a[l * lda + i]) *
+          (static_cast<float>(b[l]) * alpha);
+    }
+    c[i] = acc;
+  }
+}
+
+static bool use_arm_bf16() {
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
+  static const bool supported = cpuinfo_initialize() && cpuinfo_has_arm_bf16();
+  return supported;
+#else
+  return false;
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
+}
+
+static float
+platform_bf16_dot(const BFloat16* vec1, const BFloat16* vec2, int64_t len) {
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
+  if (use_arm_bf16()) {
     return dot_with_fp32_arith_bfdot(vec1, vec2, len);
-  } else
-#endif // COMPILER_SUPPORTS_BF16_TARGET
-  {
-    return dot_with_fp32_arith_no_bfdot(vec1, vec2, len);
+  }
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
+  return dot_with_fp32_arith_no_bfdot(vec1, vec2, len);
+}
+
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
+static bool platform_supports_bf16_dot4() {
+  return use_arm_bf16();
+}
+
+static void platform_bf16_dot4(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+  dot4_with_fp32_arith_bfdot(vec1, vec2, stride2, len, out);
+}
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
+
+static bool platform_supports_bf16_gemv_notrans() {
+  return true;
+}
+
+static void platform_bf16_gemv_notrans(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  gemv_notrans_neon(m, k, alpha, a, lda, b, beta, c);
+}
+
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
+static bool platform_supports_bf16_gemv_transa() {
+  return false;
+}
+
+static void platform_bf16_gemv_transa(
+    int64_t,
+    int64_t,
+    float,
+    const BFloat16*,
+    int64_t,
+    const BFloat16*,
+    float,
+    float*) {}
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
+
+#elif COMPILER_SUPPORTS_X86_BF16_TARGET
+
+// GCC drops vector type attributes on direct std::array<__m512, ...>
+// instantiations and promotes that warning to an error in CI.
+struct M512Accumulator {
+  __m512 value;
+};
+
+// Native x86 bf16 dot using AVX512-BF16's vdpbf16ps (_mm512_dpbf16_ps),
+// which computes bf16 x bf16 -> fp32 accumulate in a single instruction.
+__attribute__((target("avx512f,avx512bw,avx512vl,avx512bf16"))) static float
+dot_with_fp32_arith_x86bfdot(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t len) {
+  constexpr int kBF16PerRegister = 32;
+  constexpr int kAccumulators = 4;
+  constexpr int kBF16PerIteration = kBF16PerRegister * kAccumulators;
+
+  std::array<M512Accumulator, kAccumulators> acc{};
+  for (int i = 0; i < kAccumulators; ++i) {
+    acc[i].value = _mm512_setzero_ps();
+  }
+
+  int64_t j = 0;
+  const int64_t len_main = len - (len % kBF16PerIteration);
+  for (; j < len_main; j += kBF16PerIteration) {
+    for (int i = 0; i < kAccumulators; ++i) {
+      const int64_t off = j + i * kBF16PerRegister;
+      const __m512bh a =
+          (__m512bh)_mm512_loadu_si512((const void*)(vec1 + off));
+      const __m512bh b =
+          (__m512bh)_mm512_loadu_si512((const void*)(vec2 + off));
+      acc[i].value = _mm512_dpbf16_ps(acc[i].value, a, b);
+    }
+  }
+
+  const int64_t len_vec = len - (len % kBF16PerRegister);
+  for (; j < len_vec; j += kBF16PerRegister) {
+    const __m512bh a = (__m512bh)_mm512_loadu_si512((const void*)(vec1 + j));
+    const __m512bh b = (__m512bh)_mm512_loadu_si512((const void*)(vec2 + j));
+    acc[0].value = _mm512_dpbf16_ps(acc[0].value, a, b);
+  }
+
+  float reduced_sum = 0;
+  for (int i = 0; i < kAccumulators; ++i) {
+    reduced_sum += _mm512_reduce_add_ps(acc[i].value);
+  }
+  for (; j < len; ++j) {
+    const float x1 = vec1[j];
+    const float x2 = vec2[j];
+    reduced_sum += x1 * x2;
+  }
+  return reduced_sum;
+}
+
+// x86 counterpart of dot4_with_fp32_arith_bfdot. The single-dot path above
+// carries four accumulators for ILP, but at len == headSize it never enters
+// its 128-wide main loop: it fills one accumulator and then reduces all four,
+// so three of every four reductions are over zeros. Here each accumulator
+// holds a distinct output instead, so the same four reductions do four times
+// the work.
+__attribute__((target("avx512f,avx512bw,avx512vl,avx512bf16"))) static void
+dot4_with_fp32_arith_x86bfdot(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+  constexpr int64_t kBF16PerRegister = 32;
+  std::array<M512Accumulator, 4> acc{};
+  for (int i = 0; i < 4; ++i) {
+    acc[i].value = _mm512_setzero_ps();
+  }
+
+  int64_t j = 0;
+  const int64_t len_vec = len - (len % kBF16PerRegister);
+  for (; j < len_vec; j += kBF16PerRegister) {
+    const __m512bh a = (__m512bh)_mm512_loadu_si512((const void*)(vec1 + j));
+    for (int i = 0; i < 4; ++i) {
+      const __m512bh b =
+          (__m512bh)_mm512_loadu_si512((const void*)(vec2 + i * stride2 + j));
+      acc[i].value = _mm512_dpbf16_ps(acc[i].value, a, b);
+    }
+  }
+
+  for (int i = 0; i < 4; ++i) {
+    out[i] = _mm512_reduce_add_ps(acc[i].value);
+  }
+
+  // Scalar fp32 tail, matching the numerics of the no_bfdot path.
+  for (; j < len; ++j) {
+    const float x1 = vec1[j];
+    for (int i = 0; i < 4; ++i) {
+      out[i] += x1 * static_cast<float>(vec2[i * stride2 + j]);
+    }
+  }
+}
+
+template <int64_t kRegisters>
+__attribute__((
+    target("avx512f,avx512bw,avx512vl,avx512bf16,fma"))) C10_ALWAYS_INLINE void
+gemv_notrans_block_x86bf16(
+    int64_t output_offset,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  std::array<M512Accumulator, kRegisters> acc{};
+  for (int64_t r = 0; r < kRegisters; ++r) {
+    if (beta == 0.0f) {
+      acc[r].value = _mm512_setzero_ps();
+    } else {
+      acc[r].value = _mm512_loadu_ps(c + output_offset + r * 16);
+      if (beta != 1.0f) {
+        acc[r].value = _mm512_mul_ps(acc[r].value, _mm512_set1_ps(beta));
+      }
+    }
+  }
+
+  for (int64_t l = 0; l < k; ++l) {
+    const __m512 b_vec = _mm512_set1_ps(static_cast<float>(b[l]) * alpha);
+    const BFloat16* a_col = a + l * lda + output_offset;
+    for (int64_t r = 0; r < kRegisters; ++r) {
+      const __m256i a_bf16 =
+          _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_col + r * 16));
+      // GCC 10 and 11 support AVX512-BF16 dot products but do not expose
+      // _mm512_cvtpbh_ps. Widen the bit patterns with AVX-512F instead.
+      const __m512 a_vec = _mm512_castsi512_ps(
+          _mm512_slli_epi32(_mm512_cvtepu16_epi32(a_bf16), 16));
+      acc[r].value = _mm512_fmadd_ps(a_vec, b_vec, acc[r].value);
+    }
+  }
+
+  for (int64_t r = 0; r < kRegisters; ++r) {
+    _mm512_storeu_ps(c + output_offset + r * 16, acc[r].value);
+  }
+}
+
+__attribute__((target("avx512f,avx512bw,avx512vl,avx512bf16,fma"))) static void
+gemv_notrans_x86bf16(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  int64_t i = 0;
+  for (; i + 128 <= m; i += 128) {
+    gemv_notrans_block_x86bf16<8>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i + 64 <= m; i += 64) {
+    gemv_notrans_block_x86bf16<4>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i + 32 <= m; i += 32) {
+    gemv_notrans_block_x86bf16<2>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i + 16 <= m; i += 16) {
+    gemv_notrans_block_x86bf16<1>(i, k, alpha, a, lda, b, beta, c);
+  }
+  for (; i < m; ++i) {
+    float acc = beta == 0.0f ? 0.0f : beta * c[i];
+    for (int64_t l = 0; l < k; ++l) {
+      acc += static_cast<float>(a[l * lda + i]) *
+          (static_cast<float>(b[l]) * alpha);
+    }
+    c[i] = acc;
+  }
+}
+
+__attribute__((target("avx512f,avx512bw,avx512vl,avx512bf16"))) static void
+gemv_transa_x86bfdot(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  int64_t i = 0;
+  for (; i + 4 <= m; i += 4) {
+    std::array<float, 4> dots{};
+    dot4_with_fp32_arith_x86bfdot(b, a + i * lda, lda, k, dots.data());
+    for (int64_t d = 0; d < 4; ++d) {
+      c[i + d] =
+          beta == 0.0f ? alpha * dots[d] : beta * c[i + d] + alpha * dots[d];
+    }
+  }
+  for (; i < m; ++i) {
+    const float dot = dot_with_fp32_arith_x86bfdot(a + i * lda, b, k);
+    c[i] = beta == 0.0f ? alpha * dot : beta * c[i] + alpha * dot;
+  }
+}
+
+static bool use_x86_bf16() {
+  static const bool supported =
+      cpuinfo_initialize() && cpuinfo_has_x86_avx512bf16();
+  return supported;
+}
+
+static float
+platform_bf16_dot(const BFloat16* vec1, const BFloat16* vec2, int64_t len) {
+  return use_x86_bf16() ? dot_with_fp32_arith_x86bfdot(vec1, vec2, len)
+                        : dot_with_fp32_arith_no_bfdot(vec1, vec2, len);
+}
+
+static bool platform_supports_bf16_dot4() {
+  return use_x86_bf16();
+}
+
+static void platform_bf16_dot4(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+  dot4_with_fp32_arith_x86bfdot(vec1, vec2, stride2, len, out);
+}
+
+static bool platform_supports_bf16_gemv_notrans() {
+  return use_x86_bf16();
+}
+
+static void platform_bf16_gemv_notrans(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  gemv_notrans_x86bf16(m, k, alpha, a, lda, b, beta, c);
+}
+
+static bool platform_supports_bf16_gemv_transa() {
+  return use_x86_bf16();
+}
+
+static void platform_bf16_gemv_transa(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  gemv_transa_x86bfdot(m, k, alpha, a, lda, b, beta, c);
+}
+
+#else
+
+static float
+platform_bf16_dot(const BFloat16* vec1, const BFloat16* vec2, int64_t len) {
+  return dot_with_fp32_arith_no_bfdot(vec1, vec2, len);
+}
+
+#endif // defined(__aarch64__)
+
+float bf16_dot_with_fp32_arith(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t len) {
+  return platform_bf16_dot(vec1, vec2, len);
+}
+
+void bf16_dot4_with_fp32_arith(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET || COMPILER_SUPPORTS_X86_BF16_TARGET
+  if (platform_supports_bf16_dot4()) {
+    platform_bf16_dot4(vec1, vec2, stride2, len, out);
+    return;
+  }
+#endif
+  for (int64_t j = 0; j < 4; ++j) {
+    out[j] = bf16_dot_with_fp32_arith(vec1, vec2 + j * stride2, len);
+  }
+}
+
+void bf16_gemv_notrans_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+#if defined(__aarch64__) || COMPILER_SUPPORTS_X86_BF16_TARGET
+  if (platform_supports_bf16_gemv_notrans()) {
+    platform_bf16_gemv_notrans(m, k, alpha, a, lda, b, beta, c);
+    return;
+  }
+#endif
+  if (beta == 0.0f) {
+    std::fill(c, c + m, 0.0f);
+  } else if (beta != 1.0f) {
+    for (int64_t i = 0; i < m; ++i) {
+      c[i] *= beta;
+    }
+  }
+  for (int64_t l = 0; l < k; ++l) {
+    const BFloat16* a_col = a + l * lda;
+    const float b_val = static_cast<float>(b[l]) * alpha;
+    for (int64_t i = 0; i < m; ++i) {
+      c[i] += static_cast<float>(a_col[i]) * b_val;
+    }
+  }
+}
+
+void bf16_gemv_transa_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET || COMPILER_SUPPORTS_X86_BF16_TARGET
+  if (platform_supports_bf16_gemv_transa()) {
+    platform_bf16_gemv_transa(m, k, alpha, a, lda, b, beta, c);
+    return;
+  }
+#endif
+  int64_t i = 0;
+  for (; i + 4 <= m; i += 4) {
+    std::array<float, 4> dots{};
+    bf16_dot4_with_fp32_arith(b, a + i * lda, lda, k, dots.data());
+    for (int64_t d = 0; d < 4; ++d) {
+      c[i + d] =
+          beta == 0.0f ? alpha * dots[d] : beta * c[i + d] + alpha * dots[d];
+    }
+  }
+  for (; i < m; ++i) {
+    const float dot = bf16_dot_with_fp32_arith(a + i * lda, b, k);
+    c[i] = beta == 0.0f ? alpha * dot : beta * c[i] + alpha * dot;
   }
 }
 

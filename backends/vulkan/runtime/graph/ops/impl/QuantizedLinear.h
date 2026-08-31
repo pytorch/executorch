@@ -14,10 +14,10 @@
 
 namespace vkcompute {
 
-utils::uvec3 quantized_linear_local_wg_size(
+LocalWorkGroup quantized_linear_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
