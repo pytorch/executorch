@@ -47,11 +47,25 @@ from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
 from .qconfig import QuantizationConfig
 from .rules import _is_annotated, _mark_nodes_as_annotated, Q_ANNOTATION_KEY
 
+# Only the overloads torchao's `_fuse_conv_bn_qat` / `_fold_conv_bn_qat` can
+# actually match. Both trace their patterns from `F.conv1d`, `F.conv2d`,
+# `F.conv_transpose1d` and `F.conv_transpose2d`, which export to exactly these
+# four targets.
+#
+# Claiming a conv the fold cannot match is worse than not claiming it: this pass
+# drops the conv's output qspec on the assumption the fold will move the bn
+# output observer onto it, so if the fold misses, the conv is left emitting
+# float32 into a quantized graph and QNN rejects it (`0x232 != 0x408`, FLOAT_32
+# meeting UFIXED_POINT_8). `aten.conv2d.padding` -- produced by
+# `nn.Conv2d(..., padding="same")` -- hit exactly that. `aten.convolution.default`
+# only appears after decomposition, well after this pass runs, so it never
+# matched anything here either.
+#
+# Note `_is_conv_or_conv_transpose_node` is NOT a usable guard: it returns True
+# for `conv2d.padding`.
 CONV_TARGETS = (
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
-    torch.ops.aten.conv2d.padding,
-    torch.ops.aten.convolution.default,
     torch.ops.aten.conv_transpose1d.default,
     torch.ops.aten.conv_transpose2d.input,
 )

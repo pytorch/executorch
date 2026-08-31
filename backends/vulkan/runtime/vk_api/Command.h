@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
@@ -51,19 +51,19 @@ class CommandBuffer final {
   struct Bound {
     VkPipeline pipeline;
     VkPipelineLayout pipeline_layout;
-    utils::WorkgroupSize local_workgroup_size;
+    LocalWorkGroup lwg;
     VkDescriptorSet descriptors;
 
     explicit Bound()
         : pipeline{VK_NULL_HANDLE},
           pipeline_layout{VK_NULL_HANDLE},
-          local_workgroup_size{0u, 0u, 0u},
+          lwg{0u, 0u, 0u},
           descriptors{VK_NULL_HANDLE} {}
 
     inline void reset() {
       pipeline = VK_NULL_HANDLE;
       pipeline_layout = VK_NULL_HANDLE;
-      local_workgroup_size = utils::WorkgroupSize{0u, 0u, 0u};
+      lwg = LocalWorkGroup{0u, 0u, 0u};
       descriptors = VK_NULL_HANDLE;
     }
   };
@@ -89,13 +89,13 @@ class CommandBuffer final {
   void begin();
   void end();
 
-  void bind_pipeline(VkPipeline, VkPipelineLayout, const utils::WorkgroupSize);
+  void bind_pipeline(VkPipeline, VkPipelineLayout, const LocalWorkGroup&);
   void bind_descriptors(VkDescriptorSet);
   void set_push_constants(VkPipelineLayout, const void*, uint32_t);
 
   void insert_barrier(PipelineBarrier& pipeline_barrier);
   void insert_barrier_only(PipelineBarrier& pipeline_barrier);
-  void dispatch(const utils::uvec3&);
+  void dispatch(const GlobalWorkGrid&, const LocalWorkGroup&);
   void blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst);
 
   void write_timestamp(VkQueryPool, const uint32_t) const;

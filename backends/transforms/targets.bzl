@@ -244,6 +244,22 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "propagate_view_copy_permute_pass",
+        srcs = ["propagate_view_copy_permute_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            ":canonicalize_view_copy_permute_pass",
+            ":dim_maps",
+            ":fuse_duplicate_users_pass",
+            ":fuse_identical_input_transforms_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "canonicalize_view_copy_permute_pass",
         srcs = [
             "canonicalize_view_copy_permute_pass.py",
