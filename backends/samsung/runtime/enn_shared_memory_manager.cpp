@@ -11,6 +11,7 @@
 #include <executorch/backends/samsung/runtime/enn_api_implementation.h>
 #include <executorch/backends/samsung/runtime/logging.h>
 
+#include <inttypes.h>
 #include <mutex>
 
 namespace executorch {
@@ -83,17 +84,13 @@ bool SharedMemoryManager::query(
 }
 
 void SharedMemoryManager::free(void* ptr) {
-  free(ptr, {});
-}
-
-void SharedMemoryManager::free(void* ptr, std::align_val_t alignment) {
   std::lock_guard<std::mutex> lgd(instance_mutex_);
   auto enn_api_inst = EnnApi::getEnnApiInstance();
   for (auto it = buffers_.begin(); it != buffers_.end(); ++it) {
     if ((*it)->va == ptr) {
       ET_LOG(
           Info,
-          "va(%p), size(%d), offset(%d) is erased from LUT",
+          "va(%p), size(%" PRIu32 "), offset(%" PRIu32 ") is erased from LUT",
           ptr,
           (*it)->size,
           (*it)->offset);

@@ -27,6 +27,8 @@ namespace enn {
  */
 class ExynosFileDataLoader final : public executorch::runtime::DataLoader {
  public:
+  // `alignment` is validated but not applied: ENN shared memory buffers are
+  // always page-aligned.
   static executorch::runtime::Result<ExynosFileDataLoader> from(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t));

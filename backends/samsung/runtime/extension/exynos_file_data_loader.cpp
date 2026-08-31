@@ -28,9 +28,9 @@
 // Some platforms (e.g. Xtensa) do not support pread() that we use to read the
 // file at different offsets simultaneously from multiple threads not affecting
 // each other. We list them below and use a workaround for them.
-#if defined(__xtensa__)
+#if defined(__xtensa__) || defined(__hexagon__)
 #define ET_HAVE_PREAD 0
-#endif // defined(__xtensa__)
+#endif // defined(__xtensa__) || defined(__hexagon__)
 
 #ifndef ET_HAVE_PREAD
 #define ET_HAVE_PREAD 1
@@ -54,28 +54,13 @@ bool is_power_of_2(size_t value) {
   return value > 0 && (value & ~(value - 1)) == value;
 }
 
-inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
-  size_t aligned_size = (size + static_cast<size_t>(alignment) - 1) &
-      ~(static_cast<size_t>(alignment) - 1);
-  return SharedMemoryManager::getInstance()->alloc(aligned_size);
-}
-
-inline void et_aligned_free(void* ptr, std::align_val_t alignment) {
-  return SharedMemoryManager::getInstance()->free(ptr, alignment);
-}
-
 /**
  * FreeableBuffer::FreeFn-compatible callback.
  *
- * `data` is the original buffer pointer.
- * `context` is the original alignment.
- *
- * `size` is unused.
+ * `data` is the original buffer pointer. `context` and `size` are unused.
  */
-void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
-  et_aligned_free(
-      data,
-      static_cast<std::align_val_t>(reinterpret_cast<uintptr_t>(context)));
+void FreeSegment(ET_UNUSED void* context, void* data, ET_UNUSED size_t size) {
+  SharedMemoryManager::getInstance()->free(data);
 }
 
 } // namespace
@@ -164,32 +149,25 @@ Result<FreeableBuffer> ExynosFileDataLoader::load(
     return FreeableBuffer(nullptr, 0, /*free_fn=*/nullptr);
   }
 
-  // Allocate memory for the FreeableBuffer.
-  void* aligned_buffer = et_aligned_alloc(size, alignment_);
-  if (aligned_buffer == nullptr) {
+  auto* shared_memory = SharedMemoryManager::getInstance();
+  void* buffer = shared_memory->alloc(size);
+  if (buffer == nullptr) {
     ET_LOG(
         Error,
-        "Reading from %s at offset %zu: et_aligned_alloc(%zu, %zu) failed",
+        "Reading from %s at offset %zu: alloc(%zu) failed",
         file_name_,
         offset,
-        size,
-        static_cast<size_t>(alignment_));
+        size);
     return Error::MemoryAllocationFailed;
   }
 
-  auto err = load_into(offset, size, segment_info, aligned_buffer);
+  auto err = load_into(offset, size, segment_info, buffer);
   if (err != Error::Ok) {
-    et_aligned_free(aligned_buffer, alignment_);
+    shared_memory->free(buffer);
     return err;
   }
 
-  // Pass the alignment as context to FreeSegment.
-  return FreeableBuffer(
-      aligned_buffer,
-      size,
-      FreeSegment,
-      // NOLINTNEXTLINE(performance-no-int-to-ptr)
-      reinterpret_cast<void*>(static_cast<uintptr_t>(alignment_)));
+  return FreeableBuffer(buffer, size, FreeSegment);
 }
 
 Result<size_t> ExynosFileDataLoader::size() const {

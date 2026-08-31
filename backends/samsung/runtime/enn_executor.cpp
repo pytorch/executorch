@@ -11,51 +11,32 @@
 #include <executorch/backends/samsung/runtime/logging.h>
 #include <executorch/backends/samsung/runtime/profile.hpp>
 
-#include <android/log.h>
 #include <inttypes.h>
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <fstream>
-#include <string>
+#include <cstring>
 #include <vector>
 
 namespace torch {
 namespace executor {
 namespace enn {
 
-uint32_t get_size_from_fd(int fd) {
-  if (fd < 0) {
-    ET_LOG(Error, "get_size_from_fd(), invalid fd(%d)\n", fd);
-    return 0;
-  } else {
-    off_t file_size = lseek(fd, 0, SEEK_END);
-    if (file_size < 0) {
-      return 0;
-    } else {
-      return static_cast<uint32_t>(file_size);
-    }
-  }
-}
-
 Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
   EXYNOS_ATRACE_FUNCTION_LINE();
-  auto _sm_instance = executorch::backends::enn::shared_memory_manager::
+  auto sm_instance = executorch::backends::enn::shared_memory_manager::
       SharedMemoryManager::getInstance();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
   EnnReturn ret = ENN_RET_SUCCESS;
 
-  ET_LOG(Info, "Start to open model %p, %ld", binary_buf_addr, buf_size);
+  ET_LOG(Info, "Start to open model %p, %zu", binary_buf_addr, buf_size);
 
   EnnBufferPtr shared_buffer = nullptr;
-  if (_sm_instance->query(&shared_buffer, binary_buf_addr, buf_size)) {
+  if (sm_instance->query(&shared_buffer, binary_buf_addr, buf_size)) {
     int32_t fd;
     if (shared_buffer->va == binary_buf_addr &&
         !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(shared_buffer, &fd)) {
       ret = enn_api_inst->EnnOpenModelFromFd(fd, &model_id_);
       if (ret == ENN_RET_SUCCESS) {
         ET_LOG(Info, "Opened model from file descriptor, so fd is closed");
-        _sm_instance->free(shared_buffer->va);
+        sm_instance->free(shared_buffer->va);
       }
     }
   }

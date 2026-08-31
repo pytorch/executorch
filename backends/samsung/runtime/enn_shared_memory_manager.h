@@ -11,7 +11,6 @@
 #include <executorch/backends/samsung/runtime/enn_type.h>
 
 #include <cstddef>
-#include <new>
 #include <vector>
 
 namespace executorch {
@@ -32,7 +31,6 @@ class SharedMemoryManager {
 
   void* alloc(const size_t size);
   void free(void* ptr);
-  void free(void* ptr, std::align_val_t alignment);
   bool query(EnnBufferPtr* out, const void* ptr, const size_t size);
 
  private:
