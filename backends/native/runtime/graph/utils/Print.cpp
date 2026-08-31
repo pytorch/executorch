@@ -31,6 +31,19 @@ std::string id_list_str(const std::vector<ValueId>& ids) {
   return s + "]";
 }
 
+// Like id_list_str, but every entry is expected to resolve: a graph's I/O list
+// has no absent slots, so kInvalid there is corruption worth showing as "%-1".
+std::string join_ids(const std::vector<ValueId>& ids) {
+  std::string s = "[";
+  for (size_t i = 0; i < ids.size(); ++i) {
+    if (i) {
+      s += ", ";
+    }
+    s += "%" + std::to_string(ids[i]);
+  }
+  return s + "]";
+}
+
 std::string output_str(const Output& out) {
   if (out.kind == OutputValueKind::TensorList) {
     return id_list_str(out.elem_ids);
@@ -166,6 +179,24 @@ std::string to_string(const Node& node) {
       }
       s += output_str(node.outputs[i]);
     }
+  }
+  return s;
+}
+
+std::string to_string(const Graph& graph) {
+  std::string s = "inputs: " + join_ids(graph.input_ids) + "\n";
+  if (!graph.schedule.empty()) {
+    for (NodeId id : graph.schedule) {
+      s += "  " + to_string(graph.node(id)) + "\n";
+    }
+  } else {
+    for (const Node& n : graph.nodes) {
+      s += "  " + to_string(n) + "\n";
+    }
+  }
+  s += "outputs: " + join_ids(graph.output_ids) + "\n";
+  if (!graph.subgraphs.empty()) {
+    s += "(" + std::to_string(graph.subgraphs.size()) + " subgraphs)\n";
   }
   return s;
 }
