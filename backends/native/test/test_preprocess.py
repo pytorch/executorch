@@ -164,6 +164,23 @@ class PreprocessSerializationTest(unittest.TestCase):
             )
         )
 
+    def test_reinplace_produces_inplace_relu(self):
+        class ReluModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(8, 8)
+
+            def forward(self, x):
+                return torch.relu(self.linear(x))
+
+        blob = _get_delegate_blob(_lower(ReluModel(), (torch.randn(1, 8),)))
+        graph = deserialize_graph(blob)
+        targets = _call_function_targets(graph)
+        self.assertTrue(
+            any(t is not None and "relu_" in t for t in targets),
+            f"expected in-place relu_, got {targets}",
+        )
+
     def test_constants_shipped_via_named_data(self):
         edge = _lower(nn.Linear(4, 4), (torch.randn(1, 4),))
         blob = _get_delegate_blob(edge)

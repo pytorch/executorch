@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <vector>
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif
@@ -80,7 +81,12 @@ class ET_EXPERIMENTAL Sampler {
   // 0 (or >= vocab_size_) means top-k is disabled.
   int32_t topk_ = 0;
   unsigned long long rng_state_;
+  std::vector<float> float_logits_buffer_;
 };
+
+template <>
+int32_t Sampler::sample<executorch::aten::BFloat16>(
+    executorch::aten::BFloat16* logits);
 
 } // namespace llm
 } // namespace extension
