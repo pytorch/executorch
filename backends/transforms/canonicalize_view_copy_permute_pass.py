@@ -35,6 +35,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    _recompile_before_retrace = True
 
     _VIEW_TARGET = exir_ops.edge.aten.view_copy.default
     _PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
@@ -81,7 +82,10 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
+            if self._recompile_before_retrace:
+                graph_module.recompile()
+            else:
+                graph_module.graph.lint()
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
