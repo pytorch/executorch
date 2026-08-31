@@ -18,6 +18,23 @@ namespace vkcompute {
 
 using namespace utils;
 
+// Threads co-operating on one softmax row, scaled with the row length. The
+// shader's shared arrays are MAX_NTHREADS (256) wide. Buffer storage only: the
+// texture path uses a different shader and grouping scheme.
+uint32_t softmax_nworkers(
+    ComputeGraph* graph,
+    const ValueRef in,
+    const int32_t reduce_dim) {
+  // reduce_dim is a WHCN/xyz index (0 = x = last dim) while size_at counts back
+  // from the end, so xyz 0 -> -1, 1 -> -2, 2 -> -3.
+  const uint32_t extent = graph->size_at<uint32_t>(-(reduce_dim + 1), in);
+  uint32_t nworkers = 4u;
+  while (nworkers < 256u && nworkers < extent) {
+    nworkers *= 2u;
+  }
+  return nworkers;
+}
+
 GlobalWorkGrid pick_softmax_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -36,6 +53,7 @@ GlobalWorkGrid pick_softmax_gwg(
   utils::uvec3 lwg_extents{1u, 1u, 1u};
   lwg_extents[reduce_dim] = 4u;
   if (graph->is_buffer_storage(out)) {
+    lwg_extents[reduce_dim] = softmax_nworkers(graph, in, reduce_dim);
     utils::uvec3 extents = {
         graph->size_at<uint32_t>(-1, out),
         graph->size_at<uint32_t>(-2, out),
@@ -103,7 +121,10 @@ void add_softmax_node(
 
   const int dim_val = graph.extract_scalar<int>(dim_ref);
 
-  vkapi::SpecVarList spec_constants = {reduce_dim_xyz};
+  vkapi::SpecVarList spec_constants = {
+      reduce_dim_xyz,
+      utils::safe_downcast<int32_t>(
+          softmax_nworkers(&graph, in, reduce_dim_xyz))};
   std::vector<ValueRef> resize_args = {dim_val};
 
   if (!graph.is_buffer_storage(out)) {
