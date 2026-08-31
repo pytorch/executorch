@@ -77,13 +77,18 @@ class DefaultDeviceRunnerAdapter:
     ) -> InferenceResult:
         """Execute the model on device via ADB.
 
+        Note: This is a two-step protocol. ``execute()`` runs the model and
+        returns performance metrics. Call ``pull_results()`` afterward to
+        retrieve the actual output data files from the device.
+
         Args:
             inference_options: Engine-specific options. Supported keys:
                 - ``method_index``: Index of the method to execute (default 0).
                 - ``iteration``: Number of inference iterations (default 1).
 
         Returns:
-            InferenceResult with output data and performance metrics.
+            InferenceResult with performance metrics. ``output_data`` is None
+            until ``pull_results()`` is called separately.
         """
         if self._adb is None:
             raise RuntimeError(

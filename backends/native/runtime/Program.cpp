@@ -31,18 +31,17 @@ Program Program::load(const void* data, size_t size) {
   const uint8_t* begin = static_cast<const uint8_t*>(data);
   std::vector<uint8_t> bytes(begin, begin + size);
 
-  if (!::native_backend::ProgramBufferHasIdentifier(bytes.data())) {
+  if (!fbs::ProgramBufferHasIdentifier(bytes.data())) {
     throw std::runtime_error(
         "native program: bad FlatBuffer file identifier (expected 'NPTG')");
   }
 
   flatbuffers::Verifier verifier(bytes.data(), bytes.size());
-  if (!::native_backend::VerifyProgramBuffer(verifier)) {
+  if (!fbs::VerifyProgramBuffer(verifier)) {
     throw std::runtime_error("native program: FlatBuffer verification failed");
   }
 
-  const ::native_backend::Program* program_fb =
-      ::native_backend::GetProgram(bytes.data());
+  const fbs::Program* program_fb = fbs::GetProgram(bytes.data());
   return Program(std::move(bytes), program_fb);
 }
 

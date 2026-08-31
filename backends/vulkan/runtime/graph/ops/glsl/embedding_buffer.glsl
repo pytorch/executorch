@@ -32,6 +32,8 @@ ${layout_declare_ubo(B, "BufferMetadata", "weight")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 TensorIndex out_tidx_to_indices_tidx(const TensorIndex out_tidx) {
   TensorIndex indices_tidx;
   int d = 0;
@@ -56,7 +58,7 @@ T load_weight_elem(const int embedding_idx, const uint dim_idx) {
 }
 
 void main() {
-  const uint out_bufi = gl_GlobalInvocationID.x;
+  const uint out_bufi = linear_idx_from_gid();
   if (out_of_bounds(out_bufi, outp)) {
     return;
   }
