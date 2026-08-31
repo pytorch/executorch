@@ -1,6 +1,6 @@
 # Using ExecuTorch on iOS
 
-ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML for hardware-accelerated execution on Apple platforms.
+ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and MLX for hardware-accelerated execution on Apple platforms.
 
 ## Integration
 
@@ -9,6 +9,7 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 * `executorch` - Core runtime components
 * `executorch_llm` - LLM-specific runtime components
 * `backend_coreml` - Core ML backend
+* `backend_mlx` - MLX backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
@@ -53,7 +54,7 @@ let package = Package(
   name: "YourPackageName",
   platforms: [
     .iOS(.v17),
-    .macOS(.v12),
+    .macOS(.v14),
   ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
@@ -78,6 +79,11 @@ let package = Package(
   ]
 )
 ```
+
+The ExecuTorch package requires a minimum of iOS 17 and macOS 14. Your package
+has to declare at least these versions, as shown above. If it declares a lower
+one, the dependency resolves but the build then fails with a message that the
+target's platform version is too low.
 
 Then check if everything works correctly:
 
@@ -154,12 +160,15 @@ ET_PLATFORM[sdk=macos*] = macos
 OTHER_LDFLAGS = $(inherited) \
     -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch_debug_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mlx_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a
 ```
 
 **Note:** In the example above, we link against the Debug version of the ExecuTorch runtime (`libexecutorch_debug`) to preserve the logs. Normally, that does not impact the performance too much. Nevertheless, remember to link against the release version of the runtime (`libexecutorch`) for the best performance and no logs.
+
+**Note:** The MLX backend loads its Metal kernels at runtime from a per-slice metallib inside a resource bundle named `executorch_backend_mlx_resources`, not from the frameworks in `cmake-out`. The build stages the correctly named files (`mlx-ios.metallib`, `mlx-ios-simulator.metallib`, `mlx-macos.metallib`) under `.Package.swift/backend_mlx_resources/`. If you integrate MLX from a source build, ship those files in a bundle of that name for the slices you use, or MLX links and registers but has no kernels to run.
 
 You can assign such a config file to your target in Xcode:
 

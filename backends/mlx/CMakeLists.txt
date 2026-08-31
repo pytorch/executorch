@@ -188,16 +188,91 @@ set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
 )
+# In a framework build the delegate is static, so MLX cannot find a colocated
+# metallib and instead loads one from a SwiftPM resource bundle. SWIFTPM_BUNDLE
+# is the bundle name and MLX_SWIFTPM_METALLIB_NAME the per-slice file inside it
+# (one per slice, since a slice's metallib does not load on another). PLATFORM
+# is set only for the Apple presets; a plain wheel build leaves it empty and
+# keeps the colocated path.
+set(_mlx_extra_cxx_flags "")
+set(_mlx_cxx_flags_arg "")
+if(PLATFORM)
+  if(PLATFORM STREQUAL "OS64")
+    set(_mlx_metallib_slice "ios")
+  elseif(PLATFORM STREQUAL "SIMULATORARM64")
+    set(_mlx_metallib_slice "ios-simulator")
+  else()
+    set(_mlx_metallib_slice "macos")
+  endif()
+  set(_mlx_extra_cxx_flags
+      "-DSWIFTPM_BUNDLE=\\\"executorch_backend_mlx_resources\\\" -DMLX_SWIFTPM_METALLIB_NAME=\\\"mlx-${_mlx_metallib_slice}\\\""
+  )
+  # Only override the sub-build's CXX flags when there is something to add. An
+  # empty -DCMAKE_CXX_FLAGS= on the command line beats the environment, so
+  # passing it unconditionally would silently drop a wheel build's CXXFLAGS for
+  # MLX only.
+  set(_mlx_cxx_flags_arg "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}")
+endif()
+
+# Prefer the preset's per-slice DEPLOYMENT_TARGET; fall back to the toolchain
+# value.
+if(DEPLOYMENT_TARGET)
+  set(_mlx_osx_deployment_target ${DEPLOYMENT_TARGET})
+else()
+  set(_mlx_osx_deployment_target ${CMAKE_OSX_DEPLOYMENT_TARGET})
+endif()
+
+# The sub-build is forced to a single-config generator (Unix Makefiles), which
+# reads CMAKE_BUILD_TYPE, not the --config passed to the parent. Follow the
+# active configuration through $<CONFIG>, which resolves to the config being
+# built under a multi-config parent (Xcode) and to CMAKE_BUILD_TYPE under a
+# single-config one. It is empty only for a bare single-config parent that set
+# no type, so default that case to Release rather than compile MLX with no
+# optimization.
+set(_mlx_build_type "$<IF:$<BOOL:$<CONFIG>>,$<CONFIG>,Release>")
+
+# Decide the MLX sub-build's build command, consumed by BUILD_COMMAND below. An
+# empty value leaves ExternalProject's default in place, which is only the right
+# choice for a Makefiles parent: ExternalProject emits `$(MAKE)` (inheriting the
+# parent's jobserver) only when the PARENT generator matches "Make". Under Xcode
+# or Ninja it emits a bare `cmake --build`, with no -j and no jobserver, so MLX
+# would compile on one core. Name a job count there; a bare --parallel with no
+# number would expand to `make -j`, unbounded.
+cmake_host_system_information(
+  RESULT _mlx_host_cores QUERY NUMBER_OF_LOGICAL_CORES
+)
+if(CMAKE_GENERATOR MATCHES "Make")
+  set(_mlx_build_command "")
+else()
+  set(_mlx_build_command ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+                         ${_mlx_host_cores}
+  )
+endif()
+
 ExternalProject_Add(
   mlx_external
   SOURCE_DIR ${MLX_SOURCE_DIR}
   BINARY_DIR ${_mlx_binary_dir}
-  PATCH_COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh
-                ${MLX_SOURCE_DIR} ${_mlx_patches}
-  CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+  # Force a single-config generator for the sub-build. The parent Apple build
+  # uses the Xcode generator, which is multi-config and would place libmlx.a in
+  # a per-config subdirectory (mlx/Debug/libmlx.a). The paths below that consume
+  # the archive expect it flat at ${_mlx_binary_dir}/libmlx.a, the way a
+  # single-config generator emits it, which is also how the wheel build already
+  # produces it.
+  CMAKE_GENERATOR "Unix Makefiles"
+  CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${_mlx_build_type}"
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
-             -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
+             ${_mlx_cxx_flags_arg}
+             # The preset's DEPLOYMENT_TARGET carries the correct per-slice
+             # minimum (iOS 17, macOS 14); the ios.toolchain leaves
+             # CMAKE_OSX_DEPLOYMENT_TARGET at 12.0 on the iOS slices and only
+             # syncs it for MAC. The shader-flag patch reads
+             # CMAKE_OSX_DEPLOYMENT_TARGET, so feed the preset value in as that,
+             # or the iOS metallib is stamped -mios-version-min=12.0.
+             -DCMAKE_OSX_DEPLOYMENT_TARGET=${_mlx_osx_deployment_target}
              -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
              -DPLATFORM=${PLATFORM}
              -DDEPLOYMENT_TARGET=${DEPLOYMENT_TARGET}
@@ -217,6 +292,14 @@ ExternalProject_Add(
   # MLX's own install() does not emit libmlx.a where we consume it or the
   # metallib at all, so skip the install step and read both from the build tree.
   INSTALL_COMMAND ""
+  # Build in parallel, but only where it is needed and always with a job count.
+  # Under the multi-config Xcode parent the generated sub-build step is `cmake
+  # --build . --config <cfg>` with no -j and no jobserver to inherit, so MLX
+  # would compile fully serially. Under a single-config parent the default build
+  # command is `$(MAKE)`, which already inherits the parent's jobserver, so
+  # overriding it there would break that and serialize MLX instead. A bare
+  # --parallel with no number expands to `make -j`, unbounded, so name a count.
+  BUILD_COMMAND ${_mlx_build_command}
   # ExternalProject stamps its build, so a bare MLX submodule bump (git
   # submodule update) would not invalidate the stamp and we'd link a stale
   # libmlx.a with no signal. BUILD_ALWAYS reruns the build step every configure;
@@ -224,6 +307,25 @@ ExternalProject_Add(
   BUILD_ALWAYS ON
   # Required so Ninja knows these are produced by the external build.
   BUILD_BYPRODUCTS ${_mlx_static_lib} ${_mlx_metallib}
+)
+
+# ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so
+# a reused build directory whose MLX source was reset (patches reverted) would
+# recompile an unpatched MLX and silently drop the iOS Metal SDK selection and
+# the SwiftPM metallib name. Re-apply the patches on every build; apply.sh is
+# idempotent (it reverse-checks each patch, skipping those already applied).
+# DEPENDERS configure, not build: mlx_metal_sdk_per_platform.patch edits the
+# sub-project's own CMake to pick the Metal SDK from PLATFORM, so it must land
+# before the sub-configure runs, or the shaders are built against the macOS SDK
+# for every slice. That does mean the sub-configure re-runs on each build, which
+# is the price of the ordering.
+ExternalProject_Add_Step(
+  mlx_external reapply_patches
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
+          ${_mlx_patches}
+  DEPENDEES patch
+  DEPENDERS configure
+  ALWAYS 1
 )
 
 # Imported target for the MLX static library produced by mlx_external. A static
@@ -283,6 +385,21 @@ add_dependencies(mlxdelegate mlx_schema)
 # Depend on mlx_external directly so libmlx.a exists before mlxdelegate links.
 add_dependencies(mlxdelegate mlx_external)
 
+# The Apple framework build reads each static library straight from the target
+# output directory (it merges them without an install step), but libmlx.a is
+# produced by the MLX sub-build in its own binary dir, not next to the delegate.
+# Copy it beside libmlxdelegate.a after the delegate builds so the framework
+# packaging finds it where it expects. Under the multi-config Xcode generator
+# the Apple presets use, TARGET_FILE_DIR resolves to the per-config directory
+# the packaging reads (<preset>/Release), which is what this relies on.
+add_custom_command(
+  TARGET mlxdelegate
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_mlx_static_lib}
+          $<TARGET_FILE_DIR:mlxdelegate>/libmlx.a
+  VERBATIM
+)
+
 # Add logging flag if enabled
 if(ET_MLX_ENABLE_OP_LOGGING)
   target_compile_definitions(mlxdelegate PRIVATE ET_MLX_ENABLE_OP_LOGGING=1)
@@ -333,6 +450,9 @@ endif()
 
 executorch_target_link_options_shared_lib(mlxdelegate)
 target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
+# Core tensor headers carry pre-existing narrowing conversions that trip Xcode's
+# -Wshorten-64-to-32 -Werror; suppress it here as XNNPACK and abseil already do.
+target_compile_options(mlxdelegate PRIVATE -Wno-shorten-64-to-32)
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(mlxdelegate PRIVATE ${_mlx_sanitizer_link_options})
 endif()
