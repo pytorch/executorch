@@ -72,7 +72,7 @@ void resize_reduce_per_row_node(
   graph->virtual_resize(out, new_sizes);
 }
 
-utils::uvec3 reduce_global_wg_size(
+GlobalWorkGrid reduce_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -81,39 +81,19 @@ utils::uvec3 reduce_global_wg_size(
   const ValueRef out = args.at(0).refs.at(0);
   const int32_t reduce_dim_whcn =
       graph->extract_scalar<int32_t>(resize_args.at(1));
-
-  utils::uvec3 global_wg_size = graph->logical_limits_of(out);
-  global_wg_size[reduce_dim_whcn] = 1;
-  return global_wg_size;
-}
-
-utils::uvec3 reduce_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)args;
-  (void)global_workgroup_size;
-
-  const int32_t reduce_dim_whcn =
-      graph->extract_scalar<int32_t>(resize_args.at(1));
   const int64_t group_dim_whcn =
       graph->extract_scalar<int64_t>(resize_args.at(2));
 
-  // This should match the value of MAX_NTHREADS in the reduce shader.
-  constexpr uint32_t max_nthreads = 16;
-
-  const uint32_t nworkers_per_group = 4;
-  const uint32_t ngroups = 4;
+  utils::uvec3 extents = graph->logical_limits_of(out);
+  extents[reduce_dim_whcn] = 1;
+  constexpr uint32_t max_nthreads = 16u;
+  constexpr uint32_t nworkers_per_group = 4u;
+  constexpr uint32_t ngroups = 4u;
   VK_CHECK_COND(nworkers_per_group * ngroups <= max_nthreads);
-
-  utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim_whcn] = nworkers_per_group;
-  local_wg_size[group_dim_whcn] = ngroups;
-
-  return local_wg_size;
+  utils::uvec3 lwg_extents{1u, 1u, 1u};
+  lwg_extents[reduce_dim_whcn] = nworkers_per_group;
+  lwg_extents[group_dim_whcn] = ngroups;
+  return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(lwg_extents));
 }
 
 void add_reduce_node(
@@ -161,8 +141,8 @@ void add_reduce_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      reduce_global_wg_size,
-      reduce_local_wg_size,
+      reduce_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -238,8 +218,8 @@ void add_reduce2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      reduce_global_wg_size,
-      reduce_local_wg_size,
+      reduce_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -257,7 +237,7 @@ void add_reduce2d_node(
       resize_reduce2d_node));
 }
 
-utils::uvec3 reduce_per_row_global_wg_size(
+GlobalWorkGrid reduce_per_row_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -266,23 +246,10 @@ utils::uvec3 reduce_per_row_global_wg_size(
   (void)resize_args;
 
   const ValueRef out = args.at(0).refs.at(0);
-  return {1u, utils::safe_downcast<uint32_t>(graph->numel_of(out)), 1u};
-}
-
-utils::uvec3 reduce_per_row_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-
-  uint32_t outputs_per_wg = 1u;
-  uint32_t workers_per_output = 64u;
-
-  return {workers_per_output, outputs_per_wg, 1u};
+  return GlobalWorkGrid(
+      {1u, utils::safe_downcast<uint32_t>(graph->numel_of(out)), 1u},
+      kTiledWorkGrid,
+      LocalWorkGroup(64u, 1u, 1u));
 }
 
 void add_reduce_per_row_node(
@@ -305,9 +272,9 @@ void add_reduce_per_row_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       // Global workgroup size function
-      reduce_per_row_global_wg_size,
+      reduce_per_row_gwg,
       // Local workgroup size function
-      reduce_per_row_local_wg_size,
+      pick_required_lwg,
       // Inputs and Outputs
       {{output, vkapi::kWrite}, {input, vkapi::kRead}},
       // Shader param buffers

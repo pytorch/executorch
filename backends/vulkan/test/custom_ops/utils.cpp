@@ -954,8 +954,8 @@ void BenchmarkResult::add_iter_timing(float time_us) {
 void BenchmarkResult::add_shader_timing(
     const std::string& shader_name,
     float time_us,
-    const uint32_t global_wg[3],
-    const uint32_t local_wg[3]) {
+    const uint32_t gwg[3],
+    const uint32_t lwg[3]) {
   // Find existing shader timing or create new one
   for (auto& st : shader_timings_) {
     if (st.shader_name == shader_name) {
@@ -968,12 +968,12 @@ void BenchmarkResult::add_shader_timing(
   ShaderTiming new_timing;
   new_timing.shader_name = shader_name;
   new_timing.iter_timings_us.push_back(time_us);
-  new_timing.global_wg_size[0] = global_wg[0];
-  new_timing.global_wg_size[1] = global_wg[1];
-  new_timing.global_wg_size[2] = global_wg[2];
-  new_timing.local_wg_size[0] = local_wg[0];
-  new_timing.local_wg_size[1] = local_wg[1];
-  new_timing.local_wg_size[2] = local_wg[2];
+  new_timing.gwg[0] = gwg[0];
+  new_timing.gwg[1] = gwg[1];
+  new_timing.gwg[2] = gwg[2];
+  new_timing.lwg[0] = lwg[0];
+  new_timing.lwg[1] = lwg[1];
+  new_timing.lwg[2] = lwg[2];
   shader_timings_.push_back(std::move(new_timing));
 }
 
@@ -1068,12 +1068,11 @@ void BenchmarkResult::print_summary(
       const auto& st = shader_timings_[0];
       std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
                 << truncate_shader_name(st.shader_name) << " " << std::left
-                << std::setw(GLOBAL_WG_WIDTH)
-                << format_wg_size(st.global_wg_size) << std::left
-                << std::setw(LOCAL_WG_WIDTH) << format_wg_size(st.local_wg_size)
-                << std::left << std::setw(KERNEL_NAME_WIDTH)
-                << get_kernel_name() << std::right << " "
-                << std::setw(SIZE_INFO_WIDTH) << size_info
+                << std::setw(GLOBAL_WG_WIDTH) << format_wg_size(st.gwg)
+                << std::left << std::setw(LOCAL_WG_WIDTH)
+                << format_wg_size(st.lwg) << std::left
+                << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name()
+                << std::right << " " << std::setw(SIZE_INFO_WIDTH) << size_info
                 << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
                 << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
                 << std::fixed << std::setprecision(3) << total_gflops
@@ -1088,10 +1087,9 @@ void BenchmarkResult::print_summary(
         // Shader lines don't show test case info
         std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
                   << truncate_shader_name(st.shader_name) << " " << std::left
-                  << std::setw(GLOBAL_WG_WIDTH)
-                  << format_wg_size(st.global_wg_size) << std::left
-                  << std::setw(LOCAL_WG_WIDTH)
-                  << format_wg_size(st.local_wg_size) << std::left
+                  << std::setw(GLOBAL_WG_WIDTH) << format_wg_size(st.gwg)
+                  << std::left << std::setw(LOCAL_WG_WIDTH)
+                  << format_wg_size(st.lwg) << std::left
                   << std::setw(KERNEL_NAME_WIDTH) << "" << std::right << " "
                   << std::setw(SIZE_INFO_WIDTH) << "" << std::setw(TIMING_WIDTH)
                   << std::fixed << std::setprecision(3) << shader_avg_time
@@ -1626,8 +1624,8 @@ BenchmarkResult execute_test_case(
         result.add_shader_timing(
             shader_result.kernel_name,
             duration_us,
-            shader_result.metadata.global_workgroup_size,
-            shader_result.metadata.local_workgroup_size);
+            shader_result.metadata.gwg,
+            shader_result.metadata.lwg);
       }
     }
     // gpu_time_us aggregates chained_dispatches worth of shader runs; divide
@@ -2160,11 +2158,9 @@ ValueRef quantized_weights_canvas(
     const ValueRef weight_ref) {
   const auto original_sizes = graph.sizes_of(weight_ref);
 
-  // Get the 2 highest values of original_sizes
   std::vector<int64_t> sorted_sizes = original_sizes;
   std::sort(sorted_sizes.begin(), sorted_sizes.end(), std::greater<int64_t>());
   int64_t largest1 = sorted_sizes.size() > 0 ? sorted_sizes[0] : 0;
-  int64_t largest2 = sorted_sizes.size() > 1 ? sorted_sizes[1] : 0;
 
   std::vector<int64_t> final_sizes = {1, largest1, largest1};
 
@@ -2190,19 +2186,14 @@ ValueRef quantized_weights_canvas(
   ValueRef packed_weight = graph.add_tensor(
       final_sizes, vkapi::kInt, utils::kTexture3D, utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size{
-      utils::div_up(utils::safe_downcast<uint32_t>(largest1), uint32_t(4)),
-      utils::safe_downcast<uint32_t>(largest2),
-      utils::safe_downcast<uint32_t>(std::min(largest1, int64_t(2048)))};
-
   std::string kernel_name = "packed_int32_canvas";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_weight));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(packed_weight),
-      graph.create_local_wg_size(packed_weight),
+      graph.create_gwg(packed_weight),
+      graph.create_lwg(packed_weight),
       weight_ref,
       packed_weight,
       // UBOs
@@ -2218,11 +2209,9 @@ ValueRef quantized_weights_canvas(
 ValueRef float_tensor_canvas(ComputeGraph& graph, const ValueRef weight_ref) {
   const auto original_sizes = graph.sizes_of(weight_ref);
 
-  // Get the 2 highest values of original_sizes
   std::vector<int64_t> sorted_sizes = original_sizes;
   std::sort(sorted_sizes.begin(), sorted_sizes.end(), std::greater<int64_t>());
   int64_t largest1 = sorted_sizes.size() > 0 ? sorted_sizes[0] : 0;
-  int64_t largest2 = sorted_sizes.size() > 1 ? sorted_sizes[1] : 0;
 
   std::vector<int64_t> final_sizes = {1, largest1, largest1};
 
@@ -2248,16 +2237,11 @@ ValueRef float_tensor_canvas(ComputeGraph& graph, const ValueRef weight_ref) {
   ValueRef packed_weight = graph.add_tensor(
       final_sizes, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size{
-      utils::div_up(utils::safe_downcast<uint32_t>(largest1), uint32_t(4)),
-      utils::safe_downcast<uint32_t>(largest2),
-      utils::safe_downcast<uint32_t>(std::min(largest1, int64_t(2048)))};
-
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR("float_canvas"),
-      graph.create_global_wg_size(packed_weight),
-      graph.create_local_wg_size(packed_weight),
+      graph.create_gwg(packed_weight),
+      graph.create_lwg(packed_weight),
       weight_ref,
       packed_weight,
       // UBOs

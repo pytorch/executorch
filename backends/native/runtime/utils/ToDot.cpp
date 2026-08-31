@@ -24,8 +24,6 @@
 namespace ptn {
 namespace {
 
-namespace nb = ::native_backend;
-
 // Escape a dynamic string for embedding inside a DOT double-quoted label:
 // backslash and double-quote get escaped; real newlines collapse to spaces so
 // they cannot break the label (we insert line breaks ourselves as the literal
@@ -60,7 +58,7 @@ bool nonempty(const flatbuffers::String* s) {
   return s != nullptr && s->size() > 0;
 }
 
-std::string dim_str(const nb::Dim* d) {
+std::string dim_str(const fbs::Dim* d) {
   if (d->min() == d->max()) {
     return std::to_string(d->min());
   }
@@ -68,18 +66,18 @@ std::string dim_str(const nb::Dim* d) {
       (d->max() < 0 ? std::string("inf") : std::to_string(d->max()));
 }
 
-std::string quant_suffix(const nb::QuantSpec* q) {
+std::string quant_suffix(const fbs::QuantSpec* q) {
   if (q == nullptr) {
     return "";
   }
   switch (q->scheme_type()) {
-    case nb::QuantScheme::AffineGroup: {
+    case fbs::QuantScheme::AffineGroup: {
       const auto* a = q->scheme_as_AffineGroup();
       const int gs = a != nullptr ? a->group_size() : 0;
       return std::string(" q:affine g=") +
           (gs == 0 ? "perchan" : std::to_string(gs));
     }
-    case nb::QuantScheme::PackedQuant: {
+    case fbs::QuantScheme::PackedQuant: {
       const auto* p = q->scheme_as_PackedQuant();
       return std::string(" q:") + (p != nullptr ? str_of(p->codec()) : "");
     }
@@ -89,11 +87,11 @@ std::string quant_suffix(const nb::QuantSpec* q) {
 }
 
 // e.g. "FLOAT[16,16]" or "BYTE[8,16] q:affine g=32"
-std::string meta_label(const nb::TensorMeta* m) {
+std::string meta_label(const fbs::TensorMeta* m) {
   if (m == nullptr) {
     return "";
   }
-  std::string s = nb::EnumNameScalarType(m->dtype());
+  std::string s = fbs::EnumNameScalarType(m->dtype());
   s += "[";
   const auto* sizes = m->sizes();
   if (sizes != nullptr) {
@@ -112,8 +110,8 @@ std::string meta_label(const nb::TensorMeta* m) {
 // Compact rendering of a non-tensor argument for a call node's label. Returns
 // raw text (the caller esc()s it). Tensor/tensor-list args are drawn as edges,
 // not here.
-std::string arg_str(const nb::Argument* a) {
-  using AV = nb::ArgumentValue;
+std::string arg_str(const fbs::Argument* a) {
+  using AV = fbs::ArgumentValue;
   switch (a->value_type()) {
     case AV::NoneArg:
       return "None";
@@ -137,7 +135,7 @@ std::string arg_str(const nb::Argument* a) {
     case AV::StringArg:
       return "\"" + str_of(a->value_as_StringArg()->value()) + "\"";
     case AV::ScalarTypeArg:
-      return nb::EnumNameScalarType(a->value_as_ScalarTypeArg()->value());
+      return fbs::EnumNameScalarType(a->value_as_ScalarTypeArg()->value());
     case AV::IntListArg: {
       const auto* x = a->value_as_IntListArg();
       const auto* vals = x->values();
@@ -199,22 +197,22 @@ std::string arg_str(const nb::Argument* a) {
     case AV::GraphArg:
       return "graph(" + str_of(a->value_as_GraphArg()->name()) + ")";
     default:
-      return nb::EnumNameArgumentValue(a->value_type());
+      return fbs::EnumNameArgumentValue(a->value_type());
   }
 }
 
-bool is_tensor_like(nb::ArgumentValue t) {
-  return t == nb::ArgumentValue::TensorArg ||
-      t == nb::ArgumentValue::TensorListArg ||
-      t == nb::ArgumentValue::OptionalTensorListArg ||
-      t == nb::ArgumentValue::GraphArg;
+bool is_tensor_like(fbs::ArgumentValue t) {
+  return t == fbs::ArgumentValue::TensorArg ||
+      t == fbs::ArgumentValue::TensorListArg ||
+      t == fbs::ArgumentValue::OptionalTensorListArg ||
+      t == fbs::ArgumentValue::GraphArg;
 }
 
 // Method-level side tables (empty for HOP subgraphs, which carry none).
 struct Ctx {
-  std::unordered_map<std::string, const nb::NamedTensorRef*> consts;
-  std::unordered_map<std::string, const nb::MutableBufferSpec*> muts;
-  std::unordered_map<std::string, const nb::OutputSpec*> ospecs;
+  std::unordered_map<std::string, const fbs::NamedTensorRef*> consts;
+  std::unordered_map<std::string, const fbs::MutableBufferSpec*> muts;
+  std::unordered_map<std::string, const fbs::OutputSpec*> ospecs;
 };
 
 // Draws the dataflow edges of one graph. `dangling` numbers the synthesized
@@ -223,7 +221,7 @@ struct Ctx {
 struct EdgeEmitter {
   std::string& out;
   const std::string& prefix;
-  const std::unordered_map<std::string, const nb::TensorMeta*>& tm;
+  const std::unordered_map<std::string, const fbs::TensorMeta*>& tm;
   const std::unordered_map<std::string, std::string>& def;
   const Ctx& ctx;
   int dangling = 0;
@@ -256,8 +254,8 @@ void EdgeEmitter::draw(
   if (to_output) {
     const auto os = ctx.ospecs.find(vn);
     if (os != ctx.ospecs.end() &&
-        os->second->kind() != nb::OutputKind::USER_OUTPUT) {
-      label += " [" + std::string(nb::EnumNameOutputKind(os->second->kind())) +
+        os->second->kind() != fbs::OutputKind::USER_OUTPUT) {
+      label += " [" + std::string(fbs::EnumNameOutputKind(os->second->kind())) +
           "->" + esc(str_of(os->second->target())) + "]";
     }
   }
@@ -280,19 +278,19 @@ void emit_graph(
     std::string& out,
     const std::string& prefix,
     const std::string& title,
-    const nb::Graph* g,
+    const fbs::Graph* g,
     const Ctx& ctx);
 
 void placeholder_label(
     const std::string& name,
-    const nb::TensorMeta* meta,
+    const fbs::TensorMeta* meta,
     const Ctx& ctx,
     std::string& label,
     std::string& extra) {
   const auto ci = ctx.consts.find(name);
   if (ci != ctx.consts.end()) {
-    const nb::NamedTensorRef* c = ci->second;
-    label = esc(name) + "\\n" + nb::EnumNameInputKind(c->kind()) +
+    const fbs::NamedTensorRef* c = ci->second;
+    label = esc(name) + "\\n" + fbs::EnumNameInputKind(c->kind()) +
         (c->mutated() ? " (mut)" : "") + "\\n" + esc(str_of(c->data_key()));
     if (c->meta() != nullptr) {
       label += "\\n" + meta_label(c->meta());
@@ -318,8 +316,8 @@ void placeholder_label(
 void emit_node(
     std::string& out,
     const std::string& id,
-    const nb::Node* nd,
-    const std::unordered_map<std::string, const nb::TensorMeta*>& tm,
+    const fbs::Node* nd,
+    const std::unordered_map<std::string, const fbs::TensorMeta*>& tm,
     const Ctx& ctx) {
   const std::string name = str_of(nd->name());
   std::string shape;
@@ -327,14 +325,14 @@ void emit_node(
   std::string extra;
 
   switch (nd->op_kind()) {
-    case nb::OpKind::PLACEHOLDER: {
+    case fbs::OpKind::PLACEHOLDER: {
       shape = "oval";
       const auto it = tm.find(name);
       placeholder_label(
           name, it != tm.end() ? it->second : nullptr, ctx, label, extra);
       break;
     }
-    case nb::OpKind::OUTPUT:
+    case fbs::OpKind::OUTPUT:
       shape = "doubleoctagon";
       label = name.empty() ? "output" : esc(name);
       break;
@@ -343,7 +341,7 @@ void emit_node(
       label = esc(name) + "\\n" + esc(str_of(nd->target()));
       const auto* ins = nd->inputs();
       if (ins != nullptr) {
-        for (const nb::NamedArgument* na : *ins) {
+        for (const fbs::NamedArgument* na : *ins) {
           if (is_tensor_like(na->arg()->value_type())) {
             continue; // drawn as an edge
           }
@@ -361,15 +359,15 @@ void emit_graph(
     std::string& out,
     const std::string& prefix,
     const std::string& title,
-    const nb::Graph* g,
+    const fbs::Graph* g,
     const Ctx& ctx) {
   if (g == nullptr) {
     return;
   }
 
-  std::unordered_map<std::string, const nb::TensorMeta*> tm;
+  std::unordered_map<std::string, const fbs::TensorMeta*> tm;
   if (const auto* tvs = g->tensor_values()) {
-    for (const nb::TensorValue* tv : *tvs) {
+    for (const fbs::TensorValue* tv : *tvs) {
       tm[str_of(tv->name())] = tv->meta();
     }
   }
@@ -381,13 +379,13 @@ void emit_graph(
   std::unordered_map<std::string, std::string> def;
   for (flatbuffers::uoffset_t j = 0; j < n; ++j) {
     ids[j] = prefix + "_" + std::to_string(j);
-    const nb::Node* nd = nodes->Get(j);
+    const fbs::Node* nd = nodes->Get(j);
     if (const auto* outs = nd->outputs()) {
-      for (const nb::Output* o : *outs) {
+      for (const fbs::Output* o : *outs) {
         if (nonempty(o->name())) {
           def[o->name()->str()] = ids[j];
         }
-        if (o->kind() == nb::OutputValueKind::TENSOR_LIST) {
+        if (o->kind() == fbs::OutputValueKind::TENSOR_LIST) {
           if (const auto* nm = o->names()) {
             for (const flatbuffers::String* s : *nm) {
               def[s->str()] = ids[j];
@@ -409,16 +407,16 @@ void emit_graph(
   EdgeEmitter edges{out, prefix, tm, def, ctx};
 
   for (flatbuffers::uoffset_t j = 0; j < n; ++j) {
-    const nb::Node* nd = nodes->Get(j);
-    const bool to_output = nd->op_kind() == nb::OpKind::OUTPUT;
+    const fbs::Node* nd = nodes->Get(j);
+    const bool to_output = nd->op_kind() == fbs::OpKind::OUTPUT;
     if (const auto* ins = nd->inputs()) {
       // Distinct cluster per GraphArg. Must stay outside the argument loop: a
       // node may carry several GraphArgs and each needs its own suffix.
       int sg_index = 0;
-      for (const nb::NamedArgument* na : *ins) {
-        const nb::Argument* a = na->arg();
+      for (const fbs::NamedArgument* na : *ins) {
+        const fbs::Argument* a = na->arg();
         switch (a->value_type()) {
-          case nb::ArgumentValue::TensorArg:
+          case fbs::ArgumentValue::TensorArg:
             edges.draw(
                 str_of(a->value_as_TensorArg()->name()),
                 ids[j],
@@ -426,7 +424,7 @@ void emit_graph(
                 na->mutated(),
                 to_output);
             break;
-          case nb::ArgumentValue::TensorListArg: {
+          case fbs::ArgumentValue::TensorListArg: {
             const auto* nm = a->value_as_TensorListArg()->names();
             if (nm != nullptr) {
               for (flatbuffers::uoffset_t x = 0; x < nm->size(); ++x) {
@@ -440,7 +438,7 @@ void emit_graph(
             }
             break;
           }
-          case nb::ArgumentValue::OptionalTensorListArg: {
+          case fbs::ArgumentValue::OptionalTensorListArg: {
             const auto* oa = a->value_as_OptionalTensorListArg();
             const auto* nm = oa->names();
             const auto* hv = oa->has_value();
@@ -458,8 +456,8 @@ void emit_graph(
             }
             break;
           }
-          case nb::ArgumentValue::GraphArg: {
-            const nb::GraphArg* ga = a->value_as_GraphArg();
+          case fbs::ArgumentValue::GraphArg: {
+            const fbs::GraphArg* ga = a->value_as_GraphArg();
             const std::string name = str_of(ga->name());
             const std::string sg = ids[j] + "_sg" + std::to_string(sg_index++);
             emit_graph(out, sg, "subgraph: " + name, ga->graph(), Ctx{});
@@ -484,7 +482,7 @@ void emit_graph(
       }
     }
     if (const auto* outs = nd->outputs()) {
-      for (const nb::Output* o : *outs) {
+      for (const fbs::Output* o : *outs) {
         if (nonempty(o->alias_of())) {
           const auto it = def.find(o->alias_of()->str());
           if (it != def.end()) {
@@ -499,7 +497,7 @@ void emit_graph(
   out += "  }\n";
 }
 
-std::string render_program(const nb::Program& program_fb) {
+std::string render_program(const fbs::Program& program_fb) {
   std::string out;
   out += "digraph program {\n";
   out += "  compound=true;\n";
@@ -513,20 +511,20 @@ std::string render_program(const nb::Program& program_fb) {
 
   if (const auto* methods = program_fb.methods()) {
     for (flatbuffers::uoffset_t i = 0; i < methods->size(); ++i) {
-      const nb::Method* m = methods->Get(i);
+      const fbs::Method* m = methods->Get(i);
       Ctx ctx;
       if (const auto* cs = m->constants()) {
-        for (const nb::NamedTensorRef* c : *cs) {
+        for (const fbs::NamedTensorRef* c : *cs) {
           ctx.consts[str_of(c->name())] = c;
         }
       }
       if (const auto* mbs = m->mutable_buffers()) {
-        for (const nb::MutableBufferSpec* mb : *mbs) {
+        for (const fbs::MutableBufferSpec* mb : *mbs) {
           ctx.muts[str_of(mb->name())] = mb;
         }
       }
       if (const auto* os = m->output_specs()) {
-        for (const nb::OutputSpec* o : *os) {
+        for (const fbs::OutputSpec* o : *os) {
           ctx.ospecs[str_of(o->name())] = o;
         }
       }
@@ -545,6 +543,8 @@ std::string render_program(const nb::Program& program_fb) {
 
 } // namespace
 
+// A debugging entry point, so it may have no caller in any checked-in code.
+// cppcheck-suppress unusedFunction
 std::string to_dot(const Program& program) {
   return render_program(*program.flatbuffer());
 }
