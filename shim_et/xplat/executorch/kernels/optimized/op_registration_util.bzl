@@ -96,19 +96,19 @@ def define_op_library(name, compiler_flags, deps):
         compiler_flags = (select({
             # kernels often have helpers with no prototypes just disabling the warning here as the headers
             # are codegend and linked in later
-            # -Wno-missing-prototypes is Clang-only for C++; GCC (used by
-            # Zephyr ARM cross-compilation) rejects it with -Werror, so
-            # exclude it for Zephyr. OSS bypasses the select since
-            # ovr_config//os:zephyr is not in the OSS buck2 prelude.
-            "DEFAULT": [
-                "-Wno-missing-prototypes",
-                # pragma unroll fails with -Os, don't need to warn us and
-                # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
-                "-Wno-pass-failed",
-            ],
-            "ovr_config//os:zephyr": [
-                "-Wno-pass-failed",
-            ],
+            # GCC's C++ frontend rejects this C-only flag under -Werror. Nested
+            # under DEFAULT so the windows (OS) and gcc keys can't both match.
+            "DEFAULT": select({
+                "DEFAULT": [
+                    "-Wno-missing-prototypes",
+                    # pragma unroll fails with -Os, don't need to warn us and
+                    # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
+                    "-Wno-pass-failed",
+                ],
+                "ovr_config//compiler:gcc": [
+                    "-Wno-pass-failed",
+                ],
+            }),
             # The vendored ATen vec headers trip several -Werror warnings on
             # the Windows (clang) host, so disable warnings-as-errors there.
             "ovr_config//os:windows": select({
