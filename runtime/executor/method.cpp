@@ -726,6 +726,28 @@ Error populate_operator_name(
 
   return Error::Ok;
 }
+
+// True if `impl` is aligned and lies wholly inside `allocator`'s buffer, or if
+// the allocator reports no usable bounds, in which case no claim can be made.
+bool isPlausibleTensorImpl(
+    const void* impl,
+    const MemoryAllocator* allocator) {
+  if (allocator == nullptr) {
+    return true;
+  }
+  const uintptr_t begin =
+      reinterpret_cast<uintptr_t>(allocator->base_address());
+  const uintptr_t size = allocator->size();
+  if (begin == 0 || size < sizeof(executorch::aten::TensorImpl)) {
+    return true;
+  }
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(impl);
+  if (addr % alignof(executorch::aten::TensorImpl) != 0 || addr < begin) {
+    return false;
+  }
+  // Subtract; begin + size could wrap near UINTPTR_MAX.
+  return size - sizeof(executorch::aten::TensorImpl) >= addr - begin;
+}
 } // namespace
 
 Error Method::resolve_operator(
@@ -781,6 +803,18 @@ Error Method::resolve_operator(
     // handle tensor list as well
     if (eval->isTensor()) {
       auto tensor = eval->toTensor();
+      // isTensor() checks only the tag, so a slot whose payload was
+      // never a TensorImpl* faults here. Every TensorImpl reachable
+      // during init() comes from the method allocator, so an address
+      // outside it cannot be valid.
+      ET_CHECK_OR_RETURN_ERROR(
+          isPlausibleTensorImpl(
+              tensor.unsafeGetTensorImpl(),
+              memory_manager_->method_allocator()),
+          InvalidProgram,
+          "Arg %" ET_PRIsize_t " TensorImpl* %p outside method allocator",
+          i,
+          static_cast<const void*>(tensor.unsafeGetTensorImpl()));
       meta[count].dtype_ = tensor.scalar_type();
       executorch::aten::DimOrderType* dim_order_ptr =
           allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
@@ -1064,7 +1098,10 @@ Error Method::init(
               num_instructions_missing_op++;
             } else if (err == Error::MemoryAllocationFailed) {
               return err;
-            } else {
+            } else if (err != Error::Ok) {
+              // Record only real errors: delayed_error is checked once
+              // after the loop, so assigning Ok would let a later
+              // successful instruction discard an earlier failure.
               delayed_error = err;
             }
           } break;
