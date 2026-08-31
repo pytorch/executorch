@@ -680,14 +680,26 @@ class ExportSession:
         if stage_artifact is None:
             RuntimeError("No delegation info available, run the lowering stage first")
 
-        # pyre-ignore
-        delegation_info = stage_artifact.get_context("delegation_info", None)
-        if delegation_info:
+        delegation_info_by_method = stage_artifact.get_context(
+            "delegation_info_by_method", None
+        )
+        if delegation_info_by_method:
+            delegation_infos = sorted(delegation_info_by_method.items())
+        else:
+            # pyre-ignore
+            delegation_info = stage_artifact.get_context("delegation_info", None)
+            delegation_infos = [(None, delegation_info)] if delegation_info else []
+
+        if not delegation_infos:
+            print("No delegation info available")
+            return
+
+        for method_name, delegation_info in delegation_infos:
+            if method_name is not None:
+                print(f"Delegation info for method '{method_name}':")
             print(delegation_info.get_summary())
             df = delegation_info.get_operator_delegation_dataframe()
             print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
-        else:
-            print("No delegation info available")
 
     # Use Any instead of ETRecord as return type to avoid static dependency on etrecord
     def get_etrecord(self) -> Any:
