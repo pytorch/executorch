@@ -5,8 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import hashlib
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -155,7 +157,10 @@ class TestMergeCudaPtes(unittest.TestCase):
                 [variant.target_sm for variant in metadata.variants], [80, 120]
             )
             self.assertEqual(
-                [variant.ptx_compute for variant in metadata.variants], [80, 0]
+                [variant.ptx_compute for variant in metadata.variants], [0, 0]
+            )
+            self.assertFalse(
+                any(variant.fallback_only for variant in metadata.variants)
             )
             self.assertEqual(len(metadata.entries), 1)
             self.assertEqual(metadata.entries[0].fqn, "model.weight")
@@ -176,13 +181,15 @@ class TestMergeCudaPtes(unittest.TestCase):
                 },
             )
 
-    def test_allows_only_lowest_source_to_contain_ptx(self) -> None:
+    def test_uses_ptx_only_from_explicit_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             sm80 = root / "sm80"
             sm120 = root / "sm120"
+            fallback_dir = root / "fallback"
             sm80.mkdir()
             sm120.mkdir()
+            fallback_dir.mkdir()
             inputs = [
                 self._write_artifact(sm80, 80, b"sm80-so", b"weight"),
                 self._write_artifact(
@@ -193,14 +200,24 @@ class TestMergeCudaPtes(unittest.TestCase):
                     ptx_compute=0,
                 ),
             ]
+            fallback = self._write_artifact(fallback_dir, 75, b"fallback-so", b"weight")
 
-            merged = deserialize_pte_binary(bytes(merge_cuda_pte_files(inputs)))
+            merged = deserialize_pte_binary(
+                bytes(merge_cuda_pte_files(inputs, fallback))
+            )
             delegate = merged.program.execution_plan[0].delegates[0]
             metadata = decode_cuda_aoti_metadata(
                 merged.program.backend_delegate_data[delegate.processed.index].data
             )
             self.assertEqual(
-                [variant.ptx_compute for variant in metadata.variants], [80, 0]
+                [variant.target_sm for variant in metadata.variants], [80, 120, 75]
+            )
+            self.assertEqual(
+                [variant.ptx_compute for variant in metadata.variants], [0, 0, 75]
+            )
+            self.assertEqual(
+                [variant.fallback_only for variant in metadata.variants],
+                [False, False, True],
             )
 
     def test_preserves_no_ptx_fallback(self) -> None:
@@ -251,7 +268,7 @@ class TestMergeCudaPtes(unittest.TestCase):
                 [variant.target_sm for variant in metadata.variants], [80, 120]
             )
             self.assertEqual(
-                [variant.ptx_compute for variant in metadata.variants], [80, 0]
+                [variant.ptx_compute for variant in metadata.variants], [0, 0]
             )
 
     def test_rejects_different_weight_content(self) -> None:
@@ -318,6 +335,25 @@ class TestMergeCudaPtes(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Duplicate CUDA target sm80"):
                 merge_cuda_pte_files(inputs)
 
+    def test_rejects_fallback_without_ptx(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            regular_dir = root / "regular"
+            fallback_dir = root / "fallback"
+            regular_dir.mkdir()
+            fallback_dir.mkdir()
+            regular = self._write_artifact(regular_dir, 80, b"sm80-so", b"weight")
+            fallback = self._write_artifact(
+                fallback_dir,
+                75,
+                b"fallback-so",
+                b"weight",
+                ptx_compute=0,
+            )
+
+            with self.assertRaisesRegex(ValueError, "exactly one PTX-capable"):
+                merge_cuda_pte_files([regular], fallback)
+
     def test_rejects_rocm(self) -> None:
         with patch(
             "executorch.backends.cuda.merge_ptes.torch.version.hip", "6.3"
@@ -329,11 +365,14 @@ class TestMergeCudaPtes(unittest.TestCase):
             root = Path(temporary)
             sm80 = root / "sm80"
             sm120 = root / "sm120"
+            fallback_dir = root / "fallback"
             output = root / "output"
             sm80.mkdir()
             sm120.mkdir()
+            fallback_dir.mkdir()
             first = self._write_artifact(sm80, 80, b"sm80-so", b"weight")
             second = self._write_artifact(sm120, 120, b"sm120-so", b"weight")
+            fallback = self._write_artifact(fallback_dir, 75, b"fallback-so", b"weight")
             self.assertIsNotNone(first.ptd_path)
             output_pte = output / "model.pte"
             output_ptd = output / "aoti_cuda_blob.ptd"
@@ -350,17 +389,29 @@ class TestMergeCudaPtes(unittest.TestCase):
                     str(first.ptd_path),
                     "--input-ptd",
                     str(second.ptd_path),
+                    "--fallback-pte",
+                    str(fallback.pte_path),
+                    "--fallback-ptd",
+                    str(fallback.ptd_path),
                     "--output-pte",
                     str(output_pte),
                     "--output-ptd",
                     str(output_ptd),
                 ],
-            ):
+            ), redirect_stdout(io.StringIO()) as stdout:
                 merge_main()
 
             self.assertTrue(output_pte.is_file())
             assert first.ptd_path is not None
             self.assertEqual(output_ptd.read_bytes(), first.ptd_path.read_bytes())
+            report = stdout.getvalue()
+            self.assertIn(f"cubin\tsm80\t{first.pte_path}", report)
+            self.assertIn(f"cubin\tsm120\t{second.pte_path}", report)
+            self.assertIn(
+                f"ptx-fallback\tcompute_75 (source sm75)\t"
+                f"{fallback.pte_path} [fallback]",
+                report,
+            )
 
 
 if __name__ == "__main__":

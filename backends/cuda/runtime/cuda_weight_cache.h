@@ -26,12 +26,14 @@ class CudaWeightCache final {
  public:
   static constexpr char kFormatMagic[] = "ETCUDAFQN3";
   static constexpr char kMultiArchFormatMagic[] = "ETCUDAFQN4";
+  static constexpr char kMultiArchFallbackFormatMagic[] = "ETCUDAFQN5";
   static constexpr size_t kFormatMagicSize = sizeof(kFormatMagic) - 1;
 
   struct Variant {
     uint32_t target_sm{0};
     uint32_t ptx_compute{0};
     std::string so_blob_key;
+    bool fallback_only{false};
   };
 
   struct Entry {

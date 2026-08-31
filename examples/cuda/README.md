@@ -40,7 +40,7 @@ checks that the `.pte` embeds a code object for the architecture it compiled for
 
 CUDA AOTI exports record their compiled target SM. Exports of the same program
 and weights can be combined so the runtime selects an exactly matching native
-AOTI library, or falls back to the PTX carried by the lowest compatible target.
+AOTI library, or uses one explicitly designated PTX fallback.
 
 ```bash
 python -m executorch.backends.cuda.merge_ptes \
@@ -48,24 +48,29 @@ python -m executorch.backends.cuda.merge_ptes \
   --input-pte rtx5090/model.pte \
   --input-ptd a100/aoti_cuda_blob.ptd \
   --input-ptd rtx5090/aoti_cuda_blob.ptd \
+  --fallback-pte portable/model.pte \
+  --fallback-ptd portable/aoti_cuda_blob.ptd \
   --output-pte merged/model.pte \
   --output-ptd merged/aoti_cuda_blob.ptd
 ```
 
 The inputs must come from the same ExecuTorch program and contain identical
-weights. The merged PTE stores every architecture-specific shared library. The
-output PTD reuses one validated copy of the weights. Each source may contain or
-omit PTX. If several sources contain forward-compatible PTX, only the lowest
-target SM is advertised as the runtime fallback. If none contains PTX, the
-merged PTE supports exact native-SM matches only.
+weights. Each regular `--input-pte` contributes only exact-SM native cubins;
+any PTX capability in a regular input is ignored. At most one
+`--fallback-pte` may be provided, and it must contain exactly one PTX-capable
+variant. The runtime uses it only when no regular input provides a native cubin
+for the current SM. The output PTD reuses one validated copy of the weights.
+After merging, the tool prints every native SM and PTX fallback together with
+its source PTE.
 
-To avoid carrying redundant PTX bytes in higher-SM shared libraries, export the
-lowest-SM source with the default behavior and add this compile spec to each
-higher-SM `CudaPartitioner`:
+Export every regular input with PTX disabled:
 
 ```python
 CompileSpec("cuda_include_ptx", b"OFF")
 ```
 
-The merge step cannot safely remove PTX from an already-linked shared library,
-so this option must be set while exporting the higher-SM source PTEs.
+Export the fallback with PTX enabled and with any portability constraints, such
+as a shared-memory limit, required by its target GPU set. AOTI host code and its
+CUDA fatbin are linked into one shared library, so the merge step does not
+rewrite ELF sections. Instead, the merged metadata makes regular libraries
+native-only and marks the fallback library as PTX-only for runtime selection.

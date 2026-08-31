@@ -89,6 +89,24 @@ std::vector<uint8_t> serialized_multi_arch_metadata() {
   return output;
 }
 
+std::vector<uint8_t> serialized_fallback_metadata() {
+  std::vector<uint8_t> output(
+      cuda::CudaWeightCache::kMultiArchFallbackFormatMagic,
+      cuda::CudaWeightCache::kMultiArchFallbackFormatMagic +
+          cuda::CudaWeightCache::kFormatMagicSize);
+  append_u32(output, 2); // variants
+  append_u32(output, 80);
+  append_u32(output, 0);
+  append_u32(output, 0); // regular
+  append_string(output, "sm80-so");
+  append_u32(output, 80);
+  append_u32(output, 80);
+  append_u32(output, 1); // fallback only
+  append_string(output, "fallback-so");
+  append_u32(output, 0); // entries
+  return output;
+}
+
 } // namespace
 
 TEST(CudaWeightCacheTest, LegacyPayloadIsNotMisdetected) {
@@ -165,6 +183,33 @@ TEST(CudaWeightCacheTest, SelectsLowestCompatiblePtxFallback) {
           metadata, 100, variant_index, uses_ptx_fallback),
       Error::Ok);
   EXPECT_EQ(metadata.variants[variant_index].target_sm, 80u);
+  EXPECT_TRUE(uses_ptx_fallback);
+}
+
+TEST(CudaWeightCacheTest, FallbackOnlyVariantNeverWinsNativeMatch) {
+  const std::vector<uint8_t> bytes = serialized_fallback_metadata();
+  cuda::CudaWeightCache::Metadata metadata;
+  ASSERT_EQ(
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),
+      Error::Ok);
+  ASSERT_EQ(metadata.variants.size(), 2u);
+  EXPECT_FALSE(metadata.variants[0].fallback_only);
+  EXPECT_TRUE(metadata.variants[1].fallback_only);
+
+  size_t variant_index = 0;
+  bool uses_ptx_fallback = false;
+  ASSERT_EQ(
+      cuda::CudaWeightCache::select_variant(
+          metadata, 80, variant_index, uses_ptx_fallback),
+      Error::Ok);
+  EXPECT_EQ(variant_index, 0u);
+  EXPECT_FALSE(uses_ptx_fallback);
+
+  ASSERT_EQ(
+      cuda::CudaWeightCache::select_variant(
+          metadata, 90, variant_index, uses_ptx_fallback),
+      Error::Ok);
+  EXPECT_EQ(variant_index, 1u);
   EXPECT_TRUE(uses_ptx_fallback);
 }
 

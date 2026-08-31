@@ -8,6 +8,7 @@ import unittest
 
 from executorch.backends.cuda.cuda_weight_collector import (
     AOTI_DEVICE_TYPE_CUDA,
+    CUDA_MULTI_ARCH_FALLBACK_MAGIC,
     CUDA_MULTI_ARCH_MAGIC,
     CudaAotiVariant,
     CudaWeightEntry,
@@ -57,6 +58,35 @@ class TestCudaWeightMetadata(unittest.TestCase):
                 [
                     CudaAotiVariant(80, 80, "first"),
                     CudaAotiVariant(80, 0, "second"),
+                ],
+                [self._entry()],
+            )
+
+    def test_fallback_metadata_allows_matching_regular_target(self) -> None:
+        entry = self._entry()
+        encoded = encode_cuda_multi_arch_metadata(
+            [
+                CudaAotiVariant(80, 0, "sm80-so"),
+                CudaAotiVariant(80, 80, "fallback-so", fallback_only=True),
+            ],
+            [entry],
+        )
+        self.assertTrue(encoded.startswith(CUDA_MULTI_ARCH_FALLBACK_MAGIC))
+        decoded = decode_cuda_aoti_metadata(encoded)
+        self.assertEqual(
+            decoded.variants,
+            [
+                CudaAotiVariant(80, 0, "sm80-so"),
+                CudaAotiVariant(80, 80, "fallback-so", fallback_only=True),
+            ],
+        )
+
+    def test_fallback_metadata_rejects_multiple_fallbacks(self) -> None:
+        with self.assertRaisesRegex(ValueError, "only one fallback"):
+            encode_cuda_multi_arch_metadata(
+                [
+                    CudaAotiVariant(80, 80, "first", fallback_only=True),
+                    CudaAotiVariant(75, 75, "second", fallback_only=True),
                 ],
                 [self._entry()],
             )
