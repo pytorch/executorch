@@ -20,9 +20,9 @@ namespace vkcompute {
 //
 // M and K are read from fp_input's live sizes (resize_args[0]) so that
 // virtual_resize updates flow through. When M == 1 the transpose is a no-op
-// (the downstream GEMV path reads fp_input directly) and global_wg returns
+// (the downstream GEMV path reads fp_input directly) and gwg returns
 // {0,0,0} to make DispatchNode::encode() skip the recording entirely.
-static utils::uvec3 transpose_cast_global_wg_size(
+static GlobalWorkGrid transpose_cast_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -35,29 +35,31 @@ static utils::uvec3 transpose_cast_global_wg_size(
   const uint32_t K = static_cast<uint32_t>(utils::val_at(-1, in_sizes));
 
   if (M == 1u) {
-    return {0u, 0u, 0u};
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
   }
 
   bool is_4x4 = shader.kernel_name.find("4x4") != std::string::npos;
   if (is_4x4) {
-    return {utils::div_up(K, 4u), utils::div_up(M, 4u), 1u};
+    return GlobalWorkGrid(
+        {utils::div_up(K, 4u), utils::div_up(M, 4u), 1u}, kTiledWorkGrid);
   }
-  return {K, utils::div_up(M, 4u), 1u};
+  return GlobalWorkGrid({K, utils::div_up(M, 4u), 1u}, kTiledWorkGrid);
 }
 
-static utils::uvec3 transpose_cast_local_wg_size(
+static LocalWorkGroup transpose_cast_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
 
   bool is_4x4 = shader.kernel_name.find("4x4") != std::string::npos;
-  return is_4x4 ? utils::uvec3{2u, 16u, 1u} : utils::uvec3{8u, 8u, 1u};
+  return LocalWorkGroup(
+      is_4x4 ? utils::uvec3{2u, 16u, 1u} : utils::uvec3{8u, 8u, 1u});
 }
 
 // Resize the transposed output tensor to match current fp_input dimensions.
@@ -102,8 +104,8 @@ void add_transpose_cast_contig_to_vectorized_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      transpose_cast_global_wg_size,
-      transpose_cast_local_wg_size,
+      transpose_cast_gwg,
+      transpose_cast_lwg,
       {{output, vkapi::kWrite}, {fp_input, vkapi::kRead}},
       {graph.sizes_ubo(fp_input)},
       {},

@@ -221,10 +221,12 @@ def test_conftest_matches_the_coremltools_marker(system, machine, sys_platform, 
 @pytest.mark.parametrize("system,machine,sys_platform", PLATFORMS)
 @pytest.mark.parametrize("python", PYTHONS)
 def test_scikit_learn_follows_coremltools(system, machine, sys_platform, python):
-    # scikit-learn is there for coremltools' palettization, so it is only useful where
-    # coremltools is. Nothing else in the wheel imports scikit-learn itself; scipy, which
-    # used to arrive as its transitive dependency, is declared in requirements-examples.txt
-    # for the code that does import it.
+    # coremltools needs scikit-learn to palettize weights, so it is only useful where
+    # coremltools is. Nothing here imports scikit-learn directly, and coremltools does not
+    # reach it through the _HAS_SKLEARN flag either: quantization_utils.py imports
+    # sklearn.cluster.KMeans at the point of use, on the default clustering path. So the
+    # CODEBOOK_WEIGHT_ONLY recipe fails without this entry even though _HAS_SKLEARN is False,
+    # and the two must stay tied together.
     assert _marker_says_installed(
         _base_dependency("scikit-learn"), system, machine, sys_platform, python
     ) == _marker_says_installed(

@@ -60,11 +60,13 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 #include "conv2d_int8_output_tile_store.glslh"
 #include "im2col_packed_int8_utils.glslh"
 
 void main() {
-  const int out_buf_idx = int(gl_GlobalInvocationID.x);
+  const int out_buf_idx = int(linear_idx_from_gid());
 
   Conv2dBlockExtents im2col_block_extents = make_block_extents(im2col_sizes);
 

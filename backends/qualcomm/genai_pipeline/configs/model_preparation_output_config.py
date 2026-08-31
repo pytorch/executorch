@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional, TYPE_CHECKING
+from typing import Any, Iterable, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from torch import nn
@@ -27,6 +27,12 @@ class ModelPreparationOutputConfig:
     Attributes:
         model_module: The prepared nn.Module ready for quantization.
         tokenizer: The tokenizer instance for encoding/decoding text.
+        example_inputs: Positional example inputs for ``torch.export``, derived
+            from the **model** (never from ``calibration_data``): they carry the
+            exported graph's signature, its zero-initialized KV caches, and the
+            AR length baked in because HTP has no dynamic shapes. The dependency
+            runs model -> dataset, not the reverse -- the calibration dataset's
+            attention-mask schema is itself derived from this tuple.
         calibration_data: Calibration samples. Any Iterable[Tuple[Tensor, ...]],
             including a DataLoader with a custom collate_fn.
         runtime_tokenizer_path: Path to the runtime tokenizer **file** (not the
@@ -36,6 +42,7 @@ class ModelPreparationOutputConfig:
 
     model_module: Optional["nn.Module"] = None
     tokenizer: Any = None
+    example_inputs: Optional[Tuple[Any, ...]] = None
     calibration_data: Optional[Iterable[Any]] = None
     runtime_tokenizer_path: Optional[Path] = None
     chat_template: Optional[str] = None

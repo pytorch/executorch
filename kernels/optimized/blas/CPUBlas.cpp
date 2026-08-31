@@ -47,6 +47,14 @@ inline CBLAS_TRANSPOSE to_cblas_transpose(TransposeType trans) {
 #endif // ET_BUILD_FOR_APPLE
 #endif // ET_BUILD_WITH_BLAS
 
+bool gemm_uses_blas() {
+#ifdef ET_BUILD_WITH_BLAS
+  return true;
+#else
+  return false;
+#endif
+}
+
 // clang-format off
 void normalize_last_dims(
     TransposeType transa, TransposeType transb,
