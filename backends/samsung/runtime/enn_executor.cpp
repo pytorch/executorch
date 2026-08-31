@@ -43,25 +43,24 @@ Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
   auto _sm_instance = executorch::backends::enn::shared_memory_manager::
       SharedMemoryManager::getInstance();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
-  EnnReturn ret;
+  EnnReturn ret = ENN_RET_SUCCESS;
 
   ET_LOG(Info, "Start to open model %p, %ld", binary_buf_addr, buf_size);
 
-  EnnBufferPtr _out;
-  if (_sm_instance->query(&_out, binary_buf_addr, buf_size)) {
-    int fd;
-    if (_out->va == binary_buf_addr &&
-        !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(_out, &fd)) {
+  EnnBufferPtr shared_buffer = nullptr;
+  if (_sm_instance->query(&shared_buffer, binary_buf_addr, buf_size)) {
+    int32_t fd;
+    if (shared_buffer->va == binary_buf_addr &&
+        !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(shared_buffer, &fd)) {
       ret = enn_api_inst->EnnOpenModelFromFd(fd, &model_id_);
-      ET_LOG(Info, "Opened Model From File Descriptor");
       if (ret == ENN_RET_SUCCESS) {
-        ET_LOG(Info, "Buffer Loading finished with fd, so fd would be closed");
-        _sm_instance->free(_out->va);
+        ET_LOG(Info, "Opened model from file descriptor, so fd is closed");
+        _sm_instance->free(shared_buffer->va);
       }
     }
   }
   if (!model_id_) {
-    ET_LOG(Info, "Opened Model From Memory");
+    ET_LOG(Info, "Open model from memory");
     ret = enn_api_inst->EnnOpenModelFromMemory(
         binary_buf_addr, buf_size, &model_id_);
   }

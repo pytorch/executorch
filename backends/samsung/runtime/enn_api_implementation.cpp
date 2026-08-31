@@ -71,7 +71,6 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnUnsetFastIpc, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnExecuteModelFastIpc, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnExecuteModel, this);
-  ENN_LOAD_API_FUNC(libenn_public_api_, EnnCreateBuffer, this);
   ENN_LOAD_API_FUNC(
       libenn_public_api_, EnnExecuteModelWithSessionIdAsync, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnExecuteModelWithSessionIdWait, this);

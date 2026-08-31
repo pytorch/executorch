@@ -1,5 +1,13 @@
-#include <executorch/backends/samsung/runtime/enn_api_wrapper.h>
-#include <executorch/backends/samsung/runtime/enn_executor.h>
+/*
+ *  Copyright (c) 2025 Samsung Electronics Co. LTD
+ *  All rights reserved
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ */
+#include <executorch/backends/samsung/runtime/enn_api_implementation.h>
+#include <executorch/backends/samsung/runtime/enn_shared_memory_manager.h>
 #include <executorch/backends/samsung/runtime/extension/exynos_file_data_loader.h>
 #include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/data_loader.h>
@@ -10,13 +18,14 @@
 #include <cstring>
 
 using namespace ::testing;
-using executorch::backends::enn::api_wrapper::SharedMemoryManager;
+using executorch::backends::enn::shared_memory_manager::SharedMemoryManager;
 using executorch::extension::FileDataLoader;
 using executorch::extension::testing::TempFile;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+using torch::executor::enn::EnnApi;
 
 class FileDataLoaderTest : public ::testing::TestWithParam<size_t> {
  protected:
@@ -253,8 +262,3 @@ INSTANTIATE_TEST_SUITE_P(
         2 * alignof(std::max_align_t),
         128,
         1024));
-
-int main(int argc, char** argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
