@@ -41,13 +41,13 @@ enum class ValueRole : int8_t {
 
 // A single SSA value (dataflow edge) in a Graph: its contents plus def-use
 // wiring, a storage alias and an open annotation map. The id fields are plain
-// handles; whether one is in range is a property of the owning arena, so
+// handles; whether one is in range is a property of the owning list, so
 // nothing here validates them.
 //
 // The variant's alternatives are listed in ValueKind order, so kind() is its
-// index. A Tensor carries metadata only, so a weight is an ordinary arena
+// index. A Tensor carries metadata only, so a weight is an ordinary list
 // value like any other, with its bytes held outside the graph. A List holds
-// ValueIds to its elements, so nesting goes through the arena; nothing
+// ValueIds to its elements, so nesting goes through the value list; nothing
 // deserialized is a List, it exists for in-memory rewrites such as grouping a
 // tuple.
 class Value {
@@ -80,7 +80,7 @@ class Value {
       : value_(std::move(meta)), name(std::move(name)) {}
 
   // The empty dim_order_hint is what makes the tensor contiguous.
-  Value(std::string name, ScalarType dtype, std::vector<Dim> sizes)
+  Value(std::string name, ScalarType dtype, std::vector<int64_t> sizes)
       : value_(TensorMeta{dtype, std::move(sizes), {}}),
         name(std::move(name)) {}
 

@@ -18,6 +18,8 @@ struct Program;
 
 namespace ptn {
 
+namespace fbs = ::native_backend;
+
 // Represents a loaded native-graph program
 class Program {
  private:
@@ -26,11 +28,9 @@ class Program {
   // across a move. Never null: load() is the only constructor path and throws
   // rather than return a null root, so accessors dereference it unchecked.
   std::vector<uint8_t> bytes_;
-  const ::native_backend::Program* program_fb_ = nullptr;
+  const fbs::Program* program_fb_ = nullptr;
 
-  Program(
-      std::vector<uint8_t> bytes,
-      const ::native_backend::Program* program_fb)
+  Program(std::vector<uint8_t> bytes, const fbs::Program* program_fb)
       : bytes_(std::move(bytes)), program_fb_(program_fb) {}
 
  public:
@@ -44,7 +44,7 @@ class Program {
   // std::runtime_error on failure.
   static Program load(const void* data, size_t size);
 
-  const ::native_backend::Program* flatbuffer() const {
+  const fbs::Program* flatbuffer() const {
     return program_fb_;
   }
 

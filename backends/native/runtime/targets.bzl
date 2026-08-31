@@ -76,7 +76,7 @@ def define_common_targets():
 
     # A named method: one top-level Graph plus its stateful signature bindings
     # (data bindings + output specs). Sits at the Program level (peer to the reader),
-    # above the graph/ arena package.
+    # above the graph/ package.
     runtime.cxx_library(
         name = "method",
         exported_headers = [

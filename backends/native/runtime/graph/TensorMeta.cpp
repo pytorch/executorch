@@ -10,21 +10,8 @@
 #include <limits>
 #include <ranges>
 #include <stdexcept>
-#include <string>
 
 namespace ptn {
-
-Dim::Dim(int64_t min_v, int64_t max_v) : min(min_v), max(max_v) {
-  if (min_v < 0 || (max_v >= 0 && max_v < min_v)) {
-    throw std::runtime_error(
-        "Dim: no shape has the range " + std::to_string(min_v) + ".." +
-        std::to_string(max_v));
-  }
-}
-
-bool TensorMeta::is_static() const {
-  return std::ranges::all_of(sizes, &Dim::is_static);
-}
 
 bool TensorMeta::is_contiguous() const {
   if (dim_order_hint.empty()) {
@@ -38,16 +25,15 @@ bool TensorMeta::is_contiguous() const {
 
 int64_t TensorMeta::numel() const {
   int64_t n = 1;
-  for (const Dim& d : sizes) {
-    const int64_t extent = d.is_static() ? d.min : d.max;
-    if (extent < 0) {
-      throw std::runtime_error("TensorMeta::numel: unbounded dynamic dim");
+  for (const int64_t dim_size : sizes) {
+    if (dim_size < 0) {
+      throw std::runtime_error("TensorMeta::numel: negative extent");
     }
     // Signed overflow is UB, so the product must be checked before it happens.
-    if (extent != 0 && n > std::numeric_limits<int64_t>::max() / extent) {
+    if (dim_size != 0 && n > std::numeric_limits<int64_t>::max() / dim_size) {
       throw std::runtime_error("TensorMeta::numel: element count overflows");
     }
-    n *= extent;
+    n *= dim_size;
   }
   return n;
 }
