@@ -426,8 +426,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max_seq_length",
         type=int,
-        default=128,
-        help="maximum length sequence to evaluate",
+        default=None,
+        help="maximum length sequence to evaluate; defaults to max_context_length",
     )
 
     parser.add_argument(
@@ -1941,7 +1941,7 @@ def _get_source_transforms(  # noqa
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
     local_global_attention: Optional[List[int]] = None,
-    max_seq_len: Optional[int] = None,
+    max_seq_len: int,
     use_torchao_kernels_linear: bool = False,
     use_torchao_kernels_tied_embedding: bool = False,
     quantize_with_hqq: bool = True,

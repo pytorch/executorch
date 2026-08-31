@@ -226,6 +226,7 @@ class Llama2Model(EagerModelBase):
                 params=model_args,
                 sink_size=sink_size,
                 window_size=window_size,
+                max_seq_len=self.max_seq_len,
             )
 
         missing, unexpected = None, None

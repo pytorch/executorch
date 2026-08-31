@@ -55,11 +55,13 @@ class TestRingKVCache(unittest.TestCase):
         self._require_usable_cuda()
         cache = RingKVCache(
             max_batch_size=1,
-            max_context_length=self.max_context_length,
+            max_context_length=self.max_context_length * 2,
             n_heads=self.n_heads,
             head_dim=self.head_dim,
             enable_dynamic_shape=True,
             dtype=self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         ).cuda()
         input_pos = torch.tensor([0], dtype=torch.long, device="cuda")
         seq_len = 3
@@ -98,11 +100,13 @@ class TestRingKVCache(unittest.TestCase):
         """Test basic update functionality of RingKVCache."""
         cache = RingKVCache(
             self.max_batch_size,
-            self.max_context_length,
+            self.max_context_length * 2,
             self.n_heads,
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors
@@ -148,11 +152,13 @@ class TestRingKVCache(unittest.TestCase):
         """Test that the ring buffer wraps around correctly."""
         cache = RingKVCache(
             self.max_batch_size,
-            self.max_context_length,
+            self.max_context_length * 2,
             self.n_heads,
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors for first update
@@ -211,11 +217,13 @@ class TestRingKVCache(unittest.TestCase):
         """Test multiple updates to the cache."""
         cache = RingKVCache(
             self.max_batch_size,
-            self.max_context_length,
+            self.max_context_length * 2,
             self.n_heads,
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         )
 
         # First update
@@ -341,11 +349,13 @@ class TestRingKVCache(unittest.TestCase):
         """Test the edge case where input_pos is 0."""
         cache = RingKVCache(
             self.max_batch_size,
-            self.max_context_length,
+            self.max_context_length * 2,
             self.n_heads,
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors
@@ -393,11 +403,13 @@ class TestRingKVCache(unittest.TestCase):
         """Test the edge case where input_pos + seq_len > max_context_length."""
         cache = RingKVCache(
             self.max_batch_size,
-            self.max_context_length,
+            self.max_context_length * 2,
             self.n_heads,
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors
@@ -457,11 +469,13 @@ class TestRingKVCache(unittest.TestCase):
         """Test that the original indices are tracked correctly in cache_positions."""
         cache = RingKVCache(
             self.max_batch_size,
-            self.max_context_length,
+            self.max_context_length * 2,
             self.n_heads,
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         )
 
         # First update at position 10 (will be mapped to position 10 in the ring buffer)
@@ -527,11 +541,13 @@ class TestRingKVCache(unittest.TestCase):
         """Test RingKVCache with enable_dynamic_shape=False."""
         cache = RingKVCache(
             self.max_batch_size,
-            self.max_context_length,
+            self.max_context_length * 2,
             self.n_heads,
             self.head_dim,
             enable_dynamic_shape=False,
             dtype=self.dtype,
+            window_size=self.max_context_length,
+            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors

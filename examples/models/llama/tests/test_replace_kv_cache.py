@@ -290,6 +290,8 @@ class TestReplaceKVCache(unittest.TestCase):
             self.n_kv_heads,
             self.head_dim,
             self.enable_dynamic_shape,
+            window_size=self.max_context_len,
+            max_seq_len=self.max_context_len,
         )
         model = self._create_mock_model([attention])
 
@@ -308,7 +310,9 @@ class TestReplaceKVCache(unittest.TestCase):
 
         # Replace KVCache with RingKVCache with different window sizes
         layer_sizes = [4, 8, 16]  # Different sliding window sizes for each layer
-        replace_kv_cache_with_ring_kv_cache(model, layer_sizes)
+        replace_kv_cache_with_ring_kv_cache(
+            model, layer_sizes, max_seq_len=self.max_context_len
+        )
 
         # Verify that each layer has the correct window size
         self.assertIsInstance(model.layers[0].attention.kv_cache, RingKVCache)

@@ -279,7 +279,8 @@ class ExportConfig:
     Configures properties relevant to the export process.
 
     Attributes:
-        max_seq_length: Maximum length of sequence to evaluate.
+        max_seq_length: Maximum length of sequence to evaluate. Defaults to
+            max_context_length when omitted.
         max_context_length: Maximum of context for the model to remember.
         output_dir: Output dir to save the exported .pte file to.
         output_name: File name to override the exported .pte file.
@@ -292,7 +293,7 @@ class ExportConfig:
             separate file, external to the PTE. Pass the file name here.
     """
 
-    max_seq_length: int = 128
+    max_seq_length: Optional[int] = None
     max_context_length: int = 128
     output_dir: str = "."
     output_name: Optional[str] = None
@@ -302,6 +303,8 @@ class ExportConfig:
     lora_weights_file: Optional[str] = None
 
     def __post_init__(self):
+        if self.max_seq_length is None:
+            self.max_seq_length = self.max_context_length
         if self.max_context_length < self.max_seq_length:
             raise ValueError(
                 f"max_context_length of {self.max_context_length} cannot be shorter than max_seq_length of {self.max_seq_length}"
@@ -768,10 +771,12 @@ class LlmConfig:
             llm_config.model.use_moe_quantized_op = args.use_moe_quantized_op
 
         # ExportConfig
-        if hasattr(args, "max_seq_length"):
-            llm_config.export.max_seq_length = args.max_seq_length
         if hasattr(args, "max_context_length"):
             llm_config.export.max_context_length = args.max_context_length
+        if getattr(args, "max_seq_length", None) is None:
+            llm_config.export.max_seq_length = llm_config.export.max_context_length
+        else:
+            llm_config.export.max_seq_length = args.max_seq_length
         if hasattr(args, "output_dir"):
             llm_config.export.output_dir = args.output_dir
         if hasattr(args, "output_name"):

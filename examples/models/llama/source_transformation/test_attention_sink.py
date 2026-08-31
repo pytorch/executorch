@@ -434,7 +434,11 @@ class AttentionSinkE2ETest(unittest.TestCase):
 
         model = construct_transformer(args)
         model = enable_attention_sink(
-            model, params=args, sink_size=sink_size, window_size=window_size
+            model,
+            params=args,
+            sink_size=sink_size,
+            window_size=window_size,
+            max_seq_len=args.max_seq_len,
         )
 
         if use_custom_sdpa:

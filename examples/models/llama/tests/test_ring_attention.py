@@ -86,8 +86,8 @@ class TestRingAttention(unittest.TestCase):
     def _create_ring_attention(
         self,
         attention,
+        max_seq_len,
         kv_cache_type: KVCacheType = KVCacheType.REGULAR,
-        max_seq_len=None,
     ):
         """Create attention with ring buffer KV cache."""
         assert self.sliding_window is not None
@@ -114,16 +114,13 @@ class TestRingAttention(unittest.TestCase):
             # Replace regular KVCache with RingKVCache
             baseline_attention.kv_cache = RingKVCache(
                 self.args.max_batch_size,
-                self.sliding_window,
+                self.args.max_context_len,
                 self.n_kv_heads,
                 self.head_dim,
                 self.args.enable_dynamic_shape,
                 self.dtype,
-                cache_size=min(
-                    self.args.max_context_len,
-                    self.sliding_window
-                    + (self.sliding_window if max_seq_len is None else max_seq_len),
-                ),
+                window_size=self.sliding_window,
+                max_seq_len=max_seq_len,
             )
         return baseline_attention
 
@@ -136,7 +133,7 @@ class TestRingAttention(unittest.TestCase):
         chunk_size = 6
         baseline_attn = self._create_baseline_attention(12, kv_cache_type)
         ring_attn = self._create_ring_attention(
-            baseline_attn, kv_cache_type, max_seq_len=chunk_size
+            baseline_attn, chunk_size, kv_cache_type
         )
 
         self.assertEqual(ring_attn.kv_cache.max_context_length, 10)
@@ -204,7 +201,7 @@ class TestRingAttention(unittest.TestCase):
         seq_len = 10
         self.sliding_window = 4
         baseline_attn = self._create_baseline_attention(seq_len, kv_cache_type)
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(baseline_attn, 1, kv_cache_type)
 
         # Process tokens one by one
         with torch.nn.attention.sdpa_kernel(
@@ -263,7 +260,7 @@ class TestRingAttention(unittest.TestCase):
         baseline_attn = self._create_baseline_attention(seq_len, kv_cache_type)
 
         # Create ring attention with sliding window size
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(baseline_attn, 1, kv_cache_type)
 
         # Process tokens one by one
         with torch.nn.attention.sdpa_kernel(
@@ -315,7 +312,7 @@ class TestRingAttention(unittest.TestCase):
         )
 
         # Create ring attention with sliding window size
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(baseline_attn, 1, kv_cache_type)
 
         # Process enough tokens to cause wrapping
         seq_len = 1
@@ -341,13 +338,12 @@ class TestRingAttention(unittest.TestCase):
                     f"Outputs differ at position {pos}",
                 )
 
-        # After processing 8 tokens with window size 4, the ring buffer should have wrapped around
+        # With W=3 and max_seq_len=1, the physical cache has 4 slots and wraps.
         # Check the cache positions to verify wrapping
         cache_positions = ring_attn.kv_cache.cache_positions_manager.cache_positions
 
-        # The cache positions should contain the most recent 4 positions (4, 5, 6, 7)
-        # mapped to the ring buffer indices
-        expected_positions = torch.tensor([6, 7, 2, 3, 4, 5], dtype=torch.long)
+        # Positions 4 through 7 occupy physical slots 0 through 3.
+        expected_positions = torch.tensor([4, 5, 6, 7], dtype=torch.long)
 
         self.assertTrue(
             torch.all(cache_positions == expected_positions),
@@ -380,7 +376,9 @@ class TestRingAttention(unittest.TestCase):
         baseline_attn = self._create_baseline_attention(seq_len, kv_cache_type)
 
         # Create ring attention with sliding window size
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(
+            baseline_attn, max(token_lens), kv_cache_type
+        )
 
         pos = 0
         with torch.nn.attention.sdpa_kernel(
