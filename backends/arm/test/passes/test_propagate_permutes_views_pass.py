@@ -555,6 +555,25 @@ def test_up_pass_refreshes_permute_meta_before_view_slice_swap() -> None:
     assert slice_node.args == (view, 0, 0, 1)
 
 
+class ViewPermutePropagationMRE(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.ops.aten.slice_copy.Tensor(x, 1, 0, 1, 1)
+        x = torch.ops.aten.permute_copy.default(x, [2, 1, 0])
+        return torch.ops.aten.view_copy.default(x, [8, 1])
+
+    data = (torch.arange(24, dtype=torch.float32).reshape(2, 3, 4),)
+
+
+def test_up_pass_preserves_slice_permute_view_output() -> None:
+    pipeline = PassPipeline[input_t](
+        ViewPermutePropagationMRE(),
+        ViewPermutePropagationMRE.data,
+        quantize=False,
+        pass_list=[PropagateViewCopyPermuteUpPass],
+    )
+    pipeline.run()
+
+
 def test_up_pass_keeps_scatter_input_view_after_slice() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
