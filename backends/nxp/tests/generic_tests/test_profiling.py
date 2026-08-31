@@ -27,7 +27,7 @@ from executorch.backends.nxp.tests.profiling_utils import (
     get_neutron_driver_version,
     get_neutron_kernel_kinds,
 )
-from executorch.devtools.inspector._inspector import Inspector
+from executorch.devtools.inspector import Inspector, TimeScale
 from executorch.examples.models.mlperf_tiny import (
     DeepAutoEncoder,
     DSCNNKWS,
@@ -44,6 +44,14 @@ def reseed_model_per_test_run():
 
 
 PATTERN_NEUTRON_MAP = r"Neutron to Edge map was created: (\{.*\})"
+
+# NPU frequency. Default value for the i.MXRT700 SoC is 324 MHz.
+NPU_FREQUENCY_HZ = 324000000  # 324 MHz
+
+
+def neutron_cycle_converter(event_name, time_in_cycles):
+    # Convert NPU cycles to milliseconds
+    return (time_in_cycles / NPU_FREQUENCY_HZ) * 1000  # ms
 
 
 def extract_map_from_logs(caplog):
@@ -125,7 +133,10 @@ def inspector_check(test_name: str) -> None:
         inspector = Inspector(
             etdump_path=etdump_path,
             etrecord=etrecord_path,
+            source_time_scale=TimeScale.NS,
+            target_time_scale=TimeScale.MS,
             delegate_metadata_parser=parse_delegate_metadata,
+            delegate_time_scale_converter=neutron_cycle_converter,
         )
         inspector.print_data_tabular(include_delegate_debug_data=True)
 
