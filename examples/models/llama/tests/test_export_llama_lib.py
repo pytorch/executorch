@@ -48,9 +48,9 @@ UNWANTED_OPS = [
 
 
 def _tiny_llm_builder():
-    """An exported LLMEdgeManager small enough to lower in a unit test.
+    """An LLMEdgeManager small enough to lower in a unit test.
 
-    Enough to exercise the lowering helpers without a checkpoint or a real llama model.
+    `_export_llama` exports it, so this returns it unexported.
     """
 
     class Tiny(torch.nn.Module):
@@ -63,7 +63,7 @@ def _tiny_llm_builder():
         max_seq_len=4,
         use_kv_cache=False,
         example_inputs=(torch.ones(1, 4, dtype=torch.long),),
-    ).export()
+    )
 
 
 class ExportLlamaLibTest(unittest.TestCase):
@@ -177,9 +177,7 @@ class ExportLlamaLibTest(unittest.TestCase):
                 with self.assertLogs(level="WARNING") as logs:
                     self._run_tiny_export(generate_etrecord=True)
                 self.assertIn("tiny.pte", os.listdir("."))
-                self.assertTrue(
-                    any("Could not write etrecord.bin" in line for line in logs.output)
-                )
+                self.assertTrue(any("Could not write" in line for line in logs.output))
             finally:
                 os.chdir(previous)
 

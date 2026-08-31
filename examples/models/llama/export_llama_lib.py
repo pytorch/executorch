@@ -14,6 +14,7 @@ import copy
 import json
 import logging
 import math
+import os
 import re
 import shlex
 from functools import partial
@@ -1226,13 +1227,14 @@ def _save_etrecord_if_generated(builder) -> None:
         # Not generated, which is the normal case.
         return
 
+    path = os.path.join(builder.output_dir, "etrecord.bin")
     try:
-        etrecord.save("etrecord.bin")
+        etrecord.save(path)
     except Exception as error:
-        logging.warning("Could not write etrecord.bin: %s", error)
+        logging.warning("Could not write %s: %s", path, error)
         return
 
-    logging.info("Generated etrecord.bin")
+    logging.info("Generated %s", path)
 
 
 def _to_edge_and_lower_llama_openvino(
@@ -1567,16 +1569,17 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
         # Generate ETRecord
         if edge_manager_copy:
+            et_record_path = os.path.join(builder.output_dir, "etrecord.bin")
             try:
                 generate_etrecord_func(
-                    et_record="etrecord.bin",
+                    et_record=et_record_path,
                     edge_dialect_program=edge_manager_copy,
                     executorch_program=builder.export_program,
                 )
             except Exception as error:
-                logging.warning("Could not write etrecord.bin: %s", error)
+                logging.warning("Could not write %s: %s", et_record_path, error)
             else:
-                logging.info("Generated etrecord.bin")
+                logging.info("Generated %s", et_record_path)
     else:
         builder = builder_exported_to_edge.to_backend(partitioners)
         if verbose:
