@@ -51,11 +51,18 @@ class ExportLlamaLibTest(unittest.TestCase):
         llm_config.backend.qnn.enabled = qnn
         # _validate_args rejects dynamic shapes when Core ML or QNN is enabled.
         llm_config.model.enable_dynamic_shape = False
+        # With the KV cache on, the source transforms import the Qualcomm SDK, which routing
+        # does not need and which is not present on most machines.
+        llm_config.model.use_kv_cache = False
 
         class Reached(Exception):
             pass
 
-        with patch.object(export_llama_lib, lowering, side_effect=Reached) as target:
+        # Routing is decided before the model is touched, so the export is stubbed out: without
+        # this each case traces and lowers the whole model to check one branch.
+        with patch.object(
+            export_llama_lib, lowering, side_effect=Reached
+        ) as target, patch.object(export_llama_lib, "_prepare_for_llama_export"):
             with self.assertRaises(Reached):
                 _export_llama(llm_config)
         target.assert_called_once()
