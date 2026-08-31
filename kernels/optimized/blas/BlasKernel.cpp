@@ -384,6 +384,30 @@ TARGET_ARM_BF16_ATTRIBUTE static void dot4_with_fp32_arith_bfdot(
     }
   }
 }
+
+TARGET_ARM_BF16_ATTRIBUTE static void gemv_transa_with_fp32_arith_bfdot(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  int64_t i = 0;
+  for (; i + 4 <= m; i += 4) {
+    float dots[4];
+    dot4_with_fp32_arith_bfdot(b, a + i * lda, lda, k, dots);
+    for (int64_t d = 0; d < 4; ++d) {
+      c[i + d] =
+          beta == 0.0f ? alpha * dots[d] : beta * c[i + d] + alpha * dots[d];
+    }
+  }
+  for (; i < m; ++i) {
+    const float dot = dot_with_fp32_arith_bfdot(a + i * lda, b, k);
+    c[i] = beta == 0.0f ? alpha * dot : beta * c[i] + alpha * dot;
+  }
+}
 #endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 #if defined(__aarch64__)
@@ -517,18 +541,20 @@ static void platform_bf16_gemv_notrans(
 
 #if COMPILER_SUPPORTS_ARM_BF16_TARGET
 static bool platform_supports_bf16_gemv_transa() {
-  return false;
+  return use_arm_bf16();
 }
 
 static void platform_bf16_gemv_transa(
-    int64_t,
-    int64_t,
-    float,
-    const BFloat16*,
-    int64_t,
-    const BFloat16*,
-    float,
-    float*) {}
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const BFloat16* b,
+    float beta,
+    float* c) {
+  gemv_transa_with_fp32_arith_bfdot(m, k, alpha, a, lda, b, beta, c);
+}
 #endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 #elif COMPILER_SUPPORTS_X86_BF16_TARGET
