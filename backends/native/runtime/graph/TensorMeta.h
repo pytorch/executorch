@@ -16,10 +16,10 @@ namespace ptn {
 
 // Logical tensor metadata: element type and shape. No storage, no quant scheme.
 //
-// sizes holds concrete extents. The wire format carries a per-dim range instead,
-// but a runtime that plans and executes at fixed shapes cannot honor a dynamic
-// dim, so deserialization rejects one rather than silently collapsing it to its
-// upper bound.
+// sizes holds concrete extents. The wire format carries a per-dim range
+// instead, but a runtime that plans and executes at fixed shapes cannot honor a
+// dynamic dim, so deserialization rejects one rather than silently collapsing
+// it to its upper bound.
 //
 // dim_order_hint is a permutation of dim indices, outermost first; empty means
 // contiguous ([0, 1, ..., n-1]). It is a hint only for a tensor with no stored
