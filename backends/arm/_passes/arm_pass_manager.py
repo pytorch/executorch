@@ -705,7 +705,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RemoveNoopPass(),
                 # Fuse duplicates exposed by late rewrites before inserting rescales;
                 # fusing generated RESCALE users can corrupt distinct quantized paths.
-                FuseDuplicateUsersPass(),
+                FuseDuplicateUsersPass(may_alias_outputs=True),
                 InsertRescalePass(),
                 EnsureUniqueOutputNodesPass(),
             ]

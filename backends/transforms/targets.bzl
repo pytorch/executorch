@@ -230,6 +230,16 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_test(
+        name = "test_fuse_duplicate_users_effects",
+        srcs = ["test/test_fuse_duplicate_users_effects.py"],
+        deps = [
+            "//caffe2:torch",
+            ":fuse_duplicate_users_pass",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
     runtime.python_library(
         name = "fuse_identical_input_transforms_pass",
         srcs = ["fuse_identical_input_transforms_pass.py"],

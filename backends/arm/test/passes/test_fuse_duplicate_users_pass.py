@@ -176,6 +176,114 @@ def test_fuse_duplicate_users_keeps_identical_rescale_users():
     assert len(rescale_nodes) == 2
 
 
+def test_fuse_duplicate_users_keeps_nondeterministic_users():
+    graph = Graph()
+    x = _set_val(graph.placeholder("x"), torch.ones(2, 3))
+    first = _set_val(
+        graph.call_function(torch.ops.aten.rand_like.default, (x,)), torch.ones(2, 3)
+    )
+    second = _set_val(
+        graph.call_function(torch.ops.aten.rand_like.default, (x,)), torch.ones(2, 3)
+    )
+    result = _set_val(
+        graph.call_function(torch.ops.aten.add.Tensor, (first, second)),
+        torch.ones(2, 3),
+    )
+    graph.output(result)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    pass_result = FuseDuplicateUsersPass()(graph_module)
+
+    random_nodes = [
+        node
+        for node in pass_result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.rand_like.default
+    ]
+    assert not pass_result.modified
+    assert len(random_nodes) == 2
+
+
+def test_fuse_duplicate_users_compares_literal_tensors_by_identity():
+    graph = Graph()
+    x = _set_val(graph.placeholder("x"), torch.ones(2, 3))
+    first = _set_val(
+        graph.call_function(torch.ops.aten.add.Tensor, (x, torch.ones(2, 3))),
+        torch.ones(2, 3),
+    )
+    second = _set_val(
+        graph.call_function(torch.ops.aten.add.Tensor, (x, torch.ones(2, 3))),
+        torch.ones(2, 3),
+    )
+    result = _set_val(
+        graph.call_function(torch.ops.aten.add.Tensor, (first, second)),
+        torch.ones(2, 3),
+    )
+    graph.output(result)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    pass_result = FuseDuplicateUsersPass()(graph_module)
+
+    add_nodes = _add_node_names(pass_result.graph_module)
+    assert not pass_result.modified
+    assert len(add_nodes) == 3
+
+
+def test_fuse_duplicate_users_respects_input_qparams():
+    graph = Graph()
+    x = _set_val(graph.placeholder("x"), torch.ones(2, 3))
+    first = _set_val(
+        graph.call_function(torch.ops.aten.view_copy.default, (x, [2, 3])),
+        torch.ones(2, 3),
+    )
+    second = _set_val(
+        graph.call_function(torch.ops.aten.view_copy.default, (x, [2, 3])),
+        torch.ones(2, 3),
+    )
+    first.meta["input_qparams"] = {0: (0.25, 0)}
+    second.meta["input_qparams"] = {0: (0.5, 0)}
+    result = _set_val(
+        graph.call_function(torch.ops.aten.add.Tensor, (first, second)),
+        torch.ones(2, 3),
+    )
+    graph.output(result)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    pass_result = FuseDuplicateUsersPass()(graph_module)
+
+    view_nodes = [
+        node
+        for node in pass_result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.view_copy.default
+    ]
+    assert not pass_result.modified
+    assert len(view_nodes) == 2
+
+
+def test_arm_fuse_duplicate_users_preserves_distinct_output_qparams():
+    graph = Graph()
+    x = _set_val(graph.placeholder("x"), torch.ones(2, 3))
+    first = _set_val(
+        graph.call_function(torch.ops.aten.neg.default, (x,)), torch.ones(2, 3)
+    )
+    second = _set_val(
+        graph.call_function(torch.ops.aten.neg.default, (x,)), torch.ones(2, 3)
+    )
+    first.meta["output_qparams"] = {0: (0.25, 0)}
+    second.meta["output_qparams"] = {0: (0.5, 0)}
+    graph.output((first, second))
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    pass_result = FuseDuplicateUsersPass(may_alias_outputs=True)(graph_module)
+
+    neg_nodes = [
+        node
+        for node in pass_result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.neg.default
+    ]
+    assert not pass_result.modified
+    assert len(neg_nodes) == 2
+
+
 class LateDuplicateUsers(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -186,7 +294,7 @@ class LateDuplicateUsers(torch.nn.Module):
         return x + self.first, x + self.second
 
 
-def test_fuse_duplicate_users_runs_after_tosa_transformations():
+def test_fuse_duplicate_users_repairs_distinct_returned_values():
     exported_program = export(LateDuplicateUsers(), (torch.ones(2, 3),), strict=True)
     edge_program = to_edge(
         exported_program,
@@ -213,7 +321,7 @@ def test_fuse_duplicate_users_runs_after_tosa_transformations():
     graph_module.graph.lint()
     assert len(add_nodes) == 1
     assert len(identity_nodes) == 2
-    assert all(node.args[0] is add_nodes[0] for node in identity_nodes)
+    assert all(node.args == (add_nodes[0],) for node in identity_nodes)
     assert graph_module.graph.output_node().args[0] == tuple(identity_nodes)
 
     pass_types = [type(pass_) for pass_ in pass_manager.passes]

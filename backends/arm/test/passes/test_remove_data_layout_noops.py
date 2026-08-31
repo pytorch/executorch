@@ -391,7 +391,9 @@ def test_noop_removal_exposes_duplicate_user_cleanup():
     graph.output((first_add, second_add))
 
     graph_module = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
-    graph_module = FuseDuplicateUsersPass()(graph_module).graph_module
+    graph_module = FuseDuplicateUsersPass(may_alias_outputs=True)(
+        graph_module
+    ).graph_module
     result = EnsureUniqueOutputNodesPass()(graph_module).graph_module
 
     assert _count_target(result, exir_ops.edge.aten.add.Tensor) == 1
