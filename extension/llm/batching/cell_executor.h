@@ -64,13 +64,15 @@ struct Step {
 // contents leaves the cache untouched.
 //
 // nullopt = an input names a session not in `seqs`, starts past the end of its
-// sequence, carries it past `max_session_tokens`, reopens from the start, or
-// the cache turned the declaration down.
+// sequence, carries it past `max_session_tokens`, reopens from the start, the
+// batch is wider than `max_step_tokens`, or the cache turned the declaration
+// down.
 std::optional<Step> build_step(
     cache::BatchControl& ctl,
     const BatchInput& batch,
     const std::unordered_map<SessionId, SessionInfo>& sessions,
-    int max_session_tokens);
+    int max_session_tokens,
+    int max_step_tokens);
 
 class CellExecutor : public Executor {
  public:
@@ -102,6 +104,13 @@ class CellExecutor : public Executor {
       int initial_capacity = -1,
       std::string method = "forward");
 
+  // The widest step this method takes, read from the shape its token input was
+  // traced at. A batch carrying more is refused when the input is resized, so
+  // the caller bounds its batches by this.
+  int max_step_tokens() const {
+    return max_step_tokens_;
+  }
+
   std::optional<SessionId> open_session() override;
   void close_session(SessionId session) override;
   void set_sampling(
@@ -119,7 +128,8 @@ class CellExecutor : public Executor {
       int max_session_tokens,
       std::string backend_id,
       std::string method,
-      std::int32_t vocab_size);
+      std::int32_t vocab_size,
+      int max_step_tokens);
 
   // Draw the token an input produced from its row of `logits`, which the
   // session's sampler consumes in place.
@@ -138,6 +148,7 @@ class CellExecutor : public Executor {
   std::string method_;
   // The method's logits width, so a sampler can be built by its policy.
   std::int32_t vocab_size_;
+  int max_step_tokens_;
 
   SessionId next_session_ = 1; // never reused, unlike the cache's sequence ids
   std::unordered_map<SessionId, SessionInfo> sessions_;

@@ -47,7 +47,8 @@ std::optional<Step> build_step(
     cache::BatchControl& ctl,
     const BatchInput& batch,
     const std::unordered_map<SessionId, SessionInfo>& sessions,
-    int max_session_tokens) {
+    int max_session_tokens,
+    int max_step_tokens) {
   Step step;
   const std::size_t total = batch.size();
   step.tokens.reserve(total);
@@ -127,6 +128,15 @@ std::optional<Step> build_step(
         input.produce_output ? static_cast<int>(step.tokens.size()) - 1 : -1);
   }
 
+  if (static_cast<int>(step.tokens.size()) > max_step_tokens) {
+    ET_LOG(
+        Error,
+        "build_step: the batch carries %zu tokens over a step of %d",
+        step.tokens.size(),
+        max_step_tokens);
+    return std::nullopt;
+  }
+
   for (const auto& [seq, from] : rewinds) {
     if (!ctl.seq_rm(seq, from, std::nullopt)) {
       ET_LOG(Error, "build_step: sequence %d would not truncate", seq);
@@ -149,7 +159,8 @@ CellExecutor::CellExecutor(
     int max_session_tokens,
     std::string backend_id,
     std::string method,
-    std::int32_t vocab_size)
+    std::int32_t vocab_size,
+    int max_step_tokens)
     : session_(std::move(session)),
       cache_(std::move(cache)),
       module_(std::move(module)),
@@ -158,7 +169,8 @@ CellExecutor::CellExecutor(
       max_session_tokens_(max_session_tokens),
       backend_id_(std::move(backend_id)),
       method_(std::move(method)),
-      vocab_size_(vocab_size) {}
+      vocab_size_(vocab_size),
+      max_step_tokens_(max_step_tokens) {}
 
 CellExecutor::~CellExecutor() = default;
 
@@ -251,6 +263,13 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
   }
   const auto logits_sizes = logits_info->sizes();
 
+  const auto tokens_info = meta->input_tensor_meta(0);
+  if (!tokens_info.ok() || tokens_info->sizes().empty()) {
+    ET_LOG(Error, "CellExecutor: %s has no token input shape", method.c_str());
+    return nullptr;
+  }
+  const auto tokens_sizes = tokens_info->sizes();
+
   auto session =
       std::make_unique<cache::CacheSession>(cache::make_unique_key(), cache);
   // The delegate resolves the cache from this key while the method loads.
@@ -281,7 +300,8 @@ std::unique_ptr<CellExecutor> CellExecutor::create(
       max_session_tokens,
       std::move(backend_id),
       std::move(method),
-      logits_sizes[logits_sizes.size() - 1]));
+      logits_sizes[logits_sizes.size() - 1],
+      tokens_sizes[tokens_sizes.size() - 1]));
 }
 
 std::optional<SessionId> CellExecutor::open_session() {
@@ -328,8 +348,8 @@ bool CellExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
 
-  const std::optional<Step> step =
-      build_step(*ctl_, batch, sessions_, max_session_tokens_);
+  const std::optional<Step> step = build_step(
+      *ctl_, batch, sessions_, max_session_tokens_, max_step_tokens_);
   if (!step) {
     return false;
   }
