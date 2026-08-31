@@ -24,9 +24,7 @@ namespace executorch::backends::cuda {
 
 class CudaWeightCache final {
  public:
-  static constexpr char kFormatMagic[] = "ETCUDAFQN3";
-  static constexpr char kMultiArchFormatMagic[] = "ETCUDAFQN4";
-  static constexpr char kMultiArchFallbackFormatMagic[] = "ETCUDAFQN5";
+  static constexpr char kFormatMagic[] = "ETCUDAFQN0";
   static constexpr size_t kFormatMagicSize = sizeof(kFormatMagic) - 1;
 
   struct Variant {

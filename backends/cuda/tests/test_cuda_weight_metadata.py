@@ -8,13 +8,11 @@ import unittest
 
 from executorch.backends.cuda.cuda_weight_collector import (
     AOTI_DEVICE_TYPE_CUDA,
-    CUDA_MULTI_ARCH_FALLBACK_MAGIC,
-    CUDA_MULTI_ARCH_MAGIC,
+    CUDA_AOTI_METADATA_MAGIC,
     CudaAotiVariant,
     CudaWeightEntry,
     decode_cuda_aoti_metadata,
-    encode_cuda_multi_arch_metadata,
-    encode_cuda_weight_metadata,
+    encode_cuda_aoti_metadata,
 )
 
 
@@ -32,31 +30,31 @@ class TestCudaWeightMetadata(unittest.TestCase):
             strides=(3, 1),
         )
 
-    def test_multi_arch_metadata_has_shared_weights(self) -> None:
+    def test_targeted_metadata_has_shared_weights(self) -> None:
         entry = self._entry()
-        encoded = encode_cuda_multi_arch_metadata(
+        encoded = encode_cuda_aoti_metadata(
             [
-                CudaAotiVariant(80, 80, "sm80-so"),
-                CudaAotiVariant(120, 120, "sm120-so"),
+                CudaAotiVariant(80, 0, "sm80-so"),
+                CudaAotiVariant(120, 0, "sm120-so"),
             ],
             [entry],
         )
-        self.assertTrue(encoded.startswith(CUDA_MULTI_ARCH_MAGIC))
+        self.assertTrue(encoded.startswith(CUDA_AOTI_METADATA_MAGIC))
         decoded = decode_cuda_aoti_metadata(encoded)
         self.assertEqual(
             decoded.variants,
             [
-                CudaAotiVariant(80, 80, "sm80-so"),
-                CudaAotiVariant(120, 120, "sm120-so"),
+                CudaAotiVariant(80, 0, "sm80-so"),
+                CudaAotiVariant(120, 0, "sm120-so"),
             ],
         )
         self.assertEqual(decoded.entries, [entry])
 
-    def test_multi_arch_metadata_rejects_duplicate_target(self) -> None:
+    def test_metadata_rejects_duplicate_target(self) -> None:
         with self.assertRaisesRegex(ValueError, "Duplicate CUDA target SM"):
-            encode_cuda_multi_arch_metadata(
+            encode_cuda_aoti_metadata(
                 [
-                    CudaAotiVariant(80, 80, "first"),
+                    CudaAotiVariant(80, 0, "first"),
                     CudaAotiVariant(80, 0, "second"),
                 ],
                 [self._entry()],
@@ -64,14 +62,14 @@ class TestCudaWeightMetadata(unittest.TestCase):
 
     def test_fallback_metadata_allows_matching_regular_target(self) -> None:
         entry = self._entry()
-        encoded = encode_cuda_multi_arch_metadata(
+        encoded = encode_cuda_aoti_metadata(
             [
                 CudaAotiVariant(80, 0, "sm80-so"),
                 CudaAotiVariant(80, 80, "fallback-so", fallback_only=True),
             ],
             [entry],
         )
-        self.assertTrue(encoded.startswith(CUDA_MULTI_ARCH_FALLBACK_MAGIC))
+        self.assertTrue(encoded.startswith(CUDA_AOTI_METADATA_MAGIC))
         decoded = decode_cuda_aoti_metadata(encoded)
         self.assertEqual(
             decoded.variants,
@@ -83,7 +81,7 @@ class TestCudaWeightMetadata(unittest.TestCase):
 
     def test_fallback_metadata_rejects_multiple_fallbacks(self) -> None:
         with self.assertRaisesRegex(ValueError, "only one fallback"):
-            encode_cuda_multi_arch_metadata(
+            encode_cuda_aoti_metadata(
                 [
                     CudaAotiVariant(80, 80, "first", fallback_only=True),
                     CudaAotiVariant(75, 75, "second", fallback_only=True),
@@ -91,15 +89,37 @@ class TestCudaWeightMetadata(unittest.TestCase):
                 [self._entry()],
             )
 
-    def test_legacy_metadata_decodes_as_unspecified_target(self) -> None:
-        decoded = decode_cuda_aoti_metadata(
-            encode_cuda_weight_metadata("legacy-so", [self._entry()])
+    def test_multi_variant_metadata_rejects_implicit_ptx_fallback(self) -> None:
+        with self.assertRaisesRegex(ValueError, "explicit PTX fallback"):
+            encode_cuda_aoti_metadata(
+                [
+                    CudaAotiVariant(80, 80, "sm80-so"),
+                    CudaAotiVariant(120, 0, "sm120-so"),
+                ],
+                [self._entry()],
+            )
+
+    def test_untargeted_metadata_for_rocm(self) -> None:
+        encoded = encode_cuda_aoti_metadata(
+            [CudaAotiVariant(0, 0, "rocm-so")], [self._entry()]
         )
-        self.assertEqual(decoded.variants, [CudaAotiVariant(0, 0, "legacy-so")])
+        self.assertTrue(encoded.startswith(CUDA_AOTI_METADATA_MAGIC))
+        decoded = decode_cuda_aoti_metadata(encoded)
+        self.assertEqual(decoded.variants, [CudaAotiVariant(0, 0, "rocm-so")])
         self.assertEqual(decoded.entries, [self._entry()])
 
+    def test_untargeted_metadata_cannot_mix_with_targeted_variants(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires one non-fallback variant"):
+            encode_cuda_aoti_metadata(
+                [
+                    CudaAotiVariant(0, 0, "rocm-so"),
+                    CudaAotiVariant(80, 0, "sm80-so"),
+                ],
+                [self._entry()],
+            )
+
     def test_metadata_rejects_trailing_data(self) -> None:
-        encoded = encode_cuda_multi_arch_metadata(
+        encoded = encode_cuda_aoti_metadata(
             [CudaAotiVariant(80, 80, "sm80-so")], [self._entry()]
         )
         with self.assertRaisesRegex(ValueError, "trailing bytes"):

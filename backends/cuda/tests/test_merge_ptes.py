@@ -17,8 +17,7 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaAotiVariant,
     CudaWeightEntry,
     decode_cuda_aoti_metadata,
-    encode_cuda_multi_arch_metadata,
-    encode_cuda_weight_metadata,
+    encode_cuda_aoti_metadata,
 )
 from executorch.backends.cuda.merge_ptes import (
     CudaPteInput,
@@ -58,7 +57,6 @@ class TestMergeCudaPtes(unittest.TestCase):
         fqn: str = "model.weight",
         weight_key: str = "cuda_fqn_weight:cuda:model.weight",
         ptx_compute: int | None = None,
-        legacy: bool = False,
     ) -> CudaPteInput:
         if ptx_compute is None:
             ptx_compute = target_sm
@@ -73,12 +71,8 @@ class TestMergeCudaPtes(unittest.TestCase):
             sizes=(len(weight_data),),
             strides=(1,),
         )
-        metadata = (
-            encode_cuda_weight_metadata(so_key, [entry])
-            if legacy
-            else encode_cuda_multi_arch_metadata(
-                [CudaAotiVariant(target_sm, ptx_compute, so_key)], [entry]
-            )
+        metadata = encode_cuda_aoti_metadata(
+            [CudaAotiVariant(target_sm, ptx_compute, so_key)], [entry]
         )
         compile_specs = [CompileSpec("method_name", b"forward")]
         compile_specs.append(
@@ -132,7 +126,6 @@ class TestMergeCudaPtes(unittest.TestCase):
         return CudaPteInput(
             pte_path=pte_path,
             ptd_path=ptd_path,
-            legacy_target_sm=target_sm if legacy else None,
         )
 
     def test_merges_variants_and_keeps_one_weight_manifest(self) -> None:
@@ -242,30 +235,6 @@ class TestMergeCudaPtes(unittest.TestCase):
             delegate = merged.program.execution_plan[0].delegates[0]
             metadata = decode_cuda_aoti_metadata(
                 merged.program.backend_delegate_data[delegate.processed.index].data
-            )
-            self.assertEqual(
-                [variant.ptx_compute for variant in metadata.variants], [0, 0]
-            )
-
-    def test_merges_legacy_fqn3_source_with_explicit_target(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            sm80 = root / "sm80"
-            sm120 = root / "sm120"
-            sm80.mkdir()
-            sm120.mkdir()
-            inputs = [
-                self._write_artifact(sm80, 80, b"sm80-so", b"weight", legacy=True),
-                self._write_artifact(sm120, 120, b"sm120-so", b"weight"),
-            ]
-
-            merged = deserialize_pte_binary(bytes(merge_cuda_pte_files(inputs)))
-            delegate = merged.program.execution_plan[0].delegates[0]
-            metadata = decode_cuda_aoti_metadata(
-                merged.program.backend_delegate_data[delegate.processed.index].data
-            )
-            self.assertEqual(
-                [variant.target_sm for variant in metadata.variants], [80, 120]
             )
             self.assertEqual(
                 [variant.ptx_compute for variant in metadata.variants], [0, 0]

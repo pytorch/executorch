@@ -366,7 +366,7 @@ class ET_EXPERIMENTAL CudaBackend final
       const auto& variant = fqn_weights.variants[variant_index];
       so_blob_key = variant.so_blob_key;
       if (variant.target_sm == 0) {
-        ET_LOG(Info, "Selected legacy CUDA AOTI variant");
+        ET_LOG(Info, "Selected untargeted CUDA AOTI variant");
       } else if (uses_ptx_fallback) {
         ET_LOG(
             Info,

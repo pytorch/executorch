@@ -21,7 +21,7 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaAotiVariant,
     CudaWeightEntry,
     decode_cuda_aoti_metadata,
-    encode_cuda_multi_arch_metadata,
+    encode_cuda_aoti_metadata,
 )
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._named_data_store import (
@@ -54,7 +54,6 @@ class CudaPteInput:
 
     pte_path: Path
     ptd_path: Optional[Path]
-    legacy_target_sm: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -199,20 +198,8 @@ def _load_artifact(source: CudaPteInput) -> _Artifact:
                 _delegate_payload(pte.program, delegate)
             )
             if metadata.variants[0].target_sm == 0:
-                if source.legacy_target_sm is None:
-                    raise ValueError(
-                        f"Legacy CUDA metadata in {source.pte_path} requires "
-                        "--legacy-target-sm"
-                    )
-                metadata = CudaAotiMetadata(
-                    variants=[
-                        CudaAotiVariant(
-                            target_sm=source.legacy_target_sm,
-                            ptx_compute=source.legacy_target_sm,
-                            so_blob_key=metadata.variants[0].so_blob_key,
-                        )
-                    ],
-                    entries=metadata.entries,
+                raise ValueError(
+                    f"Untargeted CUDA metadata in {source.pte_path} cannot be merged"
                 )
             delegates.append(_CudaDelegate((plan.name, delegate_index), metadata))
     if not delegates:
@@ -561,9 +548,7 @@ def merge_cuda_pte_files_with_provenance(
             raise ValueError(
                 f"CUDA target variants differ across delegates at {identity}"
             )
-        merged_payload = encode_cuda_multi_arch_metadata(
-            variants, reference_metadata.entries
-        )
+        merged_payload = encode_cuda_aoti_metadata(variants, reference_metadata.entries)
         plan_name, delegate_index = identity
         plan = next(
             plan for plan in merged_program.execution_plan if plan.name == plan_name
@@ -619,13 +604,6 @@ def _parse_args() -> argparse.Namespace:
         help="PTD paired by position with --input-pte",
     )
     parser.add_argument(
-        "--legacy-target-sm",
-        action="append",
-        type=int,
-        default=[],
-        help="Target SM for a legacy FQN3 regular input",
-    )
-    parser.add_argument(
         "--fallback-pte",
         type=Path,
         help="Single CUDA PTE contributing only the PTX runtime fallback",
@@ -634,11 +612,6 @@ def _parse_args() -> argparse.Namespace:
         "--fallback-ptd",
         type=Path,
         help="PTD paired with --fallback-pte",
-    )
-    parser.add_argument(
-        "--fallback-legacy-target-sm",
-        type=int,
-        help="Target SM for a legacy FQN3 --fallback-pte",
     )
     parser.add_argument("--output-pte", required=True, type=Path)
     parser.add_argument("--output-ptd", type=Path)
@@ -650,22 +623,14 @@ def main() -> None:
     args = _parse_args()
     if args.input_ptd and len(args.input_ptd) != len(args.input_pte):
         raise ValueError("--input-ptd must be provided once per --input-pte")
-    if args.legacy_target_sm and len(args.legacy_target_sm) != len(args.input_pte):
-        raise ValueError("--legacy-target-sm must be provided once per --input-pte")
     if args.input_ptd and args.output_ptd is None:
         raise ValueError("--output-ptd is required when --input-ptd is provided")
     if args.fallback_ptd is not None and args.fallback_pte is None:
         raise ValueError("--fallback-ptd requires --fallback-pte")
-    if args.fallback_legacy_target_sm is not None and args.fallback_pte is None:
-        raise ValueError("--fallback-legacy-target-sm requires --fallback-pte")
-
     sources = [
         CudaPteInput(
             pte_path=pte_path,
             ptd_path=args.input_ptd[index] if args.input_ptd else None,
-            legacy_target_sm=(
-                args.legacy_target_sm[index] if args.legacy_target_sm else None
-            ),
         )
         for index, pte_path in enumerate(args.input_pte)
     ]
@@ -673,7 +638,6 @@ def main() -> None:
         CudaPteInput(
             pte_path=args.fallback_pte,
             ptd_path=args.fallback_ptd,
-            legacy_target_sm=args.fallback_legacy_target_sm,
         )
         if args.fallback_pte is not None
         else None

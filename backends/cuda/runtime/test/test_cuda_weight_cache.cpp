@@ -43,6 +43,10 @@ std::vector<uint8_t> serialized_metadata(
       cuda::CudaWeightCache::kFormatMagic,
       cuda::CudaWeightCache::kFormatMagic +
           cuda::CudaWeightCache::kFormatMagicSize);
+  append_u32(output, 1); // variants
+  append_u32(output, 0); // untargeted (ROCm)
+  append_u32(output, 0); // no PTX
+  append_u32(output, 0); // regular
   append_string(output, "so-key");
   append_u32(output, 1); // entries
   append_string(output, "model.weight");
@@ -61,18 +65,21 @@ std::vector<uint8_t> serialized_metadata(
 
 std::vector<uint8_t> serialized_multi_arch_metadata() {
   std::vector<uint8_t> output(
-      cuda::CudaWeightCache::kMultiArchFormatMagic,
-      cuda::CudaWeightCache::kMultiArchFormatMagic +
+      cuda::CudaWeightCache::kFormatMagic,
+      cuda::CudaWeightCache::kFormatMagic +
           cuda::CudaWeightCache::kFormatMagicSize);
   append_u32(output, 3); // variants
   append_u32(output, 80);
-  append_u32(output, 80);
+  append_u32(output, 0);
+  append_u32(output, 0); // regular
   append_string(output, "sm80-so");
   append_u32(output, 90);
-  append_u32(output, 90);
+  append_u32(output, 0);
+  append_u32(output, 0); // regular
   append_string(output, "sm90-so");
   append_u32(output, 120);
-  append_u32(output, 120);
+  append_u32(output, 0);
+  append_u32(output, 0); // regular
   append_string(output, "sm120-so");
   append_u32(output, 1); // entries
   append_string(output, "model.weight");
@@ -91,8 +98,8 @@ std::vector<uint8_t> serialized_multi_arch_metadata() {
 
 std::vector<uint8_t> serialized_fallback_metadata() {
   std::vector<uint8_t> output(
-      cuda::CudaWeightCache::kMultiArchFallbackFormatMagic,
-      cuda::CudaWeightCache::kMultiArchFallbackFormatMagic +
+      cuda::CudaWeightCache::kFormatMagic,
+      cuda::CudaWeightCache::kFormatMagic +
           cuda::CudaWeightCache::kFormatMagicSize);
   append_u32(output, 2); // variants
   append_u32(output, 80);
@@ -109,7 +116,7 @@ std::vector<uint8_t> serialized_fallback_metadata() {
 
 } // namespace
 
-TEST(CudaWeightCacheTest, LegacyPayloadIsNotMisdetected) {
+TEST(CudaWeightCacheTest, RawAotiPayloadIsNotMisdetected) {
   const std::string legacy = "so-key\nweights-key";
   EXPECT_FALSE(
       cuda::CudaWeightCache::is_serialized(legacy.data(), legacy.size()));
@@ -157,32 +164,19 @@ TEST(CudaWeightCacheTest, ParsesAndSelectsMultiArchMetadata) {
   EXPECT_EQ(
       cuda::CudaWeightCache::select_variant(
           metadata, 100, variant_index, uses_ptx_fallback),
-      Error::Ok);
-  EXPECT_EQ(variant_index, 0u);
-  EXPECT_TRUE(uses_ptx_fallback);
+      Error::NotSupported);
 }
 
-TEST(CudaWeightCacheTest, SelectsLowestCompatiblePtxFallback) {
+TEST(CudaWeightCacheTest, SelectsPtxFromPortableSingleVariant) {
   cuda::CudaWeightCache::Metadata metadata;
-  metadata.variants = {
-      {90, 90, "sm90-so"},
-      {80, 80, "sm80-so"},
-      {120, 0, "sm120-so"},
-  };
+  metadata.variants = {{80, 80, "sm80-so"}};
   size_t variant_index = 0;
   bool uses_ptx_fallback = false;
   ASSERT_EQ(
       cuda::CudaWeightCache::select_variant(
-          metadata, 120, variant_index, uses_ptx_fallback),
-      Error::Ok);
-  EXPECT_EQ(metadata.variants[variant_index].target_sm, 120u);
-  EXPECT_FALSE(uses_ptx_fallback);
-
-  ASSERT_EQ(
-      cuda::CudaWeightCache::select_variant(
           metadata, 100, variant_index, uses_ptx_fallback),
       Error::Ok);
-  EXPECT_EQ(metadata.variants[variant_index].target_sm, 80u);
+  EXPECT_EQ(variant_index, 0u);
   EXPECT_TRUE(uses_ptx_fallback);
 }
 
@@ -226,16 +220,40 @@ TEST(CudaWeightCacheTest, RejectsWhenNoVariantIsCompatible) {
 
 TEST(CudaWeightCacheTest, RejectsDuplicateMultiArchTarget) {
   std::vector<uint8_t> bytes(
-      cuda::CudaWeightCache::kMultiArchFormatMagic,
-      cuda::CudaWeightCache::kMultiArchFormatMagic +
+      cuda::CudaWeightCache::kFormatMagic,
+      cuda::CudaWeightCache::kFormatMagic +
+          cuda::CudaWeightCache::kFormatMagicSize);
+  append_u32(bytes, 2);
+  append_u32(bytes, 80);
+  append_u32(bytes, 0);
+  append_u32(bytes, 0);
+  append_string(bytes, "first-so");
+  append_u32(bytes, 80);
+  append_u32(bytes, 0);
+  append_u32(bytes, 0);
+  append_string(bytes, "second-so");
+  append_u32(bytes, 0);
+
+  cuda::CudaWeightCache::Metadata metadata;
+  EXPECT_EQ(
+      cuda::CudaWeightCache::parse(bytes.data(), bytes.size(), metadata),
+      Error::InvalidProgram);
+}
+
+TEST(CudaWeightCacheTest, RejectsImplicitPtxFallbackInMultiVariantMetadata) {
+  std::vector<uint8_t> bytes(
+      cuda::CudaWeightCache::kFormatMagic,
+      cuda::CudaWeightCache::kFormatMagic +
           cuda::CudaWeightCache::kFormatMagicSize);
   append_u32(bytes, 2);
   append_u32(bytes, 80);
   append_u32(bytes, 80);
-  append_string(bytes, "first-so");
-  append_u32(bytes, 80);
   append_u32(bytes, 0);
-  append_string(bytes, "second-so");
+  append_string(bytes, "sm80-so");
+  append_u32(bytes, 120);
+  append_u32(bytes, 0);
+  append_u32(bytes, 0);
+  append_string(bytes, "sm120-so");
   append_u32(bytes, 0);
 
   cuda::CudaWeightCache::Metadata metadata;

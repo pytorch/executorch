@@ -140,9 +140,7 @@ bool is_supported_device_type(int32_t device_type) {
 
 bool CudaWeightCache::is_serialized(const void* data, size_t size) {
   return data != nullptr && size >= kFormatMagicSize &&
-      (std::memcmp(data, kFormatMagic, kFormatMagicSize) == 0 ||
-       std::memcmp(data, kMultiArchFormatMagic, kFormatMagicSize) == 0 ||
-       std::memcmp(data, kMultiArchFallbackFormatMagic, kFormatMagicSize) == 0);
+      std::memcmp(data, kFormatMagic, kFormatMagicSize) == 0;
 }
 
 Error CudaWeightCache::parse(
@@ -154,56 +152,52 @@ Error CudaWeightCache::parse(
   }
 
   MetadataReader reader(data, size);
-  const bool has_fallback =
-      std::memcmp(data, kMultiArchFallbackFormatMagic, kFormatMagicSize) == 0;
-  const bool is_multi_arch = has_fallback ||
-      std::memcmp(data, kMultiArchFormatMagic, kFormatMagicSize) == 0;
   if (!reader.skip(kFormatMagicSize)) {
     return Error::InvalidProgram;
   }
 
   metadata.variants.clear();
-  if (is_multi_arch) {
-    uint32_t num_variants = 0;
-    constexpr uint32_t kMaxVariants = 256;
-    if (!reader.read_u32(num_variants) || num_variants == 0 ||
-        num_variants > kMaxVariants) {
-      return Error::InvalidProgram;
-    }
-    metadata.variants.reserve(num_variants);
-    std::unordered_set<uint32_t> target_sms;
-    bool found_fallback = false;
-    for (uint32_t index = 0; index < num_variants; ++index) {
-      Variant variant;
-      uint32_t flags = 0;
-      if (!reader.read_u32(variant.target_sm) || variant.target_sm == 0 ||
-          !reader.read_u32(variant.ptx_compute) ||
-          variant.ptx_compute > variant.target_sm ||
-          (has_fallback && !reader.read_u32(flags)) || (flags & ~1U) != 0 ||
-          !reader.read_string(variant.so_blob_key) ||
-          variant.so_blob_key.empty()) {
-        return Error::InvalidProgram;
-      }
-      variant.fallback_only = (flags & 1U) != 0;
-      if (variant.fallback_only) {
-        if (variant.ptx_compute == 0 || found_fallback) {
-          return Error::InvalidProgram;
-        }
-        found_fallback = true;
-      } else if (
-          (has_fallback && variant.ptx_compute != 0) ||
-          !target_sms.emplace(variant.target_sm).second) {
-        return Error::InvalidProgram;
-      }
-      metadata.variants.push_back(std::move(variant));
-    }
-  } else {
+  uint32_t num_variants = 0;
+  constexpr uint32_t kMaxVariants = 256;
+  if (!reader.read_u32(num_variants) || num_variants == 0 ||
+      num_variants > kMaxVariants) {
+    return Error::InvalidProgram;
+  }
+  metadata.variants.reserve(num_variants);
+  std::unordered_set<uint32_t> target_sms;
+  bool found_fallback = false;
+  bool regular_has_ptx = false;
+  for (uint32_t index = 0; index < num_variants; ++index) {
     Variant variant;
-    if (!reader.read_string(variant.so_blob_key) ||
+    uint32_t flags = 0;
+    if (!reader.read_u32(variant.target_sm) ||
+        !reader.read_u32(variant.ptx_compute) ||
+        variant.ptx_compute > variant.target_sm || !reader.read_u32(flags) ||
+        (flags & ~1U) != 0 || !reader.read_string(variant.so_blob_key) ||
         variant.so_blob_key.empty()) {
       return Error::InvalidProgram;
     }
+    variant.fallback_only = (flags & 1U) != 0;
+    if (variant.target_sm == 0) {
+      if (num_variants != 1 || variant.ptx_compute != 0 ||
+          variant.fallback_only) {
+        return Error::InvalidProgram;
+      }
+    } else if (variant.fallback_only) {
+      if (variant.ptx_compute == 0 || found_fallback) {
+        return Error::InvalidProgram;
+      }
+      found_fallback = true;
+    } else {
+      if (!target_sms.emplace(variant.target_sm).second) {
+        return Error::InvalidProgram;
+      }
+      regular_has_ptx |= variant.ptx_compute != 0;
+    }
     metadata.variants.push_back(std::move(variant));
+  }
+  if (num_variants > 1 && regular_has_ptx) {
+    return Error::InvalidProgram;
   }
 
   uint32_t num_entries = 0;
@@ -273,25 +267,20 @@ Error CudaWeightCache::select_variant(
     }
   }
 
-  std::optional<size_t> fallback;
   for (size_t index = 0; index < metadata.variants.size(); ++index) {
     const Variant& variant = metadata.variants[index];
-    if (variant.ptx_compute == 0 || variant.ptx_compute > current_sm) {
-      continue;
-    }
-    if (!fallback.has_value() ||
-        variant.target_sm < metadata.variants[*fallback].target_sm) {
-      fallback = index;
+    if (variant.ptx_compute != 0 && variant.ptx_compute <= current_sm &&
+        (variant.fallback_only || metadata.variants.size() == 1)) {
+      variant_index = index;
+      uses_ptx_fallback = true;
+      return Error::Ok;
     }
   }
   ET_CHECK_OR_RETURN_ERROR(
-      fallback.has_value(),
+      false,
       NotSupported,
       "CUDA AOTI has no native or PTX variant compatible with sm%u",
       current_sm);
-  variant_index = *fallback;
-  uses_ptx_fallback = true;
-  return Error::Ok;
 }
 
 Error CudaWeightCache::validate_view(const Entry& entry) {
