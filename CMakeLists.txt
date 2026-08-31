@@ -1424,9 +1424,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # --no-as-needed around its own file to every consumer, so the CUDA and
   # OpenVINO backends are covered by that and are deliberately absent here. That
   # export is emitted only for NOT APPLE, so it does nothing for an Apple-only
-  # delegate like Core ML; those are covered instead by Mach-O, which keeps a
-  # named dylib's namespace-scope initializers without an --as-needed
-  # equivalent.
+  # delegate like Core ML. In the wheel's shared build that dylib is instead
+  # kept because it is named directly on the link line, which retains its
+  # namespace-scope initializers without an --as-needed equivalent; only
+  # -dead_strip_dylibs would drop it, and nothing here passes that. In a static
+  # build the delegate is an archive kept by force_load instead.
   foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend
                               extension_threadpool etdump
   )
