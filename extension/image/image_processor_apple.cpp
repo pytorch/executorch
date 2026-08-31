@@ -150,6 +150,7 @@ class ImageProcessor::Impl {
   ScratchBuffer<uint8_t> narrow_y; // P010→8-bit narrowed Y plane
   ScratchBuffer<uint8_t> narrow_uv; // P010→8-bit narrowed CbCr plane
   ScratchBuffer<uint8_t> uv_swap; // NV21→NV12 chroma-swapped CbCr plane
+  ScratchBuffer<uint8_t> uv_completed; // one-byte-short CbCr plane, completed
 
   // Lazy force-CPU proxy used when the owning processor can use the GPU but a
   // frame must run on the CPU pipeline (small input, GPU readback, or GPU
@@ -772,7 +773,8 @@ Error ImageProcessor::process_yuv_into(
     executorch::aten::Tensor& out,
     Orientation orientation,
     NormalizedRect roi,
-    YUVRange range) const {
+    YUVRange range,
+    int64_t uv_plane_size) const {
   const auto& config = impl_->config;
   ET_CHECK_OR_RETURN_ERROR(
       y_plane != nullptr, InvalidArgument, "y_plane is null");
@@ -806,17 +808,41 @@ Error ImageProcessor::process_yuv_into(
   }
   float* out_ptr = out.mutable_data_ptr<float>();
 
+  // The chroma plane may end one byte short of its final pair (see the header
+  // contract), but no shorter. When it does, complete it into a scratch copy
+  // — the missing sample substituted from the neighboring pair, exactly as
+  // the portable decoder does — so the vImage and Core Image paths below
+  // never read past the caller's bound.
+  const int64_t uv_last_byte =
+      static_cast<int64_t>(uv_stride) * (height / 2 - 1) + width - 1;
+  ET_CHECK_OR_RETURN_ERROR(
+      uv_plane_size < 0 || uv_plane_size >= uv_last_byte,
+      InvalidArgument,
+      "uv_plane_size too small");
+  const uint8_t* uv_full = uv_plane;
+  if (uv_plane_size >= 0 && uv_plane_size <= uv_last_byte) {
+    // Full-stride allocation, neutral-filled past the copied bytes, so the
+    // framework paths may read whole rows without leaving the scratch.
+    const size_t scratch_size = static_cast<size_t>(uv_stride) * (height / 2);
+    uint8_t* completed = impl_->uv_completed.resize(scratch_size);
+    std::memset(completed, 128, scratch_size);
+    std::memcpy(completed, uv_plane, static_cast<size_t>(uv_last_byte));
+    completed[uv_last_byte] =
+        width > 2 ? uv_plane[uv_last_byte - 2] : static_cast<uint8_t>(128);
+    uv_full = completed;
+  }
+
   // NV21 stores chroma as Cr,Cb. Swap it to NV12's Cb,Cr ordering once, up
   // front, so both the GPU and CPU paths below are format-agnostic (always
   // NV12).
-  const uint8_t* cbcr = uv_plane;
+  const uint8_t* cbcr = uv_full;
   int32_t cbcr_stride = uv_stride;
   if (format == YUVFormat::NV21) {
     const int32_t chroma_w = (width + 1) / 2;
     const int32_t chroma_h = (height + 1) / 2;
     uint8_t* swapped =
         impl_->uv_swap.resize(static_cast<size_t>(chroma_w) * 2 * chroma_h);
-    swap_chroma_cbcr(uv_plane, uv_stride, swapped, chroma_w, chroma_h);
+    swap_chroma_cbcr(uv_full, uv_stride, swapped, chroma_w, chroma_h);
     cbcr = swapped;
     cbcr_stride = chroma_w * 2;
   }
@@ -1046,7 +1072,8 @@ Result<TensorPtr> ImageProcessor::process_yuv(
     YUVFormat format,
     Orientation orientation,
     NormalizedRect roi,
-    YUVRange range) const {
+    YUVRange range,
+    int64_t uv_plane_size) const {
   ET_CHECK_OR_RETURN_ERROR(
       impl_->config.target_width > 0 && impl_->config.target_height > 0,
       InvalidArgument,
@@ -1079,7 +1106,8 @@ Result<TensorPtr> ImageProcessor::process_yuv(
       *out,
       orientation,
       roi,
-      range);
+      range,
+      uv_plane_size);
   if (err != Error::Ok) {
     return err;
   }

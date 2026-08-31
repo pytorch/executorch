@@ -72,6 +72,8 @@ quantization:
   pt2e_quantize: xnnpack_dynamic
   use_spin_quant: cuda
 backend:
+  xnnpack:
+    enable_bf16: true
   coreml:
     quantize: c4w
     compute_units: cpu_and_gpu
@@ -98,6 +100,7 @@ backend:
                 called_config.quantization.pt2e_quantize.value, "xnnpack_dynamic"
             )
             self.assertEqual(called_config.quantization.use_spin_quant.value, "cuda")
+            self.assertTrue(called_config.backend.xnnpack.enable_bf16)
             self.assertEqual(called_config.backend.coreml.quantize.value, "c4w")
             self.assertEqual(
                 called_config.backend.coreml.compute_units.value, "cpu_and_gpu"
