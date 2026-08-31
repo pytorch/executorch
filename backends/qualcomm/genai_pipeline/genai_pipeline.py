@@ -213,6 +213,8 @@ class GenAIPipeline:
                 soc_model=context.soc_model,
                 backend_type=self._engine_proxy.backend_type,
                 model_module=model_prep_output.model_module,
+                # Export inputs come from the model, not from calibration_data.
+                example_inputs=model_prep_output.example_inputs,
                 calibration_data=model_prep_output.calibration_data,
             )
             output = self._quantization_stage.invoke(context, input_config)

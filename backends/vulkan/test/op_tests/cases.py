@@ -71,13 +71,23 @@ def get_binary_elementwise_inputs():
     ]
     highdim_test_suite.test_name_suffix = "highdim"
 
+    large_buffer_test_suite = VkTestSuite(
+        [
+            ((5000000,), (5000000,)),
+        ]
+    )
+    large_buffer_test_suite.storage_types = ["utils::kBuffer"]
+    large_buffer_test_suite.layouts = ["utils::kWidthPacked"]
+    large_buffer_test_suite.data_range = (1, 2)
+    large_buffer_test_suite.test_name_suffix = "large_buffer"
+
     for suite in [test_suite, highdim_test_suite]:
         suite.layouts = [
             "utils::kWidthPacked",
             "utils::kChannelsPacked",
         ]
 
-    return [test_suite, highdim_test_suite]
+    return [test_suite, highdim_test_suite, large_buffer_test_suite]
 
 
 # Eq requires a different test generator so it was split from the other test case.
@@ -999,14 +1009,22 @@ def get_view_inputs():
     highdim_test_suite.test_name_suffix = "highdim"
     highdim_test_suite.data_gen = "make_seq_tensor"
 
-    for suite in [test_suite, highdim_test_suite]:
+    large_buffer_test_suite = VkTestSuite(
+        [
+            ((30, 3, 256, 256), (30, 3, 65536)),
+        ]
+    )
+    large_buffer_test_suite.storage_types = ["utils::kBuffer"]
+    large_buffer_test_suite.test_name_suffix = "large_buffer"
+
+    for suite in [test_suite, highdim_test_suite, large_buffer_test_suite]:
         suite.layouts = [
             # "utils::kWidthPacked",
             "utils::kHeightPacked",
             "utils::kChannelsPacked",
         ]
 
-    return [test_suite, highdim_test_suite]
+    return [test_suite, highdim_test_suite, large_buffer_test_suite]
 
 
 @register_test_suite("aten.slice_copy.Tensor")

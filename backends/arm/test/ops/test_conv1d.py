@@ -118,6 +118,11 @@ class Conv1d(torch.nn.Module):
         return x
 
 
+class Conv1dWithLeakyReLU(Conv1d):
+    def forward(self, x):
+        return torch.nn.functional.leaky_relu(super().forward(x), negative_slope=0.0)
+
+
 conv1d_2_3x2x40_nobias = Conv1d(
     in_channels=2,
     out_channels=3,
@@ -322,6 +327,18 @@ def test_convolution_1d_tosa_INT(test_data):
         aten_op,
         exir_op,
         per_channel_quantization=per_channel_quantization,
+        qtol=1,
+    )
+    pipeline.run()
+
+
+def test_convolution_1d_with_leaky_relu_tosa_INT():
+    model = Conv1dWithLeakyReLU()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        [aten_op, "torch.ops.aten.leaky_relu.default"],
+        [exir_op, "executorch_exir_dialects_edge__ops_aten_leaky_relu_default"],
         qtol=1,
     )
     pipeline.run()
