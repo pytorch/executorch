@@ -330,7 +330,8 @@ void _qk_at_v_gemm(
     const int64_t o_stride_m,
     const accum_t beta,
     accum_t* buf_qdq_ptr,
-    const bool widen_v) {
+    const bool widen_v,
+    const bool use_fp32_qk_weights) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
       const float* qk = static_cast<const float*>(qk_data);
@@ -380,6 +381,18 @@ void _qk_at_v_gemm(
     // qk has been cast to the activation dtype (see qk_reduced_data); both
     // operands are reduced precision and accumulate into the float output.
     if constexpr (std::is_same<accum_t, float>::value) {
+      if (use_fp32_qk_weights) {
+        ::executorch::cpublas::gemv(
+            n,
+            k,
+            1.0f,
+            static_cast<const ::executorch::aten::BFloat16*>(v_data.data),
+            v_stride_n,
+            static_cast<const float*>(qk_data),
+            beta,
+            o_data);
+        return;
+      }
       if (widen_v) {
         ET_CHECK_MSG(
             v_data.dtype == ScalarType::BFloat16,
@@ -1251,9 +1264,13 @@ void cpu_flash_attention(
         const bool widen_v = is_reduced_type && !is_quantized_sdpa &&
             std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
             qBlockSize >= kMinQBlockForWidenedAV;
+        const bool use_fp32_qk_weights = is_reduced_type &&
+            !is_quantized_sdpa &&
+            std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+            qBlockSize == 1;
         const void* qk_gemm_data = qk_data;
         if constexpr (is_reduced_type) {
-          if (!is_quantized_sdpa && !widen_v) {
+          if (!is_quantized_sdpa && !widen_v && !use_fp32_qk_weights) {
             vec::convert<accum_t, scalar_t>(
                 qk_data, qk_reduced_data, qBlockSize * kvBlockSize);
             qk_gemm_data = qk_reduced_data;
@@ -1272,7 +1289,8 @@ void cpu_flash_attention(
             headSize,
             n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
             buf_qdq_ptr,
-            widen_v);
+            widen_v,
+            use_fp32_qk_weights);
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides
