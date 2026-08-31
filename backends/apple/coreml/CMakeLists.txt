@@ -199,10 +199,9 @@ if(APPLE)
   # link it, and so the Python extension links it dynamically instead of
   # absorbing its code. Keyed on EXECUTORCH_BUILD_SHARED rather than
   # BUILD_SHARED_LIBS, the same way the other shipped delegates decide this, so
-  # the wheel controls it independently of the generic CMake switch. Shipping it
-  # shared means a duplicate-symbol conflict would surface at load time rather
-  # than at static-link time; the process must hold exactly one copy of the
-  # delegate, which the single shipped library and the dynamic link preserve.
+  # the wheel controls it independently of the generic CMake switch. The wheel
+  # ships this one delegate library and _C links that copy rather than embedding
+  # another.
   if(EXECUTORCH_BUILD_SHARED)
     set(_coreml_backend_library_type SHARED)
   else()
@@ -273,9 +272,7 @@ if(APPLE)
     # the delegate references the helpers it uses, so ordinary resolution pulls
     # exactly those objects. Neither helper registers anything from an
     # unreferenced namespace-scope initializer, which is the only thing
-    # force_load would add here. Private also keeps the helpers' include
-    # directories out of this library's export interface, which is intended: a
-    # wheel consumer links the bundled delegate and never names the helpers.
+    # force_load would add here.
     target_link_libraries(
       coremldelegate PRIVATE coreml_util coreml_inmemoryfs executorch_shared
     )
