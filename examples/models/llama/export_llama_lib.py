@@ -32,7 +32,10 @@ from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from executorch.extension.llm.export.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.llm_config import (
+    LlmConfig,
+    QuantizationConfig,
+)
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_openvino_partitioner,
@@ -1054,7 +1057,7 @@ def get_quantizer_and_quant_params(llm_config):
 
 
 def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "4w"]
+    choices = QuantizationConfig.QMODE_OPTIONS
     patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:
