@@ -10,7 +10,7 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 * `executorch_dump` - ETDump profiling
 * `executorch_llm` - LLM-specific runtime components
 * `backend_coreml` - Core ML backend
-* `backend_mlx` - MLX backend, on real devices and Mac only, not the iOS simulator
+* `backend_mlx` - MLX backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
@@ -22,6 +22,8 @@ Link your binary with the ExecuTorch runtime and any backends or kernels used by
 **Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#Linkage) section for more details.
 
 **Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details.
+
+**Note:** The MLX backend links and registers on the iOS simulator, so an app builds for both destinations, but it reports itself unavailable there because the simulator has no Metal device it can use. A model delegated to MLX will not load on the simulator. Use a real device or a Mac to run one.
 
 ### Swift Package Manager
 
