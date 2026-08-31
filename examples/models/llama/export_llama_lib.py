@@ -1228,7 +1228,7 @@ def _save_etrecord_if_generated(builder) -> None:
 
     try:
         etrecord.save("etrecord.bin")
-    except OSError as error:
+    except Exception as error:
         logging.warning("Could not write etrecord.bin: %s", error)
         return
 
@@ -1567,12 +1567,16 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
         # Generate ETRecord
         if edge_manager_copy:
-            generate_etrecord_func(
-                et_record="etrecord.bin",
-                edge_dialect_program=edge_manager_copy,
-                executorch_program=builder.export_program,
-            )
-            logging.info("Generated etrecord.bin")
+            try:
+                generate_etrecord_func(
+                    et_record="etrecord.bin",
+                    edge_dialect_program=edge_manager_copy,
+                    executorch_program=builder.export_program,
+                )
+            except Exception as error:
+                logging.warning("Could not write etrecord.bin: %s", error)
+            else:
+                logging.info("Generated etrecord.bin")
     else:
         builder = builder_exported_to_edge.to_backend(partitioners)
         if verbose:

@@ -10,7 +10,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import torch
 from executorch.devtools.backend_debug import get_delegation_info
+from executorch.devtools.etrecord import parse_etrecord
 
 try:
     from executorch.backends.arm.quantizer.arm_quantizer import (
@@ -32,6 +34,7 @@ from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
+from executorch.extension.llm.export.builder import LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import (
     LlmConfig,
     Pt2eQuantize,
@@ -49,8 +52,6 @@ def _tiny_llm_builder():
 
     Enough to exercise the lowering helpers without a checkpoint or a real llama model.
     """
-    import torch
-    from executorch.extension.llm.export.builder import LLMEdgeManager
 
     class Tiny(torch.nn.Module):
         def forward(self, tokens):
@@ -123,8 +124,6 @@ class ExportLlamaLibTest(unittest.TestCase):
         llm_config = LlmConfig()
         llm_config.backend.xnnpack.enabled = True
         llm_config.debug.generate_etrecord = generate_etrecord
-        # The recipe rejects dynamic shapes, and _validate_args runs before the lowering.
-        llm_config.model.enable_dynamic_shape = False
         llm_config.export.output_name = "tiny.pte"
         with patch(
             "executorch.examples.models.llama.export_llama_lib._prepare_for_llama_export",
@@ -145,6 +144,10 @@ class ExportLlamaLibTest(unittest.TestCase):
             try:
                 self._run_tiny_export(generate_etrecord=True)
                 self.assertEqual(sorted(os.listdir(".")), ["etrecord.bin", "tiny.pte"])
+                # An empty file would satisfy the listing, so load it back.
+                self.assertIsNotNone(
+                    parse_etrecord("etrecord.bin").edge_dialect_program
+                )
             finally:
                 os.chdir(previous)
 
@@ -162,8 +165,8 @@ class ExportLlamaLibTest(unittest.TestCase):
     def test_export_keeps_the_model_when_the_etrecord_cannot_be_written(self):
         """A debug artifact must not cost the caller the export.
 
-        The record is written after the model and its failure is logged, so a full disk or an
-        unwritable directory loses the record and not the .pte.
+        The record is written after the model, so a failure to write it costs the record and not
+        the .pte. A full disk is the likely trigger, since the record is the larger of the two.
         """
         with tempfile.TemporaryDirectory() as directory:
             previous = os.getcwd()
@@ -171,8 +174,12 @@ class ExportLlamaLibTest(unittest.TestCase):
             try:
                 # A directory of that name makes the write fail without touching permissions.
                 os.mkdir("etrecord.bin")
-                self._run_tiny_export(generate_etrecord=True)
+                with self.assertLogs(level="WARNING") as logs:
+                    self._run_tiny_export(generate_etrecord=True)
                 self.assertIn("tiny.pte", os.listdir("."))
+                self.assertTrue(
+                    any("Could not write etrecord.bin" in line for line in logs.output)
+                )
             finally:
                 os.chdir(previous)
 
