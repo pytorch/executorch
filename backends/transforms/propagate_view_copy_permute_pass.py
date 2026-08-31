@@ -47,9 +47,8 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     _VIEW_TARGET = exir_ops.edge.aten.view_copy.default
-    _VIEW_DEFAULT_TARGET = exir_ops.edge.aten.view.default
     _PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
-    _TARGETS = {_VIEW_TARGET, _VIEW_DEFAULT_TARGET, _PERMUTE_TARGET}
+    _TARGETS = {_VIEW_TARGET, _PERMUTE_TARGET}
     _TRANSPARENT_TARGETS = {
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
@@ -77,13 +76,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         self.exported_program = exported_program
         self.compile_spec = compile_spec
         # Which targets count as a permute. A backend carrying its own layout
-        # dialect passes them here; the pass still emits self._PERMUTE_TARGET
-        # when it has to create one.
+        # dialect passes them here.
         self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
-        self._targets = {
-            self._VIEW_TARGET,
-            self._VIEW_DEFAULT_TARGET,
-        } | self._permute_targets
+        self._targets = {self._VIEW_TARGET} | self._permute_targets
 
     @staticmethod
     def _dim_arg(arg: Any) -> int | Sequence[int] | None:
@@ -137,6 +132,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         if modified:
             graph_module = self._retrace(graph_module)
+            graph_module.recompile()
 
         return PassResult(graph_module, modified)
 
@@ -240,6 +236,11 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 moved = True
                 continue
 
+            if self._maybe_distribute_upwards_permute_over_elementwise(
+                node, frontier, next_node
+            ):
+                return True
+
             # Concats are a special case since they branch the graph.
             # Perform the swap directly in this case and return.
             # Otherwise break and move the node before the concat
@@ -337,6 +338,14 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """
         return False
 
+    def _maybe_distribute_upwards_permute_over_elementwise(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        return False
+
     def _maybe_split_fork(
         self,
         node: torch.fx.Node,
@@ -357,7 +366,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """
         if node.target in self._permute_targets:
             return self._maybe_swap_permute_args(node, next_node)
-        elif node.target in {self._VIEW_TARGET, self._VIEW_DEFAULT_TARGET}:
+        elif node.target == self._VIEW_TARGET:
             return self._maybe_swap_view_args(node, next_node)
         else:
             raise ValueError(
@@ -764,7 +773,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
             output_shape = [input_val.shape[dim] for dim in permute_args[0]]
             with next_node.graph.inserting_before(next_node):
                 permute = next_node.graph.call_function(
-                    self._PERMUTE_TARGET,
+                    cast(Any, node.target),
                     args=(input_node, permute_args[0]),
                 )
             permute.meta = dict(input_node.meta)

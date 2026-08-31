@@ -43,8 +43,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
     def __init__(self, permute_targets: Iterable[Any] | None = None) -> None:
         super().__init__()
         # Which targets count as a permute. A backend carrying its own layout
-        # dialect passes them here; the pass still emits _PERMUTE_TARGET when it
-        # has to create one.
+        # dialect passes them here. Mixed-dialect chains are left unchanged.
         self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
         self._targets = {self._VIEW_TARGET} | self._permute_targets
 
@@ -55,6 +54,12 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         modified = False
 
         for chain in self._collect_chains(graph_module):
+            permute_targets = {
+                node.target for node in chain if node.target in self._permute_targets
+            }
+            if len(permute_targets) > 1:
+                continue
+
             updated_chain = chain
 
             while True:
@@ -169,7 +174,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
                             _normalize_dim(dim, len(self._shape(input_node)))
                             for dim in dims
                         ]
-                        self._set_node_op(node, self._PERMUTE_TARGET, input_node, dims)
+                        self._set_node_op(node, node.target, input_node, dims)
                         changed = True
                         any_changed = True
 
@@ -214,13 +219,17 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
                         any_changed = True
                         continue
 
-                    if self._is_permute(node) and self._is_permute(next_node):
+                    if (
+                        self._is_permute(node)
+                        and self._is_permute(next_node)
+                        and node.target == next_node.target
+                    ):
                         # Fuse consecutive permutes
                         dims = self._permute_dims(node)
                         next_dims = self._permute_dims(next_node)
                         self._set_node_op(
                             node,
-                            self._PERMUTE_TARGET,
+                            node.target,
                             input_node,
                             [dims[dim] for dim in next_dims],
                         )
@@ -372,7 +381,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
     ) -> None:
         node.target = target
         node.args = (input_node, list(arg))
-        refresh_permute_view_meta(node)
+        refresh_permute_view_meta(node, self._permute_targets)
 
     def _permute_dims(self, node: Node) -> list[int]:
         assert self._is_permute(node), "Expected permute node"

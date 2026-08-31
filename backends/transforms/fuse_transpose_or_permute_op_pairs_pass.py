@@ -49,6 +49,10 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
     ) -> bool:
         if not super().can_fuse_for_chain(producer, consumer, consumer_op_packets):
             return False
+        if (producer.target == LAYOUT_PERMUTE_COPY) != (
+            consumer.target == LAYOUT_PERMUTE_COPY
+        ):
+            return False
 
         # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions
         producer_input = cast(torch.fx.Node, producer.args[0])

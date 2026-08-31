@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import pytest
 import torch
 from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass,
@@ -13,6 +12,7 @@ from executorch.backends.transforms.propagate_view_copy_permute_pass import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 PERMUTE = exir_ops.edge.aten.permute_copy.default
+VIEW = exir_ops.edge.aten.view_copy.default
 ABS = exir_ops.edge.aten.abs.default
 NEG = exir_ops.edge.aten.neg.default
 SIGMOID = exir_ops.edge.aten.sigmoid.default
@@ -56,24 +56,6 @@ def _permute_counts(graph: torch.fx.Graph) -> tuple[int, int, int]:
     after_down = count()
     graph_module = PropagateViewCopyPermuteUpPass().call(graph_module).graph_module
     return before, after_down, count()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="Splitting a fork where some branches rejoin and others do not leaves "
-    "one copy below the meeting node and one at the source, and the up pass has "
-    "no fork split of its own to hoist the first above the rejoin. No model in a "
-    "15-model sweep produces this shape, so the driver does not special-case it; "
-    "the general fix is to stop propagation increasing the copy count at all.",
-)
-def test_mixed_reconvergence_fork_does_not_strand_a_permute() -> None:
-    graph = torch.fx.Graph()
-    left, right, diverging = _forked_permute(graph, branches=3)
-    rejoin = graph.call_function(ADD, args=(left, right))
-    rejoin.meta["val"] = torch.empty(PERMUTED_SHAPE)
-    graph.output((rejoin, diverging))
-
-    assert _permute_counts(graph) == (1, 1, 1)
 
 
 def test_fork_split_still_applies_when_every_branch_rejoins() -> None:

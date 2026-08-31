@@ -259,7 +259,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
                 kwargs=dict(transform.kwargs),
             )
         new_node.meta = self._new_transform_meta(node, transform)
-        refresh_permute_view_meta(new_node)
+        refresh_permute_view_meta(new_node, self._permute_targets)
 
         for user in list(node.users):
             if user is not new_node:

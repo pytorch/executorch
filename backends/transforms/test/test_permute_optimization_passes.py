@@ -782,6 +782,250 @@ class FuseTransposeOrPermuteOpPairsTest(unittest.TestCase):
 # ──────────────────────────────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Tests for structural layout boundary propagation
+# ──────────────────────────────────────────────────────────────────────
+
+
+class LayoutDialectHandlingTest(unittest.TestCase):
+    @staticmethod
+    def _layout_add_graph(
+        bias_name: str, bias_data: torch.Tensor
+    ) -> tuple[torch.fx.GraphModule, torch.Tensor]:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 8, 4)
+        x = builder.placeholder("x", x_data)
+        bias = builder.placeholder(bias_name, bias_data)
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 3, 1, 2]),
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor,
+            args=(to_nchw, bias),
+        )
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(add, [0, 2, 3, 1]),
+        )
+        builder.output([to_nhwc])
+        return builder.get_graph_module(), x_data
+
+    @staticmethod
+    def _layout_pad_graph(
+        shape: tuple[int, ...],
+        to_inner: list[int],
+        to_outer: list[int],
+        pad: list[int],
+    ) -> tuple[torch.fx.GraphModule, torch.Tensor]:
+        builder = GraphBuilder()
+        x_data = torch.randn(*shape)
+        x = builder.placeholder("x", x_data)
+        inner = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, to_inner),
+        )
+        padded = builder.call_operator(
+            op=exir_ops.edge.aten.constant_pad_nd.default,
+            args=(inner, pad, 0.0),
+        )
+        outer = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(padded, to_outer),
+        )
+        builder.output([outer])
+        return builder.get_graph_module(), x_data
+
+    def test_layout_pad_argument_is_remapped(self) -> None:
+        for shape, to_inner, to_outer, pad in (
+            ((1, 8, 8, 3), [0, 3, 1, 2], [0, 2, 3, 1], [0, 0, 0, 0, 0, 1]),
+            ((2, 8, 3), [0, 2, 1], [0, 2, 1], [0, 0, 0, 1]),
+        ):
+            with self.subTest(shape=shape):
+                graph_module, x_data = self._layout_pad_graph(
+                    shape, to_inner, to_outer, pad
+                )
+                before = copy.deepcopy(graph_module)
+
+                result = cast(
+                    PassResult,
+                    RemovePermutesAroundElementwiseOps()(graph_module),
+                )
+
+                self.assertTrue(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module,
+                        exir_ops.edge.aten.constant_pad_nd.default,
+                    ),
+                    1,
+                )
+                validate_numerics(
+                    before,
+                    result.graph_module,
+                    [x_data],
+                    "RemovePermutesAroundElementwiseOps",
+                )
+
+    def test_existing_layout_pad_is_remapped(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
+        pad = builder.call_operator(
+            op=exir_ops.edge.aten.constant_pad_nd.default,
+            args=(x, [0, 0, 0, 0, 0, 1], 0.0),
+        )
+        builder.output([pad])
+
+        RemovePermutesAroundElementwiseOps().update_pad(pad.node, [0, 3, 1, 2])
+
+        self.assertEqual(pad.node.args[1], [0, 1])
+
+    def test_pair_fusion_recognizes_structural_permutes(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        quantize = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(to_nhwc, 0.25, 0, -128, 127, torch.int8),
+        )
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(quantize, [0, 3, 1, 2]),
+        )
+        builder.output([to_nchw])
+        graph_module = builder.get_graph_module()
+        before = copy.deepcopy(graph_module)
+
+        result = cast(PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module))
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            0,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data],
+            "FuseTransposeOrPermuteOpPairsPass",
+        )
+
+    def test_pair_fusion_preserves_layout_dialect_across_aten_transpose(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3))
+        transpose = builder.call_operator(
+            op=exir_ops.edge.aten.transpose_copy.int,
+            args=(x, 0, 1),
+        )
+        layout_permute = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(transpose, [1, 0]),
+        )
+        builder.output([layout_permute])
+        graph_module = builder.get_graph_module()
+
+        result = cast(PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.transpose_copy.int), 1
+        )
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            1,
+        )
+
+    def test_pair_fusion_does_not_bypass_structural_per_channel_qdq(self) -> None:
+        for op, x_data in (
+            (
+                exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+                torch.randn(1, 2, 3, 4),
+            ),
+            (
+                exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+                torch.randint(-128, 127, (1, 2, 3, 4), dtype=torch.int8),
+            ),
+        ):
+            with self.subTest(op=op):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", x_data)
+                scales = builder.placeholder("scales", torch.tensor([0.25, 0.5]))
+                zero_points = builder.placeholder(
+                    "zero_points", torch.tensor([0, 0], dtype=torch.int64)
+                )
+                to_nhwc = builder.call_operator(
+                    op=exir_ops.edge.channels_last.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                qdq = builder.call_operator(
+                    op=op,
+                    args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+                )
+                to_nchw = builder.call_operator(
+                    op=exir_ops.edge.channels_last.permute_copy.default,
+                    args=(qdq, [0, 3, 1, 2]),
+                )
+                builder.output([to_nchw])
+                graph_module = builder.get_graph_module()
+
+                result = cast(
+                    PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module)
+                )
+
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module,
+                        exir_ops.edge.channels_last.permute_copy.default,
+                    ),
+                    2,
+                )
+
+    def test_layout_copy_reshapes_channel_constant_without_copy(self) -> None:
+        bias_data = torch.randn(4, 1, 1)
+        graph_module, x_data = self._layout_add_graph("b_bias", bias_data)
+        before = copy.deepcopy(graph_module)
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps()(graph_module),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.view_copy.default),
+            1,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data, bias_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+
+# ─────────────────────────────────────
+# Tests for ReplaceNopTransposeOrPermuteWithViewPass
+# ─────────────────────────────────────
+
+
 class ReplaceNopTransposeOrPermuteWithViewTest(unittest.TestCase):
     def test_replace_nop_transpose_with_view_float(self) -> None:
         x = torch.randn(2, 1, 3, 1)
@@ -2353,6 +2597,209 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
             [x_data],
             "chained_regions_absorb_into_last_permute",
         )
+
+    def _assert_region_cancels(
+        self, module: torch.nn.Module, inputs: tuple[torch.Tensor, ...]
+    ) -> None:
+        """The region's boundary permutes go away and the values do not change."""
+        module = module.eval()
+        expected = module(*inputs)
+        with torch.no_grad():
+            exported = torch.export.export(module, inputs)
+            edge = to_edge(
+                exported,
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
+            )
+            before = count_node(
+                edge.exported_program().graph_module,
+                exir_ops.edge.aten.permute_copy.default,
+            )
+            transformed = edge.transform([RemovePermutesAroundElementwiseOps()])
+            actual = transformed.exported_program().module()(*inputs)
+
+        after = count_node(
+            transformed.exported_program().graph_module,
+            exir_ops.edge.aten.permute_copy.default,
+        )
+        self.assertLess(after, before, "the boundary permutes should have cancelled")
+        torch.testing.assert_close(actual, expected)
+
+    def test_lower_rank_constant_reorder_preserves_values(self) -> None:
+        """A broadcast constant is widened and permuted, never reinterpreted.
+
+        A view cannot express the reorder -- it reinterprets strides rather than
+        moving elements -- so each rank below the region's needs its own case.
+        """
+
+        class Rank3(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "bias",
+                    torch.arange(4 * 8 * 8, dtype=torch.float32).reshape(4, 8, 8),
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(0, 3, 1, 2) + self.bias).permute(0, 2, 3, 1)
+
+        class Rank2(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "bias", torch.arange(8, dtype=torch.float32).reshape(1, 8)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(2, 0, 1) + self.bias).permute(1, 2, 0)
+
+        class Rank1(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("scale", torch.arange(1.0, 9.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(0, 3, 1, 2) * self.scale).permute(0, 2, 3, 1)
+
+        class EqualExtents(torch.nn.Module):
+            """Two non-unit axes of the same size swap.
+
+            The extents read the same before and after, so only their order
+            distinguishes a reshape from a reorder.
+            """
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "bias", torch.arange(4, dtype=torch.float32).reshape(2, 2)
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return (x.permute(0, 1, 3, 2) + self.bias).permute(0, 1, 3, 2)
+
+        self._assert_region_cancels(Rank3(), (torch.randn(1, 8, 8, 4),))
+        self._assert_region_cancels(Rank2(), (torch.randn(8, 8, 8),))
+        self._assert_region_cancels(Rank1(), (torch.randn(1, 8, 8, 8),))
+        self._assert_region_cancels(EqualExtents(), (torch.randn(1, 4, 2, 2),))
+
+    def test_region_returning_a_value_reinserts_the_permute(self) -> None:
+        """A returned region value keeps its layout, and the region still cancels.
+
+        Reaching an output used to abandon the whole region, so a graph that
+        returned an intermediate paid for every permute in it.
+        """
+
+        class ReturnsIntermediate(torch.nn.Module):
+            def forward(self, x: torch.Tensor):
+                permuted = x.permute(0, 3, 1, 2)
+                shifted = permuted + 1.0
+                scaled = shifted * 2.0
+                return scaled.permute(0, 2, 3, 1), shifted
+
+        inputs = (torch.randn(1, 8, 8, 4),)
+        module = ReturnsIntermediate().eval()
+        expected = module(*inputs)
+        with torch.no_grad():
+            edge = to_edge(
+                torch.export.export(module, inputs),
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
+            )
+            before = count_node(
+                edge.exported_program().graph_module,
+                exir_ops.edge.aten.permute_copy.default,
+            )
+            transformed = edge.transform(
+                [RemovePermutesAroundElementwiseOps(compensate_at_output=True)]
+            )
+            actual = transformed.exported_program().module()(*inputs)
+
+        after = count_node(
+            transformed.exported_program().graph_module,
+            exir_ops.edge.aten.permute_copy.default,
+        )
+        self.assertEqual(before, 2)
+        # One survives, on the edge that returns the intermediate.
+        self.assertEqual(after, 1)
+        torch.testing.assert_close(actual, expected)
+
+    def test_output_boundary_compensation_is_off_by_default(self) -> None:
+        """Without the opt-in the pass still gives up at a graph output.
+
+        Compensating relocates a layout copy toward the outputs, and a backend
+        that also runs the propagation passes has already chosen where its
+        copies sit -- Arm parks them near the inputs. Changing that under it
+        would have the two pulling the same copy apart.
+        """
+
+        class SinkOnly(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                permuted = x.permute(0, 2, 3, 1)
+                return permuted + permuted * 2.0
+
+        inputs = (torch.randn(1, 2, 3, 4),)
+        module = SinkOnly().eval()
+        expected = module(*inputs)
+        with torch.no_grad():
+            edge = to_edge(
+                torch.export.export(module, inputs),
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
+            )
+            transformed = edge.transform([RemovePermutesAroundElementwiseOps()])
+            graph = transformed.exported_program().graph_module.graph
+            actual = transformed.exported_program().module()(*inputs)
+
+        targets = [n.target for n in graph.nodes if n.op == "call_function"]
+        self.assertEqual(
+            targets.index(exir_ops.edge.aten.permute_copy.default),
+            0,
+            "the permute should not have moved to the far side of the region",
+        )
+        torch.testing.assert_close(actual, expected)
+
+    def test_value_returned_both_raw_and_through_the_region_exit(self) -> None:
+        """One value returned in both layouts still leaves exactly one permute.
+
+        The boundary permute is inserted before the exit permute is skipped, so
+        the two output slots stay distinct: the slot that went through the exit
+        takes the region's own value and the raw slot takes the new permute.
+        Inserting after the skip would collapse both onto one layout.
+        """
+
+        class BothLayouts(torch.nn.Module):
+            def forward(self, x: torch.Tensor):
+                shifted = x.permute(0, 3, 1, 2) + 1.0
+                return shifted.permute(0, 2, 3, 1), shifted
+
+        inputs = (torch.randn(1, 8, 8, 4),)
+        module = BothLayouts().eval()
+        expected = module(*inputs)
+        with torch.no_grad():
+            edge = to_edge(
+                torch.export.export(module, inputs),
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
+            )
+            transformed = edge.transform(
+                [RemovePermutesAroundElementwiseOps(compensate_at_output=True)]
+            )
+            actual = transformed.exported_program().module()(*inputs)
+
+        self.assertEqual(
+            count_node(
+                transformed.exported_program().graph_module,
+                exir_ops.edge.aten.permute_copy.default,
+            ),
+            1,
+        )
+        for index, (want, got) in enumerate(zip(expected, actual)):
+            self.assertEqual(want.shape, got.shape, f"output {index} changed layout")
+            torch.testing.assert_close(got, want)
 
 
 class LayoutPermuteVisibilityTest(unittest.TestCase):

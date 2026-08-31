@@ -6,8 +6,8 @@
 
 # pyre-unsafe
 
-from collections.abc import Sequence
-from typing import cast
+from collections.abc import Iterable, Sequence
+from typing import Any, cast
 
 import torch
 import torch.fx
@@ -19,16 +19,26 @@ from executorch.backends.transforms.dim_maps import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
-def refresh_permute_view_meta(node: torch.fx.Node) -> None:
+def refresh_permute_view_meta(
+    node: torch.fx.Node, permute_targets: Iterable[Any] | None = None
+) -> None:
     """Compute new meta-vals, specifically preserving SymInts for view/permute
     nodes.
     """
     input_node = node.all_input_nodes[0]
     input_val = input_node.meta.get("val")
-    if input_val is None or node.target not in {
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
-    }:
+    if input_val is None:
+        return
+
+    permute_targets = frozenset(
+        (exir_ops.edge.aten.permute_copy.default,)
+        if permute_targets is None
+        else permute_targets
+    )
+    if (
+        node.target != exir_ops.edge.aten.view_copy.default
+        and node.target not in permute_targets
+    ):
         return
 
     if not isinstance(input_val, torch.Tensor):
@@ -45,7 +55,7 @@ def refresh_permute_view_meta(node: torch.fx.Node) -> None:
                     )
                 )
             )
-        case exir_ops.edge.aten.permute_copy.default:
+        case target if target in permute_targets:
             dims = _normalize_dims(
                 cast(Sequence[int], node.args[1]), len(input_val.shape)
             )

@@ -571,3 +571,61 @@ def test_canonicalize_unsupported_end_view_does_not_block_prefix() -> None:
     )
     assert _count_node(result.graph_module, exir_ops.edge.aten.view_copy.default) == 1
     _validate_numerics(gm_before, result.graph_module, (x_data,))
+
+
+def test_canonicalize_mixed_permute_dialects_is_idempotent() -> None:
+    builder = GraphBuilder()
+    x_data = torch.randn(1, 2, 3, 4)
+    x = builder.placeholder("x", x_data)
+    layout_permute = builder.call_operator(
+        op=exir_ops.edge.channels_last.permute_copy.default,
+        args=(x, [0, 2, 3, 1]),
+    )
+    view = builder.call_operator(
+        op=exir_ops.edge.aten.view_copy.default,
+        args=(layout_permute, [1, 12, 2]),
+    )
+    permute = builder.call_operator(
+        op=exir_ops.edge.aten.permute_copy.default,
+        args=(view, [0, 2, 1]),
+    )
+    builder.output([permute])
+    graph_module = builder.get_graph_module()
+
+    pass_instance = CanonicalizeViewCopyPermutePass(
+        permute_targets={
+            exir_ops.edge.channels_last.permute_copy.default,
+            exir_ops.edge.aten.permute_copy.default,
+        }
+    )
+    first = cast(PassResult, pass_instance.call(graph_module))
+    second = cast(PassResult, pass_instance.call(first.graph_module))
+
+    assert not first.modified
+    assert not second.modified
+    assert _compute_nodes(second.graph_module) == [
+        exir_ops.edge.channels_last.permute_copy.default,
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+    ]
+
+
+def test_canonicalize_refreshes_backend_permute_metadata() -> None:
+    builder = GraphBuilder()
+    x = builder.placeholder("x", torch.randn(1, 2, 3, 4))
+    permute = builder.call_operator(
+        op=exir_ops.edge.channels_last.permute_copy.default,
+        args=(x, [0, 2, 3, 1]),
+    )
+
+    pass_instance = CanonicalizeViewCopyPermutePass(
+        permute_targets={exir_ops.edge.channels_last.permute_copy.default}
+    )
+    pass_instance._set_node_op(
+        permute.node,
+        exir_ops.edge.channels_last.permute_copy.default,
+        x.node,
+        [0, 3, 1, 2],
+    )
+
+    assert permute.node.meta["val"].shape == torch.Size([1, 4, 2, 3])
