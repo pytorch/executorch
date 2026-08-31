@@ -1208,20 +1208,17 @@ def _to_edge_and_lower_llama_xnnpack(
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
     # Add gen_tag_fn to tag non-delegated weights as well.
-    builder = builder.to_executorch(
+    return builder.to_executorch(
         passes=additional_passes, external_constants_tag=gen_tag_fn
     )
-    _save_etrecord_if_generated(builder)
-    return builder
 
 
 def _save_etrecord_if_generated(builder) -> None:
     """Write the etrecord the lowering attached, if there is one.
 
-    `to_edge_transform_and_lower` builds the record when asked and carries it through to the
-    ExecuTorch program, but nothing saves it, so a caller passing --generate_etrecord got no file
-    and no warning. The combined lowering path calls `generate_etrecord` itself and writes the same
-    filename, so both paths now leave the same artifact.
+    Called after the model is written, and never allowed to raise, because a debug artifact
+    must not cost a caller the export itself. A record twice the size of the model makes a
+    full disk the likely trigger.
     """
     try:
         etrecord = builder.export_program.get_etrecord()
@@ -1229,7 +1226,12 @@ def _save_etrecord_if_generated(builder) -> None:
         # Not generated, which is the normal case.
         return
 
-    etrecord.save("etrecord.bin")
+    try:
+        etrecord.save("etrecord.bin")
+    except OSError as error:
+        logging.warning("Could not write etrecord.bin: %s", error)
+        return
+
     logging.info("Generated etrecord.bin")
 
 
@@ -1411,9 +1413,7 @@ def _to_edge_and_lower_llama_coreml(
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
-    builder = builder.to_executorch(passes=additional_passes)
-    _save_etrecord_if_generated(builder)
-    return builder
+    return builder.to_executorch(passes=additional_passes)
 
 
 def _to_edge_and_lower_llama(  # noqa: C901
@@ -1714,6 +1714,7 @@ def _export_llama_multimethod(llm_config: LlmConfig) -> LLMEdgeManager:
         first_builder.dtype,
     )
     first_builder.save_to_pte(output_file)
+    _save_etrecord_if_generated(first_builder)
 
     return first_builder
 
@@ -1894,6 +1895,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         builder.dtype,
     )
     builder.save_to_pte(output_file)
+    _save_etrecord_if_generated(builder)
     return builder
 
 

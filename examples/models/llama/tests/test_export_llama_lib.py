@@ -29,7 +29,6 @@ except ImportError:
 from executorch.examples.models.llama import export_llama_lib
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
-    _to_edge_and_lower_llama_xnnpack,
     build_args_parser,
     get_quantizer_and_quant_params,
 )
@@ -120,53 +119,60 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertTrue(target.call_args.kwargs["coreml"])
         self.assertTrue(target.call_args.kwargs["vulkan"])
 
-    def test_xnnpack_lowering_saves_the_etrecord_it_generates(self):
+    def _run_tiny_export(self, generate_etrecord):
+        llm_config = LlmConfig()
+        llm_config.backend.xnnpack.enabled = True
+        llm_config.debug.generate_etrecord = generate_etrecord
+        # The recipe rejects dynamic shapes, and _validate_args runs before the lowering.
+        llm_config.model.enable_dynamic_shape = False
+        llm_config.export.output_name = "tiny.pte"
+        with patch(
+            "executorch.examples.models.llama.export_llama_lib._prepare_for_llama_export",
+            return_value=_tiny_llm_builder(),
+        ):
+            _export_llama(llm_config)
+
+    def test_export_saves_the_etrecord_it_generates(self):
         """A lowering that generates an etrecord must also write it.
 
         `to_edge_transform_and_lower` builds the record when asked and carries it to the ExecuTorch
-        program, but the helpers using that call never saved it, so `--generate_etrecord` produced
-        no file and no warning while still paying for the record.
-
-        Driving the real helper rather than the save step, so this fails on the missing file rather
-        than on a missing symbol.
+        program, but nothing saved it, so the flag produced no file and no warning while still
+        paying for the record.
         """
-        builder = _tiny_llm_builder()
-
         with tempfile.TemporaryDirectory() as directory:
             previous = os.getcwd()
             os.chdir(directory)
             try:
-                _to_edge_and_lower_llama_xnnpack(
-                    builder,
-                    modelname="tiny",
-                    additional_passes=[],
-                    pt2e_quant_params=None,
-                    quantizers=[],
-                    quant_dtype=None,
-                    generate_etrecord=True,
-                )
-                self.assertEqual(os.listdir("."), ["etrecord.bin"])
+                self._run_tiny_export(generate_etrecord=True)
+                self.assertEqual(sorted(os.listdir(".")), ["etrecord.bin", "tiny.pte"])
             finally:
                 os.chdir(previous)
 
-    def test_xnnpack_lowering_writes_nothing_when_not_asked(self):
+    def test_export_writes_no_etrecord_when_not_asked(self):
         """The common case must stay silent rather than raise or leave a stray file."""
-        builder = _tiny_llm_builder()
-
         with tempfile.TemporaryDirectory() as directory:
             previous = os.getcwd()
             os.chdir(directory)
             try:
-                _to_edge_and_lower_llama_xnnpack(
-                    builder,
-                    modelname="tiny",
-                    additional_passes=[],
-                    pt2e_quant_params=None,
-                    quantizers=[],
-                    quant_dtype=None,
-                    generate_etrecord=False,
-                )
-                self.assertEqual(os.listdir("."), [])
+                self._run_tiny_export(generate_etrecord=False)
+                self.assertEqual(os.listdir("."), ["tiny.pte"])
+            finally:
+                os.chdir(previous)
+
+    def test_export_keeps_the_model_when_the_etrecord_cannot_be_written(self):
+        """A debug artifact must not cost the caller the export.
+
+        The record is written after the model and its failure is logged, so a full disk or an
+        unwritable directory loses the record and not the .pte.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            previous = os.getcwd()
+            os.chdir(directory)
+            try:
+                # A directory of that name makes the write fail without touching permissions.
+                os.mkdir("etrecord.bin")
+                self._run_tiny_export(generate_etrecord=True)
+                self.assertIn("tiny.pte", os.listdir("."))
             finally:
                 os.chdir(previous)
 
