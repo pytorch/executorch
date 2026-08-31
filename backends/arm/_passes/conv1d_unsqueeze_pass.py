@@ -7,6 +7,7 @@
 
 from typing import Set, Type
 
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_squeezes_to_view import (
     ConvertSqueezesToViewPass,
 )
@@ -15,10 +16,11 @@ from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInp
 from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
     ConvertConv1dToConv2dPass,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class Conv1dUnsqueezePass(ConvertConv1dToConv2dPass):
+class Conv1dUnsqueezePass(ConvertConv1dToConv2dPass, ArmOpTargetedPass):
     """Arm wrapper for the shared Conv1d-to-Conv2d transform."""
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -26,3 +28,4 @@ class Conv1dUnsqueezePass(ConvertConv1dToConv2dPass):
         RewriteConvPass,
         SizeAdjustInputPass,
     }
+    target_ops = (exir_ops.edge.aten.convolution.default,)
