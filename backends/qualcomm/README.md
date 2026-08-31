@@ -19,7 +19,7 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 The supported Qualcomm SoCs are detailed in `QcomChipset`. Please navigate to [qc_schema.py](serialization/qc_schema.py).
 
 ### Adding more supported Chipset
-Currently, users cannot add additional chipset models because the chipset ID is not accessible to community users. If you have specific chipset models you wish to add, please contact one of the authors in the `Code Reviews` section at the bottom of this page.
+The SoC model integer value needed to add new chipsets can be found in the QNN AI Engine Direct SDK documentation under "Supported Snapdragon Devices". The SoC model value is listed as "SOC Model" in that table and must match `QNN_SOC_MODEL_*` constants from the SDK's `QnnTypes.h`.
 
 ### Supported Inference Type
 - Quantized
