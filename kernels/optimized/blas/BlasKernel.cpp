@@ -387,14 +387,14 @@ TARGET_ARM_BF16_ATTRIBUTE static void dot4_with_fp32_arith_bfdot(
 #endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 #if defined(__aarch64__)
-template <int64_t kRegisterPairs>
+template <int64_t kRegisterPairs, typename b_t>
 C10_ALWAYS_INLINE void gemv_notrans_block_neon(
     int64_t output_offset,
     int64_t k,
     float alpha,
     const BFloat16* a,
     int64_t lda,
-    const BFloat16* b,
+    const b_t* b,
     float beta,
     float* c) {
   float32x4_t acc[kRegisterPairs * 2];
@@ -432,13 +432,14 @@ C10_ALWAYS_INLINE void gemv_notrans_block_neon(
   }
 }
 
-static void gemv_notrans_neon(
+template <typename b_t>
+void gemv_notrans_neon(
     int64_t m,
     int64_t k,
     float alpha,
     const BFloat16* a,
     int64_t lda,
-    const BFloat16* b,
+    const b_t* b,
     float beta,
     float* c) {
   int64_t i = 0;
@@ -849,6 +850,35 @@ void bf16_gemv_notrans_with_fp32_arith(
       c[i] += static_cast<float>(a_col[i]) * b_val;
     }
   }
+}
+
+void bf16_fp32_gemv_notrans_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const float* b,
+    float beta,
+    float* c) {
+#if defined(__aarch64__)
+  gemv_notrans_neon(m, k, alpha, a, lda, b, beta, c);
+#else
+  if (beta == 0.0f) {
+    std::fill(c, c + m, 0.0f);
+  } else if (beta != 1.0f) {
+    for (int64_t i = 0; i < m; ++i) {
+      c[i] *= beta;
+    }
+  }
+  for (int64_t l = 0; l < k; ++l) {
+    const BFloat16* a_col = a + l * lda;
+    const float b_val = b[l] * alpha;
+    for (int64_t i = 0; i < m; ++i) {
+      c[i] += static_cast<float>(a_col[i]) * b_val;
+    }
+  }
+#endif
 }
 
 void bf16_gemv_transa_with_fp32_arith(
