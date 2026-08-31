@@ -24,6 +24,7 @@ except ImportError:
     TOSAQuantizer = None
     VgfQuantizer = None
 
+from executorch.examples.models.llama import export_llama_lib
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
@@ -42,35 +43,51 @@ UNWANTED_OPS = [
 
 
 class ExportLlamaLibTest(unittest.TestCase):
-    def _assert_export_reaches(self, target, **backends):
-        """Run an export and assert which lowering it routes to."""
+    def _assert_routes_to(self, lowering, coreml=False, vulkan=False, qnn=False):
+        """Assert which lowering an export routes to, without running one."""
         llm_config = LlmConfig()
-        llm_config.backend.coreml.enabled = True
-        for name, enabled in backends.items():
-            getattr(llm_config.backend, name).enabled = enabled
-        # Core ML and QNN reject dynamic shapes, and _validate_args runs before the lowering.
+        llm_config.backend.coreml.enabled = coreml
+        llm_config.backend.vulkan.enabled = vulkan
+        llm_config.backend.qnn.enabled = qnn
+        # _validate_args rejects dynamic shapes when Core ML or QNN is enabled.
         llm_config.model.enable_dynamic_shape = False
 
-        with patch(
-            f"executorch.examples.models.llama.export_llama_lib.{target}",
-            side_effect=RuntimeError("reached"),
-        ) as lowering:
-            with self.assertRaises(RuntimeError):
+        class Reached(Exception):
+            pass
+
+        with patch.object(export_llama_lib, lowering, side_effect=Reached) as target:
+            with self.assertRaises(Reached):
                 _export_llama(llm_config)
-        lowering.assert_called_once()
+        target.assert_called_once()
+        return target
 
-    def test_core_ml_alone_reaches_the_core_ml_lowering(self):
-        """The guard used to read a backend config field that no longer existed, so this raised
-        AttributeError before reaching any lowering."""
-        self._assert_export_reaches("_to_edge_and_lower_llama_coreml")
+    def test_core_ml_alone_routes_to_the_core_ml_lowering(self):
+        """Core ML on its own must reach the Core ML lowering.
 
-    def test_core_ml_with_qnn_reaches_the_combined_lowering(self):
-        """The other case the removed read broke, and the one that pins the exclusion clause.
-
-        Core ML with QNN must fall through to the combined lowering, which still lowers Core ML but
-        keeps the QNN partitioner. Without this, deleting the whole clause passes.
+        The guard read a backend config field that no longer exists, so this raised AttributeError
+        before reaching any lowering.
         """
-        self._assert_export_reaches("_to_edge_and_lower_llama", qnn=True)
+        self._assert_routes_to("_to_edge_and_lower_llama_coreml", coreml=True)
+
+    def test_core_ml_with_qnn_routes_to_the_combined_lowering(self):
+        """Core ML with QNN must keep the QNN partitioner, so it takes the combined lowering."""
+        target = self._assert_routes_to(
+            "_to_edge_and_lower_llama", coreml=True, qnn=True
+        )
+        self.assertTrue(target.call_args.kwargs["coreml"])
+        self.assertTrue(target.call_args.kwargs["qnn"])
+
+    def test_core_ml_with_vulkan_routes_to_the_combined_lowering(self):
+        """Core ML with Vulkan must keep the Vulkan partitioner the same way.
+
+        This is what pins the Vulkan half of the exclusion clause: the Core ML lowering takes no
+        Vulkan argument, so routing there would drop the partitioner silently.
+        """
+        target = self._assert_routes_to(
+            "_to_edge_and_lower_llama", coreml=True, vulkan=True
+        )
+        self.assertTrue(target.call_args.kwargs["coreml"])
+        self.assertTrue(target.call_args.kwargs["vulkan"])
 
     def test_has_expected_ops_and_op_counts(self):
         """
