@@ -1,0 +1,53 @@
+name: LLM Server Tests
+
+on:
+  workflow_call:
+    inputs:
+      docker-image:
+        description: Docker image to use for Linux tests.
+        required: false
+        type: string
+        default: ci-image:executorch-ubuntu-22.04-clang12
+
+jobs:
+  linux:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ${{ inputs.docker-image }}
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        set -eux
+
+        eval "$(conda shell.bash hook)"
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        python -m pip install --progress-bar off \
+          -r examples/llm_server/python/requirements.txt \
+          httpx \
+          pytest
+
+        export PYTHONPATH="$(dirname "${PWD}"):${PYTHONPATH:-}"
+        export PYTHONDONTWRITEBYTECODE=1
+
+        python -m pytest -q examples/llm_server/python/tests
+
+        cmake -S . -B cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON
+        cmake --build cmake-out --target install -j "$(nproc)"
+
+        cmake -S examples/llm_server/cpp -B cmake-out/examples/llm_server/cpp \
+          -DCMAKE_PREFIX_PATH="${PWD}/cmake-out"
+        cmake --build cmake-out/examples/llm_server/cpp \
+          --target test_worker_prefill_plan test_worker_loop \
+          -j "$(nproc)"
+        ctest --test-dir cmake-out/examples/llm_server/cpp --output-on-failure

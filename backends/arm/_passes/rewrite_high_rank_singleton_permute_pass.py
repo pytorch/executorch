@@ -5,12 +5,12 @@
 
 from typing import Sequence, Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class RewriteHighRankSingletonPermutePass(ArmPass):
+class RewriteHighRankSingletonPermutePass(ArmOpTargetedPass):
     """Rewrite high-rank permute via a lower-rank permute when singleton dims
     allow it.
 
@@ -30,6 +30,7 @@ class RewriteHighRankSingletonPermutePass(ArmPass):
         exir_ops.edge.aten.permute.default,
         exir_ops.edge.aten.permute_copy.default,
     )
+    target_ops = _PERMUTE_OPS
 
     @staticmethod
     def _extract_permutation(permutation_arg: object) -> tuple[int, ...] | None:
@@ -46,7 +47,7 @@ class RewriteHighRankSingletonPermutePass(ArmPass):
         return tuple(dim % rank for dim in permutation)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._PERMUTE_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
         if len(args) < 2:
             return super().call_operator(op, args, kwargs, meta)

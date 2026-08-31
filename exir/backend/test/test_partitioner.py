@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,13 +9,11 @@ import unittest
 from types import MappingProxyType
 
 import torch
-
 from executorch import exir
 from executorch.exir.backend.backend_details import CompileSpec, ExportedProgram
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
-
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -31,9 +30,7 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     AllNodesPartitionerDemo,
 )
 from executorch.exir.backend.utils import get_delegates, tag_constant_data
-
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from executorch.exir.tests.models import MLP
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
     _load_for_executorch_from_buffer,
@@ -106,7 +103,7 @@ class TestPartitioner(unittest.TestCase):
 
         with self.assertRaisesRegex(
             AttributeError,
-            "can't set attribute 'spec'",
+            r"(can't set attribute 'spec'|property 'spec' of .* object has no setter)",
         ):
             my_partitioner.spec = {"new_key": "new_value"}
 
@@ -591,7 +588,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        # Check the edge program inital buffers_to_mutate
+        # Check the edge program initial buffers_to_mutate
         mutate_op = "aten_add_tensor_1"
         self.assertEqual(
             edge.exported_program().graph_signature.buffers_to_mutate[mutate_op],
@@ -619,6 +616,41 @@ class TestPartitioner(unittest.TestCase):
             and node.target == torch.ops.aten.copy_.default
         ]
         self.assertEqual(len(copy_node), 1)
+
+    def test_tag_constant_data_detects_indirect_buffer_mutation(self) -> None:
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                result = x + self.state
+                self.state.copy_(x)
+                return result
+
+        edge = exir.to_edge(
+            torch.export.export(MutableStateModule(), (torch.ones(1),), strict=True)
+        )
+        exported_program = edge.exported_program()
+        state_node = next(
+            node
+            for node in exported_program.graph.nodes
+            if exported_program.graph_signature.inputs_to_buffers.get(node.name)
+            == "state"
+        )
+        delegate_tag = "test_partition"
+        for user in state_node.users:
+            user.meta["delegation_tag"] = delegate_tag
+
+        tag_constant_data(exported_program)
+
+        self.assertTrue(
+            all(
+                user.meta.get("delegation_tag") == delegate_tag
+                for user in state_node.users
+            )
+        )
+        self.assertNotIn("delegation_tag", state_node.meta)
 
     def test_buffer_mutation1(self):
         class TestModule(torch.nn.Module):

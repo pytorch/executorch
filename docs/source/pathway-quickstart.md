@@ -66,7 +66,7 @@ Follow the {doc}`llm/llama` guide for the complete Llama export and deployment w
 
 ## The 5-Minute Setup
 
-If you have not yet installed ExecuTorch, run the following in a Python 3.10–3.13 virtual environment:
+If you have not yet installed ExecuTorch, run the following in a Python 3.10–3.14 virtual environment:
 
 ```bash
 pip install executorch
@@ -146,14 +146,14 @@ Gradle dependency, Java `Module` API, and XNNPACK / Vulkan / Qualcomm backend se
 :link: ios-section
 :link-type: doc
 
-Swift Package Manager setup, Objective-C runtime API, and Core ML / MPS / XNNPACK backend selection for iOS.
+Swift Package Manager setup, Objective-C runtime API, and Core ML / XNNPACK backend selection for iOS.
 :::
 
 :::{grid-item-card} Desktop / Linux / macOS
 :link: desktop-section
 :link-type: doc
 
-Python runtime, C++ CMake integration, and XNNPACK / Core ML / MPS backends for desktop platforms.
+Python runtime, C++ CMake integration, and XNNPACK / Core ML backends for desktop platforms.
 :::
 
 :::{grid-item-card} Embedded Systems
@@ -200,10 +200,6 @@ Choosing the right backend has the largest impact on performance. Use this table
   - Core ML
   - {doc}`ios-coreml`
 * - iOS / macOS
-  - Metal GPU
-  - MPS
-  - {doc}`ios-mps`
-* - iOS / macOS
   - CPU (Arm)
   - XNNPACK
   - {doc}`ios-xnnpack`
@@ -213,7 +209,7 @@ Choosing the right backend has the largest impact on performance. Use this table
   - {doc}`desktop-openvino`
 * - Desktop
   - Apple Silicon
-  - Core ML / MPS
+  - Core ML
   - {doc}`desktop-coreml`
 * - Embedded
   - Arm Cortex-M / Ethos-U

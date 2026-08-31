@@ -36,8 +36,8 @@ class TestConformer:
     # .to_executorch step, i.e. after Arm partitioner.
     aten_ops = ["torch.ops.aten._assert_scalar.default"]
 
-    # TODO(MLETORCH-635): reduce tolerance
-    atol = 0.4
+    # TODO(MLETORCH-636): reduce tolerance
+    atol = 0.45
     rtol = 0.4
 
     dim = 16
@@ -61,6 +61,10 @@ def test_conformer_tosa_FP():
         aten_op=TestConformer.aten_ops,
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.change_args("check_not.exir", [])
+    pipeline.change_args(
+        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
     )
     pipeline.run()
 

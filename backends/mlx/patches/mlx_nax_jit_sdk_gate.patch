@@ -1,0 +1,112 @@
+Gate the NAX JIT kernel sources behind the SDK requirement.
+
+MLX's NAX kernels (GEMM and attention) include
+<MetalPerformancePrimitives/MetalPerformancePrimitives.h>, a framework that only
+ships in the macOS 26 / Xcode 26 SDK. With MLX_METAL_JIT=ON (which ExecuTorch
+uses) on an older SDK, the JIT preamble generator (make_compiled_preamble.sh)
+runs `metal -E` over these headers, which fatals on the missing include and
+fails the build. MLX already gates NAX on the non-JIT metallib path
+(kernels/CMakeLists.txt), but the JIT path was ungated.
+
+Instead of guarding the includes with __has_include, gate the NAX
+make_jit_source() calls behind the same
+MLX_METAL_VERSION/MACOS_SDK_VERSION/CMAKE_OSX_DEPLOYMENT_TARGET check the
+metallib path uses, and define MLX_METAL_NO_NAX when the requirement is unmet.
+On those SDKs NAX is already runtime-gated via is_nax_available()
+(device.cpp), so the get_*_nax_kernel entry points in jit_kernels.cpp are
+unreachable; guarded empty preamble getters keep that translation unit linking.
+macOS 26+ SDKs still build NAX.
+
+Upstream candidate; carried locally until an MLX release gates the JIT path.
+
+diff --git a/mlx/backend/metal/CMakeLists.txt b/mlx/backend/metal/CMakeLists.txt
+--- a/mlx/backend/metal/CMakeLists.txt
++++ b/mlx/backend/metal/CMakeLists.txt
+@@ -84,19 +84,32 @@ if(MLX_METAL_JIT)
+ 
+   make_jit_source(steel/attn/kernels/steel_attention)
+ 
+-  make_jit_source(
+-    steel/gemm/gemm_nax kernels/steel/utils.h kernels/steel/gemm/nax.h
+-    kernels/steel/gemm/params.h kernels/steel/gemm/transforms.h)
+-  make_jit_source(steel/gemm/kernels/steel_gemm_fused_nax)
+-  make_jit_source(steel/gemm/kernels/steel_gemm_gather_nax)
+-  make_jit_source(steel/gemm/kernels/steel_gemm_splitk_nax)
+-  make_jit_source(steel/gemm/kernels/steel_gemm_segmented_nax)
++  if(MLX_METAL_VERSION GREATER_EQUAL 400
++     AND MACOS_SDK_VERSION VERSION_GREATER_EQUAL 26.2
++     AND CMAKE_OSX_DEPLOYMENT_TARGET VERSION_GREATER_EQUAL 26.2)
+ 
+-  make_jit_source(quantized_nax kernels/quantized_utils.h)
+-  make_jit_source(fp_quantized_nax kernels/quantized_utils.h kernels/fp8.h
+-                  kernels/fp4.h)
++    make_jit_source(
++      steel/gemm/gemm_nax kernels/steel/utils.h kernels/steel/gemm/nax.h
++      kernels/steel/gemm/params.h kernels/steel/gemm/transforms.h)
++    make_jit_source(steel/gemm/kernels/steel_gemm_fused_nax)
++    make_jit_source(steel/gemm/kernels/steel_gemm_gather_nax)
++    make_jit_source(steel/gemm/kernels/steel_gemm_splitk_nax)
++    make_jit_source(steel/gemm/kernels/steel_gemm_segmented_nax)
++
++    make_jit_source(quantized_nax kernels/quantized_utils.h)
++    make_jit_source(fp_quantized_nax kernels/quantized_utils.h kernels/fp8.h
++                    kernels/fp4.h)
++
++    make_jit_source(steel/attn/kernels/steel_attention_nax)
+ 
+-  make_jit_source(steel/attn/kernels/steel_attention_nax)
++  else()
++    message(
++      WARNING "NAX kernels require Metal 4, macOS SDK >= 26.2, and "
++              "MACOSX_DEPLOYMENT_TARGET >= 26.2 (SDK ${MACOS_SDK_VERSION}, "
++              "CMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}). "
++              "Building without NAX kernels.")
++    target_compile_definitions(mlx PRIVATE MLX_METAL_NO_NAX)
++  endif()
+ 
+ else()
+   target_sources(mlx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/nojit_kernels.cpp)
+diff --git a/mlx/backend/metal/jit_kernels.cpp b/mlx/backend/metal/jit_kernels.cpp
+--- a/mlx/backend/metal/jit_kernels.cpp
++++ b/mlx/backend/metal/jit_kernels.cpp
+@@ -8,6 +8,40 @@ using namespace fmt::literals;
+ 
+ namespace mlx::core {
+ 
++#ifdef MLX_METAL_NO_NAX
++// NAX JIT preambles are only generated (via make_jit_source) when the SDK
++// requirement is met. On older SDKs they are skipped and MLX_METAL_NO_NAX is
++// defined, so is_nax_available() returns false and the get_*_nax_kernel entry
++// points below are never reached. These empty definitions only exist to satisfy
++// the linker for this translation unit.
++namespace metal {
++const char* gemm_nax() {
++  return "";
++}
++const char* steel_gemm_fused_nax() {
++  return "";
++}
++const char* steel_gemm_gather_nax() {
++  return "";
++}
++const char* steel_gemm_splitk_nax() {
++  return "";
++}
++const char* steel_gemm_segmented_nax() {
++  return "";
++}
++const char* quantized_nax() {
++  return "";
++}
++const char* fp_quantized_nax() {
++  return "";
++}
++const char* steel_attention_nax() {
++  return "";
++}
++} // namespace metal
++#endif // MLX_METAL_NO_NAX
++
+ MTL::ComputePipelineState* get_arange_kernel(
+     metal::Device& d,
+     const std::string& kernel_name,

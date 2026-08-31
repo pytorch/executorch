@@ -6,7 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#import "ExecuTorchBackendOption.h"
+#import "ExecuTorchBackendOptionsMap.h"
 #import "ExecuTorchError.h"
+#import "ExecuTorchEventTracer.h"
+#import "ExecuTorchImageProcessor.h"
 #import "ExecuTorchLog.h"
 #import "ExecuTorchModule.h"
 #import "ExecuTorchTensor.h"

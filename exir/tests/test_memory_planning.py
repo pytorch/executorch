@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,7 +9,7 @@
 
 import itertools
 import unittest
-from typing import Any, Callable, List, Optional, Tuple, Type
+from typing import Any, Callable, cast, List, Optional, Tuple, Type
 
 import executorch.exir as exir
 
@@ -24,11 +25,15 @@ except ModuleNotFoundError:
     del logging
 
 import torch
-from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
+    _extend_storage_base_lifetimes,
+    _is_inplace_node,
+    apply_algo,
+    collect_specs_from_nodes,
     filter_nodes,
     get_node_tensor_specs,
     greedy,
@@ -44,7 +49,9 @@ from executorch.exir.passes import (  # noqa
     SpecPropPass,
     ToOutVarPass,
 )
+from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import TensorSpec
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
@@ -673,51 +680,69 @@ class TestMisc(unittest.TestCase):
 
         et = to_edge(export(model, inputs, strict=True)).to_executorch()
 
-        # The mutable buffer (5x5 float32 = 100 bytes) should not be double allocated.
-        # The input and output of copy_ should share the same memory location.
-        values = et.executorch_program.execution_plan[0].values
-        expected_buffer_size = 5 * 5 * 4  # 5x5 float32
+        # The mutable buffer (5x5 float32 = 100 bytes) should not be
+        # double allocated. After the upstream emit dedup
+        # (`_emit_spec` reusing value_id when two FX nodes share a
+        # TensorSpec via the planner's `_alias_inplace_result_specs`),
+        # the `copy_` writeback's "out" arg uses the SAME value_id as
+        # its "self" arg (the buffer), rather than creating a separate
+        # Value at the same (mem_id, offset).
+        execution_plan = et.executorch_program.execution_plan[0]
+        values = execution_plan.values
 
-        # Collect all tensor allocations by their (memory_id, offset) and track sizes
-        # Size is computed from tensor's sizes and scalar_type, not from allocation_info
-        # (memory_offset_low/high are low/high 32-bit parts of a 64-bit offset, not bounds)
-        scalar_type_sizes = {
-            0: 1,  # BYTE
-            1: 1,  # CHAR
-            2: 2,  # SHORT
-            3: 4,  # INT
-            4: 8,  # LONG
-            5: 2,  # HALF
-            6: 4,  # FLOAT
-            7: 8,  # DOUBLE
-        }
-        offset_to_indices = {}
-        for i, val in enumerate(values):
-            tensor = val.val
-            if hasattr(tensor, "allocation_info") and tensor.allocation_info:
-                alloc = tensor.allocation_info
-                # Compute tensor size from sizes and scalar_type
-                num_elements = 1
-                for dim in tensor.sizes:
-                    num_elements *= dim
-                element_size = scalar_type_sizes.get(int(tensor.scalar_type), 4)
-                size = num_elements * element_size
-                key = (alloc.memory_id, alloc.memory_offset)
-                if key not in offset_to_indices:
-                    offset_to_indices[key] = {"indices": [], "size": size}
-                offset_to_indices[key]["indices"].append(i)
+        # Find the `copy_` writeback instruction.
+        copy_instructions = []
+        for chain in execution_plan.chains:
+            for ins in chain.instructions:
+                inner = ins.instr_args
+                if hasattr(inner, "op_index"):
+                    op = execution_plan.operators[inner.op_index]
+                    if op.name == "aten::copy_":
+                        copy_instructions.append(inner)
+        self.assertEqual(
+            len(copy_instructions),
+            1,
+            "Expected exactly one copy_ writeback for the buffer mutation",
+        )
 
-        # Find shared allocations matching the mutable buffer size (before/after copy_)
-        mutable_buffer_shares = [
-            info
-            for info in offset_to_indices.values()
-            if len(info["indices"]) == 2 and info["size"] == expected_buffer_size
+        # For an in-place copy_(self, src, ..., out), self (arg 0) and
+        # out (the emitted synthetic last arg) must share a value_id
+        # per the `(a!)` schema annotation. Emit's spec2id_dict
+        # dedup enforces this.
+        copy_args = list(copy_instructions[0].args)
+        self.assertEqual(
+            copy_args[0],
+            copy_args[-1],
+            f"copy_'s out arg should reference the same value_id as its "
+            f"self arg (buffer) via emit dedup. args={copy_args}",
+        )
+
+        # Additionally verify no distinct second Value at the buffer's
+        # (mem_id, offset): after dedup, the buffer occupies its slot alone.
+        buffer_value_id = copy_args[0]
+        buffer_val = values[buffer_value_id].val
+        self.assertTrue(
+            hasattr(buffer_val, "allocation_info") and buffer_val.allocation_info,
+            "Buffer value should have allocation_info",
+        )
+        buffer_alloc = buffer_val.allocation_info
+        duplicates_at_buffer_slot = [
+            i
+            for i, val in enumerate(values)
+            if i != buffer_value_id
+            and hasattr(val.val, "allocation_info")
+            and val.val.allocation_info
+            and val.val.allocation_info.memory_id == buffer_alloc.memory_id
+            and val.val.allocation_info.memory_offset == buffer_alloc.memory_offset
         ]
         self.assertEqual(
-            len(mutable_buffer_shares),
-            1,
-            f"Expected exactly one shared allocation of size {expected_buffer_size} "
-            f"with 2 values (copy_ input/output), found: {mutable_buffer_shares}",
+            duplicates_at_buffer_slot,
+            [],
+            f"Expected no other Values at the buffer's allocation "
+            f"(mem_id={buffer_alloc.memory_id}, "
+            f"offset={buffer_alloc.memory_offset}); emit dedup should "
+            f"collapse placeholder + writeback into one value_id. "
+            f"Found duplicates at indices: {duplicates_at_buffer_slot}",
         )
 
     def test_mutable_buffers_infinite_lifespan(self) -> None:
@@ -760,6 +785,147 @@ class TestMisc(unittest.TestCase):
                     or val.allocation_info.memory_offset_low >= memory_size
                 )
                 self.assertTrue(not_overlapping)
+
+    def test_custom_inplace_op_memory_aliasing(self) -> None:
+        """Memory planning correctly handles in-place ops registered via
+        the ``ops_to_inplace`` extension API (i.e. outside
+        ``DEFAULT_INPLACEABLE_OPS``).
+
+        Uses the HF-static-cache pattern: ``index_copy_`` updates two
+        mutable buffers (``keys``, ``values``). We:
+          1. Preserve ``index_copy`` through edge lowering.
+          2. Manually call ``reinplace_pass`` with a custom set that
+             includes ``index_copy`` (the in-place form is
+             auto-derived).
+          3. Lower with ``run_reinplace_pass=False`` (the pass already
+             ran).
+
+        Then assert that no other planned tensor's allocation overlaps
+        either buffer's storage region. This pins the schema-driven
+        ``_alias_inplace_result_specs`` path for non-default ops: the
+        ``index_copy_`` result spec must be aliased to the buffer's
+        spec, otherwise the planner would carve out a separate
+        allocation that could land inside the buffer's slot.
+        """
+        max_batch_size, num_heads, max_cache_len, head_dim = 1, 2, 4, 8
+
+        class HFStyleStaticCache(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "keys",
+                    torch.zeros((max_batch_size, num_heads, max_cache_len, head_dim)),
+                )
+                self.register_buffer(
+                    "values",
+                    torch.zeros((max_batch_size, num_heads, max_cache_len, head_dim)),
+                )
+
+            def forward(
+                self,
+                key_states: torch.Tensor,
+                value_states: torch.Tensor,
+                cache_position: torch.Tensor,
+            ) -> Tuple[torch.Tensor, torch.Tensor]:
+                self.keys.index_copy_(2, cache_position, key_states)
+                self.values.index_copy_(2, cache_position, value_states)
+                return self.keys, self.values
+
+        model = HFStyleStaticCache()
+        key_states = torch.full((max_batch_size, num_heads, 1, head_dim), 1.0)
+        value_states = torch.full((max_batch_size, num_heads, 1, head_dim), 2.0)
+        cache_position = torch.tensor([1])
+
+        exported_program = export(
+            model, (key_states, value_states, cache_position), strict=True
+        )
+
+        edge = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.index_copy.default],
+            ),
+        )
+
+        # Manually run reinplace_pass with a custom set that
+        # includes the (non-default) index_copy edge op. The in-place
+        # form is auto-derived by name + schema match.
+        custom_set = DEFAULT_INPLACEABLE_OPS | {
+            exir_ops.edge.aten.index_copy.default,
+        }
+        edge_program = reinplace_pass(
+            edge.exported_program(), ops_to_inplace=custom_set
+        )
+        # Sanity: both updates are now in-place.
+        inplace_nodes = [
+            n
+            for n in edge_program.graph.nodes
+            if n.op == "call_function" and "index_copy_" in str(n.target)
+        ]
+        self.assertEqual(
+            len(inplace_nodes),
+            2,
+            "Both buffer updates should be reinplaced before lowering",
+        )
+
+        # Lower with run_reinplace_pass=False — the pass already ran
+        # with our custom set above. Memory planning should now
+        # correctly alias the index_copy_ result spec onto the buffer
+        # placeholder spec via _alias_inplace_result_specs.
+        et = edge.to_executorch(
+            ExecutorchBackendConfig(
+                emit_mutable_buffer_names=True,
+                run_reinplace_pass=False,
+            )
+        )
+
+        execution_plan = et.executorch_program.execution_plan[0]
+        values = execution_plan.values
+
+        # Collect the keys / values buffer Values by FQN.
+        buffer_value_ids: dict[str, int] = {}
+        for i, value in enumerate(values):
+            val = value.val
+            extra = getattr(val, "extra_tensor_info", None)
+            fqn = getattr(extra, "fully_qualified_name", None) if extra else None
+            if fqn in ("keys", "values"):
+                buffer_value_ids[fqn] = i
+
+        self.assertEqual(
+            set(buffer_value_ids.keys()),
+            {"keys", "values"},
+            "Both keys and values buffers should appear in the program "
+            "with their FQN",
+        )
+
+        # For each buffer, verify no other planned Value's allocation
+        # overlaps the buffer's memory region.
+        for fqn, vid in buffer_value_ids.items():
+            buf_alloc = values[vid].val.allocation_info
+            self.assertIsNotNone(buf_alloc, f"Buffer {fqn} should have allocation_info")
+            buf_base = buf_alloc.memory_offset_low
+            # 4 bytes per float32 element.
+            num_elements = max_batch_size * num_heads * max_cache_len * head_dim
+            buf_end = buf_base + num_elements * 4
+
+            for j, other in enumerate(values):
+                if j == vid:
+                    continue
+                other_alloc = getattr(other.val, "allocation_info", None)
+                if other_alloc is None:
+                    continue
+                if other_alloc.memory_id != buf_alloc.memory_id:
+                    continue
+                offset = other_alloc.memory_offset_low
+                overlaps = buf_base <= offset < buf_end
+                self.assertFalse(
+                    overlaps,
+                    f"Value {j} (alloc offset={offset}) overlaps the "
+                    f"{fqn} buffer's region [{buf_base}, {buf_end}) — "
+                    "the in-place index_copy_ result spec was not "
+                    "correctly aliased to the buffer spec",
+                )
 
     def test_constants_not_memory_planned(self) -> None:
         class Simple(torch.nn.Module):
@@ -1259,3 +1425,589 @@ class TestMap(unittest.TestCase):
             self.assertEqual(v_cache[0].val.allocation_info.memory_id, 2)
             self.assertEqual(v_cache[0].val.allocation_info.memory_offset_low, 256)
             self.assertEqual(v_cache[0].val.allocation_info.memory_offset_high, 0)
+
+
+class TestDeviceAwareMemoryPlanning(unittest.TestCase):
+    """Tests for per-device memory planning (separate buffers per device type)."""
+
+    def _prepare_model(
+        self,
+    ) -> Tuple[GraphModule, ExportGraphSignature]:
+        """Prepare ToyModelForMemPlanning through SpecPropPass + ToOutVarPass."""
+        model = ToyModelForMemPlanning()
+        inputs = model.get_random_inputs()
+        edge = to_edge(export(model, inputs, strict=True))
+        gm = edge.exported_program().graph_module
+        gs = edge.exported_program().graph_signature
+        gm = PassManager(passes=[SpecPropPass(), ToOutVarPass()])(gm).graph_module
+        return gm, gs
+
+    def _get_planned_specs(
+        self,
+        gm: GraphModule,
+        gs: ExportGraphSignature,
+    ) -> list[TensorSpec]:
+        """Get the unique set of specs that apply_algo would plan."""
+        return list(
+            collect_specs_from_nodes(
+                gm.graph.nodes,
+                gs,
+                do_assertion=False,
+                ignore_graph_input=False,
+                ignore_graph_output=False,
+                ignore_mutable_buffers=False,
+            )
+        )
+
+    def test_cpu_only_unchanged(self) -> None:
+        """CPU-only specs produce bufsizes = [0, X] with no device metadata."""
+        gm, gs = self._prepare_model()
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        # The CUDA spec is the only tensor in its buffer
+        self.assertEqual(bufsizes[0], 0)  # constants
+        self.assertGreater(bufsizes[1], 0)  # CPU activations
+        self.assertNotIn("non_const_buffer_device", gm.meta)
+
+    def test_custom_pool_with_device_planning_raises(self) -> None:
+        """Pre-assigned mem_ids + enable_non_cpu_memory_planning raises."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+
+        # Pre-assign a custom mem_id AND set a non-CPU device
+        specs[0].mem_id = 3
+        specs[-1].device = DeviceType.CUDA
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        with self.assertRaises(NotImplementedError):
+            apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+    def test_all_cuda_no_wasted_slots(self) -> None:
+        """CUDA-only specs produce [0, X] with CUDA at buffer index 1."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+        for spec in specs:
+            spec.device = DeviceType.CUDA
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        # [0, cuda_size] — no wasted CPU buffer slot
+        self.assertEqual(len(bufsizes), 2)
+        self.assertEqual(bufsizes[0], 0)
+        self.assertGreater(bufsizes[1], 0)
+        # Device mapping should only contain non-CPU entries
+        self.assertIn("non_const_buffer_device", gm.meta)
+        device_map = gm.meta["non_const_buffer_device"]
+        self.assertEqual(len(device_map), 1)
+        self.assertEqual(device_map[0].buffer_idx, 1)
+        self.assertEqual(device_map[0].device_type, DeviceType.CUDA)
+        self.assertEqual(device_map[0].device_index, 0)
+
+    def test_mixed_cpu_cuda_separate_buffers(self) -> None:
+        """CPU specs at mem_id=1, CUDA specs at mem_id=2, separate sizes."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+
+        # Set second half of specs to CUDA
+        mid = len(specs) // 2
+        self.assertGreater(mid, 0)
+        cpu_specs = specs[:mid]
+        cuda_specs = specs[mid:]
+        for spec in cuda_specs:
+            spec.device = DeviceType.CUDA
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        # [constants, cpu_activations, cuda_activations]
+        self.assertEqual(len(bufsizes), 3)
+        self.assertEqual(bufsizes[0], 0)
+        self.assertGreater(bufsizes[1], 0)
+        self.assertGreater(bufsizes[2], 0)
+
+        # CPU specs should have mem_id=1, CUDA specs should have mem_id=2
+        for spec in cpu_specs:
+            self.assertEqual(
+                spec.mem_id, 1, f"CPU spec has wrong mem_id: {spec.mem_id}"
+            )
+        for spec in cuda_specs:
+            self.assertEqual(
+                spec.mem_id, 2, f"CUDA spec has wrong mem_id: {spec.mem_id}"
+            )
+
+    def test_mem_offset_correct_after_remap(self) -> None:
+        """After remapping, mem_offset is relative to its own buffer."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+
+        # Set the last spec to CUDA (sole CUDA tensor)
+        cuda_spec = specs[-1]
+        cuda_spec.device = DeviceType.CUDA
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        # The CUDA spec is the only tensor in its buffer, so offset should be 0
+        self.assertEqual(cuda_spec.mem_offset, 0)
+        # The CUDA buffer should fit exactly this tensor
+        cuda_mem_id = cuda_spec.mem_id
+        self.assertIsNotNone(cuda_mem_id)
+        assert cuda_mem_id is not None
+        self.assertGreaterEqual(bufsizes[cuda_mem_id], cuda_spec.allocated_memory)
+
+    def test_no_cross_device_memory_sharing(self) -> None:
+        """Specs on different devices never share buffers, regardless of lifetime."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+        self.assertGreaterEqual(len(specs), 2)
+
+        # Assign alternating specs to CUDA to ensure some pairs have
+        # non-overlapping lifetimes (which greedy would normally share).
+        for i, spec in enumerate(specs):
+            if i % 2 == 0:
+                spec.device = DeviceType.CUDA
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        # Verify CPU and CUDA specs have disjoint mem_ids
+        cpu_mem_ids: set[int] = set()
+        cuda_mem_ids: set[int] = set()
+        for i, spec in enumerate(specs):
+            if spec.mem_id is not None:
+                if i % 2 == 0:
+                    cuda_mem_ids.add(spec.mem_id)
+                else:
+                    cpu_mem_ids.add(spec.mem_id)
+
+        self.assertTrue(
+            cpu_mem_ids.isdisjoint(cuda_mem_ids),
+            f"CPU {cpu_mem_ids} and CUDA {cuda_mem_ids} should not share buffers",
+        )
+
+    def test_different_device_indices_separate_buffers(self) -> None:
+        """CUDA:0 and CUDA:1 specs get separate buffers."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+        self.assertGreaterEqual(len(specs), 3)
+
+        # specs[0] → CUDA:0, specs[1] → CUDA:1, rest → CPU
+        specs[0].device = DeviceType.CUDA
+        specs[0].device_index = 0
+        specs[1].device = DeviceType.CUDA
+        specs[1].device_index = 1
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        bufsizes = apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        # [constants, cpu, cuda:0, cuda:1]
+        self.assertEqual(len(bufsizes), 4)
+
+        # CUDA:0 and CUDA:1 should have different mem_ids
+        self.assertNotEqual(specs[0].mem_id, specs[1].mem_id)
+        # Both should differ from the CPU spec
+        self.assertNotEqual(specs[0].mem_id, specs[2].mem_id)
+        self.assertNotEqual(specs[1].mem_id, specs[2].mem_id)
+
+        # Device mapping should only contain non-CPU entries with correct indices
+        device_map = gm.meta["non_const_buffer_device"]
+        for entry in device_map:
+            self.assertEqual(entry.device_type, DeviceType.CUDA)
+        cuda_indices = sorted(e.device_index for e in device_map)
+        self.assertEqual(cuda_indices, [0, 1])
+
+    def test_device_index_propagated(self) -> None:
+        """NonConstBufferDevice entries carry the actual device_index, not 0."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+
+        # Set the first spec to CUDA device index 3
+        specs[0].device = DeviceType.CUDA
+        specs[0].device_index = 3
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        apply_algo(algo, gm, 16, gs, enable_non_cpu_memory_planning=True)
+
+        device_map = gm.meta["non_const_buffer_device"]
+        self.assertEqual(len(device_map), 1)
+        self.assertEqual(device_map[0].device_type, DeviceType.CUDA)
+        self.assertEqual(device_map[0].device_index, 3)
+
+    def test_disabled_falls_back_to_cpu(self) -> None:
+        """With enable_non_cpu_memory_planning=False (default), CUDA specs are
+        planned into CPU memory — no device-specific buffers are created."""
+        gm, gs = self._prepare_model()
+        specs = self._get_planned_specs(gm, gs)
+        for spec in specs:
+            spec.device = DeviceType.CUDA
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        # Default: enable_non_cpu_memory_planning=False
+        bufsizes = apply_algo(algo, gm, 16, gs)
+
+        # All specs planned into a single CPU pool — same as CPU-only
+        self.assertEqual(len(bufsizes), 2)
+        self.assertEqual(bufsizes[0], 0)
+        self.assertGreater(bufsizes[1], 0)
+        self.assertNotIn("non_const_buffer_device", gm.meta)
+
+
+class TestStorageBaseMemoryPlanning(unittest.TestCase):
+    def _empty_graph_module(self) -> GraphModule:
+        graph = Graph()
+        graph.output(())
+        return GraphModule({}, graph)
+
+    def _make_storage_backed_specs(self) -> Tuple[TensorSpec, TensorSpec]:
+        base = TensorSpec.from_tensor(torch.empty(10))
+        child = TensorSpec.from_tensor(torch.empty(2))
+
+        base.lifetime = [0, 1]
+        child.lifetime = [0, 1]
+        base.mem_id = 1
+        child.mem_id = 1
+        child.storage_base = base
+        child.storage_base_offset = 16
+        return base, child
+
+    def test_greedy_places_storage_backed_spec_inside_base_object(self) -> None:
+        base, child = self._make_storage_backed_specs()
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        algo(
+            16,
+            {base, child},
+            self._empty_graph_module(),
+            cast(ExportGraphSignature, None),
+            0,
+        )
+
+        self.assertEqual(child.mem_id, base.mem_id)
+        self.assertEqual(child.mem_obj_id, base.mem_obj_id)
+        base_mem_offset = base.mem_offset
+        self.assertIsNotNone(base_mem_offset)
+        assert base_mem_offset is not None
+        self.assertEqual(child.mem_offset, base_mem_offset + 16)
+
+    def test_greedy_result_contains_storage_backed_full_plan(self) -> None:
+        base, child = self._make_storage_backed_specs()
+        base.realign(1)
+        child.realign(1)
+
+        result = greedy(
+            1,
+            {base, child},
+            self._empty_graph_module(),
+            cast(ExportGraphSignature, None),
+            0,
+        )
+
+        base_result = result.spec_dict[base]
+        child_result = result.spec_dict[child]
+        self.assertEqual(child_result.mem_id, base_result.mem_id)
+        self.assertEqual(child_result.mem_obj_id, base_result.mem_obj_id)
+        self.assertEqual(child_result.mem_offset, base_result.mem_offset + 16)
+
+    def test_greedy_resolves_chained_storage_base(self) -> None:
+        # Build a storage chain where `base` owns the allocation, `child`
+        # aliases `base`, and `grandchild` aliases `child`.
+        base = TensorSpec.from_tensor(torch.empty(16, dtype=torch.uint8))
+        child = TensorSpec.from_tensor(torch.empty(6, dtype=torch.uint8))
+        grandchild = TensorSpec.from_tensor(torch.empty(2, dtype=torch.uint8))
+        for spec in (base, child, grandchild):
+            spec.lifetime = [0, 1]
+            spec.mem_id = 1
+        child.storage_base = base
+        child.storage_base_offset = 8
+        grandchild.storage_base = child
+        grandchild.storage_base_offset = 4
+
+        # Greedy should resolve the chain in dependency order and assign all
+        # three specs to the same memory object.
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        algo(
+            1,
+            {base, child, grandchild},
+            self._empty_graph_module(),
+            cast(ExportGraphSignature, None),
+            0,
+        )
+
+        self.assertEqual(child.mem_id, base.mem_id)
+        self.assertEqual(grandchild.mem_id, base.mem_id)
+        self.assertEqual(child.mem_obj_id, base.mem_obj_id)
+        self.assertEqual(grandchild.mem_obj_id, base.mem_obj_id)
+        base_mem_offset = base.mem_offset
+        self.assertIsNotNone(base_mem_offset)
+        assert base_mem_offset is not None
+        # Offsets are accumulated through the chain: child is +8 from base,
+        # grandchild is +4 from child, so grandchild is +12 from base.
+        self.assertEqual(child.mem_offset, base_mem_offset + 8)
+        self.assertEqual(grandchild.mem_offset, base_mem_offset + 12)
+
+    def test_greedy_reserves_storage_base_lifetime_before_reuse(self) -> None:
+        base = TensorSpec.from_tensor(torch.empty(16, dtype=torch.uint8))
+        child = TensorSpec.from_tensor(torch.empty(8, dtype=torch.uint8))
+        other = TensorSpec.from_tensor(torch.empty(12, dtype=torch.uint8))
+        for spec in (base, child, other):
+            spec.mem_id = 1
+        base.lifetime = [0, 1]
+        child.lifetime = [4, 5]
+        other.lifetime = [4, 5]
+        child.storage_base = base
+        child.storage_base_offset = 8
+
+        _extend_storage_base_lifetimes({base, child, other})
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        algo(
+            1,
+            {base, child, other},
+            self._empty_graph_module(),
+            cast(ExportGraphSignature, None),
+            0,
+        )
+
+        self.assertEqual(base.lifetime, [0, 5])
+        self.assertEqual(child.mem_id, base.mem_id)
+        self.assertEqual(child.mem_obj_id, base.mem_obj_id)
+        self.assertNotEqual(other.mem_obj_id, base.mem_obj_id)
+
+    def test_set_alloc_node_spec_uses_shared_alloc_offset(self) -> None:
+        base = TensorSpec.from_tensor(torch.empty(10))
+        child = TensorSpec.from_tensor(torch.empty(2))
+
+        graph = Graph()
+        input_node = graph.placeholder("input")
+        input_node.meta["spec"] = base
+        other_node = graph.placeholder("other")
+        other_node.meta["spec"] = base
+        out_node = graph.placeholder("out")
+        add_node = graph.call_function(
+            torch.ops.aten.add.out,
+            args=(input_node, other_node),
+            kwargs={"out": out_node},
+        )
+        add_node.meta["spec"] = child
+        add_node.meta["_share_alloc_with_arg_idx"] = 0
+        add_node.meta["_shared_alloc_offset"] = 16
+        graph.output(add_node)
+        graph_module = GraphModule({}, graph)
+
+        MemoryPlanningPass()._set_alloc_node_spec(graph_module)
+
+        self.assertIs(child.storage_base, base)
+        self.assertEqual(child.storage_base_offset, 16)
+
+    def test_verifier_allows_storage_base_overlap(self) -> None:
+        base, child = self._make_storage_backed_specs()
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        algo(
+            1,
+            {base, child},
+            self._empty_graph_module(),
+            cast(ExportGraphSignature, None),
+            0,
+        )
+
+        graph = Graph()
+        base_node = graph.placeholder("base")
+        base_node.meta["spec"] = base
+        child_node = graph.placeholder("child")
+        child_node.meta["spec"] = child
+        graph.output((base_node, child_node))
+        graph_module = GraphModule({}, graph)
+
+        verifier = Verifier(
+            graph_module,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_storage_reuse()
+
+    def test_verifier_allows_chained_storage_base_overlap(self) -> None:
+        outer = TensorSpec.from_tensor(torch.empty(10))
+        base = TensorSpec.from_tensor(torch.empty(6))
+        child = TensorSpec.from_tensor(torch.empty(2))
+        for spec in (outer, base, child):
+            spec.lifetime = [0, 1]
+            spec.mem_id = 1
+        base.storage_base = outer
+        base.storage_base_offset = 8
+        child.storage_base = base
+        child.storage_base_offset = 4
+
+        algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        algo(
+            1,
+            {outer, base, child},
+            self._empty_graph_module(),
+            cast(ExportGraphSignature, None),
+            0,
+        )
+
+        graph = Graph()
+        outer_node = graph.placeholder("outer")
+        outer_node.meta["spec"] = outer
+        base_node = graph.placeholder("base")
+        base_node.meta["spec"] = base
+        child_node = graph.placeholder("child")
+        child_node.meta["spec"] = child
+        graph.output((outer_node, base_node, child_node))
+        graph_module = GraphModule({}, graph)
+
+        verifier = Verifier(
+            graph_module,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_storage_reuse()
+
+
+class TestInPlaceElemWise(unittest.TestCase):
+    def _run_inplace_pipeline(
+        self,
+        model: torch.nn.Module,
+        inputs: Tuple[torch.Tensor, ...],
+        eligible_ops: set,  # pyre-ignore[2]
+        algo: Callable[..., MemoryAlgoResult] = greedy,
+    ) -> torch.fx.GraphModule:
+        edge = to_edge(export(model.eval(), inputs, strict=True))
+        ep = edge.exported_program()
+        reinplace_pass(ep, ops_to_inplace=eligible_ops)
+        graph_module = ep.graph_module
+        mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[algo])
+        return PassManager(
+            passes=[
+                SpecPropPass(),
+                ToOutVarPass(),
+                MemoryPlanningPass(
+                    memory_planning_algo=mem_algo,
+                    alignment=1,
+                ),
+            ],
+        )(graph_module).graph_module
+
+    def test_basic_inplace_sharing(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {exir_ops.edge.aten.mul.Tensor},
+        )
+
+        add_spec = None
+        inplace_node_found = False
+        for node in gm.graph.nodes:
+            if node.op != "call_function":
+                continue
+            if node.target == torch.ops.aten.add.out:
+                add_spec = node.meta["spec"]
+            if _is_inplace_node(node):
+                inplace_node_found = True
+                self.assertIs(node.meta["spec"], add_spec)
+
+        self.assertIsNotNone(add_spec)
+        self.assertTrue(inplace_node_found)
+
+    def test_verifier_allows_inplace_overlap(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {exir_ops.edge.aten.mul.Tensor},
+        )
+
+        verifier = Verifier(
+            gm,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_storage_reuse()
+
+    def test_verifier_allows_chained_inplace_overlap(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                e = d * b
+                return e
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {exir_ops.edge.aten.mul.Tensor},
+        )
+
+        inplace_nodes = [
+            node
+            for node in gm.graph.nodes
+            if node.op == "call_function" and _is_inplace_node(node)
+        ]
+        self.assertEqual(len(inplace_nodes), 2)
+
+        verifier = Verifier(
+            gm,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_storage_reuse()
+
+    def test_multi_user_blocks_inplace(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                e = c + d
+                return e
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            {exir_ops.edge.aten.mul.Tensor},
+        )
+
+        has_mul_out = any(
+            node.target == torch.ops.aten.mul.out
+            for node in gm.graph.nodes
+            if node.op == "call_function"
+        )
+        self.assertTrue(has_mul_out)
+
+    def test_no_inplace_when_ops_not_eligible(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                c = a + b
+                d = c * b
+                return d
+
+        gm = self._run_inplace_pipeline(
+            Model(),
+            (torch.randn(10), torch.randn(10)),
+            set(),
+        )
+
+        has_inplace = any(
+            _is_inplace_node(node)
+            for node in gm.graph.nodes
+            if node.op == "call_function"
+        )
+        self.assertFalse(has_inplace)

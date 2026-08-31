@@ -10,7 +10,13 @@ def get_vulkan_compiler_flags():
             "-Wno-global-constructors",
             "-Wno-missing-prototypes",
         ],
-        "ovr_config//os:windows": [],
+        # The Windows clang host build needs -Werror relaxed for the vendored
+        # VMA headers, but MSVC cl.exe rejects the gcc-style flag, so exclude
+        # pure MSVC. OSS buck2 has no compiler constraint, so guard to non-OSS.
+        "ovr_config//os:windows": select({
+            "DEFAULT": ["-Wno-error"],
+            "ovr_config//compiler:msvc": [],
+        }) if not runtime.is_oss else ["-Wno-error"],
     })
 
 def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
@@ -69,6 +75,10 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         if debug_mode:
             VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
 
+    vma_dep = read_config("etvk", "vma_dep", "xplat")
+    if vma_dep == "instantiated":
+        VK_API_PREPROCESSOR_FLAGS += ["-DETVK_USE_META_VMA"]
+
     if force_no_extensions:
         VK_API_PREPROCESSOR_FLAGS += ["-DETVK_FORCE_NO_EXTENSIONS"]
 
@@ -126,7 +136,6 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
         },
         cmd = genrule_cmd,
         default_outs = ["."],
-        labels = ["uses_dotslash"],
     )
 
     suffix = "_no_volk" if no_volk else ""
@@ -152,6 +161,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
 
 def define_common_targets(is_fbcode = False):
     debug_mode = read_config("etvk", "debug", "0") == "1"
+    vma_dep = read_config("etvk", "vma_dep", "xplat")
 
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
@@ -185,9 +195,14 @@ def define_common_targets(is_fbcode = False):
 
         suffix = "_no_volk" if no_volk else ""
 
-        VK_API_DEPS = [
-            "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
-        ]
+        if vma_dep == "instantiated":
+            VK_API_DEPS = [
+                "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocatorInstantiated",
+            ]
+        else:
+            VK_API_DEPS = [
+                "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocator_xplat",
+            ]
 
         default_deps = []
         android_deps = ["fbsource//third-party/toolchains:android"]

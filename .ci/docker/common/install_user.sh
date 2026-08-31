@@ -7,6 +7,11 @@
 
 set -ex
 
+# On Ubuntu 24.04, there is a `ubuntu` user with id=1000
+if id ubuntu >/dev/null && [[ "$(id -u ubuntu)" == 1000 ]]; then
+    sudo userdel --remove ubuntu;
+fi
+
 # Same as ec2-user
 echo "ci-user:x:1000:1000::/var/lib/ci-user:" >> /etc/passwd
 echo "ci-user:x:1000:" >> /etc/group

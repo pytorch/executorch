@@ -1,0 +1,7 @@
+# csolution / cbuild generated artifacts
+RTE/
+out/
+tmp/
+*.cbuild-idx.yml
+*.cbuild-pack.yml
+*.cbuild-set.yml

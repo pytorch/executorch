@@ -6,19 +6,36 @@
 import logging
 
 import torch
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    INT8_ACTIVATION_PER_CHANNEL_QSPEC,
-    INT8_WEIGHT_PER_TENSOR_QSPEC,
-)
 from executorch.backends.cortex_m.quantizer.quantizer import mark_node_as_annotated
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
+from executorch.backends.cortex_m.quantizer_reporter import (
     logger as quantizer_logger,
+    qspec_repr,
     QuantizerInfo,
     QuantizerReport,
     QuantizerReporter,
     QuantizerReporterUser,
 )
 from torch.export import export
+from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
+    DerivedQuantizationSpec,
+    QuantizationSpec,
+    SharedQuantizationSpec,
+)
+
+INT8_WEIGHT_PER_TENSOR_QSPEC = QuantizationSpec(
+    dtype=torch.int8,
+    observer_or_fake_quant_ctr=MinMaxObserver,
+    qscheme=torch.per_tensor_symmetric,
+    quant_min=-127,
+    quant_max=127,
+)
+INT8_ACTIVATION_PER_CHANNEL_QSPEC = QuantizationSpec(
+    dtype=torch.int8,
+    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+    qscheme=torch.per_channel_affine,
+    ch_axis=0,
+)
 
 
 class _TwoOpModule(torch.nn.Module):
@@ -38,9 +55,77 @@ class _DummyQuantizer(QuantizerReporterUser):
         return QuantizerInfo(
             name="DummyQuantizer",
             targeted_nodes_description="dummy nodes",
-            quantization_config_path="dummy.config",
+            qconfig_label="dummy.config",
             support_config_path="dummy.support",
         )
+
+
+def test_qspec_repr_quantization_spec_with_range():
+    qspec = QuantizationSpec(
+        torch.int8,
+        MinMaxObserver,
+        quant_min=-42,
+        quant_max=123,
+    )
+    assert qspec_repr(qspec) == "QuantizationSpec(dtype=INT8, range=(-42,123))"
+
+
+def test_qspec_repr_quantization_spec_without_range():
+    qspec = QuantizationSpec(
+        torch.int16,
+        MinMaxObserver,
+    )
+    assert qspec_repr(qspec) == "QuantizationSpec(dtype=INT16)"
+
+
+def test_qspec_repr_quantization_spec_partial_range():
+    qspec = QuantizationSpec(
+        torch.int16,
+        MinMaxObserver,
+        quant_min=-100,
+    )
+    assert qspec_repr(qspec) == "QuantizationSpec(dtype=INT16, range=(-100,None))"
+
+
+def test_qspec_repr_shared_quantization_spec():
+    graph_module = _export_two_op_graph_module()
+    add_node = next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == torch.ops.aten.add.Tensor
+    )
+    qspec = SharedQuantizationSpec(add_node)
+
+    assert qspec_repr(qspec) == f"SharedQuantizationSpec(edge_or_node={add_node})"
+
+
+def test_qspec_repr_derived_quantization_spec():
+    graph_module = _export_two_op_graph_module()
+    x_node = next(node for node in graph_module.graph.nodes if node.name == "x")
+    y_node = next(node for node in graph_module.graph.nodes if node.name == "y")
+    add_node = next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == torch.ops.aten.add.Tensor
+    )
+    derived_from = [(x_node, add_node), (y_node, add_node)]
+    qspec = DerivedQuantizationSpec(
+        derived_from=derived_from,
+        derive_qparams_fn=lambda _: (
+            torch.tensor([1.0]),
+            torch.tensor([0], dtype=torch.int32),
+        ),
+        dtype=torch.int32,
+    )
+
+    assert (
+        qspec_repr(qspec)
+        == f"DerivedQuantizationSpec(derived_from={derived_from}, dtype={qspec.dtype})"
+    )
+
+
+def test_qspec_repr_none():
+    assert qspec_repr(None) == "None"
 
 
 def test_warning_log_level(caplog):
@@ -128,11 +213,11 @@ Supported operators and patterns defined by dummy.support
    Rejected due to previous annotation: 0
    Rejected nodes: 0
 
-       NODE NAME    INPUT QSPEC MAP                  OUTPUT QSPEC MAP
-   --  -----------  -------------------------------  ---------------------------------
-   ╒   add          x: INT8_WEIGHT_PER_TENSOR_QSPEC  NO_QSPEC
-   |                y: NO_QSPEC
-   ╘   relu                                          INT8_ACTIVATION_PER_CHANNEL_QSPEC
+       NODE NAME    INPUT QSPEC MAP                                    OUTPUT QSPEC MAP
+   --  -----------  -------------------------------------------------  ----------------------------
+   ╒   add          x: QuantizationSpec(dtype=INT8, range=(-127,127))  None
+   |                y: None
+   ╘   relu                                                            QuantizationSpec(dtype=INT8)
 ----------------------------------------------------------------------------------------------------
 DummyQuantizer using dummy nodes
 Annotating with dummy.config

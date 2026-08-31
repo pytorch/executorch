@@ -554,6 +554,45 @@ ValueRef ComputeGraph::add_tensor(
       axis_map_layout);
 }
 
+ValueRef ComputeGraph::add_tensor(
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout,
+    const vkapi::VulkanImage& image) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(api::vTensor(
+      context(),
+      sizes,
+      dtype,
+      utils::kTexture3D,
+      memory_layout,
+      /*allocate_memory=*/false,
+      utils::kDefaultAxisMap,
+      &image));
+  return idx;
+}
+
+ValueRef ComputeGraph::add_tensor(
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout,
+    const vkapi::VulkanBuffer& buffer) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(api::vTensor(
+      context(),
+      sizes,
+      dtype,
+      utils::kBuffer,
+      memory_layout,
+      /*allocate_memory=*/false,
+      utils::kDefaultAxisMap,
+      /*external_image=*/nullptr,
+      &buffer));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensor(const vkapi::VulkanImage& image) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
@@ -806,7 +845,7 @@ void ComputeGraph::update_descriptor_counts(
 
 void ComputeGraph::register_pipeline_to_create(
     const vkapi::ShaderInfo& shader_info,
-    const utils::WorkgroupSize& local_workgroup_size,
+    const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& spec_vars,
     const std::vector<PushConstantDataInfo>& push_constants) {
   VkDescriptorSetLayout shader_layout =
@@ -818,17 +857,24 @@ void ComputeGraph::register_pipeline_to_create(
     pc_offset += pc.write(pc_data.data(), pc_offset, kMaxPushConstantSize);
   }
 
-  vkapi::SpecVarList spec_constants = {
-      SV(local_workgroup_size[0u]),
-      SV(local_workgroup_size[1u]),
-      SV(local_workgroup_size[2u])};
+  vkapi::SpecVarList spec_constants = {SV(lwg[0u]), SV(lwg[1u]), SV(lwg[2u])};
 
   spec_constants.append(spec_vars);
+
+  // Resolve any shader-declared required subgroup size into a concrete value
+  // so the pre-built pipeline matches the one created at dispatch time. The
+  // shared helper throws ShaderNotSupportedError when the adapter cannot honor
+  // the requirement; let it propagate so a stale unused pipeline doesn't sit
+  // in the cache while dispatch later throws on the same shader.
+  const uint32_t resolved_required_subgroup_size =
+      vkapi::resolve_required_subgroup_size(
+          shader_info, context()->adapter_ptr());
 
   const vkapi::ComputePipelineCache::Key desc = {
       context()->pipeline_layout_cache().retrieve(shader_layout, pc_offset),
       context()->shader_cache().retrieve(shader_info),
-      spec_constants};
+      spec_constants,
+      resolved_required_subgroup_size};
 
   if (context_->pipeline_cache().contains(desc)) {
     return;
@@ -840,62 +886,46 @@ void ComputeGraph::register_pipeline_to_create(
   pipeline_descriptors_.insert(desc);
 }
 
-utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
+GlobalWorkGrid ComputeGraph::create_gwg(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
-    return {uint32_t(numel_of(idx)), 1u, 1u};
+    return create_linear_gwg(utils::safe_downcast<uint64_t>(numel_of(idx)));
   }
-  return logical_limits_of(idx);
+
+  return GlobalWorkGrid(
+      utils::make_uvec3(logical_limits_of(idx)), kTextureExtentsWorkGrid);
 }
 
-utils::uvec3 ComputeGraph::create_local_wg_size(
-    const utils::uvec3 global_wg_size) {
-  if (config_.enable_local_wg_size_override) {
-    return config_.local_wg_size_override;
-  }
-
-  // array containing axis index and global workgroup size
-  std::pair<uint32_t, uint32_t> global_wg_size_desc[] = {
-      {0u, global_wg_size[0]},
-      {1u, global_wg_size[1]},
-      {2u, global_wg_size[2]}};
-
-  // sort the global workgroup size in descending order
-  if (global_wg_size_desc[0].second < global_wg_size_desc[1].second) {
-    std::swap(global_wg_size_desc[0], global_wg_size_desc[1]);
-  }
-  if (global_wg_size_desc[1].second < global_wg_size_desc[2].second) {
-    std::swap(global_wg_size_desc[1], global_wg_size_desc[2]);
-  }
-  if (global_wg_size_desc[0].second < global_wg_size_desc[1].second) {
-    std::swap(global_wg_size_desc[0], global_wg_size_desc[1]);
-  }
-
-  utils::uvec3 local_group_size = {
-      8,
-      std::max(1u, std::min(4u, global_wg_size_desc[1].second)),
-      std::max(1u, std::min(2u, global_wg_size_desc[2].second))};
-
-  if (global_wg_size_desc[2u].second == 1) {
-    if (global_wg_size_desc[1u].second == 1) {
-      local_group_size[0u] = 64;
-      local_group_size[1u] = 1;
-    } else if (global_wg_size_desc[1u].second % 4 == 0) {
-      local_group_size[0u] = 16;
-      local_group_size[1u] = 4;
-    } else {
-      local_group_size[0u] = 32;
-      local_group_size[1u] = 2;
-    }
-  }
-
-  return {
-      local_group_size[global_wg_size_desc[0].first],
-      local_group_size[global_wg_size_desc[1].first],
-      local_group_size[global_wg_size_desc[2].first]};
+GlobalWorkGrid ComputeGraph::create_linear_gwg(const uint64_t numel) {
+  vkapi::Adapter* const adapter = context()->adapter_ptr();
+  GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(numel), 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(
+      adapter->max_compute_workgroup_count(),
+      adapter->recommended_lwg_nthreads());
+  return gwg;
 }
 
-utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
-  return create_local_wg_size(create_global_wg_size(idx));
+LocalWorkGroup ComputeGraph::create_lwg(const GlobalWorkGrid& gwg) {
+  if (gwg.required_lwg_size().is_valid()) {
+    return gwg.required_lwg_size();
+  }
+
+  vkapi::Adapter* const adapter = context()->adapter_ptr();
+
+  utils::uvec3 shape_weights{
+      gwg[0] > 1u ? 1u : 0u, gwg[1] > 1u ? 1u : 0u, gwg[2] > 1u ? 1u : 0u};
+  if (shape_weights == utils::uvec3{0u, 0u, 0u}) {
+    shape_weights[0] = 1u;
+  }
+
+  LocalWorkGroup lwg(
+      LwgShape(shape_weights), adapter->recommended_lwg_nthreads());
+  lwg.fit_to_global(gwg);
+  return lwg;
+}
+
+LocalWorkGroup ComputeGraph::create_lwg(const ValueRef idx) {
+  return create_lwg(create_gwg(idx));
 }
 
 void ComputeGraph::bind_tensor_to_descriptor_set(
@@ -1134,8 +1164,7 @@ void ComputeGraph::clear_deferred_cmds() {
 void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
-  const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
-  // int count = 0;
+  const bool reduce_peak_memory = total_constant_nbytes_ > 10 * MB;
   context_->set_cmd();
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     // Do not trigger on the first or last prepack node.

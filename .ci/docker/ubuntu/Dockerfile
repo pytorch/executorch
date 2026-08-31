@@ -62,12 +62,20 @@ RUN bash ./install_cache.sh && rm install_cache.sh utils.sh
 ENV SCCACHE_BUCKET ossci-compiler-cache-circleci-v2
 ENV SCCACHE_S3_KEY_PREFIX executorch
 ENV SCCACHE_REGION us-east-1
+ENV AWS_REGION us-east-1
+ENV AWS_DEFAULT_REGION us-east-1
 
 ARG TORCH_VERSION
 ARG SKIP_PYTORCH
+ARG PYTORCH_BUILD_MAX_JOBS
 COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
-RUN if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
+# A host docker build let sccache reach its S3 bucket with the EC2 instance
+# role; a BuildKit pod has no instance metadata, so docker-builds passes the
+# credentials in as this secret. World-readable because the sccache server runs
+# as ci-user; a secret mount never lands in a layer.
+RUN --mount=type=secret,id=aws-credentials,mode=0444 \
+    if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
 
 ARG LINTRUNNER
 # Install lintrunner if needed
@@ -90,9 +98,10 @@ RUN rm install_arm.sh
 
 ARG ZEPHYR_SDK
 COPY ./common/install_zephyr.sh install_zephyr.sh
+COPY ./common/zephyr_sdk_release_proxy.py zephyr_sdk_release_proxy.py
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${ZEPHYR_SDK}" ]; then bash ./install_zephyr.sh; fi
-RUN rm install_zephyr.sh utils.sh
+RUN rm install_zephyr.sh zephyr_sdk_release_proxy.py utils.sh
 
 ARG QNN_SDK
 

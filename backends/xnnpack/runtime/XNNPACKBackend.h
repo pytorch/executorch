@@ -13,6 +13,24 @@ const char workspace_sharing_mode_option_key[] = "workspace_sharing_mode";
 // across delegate instances. Changes only affect subsequently loaded models.
 const char weight_cache_option_key[] = "weight_cache_enabled";
 
+/// Path for the packed weight file. When set, reserve_space() allocates from
+/// a MAP_SHARED file instead of heap; msync makes pages clean on iOS.
+// Must remain a C array (not const char*) so it can bind to the
+// BackendOptions::set_option(const char (&)[N], ...) template overloads.
+// @lint-ignore CLANGTIDY facebook-hte-CArray
+const char packed_cache_path_option_key[] = "packed_cache_path";
+
+/// EXPERIMENTAL — option name and semantics may change without notice.
+///
+/// Setting this to `true` triggers persisting the packed weight cache to disk
+/// so a subsequent process load can mmap the same file and skip XNNPACK weight
+/// repacking. The on-disk path is configured via
+/// `packed_cache_path_option_key`. The disk write is a one-shot side effect
+/// (the value is not stored): every `true` set fires another save.
+// Must remain a C array for the BackendOptions template overloads.
+// @lint-ignore CLANGTIDY facebook-hte-CArray
+const char save_weight_cache_on_disk_option_key[] = "save_weight_cache_on_disk";
+
 /// Workspace sharing mode. This is a backend option that can be set via the
 /// set_option API to control memory sharing between CALL_DELEGATE instances.
 /// This is useful for reducing memory consumption.

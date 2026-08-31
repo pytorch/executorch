@@ -29,7 +29,7 @@ endif()
 
 target_link_libraries(
   op_test_runner PRIVATE extension_module extension_tensor executorch
-                         mlxdelegate
+                         mlxdelegate extension_llm_cache
 )
 
 # --------------------------------------------------------------------------
@@ -67,5 +67,71 @@ et_cxx_test(
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(
     multi_thread_test_runner PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# Per-session mutable-state manager unit test (no model/tokenizer needed).
+add_executable(mlx_mutable_state_test mlx_mutable_state_test.cpp)
+target_include_directories(
+  mlx_mutable_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+target_link_libraries(
+  mlx_mutable_state_test PRIVATE mlxdelegate mlx_schema mlx executorch_core
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_mutable_state_test PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_mutable_state_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+add_test(NAME mlx_mutable_state COMMAND mlx_mutable_state_test)
+
+# Off-graph KV cache op-level test (no model/tokenizer needed). et_cxx_test
+# links GTest + executorch_core and registers the ctest target.
+et_cxx_test(
+  mlx_sequence_cache_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_cache_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_sequence_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_sequence_cache_test PRIVATE -fsanitize=address,undefined
+                                    -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+et_cxx_test(
+  mlx_cell_cache_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_cell_cache_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+  extension_llm_cache
+)
+target_include_directories(
+  mlx_cell_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_cell_cache_test PRIVATE -fsanitize=address,undefined
+                                -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_cell_cache_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()

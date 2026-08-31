@@ -59,11 +59,15 @@ aoti_torch_get_device_index(Tensor* tensor, int32_t* ret_device_index);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel);
+
 // Utility functions for device and layout information
 AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bfloat16();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_uint8();
@@ -82,6 +86,13 @@ AOTI_SHIM_EXPORT void aoti_torch_grad_mode_set_enabled(bool enabled);
 AOTI_SHIM_EXPORT void cleanup_tensor_metadata();
 
 AOTI_SHIM_EXPORT void aoti_torch_warn(
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg);
+
+AOTI_SHIM_EXPORT void aoti_torch_check(
+    bool cond,
     const char* func,
     const char* file,
     uint32_t line,

@@ -17,6 +17,7 @@ using Tensor = executorch::aten::Tensor;
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 using ScalarType = executorch::aten::ScalarType;
 using ::executorch::aten::IntArrayRef;
+using std::optional;
 
 namespace impl {
 namespace HiFi {
@@ -166,7 +167,9 @@ void xa_opt_quantized_conv2d_nhwc(
   bool conv1d = input.dim() == 3;
   constexpr int kNnlibMaxDim = 4;
 
-  if (input.scalar_type() == ScalarType::Char) {
+  // NNLib's int8 entry points require symmetric weights. Let the generic
+  // implementation handle non-zero weight zero points.
+  if (input.scalar_type() == ScalarType::Char && weight_zero_point == 0) {
     WORD8* __restrict__ p_out =
         (WORD8* __restrict__)out.mutable_data_ptr<int8_t>();
     WORD8* __restrict__ p_inp =
@@ -212,11 +215,7 @@ void xa_opt_quantized_conv2d_nhwc(
     WORD32 dilation_width = dilation[1];
     WORD32 dilation_height = dilation[0];
 
-    // WORD32* kernel_bias_ptr =
-    //   (WORD32*)weight_zero_point.const_data_ptr<int32_t>();
-
     WORD32 input_zero_bias = -in_zero_point;
-    WORD32 kernel_zero_bias = -weight_zero_point;
 
     WORD32 out_multiplier32[out_channels];
     WORD32 out_shift32[out_channels];
@@ -378,6 +377,7 @@ void xa_opt_quantized_conv2d_nhwc(
       output_zero_point,
       0, // out_multiplier (unused)
       0, // out_shift (unused)
+      optional<Tensor>(), // offset (unused)
       out);
 }
 
@@ -568,6 +568,7 @@ void quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
+    const optional<Tensor>& offset,
     Tensor& out) {
   // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
   if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
@@ -589,6 +590,7 @@ void quantized_conv2d_nhwc_per_tensor_out(
         output_zero_point,
         out_multiplier,
         out_shift,
+        offset,
         out);
     return;
   }

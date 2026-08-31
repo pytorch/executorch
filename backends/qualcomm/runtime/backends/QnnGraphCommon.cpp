@@ -68,6 +68,20 @@ Error QnnGraph::Configure(const std::string& graph_name) {
   // The profiler needs to be created after the backend is created.
   profile_[graph_name] =
       std::make_unique<QnnProfile>(implementation_, backend_, profile_level_);
+  if (context_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
+    ET_CHECK_OR_RETURN_ERROR(
+        AfterRetrieveGraph(graph_name) == Error::Ok,
+        Internal,
+        "Fail to configure after retrieving the graph.");
+  } else if (
+      context_->GetCacheState() == QnnBackendCache::SERIALIZE ||
+      context_->GetCacheState() == QnnBackendCache::MULTI_GRAPH) {
+    ET_CHECK_OR_RETURN_ERROR(
+        AfterCreateGraph(graph_name) == Error::Ok,
+        Internal,
+        "Fail to configure after graph creation.");
+  }
+
   return Error::Ok;
 }
 

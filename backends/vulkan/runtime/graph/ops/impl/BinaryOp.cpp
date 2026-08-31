@@ -94,8 +94,8 @@ void add_binary_op_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{arg1, arg2}, vkapi::kRead}},
       // Shader params buffers
@@ -143,6 +143,7 @@ DEFINE_BINARY_OP_FN(le);
 DEFINE_BINARY_OP_FN(gt);
 DEFINE_BINARY_OP_FN(ge);
 DEFINE_BINARY_OP_FN(bitwise_and);
+DEFINE_BINARY_OP_FN(bitwise_or);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
@@ -159,6 +160,8 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.ge.Tensor, ge);
   VK_REGISTER_OP(aten.bitwise_and.Tensor, bitwise_and);
   VK_REGISTER_OP(aten.logical_and.default, bitwise_and);
+  VK_REGISTER_OP(aten.bitwise_or.Tensor, bitwise_or);
+  VK_REGISTER_OP(aten.logical_or.default, bitwise_or);
 }
 
 } // namespace vkcompute

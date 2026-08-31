@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -33,7 +33,7 @@ def _get_atanh_ops(op):
     )
 
 
-class DecomposeAtanhPass(ArmPass):
+class DecomposeAtanhPass(ArmOpTargetedPass):
     """Decomposes the atanh operator into primitive ops.
 
     atanh(x) = 0.5 * log((1 + x) / (1 - x))
@@ -46,9 +46,10 @@ class DecomposeAtanhPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+    target_ops = (edge_atanh,)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op is not edge_atanh:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         if self._is_quantized_meta(meta):

@@ -5,11 +5,13 @@
 
 import torch
 from executorch.backends.cortex_m.quantizer.pattern_checkers import (
+    CortexMActivationCheck,
     CortexMAddMulCheck,
     CortexMAvgPool2DCheck,
     CortexMBmmCheck,
     CortexMConv2DCheck,
     CortexMConvTranspose2DCheck,
+    CortexMDivCheck,
     CortexMLinearCheck,
     CortexMMaxPool2DCheck,
     CortexMSoftmaxCheck,
@@ -24,10 +26,32 @@ BINARY_OP_PATTERNS = {
     (torch.ops.aten.add.Tensor, torch.ops.aten.clamp.default): CortexMAddMulCheck,
     (torch.ops.aten.add.Tensor, torch.ops.aten.clamp_.default): CortexMAddMulCheck,
     (torch.ops.aten.add_.Tensor,): CortexMAddMulCheck,
+    (torch.ops.aten.add_.Tensor, torch.ops.aten.relu.default): CortexMAddMulCheck,
+    (torch.ops.aten.add_.Tensor, torch.ops.aten.relu_.default): CortexMAddMulCheck,
+    (torch.ops.aten.add_.Tensor, torch.ops.aten.hardtanh.default): CortexMAddMulCheck,
+    (torch.ops.aten.add_.Tensor, torch.ops.aten.hardtanh_.default): CortexMAddMulCheck,
+    (torch.ops.aten.add_.Tensor, torch.ops.aten.clamp.default): CortexMAddMulCheck,
+    (torch.ops.aten.add_.Tensor, torch.ops.aten.clamp_.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor,): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor, torch.ops.aten.relu.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor, torch.ops.aten.relu_.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor, torch.ops.aten.hardtanh.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor, torch.ops.aten.hardtanh_.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor, torch.ops.aten.clamp.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub.Tensor, torch.ops.aten.clamp_.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor,): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor, torch.ops.aten.relu.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor, torch.ops.aten.relu_.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor, torch.ops.aten.hardtanh.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor, torch.ops.aten.hardtanh_.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor, torch.ops.aten.clamp.default): CortexMAddMulCheck,
+    (torch.ops.aten.sub_.Tensor, torch.ops.aten.clamp_.default): CortexMAddMulCheck,
     (torch.ops.aten.mul.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.mul_.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.hardswish.default,): CortexMAddMulCheck,  # lowers to mul
     (torch.ops.aten.hardswish_.default,): CortexMAddMulCheck,  # lowers to mul
+    (torch.ops.aten.div.Tensor,): CortexMDivCheck,
+    (torch.ops.aten.div_.Tensor,): CortexMDivCheck,
 }
 
 LINEAR_OP_PATTERNS = {
@@ -119,10 +143,56 @@ SOFTMAX_OP_PATTERNS = {
     (torch.ops.aten.softmax.int,): CortexMSoftmaxCheck,
 }
 
+ACTIVATION_OP_PATTERNS = {
+    (torch.ops.aten.sigmoid.default,): CortexMActivationCheck,
+    (torch.ops.aten.sigmoid_.default,): CortexMActivationCheck,
+    (torch.ops.aten.tanh.default,): CortexMActivationCheck,
+    (torch.ops.aten.tanh_.default,): CortexMActivationCheck,
+    (torch.ops.aten.silu.default,): CortexMActivationCheck,
+    (torch.ops.aten.silu_.default,): CortexMActivationCheck,
+    (torch.ops.aten.gelu.default,): CortexMActivationCheck,
+    (torch.ops.aten.log.default,): CortexMActivationCheck,
+    (torch.ops.aten.log_.default,): CortexMActivationCheck,
+    (torch.ops.aten.log2.default,): CortexMActivationCheck,
+    (torch.ops.aten.log2_.default,): CortexMActivationCheck,
+    (torch.ops.aten.log10.default,): CortexMActivationCheck,
+    (torch.ops.aten.log10_.default,): CortexMActivationCheck,
+    (torch.ops.aten.log1p.default,): CortexMActivationCheck,
+    (torch.ops.aten.log1p_.default,): CortexMActivationCheck,
+    (torch.ops.aten.sqrt.default,): CortexMActivationCheck,
+    (torch.ops.aten.sqrt_.default,): CortexMActivationCheck,
+    (torch.ops.aten.rsqrt.default,): CortexMActivationCheck,
+    (torch.ops.aten.rsqrt_.default,): CortexMActivationCheck,
+}
+
 POOL_OP_PATTERNS = {
     (torch.ops.aten.avg_pool2d.default,): CortexMAvgPool2DCheck,
     (torch.ops.aten.max_pool2d.default,): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.relu.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.clamp.default,
+    ): CortexMMaxPool2DCheck,
     (torch.ops.aten.max_pool2d_with_indices.default,): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.relu.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMMaxPool2DCheck,
+    (
+        torch.ops.aten.max_pool2d_with_indices.default,
+        torch.ops.aten.clamp.default,
+    ): CortexMMaxPool2DCheck,
 }
 
 BMM_OP_PATTERNS = {
@@ -137,4 +207,5 @@ CORTEX_M_QUANTIZER_SUPPORT_DICT = (
     | CONV_TRANSPOSE_OP_PATTERNS
     | POOL_OP_PATTERNS
     | BMM_OP_PATTERNS
+    | ACTIVATION_OP_PATTERNS
 )

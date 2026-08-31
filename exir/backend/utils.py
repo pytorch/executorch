@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,7 +21,6 @@ from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass
 from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
 from tabulate import tabulate
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
@@ -356,6 +355,7 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     buffers_map = sig.inputs_to_buffers
     constants_map = sig.inputs_to_lifted_tensor_constants
     buffers_to_mutate = sig.buffers_to_mutate
+    mutated_buffer_targets = set(buffers_to_mutate.values())
 
     mutated_buffer = set()
     for node in edge_program.graph.nodes:
@@ -364,12 +364,11 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
             or node.name in buffers_map
             or node.name in constants_map
         ):
-            for node_user in node.users:
-                if node_user.name in buffers_to_mutate:
-                    logging.info(
-                        "The buffer node is a mutated buffer node, which is not constant."
-                    )
-                    mutated_buffer.add(node)
+            if buffers_map.get(node.name) in mutated_buffer_targets:
+                logging.debug(
+                    "The buffer node is a mutated buffer node, which is not constant."
+                )
+                mutated_buffer.add(node)
 
     for node in edge_program.graph.nodes:
         # go through const/param/buffer nodes, if all users of const/param/buffer nodes are partitioned then partition
@@ -390,9 +389,10 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
                         "If the data is too large and it's not preferred to copy, please tag the "
                         "constant node like node.['no_copy'] = True and they won't be copied."
                     )
-                # tag the data node with the same tag as the last user
+                # Pick a deterministic consumer tag so a constant shared across
+                # partitions is assigned reproducibly across runs.
                 if len(user_tags) > 0:
-                    node.meta["delegation_tag"] = user_tags.pop()
+                    node.meta["delegation_tag"] = min(user_tags)
 
 
 def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
@@ -429,9 +429,10 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
                     "If the data is too large and it's not preferred to copy, please tag the "
                     "constant node like node.['no_copy'] = True and they won't be copied."
                 )
-            # tag the data node with the same tag as the last user
+            # Pick a deterministic consumer tag so a buffer shared across
+            # partitions is assigned reproducibly across runs.
             if len(user_tags) > 0:
-                node.meta["delegation_tag"] = user_tags.pop()
+                node.meta["delegation_tag"] = min(user_tags)
 
 
 def is_shape_dynamic(node: torch.fx.Node) -> bool:

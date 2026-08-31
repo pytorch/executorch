@@ -6,10 +6,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+from typing import Any, Callable, TypeGuard
 
 import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from torch.fx import Node
 
@@ -19,6 +21,56 @@ SHIFT_INT8 = 20
 
 def quantize_val(val, scale, zp, qmin, qmax):
     return float(min(max(torch.round(torch.Tensor([val / scale + zp])), qmin), qmax))
+
+
+def extract_constant_scalar(arg: Any) -> float | None:
+    if arg is None:
+        return None
+    if isinstance(arg, (int, float)):
+        return float(arg)
+    if isinstance(arg, Node):
+        if arg.op == "call_function" and arg.target in {
+            exir_ops.edge.aten.full_like.default,
+            exir_ops.edge.aten.full.default,
+            torch.ops.aten.full_like.default,
+            torch.ops.aten.full.default,
+        }:
+            fill_arg = arg.args[1] if len(arg.args) > 1 else None
+            return extract_constant_scalar(fill_arg)
+        val = arg.meta.get("val")
+        if val is None:
+            return None
+        return extract_constant_scalar(val)
+    return None
+
+
+def get_activation_bounds(node: Node) -> tuple[float | None, float | None] | None:
+    bounds: tuple[float | None, float | None]
+    match node.target:
+        case exir_ops.edge.aten.relu.default | exir_ops.edge.aten.relu_.default:
+            bounds = (0.0, None)
+        case exir_ops.edge.aten.hardsigmoid.default:
+            bounds = (0.0, 1.0)
+        case exir_ops.edge.aten.hardtanh.default | exir_ops.edge.aten.hardtanh_.default:
+            bounds = (
+                extract_constant_scalar(node.args[1]),
+                extract_constant_scalar(node.args[2]),
+            )
+        case exir_ops.edge.aten.clamp.default | exir_ops.edge.aten.clamp.Tensor:
+            bounds = (
+                extract_constant_scalar(node.args[1]) if len(node.args) > 1 else None,
+                extract_constant_scalar(node.args[2]) if len(node.args) > 2 else None,
+            )
+        case _:
+            return None
+
+    min_val, max_val = bounds
+    if len(node.args) > 1 and min_val is None and node.args[1] is not None:
+        return None
+    if len(node.args) > 2 and max_val is None and node.args[2] is not None:
+        return None
+
+    return bounds
 
 
 def dequantize_per_tensor_cmsis(
@@ -123,6 +175,16 @@ def coerce_int_pair(raw, default: tuple[int, int]) -> tuple[int, int]:
     return (items[0], items[1])
 
 
+def is_foldable_alpha(alpha: Any) -> TypeGuard[int]:
+    """Whether quantized_add can absorb this alpha into an operand multiplier.
+
+    Only an integer can get that far. FoldAndAnnotateQParamsPass re-traces once
+    the dequantize nodes are gone, and aten refuses a float alpha on an int8
+    add before the lowering ever sees the node.
+    """
+    return isinstance(alpha, int)
+
+
 def is_qualified_int8_node(args) -> bool:
     try:
         if len(args) < 6:
@@ -137,6 +199,121 @@ def is_qualified_int8_node(args) -> bool:
         return is_int8_range and is_int8_dtype
     except (IndexError, ValueError, TypeError):
         return False
+
+
+def _stable_sigmoid(x: float) -> float:
+    # Always exponentiate the non-positive value so `math.exp` never overflows
+    # for unusually large `|x|` (e.g. wide-range input qparams). Algebraically
+    # identical to `1 / (1 + exp(-x))`.
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    e = math.exp(x)
+    return e / (1.0 + e)
+
+
+def _stable_silu(x: float) -> float:
+    return x * _stable_sigmoid(x)
+
+
+def _gelu(x: float) -> float:
+    return 0.5 * x * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _via_torch(fn: Callable[[torch.Tensor], torch.Tensor]) -> Callable[[float], float]:
+    """Evaluate a torch unary at one point, in double precision."""
+
+    def evaluate(x: float) -> float:
+        return fn(torch.tensor(x, dtype=torch.float64)).item()
+
+    return evaluate
+
+
+_ACTIVATION_FNS: dict[EdgeOpOverload, Callable[[float], float]] = {
+    exir_ops.edge.aten.sigmoid.default: _stable_sigmoid,
+    exir_ops.edge.aten.tanh.default: math.tanh,
+    exir_ops.edge.aten.silu.default: _stable_silu,
+    exir_ops.edge.aten.gelu.default: _gelu,
+    # Only functions with no cheap closed form in the quantized domain belong
+    # here; anything expressible as a rescale should not spend a table. exp is
+    # deliberately absent despite qualifying: its codomain is unbounded, so an
+    # int8 output scale leaves it almost no resolution.
+    #
+    # Evaluated through torch rather than math so the table inherits IEEE
+    # semantics at the edges of each domain: math.log(0) raises where torch
+    # returns the -inf that saturates.
+    exir_ops.edge.aten.log.default: _via_torch(torch.log),
+    exir_ops.edge.aten.log2.default: _via_torch(torch.log2),
+    exir_ops.edge.aten.log10.default: _via_torch(torch.log10),
+    exir_ops.edge.aten.log1p.default: _via_torch(torch.log1p),
+    exir_ops.edge.aten.sqrt.default: _via_torch(torch.sqrt),
+    exir_ops.edge.aten.rsqrt.default: _via_torch(torch.rsqrt),
+}
+
+
+def _round_half_away_from_zero(x: float) -> int:
+    # Matches the rounding convention `requantize_cmsis` (above) applies after
+    # the right-shift step: ties on positive values round toward +∞, ties on
+    # negative values round toward -∞. Python's built-in `round` would use
+    # banker's rounding instead and disagree at exact half-integers.
+    return int(math.copysign(math.floor(abs(x) + 0.5), x)) if x != 0 else 0
+
+
+def build_activation_lut(
+    target,
+    input_scale: float,
+    input_zp: int,
+    output_scale: float,
+    output_zp: int,
+) -> torch.Tensor:
+    """AoT-compute a 256-entry int8 lookup table for a quantized activation.
+
+    `target` is the edge-dialect op being lowered (e.g.
+    `exir_ops.edge.aten.sigmoid.default`).
+
+    The LUT is indexed by the input byte value biased by 128: for any int8
+    input `q_in`, the kernel reads `lut[q_in + 128]` to get the int8 output.
+    Because the LUT is computed in float and quantized once per entry, the
+    runtime kernel is a single memory-lookup with no requantization math.
+    """
+    if target not in _ACTIVATION_FNS:
+        raise ValueError(
+            f"build_activation_lut: unsupported activation target {target!r} "
+            f"(supported: {sorted(t.__name__ for t in _ACTIVATION_FNS)})"
+        )
+    f = _ACTIVATION_FNS[target]
+    defined: dict[int, int] = {}
+    undefined: list[int] = []
+    for q in range(-128, 128):
+        x = (q - input_zp) * input_scale
+        y = f(x)
+        scaled = y / output_scale + output_zp if math.isfinite(y) else y
+        if math.isnan(scaled):
+            # log of a negative, rsqrt of a negative. Filled in below.
+            undefined.append(q + 128)
+            continue
+        if not math.isfinite(scaled):
+            # A pole. The rail is the closest int8 has to it.
+            q_out = 127 if scaled > 0 else -128
+        else:
+            q_out = _round_half_away_from_zero(scaled)
+        defined[q + 128] = max(-128, min(127, q_out))
+
+    if not defined:
+        raise ValueError(
+            f"build_activation_lut: {target} is undefined across the whole "
+            f"input range (scale {input_scale}, zero point {input_zp})"
+        )
+
+    lut = torch.empty(256, dtype=torch.int8)
+    for index, value in defined.items():
+        lut[index] = value
+    # Each of these functions is undefined on one side of a boundary, so an
+    # undefined entry continues the value at that boundary. That keeps the table
+    # monotone; emitting the output zero point instead would put a mid-range
+    # value below the pole's rail.
+    for index in undefined:
+        lut[index] = defined[min(defined, key=lambda d: abs(d - index))]
+    return lut
 
 
 def quantize_multiplier_aot(scale: float) -> tuple[int, int]:
@@ -206,6 +383,17 @@ def is_channels_last(tensor: torch.Tensor) -> bool:
 
     dim_order = list(tensor.dim_order())
     return dim_order[0:2] == [0, 2]
+
+
+_NHWC_DIM_ORDER = [0, 2, 3, 1]
+
+
+def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]:
+    """Permute a 4-element NCHW-ordered list to NHWC physical memory order
+    when ``tensor`` is in channels_last format, otherwise return unchanged."""
+    if not is_channels_last(tensor):
+        return logical_pad
+    return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
 
 
 def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:

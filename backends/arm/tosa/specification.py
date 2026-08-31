@@ -13,6 +13,10 @@ import contextvars
 import re
 from typing import Dict, Generic, List, Set, TypeVar
 
+# Import torch before any torch submodule so torch.SymInt is defined; importing
+# torch.fx first triggers a torch.distributed circular import during collection.
+import torch  # noqa: F401
+
 from packaging.version import Version
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 

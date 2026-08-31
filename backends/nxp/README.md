@@ -62,4 +62,4 @@ If you have problems or questions or have suggestions for ways to make
 implementation and testing better, please reach out to the NXP representative for the SoC you are interested in using,
 or your distribution partner contact.
 
-Or raise the issue here on ExecuTorch GitHub, label it with `module: nxp` and our ML team will address it on a priority-basis.
+Or raise the issue here on ExecuTorch [Github](https://github.com/pytorch/executorch/issues/new), label it with `module: nxp` and our ML team will address it on a priority-basis.

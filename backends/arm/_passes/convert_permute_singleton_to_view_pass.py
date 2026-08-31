@@ -6,7 +6,7 @@
 
 from typing import Sequence, Set, Tuple, Type
 
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -20,7 +20,7 @@ _PERMUTE_TARGETS: Tuple[OpOverload, ...] = (
 )
 
 
-class ConvertPermuteSingletonToViewPass(ArmPass):
+class ConvertPermuteSingletonToViewPass(ArmOpTargetedPass):
     """Replace permutations that only move singleton axes with a reshape.
 
     Examples:
@@ -34,9 +34,10 @@ class ConvertPermuteSingletonToViewPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = _PERMUTE_TARGETS
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in _PERMUTE_TARGETS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         input_tensor = args[0].data

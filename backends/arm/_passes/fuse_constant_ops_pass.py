@@ -4,7 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Set, Type
+from collections.abc import Mapping
+from typing import Sequence, Set, Type
 
 import torch._export.utils
 import torch.fx
@@ -18,6 +19,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
     FuseEqualPlaceholdersPass,
 )
+from executorch.backends.arm.tosa.dialect.shape import meta_has_shape_mark
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -26,7 +28,7 @@ from executorch.backends.transforms.utils import (
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.export.graph_signature import InputKind
+from torch.export.graph_signature import ExportGraphSignature, InputKind
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,79 @@ class FuseConstantArgsPass(ArmPass):
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+
+    def _delete_placeholder_input(self, node: torch.fx.Node) -> None:
+        if len(node.users) != 0:
+            raise RuntimeError(
+                f"Cannot delete input node {node.name} since it has users in the graph."
+            )
+
+        input_specs = [
+            spec
+            for spec in self.exported_program.graph_signature.input_specs
+            if spec.arg.name != node.name
+        ]
+        self.exported_program._graph_signature = ExportGraphSignature(
+            input_specs, self.exported_program.graph_signature.output_specs
+        )
+        node.graph.erase_node(node)
+
+    def _delete_constant_placeholder(self, node: torch.fx.Node) -> None:
+        graph_signature = self.exported_program.graph_signature
+        if node.name in graph_signature.inputs_to_parameters:
+            target = graph_signature.inputs_to_parameters[node.name]
+            if target not in self.exported_program.state_dict:
+                # Tied parameters can share a state_dict entry across placeholders;
+                # another dead placeholder may have already removed the tensor, so
+                # only remove this placeholder from the graph signature.
+                self._delete_placeholder_input(node)
+                return
+
+        delete_constant_placeholder(self.exported_program, node)
+
+    @staticmethod
+    def _is_tosa_dialect_op(target) -> bool:
+        target_str = str(target)
+        return (
+            "executorch.exir.dialects.backend._ops.tosa." in target_str
+            or "<EdgeOpOverload: tosa." in target_str
+        )
+
+    @staticmethod
+    def _has_real_tosa_dialect_impl(target) -> bool:
+        schema = getattr(target, "_schema", None)
+        op_name = getattr(schema, "name", None)
+        if op_name is None:
+            return False
+
+        try:
+            return torch._C._dispatch_has_kernel_for_dispatch_key(
+                op_name, "CompositeExplicitAutograd"
+            )
+        except RuntimeError:
+            return False
+
+    @staticmethod
+    def _arg_contains_symbolic_shape(arg) -> bool:
+        if isinstance(arg, torch.fx.Node):
+            if meta_has_shape_mark(arg.meta):
+                return True
+            return FuseConstantArgsPass._arg_contains_symbolic_shape(
+                arg.meta.get("val")
+            )
+        if isinstance(arg, torch.SymInt):
+            return True
+        if isinstance(arg, Mapping):
+            return any(
+                FuseConstantArgsPass._arg_contains_symbolic_shape(k)
+                or FuseConstantArgsPass._arg_contains_symbolic_shape(v)
+                for k, v in arg.items()
+            )
+        if isinstance(arg, Sequence) and not isinstance(arg, (str, bytes)):
+            return any(
+                FuseConstantArgsPass._arg_contains_symbolic_shape(v) for v in arg
+            )
+        return False
 
     def _propagate_special_dtype(self, from_nodes, to_node, data):
         """Propagate special dtype meta if it exists."""
@@ -83,21 +158,24 @@ class FuseConstantArgsPass(ArmPass):
         input_nodes = list(node.all_input_nodes)
         qparams = node.meta.get("input_qparams", None)
 
-        def resolve_arg(arg):
+        def resolve_arg(arg, arg_index=None):
+            qparam = (
+                qparams.get(arg_index) if qparams and arg_index is not None else None
+            )
             if isinstance(arg, torch.fx.Node) and arg in input_nodes:
-                idx = input_nodes.index(arg)
                 t = get_param_tensor(self.exported_program, arg)
-                # Check if qparams exist for this arg
-                if qparams and idx in qparams.keys():
-                    t = qparams[idx].dequantize_value(t)
+                if qparam is not None:
+                    t = qparam.dequantize_value(t)
                 return t
             if isinstance(arg, tuple):
-                return tuple(resolve_arg(x) for x in arg)
+                return tuple(resolve_arg(x, arg_index) for x in arg)
             if isinstance(arg, list):
-                return [resolve_arg(x) for x in arg]
+                return [resolve_arg(x, arg_index) for x in arg]
             return arg
 
-        new_args = tuple(resolve_arg(a) for a in node.args)
+        new_args = tuple(
+            resolve_arg(arg, arg_index) for arg_index, arg in enumerate(node.args)
+        )
         new_kwargs = {k: resolve_arg(v) for k, v in node.kwargs.items()}
 
         data = node.target(*new_args, **new_kwargs)
@@ -133,19 +211,31 @@ class FuseConstantArgsPass(ArmPass):
 
         return True
 
+    def maybe_delete(self, input_nodes_to_maybe_delete):
+        for input_node in input_nodes_to_maybe_delete:
+            if input_node.meta.get("is_input", False):
+                # Never delete submodule inputs, they need to match the parameters from the outer module.
+                continue
+            if len(input_node.users) == 0:
+                self._delete_constant_placeholder(input_node)
+
     def call(self, graph_module):
         modified = False
         input_nodes_to_maybe_delete = set()
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            if node.target in [
-                exir_ops.backend.tosa.MATMUL.default,
-                exir_ops.backend.tosa.RESCALE.default,
-                exir_ops.backend.tosa.RESIZE.default,
-                exir_ops.backend.tosa.TABLE.default,
-                exir_ops.backend.tosa.TRANSPOSE.default,
-            ]:
+            if node.target == exir_ops.backend.tosa.RESCALE.default:
+                # Leave fusing of RESCALES to the compiler.
+                continue
+            if self._is_tosa_dialect_op(
+                node.target
+            ) and not self._has_real_tosa_dialect_impl(node.target):
+                continue
+            # Don't fuse ops whose explicit args/kwargs include symbolic shape values.
+            if self._arg_contains_symbolic_shape(
+                node.args
+            ) or self._arg_contains_symbolic_shape(node.kwargs):
                 continue
 
             input_nodes = node.all_input_nodes
@@ -161,7 +251,6 @@ class FuseConstantArgsPass(ArmPass):
             )
             if not all(input_nodes_constant):
                 continue
-
             try:
                 did_fuse = self._fuse_nodes(node)
                 if did_fuse:
@@ -170,7 +259,6 @@ class FuseConstantArgsPass(ArmPass):
                         f"{[input_node.name for input_node in input_nodes]}"
                     )
                     modified |= did_fuse
-                    graph_module.recompile()  # Recompile needed to catch chains of constant ops
                     input_nodes_to_maybe_delete.update(input_nodes)
             except Exception as e:
                 logger.warning(
@@ -179,13 +267,10 @@ class FuseConstantArgsPass(ArmPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            for input_node in input_nodes_to_maybe_delete:
-                if len(input_node.users) == 0:
-                    delete_constant_placeholder(self.exported_program, input_node)
-
+            self.maybe_delete(input_nodes_to_maybe_delete)
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
 
 
 class ComputeConstantOpsAOTPass(ArmPass):
@@ -274,4 +359,4 @@ class ComputeConstantOpsAOTPass(ArmPass):
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

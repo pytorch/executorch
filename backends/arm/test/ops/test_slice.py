@@ -8,7 +8,6 @@
 from typing import Tuple
 
 import torch
-
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
 )
@@ -50,6 +49,18 @@ test_data_suite_bf16 = {
         [(0, 1), (0, 5), (3, 5), (4, 10)],
     ),
 }
+test_data_suite_fp8 = {
+    "ones_slice_4_fp8e4m3": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.float32).to(torch.float8_e4m3fn),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+        "fp8e4m3",
+    ),
+    "ones_slice_4_fp8e5m2": lambda: (
+        torch.ones((1, 12, 10, 10), dtype=torch.float32).to(torch.float8_e5m2),
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
+        "fp8e5m2",
+    ),
+}
 
 
 class Slice(torch.nn.Module):
@@ -69,6 +80,20 @@ def test_slice_tensor_tosa_FP_bf16(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Slice(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+def test_slice_tensor_tosa_FP_fp8(test_data):
+    input_data, slices, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        Slice(),
+        (input_data, slices),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"SLICE": 1})
     pipeline.run()
 
 
@@ -118,7 +143,9 @@ def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
@@ -356,7 +383,16 @@ def test_slice_tensor_u85_INT_step(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_step_int | test_data_step_fp)
+@common.parametrize(
+    "test_data",
+    test_data_step_int | test_data_step_fp,
+    xfails={
+        "arange_fp32_2d_step4": (
+            "MLCE-1969: Emlayer 0.10 Interval memory planner corrupts "
+            "multi-input CONCAT output"
+        ),
+    },
+)
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant_step(test_data: Tuple):
     pipeline = VgfPipeline[input_t_step](

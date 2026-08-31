@@ -287,9 +287,21 @@ ComputePipeline::ComputePipeline(
       descriptor.specialization_constants.data(), // pData
   };
 
+  const void* shader_stage_pnext = nullptr;
+#ifdef VK_EXT_subgroup_size_control
+  VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT
+      required_subgroup_size_info{
+          VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT,
+          nullptr,
+          descriptor.required_subgroup_size};
+  if (descriptor.required_subgroup_size > 0u) {
+    shader_stage_pnext = &required_subgroup_size_info;
+  }
+#endif /* VK_EXT_subgroup_size_control */
+
   const VkPipelineShaderStageCreateInfo shader_stage_create_info{
       VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
-      nullptr, // pNext
+      shader_stage_pnext, // pNext
       0u, // flags
       VK_SHADER_STAGE_COMPUTE_BIT, // stage
       descriptor.shader_module, // module
@@ -355,7 +367,8 @@ bool operator==(
   return (
       _1.pipeline_layout == _2.pipeline_layout &&
       _1.shader_module == _2.shader_module &&
-      _1.specialization_constants == _2.specialization_constants);
+      _1.specialization_constants == _2.specialization_constants &&
+      _1.required_subgroup_size == _2.required_subgroup_size);
 }
 
 //
@@ -489,7 +502,18 @@ void ComputePipelineCache::create_pipelines(
   std::vector<VkComputePipelineCreateInfo> create_infos;
   create_infos.reserve(num_pipelines);
 
-  for (const auto& key : keys_to_create) {
+#ifdef VK_EXT_subgroup_size_control
+  // Stable storage for any required-subgroup-size structs that need to live
+  // until vkCreateComputePipelines returns. Indexed by pipeline index; only
+  // the entries for pipelines that actually request a fixed subgroup size
+  // are populated.
+  std::vector<VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT>
+      required_subgroup_size_infos(num_pipelines);
+#endif /* VK_EXT_subgroup_size_control */
+
+  for (size_t pipeline_idx = 0; pipeline_idx < keys_to_create.size();
+       ++pipeline_idx) {
+    const auto& key = keys_to_create[pipeline_idx];
     map_entries.push_back(key.specialization_constants.generate_map_entries());
 
     specialization_infos.push_back(VkSpecializationInfo{
@@ -499,9 +523,20 @@ void ComputePipelineCache::create_pipelines(
         key.specialization_constants.data(), // pData
     });
 
+    const void* shader_stage_pnext = nullptr;
+#ifdef VK_EXT_subgroup_size_control
+    if (key.required_subgroup_size > 0u) {
+      required_subgroup_size_infos[pipeline_idx] = {
+          VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT,
+          nullptr,
+          key.required_subgroup_size};
+      shader_stage_pnext = &required_subgroup_size_infos[pipeline_idx];
+    }
+#endif /* VK_EXT_subgroup_size_control */
+
     shader_stage_create_infos.push_back(VkPipelineShaderStageCreateInfo{
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
-        nullptr, // pNext
+        shader_stage_pnext, // pNext
         0u, // flags
         VK_SHADER_STAGE_COMPUTE_BIT, // stage
         key.shader_module, // module

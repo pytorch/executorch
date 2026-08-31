@@ -26,6 +26,7 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_token_generator.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/tok_embedding_runner.h>
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
@@ -46,8 +47,9 @@ enum class VisionLanguageModel {
   kInternvl3,
 };
 
-// TODO: Add audio models when they are supported
-enum class AudioLanguageModel {};
+enum class AudioLanguageModel {
+  kGraniteSpeech = 0,
+};
 
 using ModelVersion = std::variant<VisionLanguageModel, AudioLanguageModel>;
 
@@ -64,15 +66,16 @@ inline Modality modality_of(const ModelVersion& model_version) {
       [](const auto& model) { return modality_of(model); }, model_version);
 }
 
-enum KvBitWidth {
-  kWidth8 = 8,
-  kWidth16 = 16,
-};
-
-template <typename T>
 class QNNMultimodalRunner
     : public executorch::extension::llm::MultimodalRunner {
  public:
+  enum EvalMode {
+    kKVCached = 0,
+    kHybrid,
+    kLookaheadDecoding,
+    kUnsupported,
+  };
+
   explicit QNNMultimodalRunner(
       std::unique_ptr<executorch::extension::Module> encoder,
       std::unique_ptr<executorch::extension::Module> tok_embedding,
@@ -103,13 +106,6 @@ class QNNMultimodalRunner
   get_encoder_method_meta();
 
  private:
-  enum EvalMode {
-    kKVCached = 0,
-    kHybrid,
-    kLookaheadDecoding,
-    kUnsupported,
-  };
-
   // Modules
   std::unique_ptr<executorch::extension::Module> encoder_;
   std::unique_ptr<executorch::extension::Module> tok_embedding_;
@@ -137,21 +133,16 @@ class QNNMultimodalRunner
 
   ModelVersion model_version_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
-  std::unique_ptr<KVManager<T>> kv_manager_;
+  std::unique_ptr<KVManager> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
-  std::unique_ptr<MultimodalPromptProcessor<T>> prompt_processor_;
-  std::unique_ptr<MultimodalTokenGenerator<T>> token_generator_;
+  std::unique_ptr<MultimodalPromptProcessor> prompt_processor_;
+  std::unique_ptr<MultimodalTokenGenerator> token_generator_;
   std::unique_ptr<EncoderRunner> encoder_runner_;
   std::unique_ptr<TokenEmbeddingRunner> tok_embedding_runner_;
   std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_processor_;
   std::unique_ptr<TokenEmbeddingProcessor> tok_embedding_generator_;
   std::unique_ptr<MultimodalEmbeddingMerger> embedding_merger_;
-
-  // Placeholder token ID for image inputs. This value will be set from the
-  // model's metadata. A default of 0 indicates that the vision modality is not
-  // supported.
-  uint64_t image_token_id_{0};
 
   // stats
   executorch::llm::Stats stats_;

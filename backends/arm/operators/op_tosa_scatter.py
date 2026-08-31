@@ -36,7 +36,13 @@ class ScatterVisitor(NodeVisitor):
         validate_same_dtype(self.target, [inputs[0], inputs[2], output], ts)
         validate_valid_dtype(
             self.target,
-            [inputs[0], inputs[1], inputs[2], output],
+            [inputs[1]],
+            [ts.DType.INT32],
+            self.tosa_spec,
+        )
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], inputs[2], output],
             [
                 ts.DType.INT8,
                 ts.DType.INT16,
@@ -44,6 +50,16 @@ class ScatterVisitor(NodeVisitor):
                 ts.DType.FP32,
                 ts.DType.FP16,
                 ts.DType.BF16,
+                *(
+                    [ts.DType.FP8E4M3]
+                    if self.tosa_spec.support_extension("fp8e4m3")
+                    else []
+                ),
+                *(
+                    [ts.DType.FP8E5M2]
+                    if self.tosa_spec.support_extension("fp8e5m2")
+                    else []
+                ),
             ],
             self.tosa_spec,
         )

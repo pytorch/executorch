@@ -29,7 +29,7 @@ bool q8ta_linear_check_packed_dim_info(const api::PackedDimInfo& info) {
 // Workgroup size selection
 //
 
-utils::uvec3 q8ta_linear_global_wg_size(
+GlobalWorkGrid q8ta_linear_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -50,17 +50,44 @@ utils::uvec3 q8ta_linear_global_wg_size(
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
-  return {num_N_tiles, num_M_tiles, 1};
+  return GlobalWorkGrid({num_N_tiles, num_M_tiles, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 q8ta_linear_local_wg_size(
+LocalWorkGroup q8ta_linear_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return pick_hw_square_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
+}
+
+//
+// Resize
+//
+
+// resize_args = {}
+//
+// Quantized linear/matmul: output = [*input.shape[:-1], out_features]. The
+// leading/M dims follow the input; out_features (the last dim) is
+// weight-derived and shape-independent, so it stays as currently allocated.
+// Without this the DynamicDispatchNode freezes the output (incl. the M dim) at
+// the build-time upper bound. Mirrors the fp32 resize_linear_qw_node shape
+// logic, generalized to arbitrary input rank.
+void resize_q8ta_linear_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
+  const std::vector<int64_t> out_sizes = graph->sizes_of(out);
+  // Keep out_features (last dim, weight-derived); take all leading dims from
+  // in.
+  new_sizes.at(new_sizes.size() - 1) = out_sizes.at(out_sizes.size() - 1);
+  graph->virtual_resize(out, new_sizes);
 }
 
 //
@@ -116,8 +143,8 @@ void add_q8ta_linear_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      q8ta_linear_global_wg_size,
-      q8ta_linear_local_wg_size,
+      q8ta_linear_gwg,
+      q8ta_linear_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -135,7 +162,7 @@ void add_q8ta_linear_node(
       // Resize args
       {},
       // Resizing Logic
-      nullptr));
+      resize_q8ta_linear_node));
 }
 
 //

@@ -25,7 +25,7 @@ the following information
 
 import dataclasses
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, FrozenSet, Optional, Tuple
 
 import torch
 from torch._ops import OpOverload
@@ -103,6 +103,70 @@ def get_out_args_from_schema(out_var_schema: FunctionSchema) -> Tuple[str]:
         out_var_schema.is_out_fn()
     ), f"Expect an out variant, but get: {out_var_schema}"
     return tuple(arg.name for arg in out_var_schema.arguments.out)
+
+
+def unwrap_op_overload(target: object) -> torch._ops.OpOverload:
+    """Return the underlying ``torch._ops.OpOverload`` for a node target.
+
+    Handles both raw aten ops (``torch.ops.aten.X.Y``) and edge-dialect
+    wrappers (``ops.edge.aten.X.Y`` / ``BackendOpOverload``), which expose
+    the underlying ATen op as ``target._op`` but are not themselves
+    subclasses of ``torch._ops.OpOverload``.
+
+    Raises ``TypeError`` if ``target`` is neither an ``OpOverload`` nor
+    wraps one.
+    """
+    if isinstance(target, torch._ops.OpOverload):
+        return target
+    underlying = getattr(target, "_op", None)
+    if isinstance(underlying, torch._ops.OpOverload):
+        return underlying
+    raise TypeError(
+        f"unwrap_op_overload: expected a torch._ops.OpOverload or a "
+        f"wrapper exposing one as `_op`, got {type(target).__name__}: "
+        f"{target!r}"
+    )
+
+
+def output_to_aliased_input_map(
+    schema: torch.FunctionSchema,
+) -> Dict[int, int]:
+    """For a mutating op, return a map from output index to input arg
+    index, where the output aliases (i.e., mutates) the input via a
+    shared ``Tensor(a!)`` write-alias set.
+
+    Only outputs whose ``alias_info.is_write`` is True are considered.
+    Inputs without a write-aliased ``alias_info`` cannot be aliased
+    targets and are skipped. If multiple inputs share a single
+    return's alias set (no known cases in aten today), the first
+    matching input wins.
+
+    Returns an empty dict for ops with no write-aliased outputs (i.e.,
+    purely functional ops, or ops whose schema declares no returns).
+
+    Note: ``schema`` is the pybind ``torch._C.FunctionSchema`` (as
+    obtained from ``op._schema``), not the torchgen native
+    ``FunctionSchema`` used elsewhere in this file.
+    """
+    # Build alias_set -> input_idx so we can look up each return.
+    alias_set_to_input: Dict[FrozenSet[str], int] = {}
+    for in_idx, arg in enumerate(schema.arguments):
+        info = arg.alias_info
+        if info is None or not info.is_write:
+            continue
+        alias_set = frozenset(info.before_set)
+        alias_set_to_input.setdefault(alias_set, in_idx)
+
+    out_to_in: Dict[int, int] = {}
+    for out_idx, ret in enumerate(schema.returns):
+        info = ret.alias_info
+        if info is None or not info.is_write:
+            continue
+        alias_set = frozenset(info.before_set)
+        in_idx = alias_set_to_input.get(alias_set)
+        if in_idx is not None:
+            out_to_in[out_idx] = in_idx
+    return out_to_in
 
 
 def parse_qualified_opname(qualified_opname: str) -> Tuple[str, str]:

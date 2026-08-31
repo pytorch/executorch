@@ -8,7 +8,11 @@
 
 #pragma once
 
+#include "MLXCache.h"
 #include "MLXExecutor.h"
+
+#include <algorithm>
+#include <vector>
 
 #include <mlx/array.h>
 #include <mlx/fast.h>
@@ -242,6 +246,11 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     freqs_arr = st.const_tensor_ref(*n.freqs);
   }
 
+  // MLX requires exactly one of base or freqs — when freqs is provided,
+  // base must be nullopt.
+  std::optional<float> base =
+      freqs_arr ? std::nullopt : std::optional<float>(n.base);
+
   // MLX has two overloads: rope(..., int offset, ...) and rope(..., const
   // array& offset, ...) Call the appropriate one based on is_vid
   if (n.offset.is_vid) {
@@ -250,14 +259,14 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   } else {
     // Tensor offset from Tid
     const array& offset = st.const_tensor_ref(n.offset.tid);
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   }
 }
 
@@ -285,6 +294,99 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
 
   array out = fast::scaled_dot_product_attention(
       Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_update_and_attend(
+    const UpdateAndAttendNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  if (!st.cache) {
+    throw std::runtime_error("update_and_attend: no cache installed");
+  }
+  if (!n.layer_id) {
+    throw std::runtime_error("update_and_attend: layer_id is not set");
+  }
+  if (!n.scale) {
+    throw std::runtime_error("update_and_attend: scale is not set");
+  }
+  // The cache does the KV write + read and declares the mask; the handler owns
+  // the query side (q, scale) and calls SDPA.
+  const array& q = st.const_tensor_ref(n.q);
+  // One position per query token, read host-side so the cache stays pure graph
+  // + integer bookkeeping. Every layer of a step reads the same position
+  // tensor, so evaluating it in place costs one sync for the first layer and
+  // nothing for the rest.
+  auto pos = st.const_tensor_ref(n.position);
+  eval(pos);
+  // The entries are read in order off the buffer, which a strided view would
+  // walk with the wrong stride.
+  if (!pos.flags().row_contiguous) {
+    throw std::runtime_error("update_and_attend: position must be contiguous");
+  }
+  const int length = static_cast<int>(pos.size());
+  if (length != static_cast<int>(q.shape(2))) {
+    throw std::runtime_error(
+        "update_and_attend: position must hold one entry per query token");
+  }
+  std::vector<int32_t> positions(static_cast<size_t>(length));
+  switch (pos.dtype()) {
+    case ::mlx::core::int32:
+      std::copy(
+          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
+      break;
+    case ::mlx::core::int64:
+      std::transform(
+          pos.data<int64_t>(),
+          pos.data<int64_t>() + length,
+          positions.begin(),
+          [](int64_t p) { return static_cast<int32_t>(p); });
+      break;
+    default:
+      throw std::runtime_error(
+          std::string("update_and_attend: position must be int32 or int64, ") +
+          "got " + ExecutionState::dtype_str(pos.dtype()));
+  }
+  AttendSpec spec = st.cache->update_and_fetch(
+      *n.layer_id,
+      positions,
+      st.const_tensor_ref(n.k),
+      st.const_tensor_ref(n.v),
+      s);
+  // Match stored K/V to the query dtype before SDPA (no-op when equal; the
+  // storage precision may differ from the compute dtype).
+  array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
+  array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
+  // MLX takes the mask as a mode string plus an optional tensor. Switch: None
+  // and Explicit both map to "" and are told apart only by spec.mask, so an
+  // Explicit with no mask would silently attend unmasked.
+  std::string mask_mode;
+  switch (spec.kind) {
+    case AttendSpec::Mask::None:
+      break;
+    case AttendSpec::Mask::Causal:
+      mask_mode = "causal";
+      break;
+    case AttendSpec::Mask::Explicit:
+      if (!spec.mask) {
+        throw std::runtime_error(
+            "update_and_attend: Explicit mask kind with no mask tensor");
+      }
+      break;
+  }
+  array out = fast::scaled_dot_product_attention(
+      q,
+      K,
+      V,
+      static_cast<float>(*n.scale),
+      mask_mode,
+      spec.mask,
+      std::nullopt,
+      s);
+  // Honor the op's output-dtype contract (unset -> SDPA's native output).
+  if (n.out_dtype) {
+    out = astype(out, resolve_dtype(*n.out_dtype), s);
+  }
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -735,6 +837,11 @@ exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
 }
 
+inline void exec_flip(const FlipNode& n, ExecutionState& st, StreamOrDevice s) {
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, flip(st.const_tensor_ref(n.x), axes, s));
+}
+
 inline void
 exec_as_strided(const AsStridedNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -785,6 +892,16 @@ exec_gather(const GatherNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 
   st.set_tensor(n.out, gather(x, indices, n.axes, slice_sizes, s));
+}
+
+inline void exec_scatter_add(
+    const ScatterAddNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  const auto& indices = st.const_tensor_ref(n.indices);
+  const auto& updates = st.const_tensor_ref(n.updates);
+  st.set_tensor(n.out, scatter_add_axis(x, indices, updates, n.axis, s));
 }
 
 inline void
@@ -841,6 +958,227 @@ inline void exec_quantized_matmul(
       X, Wq, Sc, Qb, n.transpose, n.group_size, n.bits, n.mode, s);
 
   st.set_tensor(n.out, std::move(Y));
+}
+
+inline void
+exec_gather_mm(const GatherMmNode& n, ExecutionState& st, StreamOrDevice s) {
+  array A = st.const_tensor_ref(n.a);
+  array B = st.const_tensor_ref(n.b);
+
+  std::optional<array> lhs_idx = std::nullopt;
+  if (n.lhs_indices.has_value()) {
+    lhs_idx = st.const_tensor_ref(*n.lhs_indices);
+  }
+  std::optional<array> rhs_idx = std::nullopt;
+  if (n.rhs_indices.has_value()) {
+    rhs_idx = st.const_tensor_ref(*n.rhs_indices);
+  }
+
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
+  array Y = gather_mm(A, B, lhs_idx, rhs_idx, sorted, s);
+  st.set_tensor(n.out, std::move(Y));
+}
+
+inline void
+exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
+  array X = st.const_tensor_ref(n.x);
+  array Wq = st.const_tensor_ref(n.w);
+  array Sc = st.const_tensor_ref(n.scales);
+
+  std::optional<array> Qb = std::nullopt;
+  if (n.biases.has_value()) {
+    Qb = st.const_tensor_ref(*n.biases);
+  }
+  std::optional<array> lhs_idx = std::nullopt;
+  if (n.lhs_indices.has_value()) {
+    lhs_idx = st.const_tensor_ref(*n.lhs_indices);
+  }
+  std::optional<array> rhs_idx = std::nullopt;
+  if (n.rhs_indices.has_value()) {
+    rhs_idx = st.const_tensor_ref(*n.rhs_indices);
+  }
+
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
+  array Y = gather_qmm(
+      X,
+      Wq,
+      Sc,
+      Qb,
+      lhs_idx,
+      rhs_idx,
+      n.transpose,
+      n.group_size,
+      n.bits,
+      n.mode,
+      sorted,
+      s);
+  st.set_tensor(n.out, std::move(Y));
+}
+
+inline void exec_metal_kernel(
+    const MetalKernelNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+#ifndef ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  throw std::runtime_error(
+      "MetalKernelNode: custom kernel execution is disabled. "
+      "Rebuild with -DET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION to enable. "
+      "WARNING: enabling this allows .pte files to execute arbitrary GPU code.");
+#else
+
+  // Validate parallel array lengths
+  if (n.input_names.size() != n.inputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: input_names length (" +
+        std::to_string(n.input_names.size()) + ") must match inputs length (" +
+        std::to_string(n.inputs.size()) + ")");
+  }
+  if (n.output_names.size() != n.outputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_names length (" +
+        std::to_string(n.output_names.size()) +
+        ") must match outputs length (" + std::to_string(n.outputs.size()) +
+        ")");
+  }
+  if (n.outputs.empty()) {
+    throw std::runtime_error("MetalKernelNode: outputs must not be empty");
+  }
+  if (n.inputs.empty()) {
+    throw std::runtime_error("MetalKernelNode: inputs must not be empty");
+  }
+  if (n.output_shape_lengths.size() != n.outputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_shape_lengths length (" +
+        std::to_string(n.output_shape_lengths.size()) +
+        ") must match outputs length (" + std::to_string(n.outputs.size()) +
+        ")");
+  }
+  if (n.output_dtypes.size() != n.outputs.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_dtypes length (" +
+        std::to_string(n.output_dtypes.size()) +
+        ") must match outputs length (" + std::to_string(n.outputs.size()) +
+        ")");
+  }
+
+  // Validate output_shapes_flat length matches sum of output_shape_lengths
+  size_t expected_flat_len = 0;
+  for (int32_t len : n.output_shape_lengths) {
+    if (len < 0) {
+      throw std::runtime_error(
+          "MetalKernelNode: output_shape_lengths contains negative value " +
+          std::to_string(len));
+    }
+    expected_flat_len += static_cast<size_t>(len);
+  }
+  if (n.output_shapes_flat.size() != expected_flat_len) {
+    throw std::runtime_error(
+        "MetalKernelNode: output_shapes_flat length (" +
+        std::to_string(n.output_shapes_flat.size()) +
+        ") must equal sum of output_shape_lengths (" +
+        std::to_string(expected_flat_len) + ")");
+  }
+
+  // Validate template arg parallel arrays
+  if (n.template_arg_kinds.size() != n.template_arg_names.size() ||
+      n.template_arg_values.size() != n.template_arg_names.size()) {
+    throw std::runtime_error(
+        "MetalKernelNode: template_arg_names/kinds/values must have same length (" +
+        std::to_string(n.template_arg_names.size()) + "/" +
+        std::to_string(n.template_arg_kinds.size()) + "/" +
+        std::to_string(n.template_arg_values.size()) + ")");
+  }
+
+  // Build the kernel function (cached internally by MLX based on name+source)
+  auto kernel_fn = ::mlx::core::fast::metal_kernel(
+      n.name,
+      n.input_names,
+      n.output_names,
+      n.source ? *n.source : std::string{},
+      n.header ? *n.header : std::string{},
+      n.ensure_row_contiguous,
+      n.atomic_outputs);
+
+  // Resolve inputs
+  std::vector<array> inputs;
+  inputs.reserve(n.inputs.size());
+  for (const auto& tid : n.inputs) {
+    inputs.push_back(st.const_tensor_ref(tid));
+  }
+
+  // Resolve grid and threadgroup (IntOrVid → int)
+  auto grid_ints = resolve_ints(n.grid, st);
+  auto tg_ints = resolve_ints(n.threadgroup, st);
+  if (grid_ints.size() != 3) {
+    throw std::runtime_error(
+        "MetalKernelNode: grid must have exactly 3 elements, got " +
+        std::to_string(grid_ints.size()));
+  }
+  if (tg_ints.size() != 3) {
+    throw std::runtime_error(
+        "MetalKernelNode: threadgroup must have exactly 3 elements, got " +
+        std::to_string(tg_ints.size()));
+  }
+  std::tuple<int, int, int> grid{grid_ints[0], grid_ints[1], grid_ints[2]};
+  std::tuple<int, int, int> threadgroup{tg_ints[0], tg_ints[1], tg_ints[2]};
+
+  // Resolve output shapes from flattened representation (lengths already
+  // validated)
+  std::vector<::mlx::core::Shape> output_shapes;
+  size_t flat_offset = 0;
+  for (int32_t len : n.output_shape_lengths) {
+    ::mlx::core::Shape shape;
+    for (int32_t j = 0; j < len; ++j) {
+      shape.push_back(resolve_int(n.output_shapes_flat[flat_offset++], st));
+    }
+    output_shapes.push_back(std::move(shape));
+  }
+
+  // Resolve output dtypes
+  std::vector<::mlx::core::Dtype> output_dtypes;
+  for (int32_t d : n.output_dtypes) {
+    output_dtypes.push_back(resolve_dtype(static_cast<int8_t>(d)));
+  }
+
+  // Resolve template args from parallel arrays (lengths already validated)
+  std::vector<std::pair<std::string, ::mlx::core::fast::TemplateArg>>
+      template_args;
+  for (size_t i = 0; i < n.template_arg_names.size(); ++i) {
+    int32_t kind = n.template_arg_kinds[i];
+    int32_t value = n.template_arg_values[i];
+    ::mlx::core::fast::TemplateArg arg;
+    if (kind == 0) {
+      arg = value; // int
+    } else if (kind == 1) {
+      arg = static_cast<bool>(value); // bool
+    } else {
+      arg = resolve_dtype(static_cast<int8_t>(value)); // Dtype
+    }
+    template_args.push_back({n.template_arg_names[i], std::move(arg)});
+  }
+
+  // Invoke the kernel
+  auto results = kernel_fn(
+      inputs,
+      output_shapes,
+      output_dtypes,
+      grid,
+      threadgroup,
+      template_args,
+      n.init_value,
+      /*verbose=*/false,
+      s);
+
+  // Store outputs
+  for (size_t i = 0; i < results.size() && i < n.outputs.size(); ++i) {
+    st.set_tensor(n.outputs[i], std::move(results[i]));
+  }
+
+#endif // ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
 }
 
 inline void exec_concatenate(
@@ -1155,6 +1493,13 @@ inline void exec_logical_not(
   st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.x), s));
 }
 
+inline void exec_bitwise_invert(
+    const BitwiseInvertNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(n.out, bitwise_invert(st.const_tensor_ref(n.x), s));
+}
+
 inline void exec_logical_and(
     const LogicalAndNode& n,
     ExecutionState& st,
@@ -1168,6 +1513,30 @@ inline void
 exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_and(
+    const BitwiseAndNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_bitwise_or(const BitwiseOrNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, bitwise_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_xor(
+    const BitwiseXorNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_xor(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -1195,6 +1564,11 @@ exec_floor(const FloorNode& n, ExecutionState& st, StreamOrDevice s) {
 
 inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, ceil(st.const_tensor_ref(n.x), s));
+}
+
+inline void
+exec_trunc(const TruncNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, trunc(st.const_tensor_ref(n.x), s));
 }
 
 inline void
@@ -1434,6 +1808,26 @@ exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, argmax(x, n.axis, n.keepdims, s));
 }
 
+inline void exec_random_bits(
+    const RandomBitsNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  // random::bits supports width (bytes/element) in {1, 2, 4} ->
+  // uint8/uint16/uint32.
+  if (n.width != 1 && n.width != 2 && n.width != 4) {
+    throw std::runtime_error("random_bits: width must be 1, 2, or 4");
+  }
+  auto shape = to_shape(n.shape, st);
+  // uint32 (4 bytes, the widest supported) is a safe upper bound for the guard.
+  check_allocation_bounded(shape, uint32, "random_bits");
+  std::optional<array> key = std::nullopt;
+  if (n.seed.has_value()) {
+    key = random::key(
+        static_cast<uint64_t>(st.const_value_ref<int32_t>(n.seed.value())));
+  }
+  st.set_tensor(n.out, random::bits(shape, n.width, key, s));
+}
+
 inline void
 exec_argmin(const ArgminNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -1499,6 +1893,13 @@ inline void exec_all(const AllNode& n, ExecutionState& st, StreamOrDevice s) {
   } else {
     st.set_tensor(n.out, all(x, axes, n.keepdims, s));
   }
+}
+
+inline void exec_roll(const RollNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto shifts = to_shape(n.shift, st);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, roll(x, shifts, axes, s));
 }
 
 inline void
@@ -1567,13 +1968,70 @@ class Interpreter {
     size_t idx = 0;
     for (const auto& instr : chain) {
       st.begin_op(idx, op_name(instr.op));
-      dispatch(instr, st, stream);
+      if (instr.op == OpCode::SCAN) {
+        exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+      } else if (instr.op == OpCode::IF) {
+        exec_if(prog, std::get<IfNode>(instr.node), st, stream);
+      } else {
+        dispatch(instr, st, stream);
+      }
       st.end_op();
       ++idx;
     }
   }
 
  private:
+  void exec_if(
+      const MLXProgram& prog,
+      const IfNode& n,
+      ExecutionState& st,
+      StreamOrDevice s) const {
+    // Select one branch at runtime based on the integer condition.
+    // Nonzero -> then_chain, zero -> else_chain. The selected chain's
+    // instructions write the output slot(s) directly.
+    const int64_t cond = resolve_int(n.cond, st);
+    const uint32_t chain_idx =
+        (cond != 0) ? n.then_chain_idx : n.else_chain_idx;
+    run_chain(prog, chain_idx, st, s);
+  }
+
+  void exec_scan(
+      const MLXProgram& prog,
+      const ScanNode& n,
+      ExecutionState& st,
+      StreamOrDevice s) const {
+    int axis = n.scan_axis;
+    int T_int = st.const_tensor_ref(n.originals[0]).shape(axis);
+    size_t T = static_cast<size_t>(T_int);
+    size_t num_outputs = n.outputs.size();
+
+    std::vector<std::vector<::mlx::core::array>> collected(num_outputs);
+    for (size_t i = 0; i < num_outputs; ++i) {
+      collected[i].reserve(T);
+    }
+
+    for (size_t t = 0; t < T; ++t) {
+      for (size_t i = 0; i < n.originals.size(); ++i) {
+        st.set_tensor(
+            n.sliced[i],
+            ::mlx::core::take(
+                st.const_tensor_ref(n.originals[i]),
+                static_cast<int>(t),
+                axis,
+                s));
+      }
+
+      run_chain(prog, static_cast<uint32_t>(n.body_chain_idx), st, s);
+
+      for (size_t i = 0; i < num_outputs; ++i) {
+        collected[i].push_back(st.const_tensor_ref(n.outputs[i]));
+      }
+    }
+
+    for (size_t i = 0; i < num_outputs; ++i) {
+      st.set_tensor(n.outputs[i], ::mlx::core::stack(collected[i], axis, s));
+    }
+  }
   void dispatch(const Instruction& instr, ExecutionState& st, StreamOrDevice s)
       const {
     switch (instr.op) {
@@ -1613,6 +2071,10 @@ class Interpreter {
         break;
       case OpCode::SDPA:
         ops::exec_sdpa(std::get<SdpaNode>(instr.node), st, s);
+        break;
+      case OpCode::UPDATE_AND_ATTEND:
+        ops::exec_update_and_attend(
+            std::get<UpdateAndAttendNode>(instr.node), st, s);
         break;
       case OpCode::ADD:
         ops::exec_add(std::get<AddNode>(instr.node), st, s);
@@ -1705,6 +2167,9 @@ class Interpreter {
       case OpCode::TRANSPOSE:
         ops::exec_transpose(std::get<TransposeNode>(instr.node), st, s);
         break;
+      case OpCode::FLIP:
+        ops::exec_flip(std::get<FlipNode>(instr.node), st, s);
+        break;
       case OpCode::AS_STRIDED:
         ops::exec_as_strided(std::get<AsStridedNode>(instr.node), st, s);
         break;
@@ -1731,6 +2196,9 @@ class Interpreter {
         break;
       case OpCode::ARGMAX:
         ops::exec_argmax(std::get<ArgmaxNode>(instr.node), st, s);
+        break;
+      case OpCode::RANDOM_BITS:
+        ops::exec_random_bits(std::get<RandomBitsNode>(instr.node), st, s);
         break;
       case OpCode::SLICE_UPDATE:
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);
@@ -1762,11 +2230,24 @@ class Interpreter {
       case OpCode::LOGICAL_NOT:
         ops::exec_logical_not(std::get<LogicalNotNode>(instr.node), st, s);
         break;
+      case OpCode::BITWISE_INVERT:
+        ops::exec_bitwise_invert(
+            std::get<BitwiseInvertNode>(instr.node), st, s);
+        break;
       case OpCode::LOGICAL_AND:
         ops::exec_logical_and(std::get<LogicalAndNode>(instr.node), st, s);
         break;
       case OpCode::LOGICAL_OR:
         ops::exec_logical_or(std::get<LogicalOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_AND:
+        ops::exec_bitwise_and(std::get<BitwiseAndNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_OR:
+        ops::exec_bitwise_or(std::get<BitwiseOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_XOR:
+        ops::exec_bitwise_xor(std::get<BitwiseXorNode>(instr.node), st, s);
         break;
       case OpCode::TRI:
         ops::exec_tri(std::get<TriNode>(instr.node), st, s);
@@ -1783,6 +2264,9 @@ class Interpreter {
         break;
       case OpCode::CEIL:
         ops::exec_ceil(std::get<CeilNode>(instr.node), st, s);
+        break;
+      case OpCode::TRUNC:
+        ops::exec_trunc(std::get<TruncNode>(instr.node), st, s);
         break;
       case OpCode::SQUARE:
         ops::exec_square(std::get<SquareNode>(instr.node), st, s);
@@ -1933,6 +2417,9 @@ class Interpreter {
       case OpCode::REPEAT:
         ops::exec_repeat(std::get<RepeatNode>(instr.node), st, s);
         break;
+      case OpCode::ROLL:
+        ops::exec_roll(std::get<RollNode>(instr.node), st, s);
+        break;
       case OpCode::SORT:
         ops::exec_sort(std::get<SortNode>(instr.node), st, s);
         break;
@@ -1948,6 +2435,18 @@ class Interpreter {
       case OpCode::QUANTIZED_MATMUL:
         ops::exec_quantized_matmul(
             std::get<QuantizedMatmulNode>(instr.node), st, s);
+        break;
+      case OpCode::SCATTER_ADD:
+        ops::exec_scatter_add(std::get<ScatterAddNode>(instr.node), st, s);
+        break;
+      case OpCode::GATHER_MM:
+        ops::exec_gather_mm(std::get<GatherMmNode>(instr.node), st, s);
+        break;
+      case OpCode::GATHER_QMM:
+        ops::exec_gather_qmm(std::get<GatherQmmNode>(instr.node), st, s);
+        break;
+      case OpCode::METAL_KERNEL:
+        ops::exec_metal_kernel(std::get<MetalKernelNode>(instr.node), st, s);
         break;
       default:
         throw std::runtime_error(

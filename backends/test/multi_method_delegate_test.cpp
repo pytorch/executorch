@@ -7,6 +7,7 @@
 
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/executor/program.h>
@@ -16,6 +17,7 @@
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/runner_util/inputs.h>
 
+using executorch::backends::xnnpack::weight_cache_option_key;
 using executorch::backends::xnnpack::workspace_sharing_mode_option_key;
 using executorch::backends::xnnpack::WorkspaceSharingMode;
 using executorch::backends::xnnpack::xnnpack_backend_key;
@@ -106,7 +108,9 @@ class ETPTEMethodRunBaseTest : public ::testing::Test {
   }
 };
 
-class XNNPACKMultiDelegateTest : public ETPTEMethodRunBaseTest {
+class XNNPACKMultiDelegateTest : public ETPTEMethodRunBaseTest,
+                                 public ::testing::WithParamInterface<
+                                     std::tuple<WorkspaceSharingMode, bool>> {
  protected:
   std::string kTestPTE1Path, kTestPTE2Path;
   std::string kMethodName;
@@ -114,6 +118,7 @@ class XNNPACKMultiDelegateTest : public ETPTEMethodRunBaseTest {
 
   void SetUp() override {
     ETPTEMethodRunBaseTest::SetUp();
+
     const char* pte1_path =
         std::getenv("ET_XNNPACK_GENERATED_ADD_LARGE_PTE_PATH");
     if (pte1_path == nullptr) {
@@ -164,12 +169,16 @@ class XNNPACKMultiDelegateTest : public ETPTEMethodRunBaseTest {
     ASSERT_EQ(count, num_threads);
   }
 
-  void setWorkspaceSharingMode(WorkspaceSharingMode mode) {
-    executorch::runtime::runtime_init();
-
-    BackendOptions<1> backend_options;
+  // Set both the workspace sharing mode and the weight cache flag in a single
+  // call so each parameterized case starts from a clean, fully-specified
+  // backend option state. set_option is process-global, and tests run
+  // sequentially in the same process, so we must overwrite both options every
+  // time to prevent leakage between cases.
+  void setOptions(WorkspaceSharingMode mode, bool weight_cache_enabled) {
+    BackendOptions<2> backend_options;
     backend_options.set_option(
         workspace_sharing_mode_option_key, static_cast<int>(mode));
+    backend_options.set_option(weight_cache_option_key, weight_cache_enabled);
 
     auto status = executorch::runtime::set_option(
         xnnpack_backend_key, backend_options.view());
@@ -177,20 +186,47 @@ class XNNPACKMultiDelegateTest : public ETPTEMethodRunBaseTest {
   }
 };
 
-TEST_F(XNNPACKMultiDelegateTest, MultipleThreadsSharingDisabled) {
-  setWorkspaceSharingMode(WorkspaceSharingMode::Disabled);
+// Parameterized over (WorkspaceSharingMode, weight_cache_enabled) to exercise
+// every combination of XNNPACK concurrency-affecting options. The
+// weight_cache_enabled=true cases reproduce the race condition fixed by
+// D105753995 (TSAN-detected data race on XNNWeightsCache::is_finalized_ /
+// named_data_map_ when init() is called concurrently). The
+// weight_cache_enabled=false cases provide regression coverage for the
+// non-cache concurrent path.
+TEST_P(XNNPACKMultiDelegateTest, MultipleThreadsStress) {
+  const auto [sharing_mode, weight_cache_enabled] = GetParam();
+  setOptions(sharing_mode, weight_cache_enabled);
   runStressTest();
 }
 
-TEST_F(XNNPACKMultiDelegateTest, MultipleThreadsPerModelSharing) {
-  setWorkspaceSharingMode(WorkspaceSharingMode::PerModel);
-  runStressTest();
-}
-
-TEST_F(XNNPACKMultiDelegateTest, MultipleThreadsGlobalSharing) {
-  setWorkspaceSharingMode(WorkspaceSharingMode::Global);
-  runStressTest();
-}
+INSTANTIATE_TEST_SUITE_P(
+    AllConfigs,
+    XNNPACKMultiDelegateTest,
+    ::testing::Combine(
+        ::testing::Values(
+            WorkspaceSharingMode::Disabled,
+            WorkspaceSharingMode::PerModel,
+            WorkspaceSharingMode::Global),
+        ::testing::Bool()),
+    [](const ::testing::TestParamInfo<XNNPACKMultiDelegateTest::ParamType>&
+           info) {
+      const auto sharing_mode = std::get<0>(info.param);
+      const auto weight_cache_enabled = std::get<1>(info.param);
+      const char* mode_name = "Unknown";
+      switch (sharing_mode) {
+        case WorkspaceSharingMode::Disabled:
+          mode_name = "SharingDisabled";
+          break;
+        case WorkspaceSharingMode::PerModel:
+          mode_name = "PerModelSharing";
+          break;
+        case WorkspaceSharingMode::Global:
+          mode_name = "GlobalSharing";
+          break;
+      }
+      return std::string(mode_name) +
+          (weight_cache_enabled ? "_WeightCacheOn" : "_WeightCacheOff");
+    });
 
 // TODO(T208989291): Add more tests here. For example,
 // - PTEs with multiple methods

@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -21,7 +22,7 @@ namespace vkcompute {
 // Shader dispatch utilities
 //
 
-utils::uvec3 pick_q8ta_im2col_global_wg_size(
+GlobalWorkGrid pick_q8ta_im2col_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -31,31 +32,32 @@ utils::uvec3 pick_q8ta_im2col_global_wg_size(
 
   const ValueRef im2col_output = args.at(0).refs.at(0);
 
-  std::vector<int64_t> im2col_sizes = graph->sizes_of(im2col_output);
-  const uint32_t K = utils::safe_downcast<uint32_t>(im2col_sizes[0]);
-  const uint32_t H = utils::safe_downcast<uint32_t>(im2col_sizes[1]);
-  const uint32_t W = utils::safe_downcast<uint32_t>(im2col_sizes[2]);
+  const uint32_t N = graph->size_at<uint32_t>(-4, im2col_output);
+  const uint32_t K = graph->size_at<uint32_t>(-3, im2col_output);
+  const uint32_t H = graph->size_at<uint32_t>(-2, im2col_output);
+  const uint32_t W = graph->size_at<uint32_t>(-1, im2col_output);
 
   const uint32_t K4 = utils::div_up_4(K);
   const uint32_t W4 = utils::div_up_4(W);
 
   // Each thread handles one 4x4 block in the output
-  return {K4 * W4 * H, 1, 1};
+  return graph->create_linear_gwg(
+      utils::safe_downcast<uint32_t>(static_cast<uint64_t>(K4) * W4 * H * N));
 }
 
-utils::uvec3 pick_q8ta_im2col_local_wg_size(
+LocalWorkGroup pick_q8ta_im2col_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
   (void)args;
   (void)resize_args;
-  (void)global_workgroup_size;
+  (void)gwg;
 
-  return {64, 1, 1};
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 //
@@ -69,6 +71,7 @@ std::vector<int64_t> calculate_q8ta_im2col_sizes(
     const ValueRef& kernel_size,
     const ValueRef& groups) {
   std::vector<int64_t> in_sizes = graph->sizes_of(input);
+  const int64_t batch = utils::val_at(-4, in_sizes);
   const int64_t in_channels = utils::val_at(-3, in_sizes);
 
   std::vector<int64_t> out_sizes = graph->sizes_of(output);
@@ -92,7 +95,61 @@ std::vector<int64_t> calculate_q8ta_im2col_sizes(
   const int64_t W = utils::align_up_4(out_width);
   const int64_t H = out_height;
 
-  return {K, H, W};
+  return {batch, K, H, W};
+}
+
+//
+// Resize
+//
+
+// resize_args = { input, kernel_size, stride, padding, dilation, groups }
+//
+// The im2col scratch tensor is [N, K, H_out, align_up_4(W_out)] where K (the
+// flattened conv window, channel/kernel-derived) is shape-independent and
+// H_out/W_out are the conv output spatial dims. The downstream PW GEMM that
+// consumes this scratch is resized separately (it preserves H/W). Without this,
+// the scratch freezes at the build-time upper bound and feeds garbage rows into
+// the GEMM. Recompute H_out/W_out from the CURRENT input (NOT the conv output
+// tensor, which may itself still be frozen at this point in the resize order).
+void resize_q8ta_im2col_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef im2col_out = args.at(0).refs.at(0);
+  const ValueRef in = resize_args.at(0);
+  const ValueRef kernel_size = resize_args.at(1);
+  const ValueRef stride = resize_args.at(2);
+  const ValueRef padding = resize_args.at(3);
+  const ValueRef dilation = resize_args.at(4);
+  const ValueRef groups = resize_args.at(5);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  const int64_t batch = utils::val_at(-4, in_sizes);
+
+  // Conv output H/W from the current input.
+  const std::vector<int64_t> out_hw = calc_out_sizes_hw(
+      *graph,
+      in_sizes,
+      kernel_size,
+      /*kernel_size_only=*/true,
+      {stride, padding, dilation, dilation},
+      /*transposed=*/false);
+  const int64_t out_height = out_hw.at(0);
+  const int64_t out_width = out_hw.at(1);
+
+  // K (flattened conv window) is shape-independent — recompute from channels +
+  // kernel exactly as calculate_q8ta_im2col_sizes does.
+  const int64_t in_channels = utils::val_at(-3, in_sizes);
+  const int64_t groups_val = graph->extract_scalar<int64_t>(groups);
+  const int64_t in_channels_per_group = in_channels / groups_val;
+  const auto kernel_size_list = graph->get_int_list(kernel_size);
+  const int64_t flattened_kernel_len = utils::align_up_4(
+      in_channels_per_group * kernel_size_list->at(0) *
+      kernel_size_list->at(1));
+  const int64_t K = flattened_kernel_len * groups_val;
+  const int64_t W = utils::align_up_4(out_width);
+
+  graph->virtual_resize(im2col_out, {batch, K, out_height, W});
 }
 
 //
@@ -158,8 +215,8 @@ void add_q8ta_im2col_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_im2col_global_wg_size,
-      pick_q8ta_im2col_local_wg_size,
+      pick_q8ta_im2col_gwg,
+      pick_q8ta_im2col_lwg,
       // Inputs and Outputs
       {{packed_int8_im2col, vkapi::kWrite}, {packed_int8_input, vkapi::kRead}},
       // Shader params buffers
@@ -168,10 +225,11 @@ void add_q8ta_im2col_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args
-      {},
-      // Resizing Logic
-      nullptr));
+      // Resize args: { input, kernel_size, stride, padding, dilation, groups }
+      {packed_int8_input, kernel_size, stride, padding, dilation, groups},
+      // Resizing Logic: recompute the im2col scratch dims from the current
+      // input
+      resize_q8ta_im2col_node));
 }
 
 //
@@ -272,7 +330,14 @@ void q8ta_conv2d_im2col(
       packed_bias,
       activation_type_val,
       packed_int8_output,
-      groups_val);
+      groups_val,
+      // Original activation + conv geometry so the PW output H/W is recomputed
+      // from the true conv result, not the width-padded im2col scratch.
+      packed_int8_input,
+      kernel_size,
+      stride,
+      padding,
+      dilation);
 }
 
 REGISTER_OPERATORS {

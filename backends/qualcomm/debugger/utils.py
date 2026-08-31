@@ -4,15 +4,19 @@ import re
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from typing import Sequence, Tuple
+
+# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
+# here rather than in the package's __init__.
+from executorch.backends.qualcomm import setup_qnn_sdk
+
+setup_qnn_sdk()
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import pandas as pd
 import torch
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import dump_context_from_pte
-
 from graphviz import Digraph
 
 
@@ -211,7 +215,7 @@ class QnnTool:
         self.adb = adb
         self.sample_input = sample_input
         self.build_folder = build_folder
-        self.root = str(Path(__file__).resolve().parents[3])
+        self.root = os.getcwd()
         self.config = {
             "backend_extension_config": {
                 "backend_extensions": {

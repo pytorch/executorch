@@ -27,11 +27,11 @@ touch ${llama_artifacts}/params.json
 echo '{"dim": 64, "n_layers": 5, "n_heads": 8, "n_kv_heads": 4, "vocab_size": 512, "multiple_of": 4, "max_seq_len": 512}' > ${llama_artifacts}/params.json
 
 # Checks e2e accuracy
-expected=$($PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_260k --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir . --llama_artifacts $llama_artifacts --enable_x86_64 | grep "Model CI result:")
+expected=$($PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_260k --soc_model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir . --llama_artifacts $llama_artifacts --enable_x86_64 | grep "Model CI result:")
 exit_code1=$?
 
 # Checks accuracy with precompiled
-output=$($PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_260k --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir $PTE_ARTIFACT --llama_artifacts $llama_artifacts --enable_x86_64 --pre_gen_pte $PTE_ARTIFACT | grep "Model CI result:")
+output=$($PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_260k --soc_model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir $PTE_ARTIFACT --llama_artifacts $llama_artifacts --enable_x86_64 --pre_gen_pte $PTE_ARTIFACT | grep "Model CI result:")
 exit_code2=$?
 
 if [[ "$output" == "$expected" ]]; then

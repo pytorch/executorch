@@ -14,13 +14,12 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from functools import wraps
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional
 
-import torch
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
-from executorch.backends.qualcomm.utils.utils import (
+from executorch.backends.qualcomm.utils.check_qnn_version import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
@@ -34,12 +33,18 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     StaticLLMQuantRecipe,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch.utils.data import DataLoader
 from transformers import AutoConfig
 
 
 class Mode(Enum):
+    # AR-N graph compiled and deployed for runtime.
     PREFILL = 1
+    # AR-1 graph compiled and deployed for runtime.
     DECODE = 2
+    # Full AR sequence mode; used for quantization, never deployed.
+    # After convert_pt2e, its scale/zp are propagated to DECODE and PREFILL via _encoding_override.
+    CALIBRATE = 3
 
 
 def log_info(func):
@@ -83,9 +88,8 @@ def process_model_args(
         model_args: ModelArgs object to be modified.
         quant_recipe: Quantization recipe to be used.
         config: LLMModelConfig object to be used.
-        mode: Mode of operation (PREFILL or DECODE).
+        mode: Mode of operation (PREFILL, DECODE, or CALIBRATE).
     """
-    # TODO: support batch inputs if necessary
     if mode == Mode.DECODE:
         ar_len = (
             # To get better performance, we round up to the nearest power of 2.
@@ -95,13 +99,20 @@ def process_model_args(
             if control_args.model_mode == "lookahead"
             else 1
         )
-    else:
+    elif mode == Mode.PREFILL:
         ar_len = control_args.prefill_ar_len
+    elif mode == Mode.CALIBRATE:
+        ar_len = control_args.max_context_len
+    else:
+        raise ValueError(f"Unsupported mode: {mode}")
 
-    model_args.max_batch_size = 1
+    # TODO: support batch inputs for runtime mode if necessary
+    model_args.max_batch_size = control_args.batch_size if mode == Mode.CALIBRATE else 1
     model_args.max_seq_len = control_args.max_seq_len
     model_args.max_context_len = control_args.max_context_len
-    model_args.use_kv_cache = control_args.max_context_len != ar_len
+    model_args.use_kv_cache = (
+        control_args.max_context_len != ar_len or mode == Mode.CALIBRATE
+    )
     model_args.enable_r3 = config.r3
     model_args.ar_len = ar_len
     model_args.kv_io_bit_width = quant_recipe.get_kv_io_bit_width()
@@ -127,19 +138,15 @@ def get_model_specific_kwargs(control_args: argparse.Namespace, config: LLMModel
 
     """
     kwargs = {}
-    # Vision-Language Model (VLM)
-    # For multimodal models, we need the special token ID that represents image placeholders
-    # in the input sequence. This token is used to mark positions where image embeddings
+    # For multimodal models, we need the special token ID that represents modality placeholders
+    # in the input sequence. This token is used to mark positions where modality embeddings
     # should be inserted during inference.
+    if hasattr(config, AUDIO_ENCODER):
+        hf_config = AutoConfig.from_pretrained(config.repo_id)
+        kwargs["audio_token_id"] = hf_config.audio_token_index
     if hasattr(config, VISION_ENCODER):
         hf_config = AutoConfig.from_pretrained(config.repo_id)
         kwargs["image_token_id"] = hf_config.image_token_id
-    # TODO: Support Audio modality
-    if hasattr(config, AUDIO_ENCODER):
-        raise NotImplementedError(
-            "Audio encoder modality is not currently supported. "
-            "Please provide a valid audio_token_id in kwargs."
-        )
     return kwargs
 
 
@@ -158,17 +165,19 @@ class Processor:
 @dataclass
 class Request:
     @dataclass
-    class CalibrationData:
-        datasets: List[Tuple[torch.Tensor]] = None
-        intermediate_outputs: List[Tuple[torch.Tensor]] = None
-        qdq_intermediate_outputs: List[Tuple[torch.Tensor]] = None
+    class QuantizationData:
+        calib_loader: Optional[DataLoader] = None
+        intermediate_outputs: Optional[DataLoader] = None
+        qdq_intermediate_outputs: Optional[DataLoader] = None
+        train_loader: Optional[DataLoader] = None
+        val_loader: Optional[DataLoader] = None
 
     @dataclass
     class Data:
         compile_spec: List[CompileSpec] = None
         pte_filename: str = None
         custom_annotation: Any = ()
-        calibration_data: Request.CalibrationData = None
+        quantization_data: Request.QuantizationData = None
         tokenizer: callable = None
         skip_quantize: bool = False
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend

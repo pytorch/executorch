@@ -8,6 +8,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import cast, Dict, List, Optional, Set, Tuple
 
+# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
+# here rather than in the package's __init__. Called from this module too because it does not
+# import node_visitor before the adaptor, so it cannot leave the call to that module.
+from executorch.backends.qualcomm import setup_qnn_sdk
+
+setup_qnn_sdk()
+
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -283,7 +290,21 @@ def _qspec_port_encoding_type(node: Node, qspec: QuantizationSpecBase):
     qscheme = qspec.qscheme
 
     if qscheme in [torch.per_tensor_symmetric, torch.per_tensor_affine]:
-        if qspec.dtype == torch.int8 and qspec.quant_max - qspec.quant_min <= 15:
+        # quant_max/quant_min are None for non-integer activations (e.g. uint16 in
+        # 16a2w) whose range is not expressed as a fixed integer bound; skip the
+        # 4-bit BW_SCALE_OFFSET special-casing for those tensors.
+        if (
+            qspec.dtype == torch.int8
+            and qspec.quant_max is not None
+            and qspec.quant_min is not None
+            and (quant_range := qspec.quant_max - qspec.quant_min) <= 15
+        ):
+            if quant_range <= 3:
+                raise ValueError(
+                    f"2-bit quantization (range={quant_range}) "
+                    "does not support per-tensor encoding. "
+                    "Use per-channel quantization instead."
+                )
             encoding_type = (
                 PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET
             )

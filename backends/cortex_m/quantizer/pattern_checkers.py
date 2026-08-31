@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast
-
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
@@ -13,6 +11,7 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     coerce_int_pair,
     is_channel_broadcast,
     is_channels_last,
+    is_foldable_alpha,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
@@ -31,9 +30,12 @@ class CortexMAddMulCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
         """
-        Checks that the pattern does not perform unsupported broadcasting.
+        Checks that the pattern does not perform unsupported broadcasting, and
+        that any alpha on an add/sub is one quantized_add can fold.
         """
         for node in pattern:
+            if not is_foldable_alpha(node.kwargs.get("alpha", 1)):
+                return False
             if len(node.all_input_nodes) == 2:
                 t1 = get_first_fake_tensor(node.all_input_nodes[0])
                 t2 = get_first_fake_tensor(node.all_input_nodes[1])
@@ -56,6 +58,48 @@ class CortexMAddMulCheck(PatternCheck):
         ) and PatternCheck.is_per_tensor(quantization_config.get_output_act_qspec())
         is_int8 = cls.is_int8_activations(quantization_config)
         return is_per_tensor and is_int8
+
+
+class CortexMDivCheck(PatternCheck):
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        """
+        Reject any broadcasting. Division is not commutative, so the operand
+        swapping used to support channel broadcast in add/mul does not apply;
+        only identically shaped inputs are supported.
+        """
+        for node in pattern:
+            if len(node.all_input_nodes) == 2:
+                t1 = get_first_fake_tensor(node.all_input_nodes[0])
+                t2 = get_first_fake_tensor(node.all_input_nodes[1])
+                if t1.shape != t2.shape:
+                    return False
+
+        return True
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        """
+        Checks that the quantization config uses per-tensor int8 or int16
+        quantization (the div kernel supports both).
+        """
+        input_qspec = quantization_config.get_input_act_qspec()
+        output_qspec = quantization_config.get_output_act_qspec()
+        is_per_tensor = PatternCheck.is_per_tensor(
+            input_qspec
+        ) and PatternCheck.is_per_tensor(output_qspec)
+        allowed_dtypes = (torch.int8, torch.int16)
+        is_valid_dtype = (
+            isinstance(input_qspec, QuantizationSpec)
+            and isinstance(output_qspec, QuantizationSpec)
+            and input_qspec.dtype in allowed_dtypes
+            and output_qspec.dtype in allowed_dtypes
+            and input_qspec.dtype == output_qspec.dtype
+        )
+        return is_per_tensor and is_valid_dtype
 
 
 class CortexMConv2DCheck(PatternCheck):
@@ -97,6 +141,25 @@ class CortexMLinearCheck(PatternCheck):
         """
         is_int8 = cls.is_int8_activations(quantization_config)
         return is_int8
+
+
+class CortexMActivationCheck(PatternCheck):
+    """Accept the standalone elementwise activations that the LUT-based
+    cortex_m.quantized_activation op handles uniformly.
+
+    The kernel is shape-agnostic and the LUT is computed AoT from per-tensor
+    qparams, so the only thing to enforce is int8 per-tensor quantization.
+    """
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        is_int8 = cls.is_int8_activations(quantization_config)
+        is_per_tensor = cls.is_per_tensor(
+            quantization_config.get_input_act_qspec()
+        ) and cls.is_per_tensor(quantization_config.get_output_act_qspec())
+        return is_int8 and is_per_tensor
 
 
 class CortexMSoftmaxCheck(PatternCheck):
@@ -231,8 +294,8 @@ class CortexMAvgPool2DCheck(PatternCheck):
         if not pattern:
             return False
         node = pattern[0]
-        ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-        return not ceil_mode
+        divisor_override = node.args[6] if len(node.args) > 6 else None
+        return divisor_override is None
 
     @classmethod
     def check_quantization_config(

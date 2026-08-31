@@ -4,62 +4,121 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from enum import auto, Enum
-from typing import Any
-
-from executorch.exir._warnings import deprecated
+from typing import Any, cast
 
 
 class SoftmaxDecompositionConfig(Enum):
+    """Options for decomposing softmax before lowering."""
+
     MASKED = auto()  # Stable softmax + masked fill decomposition
-    UNSTABLE = auto()  # Unstable softmax, no masked fill decomposition
     STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
-class FuseDuplicateUsersConfig(Enum):
-    ENABLED = auto()
-    DISABLED = auto()
+class LeakyReLULoweringConfig(Enum):
+    """Options for lowering quantized LeakyReLU."""
+
+    TABLE = auto()  # Lower quantized leaky_relu with TOSA TABLE
+    DECOMPOSE = auto()  # Lower leaky_relu into clamp, mul, and add
+
+
+class SDPASafeSoftmaxGuardPolicy(Enum):
+    """Options for preserving or removing SDPA safe-softmax guards."""
+
+    PRESERVE = auto()  # Preserve safe-softmax all--inf row guards
+    REMOVE = auto()  # Remove exact expanded safe-softmax guards
+    REMOVE_WHEN_PROVEN = auto()  # Preserve unless a proof is available
+
+
+@dataclass
+class QuantizeInfConfig:
+    """Replacement values for infinities before quantization.
+
+    Infinities cannot be quantized directly, so the Arm pipeline replaces them
+    with finite values before running the quantization passes.
+
+    Args:
+        neg_inf (float): Value used for ``-inf``.
+        pos_inf (float): Value used for ``inf``.
+
+    """
+
+    neg_inf: float = -256.0
+    pos_inf: float = 255.0
 
 
 @dataclass
 class ArmPassPipelineConfig:
-    softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
-    fuse_duplicate_users: FuseDuplicateUsersConfig = FuseDuplicateUsersConfig.ENABLED
+    """Options for tuning the Arm pass pipeline.
 
-    @deprecated(
-        "The stable softmax decomposition is now supported by all arm targets and will be made default in a future release. Overwrite the default config using `compile_spec.set_pass_pipeline_config(ArmPassPipelineConfig())` to use the stable algorithm and avoid this error."
-    )
-    def disable_masked_softmax(self) -> None:
-        """
-            .. warning::
+    Args:
+        softmax (SoftmaxDecompositionConfig): Softmax decomposition mode.
+        leaky_relu (LeakyReLULoweringConfig): Quantized leaky_relu lowering
+            mode.
+        quantize_inf (QuantizeInfConfig): Values used when replacing
+            infinities before quantization.
+        sdpa_safe_softmax_guard (SDPASafeSoftmaxGuardPolicy): SDPA
+            safe-softmax guard policy.
 
-        The stable softmax decomposition is now supported by all arm targets and will be made default in a future release. Overwrite the default config using `compile_spec.set_pass_pipeline_config(ArmPassPipelineConfig())` to use the stable algorithm and avoid this error."
-        """
-
-        self.softmax = SoftmaxDecompositionConfig.STABLE
-
-    def disable_fuse_duplicate_users(self) -> None:
-        self.fuse_duplicate_users = FuseDuplicateUsersConfig.DISABLED
-
-    def is_default(self) -> bool:
-        return (
-            self.softmax is SoftmaxDecompositionConfig.MASKED
-            and self.fuse_duplicate_users is FuseDuplicateUsersConfig.ENABLED
+    Example:
+        compile_spec.set_pass_pipeline_config(
+            ArmPassPipelineConfig(
+                softmax=SoftmaxDecompositionConfig.STABLE,
+                leaky_relu=LeakyReLULoweringConfig.DECOMPOSE,
+                quantize_inf=QuantizeInfConfig(
+                    neg_inf=-100.0,
+                    pos_inf=100.0,
+                ),
+            )
         )
 
-    def to_dict(self) -> dict[str, str]:
-        return {f.name: getattr(self, f.name).name for f in fields(self)}
+    """
+
+    softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
+    leaky_relu: LeakyReLULoweringConfig = LeakyReLULoweringConfig.DECOMPOSE
+    quantize_inf: QuantizeInfConfig = field(default_factory=QuantizeInfConfig)
+    sdpa_safe_softmax_guard: SDPASafeSoftmaxGuardPolicy = (
+        SDPASafeSoftmaxGuardPolicy.PRESERVE
+    )
+
+    def is_default(self) -> bool:
+        """Return true when all options are set to their defaults."""
+        return (
+            self.softmax is SoftmaxDecompositionConfig.MASKED
+            and self.leaky_relu is LeakyReLULoweringConfig.DECOMPOSE
+            and (self.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.PRESERVE)
+            and self.quantize_inf == QuantizeInfConfig()
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dictionary."""
+        data: dict[str, Any] = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if is_dataclass(value):
+                data[f.name] = asdict(cast(Any, value))
+            elif isinstance(value, Enum):
+                data[f.name] = value.name
+            else:
+                raise AssertionError(f"Cannot serialize {f.name}")
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ArmPassPipelineConfig":
+        """Create a config from a serialized dictionary."""
         config = cls()
         for f in fields(cls):
             raw_value = data.get(f.name)
             if raw_value is None:
                 continue
-            enum_type = f.type
-            setattr(config, f.name, enum_type[raw_value])
+
+            if f.name == "quantize_inf":
+                config.quantize_inf = QuantizeInfConfig(**raw_value)
+            else:
+                # The field is an enum
+                enum_type = f.type
+                setattr(config, f.name, enum_type[raw_value])
         return config
 
     def serialize(self) -> bytes:
@@ -67,5 +126,6 @@ class ArmPassPipelineConfig:
         return json.dumps(self.to_dict()).encode()
 
     def __repr__(self):
+        """Return a compact field representation."""
         fields = ", ".join(f"{name}={value!r}" for name, value in self.__dict__.items())
         return f"({fields})"

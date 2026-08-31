@@ -13,6 +13,21 @@
 
 namespace vkcompute {
 
+// quantize / dequantize are elementwise: output shape == input shape. Without a
+// resize function the DynamicDispatchNode freezes the output at the build-time
+// upper bound, so on a dynamic-shape graph (e.g. a 238-row input fed to a
+// 241-allocated graph) the FIRST quantize_per_tensor freezes everything
+// downstream at 241. Propagate the input's current sizes to the output.
+void resize_q8ta_qdq_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  graph->virtual_resize(out, graph->sizes_of(in));
+}
+
 void add_q8ta_quantize_node(
     ComputeGraph& graph,
     const ValueRef fp_input,
@@ -51,7 +66,7 @@ void add_q8ta_quantize_node(
   const BlockConfig inp_block_config =
       create_block_config_from_other(graph, fp_input, outp_block_config);
 
-  // Cast block config to ValueRef for pick_*_global_wg_with_block_config
+  // Cast block config to ValueRef for pick_*_gwg_with_block_config
   // Use inp_block_config since shader uses inp_block_config for indexing
   const ValueRef block_config_ref =
       static_cast<ValueRef>(inp_block_config.as_packed_int());
@@ -59,15 +74,15 @@ void add_q8ta_quantize_node(
   // Choose dispatch function based on FP input storage type:
   // - Buffer: use linear dispatch (better performance)
   // - Texture: use extents-style 3D dispatch (better performance)
-  auto pick_global_wg_size = (inp_storage == utils::kBuffer)
-      ? pick_linear_global_wg_with_block_config
-      : pick_extents_global_wg_with_block_config;
+  auto pick_gwg = (inp_storage == utils::kBuffer)
+      ? pick_linear_gwg_with_block_config
+      : pick_extents_gwg_with_block_config;
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_global_wg_size,
-      pick_square_local_wg_with_block_config,
+      pick_gwg,
+      pick_square_lwg_with_block_config,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite}, {fp_input, vkapi::kRead}},
       // Shader params buffers
@@ -80,7 +95,9 @@ void add_q8ta_quantize_node(
        inp_block_config.as_packed_int(),
        outp_block_config.as_packed_int()},
       // Resize args
-      {block_config_ref}));
+      {block_config_ref},
+      // Resize function: output shape == input shape (elementwise).
+      resize_q8ta_qdq_node));
 }
 
 void add_q8ta_dequantize_node(
@@ -121,7 +138,7 @@ void add_q8ta_dequantize_node(
   const BlockConfig inp_block_config = create_block_config_from_other(
       graph, packed_int8_input, outp_block_config);
 
-  // Cast block config to ValueRef for pick_*_global_wg_with_block_config
+  // Cast block config to ValueRef for pick_*_gwg_with_block_config
   // Use inp_block_config since shader uses inp_block_config for indexing
   const ValueRef block_config_ref =
       static_cast<ValueRef>(inp_block_config.as_packed_int());
@@ -129,15 +146,15 @@ void add_q8ta_dequantize_node(
   // Choose dispatch function based on FP output storage type:
   // - Buffer: use linear dispatch (better performance)
   // - Texture: use extents-style 3D dispatch (better performance)
-  auto pick_global_wg_size = (outp_storage == utils::kBuffer)
-      ? pick_linear_global_wg_with_block_config
-      : pick_extents_global_wg_with_block_config;
+  auto pick_gwg = (outp_storage == utils::kBuffer)
+      ? pick_linear_gwg_with_block_config
+      : pick_extents_gwg_with_block_config;
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_global_wg_size,
-      pick_square_local_wg_with_block_config,
+      pick_gwg,
+      pick_square_lwg_with_block_config,
       // Inputs and Outputs
       {{fp_output, vkapi::kWrite}, {packed_int8_input, vkapi::kRead}},
       // Shader params buffers
@@ -150,7 +167,9 @@ void add_q8ta_dequantize_node(
        outp_block_config.as_packed_int(),
        inp_block_config.as_packed_int()},
       // Resize args
-      {block_config_ref}));
+      {block_config_ref},
+      // Resize function: output shape == input shape (elementwise).
+      resize_q8ta_qdq_node));
 }
 
 } // namespace vkcompute

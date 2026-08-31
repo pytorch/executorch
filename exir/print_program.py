@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -60,6 +61,8 @@ def _scalar_type_str(scalar_type: ScalarType) -> str:
         ScalarType.QUINT8: "qui8",
         ScalarType.QINT32: "qi32",
         ScalarType.BFLOAT16: "bf16",
+        ScalarType.FLOAT8E5M2: "f8e5m2",
+        ScalarType.FLOAT8E4M3FN: "f8e4m3fn",
         ScalarType.QUINT4x2: "qui4x2",
         ScalarType.QUINT2x4: "qui2x4",
     }
@@ -353,16 +356,21 @@ def add_cursor_to_graph(graph: torch.fx.Graph, finding_node: torch.fx.Node) -> s
 
 def _stacktrace_to_framelist(stacktrace: str) -> FrameList:
     """Creates a frame list from a stacktrace string."""
-    pattern = r'File "(.*?)", line (\d+), in (.*?)\n'
-    matches = re.findall(pattern, stacktrace)
+    # Capture (filename, lineno, name, source-line) in a single regex.  Python
+    # 3.11+ tracebacks may include extra caret/underline lines (e.g. "^^^^")
+    # between frames, so we cannot rely on a fixed line offset; instead we pull
+    # the source line directly out of the line that immediately follows each
+    # `File "...", line N, in <name>` header.
+    pattern = re.compile(r'File "(.*?)", line (\d+), in (.*?)\n([^\n]*)')
+    matches = pattern.findall(stacktrace)
     mapped_frame_list = [
         Frame(
-            filename=match[0],
-            lineno=int(match[1]),
-            name=match[2],
-            context=stacktrace.split("\n")[i * 2 + 1].strip(),
+            filename=m[0],
+            lineno=int(m[1]),
+            name=m[2],
+            context=m[3].strip(),
         )
-        for i, match in enumerate(matches)
+        for m in matches
     ]
     return FrameList(mapped_frame_list)
 

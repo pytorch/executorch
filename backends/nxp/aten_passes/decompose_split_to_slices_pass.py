@@ -2,12 +2,16 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Optional, TypeAlias
+
+from typing import TypeAlias
 
 import torch
 from torch._subclasses import FakeTensor, FakeTensorMode
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+
+
+SlicesArgs: TypeAlias = tuple[list[int], list[int], int]
 
 
 class DecomposeSplitToSlicesPass(PassBase):
@@ -103,8 +107,7 @@ class DecomposeSplitToSlicesPass(PassBase):
 
         return slice_node
 
-    SlicesArgs: TypeAlias = tuple[list[int], list[int], int]
-
+    # noinspection PyMethodMayBeStatic
     def _get_slices_args(self, split_node: Node) -> SlicesArgs:
         split_nodes_chunks = split_node.meta["val"]
         dim = 0 if len(split_node.args) < 3 else split_node.args[2]
@@ -147,7 +150,7 @@ class DecomposeSplitToSlicesPass(PassBase):
         split_node.replace_all_uses_with(input_node)
         self.graph_module.graph.erase_node(split_node)
 
-    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: GraphModule) -> PassResult:
         self.graph_module = graph_module
         made_changes = False
 

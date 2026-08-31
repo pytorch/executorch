@@ -19,6 +19,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -30,6 +32,10 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
+
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 
 using namespace vkcompute;
 using namespace vkcompute::api;
@@ -106,6 +112,39 @@ class VulkanComputeAPITest : public ::testing::Test {
 
 TEST_F(VulkanComputeAPITest, print_adapter) {
   std::cout << *(context()->adapter_ptr()) << std::endl;
+}
+
+TEST_F(VulkanComputeAPITest, device_to_host_staging_prefers_cached_memory) {
+  vkapi::VulkanBuffer staging_buffer =
+      context()->adapter_ptr()->vma().create_staging_buffer(
+          4096, vkapi::CopyDirection::DEVICE_TO_HOST);
+  const VmaAllocator allocator = staging_buffer.vma_allocator();
+  ASSERT_NE(allocator, nullptr);
+
+  const VkPhysicalDeviceMemoryProperties* memory_properties = nullptr;
+  vmaGetMemoryProperties(allocator, &memory_properties);
+  ASSERT_NE(memory_properties, nullptr);
+
+  bool has_host_cached_memory = false;
+  for (uint32_t i = 0; i < memory_properties->memoryTypeCount; ++i) {
+    const VkMemoryPropertyFlags flags =
+        memory_properties->memoryTypes[i].propertyFlags;
+    has_host_cached_memory = has_host_cached_memory ||
+        ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+         (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT));
+  }
+  if (!has_host_cached_memory) {
+    GTEST_SKIP() << "Device does not expose host-cached visible memory";
+  }
+
+  const VmaAllocation allocation = staging_buffer.allocation();
+  ASSERT_NE(allocation, nullptr);
+
+  VkMemoryPropertyFlags selected_flags = 0;
+  vmaGetAllocationMemoryProperties(allocator, allocation, &selected_flags);
+
+  EXPECT_TRUE(selected_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+      << "Selected memory with flags " << selected_flags;
 }
 
 #if defined(VK_KHR_pipeline_executable_properties) && \
@@ -1058,7 +1097,7 @@ TEST_F(VulkanComputeAPITest, vec_test) {
     ASSERT_TRUE(v[2] == 10);
   }
 
-  // Test initalization from temporary vec
+  // Test initialization from temporary vec
   {
     utils::uvec3 v = make_temp_ivec3(4, 5, 10);
     ASSERT_TRUE(v[0] == 4);
@@ -1136,8 +1175,8 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
     context()->submit_compute_job(
         VK_KERNEL(fill_buffer),
         pipeline_barrier,
-        {64, 1, 1},
-        {len_div4, 1, 1},
+        GlobalWorkGrid({64u, 1u, 1u}, kExplicitWorkGrid),
+        LocalWorkGroup(len_div4, 1u, 1u),
         {SV(scale), SV(offset)},
         VK_NULL_HANDLE,
         0,
@@ -1183,8 +1222,8 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        {4, 4, 4},
-        {4, 4, 4},
+        GlobalWorkGrid({4u, 4u, 4u}, kExplicitWorkGrid),
+        LocalWorkGroup(4u, 4u, 4u),
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -1250,8 +1289,8 @@ void test_storage_buffer_type(const size_t len) {
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        {64, 1, 1},
-        {len_div4, 1, 1},
+        GlobalWorkGrid({64u, 1u, 1u}, kExplicitWorkGrid),
+        LocalWorkGroup(len_div4, 1u, 1u),
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -1653,8 +1692,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
   // Current known size on 64 bit system: 608 B
   EXPECT_TRUE(sizeof(ComputeGraph) < 700);
-  // Current known size on 64 bit system: 248 B
-  EXPECT_TRUE(sizeof(DispatchNode) < 500);
+  // Current known size on 64 bit system: 528 B
+  EXPECT_TRUE(sizeof(DispatchNode) < 600);
 }
 
 TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
@@ -1698,6 +1737,160 @@ TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
 
   const auto exp_numel = w * h * d * 4;
   EXPECT_TRUE(tensor.numel() == exp_numel);
+}
+
+// Sizes an image can carry but its extents cannot express: rank 4, and a
+// sequence dim that is not the packed one.
+static const std::vector<int64_t> kExternalSizes = {1, 37, 8, 64};
+
+static vTensor make_image_owner() {
+  return vTensor(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_image_keeps_logical_sizes) {
+  vTensor owner = make_image_owner();
+
+  vTensor view(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      &owner.image());
+
+  EXPECT_TRUE(view.sizes() == kExternalSizes);
+  EXPECT_TRUE(view.packed_dim() == 0);
+  EXPECT_TRUE(view.numel() == owner.numel());
+
+  // Reconstructing from the extents instead would collapse this to 3 sizes.
+  EXPECT_TRUE(vTensor(context(), owner.image()).sizes().size() == 3);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_image_rejects_size_mismatch) {
+  vTensor owner = make_image_owner();
+
+  std::vector<int64_t> mismatched = kExternalSizes;
+  mismatched.back() *= 2;
+
+  EXPECT_THROW(
+      vTensor(
+          context(),
+          mismatched,
+          vkapi::kFloat,
+          utils::kTexture3D,
+          utils::kWidthPacked,
+          /*allocate_memory = */ false,
+          utils::kDefaultAxisMap,
+          &owner.image()),
+      vkapi::Error);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_image_does_not_own_it) {
+  vTensor owner = make_image_owner();
+
+  {
+    vTensor view(
+        context(),
+        kExternalSizes,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        /*allocate_memory = */ false,
+        utils::kDefaultAxisMap,
+        &owner.image());
+
+    EXPECT_TRUE(view.image().is_copy_of(owner.image()));
+  }
+
+  // The view is gone and its deferred cleanup has run; the image it aliased
+  // belongs to `owner` and is still live.
+  context()->flush();
+  EXPECT_TRUE(owner.image());
+  EXPECT_FALSE(owner.image().is_copy());
+}
+
+static vTensor make_buffer_owner() {
+  return vTensor(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_keeps_sizes) {
+  vTensor owner = make_buffer_owner();
+
+  vTensor view(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      /*external_image = */ nullptr,
+      &owner.buffer());
+
+  EXPECT_TRUE(view.sizes() == kExternalSizes);
+  EXPECT_TRUE(view.numel() == owner.numel());
+  EXPECT_TRUE(view.storage_type() == utils::kBuffer);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_buffer_rejects_overflow) {
+  vTensor owner = make_buffer_owner();
+
+  std::vector<int64_t> too_large = kExternalSizes;
+  too_large.back() *= 2;
+
+  EXPECT_THROW(
+      vTensor(
+          context(),
+          too_large,
+          vkapi::kFloat,
+          utils::kBuffer,
+          utils::kWidthPacked,
+          /*allocate_memory = */ false,
+          utils::kDefaultAxisMap,
+          /*external_image = */ nullptr,
+          &owner.buffer()),
+      vkapi::Error);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_buffer_does_not_own_it) {
+  vTensor owner = make_buffer_owner();
+
+  {
+    vTensor view(
+        context(),
+        kExternalSizes,
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kWidthPacked,
+        /*allocate_memory = */ false,
+        utils::kDefaultAxisMap,
+        /*external_image = */ nullptr,
+        &owner.buffer());
+
+    EXPECT_TRUE(view.buffer().is_copy_of(owner.buffer()));
+  }
+
+  context()->flush();
+  EXPECT_TRUE(owner.buffer());
+  EXPECT_FALSE(owner.buffer().is_copy());
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
@@ -1914,8 +2107,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR("scalar_add_texture"),
-      graph.create_global_wg_size(a.value),
-      graph.create_local_wg_size(a.value),
+      graph.create_gwg(a.value),
+      graph.create_lwg(a.value),
       // Inputs and Outputs
       {{out.value, vkapi::MemoryAccessType::WRITE}},
       // Shader params buffers
@@ -2498,8 +2691,9 @@ void run_from_gpu_test(
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.logical_limits(),
-        {4, 4, 4},
+        GlobalWorkGrid(
+            utils::make_uvec3(vten.logical_limits()), kTextureExtentsWorkGrid),
+        LocalWorkGroup(4u, 4u, 4u),
         {vten.packed_dim(), offset},
         VK_NULL_HANDLE,
         0,
@@ -3072,7 +3266,7 @@ void test_to_copy() {
         std::bitset<32>(*reinterpret_cast<uint32_t*>(&input)).to_string() +
         "), expected output = " + std::to_string(expected_output) + "(0b" +
         std::bitset<16>(*expected_bits).to_string() +
-        "), recieved output = " + std::to_string(output) + "(0b" +
+        "), received output = " + std::to_string(output) + "(0b" +
         std::bitset<16>(*output_bits).to_string() + ")";
 
     std::cout << msg << std::endl;
@@ -3131,26 +3325,28 @@ vkapi::ShaderInfo pick_dynamic_dispatch_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-utils::uvec3 pick_dynamic_dispatch_global_wg_size(
+GlobalWorkGrid pick_dynamic_dispatch_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
   const ValueRef out = args[0].refs[0];
-  return graph->logical_limits_of(out);
+  return GlobalWorkGrid(
+      utils::make_uvec3(graph->logical_limits_of(out)),
+      kTextureExtentsWorkGrid);
 }
 
-utils::uvec3 pick_dynamic_dispatch_local_wg_size(
+LocalWorkGroup pick_dynamic_dispatch_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
-  return {64, 1, 1};
+  (void)gwg;
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 void resize_dynamic_dispatch_node(
@@ -3174,8 +3370,8 @@ void add_dynamic_dispatch_test_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_dynamic_dispatch_shader,
-      pick_dynamic_dispatch_global_wg_size,
-      pick_dynamic_dispatch_local_wg_size,
+      pick_dynamic_dispatch_gwg,
+      pick_dynamic_dispatch_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
@@ -3336,4 +3532,272 @@ TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
       test_int8x4_staging_round_trip(sizes, layout);
     }
   }
+}
+
+TEST(VulkanWorkGroupSizeTest, lwg) {
+  const LocalWorkGroup lwg(64u, 2u, 1u);
+
+  EXPECT_EQ(lwg.x(), 64u);
+  EXPECT_EQ(lwg.y(), 2u);
+  EXPECT_EQ(lwg.z(), 1u);
+  EXPECT_TRUE(lwg.is_valid());
+  EXPECT_EQ(lwg.nthreads(), 128u);
+  EXPECT_EQ(lwg.target_total_nthreads(), 64u);
+  EXPECT_EQ(static_cast<utils::uvec3>(lwg), utils::uvec3({64u, 2u, 1u}));
+
+  const LocalWorkGroup targeted_lwg(8u, 4u, 1u, 128u);
+  EXPECT_EQ(targeted_lwg.target_total_nthreads(), 128u);
+  EXPECT_EQ(targeted_lwg, LocalWorkGroup(8u, 4u, 1u, 64u));
+  EXPECT_EQ(LocalWorkGroup(kLinearLwg, 1u), LocalWorkGroup(kCubeLwg, 1u));
+
+  const LocalWorkGroup large_z_lwg(1u, 1u, 1024u);
+  EXPECT_EQ(large_z_lwg.z(), 1024u);
+
+  EXPECT_FALSE(LocalWorkGroup().is_valid());
+  EXPECT_THROW(LocalWorkGroup(3u, 2u, 1u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, lwg_validation) {
+  const utils::uvec3 max_lwg{1024u, 1024u, 64u};
+  const LocalWorkGroup lwg(8u, 8u, 1u);
+
+  EXPECT_NO_THROW(lwg.validate(max_lwg, 64u));
+  EXPECT_THROW(LocalWorkGroup().validate(max_lwg, 64u), vkapi::Error);
+  EXPECT_THROW(
+      LocalWorkGroup(128u, 1u, 1u).validate({64u, 1024u, 64u}, 128u),
+      vkapi::Error);
+  EXPECT_THROW(lwg.validate(max_lwg, 32u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, lwg_shape) {
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kLinearLwg, 64u)),
+      utils::uvec3({64u, 1u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kSquareLwg, 64u)),
+      utils::uvec3({8u, 8u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kCubeLwg, 64u)),
+      utils::uvec3({4u, 4u, 4u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kSquareLwg, 128u)),
+      utils::uvec3({16u, 8u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kCubeLwg, 128u)),
+      utils::uvec3({8u, 4u, 4u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(LwgShape{4u, 2u, 1u}, 64u)),
+      utils::uvec3({16u, 4u, 1u}));
+
+  EXPECT_THROW(LocalWorkGroup(kSquareLwg, 48u), vkapi::Error);
+  EXPECT_THROW(LocalWorkGroup(8u, 4u, 1u, 48u), vkapi::Error);
+  EXPECT_THROW(LocalWorkGroup(LwgShape{}, 64u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, fit_to_global) {
+  const LocalWorkGroup cube(kCubeLwg, 64u);
+  const GlobalWorkGrid gwg({1024u, 4u, 2u}, kExplicitWorkGrid);
+
+  auto fitted = cube;
+  fitted.fit_to_global(gwg);
+
+  EXPECT_EQ(static_cast<utils::uvec3>(fitted), utils::uvec3({4u, 4u, 4u}));
+  EXPECT_EQ(fitted.target_total_nthreads(), 64u);
+
+  const LocalWorkGroup square(kSquareLwg, 64u);
+  const GlobalWorkGrid shallow_gwg({1024u, 4u, 1u}, kExplicitWorkGrid);
+  auto shallow_fitted = square;
+  shallow_fitted.fit_to_global(shallow_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(shallow_fitted), utils::uvec3({16u, 4u, 1u}));
+
+  const GlobalWorkGrid permuted_gwg({4u, 1024u, 2u}, kExplicitWorkGrid);
+  auto permuted_fitted = cube;
+  permuted_fitted.fit_to_global(permuted_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(permuted_fitted), utils::uvec3({4u, 4u, 4u}));
+
+  const LocalWorkGroup linear(kLinearLwg, 64u);
+  const GlobalWorkGrid square_gwg({8u, 8u, 1u}, kExplicitWorkGrid);
+  auto square_fitted = linear;
+  square_fitted.fit_to_global(square_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(square_fitted), utils::uvec3({8u, 8u, 1u}));
+
+  const GlobalWorkGrid large_gwg({1024u, 1024u, 1u}, kExplicitWorkGrid);
+  square_fitted.fit_to_global(large_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(square_fitted), utils::uvec3({8u, 8u, 1u}));
+
+  const GlobalWorkGrid wide_gwg({4u, 1024u, 2u}, kExplicitWorkGrid);
+  auto wide_fitted = linear;
+  wide_fitted.fit_to_global(wide_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(wide_fitted), utils::uvec3({4u, 16u, 1u}));
+
+  const GlobalWorkGrid small_gwg({3u, 3u, 1u}, kExplicitWorkGrid);
+  auto small_fitted = square;
+  small_fitted.fit_to_global(small_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(small_fitted), utils::uvec3({4u, 4u, 1u}));
+
+  auto explicit_linear = LocalWorkGroup(64u, 1u, 1u);
+  explicit_linear.fit_to_global(square_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(explicit_linear), utils::uvec3({64u, 1u, 1u}));
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_at_x_limit) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65536u * 64u, 1u, 1u}, kLinearWorkGrid);
+  EXPECT_FALSE(gwg.required_lwg_size().is_valid());
+  gwg.wrap_linear_dispatch(max_wg_count);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({65536u * 64u, 1u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+  EXPECT_TRUE(gwg.is_linear());
+  EXPECT_EQ(gwg.intent(), kLinearWorkGrid);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_wraps_across_xy) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65537u * 64u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, 64u);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({257u * 64u, 256u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+  EXPECT_TRUE(gwg.is_linear());
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_allows_cooperative_z_lanes) {
+  const LocalWorkGroup lwg(1u, 1u, 64u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65537u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, lwg);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({257u, 256u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_allows_xy_cooperation) {
+  const LocalWorkGroup lwg(1u, 8u, 8u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65537u * 8u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, lwg);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({257u, 2048u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_rejects_insufficient_y) {
+  const utils::uvec3 max_wg_count{2u, 1u, 1u};
+  GlobalWorkGrid gwg({3u * 64u, 1u, 1u}, kLinearWorkGrid);
+
+  EXPECT_THROW(gwg.wrap_linear_dispatch(max_wg_count, 64u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_uses_available_x_capacity) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{4u, 2u, 1u};
+  GlobalWorkGrid gwg({7u * 64u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, lwg);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({4u * 64u, 2u, 1u}));
+}
+
+TEST(VulkanWorkGroupSizeTest, explicit_gwg_preserves_extents) {
+  const GlobalWorkGrid gwg({31u, 17u, 5u}, kExplicitWorkGrid);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({31u, 17u, 5u}));
+  EXPECT_FALSE(gwg.required_lwg_size().is_valid());
+  EXPECT_FALSE(gwg.is_linear());
+  EXPECT_EQ(gwg.intent(), kExplicitWorkGrid);
+}
+
+TEST(VulkanWorkGroupSizeTest, gwg_intents) {
+  const utils::uvec3 extents{32u, 24u, 8u};
+
+  EXPECT_EQ(
+      GlobalWorkGrid(extents, kTextureExtentsWorkGrid).intent(),
+      kTextureExtentsWorkGrid);
+  EXPECT_EQ(GlobalWorkGrid(extents, kTiledWorkGrid).intent(), kTiledWorkGrid);
+
+  GlobalWorkGrid texture_grid(extents, kTextureExtentsWorkGrid);
+  texture_grid.wrap_linear_dispatch({1u, 1u, 1u}, 64u);
+  EXPECT_EQ(texture_grid.extents(), extents);
+  EXPECT_FALSE(texture_grid.required_lwg_size().is_valid());
+}
+
+TEST(VulkanWorkGroupSizeTest, required_lwg_picker) {
+  const LocalWorkGroup required_lwg(1u, 64u, 1u);
+  const GlobalWorkGrid gwg({32u, 16u, 1u}, kTiledWorkGrid, required_lwg);
+
+  EXPECT_EQ(gwg.required_lwg_size(), required_lwg);
+  EXPECT_EQ(
+      pick_required_lwg(nullptr, vkapi::ShaderInfo{}, gwg, {}, {}),
+      required_lwg);
+}
+
+TEST(VulkanWorkGroupSizeTest, required_lwg_picker_rejects_missing_lwg) {
+  const GlobalWorkGrid gwg({32u, 16u, 1u}, kTiledWorkGrid);
+
+  EXPECT_THROW(
+      pick_required_lwg(nullptr, vkapi::ShaderInfo{}, gwg, {}, {}),
+      vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, explicit_gwg_rejects_excess_workgroups) {
+  const LocalWorkGroup lwg(2u, 1u, 1u);
+  const GlobalWorkGrid gwg({5u, 1u, 1u}, kExplicitWorkGrid);
+
+  EXPECT_THROW(gwg.validate(lwg, {2u, 1u, 1u}), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_requires_its_local_hint) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  GlobalWorkGrid gwg({100u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch({65536u, 65536u, 65536u}, lwg);
+
+  EXPECT_THROW(
+      gwg.validate(LocalWorkGroup(32u, 1u, 1u), {65536u, 65536u, 65536u}),
+      vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, adapter_dispatch_recommendations) {
+  if (!api::available()) {
+    GTEST_SKIP();
+  }
+  api::Context* const context = api::context();
+  const auto* const adapter = context->adapter_ptr();
+  const utils::uvec3 max_wg_count = adapter->max_compute_workgroup_count();
+  const utils::uvec3 max_lwg = adapter->max_compute_workgroup_size();
+
+  EXPECT_GT(max_wg_count[0], 0u);
+  EXPECT_GT(max_wg_count[1], 0u);
+  EXPECT_GT(max_wg_count[2], 0u);
+  EXPECT_GT(max_lwg[0], 0u);
+  EXPECT_GT(adapter->max_compute_workgroup_invocations(), 0u);
+  EXPECT_EQ(adapter->recommended_lwg_nthreads(), 64u);
+}
+
+TEST(VulkanWorkGroupSizeTest, compute_graph_preserves_dispatch_intent) {
+  if (!api::available()) {
+    GTEST_SKIP();
+  }
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef buffer = graph.add_tensor(
+      {257}, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+  const ValueRef texture = graph.add_tensor(
+      {1, 2, 3, 4}, vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked);
+
+  const GlobalWorkGrid buffer_gwg = graph.create_gwg(buffer);
+  const GlobalWorkGrid texture_gwg = graph.create_gwg(texture);
+
+  EXPECT_TRUE(buffer_gwg.is_linear());
+  EXPECT_EQ(graph.create_lwg(buffer_gwg), buffer_gwg.required_lwg_size());
+  EXPECT_FALSE(texture_gwg.is_linear());
 }

@@ -9,8 +9,10 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/portable_type/device.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 
@@ -32,6 +34,30 @@ class HierarchicalAllocator final {
    */
   explicit HierarchicalAllocator(Span<Span<uint8_t>> buffers)
       : buffers_(buffers) {}
+
+  /**
+   * Constructs a new hierarchical allocator with per-buffer device metadata.
+   *
+   * @param[in] buffers Same as above. May contain a mix of CPU and device
+   *     pointers — HierarchicalAllocator only does pointer arithmetic, so
+   *     device pointers are valid.
+   * @param[in] planned_buffer_devices One entry per buffer (same count as
+   *     `buffers`), indicating the `Device` (type + index) for each buffer.
+   *     Different buffers can target the same device type but different
+   *     indices (e.g., `cuda:0` vs `cuda:1`). For CPU-only programs, use the
+   *     single-arg constructor instead.
+   */
+  HierarchicalAllocator(
+      Span<Span<uint8_t>> buffers,
+      Span<const etensor::Device> planned_buffer_devices)
+      : buffers_(buffers), planned_buffer_devices_(planned_buffer_devices) {
+    ET_CHECK_MSG(
+        planned_buffer_devices.size() == buffers.size(),
+        "planned_buffer_devices size (%" ET_PRIsize_t
+        ") must match buffers size (%" ET_PRIsize_t ")",
+        planned_buffer_devices.size(),
+        buffers.size());
+  }
 
   /**
    * DEPRECATED: Use spans instead.
@@ -58,8 +84,9 @@ class HierarchicalAllocator final {
       size_t offset_bytes,
       size_t size_bytes) {
     // Check for integer overflow in offset_bytes + size_bytes.
+    size_t end_bytes = 0;
     ET_CHECK_OR_RETURN_ERROR(
-        size_bytes <= SIZE_MAX - offset_bytes,
+        !c10::add_overflows(offset_bytes, size_bytes, &end_bytes),
         InvalidArgument,
         "Integer overflow in offset_bytes (%" ET_PRIsize_t
         ") + size_bytes (%" ET_PRIsize_t ")",
@@ -73,7 +100,7 @@ class HierarchicalAllocator final {
         buffers_.size());
     Span<uint8_t> buffer = buffers_[memory_id];
     ET_CHECK_OR_RETURN_ERROR(
-        offset_bytes + size_bytes <= buffer.size(),
+        end_bytes <= buffer.size(),
         MemoryAllocationFailed,
         "offset_bytes (%" ET_PRIsize_t ") + size_bytes (%" ET_PRIsize_t
         ") >= allocator size (%" ET_PRIsize_t
@@ -84,6 +111,17 @@ class HierarchicalAllocator final {
         buffer.size(),
         memory_id);
     return buffer.data() + offset_bytes;
+  }
+
+  /**
+   * Returns per-buffer device metadata. One entry per buffer, same count as
+   * the `buffers` passed to the constructor. Each entry is a `Device`
+   * carrying both type and index, so callers can distinguish e.g. `cuda:0`
+   * from `cuda:1`. Empty if no device metadata was provided (CPU-only
+   * program).
+   */
+  Span<const etensor::Device> planned_buffer_devices() const {
+    return planned_buffer_devices_;
   }
 
  private:
@@ -111,6 +149,10 @@ class HierarchicalAllocator final {
 
   /// The underlying buffers.
   Span<Span<uint8_t>> buffers_;
+
+  /// Per-buffer device metadata. Empty when no device info was provided
+  /// (CPU-only program).
+  Span<const etensor::Device> planned_buffer_devices_;
 };
 
 } // namespace runtime

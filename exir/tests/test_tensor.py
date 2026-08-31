@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -90,6 +91,14 @@ class TestTensor(unittest.TestCase):
         # whereas strides for torch.memory_format = torch.channels_last is
         # (3*4*5, 1, 5*3, 3))
 
+    def test_fp8_tensor_conversion(self) -> None:
+        for dtype in (torch.float8_e5m2, torch.float8_e4m3fn):
+            normal_tensor = torch.randn(2, 2, 3, dtype=torch.float32).to(dtype)
+            flatbuffer_tensor = make_tensor_value(
+                1, 0, TensorSpec.from_tensor(normal_tensor)
+            )
+            self.compare_tensors(normal_tensor, flatbuffer_tensor)
+
     def test_allocation_info_succeeds(self) -> None:
         test_cases = (
             (
@@ -174,6 +183,23 @@ class TestTensor(unittest.TestCase):
             with self.assertRaisesRegex(Exception, test_case[1], msg=f"{kwargs}"):
                 make_allocation_info(**kwargs)
 
+    def test_inplace_base_aliases_storage_base_at_offset_zero(self) -> None:
+        base = TensorSpec.from_tensor(torch.empty(4))
+        child = TensorSpec.from_tensor(torch.empty(4))
+
+        child.inplace_base = base
+
+        self.assertIs(child.storage_base, base)
+        self.assertEqual(child.storage_base_offset, 0)
+        self.assertIs(child.inplace_base, base)
+
+        child.storage_base_offset = 4
+        with self.assertRaisesRegex(Exception, "offset 0"):
+            child.inplace_base
+        with self.assertRaisesRegex(Exception, "storage_base_offset is 0"):
+            child.inplace_base = base
+        self.assertEqual(child.storage_base_offset, 4)
+
     def test_contiguous_stride_from_shape(self) -> None:
         shape = (2, 3, 4)
         stride = contiguous_stride_from_shape(torch.Size(shape))
@@ -246,8 +272,54 @@ class TestTensor(unittest.TestCase):
         # dim[2] is broadcasting dim
         # shape = (5, 1, 15, 10)
         strides = (10, 10, 0, 1)
-        with self.assertRaises(ValueError):
+        # torch._check raises RuntimeError on concrete 0.
+        with self.assertRaises(RuntimeError):
             dim_order = dim_order_from_stride(strides)
+
+    def test_dim_order_from_stride_unbacked(self) -> None:
+        """
+        dim_order_from_stride should produce a sane permutation even when the
+        strides contain unbacked SymInts. The comparator falls back to
+        divisibility-based reasoning so common cases like (1, u0) and
+        (u0, 2 * u0) order correctly.
+        """
+        from torch.fx.experimental.symbolic_shapes import (
+            GuardOnDataDependentSymNode,
+            ShapeEnv,
+        )
+
+        shape_env = ShapeEnv()
+        u0 = shape_env.create_unbacked_symint()
+        u1 = shape_env.create_unbacked_symint()
+
+        # 1 < u0 should be True via divisibility (u0 % 1 == 0) + optimistic
+        # `1 != u0`. Descending sort puts u0 outer, stride 1 inner.
+        dim_order = dim_order_from_stride((1, u0))
+        self.assertEqual((1, 0), dim_order)
+
+        # u0 < 2 * u0 should be True via divisibility ((2*u0) % u0 == 0) and
+        # provable inequality (u0 != 0 after torch._check).
+        dim_order = dim_order_from_stride((u0, 2 * u0))
+        self.assertEqual((1, 0), dim_order)
+
+        # Mixed concrete + symbolic: (1, u0, 2 * u0). Descending stride order
+        # is (2*u0, u0, 1) -> indices (2, 1, 0).
+        dim_order = dim_order_from_stride((1, u0, 2 * u0))
+        self.assertEqual((2, 1, 0), dim_order)
+
+        # u0 < u1 (independent unbackeds) is genuinely ambiguous, so the
+        # comparator must fall back to the raw `<` and raise DDE.
+        with self.assertRaises(GuardOnDataDependentSymNode):
+            dim_order_from_stride((u0, u1))
+
+        # u0 < u0 is False both ways (symmetric); stable sort preserves order.
+        dim_order = dim_order_from_stride((u0, u0))
+        self.assertEqual((0, 1), dim_order)
+
+        # Unbacked stride of 0 (concrete 0 mixed with unbacked) -> RuntimeError
+        # via torch._check.
+        with self.assertRaises(RuntimeError):
+            dim_order_from_stride((u0, 0, 1))
 
     def test_strides_from_dim_order(self) -> None:
         sizes = []
@@ -332,6 +404,26 @@ class TestTensor(unittest.TestCase):
         expected_strides = [1, 1, 1, 1]
         strides = stride_from_dim_order(sizes, dim_order)
         self.assertEqual(expected_strides, strides)
+
+    def test_strides_from_dim_order_with_symbolic_sizes(self) -> None:
+        class ViewModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.view(x.shape[0], -1)
+
+        exported_program = torch.export.export(
+            ViewModule(),
+            (torch.randn(2, 3, 4),),
+            dynamic_shapes={"x": {0: torch.export.Dim("batch", min=1, max=8)}},
+        )
+        placeholder = next(
+            node
+            for node in exported_program.graph_module.graph.nodes
+            if node.op == "placeholder"
+        )
+        sizes = list(placeholder.meta["val"].shape)
+
+        self.assertIsInstance(sizes[0], torch.SymInt)
+        self.assertEqual([12, 4, 1], stride_from_dim_order(sizes, [0, 1, 2]))
 
     def test_num_bytes_from_shape_and_dtype(self) -> None:
         shape = (2, 3, 4)

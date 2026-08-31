@@ -9,10 +9,8 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using torch::executor::Error;
 
 namespace impl {
 namespace HiFi {
@@ -22,7 +20,7 @@ inline Tensor& _softmax_f32_f32_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
-    ::executorch::aten::optional<bool> half_to_float,
+    std::optional<bool> half_to_float,
     Tensor& out) {
   constexpr int kNnlibMaxDim = 16;
 
@@ -146,7 +144,7 @@ Tensor& softmax_f32_f32_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
-    ::executorch::aten::optional<bool> half_to_float,
+    std::optional<bool> half_to_float,
     Tensor& out) {
   return _softmax_f32_f32_out(ctx, in, dim, half_to_float, out);
 }

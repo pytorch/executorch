@@ -41,15 +41,17 @@ vkapi::ShaderInfo pick_choose_qparams_per_row_shader(
   (void)resize_args;
 
   const ValueRef input = args.at(1).refs.at(0);
+  const ValueRef input_zps = args.at(0).refs.at(1);
 
   std::string kernel_name = "choose_qparams_per_row";
   add_storage_type_suffix(kernel_name, graph->storage_type_of(input));
   add_dtype_suffix(kernel_name, graph->dtype_of(input));
+  add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zps));
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-utils::uvec3 pick_choose_qparams_per_row_global_wg_size(
+GlobalWorkGrid pick_choose_qparams_per_row_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -59,23 +61,10 @@ utils::uvec3 pick_choose_qparams_per_row_global_wg_size(
 
   const ValueRef input = args.at(1).refs.at(0);
   const uint32_t height = graph->size_at<uint32_t>(-2, input);
-  return {1u, utils::div_up_4(height), 1u};
-}
-
-utils::uvec3 pick_choose_qparams_per_row_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-
-  uint32_t outputs_per_wg = 1u;
-  uint32_t workers_per_output = 64u;
-
-  return {workers_per_output, outputs_per_wg, 1u};
+  return GlobalWorkGrid(
+      {1u, utils::div_up_4(height), 1u},
+      kTiledWorkGrid,
+      LocalWorkGroup(64u, 1u, 1u));
 }
 
 void add_choose_qparams_per_row_node(
@@ -113,8 +102,8 @@ void add_choose_qparams_per_row_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_choose_qparams_per_row_shader,
-      pick_choose_qparams_per_row_global_wg_size,
-      pick_choose_qparams_per_row_local_wg_size,
+      pick_choose_qparams_per_row_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{{input_scales, input_zps}, vkapi::kWrite}, {input, vkapi::kRead}},
       // Shader param buffers

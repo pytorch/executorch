@@ -166,6 +166,9 @@ class RemoveIdentityTransposeOperators(BaseOptimization):
 
                 self._builder.swap_tensor_names(x, y)
 
+            # Make sure `x` has the same format as `y` had.
+            x.tensor_format = y.tensor_format
+
             to_remove.append(transpose)
 
         for op in to_remove:

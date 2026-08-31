@@ -6,5 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#ifndef ETVK_USE_META_VMA
 #define VMA_IMPLEMENTATION
+#endif
 #include <executorch/backends/vulkan/runtime/vk_api/memory/vma_api.h>

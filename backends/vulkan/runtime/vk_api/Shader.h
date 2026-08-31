@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/Types.h>
 
@@ -61,13 +61,20 @@ struct ShaderInfo final {
   ShaderLayout::Signature kernel_layout{};
 
   // Shader Metadata
-  utils::WorkgroupSize out_tile_size{1u, 1u, 1u};
+  LocalWorkGroup out_tile_size{1u, 1u, 1u};
   bool requires_shader_int16 = false;
   bool requires_16bit_storage = false;
   bool requires_8bit_storage = false;
   bool requires_integer_dot_product = false;
   bool requires_shader_int64 = false;
   bool requires_shader_float64 = false;
+
+  // Subgroup size requirement declared in the shader's yaml.
+  //   0  = no requirement (default)
+  //  >0  = literal fixed size; pipeline is pinned to this subgroup size.
+  // Sourced from the yaml's `SUBGROUP_SIZE` template parameter — single
+  // source of truth shared with GLSL ${SUBGROUP_SIZE} substitution.
+  uint32_t required_subgroup_size = 0u;
 
   explicit ShaderInfo();
 
@@ -82,7 +89,8 @@ struct ShaderInfo final {
       const bool requires_8bit_storage_ext,
       const bool requires_integer_dot_product_ext,
       const bool requires_shader_int64_ext,
-      const bool requires_shader_float64_ext);
+      const bool requires_shader_float64_ext,
+      const uint32_t required_subgroup_size_arg = 0u);
 
   operator bool() const {
     return src_code.bin != nullptr;

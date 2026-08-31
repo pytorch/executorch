@@ -1,0 +1,172 @@
+name: Promote commit to viable/strict
+
+# Grants a commit eligibility for viable/strict by pushing a
+# `ciflow/trunk/<sha>` tag at it, which:
+#   1. Runs `pull.yml` / `trunk.yml` against that commit with
+#      ``is-full-run = true``, so every gated job runs regardless of the
+#      path filter.
+#   2. Runs `viable-strict-gate.yml`, whose presence is what
+#      `update-viablestrict` requires before it will advance.
+#
+# This runs on a schedule, because landing a commit does not make it
+# eligible on its own. Without a periodic promotion the tip of main
+# would sit outside viable/strict until somebody promoted it by hand.
+#
+# The schedule includes a tick several hours before the nightly branch
+# is cut, so the last commits of a quiet night still have time to run
+# full CI and reach that day's nightly build.
+#
+# Can also be dispatched by hand for a specific commit, for example to
+# force full CI on one commit while bisecting a regression. Note that
+# promoting a commit that is only on a release branch runs CI for it but
+# will never advance viable/strict: the updater only considers commits
+# reachable from the branch it checks out, which is main. (The
+# `main-branch: main` line in update-viablestrict.yml looks like it
+# controls this, but the action does not declare that input and passes a
+# hardcoded value, so it has no effect either way.)
+
+on:
+  schedule:
+    # Every 4 hours. The 08:00 UTC tick is the one that lands ahead of
+    # the nightly branch cut.
+    - cron: "0 0,4,8,12,16,20 * * *"
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-char SHA on main / release/* to promote. Defaults to the tip of main."
+        required: false
+        type: string
+
+concurrency:
+  # One in-flight promotion at a time; safer than racing tag pushes.
+  group: promote-to-viable-strict
+  cancel-in-progress: false
+
+jobs:
+  push-ciflow-tag:
+    if: ${{ github.repository_owner == 'pytorch' }}
+    runs-on: ubuntu-22.04
+    # GH_PYTORCHBOT_TOKEN is an environment secret, not a repository
+    # secret, so a job that does not name the environment cannot read it
+    # and would see an empty string. Same pattern as
+    # weekly-pytorch-pin-bump.yml.
+    #
+    # This environment's deployment branch policy allows `main` only, so
+    # a hand dispatch from any other ref is refused before the first
+    # step. That also means this job cannot be exercised from a pull
+    # request branch; it is first live after merge.
+    environment: update-commit-hash
+    permissions:
+      # Both the checkout and the tag push use the bot token below, so no
+      # step uses GITHUB_TOKEN at all. Declared read-only rather than
+      # omitted so that a future step cannot silently inherit write.
+      contents: read
+    steps:
+      # Checked before the tag is pushed rather than after, so a missing
+      # secret is reported as itself instead of as an opaque checkout
+      # error or, worse, a tag that silently starts nothing.
+      - name: Check the bot token is configured
+        env:
+          BOT_TOKEN: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "${BOT_TOKEN:-}" ]; then
+            echo "::error::GH_PYTORCHBOT_TOKEN resolved to an empty string. It is an environment secret on the 'update-commit-hash' environment, so check that this job still declares that environment and that the secret is still present on it. Promotion needs a bot token with contents write access, because a ref pushed with the default GITHUB_TOKEN does not start any workflow run and the tag would do nothing."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # A ref pushed with the default GITHUB_TOKEN does not start any
+          # workflow run, which would leave the tag below doing nothing.
+          # Push as the bot so the tag triggers full CI and the gate,
+          # which is the entire point of promoting a commit.
+          token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
+
+      - name: Validate SHA and push ciflow tag
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # A scheduled run has no inputs, so promote the tip of main.
+          SHA="${INPUT_SHA:-}"
+          if [ -z "$SHA" ]; then
+            SHA=$(git rev-parse origin/main)
+            echo "No SHA given; promoting the tip of main: $SHA"
+          fi
+
+          # Reject anything that isn't a full 40-char lowercase hex SHA.
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Input must be a full 40-char lowercase hex SHA; got: '$SHA'"
+            exit 1
+          fi
+
+          # The commit must exist locally (fetch-depth: 0 above pulls
+          # everything, but defensively confirm it's an object).
+          if ! git cat-file -e "$SHA^{commit}" 2>/dev/null; then
+            echo "::error::SHA $SHA is not a commit in this repository."
+            exit 1
+          fi
+
+          # Restrict promotion to commits reachable from a release-track
+          # branch. Prevents tagging arbitrary commits (PR heads,
+          # rewritten branches, etc.) that aren't part of the official
+          # main/release history.
+          REACHABLE=false
+          # `git for-each-ref` produces clean refnames (no leading
+          # whitespace, no `origin/HEAD ->` lines), unlike `git branch -r`.
+          BRANCHES="main"
+          while IFS= read -r RELEASE_BRANCH; do
+            BRANCHES="$BRANCHES $RELEASE_BRANCH"
+          done < <(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/release/)
+          for branch in $BRANCHES; do
+            if git merge-base --is-ancestor "$SHA" "origin/$branch" 2>/dev/null; then
+              echo "SHA is reachable from origin/$branch"
+              REACHABLE=true
+              break
+            fi
+          done
+          if [ "$REACHABLE" = "false" ]; then
+            echo "::error::SHA $SHA is not reachable from main or any release/* branch."
+            exit 1
+          fi
+
+          # Nothing to promote if viable/strict already contains the
+          # commit. This is the common case for a scheduled tick that
+          # finds main unchanged since the last one.
+          #
+          # Only applied when we picked the SHA ourselves. Almost all of
+          # main is already an ancestor of viable/strict, so applying it
+          # to a hand-dispatched SHA would turn nearly every deliberate
+          # request into a silent no-op that still reports success.
+          if [ -z "${INPUT_SHA:-}" ] \
+             && git merge-base --is-ancestor "$SHA" origin/viable/strict 2>/dev/null; then
+            echo "$SHA is already contained in viable/strict; nothing to do."
+            exit 0
+          fi
+
+          TAG="ciflow/trunk/$SHA"
+
+          # If the tag already exists (e.g. an earlier tick promoted
+          # this same commit), exit cleanly. This is what keeps repeated
+          # ticks over a quiet period from re-running CI.
+          if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on origin; nothing to do."
+            exit 0
+          fi
+
+          git config user.name "pytorchbot"
+          git config user.email "pytorchbot@users.noreply.github.com"
+          git tag "$TAG" "$SHA"
+          git push origin "$TAG"
+
+          # Only the workflows that list ciflow/trunk/* under `on.push.tags`
+          # start from this tag. Four of them are in update-viablestrict's
+          # required set; the other three run but do not gate. `lint` and
+          # `Build documentation` are required too, and neither has a
+          # ciflow/trunk trigger, so their rows come from the earlier push
+          # to main; if either was cancelled on that push, this tag cannot
+          # revive it.
+          echo "::notice::Pushed $TAG. Workflow runs started by this tag: pull, trunk, Apple, viable-strict-gate, Windows MSVC Build, Test RISC-V Backend, Test QNN Windows MSVC build. Of those, update-viablestrict only requires pull, trunk, Apple and viable-strict-gate; the other three do not gate advancement. The two remaining required checks, lint and Build documentation, do not start from a ciflow/trunk tag and must already be green from the push to main. Once all six required checks are green, the next update-viablestrict cron (every 30 min) will advance viable/strict."

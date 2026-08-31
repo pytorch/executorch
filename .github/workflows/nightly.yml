@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
 jobs:
@@ -32,11 +32,23 @@ jobs:
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
 
   link-check:
+    # Whole tree scans only. Pull requests get the same check from lint.yml.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: update-pytorch-commit-hash
     uses: ./.github/workflows/_link_check.yml
     with:
       ref: ${{ github.sha }}
     
+  test-cortex-m-e2e-nightly:
+    name: test-cortex-m-e2e-nightly
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_e2e.yml
+    with:
+      models: '["ds_cnn", "mobilenet_v1_025", "resnet8", "deep_autoencoder"]'
+      timeout: 180
+
   test-static-hf-llm-qnn-linux:
     name: test-static-hf-llm-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main

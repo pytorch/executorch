@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -64,7 +64,6 @@ def test_promote_bool_operands_tosa_FP_all_bool(test_data: tensor_pair_t) -> Non
     }
     ops_after_pass = {
         "executorch_exir_dialects_edge__ops_aten_bitwise_and_Tensor": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 3,
     }
     pipeline = PassPipeline[tensor_pair_t](
         module,
@@ -76,8 +75,7 @@ def test_promote_bool_operands_tosa_FP_all_bool(test_data: tensor_pair_t) -> Non
     )
     pipeline.run()
     cast_dtypes = _collect_cast_dtypes(pipeline)
-    assert cast_dtypes.count(torch.int8) == 2
-    assert cast_dtypes.count(torch.bool) == 1
+    assert cast_dtypes == []
 
 
 @common.parametrize("test_data", MixedMulModule.test_data)

@@ -6,13 +6,16 @@
 import argparse
 
 import torch
-import tqdm
-from datasets import DatasetDict, load_dataset
+import tqdm  # type: ignore[import]
+from datasets import DatasetDict, load_dataset  # type: ignore[import]
 
 from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
+)
+from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
+    ReplaceQuantNodesPass,
 )
 from executorch.exir import (
     EdgeCompileConfig,
@@ -21,7 +24,10 @@ from executorch.exir import (
 )
 from executorch.extension.export_util.utils import save_pte_program
 
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import (  # type: ignore[import]
+    convert_pt2e,
+    prepare_pt2e,
+)
 from transformers import AutoImageProcessor
 from transformers.models.vit.modeling_vit import ViTForImageClassification
 
@@ -164,6 +170,7 @@ if __name__ == "__main__":
             _check_ir_validity=False,
         ),
     )
+    edge_encoder = edge_encoder.transform([ReplaceQuantNodesPass()])
     edge_manager = edge_encoder.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )

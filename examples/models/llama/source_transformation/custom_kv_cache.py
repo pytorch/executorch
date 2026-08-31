@@ -1,10 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import math
 from enum import Enum
 from typing import Optional, Tuple
 
@@ -253,6 +255,211 @@ class QuantizedKVCache(nn.Module):
         )
 
 
+class StaticQuantizedKVCache(nn.Module):
+    def __init__(
+        self,
+        max_batch_size,
+        max_context_length,
+        n_heads,
+        head_dim,
+        scale: float = 1.0 / 127.0,
+        use_custom_update_cache_op: bool = True,
+        return_float_values: bool = True,
+        dtype: torch.dtype = torch.float32,
+    ):
+        super().__init__()
+
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("Static KV cache scale must be finite and positive")
+
+        self.use_custom_update_cache_op = use_custom_update_cache_op
+        self.quantized_cache_dtype = torch.int8
+        self.return_float_values = return_float_values
+        self.max_context_length = max_context_length
+        self.calibration_enabled = False
+        cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
+        scale_shape = (1, 1, 1, head_dim)
+        self.register_buffer(
+            "k_cache",
+            torch.zeros(cache_shape, dtype=self.quantized_cache_dtype),
+            persistent=False,
+        )
+        self.register_buffer(
+            "v_cache",
+            torch.zeros(cache_shape, dtype=self.quantized_cache_dtype),
+            persistent=False,
+        )
+        self.register_buffer(
+            "k_cache_scales", torch.full(scale_shape, scale, dtype=torch.float32)
+        )
+        self.register_buffer(
+            "v_cache_scales", torch.full(scale_shape, scale, dtype=torch.float32)
+        )
+        self.register_buffer("k_calibration_cache", None, persistent=False)
+        self.register_buffer("v_calibration_cache", None, persistent=False)
+        self.register_buffer(
+            "k_observed_max",
+            torch.zeros(scale_shape, dtype=dtype),
+            persistent=False,
+        )
+        self.register_buffer(
+            "v_observed_max",
+            torch.zeros(scale_shape, dtype=dtype),
+            persistent=False,
+        )
+
+    def enable_calibration(self):
+        self.calibration_enabled = True
+        self.k_calibration_cache = self.k_observed_max.new_zeros(self.k_cache.shape)
+        self.v_calibration_cache = self.v_observed_max.new_zeros(self.v_cache.shape)
+        self.k_observed_max.zero_()
+        self.v_observed_max.zero_()
+
+    def finalize_calibration(self):
+        if not self.calibration_enabled:
+            raise RuntimeError("Static KV cache calibration is not enabled")
+        if not torch.any(self.k_observed_max) or not torch.any(self.v_observed_max):
+            raise RuntimeError("Static KV cache calibration observed no K/V values")
+
+        k_scales = self.k_observed_max.to(self.k_cache_scales.dtype) / 127.0
+        v_scales = self.v_observed_max.to(self.v_cache_scales.dtype) / 127.0
+        if torch.any(k_scales == 0) or torch.any(v_scales == 0):
+            logging.warning(
+                "Static KV cache calibration observed an all-zero K/V channel; "
+                "using the smallest positive scale for that channel."
+            )
+        # This floor prevents division by zero; it is not an accuracy threshold.
+        self.k_cache_scales.copy_(
+            k_scales.clamp_min(torch.finfo(self.k_cache_scales.dtype).tiny)
+        )
+        self.v_cache_scales.copy_(
+            v_scales.clamp_min(torch.finfo(self.v_cache_scales.dtype).tiny)
+        )
+        self.calibration_enabled = False
+        self.k_calibration_cache = None
+        self.v_calibration_cache = None
+        self.k_cache.zero_()
+        self.v_cache.zero_()
+
+    def _observe_and_update(self, input_pos, k_val, v_val):
+        if self.k_calibration_cache is None or self.v_calibration_cache is None:
+            raise RuntimeError("Static KV cache calibration is not enabled")
+        self.k_observed_max.copy_(
+            torch.maximum(
+                self.k_observed_max,
+                k_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True),
+            )
+        )
+        self.v_observed_max.copy_(
+            torch.maximum(
+                self.v_observed_max,
+                v_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True),
+            )
+        )
+        self.k_calibration_cache[:, input_pos] = k_val
+        self.v_calibration_cache[:, input_pos] = v_val
+        return self.k_calibration_cache, self.v_calibration_cache
+
+    def _quantize(self, value, scales):
+        # torchao affine custom ops do not yet have the required Arm/TOSA
+        # lowering and ExecuTorch out-variant runtime support.
+        qmin = torch.iinfo(self.quantized_cache_dtype).min
+        qmax = torch.iinfo(self.quantized_cache_dtype).max
+        return torch.clamp(torch.round(value / scales), qmin, qmax).to(
+            self.quantized_cache_dtype
+        )
+
+    def _dequantize(self, value, scales, dtype):
+        return value.to(dtype) * scales.to(dtype)
+
+    def _update_cache(self, value, cache, input_pos, indices=None):
+        start_pos = input_pos[0].item()
+        if self.use_custom_update_cache_op:
+            if indices is not None:
+                _ = torch.ops.llama.update_cache_with_indices(
+                    value, cache, start_pos, indices
+                )
+            else:
+                _ = torch.ops.llama.update_cache(value, cache, start_pos)
+        else:
+            assert indices is None, "Indices not supported for this path"
+            cache[:, input_pos] = value
+
+    def _quantize_and_update(self, input_pos, k_val, v_val, indices=None):
+        quantized_k_val = self._quantize(k_val, self.k_cache_scales)
+        quantized_v_val = self._quantize(v_val, self.v_cache_scales)
+
+        self._update_cache(quantized_k_val, self.k_cache, input_pos, indices)
+        self._update_cache(quantized_v_val, self.v_cache, input_pos, indices)
+
+    def _update_and_return_float_values(self, input_pos, k_val, v_val, indices=None):
+        self._quantize_and_update(input_pos, k_val, v_val, indices)
+
+        k_out = self._dequantize(self.k_cache, self.k_cache_scales, k_val.dtype)
+        v_out = self._dequantize(self.v_cache, self.v_cache_scales, v_val.dtype)
+
+        self._update_cache(k_val, k_out, input_pos, indices)
+        self._update_cache(v_val, v_out, input_pos, indices)
+
+        return k_out, v_out
+
+    def _update_and_return_quantized_values(
+        self, input_pos, k_val, v_val, indices=None
+    ):
+        self._quantize_and_update(input_pos, k_val, v_val, indices)
+
+        return self.k_cache, self.v_cache
+
+    def update(self, input_pos, k_val, v_val, indices=None):
+        """
+        k_val, v_val: [B, H, S, D]
+        return: [B, H, S, D]
+        Storage is [B, S, H, D], with static per-head-dim qparams.
+        """
+
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+
+        if self.calibration_enabled:
+            if indices is not None:
+                raise ValueError("Static KV calibration does not support indices")
+            k_out, v_out = self._observe_and_update(input_pos, k_val, v_val)
+        elif self.return_float_values:
+            k_out, v_out = self._update_and_return_float_values(
+                input_pos, k_val, v_val, indices
+            )
+        else:
+            k_out, v_out = self._update_and_return_quantized_values(
+                input_pos, k_val, v_val, indices
+            )
+        return k_out.transpose(1, 2), v_out.transpose(1, 2)
+
+    @classmethod
+    def from_float(
+        cls,
+        kv_cache,
+        scale: float = 1.0 / 127.0,
+        use_custom_update_cache_op: bool = True,
+    ):
+        if isinstance(kv_cache, CustomKVCache):
+            max_batch_size, max_context_length, n_heads, head_dim = (
+                kv_cache.k_cache.shape
+            )
+        else:
+            max_batch_size, n_heads, max_context_length, head_dim = (
+                kv_cache.k_cache.shape
+            )
+        return cls(
+            max_batch_size,
+            max_context_length,
+            n_heads,
+            head_dim,
+            scale=scale,
+            use_custom_update_cache_op=use_custom_update_cache_op,
+            dtype=kv_cache.k_cache.dtype,
+        )
+
+
 def replace_kv_cache_with_quantized_kv_cache(module):
     try:
         op = torch.ops.quantized_decomposed.quantize_per_token.out
@@ -302,6 +509,71 @@ def _replace_kv_cache_with_quantized_kv_cache(module):
         else:
             _replace_kv_cache_with_quantized_kv_cache(child)
     return module
+
+
+def replace_kv_cache_with_static_quantized_kv_cache(
+    module, scale: float = 1.0 / 127.0, use_custom_update_cache_op: bool = True
+):
+    if use_custom_update_cache_op:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+    logging.info(
+        "Replacing KVCache with StaticQuantizedKVCache. This modifies the model "
+        "in place. use_custom_update_cache_op=%s, scale=%s",
+        use_custom_update_cache_op,
+        scale,
+    )
+    return _replace_kv_cache_with_static_quantized_kv_cache(
+        module, scale, use_custom_update_cache_op
+    )
+
+
+def _replace_kv_cache_with_static_quantized_kv_cache(
+    module, scale: float, use_custom_update_cache_op: bool
+):
+    for name, child in module.named_children():
+        if isinstance(child, KVCache) or isinstance(child, CustomKVCache):
+            if type(child) not in (KVCache, CustomKVCache):
+                raise ValueError(
+                    "Static quantized KV cache does not support specialized "
+                    f"cache type {type(child).__name__}"
+                )
+            setattr(
+                module,
+                name,
+                StaticQuantizedKVCache.from_float(
+                    child,
+                    scale=scale,
+                    use_custom_update_cache_op=use_custom_update_cache_op,
+                ),
+            )
+        else:
+            _replace_kv_cache_with_static_quantized_kv_cache(
+                child, scale, use_custom_update_cache_op
+            )
+    return module
+
+
+def enable_static_kv_cache_calibration(module):
+    caches = [
+        child for child in module.modules() if isinstance(child, StaticQuantizedKVCache)
+    ]
+    if not caches:
+        raise ValueError("No StaticQuantizedKVCache modules found for calibration")
+    for cache in caches:
+        cache.enable_calibration()
+    return caches
+
+
+def finalize_static_kv_cache_calibration(module):
+    caches = [
+        child for child in module.modules() if isinstance(child, StaticQuantizedKVCache)
+    ]
+    if not caches:
+        raise ValueError("No StaticQuantizedKVCache modules found for calibration")
+    for cache in caches:
+        cache.finalize_calibration()
+    return caches
 
 
 class CustomKVCache(nn.Module):
@@ -371,8 +643,41 @@ def replace_kv_cache_with_custom_kv_cache(module):
 
 
 def _replace_kv_cache_with_custom_kv_cache(module):
+    # Import here to avoid circular imports
+    from executorch.examples.models.llama.source_transformation.attention_sink import (
+        KVCacheWithAttentionSink,
+    )
+
     for name, child in module.named_children():
-        if isinstance(child, KVCache):
+        if isinstance(child, KVCacheWithAttentionSink):
+            # Replace with custom op variant for performance
+            setattr(
+                module,
+                name,
+                CustomKVCacheWithAttentionSink.from_kv_cache_with_attention_sink(child),
+            )
+            # If parent has SDPACustom, enable explicit mask mode
+            sdpa = getattr(module, "SDPA", None)
+            if sdpa is not None and hasattr(sdpa, "use_attention_mask"):
+                sdpa.use_attention_mask = True
+        elif isinstance(child, RingKVCache):
+            # RingKVCache (e.g., from attention sink with sink_size=0) needs
+            # CustomRingKVCache, not plain CustomKVCache
+            setattr(
+                module,
+                name,
+                CustomRingKVCache(
+                    child.max_batch_size,
+                    child.window_size,
+                    child.n_heads,
+                    child.head_dim,
+                    dtype=child.k_cache.dtype,
+                ),
+            )
+            sdpa = getattr(module, "SDPA", None)
+            if sdpa is not None and hasattr(sdpa, "use_attention_mask"):
+                sdpa.use_attention_mask = True
+        elif isinstance(child, KVCache):
             cache_shape = child.k_cache.shape
             cache_dtype = child.k_cache.dtype
             max_batch_size, n_heads, max_context_length, head_dim = cache_shape
@@ -463,6 +768,89 @@ class QuantizedRingKVCache(QuantizedKVCache):
             kv_cache.cache_type,
             kv_cache.use_custom_update_cache_op,
             kv_cache.return_float_values,
+        )
+
+
+class CustomKVCacheWithAttentionSink(CustomKVCache):
+    """
+    CustomKVCache variant for attention sink models.
+
+    Uses the custom update_cache_with_indices op for performance while
+    supporting sink tokens (fixed slots) + ring buffer (sliding window).
+    Modeled after CustomRingKVCache but with CachePositionsManagerWithSink.
+    """
+
+    def __init__(
+        self,
+        max_batch_size,
+        n_heads,
+        head_dim,
+        window_size,
+        sink_size,
+        dtype=torch.float32,
+    ):
+        # Total cache size: sink slots + ring buffer (2x window for wrap safety)
+        total_cache_size = sink_size + window_size * 2
+        super().__init__(max_batch_size, total_cache_size, n_heads, head_dim, dtype)
+        from executorch.examples.models.llama.source_transformation.attention_sink import (
+            CachePositionsManagerWithSink,
+        )
+
+        self.cache_positions_manager = CachePositionsManagerWithSink(
+            total_cache_size, sink_size
+        )
+        self.is_ring_buffer = True
+        self.window_size = window_size
+        self.sink_size = sink_size
+
+    def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
+        cache_positions = self.cache_positions_manager.cache_positions
+        if self.sink_size > 0:
+            from executorch.examples.models.llama.source_transformation.attention_sink import (
+                _create_causal_mask_for_attention_sink,
+            )
+
+            return _create_causal_mask_for_attention_sink(
+                cache_positions, self.window_size, self.sink_size, start_pos, seq_len
+            )
+        else:
+            return _create_causal_mask_for_ring_buffer(
+                cache_positions, self.window_size, start_pos, seq_len
+            )
+
+    def update(self, input_pos, k_val, v_val):
+        seq_len = k_val.transpose(1, 2).size(1)
+        assert seq_len <= self.k_cache.size(
+            1
+        ), f"Update sequence length({seq_len}) for kv cache must be smaller than the cache size({self.k_cache.size(1)})"
+        # Verify that window tokens don't exceed ring_size, which would cause
+        # duplicate indices in update_cache_with_indices (scatter-style update).
+        start_pos = input_pos[0].item()
+        num_sink_tokens = max(0, min(seq_len, self.sink_size - start_pos))
+        num_window_tokens = seq_len - num_sink_tokens
+        assert num_window_tokens <= self.cache_positions_manager.ring_size, (
+            f"Window tokens ({num_window_tokens}) exceed ring buffer capacity "
+            f"({self.cache_positions_manager.ring_size}), which would cause "
+            f"non-deterministic behavior with update_cache_with_indices"
+        )
+        indices = self.cache_positions_manager.calculate_positions_and_update_indices(
+            input_pos, seq_len
+        )
+        indices = indices.unsqueeze(0)
+
+        return super().update(input_pos, k_val, v_val, indices)
+
+    @classmethod
+    def from_kv_cache_with_attention_sink(cls, kv_cache):
+        """Create from an existing KVCacheWithAttentionSink."""
+        max_batch_size, n_heads, _, head_dim = kv_cache.k_cache.shape
+        return cls(
+            max_batch_size,
+            n_heads,
+            head_dim,
+            kv_cache.window_size,
+            kv_cache.sink_size,
+            dtype=kv_cache.k_cache.dtype,
         )
 
 

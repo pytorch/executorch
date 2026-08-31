@@ -41,5 +41,16 @@ class GetItemConverter(NodeConverter):
             input_.type = output.type
             propagate_quantization(from_tensor=output, to_tensor=input_)
 
-        self.builder.turn_operator_to_identity(t_op)
-        self.builder.append_operators([t_op])
+        consumes_model_input = (
+            node.args[0].name in self.context.edge_program_signature.user_inputs
+        )
+        if consumes_model_input:
+            # Convert as identity op (Transpose that will be removed) because the input tensor is also an input of the
+            #  model. If we did redirection here, we would change the name of a model input, which is prohibited.
+            self.builder.turn_operator_to_identity(t_op)
+            self.builder.append_operators([t_op])
+        else:
+            # The operator will be converted to nothing. That means its output will not be in the model. We need to
+            #  redirect the output to the input, so that any operators that consume the `output` will use the `input_`
+            #  instead.
+            self.builder.redirect_tensor(output, input_)

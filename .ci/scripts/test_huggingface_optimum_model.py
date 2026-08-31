@@ -2,10 +2,16 @@ import argparse
 import gc
 import logging
 import math
+import os
+import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import List
+
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 import torch
 from datasets import load_dataset
@@ -25,6 +31,17 @@ from transformers import (
 )
 
 
+EXPORT_RETRIES = 3
+
+
+def _clear_export_dir(model_dir):
+    for path in Path(model_dir).iterdir():
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+
 def cli_export(command, model_dir):
     p = Path(model_dir)
     if p.exists():
@@ -34,11 +51,19 @@ def cli_export(command, model_dir):
             raise Exception(
                 f"Existing directory {model_dir} is non-empty. Please remove it first."
             )
-    try:
-        subprocess.run(command, check=True)
-        print("Export completed successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"Export failed with error: {e}")
+
+    for attempt in range(1, EXPORT_RETRIES + 1):
+        try:
+            subprocess.run(command, check=True)
+            print("Export completed successfully.")
+            return
+        except subprocess.CalledProcessError as e:
+            print(f"Export attempt {attempt}/{EXPORT_RETRIES} failed with error: {e}")
+            if attempt == EXPORT_RETRIES:
+                raise
+            if p.exists():
+                _clear_export_dir(model_dir)
+            time.sleep(attempt * 10)
 
 
 def check_causal_lm_output_quality(

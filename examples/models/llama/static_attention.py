@@ -13,8 +13,9 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
     register_attention,
 )
-from executorch.examples.models.llama.lora import LoRALinear
+from executorch.examples.models.llama.lora import lora_call, LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.norm import ScalelessRMSNorm
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -63,61 +64,55 @@ class StaticKVCache(nn.Module, ABC):
         """
         After inference, update the cache state for next iteration. The runtime needs to
         implement the same operation.
+
+        `pos` is the absolute position of the first token in the update. Caches smaller
+        than the sequence (sliding-window layers) wrap it into a ring index.
         """
         seq_dim = -1 if transpose else -2
         cache_len = cache.size(seq_dim)
         if cache_len == 0:
             return
-        if cache_len < update.size(seq_dim):
-            update = torch.narrow(
-                update,
-                seq_dim,
-                update.size(seq_dim) - cache_len,
-                cache_len,
-            )
-            assert update.size(seq_dim) == cache_len
+        if update_len is None:
+            update_len = update.size(seq_dim)
+
+        # Only the newest cache_len tokens fit. Drop from the front of the real-token
+        # window instead of narrowing the update tensor, which may be padded past
+        # update_len and would otherwise push padding into the cache.
+        dropped = max(0, update_len - cache_len)
+        update_pos += dropped
+        update_len -= dropped
+        pos = (pos + dropped) % cache_len
 
         if style == "shift_pointer":
+            updated = torch.roll(cache, -update_len, seq_dim)
             if transpose:
-                update_len = update_len or update.size(-1)
-                updated = torch.roll(cache, -update_len, -1)
                 updated[..., -update_len:] = update[
                     ..., update_pos : update_pos + update_len
                 ]
             else:
-                update_len = update_len or update.size(-2)
-                updated = torch.roll(cache, -update_len, -2)
                 updated[..., -update_len:, :] = update[
                     ..., update_pos : update_pos + update_len, :
                 ]
 
         if style == "smart_mask":
-            available = cache.size(-2) - pos
-            update_len = update_len or update.size(-1 if transpose else -2)
-            if update_len > available:
-                wrap = update_len - available
-                update_len = available
-            else:
-                wrap = 0
+            # Ring buffer: fill to the end of the cache, then wrap to the front.
+            contiguous_len = min(update_len, cache_len - pos)
+            wrap = update_len - contiguous_len
+            wrap_pos = update_pos + contiguous_len
 
             updated = torch.clone(cache)
             if transpose:
-                updated[..., pos : pos + update_len] = update[
-                    ..., update_pos : update_pos + update_len
+                updated[..., pos : pos + contiguous_len] = update[
+                    ..., update_pos : update_pos + contiguous_len
                 ]
                 if wrap > 0:
-                    update_pos += update_len
-                    updated[..., :wrap] = update[..., update_pos : update_pos + wrap]
-
+                    updated[..., :wrap] = update[..., wrap_pos : wrap_pos + wrap]
             else:
-                updated[..., pos : pos + update_len, :] = update[
-                    ..., update_pos : update_pos + update_len, :
+                updated[..., pos : pos + contiguous_len, :] = update[
+                    ..., update_pos : update_pos + contiguous_len, :
                 ]
                 if wrap > 0:
-                    update_pos += update_len
-                    updated[..., :wrap, :] = update[
-                        ..., update_pos : update_pos + wrap, :
-                    ]
+                    updated[..., :wrap, :] = update[..., wrap_pos : wrap_pos + wrap, :]
 
         return updated
 
@@ -197,6 +192,10 @@ class StaticAttentionMask:
         self.tensor[:, :, self.cache_len :] = input_mask
 
     def unmask(self, new_unmasked_len):
+        # Clamp to what is left of the cache region, mirroring the runtime
+        # (static_attention_io_manager.h). Without this the smart_mask branch walks
+        # past cache_len and zeroes part of the in-chunk causal mask.
+        new_unmasked_len = min(new_unmasked_len, self.cache_len - self.unmasked_len)
         if new_unmasked_len <= 0:
             return
 
@@ -204,9 +203,9 @@ class StaticAttentionMask:
             self.tensor[
                 :,
                 :,
-                max(
-                    0, self.cache_len - self.unmasked_len - new_unmasked_len
-                ) : self.cache_len
+                self.cache_len
+                - self.unmasked_len
+                - new_unmasked_len : self.cache_len
                 - self.unmasked_len,
             ] = 0
 
@@ -273,6 +272,12 @@ class StaticAttentionIOManager:
             )
             for cl in set(cache_lens)
         }
+        # Global (full-attention) layers use the largest cache; local
+        # (sliding-window) layers use a strictly smaller cache. In a global-only
+        # model every layer shares the same cache, so this stays equal to it.
+        self._global_cache_len = max(
+            (mask.cache_len for mask in self._masks.values()), default=0
+        )
 
         if isinstance(config_or_model, ModelArgs):
             self._from_config(config_or_model, cache_lens_dict, batch_size, dtype)
@@ -420,6 +425,50 @@ class StaticAttentionIOManager:
         for mask in self._masks.values():
             mask.reset()
 
+    def _is_windowed_mask(self, mask: StaticAttentionMask) -> bool:
+        """
+        A mask belongs to a local (sliding-window) layer iff its cache is strictly
+        smaller than the global cache. A pure sliding-window model is
+        indistinguishable from a global one by cache_len alone and counts as global.
+        """
+        return 0 < mask.cache_len < self._global_cache_len
+
+    def _mask_cache_outside_window(self):
+        """
+        Rewrite the cache region of every windowed mask so each query row only sees
+        its own window. `unmask` fills the cache region identically for all rows,
+        which lets query row k attend to cache_len + k + 1 keys instead of cache_len.
+
+        Express both layouts through the age of the token held in a slot -- how many
+        tokens are newer than it. With W = cache_len and v = min(pos, W) valid entries,
+        slot c is visible to query row k iff age(c) < min(v, W - 1 - k): the first term
+        is validity, the second is the window. Once k >= W - 1 the whole window lives
+        inside the chunk and nothing in the cache is visible.
+
+        Only the age mapping differs by layout. shift_pointer keeps valid entries right
+        aligned oldest to newest, so age is W - 1 - c. smart_mask is a ring indexed by
+        absolute position, so the same pattern is rotated by pos.
+
+        Composes with the in-chunk causal/window mask set by the caller, and holds for
+        both prefill chunks and decode steps.
+        """
+        for mask in self._masks.values():
+            if not self._is_windowed_mask(mask):
+                continue
+            w = mask.cache_len
+            rows = torch.arange(self.input_len).unsqueeze(1)
+            cols = torch.arange(w).unsqueeze(0)
+            if mask.style == "smart_mask":
+                age = (self.pos - 1 - cols) % w
+            else:
+                age = w - 1 - cols
+            limit = torch.clamp(w - 1 - rows, max=min(self.pos, w))
+            cache_mask = torch.full(
+                (self.input_len, w), mask.mask_val, dtype=mask.tensor.dtype
+            )
+            cache_mask[age < limit] = 0
+            mask.tensor[:, :, :w] = cache_mask
+
     def prefill(
         self,
         model: Callable[..., Any],
@@ -429,12 +478,24 @@ class StaticAttentionIOManager:
             raise RuntimeError("KV cache is full.")
 
         for mask in self._masks.values():
-            mask.set_input_mask(
-                torch.triu(
-                    torch.full((1, self.input_len, self.input_len), self.mask_val),
-                    diagonal=1,
-                )
+            input_mask = torch.triu(
+                torch.full((1, self.input_len, self.input_len), self.mask_val),
+                diagonal=1,
             )
+            # Local (sliding-window) layers use a per-layer cache_len smaller than
+            # the prompt. When the whole prompt is prefilled in a single chunk, the
+            # cache-eviction window is never exercised, so also mask keys older than
+            # the window here to reproduce the local attention instead of full causal.
+            # Only genuine local layers (cache smaller than the global cache) are
+            # windowed; a global layer is left full-causal even when its (nominal)
+            # cache is smaller than the prompt. No-op for chunked prefill
+            # (input_len <= cache_len).
+            if self._is_windowed_mask(mask) and mask.cache_len < self.input_len:
+                input_mask = input_mask + torch.tril(
+                    torch.full((1, self.input_len, self.input_len), self.mask_val),
+                    diagonal=-mask.cache_len,
+                )
+            mask.set_input_mask(input_mask)
 
         if isinstance(tokens, list):
             tokens = torch.tensor([tokens], dtype=torch.int32)
@@ -442,6 +503,7 @@ class StaticAttentionIOManager:
         logits = None
         all_logits = None
         for i in range(0, tokens.size(1), self.input_len):
+            self._mask_cache_outside_window()
             logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
             if self.generate_full_logits:
                 if all_logits is None:
@@ -475,6 +537,7 @@ class StaticAttentionIOManager:
         stop_tokens = stop_tokens or []
         new_tokens = [init_token]
         for _ in range(n):
+            self._mask_cache_outside_window()
             y = self._run_once(model, new_tokens[-1:])[0]
             if self.generate_full_logits:
                 new_tokens.append(y[:, :1, ...].argmax().item())
@@ -797,6 +860,7 @@ class StaticAttention(Attention):
         self.attention_qkv_bias = config.attention_qkv_bias
         self.use_qk_norm = config.use_qk_norm
         self.qk_norm_before_rope = config.qk_norm_before_rope
+        self.scale_query_by = getattr(config, "scale_query_by", 1.0)
         self.split_mha = split_mha
         self.is_kv_shared_layer = is_kv_shared_layer
         self.num_kv_shared_layers = config.num_kv_shared_layers
@@ -896,11 +960,18 @@ class StaticAttention(Attention):
 
     def _init_qk_norms(self, config: ModelArgs, is_kv_shared_layer: bool) -> None:
         if self.use_qk_norm:
-            self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
-            if is_kv_shared_layer:
-                self.k_norm = nn.Identity()
+            if getattr(config, "qk_norm_affine", True):
+                self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+                if is_kv_shared_layer:
+                    self.k_norm = nn.Identity()
+                else:
+                    self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
             else:
-                self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+                self.q_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
+                if is_kv_shared_layer:
+                    self.k_norm = nn.Identity()
+                else:
+                    self.k_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
@@ -928,6 +999,18 @@ class StaticAttention(Attention):
                 "contains LoRALinear modules. Use split_mha=False instead."
             )
 
+        if getattr(other, "use_attn_o_gate", False) or getattr(
+            other, "use_attn_o_norm", False
+        ):
+            raise ValueError(
+                "StaticAttention does not support use_attn_o_gate or use_attn_o_norm. "
+                "These features require AttentionMHA."
+            )
+
+        qk_norm_affine = (
+            hasattr(other.q_norm_fn, "weight") if other.use_qk_norm else True
+        )
+
         config = ModelArgs(
             dim=other.dim,
             n_layers=1,  # Not used in attention layer
@@ -939,8 +1022,10 @@ class StaticAttention(Attention):
             attention_qkv_bias=other.attention_qkv_bias,
             use_qk_norm=other.use_qk_norm,
             qk_norm_before_rope=other.qk_norm_before_rope,
+            qk_norm_affine=qk_norm_affine,
             norm_eps=other.q_norm_fn.eps if other.use_qk_norm else 1e-5,
             num_kv_shared_layers=getattr(other, "num_kv_shared_layers", 0),
+            scale_query_by=getattr(other, "scale_query_by", 1.0),
         )
 
         instance = cls(
@@ -1007,7 +1092,13 @@ class StaticAttention(Attention):
         if self.use_conv2d:
             x = x.reshape(bsz, -1, 1, dim).transpose(1, 3)
 
-        new_qs = [wq(x) for wq in self.wqs]
+        # CoreML LoRA-as-IO Path-2: when an upstream wrapper has stashed
+        # a per-key LoRA blob in attn_options, route per-projection slices
+        # to LoRALinear instances that have been tagged with `_lora_key`.
+        # Default behavior (no blob, or no `_lora_key`) is unchanged.
+        _lora_blob = kwargs.get("__lora_io_blob__")
+
+        new_qs = [lora_call(wq, x, _lora_blob) for wq in self.wqs]
 
         shared_kv = kwargs.get("shared_kv")
         if shared_kv is not None:
@@ -1017,8 +1108,8 @@ class StaticAttention(Attention):
             new_ks = []
             new_vs = []
         else:
-            new_ks = [wk(x) for wk in self.wks]
-            new_vs = [wv(x) for wv in self.wvs]
+            new_ks = [lora_call(wk, x, _lora_blob) for wk in self.wks]
+            new_vs = [lora_call(wv, x, _lora_blob) for wv in self.wvs]
 
         if self.use_conv2d:
 
@@ -1055,14 +1146,16 @@ class StaticAttention(Attention):
 
         if self.use_conv2d:
             y = (
-                self.wo(
-                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3)
+                lora_call(
+                    self.wo,
+                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3),
+                    _lora_blob,
                 )
                 .transpose(1, 3)
                 .reshape(bsz, -1, self.dim)
             )
         else:
-            y = self.wo(y)
+            y = lora_call(self.wo, y, _lora_blob)
 
         update = {"out_cache_state": out_cache_state}
         if kv_to_share is not None:
@@ -1078,7 +1171,7 @@ class StaticAttention(Attention):
             before_rope (bool, optional): Whether to apply normalization before RoPE. Defaults to False.
         """
         if self.use_qk_norm and before_rope == self.qk_norm_before_rope:
-            qs = [self.q_norm(q) for q in qs]
+            qs = [self.q_norm(q) * self.scale_query_by for q in qs]
             if ks is not None:
                 ks = [self.k_norm(k) for k in ks]
         return qs, ks
@@ -1306,12 +1399,12 @@ class StaticAttention(Attention):
             q = q.view(bsz, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
 
             if self.use_qk_norm and self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
 
             q = self.rope(q, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
 
             k, v = shared_kv
         else:
@@ -1320,14 +1413,14 @@ class StaticAttention(Attention):
             v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
 
             if self.use_qk_norm and self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
                 k = self.k_norm(k)
 
             q = self.rope(q, freqs_cos, freqs_sin)
             k = self.rope(k, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
-                q = self.q_norm(q)
+                q = self.q_norm(q) * self.scale_query_by
                 k = self.k_norm(k)
 
             k, out_cache_state = self.k_caches[0].update(
@@ -1430,14 +1523,17 @@ class StaticAttention(Attention):
         if other.use_qk_norm:
             self.use_qk_norm = True
             self.qk_norm_before_rope = other.qk_norm_before_rope
-            self.q_norm = rms_norm_class(other.q_norm_fn.dim, other.q_norm_fn.eps).to(
-                other.q_norm_fn.weight.dtype
-            )
-            self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
+            self.scale_query_by = getattr(other, "scale_query_by", 1.0)
+            if hasattr(other.q_norm_fn, "weight"):
+                self.q_norm = rms_norm_class(
+                    other.q_norm_fn.dim, other.q_norm_fn.eps
+                ).to(other.q_norm_fn.weight.dtype)
+                self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
             if (
                 not self.is_kv_shared_layer
                 and hasattr(other, "k_norm_fn")
                 and other.k_norm_fn is not None
+                and hasattr(other.k_norm_fn, "weight")
             ):
                 self.k_norm = rms_norm_class(
                     other.k_norm_fn.dim, other.k_norm_fn.eps

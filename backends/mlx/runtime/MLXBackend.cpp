@@ -6,9 +6,15 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+#include "MLXCache.h"
+#include "MLXCellCache.h"
 #include "MLXExecutor.h"
 #include "MLXInterpreter.h"
 #include "MLXLoader.h"
+#include "MLXSequenceCache.h"
+#include "mlx_mutable_state.h"
+
+#include <executorch/extension/llm/cache/cache_registry.h>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -18,8 +24,9 @@
 
 #include <mlx/mlx.h>
 
+#include <executorch/backends/mlx/runtime/backend_options.h>
+
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -169,6 +176,17 @@ struct MLXHandle {
   Interpreter interpreter;
   ::mlx::core::Stream stream; // Dedicated GPU stream for this handle
 
+  // Periodically call mlx::core::clear_cache() every N execute() calls to
+  // release MLX's cached buffer pool. 0 disables. Counter is non-atomic: it is
+  // only touched inside mlx_global_mutex() (see execute()).
+  int clear_cache_interval_{0};
+  uint64_t execute_count_{0};
+
+  // Keep-alive for the off-graph KV cache bound in init(). state.cache is a
+  // non-owning view of the same object, so the cache must outlive the handle
+  // even if the runner's session is torn down first.
+  std::shared_ptr<::executorch::extension::llm::cache::CacheBase> cache_shared;
+
   // Keep the constant buffers alive for zero-copy constants
   // Each FreeableBuffer must outlive the MLX arrays that reference it
   std::vector<FreeableBuffer> constant_buffers;
@@ -210,6 +228,13 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
     try {
       new (handle) MLXHandle();
+
+      // Per-model clear-cache cadence (optional runtime spec, keyed per
+      // delegate)
+      if (auto spec = context.get_runtime_spec<int>(kClearCacheIntervalKey);
+          spec.ok() && spec.get() > 0) {
+        handle->clear_cache_interval_ = spec.get();
+      }
 
       if (!processed || !processed->data() || processed->size() == 0) {
         throw std::runtime_error("init: null or empty delegate payload");
@@ -254,12 +279,72 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       processed->Free();
       processed = nullptr;
 
-      // Load mutable buffers (e.g., KV cache)
-      load_mutable_buffers(handle->program, handle->mutable_buffers);
+      // Load mutable buffers (e.g., KV cache). When skip_mutable_buffer_init is
+      // set (multi-session, where mlx_mutable_state.h allocates per-session
+      // buffers), avoid keeping a dead default copy on the handle. This is only
+      // safe if the init chain does not reference mutable buffers — otherwise
+      // it would run against an empty store, so we error out clearly.
+      bool skip_mutable_buffer_init = false;
+      if (auto spec = context.get_runtime_spec<bool>(kSkipMutableBufferInitKey);
+          spec.ok()) {
+        skip_mutable_buffer_init = spec.get();
+      }
+      // skip_mutable_buffer_init is only safe under a multi-session owner: the
+      // per-session manager allocates the buffers and execute() rebinds to
+      // them. Without an active load scope no handle is registered, no
+      // per-session buffers are ever created, and execute() would run against
+      // empty buffers. Reject the misuse loudly here instead of failing later.
+      if (skip_mutable_buffer_init && !mutable_state_load_scope_active()) {
+        ET_LOG(
+            Error,
+            "skip_mutable_buffer_init set without an active multi-session load "
+            "scope; mutable buffers would never be allocated");
+        throw std::runtime_error(
+            "skip_mutable_buffer_init requires an active multi-session owner");
+      }
+      if (skip_mutable_buffer_init &&
+          init_chain_references_mutable_buffer(handle->program)) {
+        ET_LOG(
+            Error,
+            "skip_mutable_buffer_init set but the init chain references "
+            "mutable buffers; cannot skip default mutable-buffer init");
+        throw std::runtime_error(
+            "skip_mutable_buffer_init incompatible with init chain that "
+            "references mutable buffers");
+      }
+      if (!skip_mutable_buffer_init) {
+        load_mutable_buffers(handle->program, handle->mutable_buffers);
+      }
 
       // Bind execution state (reused across execute() calls)
       handle->state.bind(
           handle->program, handle->constants, handle->mutable_buffers);
+
+      // Bind the off-graph KV cache, if the runner installed one under a key it
+      // passed as a runtime spec. Bound before the init chain runs so an
+      // update_and_attend node there sees the same cache execute() will.
+      if (auto spec = context.get_runtime_spec<const char*>(kCacheKeyKey);
+          spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
+        const char* cache_key = spec.get();
+        handle->cache_shared =
+            cache::CacheRegistry::global().get(std::string(cache_key));
+        if (!handle->cache_shared) {
+          throw std::runtime_error(
+              std::string("init: cache_key '") + cache_key +
+              "' is not installed in the CacheRegistry");
+        }
+        // Cross-cast from the neutral ownership anchor to this backend's
+        // tensor-typed op face; the two are deliberately unrelated bases (see
+        // MLXCache.h), so nullptr here means the key names another backend's
+        // cache.
+        handle->state.cache =
+            dynamic_cast<MLXCache*>(handle->cache_shared.get());
+        if (handle->state.cache == nullptr) {
+          throw std::runtime_error(
+              std::string("init: cache under key '") + cache_key +
+              "' is not an MLX cache");
+        }
+      }
 
       // Run init chain if present.
       // SAFETY: The >= 0 check ensures init_chain_idx is non-negative, so the
@@ -278,8 +363,21 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         eval(handle->constants.tensors);
       }
 
+      // Register the handle with the per-session mutable-state manager. This is
+      // a no-op unless a multi-session owner is active for this load (see
+      // mlx_mutable_state.h); single-session execution is unaffected.
+      mutable_state_note_handle(
+          handle, &handle->program, &handle->mutable_buffers);
+
     } catch (const std::exception& e) {
       ET_LOG(Error, "Failed to load MLX program: %s", e.what());
+      handle->~MLXHandle();
+      if (processed != nullptr) {
+        processed->Free();
+      }
+      return Error::InvalidProgram;
+    } catch (...) {
+      ET_LOG(Error, "Failed to load MLX program: unknown non-std exception");
       handle->~MLXHandle();
       if (processed != nullptr) {
         processed->Free();
@@ -360,6 +458,14 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           }
         }
 
+        // Select the active session's mutable buffers (KV cache, recurrent/conv
+        // state) before running. No-op for single-session handles; weights stay
+        // shared via ExecutionState::constants.
+        if (Error rebind_err = mutable_state_rebind_for_execute(h, h->state);
+            rebind_err != Error::Ok) {
+          return rebind_err;
+        }
+
         // Run the MLX program (builds lazy computation graph)
         h->interpreter.run(program, h->state, h->stream);
 
@@ -412,9 +518,22 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
       h->state.reset(); // Release temp GPU buffers back to MLX cache
 
+      // Periodically release MLX's cached buffer pool. The counter increment
+      // and clear_cache() run under the global mutex so they can't race another
+      // handle's in-flight submission, and the counter needs no atomic.
+      if (h->clear_cache_interval_ > 0) {
+        std::lock_guard<std::mutex> lock(mlx_global_mutex());
+        if ((++h->execute_count_ % h->clear_cache_interval_) == 0) {
+          ::mlx::core::clear_cache();
+        }
+      }
+
       return Error::Ok;
     } catch (const std::exception& e) {
       ET_LOG(Error, "MLX execute failed: %s", e.what());
+      return Error::Internal;
+    } catch (...) {
+      ET_LOG(Error, "MLX execute failed: unknown non-std exception");
       return Error::Internal;
     }
   }
@@ -422,6 +541,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
   void destroy(DelegateHandle* handle) const override {
     std::lock_guard<std::mutex> lock(mlx_global_mutex());
     if (handle != nullptr) {
+      mutable_state_forget_handle(handle);
       auto* mlx_handle = static_cast<MLXHandle*>(handle);
       mlx_handle->~MLXHandle();
     }
@@ -430,8 +550,25 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
 
 namespace {
 auto cls = MLXBackend();
-Backend backend{"MLXBackend", &cls};
+Backend backend{kMLXBackendId, &cls};
 static auto success_with_compiler = register_backend(backend);
+
+// Cache kind is named by the builder tag rather than an enum on the config: a
+// runner asks the registry for (backend_id, kind) and gets back a neutral
+// CacheBase it installs under a cache_key. Adding a kind is a new builder here.
+const int cache_builders_registered = [] {
+  cache::CacheBuilderRegistry::global().register_builder(
+      kMLXBackendId, "seq", [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::CacheBase>(
+            std::make_shared<MLXSequenceCache>(cfg));
+      });
+  cache::CacheBuilderRegistry::global().register_builder(
+      kMLXBackendId, "cell", [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::CacheBase>(
+            std::make_shared<MLXCellCache>(cfg));
+      });
+  return 0;
+}();
 } // namespace
 
 } // namespace mlx

@@ -1,0 +1,53 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+def define_common_targets(is_fbcode = False):
+    if not is_fbcode:
+        return
+
+    # Copyright (c) Meta Platforms, Inc. and affiliates.
+    # All rights reserved.
+    #
+    # This source code is licensed under the BSD-style license found in the
+    # LICENSE file in the root directory of this source tree.
+
+
+
+    python_library(
+        name = "quantizer",
+        srcs = [
+            "__init__.py",
+            "node_finders.py",
+            "pattern_checkers.py",
+            "pattern_matcher.py",
+            "quantization_configs.py",
+            "quantizer.py",
+            "quantizer_support.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/arm:common",
+            "//executorch/backends/arm:constants",
+            "//executorch/backends/arm/quantizer:arm_quantizer_utils",
+            "//executorch/backends/arm/quantizer:quantization_annotator",
+            "//executorch/backends/arm/quantizer:quantization_config",
+            "//executorch/backends/cortex_m:quantizer_reporter",
+            "//executorch/backends/cortex_m/passes:cortex_passes",
+            "//pytorch/ao:torchao",
+            "fbsource//third-party/pypi/tabulate:tabulate",
+        ],
+    )
+
+
+    python_library(
+        name = "quantization_configs",
+        srcs = [
+            "quantization_configs.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/arm/quantizer:arm_quantizer_utils",
+            "//executorch/backends/arm/quantizer:quantization_config",
+            "//executorch/backends/cortex_m:quantizer_reporter",
+            "//pytorch/ao:torchao",
+        ],
+    )

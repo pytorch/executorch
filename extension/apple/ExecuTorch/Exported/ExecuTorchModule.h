@@ -6,6 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#import "ExecuTorchBackendOption.h"
+#import "ExecuTorchBackendOptionsMap.h"
+#import "ExecuTorchEventTracer.h"
 #import "ExecuTorchValue.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -20,21 +23,20 @@ __attribute__((objc_subclassing_restricted))
 @interface ExecuTorchTensorMetadata : NSObject
 
 /** The size of each dimension. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *shape
-    NS_REFINED_FOR_SWIFT;
+@property(nonatomic, readonly) NSArray<NSNumber *> *shape NS_REFINED_FOR_SWIFT;
 
 /** The order in which dimensions are laid out. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder
-    NS_REFINED_FOR_SWIFT;
+@property(nonatomic, readonly)
+    NSArray<NSNumber *> *dimensionOrder NS_REFINED_FOR_SWIFT;
 
 /** The scalar type of each element in the tensor. */
-@property (nonatomic, readonly) ExecuTorchDataType dataType;
+@property(nonatomic, readonly) ExecuTorchDataType dataType;
 
 /** YES if the runtime pre-allocated memory for this tensor. */
-@property (nonatomic, readonly) BOOL isMemoryPlanned;
+@property(nonatomic, readonly) BOOL isMemoryPlanned;
 
 /** The (optional) user-visible name of this tensor (may be empty) */
-@property (nonatomic, readonly) NSString *name;
+@property(nonatomic, readonly) NSString *name;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
@@ -51,42 +53,45 @@ __attribute__((objc_subclassing_restricted))
 @interface ExecuTorchMethodMetadata : NSObject
 
 /** The method’s name. */
-@property (nonatomic, readonly) NSString *name;
+@property(nonatomic, readonly) NSString *name;
 
 /** An array of ExecuTorchValueTag raw values, one per declared input. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *inputValueTags
-    NS_REFINED_FOR_SWIFT;
+@property(nonatomic, readonly)
+    NSArray<NSNumber *> *inputValueTags NS_REFINED_FOR_SWIFT;
 
 /** An array of ExecuTorchValueTag raw values, one per declared output. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *outputValueTags
-    NS_REFINED_FOR_SWIFT;
+@property(nonatomic, readonly)
+    NSArray<NSNumber *> *outputValueTags NS_REFINED_FOR_SWIFT;
 
 /**
  * Mapping from input-index to TensorMetadata.
  * Only present for those indices whose tag == .tensor
  */
-@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *inputTensorMetadata
-    NS_REFINED_FOR_SWIFT;
+@property(nonatomic, readonly)
+    NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *inputTensorMetadata
+        NS_REFINED_FOR_SWIFT;
 
 /**
  * Mapping from output-index to TensorMetadata.
  * Only present for those indices whose tag == .tensor
  */
-@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *outputTensorMetadata
-    NS_REFINED_FOR_SWIFT;
+@property(nonatomic, readonly)
+    NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *outputTensorMetadata
+        NS_REFINED_FOR_SWIFT;
 
 /** A list of attribute TensorsMetadata. */
-@property (nonatomic, readonly) NSArray<ExecuTorchTensorMetadata *> *attributeTensorMetadata;
+@property(nonatomic, readonly)
+    NSArray<ExecuTorchTensorMetadata *> *attributeTensorMetadata;
 
 /** A list of memory-planned buffer sizes. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *memoryPlannedBufferSizes
-    NS_REFINED_FOR_SWIFT;
+@property(nonatomic, readonly)
+    NSArray<NSNumber *> *memoryPlannedBufferSizes NS_REFINED_FOR_SWIFT;
 
 /** Names of all backends this method can run on. */
-@property (nonatomic, readonly) NSArray<NSString *> *backendNames;
+@property(nonatomic, readonly) NSArray<NSString *> *backendNames;
 
 /** Total number of low-level instructions in this method’s body. */
-@property (nonatomic, readonly) NSInteger instructionCount;
+@property(nonatomic, readonly) NSInteger instructionCount;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
@@ -111,13 +116,14 @@ typedef NS_ENUM(NSInteger, ExecuTorchModuleLoadMode) {
  * runtime/executor/program.h
  */
 typedef NS_ENUM(uint8_t, ExecuTorchVerification) {
-    ExecuTorchVerificationMinimal,
-    ExecuTorchVerificationInternalConsistency,
+  ExecuTorchVerificationMinimal,
+  ExecuTorchVerificationInternalConsistency,
 } NS_SWIFT_NAME(ModuleVerification);
 
 /**
  * Represents a module that encapsulates an ExecuTorch program.
- * This class is a facade for loading programs and executing methods within them.
+ * This class is a facade for loading programs and executing methods within
+ * them.
  */
 NS_SWIFT_NAME(Module)
 @interface ExecuTorchModule : NSObject
@@ -125,7 +131,8 @@ NS_SWIFT_NAME(Module)
 /**
  * Initializes a module with a file path, data path and a specified load mode.
  *
- * @param filePath A string representing the path to the ExecuTorch program file.
+ * @param filePath A string representing the path to the ExecuTorch program
+ * file.
  * @param dataFilePaths A list of strings representing paths to .ptd files with
  * external tensors and external data.
  * @param loadMode A value from ExecuTorchModuleLoadMode that determines the
@@ -140,7 +147,8 @@ NS_SWIFT_NAME(Module)
 /**
  * Initializes a module with a file path, data path and a specified load mode.
  *
- * @param filePath A string representing the path to the ExecuTorch program file.
+ * @param filePath A string representing the path to the ExecuTorch program
+ * file.
  * @param dataFilePaths A list of strings representing paths to .ptd files with
  * external tensors and external data.
  * @return An initialized ExecuTorchModule instance.
@@ -151,26 +159,61 @@ NS_SWIFT_NAME(Module)
 /**
  * Initializes a module with a file path and a specified load mode.
  *
- * @param filePath A string representing the path to the ExecuTorch program file.
- * @param loadMode A value from ExecuTorchModuleLoadMode that determines the file loading behavior.
+ * @param filePath A string representing the path to the ExecuTorch program
+ * file.
+ * @param loadMode A value from ExecuTorchModuleLoadMode that determines the
+ * file loading behavior.
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath
                         loadMode:(ExecuTorchModuleLoadMode)loadMode;
 
 /**
- * Initializes a module with a file path using the default load mode (File mode).
+ * Initializes a module with a file path using the default load mode (File
+ * mode).
  *
- * @param filePath A string representing the path to the ExecuTorch program file.
+ * @param filePath A string representing the path to the ExecuTorch program
+ * file.
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath;
 
 /**
+ * Initializes a module that records events through the given tracer.
+ *
+ * The module takes over the tracer, so pass a fresh one and do not reuse it
+ * with another module. Read it back later with the `eventTracer` property, for
+ * example to collect a profile.
+ *
+ * @param filePath A string representing the path to the ExecuTorch program
+ * file.
+ * @param dataFilePaths A list of strings representing paths to .ptd files with
+ * external tensors and external data.
+ * @param loadMode A value from ExecuTorchModuleLoadMode that determines the
+ * file loading behavior.
+ * @param eventTracer The tracer the module records through.
+ * @return An initialized ExecuTorchModule instance.
+ */
+- (instancetype)initWithFilePath:(NSString *)filePath
+                   dataFilePaths:(NSArray<NSString *> *)dataFilePaths
+                        loadMode:(ExecuTorchModuleLoadMode)loadMode
+                     eventTracer:(ExecuTorchEventTracer *)eventTracer
+    NS_SWIFT_NAME(init(filePath:dataFilePaths:loadMode:eventTracer:));
+
+/**
+ * The tracer the module records through, or nil if it was created without one.
+ *
+ * The module owns the tracer, so this pointer is valid only while the module
+ * is.
+ */
+@property(nonatomic, readonly, nullable) ExecuTorchEventTracer *eventTracer;
+
+/**
  * Loads the module’s program using the specified verification level.
  *
  * @param verification The verification level to apply when loading the program.
- * @param error A pointer to an NSError pointer that will be set if an error occurs.
+ * @param error A pointer to an NSError pointer that will be set if an error
+ * occurs.
  * @return YES if the program was successfully loaded; otherwise, NO.
  */
 - (BOOL)loadWithVerification:(ExecuTorchVerification)verification
@@ -179,12 +222,45 @@ NS_SWIFT_NAME(Module)
 /**
  * Loads the module’s program using minimal verification.
  *
- * This is a convenience overload that defaults the verification level to Minimal.
+ * This is a convenience overload that defaults the verification level to
+ * Minimal.
  *
- * @param error A pointer to an NSError pointer that will be set if an error occurs.
+ * @param error A pointer to an NSError pointer that will be set if an error
+ * occurs.
  * @return YES if the program was successfully loaded; otherwise, NO.
  */
 - (BOOL)load:(NSError **)error;
+
+/**
+ * Loads the module's program with per-delegate backend options.
+ *
+ * The receiver retains @c options for as long as the underlying program
+ * references it (lifetime tracked via ARC).
+ *
+ * @param options A `ExecuTorchBackendOptionsMap` containing per-delegate
+ *        load-time configuration, built once via
+ *        `[ExecuTorchBackendOptionsMap mapWithOptions:error:]`.
+ * @param verification The verification level to apply when loading the program.
+ * @param error A pointer to an NSError pointer that will be set if an error
+ * occurs.
+ * @return YES if the program was successfully loaded; otherwise, NO.
+ */
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+           verification:(ExecuTorchVerification)verification
+                  error:(NSError **)error NS_REFINED_FOR_SWIFT;
+
+/**
+ * Loads the module's program with per-delegate backend options using minimal
+ * verification.
+ *
+ * @param options A `ExecuTorchBackendOptionsMap` containing per-delegate
+ *        load-time configuration.
+ * @param error A pointer to an NSError pointer that will be set if an error
+ * occurs.
+ * @return YES if the program was successfully loaded; otherwise, NO.
+ */
+- (BOOL)loadWithOptions:(ExecuTorchBackendOptionsMap *)options
+                  error:(NSError **)error NS_REFINED_FOR_SWIFT;
 
 /**
  * Checks if the module is loaded.
@@ -202,6 +278,19 @@ NS_SWIFT_NAME(Module)
  */
 - (BOOL)loadMethod:(NSString *)methodName
              error:(NSError **)error NS_SWIFT_NAME(load(_:));
+
+/**
+ * Loads a specific method from the program with per-delegate backend options.
+ *
+ * @param methodName A string representing the name of the method to load.
+ * @param options A `ExecuTorchBackendOptionsMap` containing per-delegate
+ *        load-time configuration.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return YES if the method was successfully loaded; otherwise, NO.
+ */
+- (BOOL)loadMethod:(NSString *)methodName
+           options:(ExecuTorchBackendOptionsMap *)options
+             error:(NSError **)error NS_REFINED_FOR_SWIFT;
 
 /**
  * Checks if a specific method is loaded.
@@ -222,8 +311,8 @@ NS_SWIFT_NAME(Module)
 /**
  * Retrieves the set of method names available in the loaded program.
  *
- * The method names are returned as an unordered set of strings. The program and methods
- * are loaded as needed.
+ * The method names are returned as an unordered set of strings. The program and
+ * methods are loaded as needed.
  *
  * @param error A pointer to an NSError pointer that is set if an error occurs.
  * @return An unordered set of method names, or nil in case of an error.
@@ -239,10 +328,11 @@ NS_SWIFT_NAME(Module)
  *
  * @param methodName A string representing the method name.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An ExecuTorchMethodMetadata object on success, or nil if the method isn’t found or a load error occurred.
+ * @return An ExecuTorchMethodMetadata object on success, or nil if the method
+ * isn’t found or a load error occurred.
  */
- - (nullable ExecuTorchMethodMetadata *)methodMetadata:(NSString *)methodName
-                                                 error:(NSError **)error
+- (nullable ExecuTorchMethodMetadata *)methodMetadata:(NSString *)methodName
+                                                error:(NSError **)error
     NS_RETURNS_RETAINED;
 
 /**
@@ -253,13 +343,13 @@ NS_SWIFT_NAME(Module)
  * @param methodName A string representing the method name.
  * @param values An NSArray of ExecuTorchValue objects representing the inputs.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
-- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
-                                            withInputs:(NSArray<ExecuTorchValue *> *)values
-                                                 error:(NSError **)error
-    NS_REFINED_FOR_SWIFT
-    NS_RETURNS_RETAINED;
+- (nullable NSArray<ExecuTorchValue *> *)
+    executeMethod:(NSString *)methodName
+       withInputs:(NSArray<ExecuTorchValue *> *)values
+            error:(NSError **)error NS_REFINED_FOR_SWIFT NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with the provided single input value.
@@ -269,13 +359,13 @@ NS_SWIFT_NAME(Module)
  * @param methodName A string representing the method name.
  * @param value An ExecuTorchValue object representing the input.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                              withInput:(ExecuTorchValue *)value
                                                  error:(NSError **)error
-    NS_SWIFT_UNAVAILABLE("")
-    NS_RETURNS_RETAINED;
+    NS_SWIFT_UNAVAILABLE("")NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with no input values.
@@ -284,12 +374,12 @@ NS_SWIFT_NAME(Module)
  *
  * @param methodName A string representing the method name.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:))
-    NS_RETURNS_RETAINED;
+    NS_SWIFT_NAME(execute(_:)) NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with the provided input tensors.
@@ -297,15 +387,16 @@ NS_SWIFT_NAME(Module)
  * The method is loaded on demand if not already loaded.
  *
  * @param methodName A string representing the method name.
- * @param tensors An NSArray of ExecuTorchTensor objects representing the inputs.
+ * @param tensors An NSArray of ExecuTorchTensor objects representing the
+ * inputs.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
-- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
-                                           withTensors:(NSArray<ExecuTorchTensor *> *)tensors
-                                                 error:(NSError **)error
-    NS_SWIFT_UNAVAILABLE("")
-    NS_RETURNS_RETAINED;
+- (nullable NSArray<ExecuTorchValue *> *)
+    executeMethod:(NSString *)methodName
+      withTensors:(NSArray<ExecuTorchTensor *> *)tensors
+            error:(NSError **)error NS_SWIFT_UNAVAILABLE("")NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with the provided single input tensor.
@@ -315,49 +406,56 @@ NS_SWIFT_NAME(Module)
  * @param methodName A string representing the method name.
  * @param tensor An ExecuTorchTensor object representing the input.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
-                                            withTensor:(ExecuTorchTensor *)tensor
+                                            withTensor:
+                                                (ExecuTorchTensor *)tensor
                                                  error:(NSError **)error
-    NS_SWIFT_UNAVAILABLE("")
-    NS_RETURNS_RETAINED;
+    NS_SWIFT_UNAVAILABLE("")NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with the provided input values.
  *
- * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ * This is a convenience method that calls the executeMethod with "forward" as
+ * the method name.
  *
  * @param values An NSArray of ExecuTorchValue objects representing the inputs.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
-- (nullable NSArray<ExecuTorchValue *> *)forwardWithInputs:(NSArray<ExecuTorchValue *> *)values
-                                                     error:(NSError **)error
-    NS_SWIFT_UNAVAILABLE("")
-    NS_RETURNS_RETAINED;
+- (nullable NSArray<ExecuTorchValue *> *)
+    forwardWithInputs:(NSArray<ExecuTorchValue *> *)values
+                error:(NSError **)error
+    NS_SWIFT_UNAVAILABLE("")NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with the provided single input value.
  *
- * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ * This is a convenience method that calls the executeMethod with "forward" as
+ * the method name.
  *
  * @param value An ExecuTorchValue object representing the input.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
-- (nullable NSArray<ExecuTorchValue *> *)forwardWithInput:(ExecuTorchValue *)value
+- (nullable NSArray<ExecuTorchValue *> *)forwardWithInput:
+                                             (ExecuTorchValue *)value
                                                     error:(NSError **)error
-    NS_SWIFT_UNAVAILABLE("")
-    NS_RETURNS_RETAINED;
+    NS_SWIFT_UNAVAILABLE("")NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with no inputs.
  *
- * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ * This is a convenience method that calls the executeMethod with "forward" as
+ * the method name.
  *
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
 - (nullable NSArray<ExecuTorchValue *> *)forward:(NSError **)error
     NS_RETURNS_RETAINED;
@@ -365,30 +463,35 @@ NS_SWIFT_NAME(Module)
 /**
  * Executes the "forward" method with the provided input tensors.
  *
- * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ * This is a convenience method that calls the executeMethod with "forward" as
+ * the method name.
  *
- * @param tensors An NSArray of ExecuTorchTensor objects representing the inputs.
+ * @param tensors An NSArray of ExecuTorchTensor objects representing the
+ * inputs.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
-- (nullable NSArray<ExecuTorchValue *> *)forwardWithTensors:(NSArray<ExecuTorchTensor *> *)tensors
-                                                      error:(NSError **)error
-    NS_SWIFT_UNAVAILABLE("")
-    NS_RETURNS_RETAINED;
+- (nullable NSArray<ExecuTorchValue *> *)
+    forwardWithTensors:(NSArray<ExecuTorchTensor *> *)tensors
+                 error:(NSError **)error
+    NS_SWIFT_UNAVAILABLE("")NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with the provided single input tensor.
  *
- * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ * This is a convenience method that calls the executeMethod with "forward" as
+ * the method name.
  *
  * @param tensor An ExecuTorchTensor object representing the input.
  * @param error A pointer to an NSError pointer that is set if an error occurs.
- * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or
+ * nil in case of an error.
  */
-- (nullable NSArray<ExecuTorchValue *> *)forwardWithTensor:(ExecuTorchTensor *)tensor
+- (nullable NSArray<ExecuTorchValue *> *)forwardWithTensor:
+                                             (ExecuTorchTensor *)tensor
                                                      error:(NSError **)error
-    NS_SWIFT_UNAVAILABLE("")
-    NS_RETURNS_RETAINED;
+    NS_SWIFT_UNAVAILABLE("")NS_RETURNS_RETAINED;
 
 /**
  * Sets a single input value for the "forward" method at index 0.

@@ -81,7 +81,7 @@ void CommandBuffer::end() {
 void CommandBuffer::bind_pipeline(
     VkPipeline pipeline,
     VkPipelineLayout pipeline_layout,
-    const utils::WorkgroupSize local_workgroup_size) {
+    const LocalWorkGroup& lwg) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::RECORDING,
       "Vulkan CommandBuffer: called bind_pipeline() on a command buffer whose state "
@@ -94,7 +94,7 @@ void CommandBuffer::bind_pipeline(
   }
 
   bound_.pipeline_layout = pipeline_layout;
-  bound_.local_workgroup_size = local_workgroup_size;
+  bound_.lwg = lwg;
 
   state_ = CommandBuffer::State::PIPELINE_BOUND;
 }
@@ -137,13 +137,7 @@ void CommandBuffer::set_push_constants(
   }
 }
 
-void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
-  VK_CHECK_COND(
-      state_ == CommandBuffer::State::DESCRIPTORS_BOUND ||
-          state_ == CommandBuffer::State::RECORDING,
-      "Vulkan CommandBuffer: called insert_barrier() on a command buffer whose state "
-      "is not DESCRIPTORS_BOUND or RECORDING.");
-
+void CommandBuffer::record_barrier(PipelineBarrier& pipeline_barrier) {
   if (pipeline_barrier) {
     if (!pipeline_barrier.buffer_barrier_handles.empty()) {
       pipeline_barrier.buffer_barrier_handles.clear();
@@ -174,22 +168,46 @@ void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
             ? pipeline_barrier.image_barrier_handles.data()
             : nullptr); // pImageMemoryBarriers
   }
+}
+
+void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
+  VK_CHECK_COND(
+      state_ == CommandBuffer::State::DESCRIPTORS_BOUND ||
+          state_ == CommandBuffer::State::RECORDING,
+      "Vulkan CommandBuffer: called insert_barrier() on a command buffer whose state "
+      "is not DESCRIPTORS_BOUND or RECORDING.");
+
+  record_barrier(pipeline_barrier);
 
   state_ = CommandBuffer::State::BARRIERS_INSERTED;
 }
 
-void CommandBuffer::dispatch(const utils::uvec3& global_workgroup_size) {
+void CommandBuffer::insert_barrier_only(PipelineBarrier& pipeline_barrier) {
+  VK_CHECK_COND(
+      state_ == CommandBuffer::State::RECORDING,
+      "Vulkan CommandBuffer: called insert_barrier_only() on a command buffer "
+      "whose state is not RECORDING.");
+
+  record_barrier(pipeline_barrier);
+}
+
+void CommandBuffer::dispatch(
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::BARRIERS_INSERTED,
       "Vulkan CommandBuffer: called dispatch() on a command buffer whose state "
       "is not BARRIERS_INSERTED.");
+  VK_CHECK_COND(
+      bound_.lwg == lwg,
+      "Vulkan CommandBuffer: dispatch local workgroup does not match bound "
+      "pipeline.");
 
   vkCmdDispatch(
       handle_,
-      utils::div_up(global_workgroup_size[0u], bound_.local_workgroup_size[0u]),
-      utils::div_up(global_workgroup_size[1u], bound_.local_workgroup_size[1u]),
-      utils::div_up(
-          global_workgroup_size[2u], bound_.local_workgroup_size[2u]));
+      utils::div_up(gwg[0u], lwg[0u]),
+      utils::div_up(gwg[1u], lwg[1u]),
+      utils::div_up(gwg[2u], lwg[2u]));
 
   state_ = CommandBuffer::State::RECORDING;
 }

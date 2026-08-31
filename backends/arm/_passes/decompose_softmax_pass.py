@@ -3,10 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -24,6 +25,8 @@ edge_softmax = (
     exir_ops.edge.aten._log_softmax.default,
 )
 log_softmax = (torch.ops.aten.log_softmax.int, exir_ops.edge.aten._log_softmax.default)
+
+logger = logging.getLogger(__name__)
 
 
 def _get_logsoftmax_ops(op) -> tuple:
@@ -53,7 +56,7 @@ def _get_logsoftmax_ops(op) -> tuple:
     raise RuntimeError(f"Can't get logsoftmax decomposition ops for op {op}")
 
 
-class DecomposeSoftmaxPass(ArmPass):
+class DecomposeSoftmaxPass(ArmOpTargetedPass):
     """This pass decomposes log_softmax or softmax into more primitive ops.
 
     Example:
@@ -74,19 +77,31 @@ class DecomposeSoftmaxPass(ArmPass):
         DecomposeSumPass,
         InsertTableOpsPass,
     }
+    target_ops = torch_softmax + edge_softmax
 
     def __init__(self, skip_safe_softmax: bool = False, **kwargs):
         super().__init__(**kwargs)
         self._skip_safe_softmax = skip_safe_softmax
+        self._warned_safe_softmax = False
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in torch_softmax + edge_softmax or not self.allowed_to_transform(
-            meta
-        ):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         if self._skip_safe_softmax and op == torch.ops.aten._safe_softmax.default:
             return super().call_operator(op, args, kwargs, meta)
+
+        if (
+            self.is_tfa_pass
+            and op == torch.ops.aten._safe_softmax.default
+            and not self._warned_safe_softmax
+        ):
+            logger.warning(
+                "aten._safe_softmax is being decomposed as regular softmax in "
+                "the annotation pipeline; this is only semantics-preserving "
+                "when no row is fully masked at runtime."
+            )
+            self._warned_safe_softmax = True
 
         log_op, sub_op, max_op, exp_op, sum_op, reciprocal_op, mul_op = (
             _get_logsoftmax_ops(op)

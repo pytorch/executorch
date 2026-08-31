@@ -36,6 +36,11 @@ bool is_nchw_to_bitw8_shader(const vkapi::ShaderInfo& shader) {
   return shader_prefix_str == kNchwToBitw8PrefixStr;
 }
 
+bool is_coalesced_image_to_nchw_shader(const vkapi::ShaderInfo& shader) {
+  return shader.kernel_name.find("image_to_nchw_coalesced") !=
+      std::string::npos;
+}
+
 void add_staging_to_tensor_node(
     ComputeGraph& graph,
     const ValueRef in_staging,
@@ -67,8 +72,8 @@ void add_staging_to_tensor_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Input and Outputs
       {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
@@ -83,7 +88,7 @@ void add_staging_to_tensor_node(
       nullptr));
 }
 
-utils::uvec3 tensor_to_staging_global_wg_size(
+GlobalWorkGrid tensor_to_staging_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -92,23 +97,30 @@ utils::uvec3 tensor_to_staging_global_wg_size(
   const ValueRef in_tensor = args.at(1).refs.at(0);
   const ValueRef out_staging = args.at(0).refs.at(0);
 
-  utils::uvec3 global_wg_size = graph->create_global_wg_size(in_tensor);
+  GlobalWorkGrid gwg = graph->create_gwg(in_tensor);
 
-  // Normally, the image_to_nchw shader is structured so that each thread reads
-  // one texel from the input texture and writes each component of the texel
-  // into the corresponding location in the output buffer. However, this shader
-  // is structured slightly differently in that each thread writes out a
-  // complete 32 bit integer (containing 4 packed 8-bit integers) into the
-  // output buffer. Therefore, the global work group size for this shader will
-  // be the number of elements in the output buffer divided by 4, as opposed to
-  // the extents of the input texture.
+  // The bitw8 shader writes out a complete 32 bit integer (containing 4 packed
+  // 8-bit integers) per thread, so its global work group size is the number of
+  // elements in the output buffer divided by 4.
   if (is_bitw8_shader(shader)) {
     const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
         graph->get_staging(out_staging)->numel() / 4);
-    global_wg_size = {buffer_len, 1, 1};
+    gwg = graph->create_linear_gwg(buffer_len);
+  } else if (is_coalesced_image_to_nchw_shader(shader)) {
+    // The coalesced (output-centric) image_to_nchw variant dispatches one
+    // thread per output (staging) element so that consecutive threads write
+    // consecutive NCHW offsets, keeping writes to the PCIe-backed staging
+    // buffer fully coalesced. This mirrors the buffer_to_nchw path, whose
+    // global size is already numel-based via create_gwg.
+    const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
+        graph->get_staging(out_staging)->numel());
+    gwg = graph->create_linear_gwg(buffer_len);
   }
+  // Otherwise (texel-centric image_to_nchw, used on unified-memory GPUs) keep
+  // the default texel-grid global size from create_gwg: one thread
+  // per texture texel.
 
-  return global_wg_size;
+  return gwg;
 }
 
 void add_tensor_to_staging_node(
@@ -143,8 +155,8 @@ void add_tensor_to_staging_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      tensor_to_staging_global_wg_size,
-      default_pick_local_wg_size,
+      tensor_to_staging_gwg,
+      default_pick_lwg,
       // Input and Outputs
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
@@ -163,7 +175,7 @@ void add_prepack_standard_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
     const ValueRef tensor,
-    const bool transpose_hw = false) {
+    const bool transpose_hw) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       graph,
       tensor,
@@ -192,8 +204,8 @@ void add_prepack_standard_node(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(tensor),
-      graph.create_local_wg_size(tensor),
+      graph.create_gwg(tensor),
+      graph.create_lwg(tensor),
       // Input and Outputs
       tensor_data,
       tensor,
@@ -276,8 +288,8 @@ void add_prepack_direct_copy_buffer_node(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(tensor),
-      graph.create_local_wg_size(tensor),
+      graph.create_gwg(tensor),
+      graph.create_lwg(tensor),
       // Input and Outputs
       tensor_data,
       tensor,
@@ -317,9 +329,9 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
   ValueRef qmat2 = graph.add_tensor(
       qmat2_sizes, vkcompute::vkapi::kByte, storage_type, utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size;
-  global_wg_size = graph.logical_limits_of(qmat2);
-  global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(2));
+  utils::uvec3 global_extents = graph.logical_limits_of(qmat2);
+  global_extents[1] = utils::div_up(global_extents[1], uint32_t(2));
+  const GlobalWorkGrid gwg(global_extents, kTiledWorkGrid);
 
   std::string kernel_name =
       graph.context()->adapter_ptr()->has_full_int8_buffers_support()
@@ -330,8 +342,8 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       // Inputs and Outputs
       qmat2_data,
       qmat2,

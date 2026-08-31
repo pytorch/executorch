@@ -6,9 +6,11 @@
 
 
 import io
+import os
+import tempfile
 import unittest
 
-from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._cord import Cord, FileBackedData
 
 
 class TestCord(unittest.TestCase):
@@ -61,3 +63,22 @@ class TestCord(unittest.TestCase):
         outfile = io.BytesIO()
         cord.write_to_file(outfile)
         self.assertEqual(b"HelloWorld", outfile.getvalue())
+
+    def test_file_backed_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "source.bin")
+            with open(source_path, "wb") as f:
+                f.write(b"FileBacked")
+
+            with FileBackedData.move_from(source_path) as data:
+                self.assertFalse(os.path.exists(source_path))
+                self.assertEqual(10, len(data))
+
+                cord = Cord(b"Prefix")
+                cord.append(data)
+                outfile = io.BytesIO()
+                cord.write_to_file(outfile)
+                self.assertEqual(b"PrefixFileBacked", outfile.getvalue())
+                self.assertEqual(b"PrefixFileBacked", bytes(cord))
+
+            self.assertEqual([], os.listdir(directory))

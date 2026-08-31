@@ -48,8 +48,8 @@ void add_unary_op_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -157,6 +157,7 @@ DEFINE_HARDSHRINK_FN(hardshrink);
 DEFINE_ACTIVATION_FN(hardswish);
 DEFINE_ACTIVATION_FN(hardsigmoid);
 DEFINE_LEAKY_RELU_FN(leaky_relu);
+DEFINE_ACTIVATION_FN(log10);
 DEFINE_ACTIVATION_FN(round);
 DEFINE_ACTIVATION_FN(bitwise_not);
 
@@ -179,6 +180,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
   VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
+  VK_REGISTER_OP(aten.log10.default, log10);
   VK_REGISTER_OP(aten.round.default, round);
   VK_REGISTER_OP(aten.bitwise_not.default, bitwise_not);
 }

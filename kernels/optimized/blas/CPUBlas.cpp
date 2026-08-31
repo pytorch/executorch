@@ -47,6 +47,14 @@ inline CBLAS_TRANSPOSE to_cblas_transpose(TransposeType trans) {
 #endif // ET_BUILD_FOR_APPLE
 #endif // ET_BUILD_WITH_BLAS
 
+bool gemm_uses_blas() {
+#ifdef ET_BUILD_WITH_BLAS
+  return true;
+#else
+  return false;
+#endif
+}
+
 // clang-format off
 void normalize_last_dims(
     TransposeType transa, TransposeType transb,
@@ -233,6 +241,48 @@ void gemm(
       static_cast<const acc_type>(beta),
       c, ldc);
 #endif
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const BFloat16 *a, int64_t lda,
+    const BFloat16 *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+  gemm_impl<BFloat16, float, float>(
+      transa, transb,
+      m, n, k,
+      alpha,
+      a, lda,
+      b, ldb,
+      beta,
+      c, ldc);
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const Half *a, int64_t lda,
+    const Half *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+  gemm_impl<Half, float, float>(
+      transa, transb,
+      m, n, k,
+      alpha,
+      a, lda,
+      b, ldb,
+      beta,
+      c, ldc);
 }
 // clang-format on
 

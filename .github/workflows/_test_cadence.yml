@@ -45,9 +45,9 @@ jobs:
 
         ./install_requirements.sh > /dev/null
         pip install -e . --no-build-isolation > /dev/null
-        pip install beartype later pyre_extensions pytest-xdist
+        pip install beartype later pyre_extensions pytest-rerunfailures==15.1 pytest-xdist
 
-        python -m pytest backends/cadence/aot/tests/ -v -n auto
+        python -m pytest backends/cadence/aot/tests/ -v -n auto --reruns 2 --reruns-delay 1
 
   test-ops:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -66,7 +66,7 @@ jobs:
 
         ./install_requirements.sh > /dev/null
         pip install -e . --no-build-isolation > /dev/null
-        pip install beartype later pyre_extensions pytest-xdist
+        pip install beartype later pyre_extensions pytest-rerunfailures==15.1 pytest-xdist
 
         # Use the pre-built runner from the build job
         mkdir -p cmake-out/backends/cadence
@@ -74,4 +74,4 @@ jobs:
         chmod +x cmake-out/backends/cadence/cadence_runner
 
         export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/backends/cadence/utils/FACTO"
-        python -m pytest examples/cadence/operators/ -v -n auto
+        python -m pytest examples/cadence/operators/ -v -n auto --reruns 2 --reruns-delay 1

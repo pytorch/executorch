@@ -28,7 +28,11 @@ from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
-from executorch.extension.llm.export.config.llm_config import LlmConfig, Pt2eQuantize
+from executorch.extension.llm.export.config.llm_config import (
+    LlmConfig,
+    Pt2eQuantize,
+    VgfQuantizeScope,
+)
 
 UNWANTED_OPS = [
     "aten_permute_copy_default",
@@ -65,6 +69,24 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
+
+    def test_bf16_xnnpack_delegates_linears_when_enabled(self):
+        parser = build_args_parser()
+        args = parser.parse_args([])
+        args.use_kv_cache = True
+        args.xnnpack = True
+        args.xnnpack_extended_ops = True
+        args.xnnpack_enable_bf16 = True
+        args.dtype_override = "bf16"
+
+        llm_config = LlmConfig.from_args(args)
+        builder = _export_llama(llm_config)
+        graph_module = builder.edge_manager.exported_program().graph_module
+        delegation_info = get_delegation_info(graph_module)
+
+        linear = delegation_info.delegation_by_operator["aten_linear_default"]
+        self.assertGreater(linear.delegated, 0)
+        self.assertEqual(linear.non_delegated, 0)
 
     @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
     def test_get_quantizer_and_quant_params_returns_tosa_quantizer(self):
@@ -109,5 +131,46 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         self.assertIsNone(pt2e_quant_params)
         self.assertIsNone(quant_dtype)
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_get_quantizer_and_quant_params_returns_vgf_linear_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_8a8w
+
+        _pt2e_quant_params, quantizers, _quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_vgf_16a8w_requires_int16_compile_spec_extension(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_16a8w
+
+        with self.assertRaisesRegex(ValueError, "INT16 support"):
+            get_quantizer_and_quant_params(llm_config)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_vgf_16a8w_accepts_int16_compile_spec_extension(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT+int16"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_16a8w
+
+        _pt2e_quant_params, quantizers, _quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], VgfQuantizer)

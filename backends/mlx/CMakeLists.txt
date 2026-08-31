@@ -162,83 +162,191 @@ if(NOT _mlx_deployment_target_ok)
   )
 endif()
 
-# MLX build options - we only need the C++ library with Metal
-set(MLX_BUILD_PYTHON_BINDINGS
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_TESTS
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_EXAMPLES
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_BENCHMARKS
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_PYTHON_STUBS
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_CUDA
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_CPU
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_METAL
-    ON
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_SHARED_LIBS
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_GGUF
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_BUILD_SAFETENSORS
-    OFF
-    CACHE BOOL "" FORCE
-)
-set(MLX_METAL_JIT
-    ON
-    CACHE BOOL "Use JIT compiled Metal kernels"
-)
+# Build MLX in its own isolated CMake scope via ExternalProject, then consume it
+# as a prebuilt static lib through an imported target (see below). Building MLX
+# with add_subdirectory would drop its whole project into ExecuTorch's
+# target/option namespace, which collides with shared deps MLX fetches (e.g.
+# nlohmann_json) and leaks MLX's MLX_BUILD_* options into our cache. The
+# isolated scope runs MLX's FetchContent in its own namespace, so no collision
+# and no submodule patching are needed.
+include(ExternalProject)
 
-# Auto-apply patches to MLX submodule. Each patch is applied idempotently: `git
-# apply --check` tests whether the patch is still applicable (i.e. not yet
-# applied), and only then applies it.
-set(_mlx_patches "${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_json.patch")
-foreach(_patch IN LISTS _mlx_patches)
-  if(EXISTS "${_patch}" AND EXISTS "${MLX_SOURCE_DIR}")
-    get_filename_component(_patch_name "${_patch}" NAME)
-    execute_process(
-      COMMAND git apply --check "${_patch}"
-      WORKING_DIRECTORY ${MLX_SOURCE_DIR}
-      RESULT_VARIABLE _patch_check
-      OUTPUT_QUIET ERROR_QUIET
-    )
-    if(_patch_check EQUAL 0)
-      execute_process(
-        COMMAND git apply "${_patch}" WORKING_DIRECTORY ${MLX_SOURCE_DIR}
-      )
-      message(STATUS "Applied ${_patch_name} to MLX submodule")
-    else()
-      message(STATUS "${_patch_name} already applied or not applicable")
-    endif()
+set(_mlx_binary_dir ${CMAKE_CURRENT_BINARY_DIR}/mlx)
+set(_mlx_static_lib ${_mlx_binary_dir}/libmlx.a)
+# With MLX_METAL_JIT=ON, MLX does not install the metallib; it is produced in
+# the build tree at this path.
+set(_mlx_metallib ${_mlx_binary_dir}/mlx/backend/metal/kernels/mlx.metallib)
+
+message(
+  STATUS "Building MLX from submodule (ExternalProject): ${MLX_SOURCE_DIR}"
+)
+# Local patches applied to the MLX submodule before its build. Kept minimal and
+# idempotent (patches/apply.sh reverse-checks each before applying); a context
+# mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
+# each patch file under patches/ for its rationale.
+set(_mlx_patches
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
+)
+# In a framework build the delegate is static, so MLX cannot find a colocated
+# metallib and instead loads one from a SwiftPM resource bundle. SWIFTPM_BUNDLE
+# is the bundle name and MLX_SWIFTPM_METALLIB_NAME the per-slice file inside it
+# (one per slice, since a slice's metallib does not load on another). PLATFORM
+# is set only for the Apple presets; a plain wheel build leaves it empty and
+# keeps the colocated path.
+set(_mlx_extra_cxx_flags "")
+set(_mlx_cxx_flags_arg "")
+if(PLATFORM)
+  if(PLATFORM STREQUAL "OS64")
+    set(_mlx_metallib_slice "ios")
+  elseif(PLATFORM STREQUAL "SIMULATORARM64")
+    set(_mlx_metallib_slice "ios-simulator")
+  else()
+    set(_mlx_metallib_slice "macos")
   endif()
-endforeach()
+  set(_mlx_extra_cxx_flags
+      "-DSWIFTPM_BUNDLE=\\\"executorch_backend_mlx_resources\\\" -DMLX_SWIFTPM_METALLIB_NAME=\\\"mlx-${_mlx_metallib_slice}\\\""
+  )
+  # Only override the sub-build's CXX flags when there is something to add. An
+  # empty -DCMAKE_CXX_FLAGS= on the command line beats the environment, so
+  # passing it unconditionally would silently drop a wheel build's CXXFLAGS for
+  # MLX only.
+  set(_mlx_cxx_flags_arg "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}")
+endif()
 
-# Add MLX subdirectory
-message(STATUS "Adding MLX from submodule: ${MLX_SOURCE_DIR}")
-add_subdirectory(${MLX_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/mlx)
+# Prefer the preset's per-slice DEPLOYMENT_TARGET; fall back to the toolchain
+# value.
+if(DEPLOYMENT_TARGET)
+  set(_mlx_osx_deployment_target ${DEPLOYMENT_TARGET})
+else()
+  set(_mlx_osx_deployment_target ${CMAKE_OSX_DEPLOYMENT_TARGET})
+endif()
+
+# The sub-build is forced to a single-config generator (Unix Makefiles), which
+# reads CMAKE_BUILD_TYPE, not the --config passed to the parent. Follow the
+# active configuration through $<CONFIG>, which resolves to the config being
+# built under a multi-config parent (Xcode) and to CMAKE_BUILD_TYPE under a
+# single-config one. It is empty only for a bare single-config parent that set
+# no type, so default that case to Release rather than compile MLX with no
+# optimization.
+set(_mlx_build_type "$<IF:$<BOOL:$<CONFIG>>,$<CONFIG>,Release>")
+
+# Decide the MLX sub-build's build command, consumed by BUILD_COMMAND below. An
+# empty value leaves ExternalProject's default in place, which is only the right
+# choice for a Makefiles parent: ExternalProject emits `$(MAKE)` (inheriting the
+# parent's jobserver) only when the PARENT generator matches "Make". Under Xcode
+# or Ninja it emits a bare `cmake --build`, with no -j and no jobserver, so MLX
+# would compile on one core. Name a job count there; a bare --parallel with no
+# number would expand to `make -j`, unbounded.
+cmake_host_system_information(
+  RESULT _mlx_host_cores QUERY NUMBER_OF_LOGICAL_CORES
+)
+if(CMAKE_GENERATOR MATCHES "Make")
+  set(_mlx_build_command "")
+else()
+  set(_mlx_build_command ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel
+                         ${_mlx_host_cores}
+  )
+endif()
+
+ExternalProject_Add(
+  mlx_external
+  SOURCE_DIR ${MLX_SOURCE_DIR}
+  BINARY_DIR ${_mlx_binary_dir}
+  # Force a single-config generator for the sub-build. The parent Apple build
+  # uses the Xcode generator, which is multi-config and would place libmlx.a in
+  # a per-config subdirectory (mlx/Debug/libmlx.a). The paths below that consume
+  # the archive expect it flat at ${_mlx_binary_dir}/libmlx.a, the way a
+  # single-config generator emits it, which is also how the wheel build already
+  # produces it.
+  CMAKE_GENERATOR "Unix Makefiles"
+  CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${_mlx_build_type}"
+             -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
+             ${_mlx_cxx_flags_arg}
+             # The preset's DEPLOYMENT_TARGET carries the correct per-slice
+             # minimum (iOS 17, macOS 14); the ios.toolchain leaves
+             # CMAKE_OSX_DEPLOYMENT_TARGET at 12.0 on the iOS slices and only
+             # syncs it for MAC. The shader-flag patch reads
+             # CMAKE_OSX_DEPLOYMENT_TARGET, so feed the preset value in as that,
+             # or the iOS metallib is stamped -mios-version-min=12.0.
+             -DCMAKE_OSX_DEPLOYMENT_TARGET=${_mlx_osx_deployment_target}
+             -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+             -DPLATFORM=${PLATFORM}
+             -DDEPLOYMENT_TARGET=${DEPLOYMENT_TARGET}
+             # We only need the static Metal C++ library.
+             -DMLX_BUILD_METAL=ON
+             -DMLX_BUILD_CPU=OFF
+             -DMLX_BUILD_CUDA=OFF
+             -DMLX_BUILD_SHARED_LIBS=OFF
+             -DMLX_BUILD_PYTHON_BINDINGS=OFF
+             -DMLX_BUILD_PYTHON_STUBS=OFF
+             -DMLX_BUILD_TESTS=OFF
+             -DMLX_BUILD_EXAMPLES=OFF
+             -DMLX_BUILD_BENCHMARKS=OFF
+             -DMLX_BUILD_GGUF=OFF
+             -DMLX_BUILD_SAFETENSORS=OFF
+             -DMLX_METAL_JIT=ON
+  # MLX's own install() does not emit libmlx.a where we consume it or the
+  # metallib at all, so skip the install step and read both from the build tree.
+  INSTALL_COMMAND ""
+  # Build in parallel, but only where it is needed and always with a job count.
+  # Under the multi-config Xcode parent the generated sub-build step is `cmake
+  # --build . --config <cfg>` with no -j and no jobserver to inherit, so MLX
+  # would compile fully serially. Under a single-config parent the default build
+  # command is `$(MAKE)`, which already inherits the parent's jobserver, so
+  # overriding it there would break that and serialize MLX instead. A bare
+  # --parallel with no number expands to `make -j`, unbounded, so name a count.
+  BUILD_COMMAND ${_mlx_build_command}
+  # ExternalProject stamps its build, so a bare MLX submodule bump (git
+  # submodule update) would not invalidate the stamp and we'd link a stale
+  # libmlx.a with no signal. BUILD_ALWAYS reruns the build step every configure;
+  # it is a fast no-op under Ninja when nothing changed.
+  BUILD_ALWAYS ON
+  # Required so Ninja knows these are produced by the external build.
+  BUILD_BYPRODUCTS ${_mlx_static_lib} ${_mlx_metallib}
+)
+
+# ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so
+# a reused build directory whose MLX source was reset (patches reverted) would
+# recompile an unpatched MLX and silently drop the iOS Metal SDK selection and
+# the SwiftPM metallib name. Re-apply the patches on every build; apply.sh is
+# idempotent (it reverse-checks each patch, skipping those already applied).
+# DEPENDERS configure, not build: mlx_metal_sdk_per_platform.patch edits the
+# sub-project's own CMake to pick the Metal SDK from PLATFORM, so it must land
+# before the sub-configure runs, or the shaders are built against the macOS SDK
+# for every slice. That does mean the sub-configure re-runs on each build, which
+# is the price of the ordering.
+ExternalProject_Add_Step(
+  mlx_external reapply_patches
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
+          ${_mlx_patches}
+  DEPENDEES patch
+  DEPENDERS configure
+  ALWAYS 1
+)
+
+# Imported target for the MLX static library produced by mlx_external. A static
+# libmlx.a carries no transitive link deps, so re-add the frameworks MLX itself
+# links (mirrors third-party/mlx/CMakeLists.txt:209). CPU is OFF, so Accelerate
+# is not needed.
+add_library(mlx STATIC IMPORTED GLOBAL)
+set_target_properties(mlx PROPERTIES IMPORTED_LOCATION ${_mlx_static_lib})
+# Headers come from the submodule source tree (always present), not the build
+# dir, so mlxdelegate compilation cannot race the external build. Verified: MLX
+# emits no public headers into the build tree (version.h is checked in; the
+# version string is a compile-def on version.cpp), so the source dir suffices.
+target_include_directories(mlx INTERFACE ${MLX_SOURCE_DIR})
+find_library(METAL_FRAMEWORK Metal)
+find_library(FOUNDATION_FRAMEWORK Foundation)
+find_library(QUARTZ_FRAMEWORK QuartzCore)
+set_target_properties(
+  mlx
+  PROPERTIES INTERFACE_LINK_LIBRARIES
+             "${METAL_FRAMEWORK};${FOUNDATION_FRAMEWORK};${QUARTZ_FRAMEWORK}"
+)
 
 # -----------------------------------------------------------------------------
 # MLX Backend library
@@ -247,14 +355,50 @@ add_subdirectory(${MLX_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/mlx)
 # Op logging option (for debugging) - OFF by default for performance
 option(ET_MLX_ENABLE_OP_LOGGING "Enable per-op logging in MLX delegate" OFF)
 
-set(_mlx_backend__srcs ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
-                       ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
+# Custom kernel execution - OFF by default for security. When enabled,
+# MetalKernelNode can execute arbitrary Metal shader code embedded in .pte
+# files. Only enable for trusted .pte sources.
+option(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+       "Allow MetalKernelNode to execute custom Metal shaders from .pte files"
+       ON
 )
 
-add_library(mlxdelegate ${_mlx_backend__srcs})
+set(_mlx_backend__srcs
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/mlx_mutable_state.cpp
+)
+
+# Build the delegate as a shared library for the wheel so a C++ consumer can
+# link it, and keep it static everywhere else so no other build changes.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_mlx_backend_library_type SHARED)
+else()
+  set(_mlx_backend_library_type STATIC)
+endif()
+add_library(mlxdelegate ${_mlx_backend_library_type} ${_mlx_backend__srcs})
 
 # Ensure schema is generated before compiling
 add_dependencies(mlxdelegate mlx_schema)
+
+# mlx is an imported target, so a dependency on it would not order the build.
+# Depend on mlx_external directly so libmlx.a exists before mlxdelegate links.
+add_dependencies(mlxdelegate mlx_external)
+
+# The Apple framework build reads each static library straight from the target
+# output directory (it merges them without an install step), but libmlx.a is
+# produced by the MLX sub-build in its own binary dir, not next to the delegate.
+# Copy it beside libmlxdelegate.a after the delegate builds so the framework
+# packaging finds it where it expects. Under the multi-config Xcode generator
+# the Apple presets use, TARGET_FILE_DIR resolves to the per-config directory
+# the packaging reads (<preset>/Release), which is what this relies on.
+add_custom_command(
+  TARGET mlxdelegate
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_mlx_static_lib}
+          $<TARGET_FILE_DIR:mlxdelegate>/libmlx.a
+  VERBATIM
+)
 
 # Add logging flag if enabled
 if(ET_MLX_ENABLE_OP_LOGGING)
@@ -262,18 +406,53 @@ if(ET_MLX_ENABLE_OP_LOGGING)
   message(STATUS "MLX delegate op logging ENABLED")
 endif()
 
+if(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION)
+  target_compile_definitions(
+    mlxdelegate PRIVATE ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
+  )
+  message(STATUS "MLX delegate custom kernel execution ENABLED")
+endif()
+
 target_include_directories(
   mlxdelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime
 )
 
-# Link against MLX and executorch mlx is only available at BUILD_INTERFACE -
-# consumers must link to mlx separately
+# Link against MLX and executorch. mlx is an imported static lib (built by
+# mlx_external) and is not re-exported, so a consumer of the static build must
+# link mlx separately via the package config. The shared build bundles it
+# instead, see below. extension_llm_cache carries the off-graph KV-cache
+# registry the backend binds to in init(); it is defined under
+# EXECUTORCH_BUILD_EXTENSION_LLM, which the mlx preset enables.
 target_link_libraries(
-  mlxdelegate PRIVATE mlx_schema executorch_core $<BUILD_INTERFACE:mlx>
+  mlxdelegate PRIVATE mlx_schema extension_llm_cache $<BUILD_INTERFACE:mlx>
 )
+if(EXECUTORCH_BUILD_SHARED)
+  set_target_properties(
+    mlxdelegate PROPERTIES OUTPUT_NAME executorch_backend_mlx
+  )
+  executorch_target_soname_policy(mlxdelegate)
+  # mlx is built as a static archive, so bundle it inside this library instead
+  # of making every consumer supply it. Written out rather than routed through
+  # executorch_target_whole_archive() so the archive stays out of this target's
+  # link interface: the imported target exists only while building, and naming
+  # it anywhere a consumer can see would leave the installed export set
+  # referring to a target that is not there. The BUILD_INTERFACE link above
+  # already makes the archive a build prerequisite.
+  target_link_options(
+    mlxdelegate PRIVATE "SHELL:LINKER:-force_load,$<TARGET_FILE:mlx>"
+  )
+  target_link_libraries(mlxdelegate PRIVATE executorch_shared)
+  # Ships beside the runtime in the wheel's lib/ directory.
+  executorch_target_shipped_runtime_path(mlxdelegate)
+else()
+  target_link_libraries(mlxdelegate PRIVATE executorch_core)
+endif()
 
 executorch_target_link_options_shared_lib(mlxdelegate)
 target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
+# Core tensor headers carry pre-existing narrowing conversions that trip Xcode's
+# -Wshorten-64-to-32 -Werror; suppress it here as XNNPACK and abseil already do.
+target_compile_options(mlxdelegate PRIVATE -Wno-shorten-64-to-32)
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(mlxdelegate PRIVATE ${_mlx_sanitizer_link_options})
 endif()
@@ -284,8 +463,10 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-# Install mlx library for downstream consumers
-install(TARGETS mlx DESTINATION ${CMAKE_INSTALL_LIBDIR})
+# Install mlx library for downstream consumers. mlx is an imported target (built
+# by mlx_external), so install the static lib file directly rather than via
+# install(TARGETS ...), which only accepts built targets.
+install(FILES ${_mlx_static_lib} DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Install mlx headers for downstream consumers that may need mlx types
 install(
@@ -305,21 +486,37 @@ install(
 # exist)
 #
 # where {binary_dir} is determined at runtime via dladdr() on the library
-# containing MLX code. When MLX is statically linked into _portable_lib.so, this
-# is the directory containing _portable_lib.so.
+# containing MLX code. When MLX is statically linked into _C.so, this is the
+# directory containing _C.so.
 #
-# For the installed library, we put metallib in lib/ alongside libmlx.a
-install(
-  FILES ${CMAKE_CURRENT_BINARY_DIR}/mlx/mlx/backend/metal/kernels/mlx.metallib
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
+# For the installed library, we put metallib in lib/ alongside libmlx.a. The
+# metallib is produced in the mlx_external build tree (MLX_METAL_JIT=ON does not
+# install it); _mlx_metallib points there.
+install(FILES ${_mlx_metallib} DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-# Cache the metallib path for pybindings to copy it next to _portable_lib.so
-# This enables editable installs to work correctly
+# Cache the metallib path for pybindings to copy it next to _C.so. This enables
+# editable installs to work correctly
 set(MLX_METALLIB_PATH
-    "${CMAKE_CURRENT_BINARY_DIR}/mlx/mlx/backend/metal/kernels/mlx.metallib"
+    "${_mlx_metallib}"
     CACHE INTERNAL "Path to mlx.metallib for pybindings"
 )
+
+# Whether the Python extension is the image carrying MLX code, which is true
+# only when the delegate is static and therefore absorbed into it. Packaging
+# reads this to decide whether the metallib has to ship beside the extension: a
+# shared delegate carries MLX itself and is served by the copy beside it
+# instead.
+if(EXECUTORCH_BUILD_SHARED)
+  set(EXECUTORCH_MLX_METALLIB_IN_PYBINDINGS
+      OFF
+      CACHE INTERNAL "Ship mlx.metallib beside the Python extension"
+  )
+else()
+  set(EXECUTORCH_MLX_METALLIB_IN_PYBINDINGS
+      ON
+      CACHE INTERNAL "Ship mlx.metallib beside the Python extension"
+  )
+endif()
 
 # -----------------------------------------------------------------------------
 # Tests (off by default; CI passes -DEXECUTORCH_BUILD_TESTS=ON)

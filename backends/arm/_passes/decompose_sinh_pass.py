@@ -6,7 +6,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -21,7 +21,7 @@ from executorch.exir.pass_base import ExportPass
 edge_sinh = exir_ops.edge.aten.sinh.default
 
 
-class DecomposeSinhPass(ArmPass):
+class DecomposeSinhPass(ArmOpTargetedPass):
     """A decomposition pass that decomposes Sinh operations into a combination
     of supported TOSA-equivalent operations (MI).
 
@@ -39,9 +39,10 @@ class DecomposeSinhPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
         MatchArgDtypePass,
     }
+    target_ops = (edge_sinh,)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op is not edge_sinh:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if self._is_quantized_meta(meta):

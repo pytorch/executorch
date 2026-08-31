@@ -15,6 +15,7 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAd
 import numpy as np
 
 import torch
+from executorch.backends.qualcomm.export_utils import QnnConfig, SimpleADB
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     draw_graph,
@@ -24,7 +25,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_option,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
-from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
+from executorch.examples.qualcomm.utils import make_output_dir
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
@@ -168,15 +169,17 @@ def to_context_binary(
     # leverage SimpleADB for model library conversion
     lib_name = Path(model_lib).stem
     sdk_root = os.getenv("QNN_SDK_ROOT")
+    qnn_config = QnnConfig(
+        soc_model=soc_model,
+        build_folder=build_folder,
+        device=device,
+        host=host,
+        target=target,
+    )
     adb = SimpleADB(
-        qnn_sdk=sdk_root,
-        build_path=build_folder,
+        qnn_config=qnn_config,
         pte_path=model_lib,
         workspace=f"/data/local/tmp/executorch/{lib_name}",
-        device_id=device,
-        soc_model=soc_model,
-        host_id=host,
-        target=target,
     )
 
     logger.info("pushing QNN libraries & tool")
@@ -221,7 +224,7 @@ def compile(args):
     backend_options = generate_htp_compiler_spec(use_fp16=False)
     # setup general compiler spec for QNN
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=getattr(QcomChipset, args.model),
+        soc_model=getattr(QcomChipset, args.soc_model),
         backend_options=backend_options,
         is_from_context_binary=True,
     )
@@ -242,7 +245,7 @@ def compile(args):
         # conversion model library into context binary if required
         ctx_bin = to_context_binary(
             model_lib=ctx_bin,
-            soc_model=args.model,
+            soc_model=args.soc_model,
             device=args.device,
             host=args.host,
             target=args.target,
@@ -261,7 +264,7 @@ def compile(args):
         # step 1: generate ExportedProgram with custom op as binary loader & lower to QnnBackend
         logger.info(f"({index}/{num_bins}) exporting program for {ctx_bin}")
         prog_info = from_context_binary(
-            ctx_bin, custom_op_name, getattr(QcomChipset, args.model)
+            ctx_bin, custom_op_name, getattr(QcomChipset, args.soc_model)
         )
         # step 2: write pte files and IO information
         logger.info(f"({index}/{num_bins}) exporting {binary_name}.pte")
@@ -281,7 +284,7 @@ def compile(args):
         )
         with open(f"{output_dir}/{binary_name}.json", "w") as f:
             graph_info = get_io_info(prog_info, ctx_bin, compiler_specs)
-            graph_info["soc_model"] = args.model
+            graph_info["soc_model"] = args.soc_model
             json.dump(graph_info, f, indent=2)
 
 
@@ -308,17 +311,12 @@ def execute(args):
     inputs = get_tensor(graph_info["inputs"], user_inputs, logger)
 
     logger.info("preparing ADB connection")
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
     # leverage SimpleADB for e2e inference
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=args.build_folder,
+        qnn_config=qnn_config,
         pte_path=f"{args.pte_directory}/{pte_name}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_name}",
-        device_id=args.device,
-        soc_model=graph_info["soc_model"],
-        host_id=args.host,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
 
     logger.info("pushing QNN libraries & other artifacts")

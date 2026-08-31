@@ -23,6 +23,7 @@
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/merged_data_map.h>
 #include <executorch/runtime/executor/method_meta.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -82,6 +83,7 @@ class Method final {
         merged_data_map_(std::move(rhs.merged_data_map_)),
         external_constants_(rhs.external_constants_),
         n_external_constants_(rhs.n_external_constants_),
+        kernel_registry_(rhs.kernel_registry_),
         init_state_(rhs.init_state_) {
     // Required: clear out fields that the dtor looks at, so that we don't free
     // anything twice.
@@ -331,7 +333,8 @@ class Method final {
       const Program* program,
       MemoryManager* memory_manager,
       EventTracer* event_tracer,
-      MemoryAllocator* temp_allocator)
+      MemoryAllocator* temp_allocator,
+      Span<const Kernel> kernel_registry = {})
       : step_state_(),
         program_(program),
         memory_manager_(memory_manager),
@@ -348,6 +351,7 @@ class Method final {
         merged_data_map_(nullptr),
         external_constants_(nullptr),
         n_external_constants_(0),
+        kernel_registry_(kernel_registry),
         init_state_(InitializationState::Uninitialized) {}
 
   /// Static factory used by Program.
@@ -357,7 +361,8 @@ class Method final {
       MemoryManager* memory_manager,
       EventTracer* event_tracer,
       const NamedDataMap* named_data_map,
-      const LoadBackendOptionsMap* backend_options = nullptr);
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      Span<const Kernel> kernel_registry = {});
 
   /**
    * Initialize the method from its serialized representation.
@@ -402,6 +407,8 @@ class Method final {
   internal::MergedDataMap* merged_data_map_;
   NamedData* external_constants_;
   size_t n_external_constants_ = 0;
+
+  Span<const Kernel> kernel_registry_;
 
   InitializationState init_state_;
 

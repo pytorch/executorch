@@ -4,8 +4,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Callable
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -350,6 +350,7 @@ def test_mean_dim_vgf_quant(test_data):
     pipeline = VgfPipeline[input_t](
         MeanDim(dim, keep_dim),
         (test_data_val,),
+        [],  # Quantized mean.dim may be decomposed to sum, avgpool, or both.
         [],
         symmetric_io_quantization=True,
         quantize=True,
@@ -357,39 +358,130 @@ def test_mean_dim_vgf_quant(test_data):
     pipeline.run()
 
 
-mean_input_t = tuple[torch.Tensor, bool]
-
-
 class MeanDefault(torch.nn.Module):
-    def forward(self, tensor: torch.Tensor, keepdim: bool):
-        return tensor.mean()
+    torch_op = "torch.ops.aten.mean.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_mean_default"
 
-    test_data_suite: dict[str, Callable[[], mean_input_t]] = {
-        "rank_2": lambda: (
-            torch.rand(1, 2),
-            False,
-        ),
-        "rank_2_keepdim": lambda: (torch.rand(5, 5), True),
-        "rank_4": lambda: (torch.rand(5, 1, 10, 1), False),
+    test_data_suite = {
+        "rank_1": lambda: (torch.rand(7),),
+        "rank_2": lambda: (torch.rand(2, 5),),
+        "rank_3": lambda: (torch.rand(2, 5, 7),),
+        "rank_4": lambda: (torch.rand(1, 5, 7, 3),),
     }
+
+    def forward(self, x: torch.Tensor):
+        return torch.mean(x)
 
 
 @common.parametrize("test_data", MeanDefault.test_data_suite)
 def test_mean_tosa_FP(test_data):
-    pipeline = TosaPipelineFP[mean_input_t](
+    pipeline = TosaPipelineFP[input_t](
         MeanDefault(),
         test_data(),
-        [],  # Might be sum, avgpool, or both
+        MeanDefault.torch_op,
+        MeanDefault.exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MeanDefault.test_data_suite)
 def test_mean_tosa_INT(test_data):
-    pipeline = TosaPipelineINT[mean_input_t](
+    pipeline = TosaPipelineINT[input_t](
         MeanDefault(),
         test_data(),
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_vgf_no_quant(test_data):
+    pipeline = VgfPipeline[input_t](
+        MeanDefault(),
+        test_data(),
+        MeanDefault.torch_op,
+        MeanDefault.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_vgf_quant(test_data):
+    pipeline = VgfPipeline[input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Quantized mean.default may be decomposed to sum, avgpool, or both.
+        [],
+        symmetric_io_quantization=True,
+        quantize=True,
+    )
+    pipeline.run()
+
+
+a16w8_mean_test_parameters = {
+    "rank_2_keepdim": lambda: (torch.rand(7, 3), (0, 1), True),
+    "rank_3_keepdim": lambda: (torch.rand(5, 7, 3), (0, 1, 2), True),
+    "rand_23_keepdim": lambda: (torch.rand(1, 5, 7, 3), (2, 3), True),
+    "rand_0123_keepdim": lambda: (torch.rand(1, 5, 7, 3), (0, 1, 2, 3), True),
+    "rand_none_keepdim": lambda: (torch.rand(1, 5, 7, 3), None, True),
+    "rank_2": lambda: (torch.rand(5, 7), (-2, -1), False),
+    "rand_123": lambda: (torch.rand(1, 5, 7, 3), (-3, -2, -1), False),
+}
+
+a16w8_mean_test_parameters_u85_xfails = {
+    "rank_1_keepdim": lambda: (torch.rand(7), 0, True),
+    "rand_1_keepdim": lambda: (torch.rand(1, 5, 7, 3), (1), True),
+    "rank_1": lambda: (torch.rand(7), (-1), False),
+    "rand_3": lambda: (torch.rand(1, 5, 7, 3), (-1), False),
+}
+
+
+@common.parametrize(
+    "test_data", {**a16w8_mean_test_parameters, **a16w8_mean_test_parameters_u85_xfails}
+)
+@common.XfailIfNoCorstone300
+def test_mean_dim_a16w8_u55_INT(test_data):
+    test_data, dim, keep_dim = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data,),
+        [],
+        symmetric_io_quantization=True,
+        a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", a16w8_mean_test_parameters)
+@common.XfailIfNoCorstone320
+def test_mean_dim_a16w8_u85_INT(test_data):
+    test_data, dim, keep_dim = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data,),
+        [],
+        symmetric_io_quantization=True,
+        a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", a16w8_mean_test_parameters_u85_xfails)
+@pytest.mark.xfail(
+    reason="U85 mean_dim a16w8 produces all-zero output for single-dim reductions"
+)
+@common.XfailIfNoCorstone320
+def test_mean_dim_a16w8_u85_INT_xfail(test_data):
+    test_data, dim, keep_dim = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data,),
+        [],
+        symmetric_io_quantization=True,
+        a16w8_quantization=True,
     )
     pipeline.run()

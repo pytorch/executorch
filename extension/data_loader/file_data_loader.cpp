@@ -13,12 +13,14 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <new>
 
 #include <executorch/runtime/platform/compat_unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -43,7 +45,12 @@ namespace extension {
 
 namespace {
 inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
-  return ::operator new(size, alignment);
+  // Use the nothrow form so allocation failure returns nullptr instead of
+  // throwing std::bad_alloc. ExecuTorch is built exception-free and callers
+  // (e.g. FileDataLoader::load) check for nullptr and return
+  // Error::MemoryAllocationFailed; a throw here would unwind with no landing
+  // pad and abort the process.
+  return ::operator new(size, alignment, std::nothrow);
 }
 
 inline void et_aligned_free(void* ptr, std::align_val_t alignment) {
@@ -143,10 +150,12 @@ Result<FreeableBuffer> FileDataLoader::load(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
+  size_t total_size;
+  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      !overflow && total_size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu",
+      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
       file_name_,
       offset,
       size,
@@ -204,10 +213,12 @@ ET_NODISCARD Error FileDataLoader::load_into(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
+  size_t total_size;
+  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      !overflow && total_size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu",
+      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
       file_name_,
       offset,
       size,

@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -19,7 +19,7 @@ from executorch.exir.pass_base import ExportPass
 edge_cosh = exir_ops.edge.aten.cosh.default
 
 
-class DecomposeCoshPass(ArmPass):
+class DecomposeCoshPass(ArmOpTargetedPass):
     """
     This pass replaces the cosh operator with a sequence of TOSA-equivalent operations that
     compute the hyperbolic cosine using the formula:
@@ -34,9 +34,10 @@ class DecomposeCoshPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
         MatchArgDtypePass,
     }
+    target_ops = (edge_cosh,)
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op is not edge_cosh:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         if self._is_quantized_meta(meta):

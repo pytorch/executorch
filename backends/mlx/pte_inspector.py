@@ -403,6 +403,11 @@ def _extract_field(node, accessor_name: str, kind: str) -> Any:  # noqa: C901
             items.append(f"tid {s.Idx()}" if s else None)
         return items
 
+    if kind == "string_list":
+        length = getattr(node, f"{accessor_name}Length")()
+        getter = getattr(node, accessor_name)
+        return [getter(i).decode("utf-8") if getter(i) else None for i in range(length)]
+
     if kind == "int_or_vid_list":
         length = getattr(node, f"{accessor_name}Length")()
         getter = getattr(node, accessor_name)
@@ -783,9 +788,9 @@ Examples:
     parser.add_argument(
         "--delegate-index",
         type=int,
-        default=None,
+        default=0,
         metavar="N",
-        help="Index of delegate to extract (0-based). If not specified, extracts first matching delegate.",
+        help="Index of delegate to extract (0-based, default: 0).",
     )
     parser.add_argument(
         "--parse-mlx",

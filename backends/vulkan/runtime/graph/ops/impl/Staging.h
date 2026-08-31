@@ -32,6 +32,12 @@ void add_tensor_to_staging_node(
 // Standard Prepack
 //
 
+void add_prepack_standard_node(
+    ComputeGraph& graph,
+    const ValueRef tensor_data,
+    const ValueRef tensor,
+    const bool transpose_hw = false);
+
 /*
  * Given that `v` is a `TensorRef`, create a new `Tensor` value with the
  * specified `storage_type` and `memory_layout`, and add a a prepacking node to

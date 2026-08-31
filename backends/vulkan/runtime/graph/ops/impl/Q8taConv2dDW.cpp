@@ -12,6 +12,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -20,7 +21,7 @@ namespace vkcompute {
 // Shader dispatch utilities
 //
 
-utils::uvec3 pick_q8ta_conv2d_dw_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_dw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -33,19 +34,22 @@ utils::uvec3 pick_q8ta_conv2d_dw_global_wg_size(
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
+  const uint32_t N = graph->size_at<uint32_t>(-4, output);
 
   // Each thread processes 4 adjacent width positions and 4 channels (4Wx4C
   // tile)
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid(
+      {W4, utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N), C4},
+      kTiledWorkGrid);
 }
 
-utils::uvec3 pick_q8ta_conv2d_dw_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_dw_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
@@ -55,18 +59,18 @@ utils::uvec3 pick_q8ta_conv2d_dw_local_wg_size(
 
   // Some inactive invocations are okay; set 6 as the threshold to use the
   // a square wg size.
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
+  if (gwg[0u] >= 6 && gwg[2u] >= 6) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
   // If channels dim is sufficiently small, then bias towards width dim to
   // reduce the number of inactive invocations.
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
+  if (gwg[2u] < 2u) {
+    return LocalWorkGroup(64u, 1u, 1u);
   }
-  return {16u, 1u, 4u};
+  return LocalWorkGroup(16u, 1u, 4u);
 }
 
-utils::uvec3 int8_conv2d_dw_global_wg_size(
+GlobalWorkGrid int8_conv2d_dw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -80,7 +84,7 @@ utils::uvec3 int8_conv2d_dw_global_wg_size(
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {C4 * W4 * H, 1, 1};
+  return graph->create_linear_gwg(C4 * W4 * H);
 }
 
 //
@@ -145,10 +149,11 @@ ValueRef prepack_quantized_conv2d_dw_weight(
       storage_type,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(num_blocks_OC),
-      utils::safe_downcast<uint32_t>(num_blocks_K),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(num_blocks_OC),
+       utils::safe_downcast<uint32_t>(num_blocks_K),
+       1u},
+      kTiledWorkGrid);
 
   std::string kernel_name = "pack_q8_conv2d_dw_weights";
   add_storage_type_suffix(kernel_name, storage_type);
@@ -156,8 +161,8 @@ ValueRef prepack_quantized_conv2d_dw_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       // Inputs and Outputs
       weight_data,
       packed_weight,
@@ -170,6 +175,45 @@ ValueRef prepack_quantized_conv2d_dw_weight(
        PushConstantDataInfo(&orig_sizes, sizeof(utils::ivec3))}));
 
   return packed_weight;
+}
+
+//
+// Resize
+//
+
+// resize_args = { input, kernel_size, stride, padding, dilation }
+//
+// Depthwise conv output H/W follows the same formula as a regular conv (channel
+// count is unchanged: groups == in_channels == out_channels). Without this the
+// DynamicDispatchNode freezes the output at the build-time upper bound. N/C are
+// shape-independent and stay as currently allocated. Mirrors the regular q8ta
+// conv resize (resize_q8ta_conv2d_node).
+void resize_q8ta_conv2d_dw_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = resize_args.at(0);
+  const ValueRef kernel_size = resize_args.at(1);
+  const ValueRef stride = resize_args.at(2);
+  const ValueRef padding = resize_args.at(3);
+  const ValueRef dilation = resize_args.at(4);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+
+  const std::vector<int64_t> out_hw = calc_out_sizes_hw(
+      *graph,
+      in_sizes,
+      kernel_size,
+      /*kernel_size_only=*/true,
+      {stride, padding, dilation, dilation},
+      /*transposed=*/false);
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(out);
+  const size_t ndim = new_sizes.size();
+  new_sizes.at(ndim - 2) = out_hw.at(0);
+  new_sizes.at(ndim - 1) = out_hw.at(1);
+  graph->virtual_resize(out, new_sizes);
 }
 
 //
@@ -242,8 +286,8 @@ void add_conv2d_dw_q8ta_q8csw_q8to_4w4c_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      int8_conv2d_dw_global_wg_size,
-      default_pick_local_wg_size,
+      int8_conv2d_dw_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -258,10 +302,10 @@ void add_conv2d_dw_q8ta_q8csw_q8to_4w4c_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args
-      {},
+      // Resize args: { input, kernel_size, stride, padding, dilation }
+      {packed_int8_input, kernel_size, stride, padding, dilation},
       // Resizing Logic
-      nullptr));
+      resize_q8ta_conv2d_dw_node));
 }
 
 void add_q8ta_conv2d_dw_node(
@@ -347,8 +391,8 @@ void add_q8ta_conv2d_dw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_dw_global_wg_size,
-      pick_q8ta_conv2d_dw_local_wg_size,
+      pick_q8ta_conv2d_dw_gwg,
+      pick_q8ta_conv2d_dw_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -363,8 +407,10 @@ void add_q8ta_conv2d_dw_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args
-      {}));
+      // Resize args: { input, kernel_size, stride, padding, dilation }
+      {packed_int8_input, kernel_size, stride, padding, dilation},
+      // Resizing Logic
+      resize_q8ta_conv2d_dw_node));
 }
 
 //

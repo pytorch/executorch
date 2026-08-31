@@ -10,10 +10,10 @@
 
 set -ex
 
-# CUDA version must be specified (e.g., 12.8)
+# CUDA version must be specified (e.g., 13.0)
 CUDA_VERSION="${CUDA_VERSION:?CUDA_VERSION must be set}"
 
-# Convert version format (e.g., 12.8 -> 12-8 for package names)
+# Convert version format (e.g., 13.0 -> 13-0 for package names)
 CUDA_VERSION_DASH=$(echo "${CUDA_VERSION}" | tr '.' '-')
 
 # Add NVIDIA package repository
@@ -38,13 +38,15 @@ apt-get update
 # - libcublas-dev: cuBLAS development files
 # - libcusparse-dev: cuSPARSE development files
 # - libcufft-dev: cuFFT development files
+# - libcurand-dev: cuRAND development files
 apt-get install -y --no-install-recommends \
     "cuda-nvcc-${CUDA_VERSION_DASH}" \
     "cuda-cudart-dev-${CUDA_VERSION_DASH}" \
     "cuda-nvrtc-dev-${CUDA_VERSION_DASH}" \
     "libcublas-dev-${CUDA_VERSION_DASH}" \
     "libcusparse-dev-${CUDA_VERSION_DASH}" \
-    "libcufft-dev-${CUDA_VERSION_DASH}"
+    "libcufft-dev-${CUDA_VERSION_DASH}" \
+    "libcurand-dev-${CUDA_VERSION_DASH}"
 
 # Clean up
 apt-get clean

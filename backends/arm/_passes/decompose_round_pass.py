@@ -5,8 +5,7 @@
 
 from typing import Set, Type
 
-import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass
@@ -33,20 +32,10 @@ def _get_round_decomposition_ops(op) -> tuple[Op, Op, Op, Op, Op, Op, Op]:
             exir_ops.edge.aten.ceil.default,
             exir_ops.edge.aten.where.self,
         )
-    elif op == torch.ops.aten.round.default:
-        return (
-            torch.ops.aten.full.default,
-            torch.ops.aten.ge.Tensor,
-            torch.ops.aten.add.Scalar,
-            torch.ops.aten.sub.Scalar,
-            torch.ops.aten.floor.default,
-            torch.ops.aten.ceil.default,
-            torch.ops.aten.where.self,
-        )
     raise RuntimeError(f"Can't get round decomposition ops for op {op}")
 
 
-class DecomposeRoundPass(ArmPass):
+class DecomposeRoundPass(ArmOpTargetedPass):
     """
     For inputs >= 0, round(x) is equivalent to floor(x + 0.5), and for inputs < 0,
     round(x) is equivalent to ceil(x - 0.5). This pass decomposes the round operation into
@@ -63,15 +52,12 @@ class DecomposeRoundPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    _TARGET_OPS = {
+    target_ops = {
         exir_ops.edge.aten.round.default,
-        torch.ops.aten.round.default,
     }
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in DecomposeRoundPass._TARGET_OPS or not self.allowed_to_transform(
-            meta
-        ):
+        if op not in self.target_ops or self._is_quantized_meta(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
         x = args[0]
         input_dtype = x.node.meta["val"].dtype
