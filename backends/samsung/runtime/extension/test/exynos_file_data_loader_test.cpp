@@ -18,8 +18,8 @@
 #include <cstring>
 
 using namespace ::testing;
+using executorch::backends::enn::ExynosFileDataLoader;
 using executorch::backends::enn::shared_memory_manager::SharedMemoryManager;
-using executorch::extension::FileDataLoader;
 using executorch::extension::testing::TempFile;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
@@ -27,11 +27,12 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using torch::executor::enn::EnnApi;
 
-class FileDataLoaderTest : public ::testing::TestWithParam<size_t> {
+class ExynosFileDataLoaderTest : public ::testing::TestWithParam<size_t> {
  protected:
   void SetUp() override {
     executorch::runtime::runtime_init();
-    EnnApi::getEnnApiInstance()->EnnInitialize();
+    // Constructing the singleton initializes the ENN API.
+    EnnApi::getEnnApiInstance();
   }
 
   size_t alignment() const {
@@ -39,14 +40,14 @@ class FileDataLoaderTest : public ::testing::TestWithParam<size_t> {
   }
 };
 
-TEST_P(FileDataLoaderTest, InBoundsLoadsSucceed) {
+TEST_P(ExynosFileDataLoaderTest, InBoundsLoadsSucceed) {
   uint8_t data[256];
   for (int i = 0; i < sizeof(data); ++i) {
     data[i] = i;
   }
   TempFile tf(data, sizeof(data));
-  Result<FileDataLoader> fdl =
-      FileDataLoader::from(tf.path().c_str(), alignment());
+  Result<ExynosFileDataLoader> fdl =
+      ExynosFileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
 
   // size() should succeed and reflect the total size.
@@ -115,13 +116,13 @@ TEST_P(FileDataLoaderTest, InBoundsLoadsSucceed) {
   }
 }
 
-TEST_P(FileDataLoaderTest, OutOfBoundsLoadFails) {
+TEST_P(ExynosFileDataLoaderTest, OutOfBoundsLoadFails) {
   // Create a temp file; contents don't matter.
   uint8_t data[256] = {};
   TempFile tf(data, sizeof(data));
 
-  Result<FileDataLoader> fdl =
-      FileDataLoader::from(tf.path().c_str(), alignment());
+  Result<ExynosFileDataLoader> fdl =
+      ExynosFileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
 
   // Loading beyond the end of the data should fail.
@@ -143,51 +144,52 @@ TEST_P(FileDataLoaderTest, OutOfBoundsLoadFails) {
   }
 }
 
-TEST_P(FileDataLoaderTest, FromMissingFileFails) {
+TEST_P(ExynosFileDataLoaderTest, FromMissingFileFails) {
   // Wrapping a file that doesn't exist should fail.
-  Result<FileDataLoader> fdl = FileDataLoader::from(
-      "/tmp/FILE_DOES_NOT_EXIST_EXECUTORCH_MMAP_LOADER_TEST");
+  Result<ExynosFileDataLoader> fdl = ExynosFileDataLoader::from(
+      "/tmp/FILE_DOES_NOT_EXIST_EXECUTORCH_EXYNOS_LOADER_TEST");
   EXPECT_NE(fdl.error(), Error::Ok);
 }
 
-TEST_P(FileDataLoaderTest, FromEmptyFilePathFails) {
+TEST_P(ExynosFileDataLoaderTest, FromEmptyFilePathFails) {
   // Nullptr should fail
-  Result<FileDataLoader> fdl = FileDataLoader::from(nullptr);
+  Result<ExynosFileDataLoader> fdl = ExynosFileDataLoader::from(nullptr);
   EXPECT_NE(fdl.error(), Error::Ok);
 }
 
-TEST_P(FileDataLoaderTest, BadAlignmentFails) {
+TEST_P(ExynosFileDataLoaderTest, BadAlignmentFails) {
   // Create a temp file; contents don't matter.
   uint8_t data[256] = {};
   TempFile tf(data, sizeof(data));
 
   // Creating a loader with default alignment works fine.
   {
-    Result<FileDataLoader> fdl = FileDataLoader::from(tf.path().c_str());
+    Result<ExynosFileDataLoader> fdl =
+        ExynosFileDataLoader::from(tf.path().c_str());
     ASSERT_EQ(fdl.error(), Error::Ok);
   }
 
   // Bad alignments fail.
   const std::vector<size_t> bad_alignments = {0, 3, 5, 17};
   for (size_t bad_alignment : bad_alignments) {
-    Result<FileDataLoader> fdl =
-        FileDataLoader::from(tf.path().c_str(), bad_alignment);
+    Result<ExynosFileDataLoader> fdl =
+        ExynosFileDataLoader::from(tf.path().c_str(), bad_alignment);
     ASSERT_EQ(fdl.error(), Error::InvalidArgument);
   }
 }
 
 // Tests that the move ctor works.
-TEST_P(FileDataLoaderTest, MoveCtor) {
+TEST_P(ExynosFileDataLoaderTest, MoveCtor) {
   // Create a loader.
   std::string contents = "FILE_CONTENTS";
   TempFile tf(contents);
-  Result<FileDataLoader> fdl =
-      FileDataLoader::from(tf.path().c_str(), alignment());
+  Result<ExynosFileDataLoader> fdl =
+      ExynosFileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
   EXPECT_EQ(fdl->size().get(), contents.size());
 
   // Move it into another instance.
-  FileDataLoader dl2(std::move(*fdl));
+  ExynosFileDataLoader dl2(std::move(*fdl));
 
   // Old loader should now be invalid.
   EXPECT_EQ(
@@ -212,11 +214,11 @@ TEST_P(FileDataLoaderTest, MoveCtor) {
 }
 
 // TODO: Allocation failure test
-TEST_P(FileDataLoaderTest, EnnQueryFailure) {
+TEST_P(ExynosFileDataLoaderTest, EnnQueryFailure) {
   uint8_t data[256] = {};
   TempFile tf(data, sizeof(data));
-  Result<FileDataLoader> fdl =
-      FileDataLoader::from(tf.path().c_str(), alignment());
+  Result<ExynosFileDataLoader> fdl =
+      ExynosFileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
 
   // Allocate valid buffer
@@ -231,11 +233,11 @@ TEST_P(FileDataLoaderTest, EnnQueryFailure) {
   EXPECT_EQ(out, nullptr);
 }
 
-TEST_P(FileDataLoaderTest, EnnFreeFailure) {
+TEST_P(ExynosFileDataLoaderTest, EnnFreeFailure) {
   uint8_t data[256] = {};
   TempFile tf(data, sizeof(data));
-  Result<FileDataLoader> fdl =
-      FileDataLoader::from(tf.path().c_str(), alignment());
+  Result<ExynosFileDataLoader> fdl =
+      ExynosFileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
 
   // Allocate and free with invalid ENN state
@@ -249,12 +251,12 @@ TEST_P(FileDataLoaderTest, EnnFreeFailure) {
   }
 }
 
-// Run all FileDataLoaderTests multiple times, varying the return value of
+// Run all ExynosFileDataLoaderTests multiple times, varying the return value of
 // `GetParam()` based on the `testing::Values` list. The tests will interpret
 // the value as "alignment".
 INSTANTIATE_TEST_SUITE_P(
     VariedSegments,
-    FileDataLoaderTest,
+    ExynosFileDataLoaderTest,
     testing::Values(
         1,
         4,

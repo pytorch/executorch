@@ -19,5 +19,10 @@ if(${ANDROID})
             ${CMAKE_CURRENT_LIST_DIR}/enn_executor.cpp
             ${CMAKE_CURRENT_LIST_DIR}/enn_shared_memory_manager.cpp
             ${CMAKE_CURRENT_LIST_DIR}/enn_api_implementation.cpp
+            ${CMAKE_CURRENT_LIST_DIR}/extension/exynos_file_data_loader.cpp
   )
+
+  if(BUILD_TESTING)
+    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/extension/test)
+  endif()
 endif()

@@ -15,15 +15,23 @@
 #include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
-namespace extension {
+namespace backends {
+namespace enn {
 
-class FileDataLoader final : public executorch::runtime::DataLoader {
+/**
+ * Loads a file from disk into buffers backed by ENN shared memory (dmabuf), so
+ * that segments handed to the ENN backend can be opened without an extra copy.
+ *
+ * Mirrors executorch::extension::FileDataLoader, which cannot be reused
+ * directly because it is final and always allocates from the heap.
+ */
+class ExynosFileDataLoader final : public executorch::runtime::DataLoader {
  public:
-  static executorch::runtime::Result<FileDataLoader> from(
+  static executorch::runtime::Result<ExynosFileDataLoader> from(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t));
 
-  FileDataLoader(FileDataLoader&& rhs) noexcept
+  ExynosFileDataLoader(ExynosFileDataLoader&& rhs) noexcept
       : file_name_(rhs.file_name_),
         file_size_(rhs.file_size_),
         alignment_(rhs.alignment_),
@@ -34,7 +42,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
     const_cast<int&>(rhs.fd_) = -1;
   }
 
-  ~FileDataLoader() override;
+  ~ExynosFileDataLoader() override;
 
   ET_NODISCARD
   executorch::runtime::Result<executorch::runtime::FreeableBuffer> load(
@@ -51,7 +59,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
       void* buffer) const override;
 
  private:
-  FileDataLoader(
+  ExynosFileDataLoader(
       int fd,
       size_t file_size,
       size_t alignment,
@@ -62,9 +70,9 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
         fd_(fd) {}
 
   // Not safely copyable.
-  FileDataLoader(const FileDataLoader&) = delete;
-  FileDataLoader& operator=(const FileDataLoader&) = delete;
-  FileDataLoader& operator=(FileDataLoader&&) = delete;
+  ExynosFileDataLoader(const ExynosFileDataLoader&) = delete;
+  ExynosFileDataLoader& operator=(const ExynosFileDataLoader&) = delete;
+  ExynosFileDataLoader& operator=(ExynosFileDataLoader&&) = delete;
 
   const char* const file_name_; // Owned by the instance.
   const size_t file_size_;
@@ -72,15 +80,6 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
   const int fd_; // Owned by the instance.
 };
 
-} // namespace extension
+} // namespace enn
+} // namespace backends
 } // namespace executorch
-
-namespace torch {
-namespace executor {
-namespace util {
-// TODO(T197294990): Remove these deprecated aliases once all users have moved
-// to the new `::executorch` namespaces.
-using ::executorch::extension::FileDataLoader;
-} // namespace util
-} // namespace executor
-} // namespace torch

@@ -6,8 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/samsung/runtime/extension/exynos_file_data_loader.h>
+
 #include <executorch/backends/samsung/runtime/enn_shared_memory_manager.h>
-#include <executorch/extension/data_loader/file_data_loader.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -35,25 +36,51 @@
 #define ET_HAVE_PREAD 1
 #endif // !ET_HAVE_PREAD
 
+using executorch::backends::enn::shared_memory_manager::SharedMemoryManager;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
-using namespace executorch::backends;
 
 namespace executorch {
-namespace extension {
+namespace backends {
+namespace enn {
 
 namespace {
 
 /**
  * Returns true if the value is an integer power of 2.
  */
-static bool is_power_of_2(size_t value) {
+bool is_power_of_2(size_t value) {
   return value > 0 && (value & ~(value - 1)) == value;
 }
+
+inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
+  size_t aligned_size = (size + static_cast<size_t>(alignment) - 1) &
+      ~(static_cast<size_t>(alignment) - 1);
+  return SharedMemoryManager::getInstance()->alloc(aligned_size);
+}
+
+inline void et_aligned_free(void* ptr, std::align_val_t alignment) {
+  return SharedMemoryManager::getInstance()->free(ptr, alignment);
+}
+
+/**
+ * FreeableBuffer::FreeFn-compatible callback.
+ *
+ * `data` is the original buffer pointer.
+ * `context` is the original alignment.
+ *
+ * `size` is unused.
+ */
+void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
+  et_aligned_free(
+      data,
+      static_cast<std::align_val_t>(reinterpret_cast<uintptr_t>(context)));
+}
+
 } // namespace
 
-FileDataLoader::~FileDataLoader() {
+ExynosFileDataLoader::~ExynosFileDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
   std::free(const_cast<char*>(file_name_));
@@ -65,7 +92,7 @@ FileDataLoader::~FileDataLoader() {
   ::close(fd_);
 }
 
-Result<FileDataLoader> FileDataLoader::from(
+Result<ExynosFileDataLoader> ExynosFileDataLoader::from(
     const char* file_name,
     size_t alignment) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -111,45 +138,10 @@ Result<FileDataLoader> FileDataLoader::from(
     return Error::MemoryAllocationFailed;
   }
 
-  return FileDataLoader(fd, file_size, alignment, file_name_copy);
+  return ExynosFileDataLoader(fd, file_size, alignment, file_name_copy);
 }
 
-namespace {
-
-// TODO: need to make a enn_data_loader.cpp
-inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
-  auto _instance =
-      enn::shared_memory_manager::SharedMemoryManager::getInstance();
-  size_t aligned_size = (size + static_cast<size_t>(alignment) - 1) &
-      ~(static_cast<size_t>(alignment) - 1);
-
-  return _instance->alloc(aligned_size);
-}
-
-inline void et_aligned_free(void* ptr, std::align_val_t alignment) {
-  auto _instance =
-      enn::shared_memory_manager::SharedMemoryManager::getInstance();
-
-  return _instance->free(ptr, alignment);
-}
-
-/**
- * FreeableBuffer::FreeFn-compatible callback.
- *
- * `data` is the original buffer pointer.
- * `context` is the original alignment.
- *
- * `size` is unused.
- */
-void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
-  et_aligned_free(
-      data,
-      static_cast<std::align_val_t>(reinterpret_cast<uintptr_t>(context)));
-}
-
-} // namespace
-
-Result<FreeableBuffer> FileDataLoader::load(
+Result<FreeableBuffer> ExynosFileDataLoader::load(
     size_t offset,
     size_t size,
     ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
@@ -200,7 +192,7 @@ Result<FreeableBuffer> FileDataLoader::load(
       reinterpret_cast<void*>(static_cast<uintptr_t>(alignment_)));
 }
 
-Result<size_t> FileDataLoader::size() const {
+Result<size_t> ExynosFileDataLoader::size() const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -209,7 +201,7 @@ Result<size_t> FileDataLoader::size() const {
   return file_size_;
 }
 
-ET_NODISCARD Error FileDataLoader::load_into(
+ET_NODISCARD Error ExynosFileDataLoader::load_into(
     size_t offset,
     size_t size,
     ET_UNUSED const SegmentInfo& segment_info,
@@ -281,5 +273,6 @@ ET_NODISCARD Error FileDataLoader::load_into(
   return Error::Ok;
 }
 
-} // namespace extension
+} // namespace enn
+} // namespace backends
 } // namespace executorch

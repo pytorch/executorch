@@ -6,28 +6,39 @@
  * LICENSE file in the root directory of this source tree.
  *
  */
-#include <executorch/backends/samsung/runtime/enn_api_implementation.h>
 #include <executorch/backends/samsung/runtime/enn_shared_memory_manager.h>
-#include <executorch/backends/samsung/runtime/enn_type.h>
+
+#include <executorch/backends/samsung/runtime/enn_api_implementation.h>
 #include <executorch/backends/samsung/runtime/logging.h>
-#include <executorch/runtime/core/error.h>
 
 #include <mutex>
-#include <vector>
-
-using namespace torch::executor::enn;
-using namespace torch::executor;
 
 namespace executorch {
 namespace backends {
 namespace enn {
 namespace shared_memory_manager {
 
+using torch::executor::enn::EnnApi;
+
 static std::mutex instance_mutex_;
 
 SharedMemoryManager* SharedMemoryManager::getInstance() {
+  // Touch the EnnApi singleton first so that it outlives this instance: the
+  // destructor below releases buffers through the ENN API.
+  EnnApi::getEnnApiInstance();
   static SharedMemoryManager instance;
   return &instance;
+}
+
+SharedMemoryManager::~SharedMemoryManager() {
+  std::lock_guard<std::mutex> lgd(instance_mutex_);
+  auto enn_api_inst = EnnApi::getEnnApiInstance();
+  for (auto& buffer : buffers_) {
+    if (enn_api_inst->EnnReleaseBuffer(buffer)) {
+      ET_LOG(Error, "Failed to destroy buffer: %p", buffer->va);
+    }
+  }
+  buffers_.clear();
 }
 
 void* SharedMemoryManager::alloc(const size_t size) {
@@ -39,7 +50,7 @@ void* SharedMemoryManager::alloc(const size_t size) {
     ET_LOG(Error, "Buffer Creation Error");
     return nullptr;
   }
-  EnnBufferPtrList.emplace_back(bufferPtr);
+  buffers_.emplace_back(bufferPtr);
   return bufferPtr->va;
 }
 
@@ -49,10 +60,10 @@ bool SharedMemoryManager::query(
     const size_t size) {
   std::lock_guard<std::mutex> lgd(instance_mutex_);
   auto enn_api_inst = EnnApi::getEnnApiInstance();
-  for (const auto& buffer : EnnBufferPtrList) {
+  for (const auto& buffer : buffers_) {
     if (buffer->va <= ptr &&
         ptr < static_cast<char*>(buffer->va) + buffer->size) {
-      int fd;
+      int32_t fd;
       auto ret = enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(buffer, &fd);
       if (ret) {
         ET_LOG(
@@ -74,10 +85,11 @@ bool SharedMemoryManager::query(
 void SharedMemoryManager::free(void* ptr) {
   free(ptr, {});
 }
+
 void SharedMemoryManager::free(void* ptr, std::align_val_t alignment) {
   std::lock_guard<std::mutex> lgd(instance_mutex_);
   auto enn_api_inst = EnnApi::getEnnApiInstance();
-  for (auto it = EnnBufferPtrList.begin(); it != EnnBufferPtrList.end(); ++it) {
+  for (auto it = buffers_.begin(); it != buffers_.end(); ++it) {
     if ((*it)->va == ptr) {
       ET_LOG(
           Info,
@@ -85,12 +97,10 @@ void SharedMemoryManager::free(void* ptr, std::align_val_t alignment) {
           ptr,
           (*it)->size,
           (*it)->offset);
-      auto ret = enn_api_inst->EnnReleaseBuffer(*it);
-      if (ret) {
+      if (enn_api_inst->EnnReleaseBuffer(*it)) {
         ET_LOG(Error, "Failed to destroy buffer: %p", ptr);
       }
-      EnnBufferPtrList.erase(it);
-      ET_LOG(Info, "Buffer Erased(%p)", ptr);
+      buffers_.erase(it);
       return;
     }
   }

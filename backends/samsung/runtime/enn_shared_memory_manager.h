@@ -8,13 +8,11 @@
  */
 #pragma once
 
-#include <executorch/backends/samsung/runtime/enn_api_implementation.h>
 #include <executorch/backends/samsung/runtime/enn_type.h>
-#include <executorch/runtime/core/error.h>
 
+#include <cstddef>
+#include <new>
 #include <vector>
-
-using namespace torch::executor::enn;
 
 namespace executorch {
 namespace backends {
@@ -26,7 +24,7 @@ class SharedMemoryManager {
   static SharedMemoryManager* getInstance();
 
   SharedMemoryManager() = default;
-  ~SharedMemoryManager() = default;
+  ~SharedMemoryManager();
   SharedMemoryManager(const SharedMemoryManager&) = delete;
   SharedMemoryManager& operator=(const SharedMemoryManager&) = delete;
   SharedMemoryManager(SharedMemoryManager&&) = delete;
@@ -38,7 +36,7 @@ class SharedMemoryManager {
   bool query(EnnBufferPtr* out, const void* ptr, const size_t size);
 
  private:
-  std::vector<EnnBufferPtr> EnnBufferPtrList;
+  std::vector<EnnBufferPtr> buffers_;
 };
 
 } // namespace shared_memory_manager
