@@ -1,0 +1,40 @@
+name: Resolve CI docker image
+
+# linux_job_v3 passes `docker-image` straight to the runner pod's container, which
+# is pulled before any step runs, so nothing inside the job can derive it. Callers
+# depend on this workflow and name the image as
+# 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:<name>-<hash>.
+#
+# Nothing here waits for docker-builds. A commit that changes .ci/docker needs the
+# ciflow/docker label to build the images it asks for; without them the pod fails
+# to pull and the job has to be re-run once they land.
+
+on:
+  workflow_call:
+    outputs:
+      ci-docker-hash:
+        description: Tag suffix shared by every executorch CI image for this commit.
+        value: ${{ jobs.resolve.outputs.ci-docker-hash }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ci-docker-hash: ${{ steps.hash.outputs.ci-docker-hash }}
+
+    steps:
+      - name: Checkout ExecuTorch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Compute the docker tag
+        id: hash
+        run: |
+          set -eu
+          echo "ci-docker-hash=$(git rev-parse HEAD:.ci/docker)" >> "$GITHUB_OUTPUT"

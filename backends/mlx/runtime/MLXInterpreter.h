@@ -837,6 +837,11 @@ exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
 }
 
+inline void exec_flip(const FlipNode& n, ExecutionState& st, StreamOrDevice s) {
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, flip(st.const_tensor_ref(n.x), axes, s));
+}
+
 inline void
 exec_as_strided(const AsStridedNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -2161,6 +2166,9 @@ class Interpreter {
         break;
       case OpCode::TRANSPOSE:
         ops::exec_transpose(std::get<TransposeNode>(instr.node), st, s);
+        break;
+      case OpCode::FLIP:
+        ops::exec_flip(std::get<FlipNode>(instr.node), st, s);
         break;
       case OpCode::AS_STRIDED:
         ops::exec_as_strided(std::get<AsStridedNode>(instr.node), st, s);
