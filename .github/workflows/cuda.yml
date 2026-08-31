@@ -294,6 +294,7 @@ jobs:
         cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_CUDA=ON \
             -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_ENABLE_LOGGING=ON \
             -DPYTHON_EXECUTABLE=python \
             -Bcmake-out .
         cmake --build cmake-out --target executor_runner -j4
@@ -359,6 +360,7 @@ jobs:
         cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_CUDA=ON \
             -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_ENABLE_LOGGING=ON \
             -DPYTHON_EXECUTABLE=python \
             -Bcmake-out .
         cmake --build cmake-out --target executor_runner -j4
