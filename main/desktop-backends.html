@@ -679,6 +679,12 @@ document.write(`
               </li>
             
               <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/webgpu/webgpu-overview.html">
+                  WebGPU Backend
+                </a>
+              </li>
+            
+              <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
                   Qualcomm AI Engine Backend
                 </a>
@@ -1337,6 +1343,12 @@ document.write(`
               </li>
             
               <li class=" ">
+                <a class="nav-link dropdown-item nav-internal" href="backends/webgpu/webgpu-overview.html">
+                  WebGPU Backend
+                </a>
+              </li>
+            
+              <li class=" ">
                 <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
                   Qualcomm AI Engine Backend
                 </a>
@@ -1855,6 +1867,17 @@ document.write(`
 <li class="toctree-l4"><a class="reference internal" href="backends/coreml/coreml-op-support.html">Op support</a></li>
 </ul>
 </details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="backends/mlx/mlx-overview.html">MLX Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-quantization.html">Quantization</a></li>
+<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-op-support.html">Op Support</a></li>
+</ul>
+</details></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="backends/webgpu/webgpu-overview.html">WebGPU Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="backends/webgpu/webgpu-op-support.html">Operator Support</a></li>
+</ul>
+</details></li>
 </ul>
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
@@ -2004,6 +2027,7 @@ document.write(`
 <ul class="simple">
 <li><p><a class="reference internal" href="desktop-xnnpack.html"><span class="doc">XNNPACK Backend</span></a> — XNNPACK (CPU acceleration)</p></li>
 <li><p><a class="reference internal" href="desktop-openvino.html"><span class="doc">Building and Running ExecuTorch with OpenVINO Backend</span></a> — OpenVINO (Intel hardware optimization)</p></li>
+<li><p><a class="reference internal" href="backends/webgpu/webgpu-overview.html"><span class="doc">WebGPU Backend</span></a> — WebGPU acceleration (experimental)</p></li>
 </ul>
 </section>
 <section id="macos-backends">
@@ -2011,6 +2035,7 @@ document.write(`
 <ul class="simple">
 <li><p><a class="reference internal" href="backends/coreml/coreml-overview.html"><span class="doc">Core ML Backend</span></a> — CoreML (recommended for Apple Silicon)</p></li>
 <li><p><a class="reference internal" href="backends/mlx/mlx-overview.html"><span class="doc">MLX Backend</span></a> — MLX (Apple Silicon GPU)</p></li>
+<li><p><a class="reference internal" href="backends/webgpu/webgpu-overview.html"><span class="doc">WebGPU Backend</span></a> — WebGPU acceleration (experimental)</p></li>
 <li><p><a class="reference internal" href="desktop-xnnpack.html"><span class="doc">XNNPACK Backend</span></a> — XNNPACK (CPU acceleration)</p></li>
 </ul>
 </section>
@@ -2370,7 +2395,7 @@ document.write(`
        "headline": "Backends",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/desktop-backends.html",
-       "articleBody": "Backends# Available hardware acceleration backends for desktop platforms. Linux Backends# XNNPACK Backend \u2014 XNNPACK (CPU acceleration) Building and Running ExecuTorch with OpenVINO Backend \u2014 OpenVINO (Intel hardware optimization) macOS Backends# Core ML Backend \u2014 CoreML (recommended for Apple Silicon) MLX Backend \u2014 MLX (Apple Silicon GPU) XNNPACK Backend \u2014 XNNPACK (CPU acceleration) Windows Backends# XNNPACK Backend \u2014 XNNPACK (CPU acceleration) Building and Running ExecuTorch with OpenVINO Backend \u2014 OpenVINO (Intel hardware optimization)",
+       "articleBody": "Backends# Available hardware acceleration backends for desktop platforms. Linux Backends# XNNPACK Backend \u2014 XNNPACK (CPU acceleration) Building and Running ExecuTorch with OpenVINO Backend \u2014 OpenVINO (Intel hardware optimization) WebGPU Backend \u2014 WebGPU acceleration (experimental) macOS Backends# Core ML Backend \u2014 CoreML (recommended for Apple Silicon) MLX Backend \u2014 MLX (Apple Silicon GPU) WebGPU Backend \u2014 WebGPU acceleration (experimental) XNNPACK Backend \u2014 XNNPACK (CPU acceleration) Windows Backends# XNNPACK Backend \u2014 XNNPACK (CPU acceleration) Building and Running ExecuTorch with OpenVINO Backend \u2014 OpenVINO (Intel hardware optimization)",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
