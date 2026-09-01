@@ -73,3 +73,36 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
     )
+
+    # A named method: one top-level Graph plus its stateful signature bindings
+    # (data bindings + output specs). Sits at the Program level (peer to the reader),
+    # above the graph/ package.
+    runtime.cxx_library(
+        name = "method",
+        exported_headers = [
+            "Method.h",
+        ],
+        exported_deps = [
+            "//executorch/backends/native/runtime/graph:graph",
+            "//executorch/backends/native/runtime/graph:ids",
+            "//executorch/backends/native/runtime/graph:value",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    # The graph/ printer stops at Graph, since Method sits above that package;
+    # this adds the method layer on top of it.
+    runtime.cxx_library(
+        name = "print",
+        srcs = [
+            "utils/Print.cpp",
+        ],
+        exported_headers = [
+            "utils/Print.h",
+        ],
+        exported_deps = [
+            ":method",
+            "//executorch/backends/native/runtime/graph:print",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
