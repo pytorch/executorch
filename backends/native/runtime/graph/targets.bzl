@@ -18,6 +18,15 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "scalar",
+        srcs = ["Scalar.cpp"],
+        exported_headers = [
+            "Scalar.h",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    runtime.cxx_library(
         name = "tensor_meta",
         srcs = ["TensorMeta.cpp"],
         exported_headers = [
@@ -39,7 +48,9 @@ def define_common_targets():
             "utils/Print.h",
         ],
         exported_deps = [
+            ":scalar",
             ":tensor_meta",
         ],
+        deps = [":string_format"],
         visibility = ["//executorch/backends/native/..."],
     )
