@@ -35,8 +35,11 @@ inline constexpr unsigned long long cudaGraphInstantiateFlagAutoFreeOnLaunch =
     hipGraphInstantiateFlagAutoFreeOnLaunch;
 
 // A macro, unlike the aliases above, because hipStreamPerThread casts an
-// integer to a pointer type and so is not a constant expression.
+// integer to a pointer type and so is not a constant expression. Guarded in
+// case a HIP header ever defines the CUDA spelling itself.
+#ifndef cudaStreamPerThread
 #define cudaStreamPerThread hipStreamPerThread
+#endif
 
 struct cudaPointerAttributes {
   cudaMemoryType type{};
