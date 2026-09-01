@@ -9,13 +9,14 @@
 
 #include <algorithm>
 
+#include "arm_nnsupportfunctions.h"
+
 namespace cortex_m {
 namespace native {
 namespace {
 
 constexpr int32_t kInt8ActivationMin = std::numeric_limits<int8_t>::min();
 constexpr int32_t kInt8ActivationMax = std::numeric_limits<int8_t>::max();
-constexpr int32_t kScalarBroadcastBlockSize = 32;
 
 } // namespace
 
@@ -70,7 +71,6 @@ Tensor& quantized_mul_out(
   const int32_t output_mult = static_cast<int32_t>(output_multiplier);
   const int32_t output_shift_val = static_cast<int32_t>(output_shift);
 
-  int8_t scalar_broadcast_buffer[kScalarBroadcastBlockSize];
   int32_t muls_per_loop = 0;
 
   if (channel_broadcast) {
@@ -82,12 +82,18 @@ Tensor& quantized_mul_out(
     muls_per_loop = static_cast<int32_t>(
         std::min(input1_int8.numel(), input2_int8.numel()));
     if (muls_per_loop == 1) {
-      // CMSIS-NN has no scalar-broadcast entry point. A small repeated tile
-      // preserves its quantized arithmetic without one function call per item.
-      std::fill_n(
-          scalar_broadcast_buffer, kScalarBroadcastBlockSize, input2_ptr[0]);
-      input2_ptr = scalar_broadcast_buffer;
-      muls_per_loop = kScalarBroadcastBlockSize;
+      // CMSIS-NN's mul API only accepts equal-length vectors. Follow its
+      // shape-aware min/max kernels by handling scalar broadcast directly.
+      const int32_t input2 = static_cast<int32_t>(input2_ptr[0]) - zp2;
+      int8_t* output = out.mutable_data_ptr<int8_t>();
+      for (int64_t i = 0; i < out.numel(); ++i) {
+        int32_t product = (static_cast<int32_t>(input1_ptr[i]) - zp1) * input2;
+        product =
+            arm_nn_requantize(product, output_mult, output_shift_val) + out_zp;
+        output[i] = static_cast<int8_t>(std::max(
+            kInt8ActivationMin, std::min(kInt8ActivationMax, product)));
+      }
+      return out;
     }
   } else {
     muls_per_loop = out.numel();
@@ -107,9 +113,8 @@ Tensor& quantized_mul_out(
   //    effective_scale = (scale_in1 * scale_in2 / scale_out)
   // Hence no input quantization params required here.
 
-  for (int64_t broadcast_offset = 0; broadcast_offset < out.numel();) {
-    const int32_t block_size = static_cast<int32_t>(
-        std::min<int64_t>(muls_per_loop, out.numel() - broadcast_offset));
+  for (int32_t broadcast_offset = 0; broadcast_offset < out.numel();
+       broadcast_offset += muls_per_loop) {
     // Call CMSIS-NN elementwise multiply kernel
     arm_cmsis_nn_status status = arm_elementwise_mul_s8(
         input1_ptr + broadcast_offset,
@@ -122,7 +127,7 @@ Tensor& quantized_mul_out(
         output_shift_val,
         kInt8ActivationMin,
         kInt8ActivationMax,
-        block_size);
+        muls_per_loop);
 
     if (status != ARM_CMSIS_NN_SUCCESS) {
       ET_LOG(
@@ -132,7 +137,6 @@ Tensor& quantized_mul_out(
       context.fail(Error::Internal);
       return out;
     }
-    broadcast_offset += block_size;
   }
   return out;
 }

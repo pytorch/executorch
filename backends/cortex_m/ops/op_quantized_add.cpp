@@ -11,14 +11,10 @@
 
 #include <algorithm>
 
+#include "arm_nnsupportfunctions.h"
+
 namespace cortex_m {
 namespace native {
-namespace {
-
-constexpr int32_t kScalarBroadcastBlockSize = 32;
-
-} // namespace
-
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
 // cppcheck-suppress unusedFunction
@@ -107,7 +103,6 @@ Tensor& quantized_add_out(
   // addition. To preserve precision when rescaling the inputs, they are first
   // upscaled as much as possible, Hence the left_shift parameter required here.
 
-  int8_t scalar_broadcast_buffer[kScalarBroadcastBlockSize];
   int32_t adds_per_loop = 0;
   if (channel_broadcast) {
     if (input1_int8.numel() < input2_int8.numel()) {
@@ -119,20 +114,31 @@ Tensor& quantized_add_out(
     adds_per_loop = static_cast<int32_t>(
         std::min(input1_int8.numel(), input2_int8.numel()));
     if (adds_per_loop == 1) {
-      // CMSIS-NN has no scalar-broadcast entry point. A small repeated tile
-      // preserves its quantized arithmetic without one function call per item.
-      std::fill_n(
-          scalar_broadcast_buffer, kScalarBroadcastBlockSize, input2_ptr[0]);
-      input2_ptr = scalar_broadcast_buffer;
-      adds_per_loop = kScalarBroadcastBlockSize;
+      // CMSIS-NN's add API only accepts equal-length vectors. Follow its
+      // shape-aware min/max kernels by handling scalar broadcast directly.
+      const int32_t input2 = arm_nn_requantize(
+          (static_cast<int32_t>(input2_ptr[0]) - zp2) << left_shift,
+          input2_mult,
+          input2_shift_val);
+      int8_t* output = out.mutable_data_ptr<int8_t>();
+      for (int64_t i = 0; i < out.numel(); ++i) {
+        int32_t input1 = (static_cast<int32_t>(input1_ptr[i]) - zp1)
+            << left_shift;
+        input1 = arm_nn_requantize(input1, input1_mult, input1_shift_val);
+        int32_t sum =
+            arm_nn_requantize(input1 + input2, output_mult, output_shift_val) +
+            out_zp;
+        output[i] =
+            static_cast<int8_t>(std::max(act_min, std::min(act_max, sum)));
+      }
+      return out;
     }
   } else {
     adds_per_loop = out.numel();
   }
 
-  for (int64_t broadcast_offset = 0; broadcast_offset < out.numel();) {
-    const int32_t block_size = static_cast<int32_t>(
-        std::min<int64_t>(adds_per_loop, out.numel() - broadcast_offset));
+  for (int32_t broadcast_offset = 0; broadcast_offset < out.numel();
+       broadcast_offset += adds_per_loop) {
     // Call CMSIS-NN kernel with precomputed parameters
     arm_cmsis_nn_status status = arm_elementwise_add_s8(
         input1_ptr + broadcast_offset,
@@ -150,7 +156,7 @@ Tensor& quantized_add_out(
         output_shift_val,
         act_min,
         act_max,
-        block_size);
+        adds_per_loop);
 
     if (status != ARM_CMSIS_NN_SUCCESS) {
       ET_LOG(
@@ -161,7 +167,6 @@ Tensor& quantized_add_out(
       context.fail(Error::Internal); // Fail the execution context
       return out;
     }
-    broadcast_offset += block_size;
   }
   ET_LOG(
       Debug,
