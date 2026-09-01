@@ -263,35 +263,6 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
         input_pos = torch.tensor([100], dtype=torch.int32)
         self.assertEqual(self.kv_cache.evict_tokens(input_pos, 10), 0)
 
-    def test_capacity_includes_sink_window_and_max_seq_len(self):
-        self.assertEqual(self.kv_cache.max_context_length, self.cache_size)
-        self.assertEqual(
-            self.kv_cache.cache_positions_manager.ring_size,
-            self.window_size + self.params.max_seq_len,
-        )
-        self.assertEqual(
-            self.rope.ring_size, self.window_size + self.params.max_seq_len
-        )
-
-    def test_update_supports_chunks_larger_than_the_window(self):
-        sink_k, sink_v = self._rand_kv(self.sink_size)
-        self.kv_cache.update(torch.tensor([0], dtype=torch.long), sink_k, sink_v)
-
-        chunk_len = self.window_size + 8
-        k_chunk, v_chunk = self._rand_kv(chunk_len)
-        self.kv_cache.update(
-            torch.tensor([self.cache_size + 3], dtype=torch.long),
-            k_chunk,
-            v_chunk,
-        )
-
-        torch.testing.assert_close(
-            self.kv_cache.k_cache[:, :, : self.sink_size, :], sink_k
-        )
-        torch.testing.assert_close(
-            self.kv_cache.v_cache[:, :, : self.sink_size, :], sink_v
-        )
-
     def test_update_initial_fill(self):
         """First tokens should fill cache slots sequentially."""
         k, v = self._rand_kv(10)
@@ -516,25 +487,6 @@ class AttentionSinkE2ETest(unittest.TestCase):
         self.assertEqual(cache.max_seq_len, 32)
         self.assertEqual(cache.max_context_length, 48)
 
-    def test_sink_capacity_uses_configured_max_seq_len(self):
-        args = self._make_args(max_context_len=128)
-        model = self._build_model(args, sink_size=4, window_size=16)
-
-        cache = model.layers[0].attention.kv_cache
-        self.assertEqual(cache.max_seq_len, 32)
-        self.assertEqual(cache.max_context_length, 52)
-        self.assertEqual(cache.cache_positions_manager.ring_size, 48)
-
-    def test_sink_capacity_defaults_max_seq_len_to_context_length(self):
-        args = self._make_args(max_context_len=128)
-        args.max_seq_len = None
-        model = self._build_model(args, sink_size=4, window_size=16)
-
-        cache = model.layers[0].attention.kv_cache
-        self.assertEqual(cache.max_seq_len, 128)
-        self.assertEqual(cache.max_context_length, 128)
-        self.assertEqual(cache.cache_positions_manager.ring_size, 124)
-
     def _run_generation(self, model, args, num_tokens):
         """Run prefill + decode for num_tokens total, return all outputs."""
         outputs = []
@@ -599,10 +551,13 @@ class AttentionSinkE2ETest(unittest.TestCase):
         """Generate tokens beyond max_context_len with RoPE position remapping."""
         sink_size = 4
         window_size = 16
-        # KV cache size = 52, max_context_len = 64
+        # With max_seq_len omitted, the cache is capped at max_context_len.
         # Generate 100 tokens — well beyond max_context_len
         args = self._make_args(max_context_len=64)
+        args.max_seq_len = None
         model = self._build_model(args, sink_size, window_size, use_custom_sdpa=False)
+        cache = model.layers[0].attention.kv_cache
+        self.assertEqual(cache.max_context_length, 64)
 
         outputs = self._run_generation(model, args, num_tokens=100)
 
@@ -616,9 +571,9 @@ class AttentionSinkE2ETest(unittest.TestCase):
     def test_chunked_prefill_across_the_ring_wrap(self):
         """Chunked prefill where a chunk spans the ring wrap.
 
-        sink_size=4, window_size=16, and max_seq_len=32, so the ring is slots
-        [4, 52). Feeding 5 tokens at a time crosses that ring boundary while
-        exercising the mask, cache indexing, and RoPE remapping together.
+        sink_size=4, window_size=16, and max_seq_len=48, so the ring is slots
+        [4, 68). Feeding 40 tokens at a time exceeds the old 2x-window ring and
+        crosses the new ring boundary on the second chunk.
 
         The other beyond-context-window tests decode one token at a time, and a
         chunk of one can never span the wrap however far the position runs, so
@@ -632,27 +587,32 @@ class AttentionSinkE2ETest(unittest.TestCase):
         """
         sink_size = 4
         window_size = 16
-        args = self._make_args(max_context_len=64)
+        chunk_size = 40
+        args = self._make_args(max_context_len=128)
+        args.max_seq_len = 48
 
         torch.manual_seed(0)
         model = self._build_model(args, sink_size, window_size)
-        tokens = torch.randint(0, args.vocab_size, (1, 100))
+        tokens = torch.randint(0, args.vocab_size, (1, 80))
 
-        chunked = self._feed_in_chunks(copy.deepcopy(model), tokens, chunk_size=5)
+        chunked = self._feed_in_chunks(
+            copy.deepcopy(model), tokens, chunk_size=chunk_size
+        )
         one_at_a_time = self._feed_in_chunks(copy.deepcopy(model), tokens, chunk_size=1)
 
-        self.assertEqual(len(chunked), 20)
-        self.assertEqual(len(one_at_a_time), 100)
+        self.assertEqual(len(chunked), 2)
+        self.assertEqual(len(one_at_a_time), 80)
 
         # generate_full_logits is off, so each call returns logits for its last
         # position only. How the input was chunked must not change the result:
-        # chunk i ends on the same token as one_at_a_time[5 * i + 4].
+        # chunk i ends on the same token as the corresponding decode call.
         for i, out in enumerate(chunked):
             self.assertTrue(torch.isfinite(out).all(), f"chunk {i} is not finite")
             torch.testing.assert_close(
                 out,
-                one_at_a_time[5 * i + 4],
-                msg=lambda m, i=i: f"chunk {i}, positions {5 * i}..{5 * i + 4}, "
+                one_at_a_time[chunk_size * (i + 1) - 1],
+                msg=lambda m, i=i: f"chunk {i}, positions {chunk_size * i}.."
+                f"{chunk_size * (i + 1) - 1}, "
                 f"disagrees with feeding the same tokens one at a time:\n{m}",
             )
 

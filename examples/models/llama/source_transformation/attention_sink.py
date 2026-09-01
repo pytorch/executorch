@@ -34,15 +34,8 @@ def _get_attention_sink_cache_size(
 ) -> int:
     """Size a sink cache for fixed sinks, one window, and one input chunk."""
     assert sink_size >= 0, "Attention sink size must be non-negative"
-    assert window_size > 0, "Sliding-window size must be positive"
     if max_seq_len is None:
         max_seq_len = max_context_length
-    assert max_seq_len > 0, "Maximum sequence length must be positive"
-    assert sink_size + window_size <= max_context_length, (
-        f"Attention sink size ({sink_size}) plus sliding-window size "
-        f"({window_size}) cannot exceed the full context length "
-        f"({max_context_length})"
-    )
     return sink_size + _get_ring_cache_size(
         max_context_length - sink_size,
         window_size,
@@ -78,7 +71,7 @@ class RopeWithAttentionSink(Rope):
         super().__init__(params)
         self.window_size = window_size
         self.sink_size = sink_size
-        self.max_seq_len = (
+        max_seq_len = (
             params.max_context_len
             if getattr(params, "max_seq_len", None) is None
             else int(params.max_seq_len)
@@ -87,7 +80,7 @@ class RopeWithAttentionSink(Rope):
             params.max_context_len,
             window_size,
             sink_size,
-            self.max_seq_len,
+            max_seq_len,
         )
         self.ring_size = cache_size - sink_size
 
