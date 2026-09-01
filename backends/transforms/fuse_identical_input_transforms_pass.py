@@ -158,6 +158,7 @@ class FuseIdenticalInputTransformsPass(ExportPass):
     _ELEMENTWISE_OPS = _BINARY_ELEMENTWISE_OPS | _NARY_ELEMENTWISE_OPS
 
     target_ops = _ELEMENTWISE_OPS | _CONCAT_OPS
+    _recompile_before_retrace = True
 
     def __init__(
         self,
@@ -198,7 +199,8 @@ class FuseIdenticalInputTransformsPass(ExportPass):
         if modified:
             graph_module.graph.eliminate_dead_code()
             graph_module.graph.lint()
-            graph_module.recompile()
+            if self._recompile_before_retrace:
+                graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
