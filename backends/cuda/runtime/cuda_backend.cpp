@@ -1050,7 +1050,8 @@ class ET_EXPERIMENTAL CudaBackend final
     size_t num_constants = 0;
     ET_CHECK_OK_OR_RETURN_ERROR(
         handle->get_num_constants(handle->container_handle, &num_constants),
-        "Failed to enumerate CUDA AOTI constants");
+        "Failed to enumerate CUDA AOTI constants for method '%s'",
+        method_name.c_str());
     if (num_constants == 0) {
       ET_LOG(Info, "No constants for method '%s'", method_name.c_str());
       return Error::Ok;

@@ -27,7 +27,6 @@ import unittest
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-
 from executorch.backends.cuda.cuda_weight_collector import CUDA_WEIGHT_CACHE_MAGIC
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir._serialize._program import deserialize_pte_binary
@@ -135,15 +134,17 @@ class TestMissingWeightsBlob(unittest.TestCase):
             self.assertTrue(blobs, "expected an externalized weights blob")
             # A blob holding no constants is a bare header, and a missing blob
             # really is harmless then, so the model has to carry real data for
-            # this to be testing anything.
-            largest = max(os.path.getsize(os.path.join(outdir, f)) for f in blobs)
-            self.assertGreater(largest, 256, "expected non-empty constants")
+            # this to be testing anything. The largest is also the one used below,
+            # because os.listdir does not promise an order.
+            sidecar = max((os.path.join(outdir, f) for f in blobs), key=os.path.getsize)
+            self.assertGreater(
+                os.path.getsize(sidecar), 256, "expected non-empty constants"
+            )
 
             # A positive control first: the same program loads when its blob is
             # supplied, so a later failure is about the missing blob rather than the
             # program or the backend registration. The rewrite is covered by the
             # payload check below it, which runs after the rewrite has happened.
-            sidecar = os.path.join(outdir, blobs[0])
             Runtime.get().load_program(path, data_path=sidecar).load_method("forward")
 
             self._rewrite_payload_as_legacy(path)
