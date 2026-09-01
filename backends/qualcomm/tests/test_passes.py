@@ -909,6 +909,16 @@ class ConvReluConv(torch.nn.Module):
         return torch.relu(self.conv2(torch.relu(self.conv1(x))))
 
 
+class LinearReluLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = torch.nn.Linear(16, 32)
+        self.fc2 = torch.nn.Linear(32, 8)
+
+    def forward(self, x):
+        return torch.relu(self.fc2(torch.relu(self.fc1(x))))
+
+
 class TestActivationSpecSharing(unittest.TestCase):
     """A per-channel op's activation spec must match the default one.
 
@@ -966,17 +976,10 @@ class TestActivationSpecSharing(unittest.TestCase):
                         ),
                     )
 
-    def test_8a8w_qat_does_not_double_quantize_conv_boundaries(self):
-        """End-to-end guard for the same invariant.
-
-        This model has no BatchNorm, so it isolates the activation-spec mismatch
-        from anything conv-bn related. Before the act_symmetric split in
-        get_8a8w_qnn_qat_config, QAT produced three redundant clusters here while
-        PTQ produced none.
-        """
+    def _requantize_counts(self, module_cls, example_inputs):
+        """Redundant dequantize->quantize clusters under PTQ and QAT."""
         from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
 
-        example_inputs = (torch.randn(2, 3, 8, 8),)
         counts = {}
         for is_qat in (False, True):
             quantizer = QnnQuantizer()
@@ -986,7 +989,7 @@ class TestActivationSpecSharing(unittest.TestCase):
                 is_conv_per_channel=True,
                 is_linear_per_channel=True,
             )
-            module = ConvReluConv()
+            module = module_cls()
             module = module.train() if is_qat else module.eval()
             exported = torch.export.export(module, example_inputs, strict=True).module()
             prepared = (
@@ -996,13 +999,38 @@ class TestActivationSpecSharing(unittest.TestCase):
             )
             prepared(*example_inputs)
             counts[is_qat] = _count_requantize_clusters(convert_pt2e(prepared))
+        return counts
 
+    def _assert_qat_matches_ptq(self, counts):
         self.assertEqual(counts[False], 0, "PTQ regressed")
         self.assertEqual(
             counts[True],
             counts[False],
             "QAT inserts a dequantize->quantize round trip that PTQ does not; the "
             "default and per-channel activation specs have drifted apart",
+        )
+
+    def test_8a8w_qat_does_not_double_quantize_conv_boundaries(self):
+        """End-to-end guard for the same invariant.
+
+        This model has no BatchNorm, so it isolates the activation-spec mismatch
+        from anything conv-bn related. Before the act_symmetric split in
+        get_8a8w_qnn_qat_config, QAT produced three redundant clusters here while
+        PTQ produced none.
+        """
+        self._assert_qat_matches_ptq(
+            self._requantize_counts(ConvReluConv, (torch.randn(2, 3, 8, 8),))
+        )
+
+    def test_8a8w_qat_does_not_double_quantize_linear_boundaries(self):
+        """The conv case above never reaches is_linear_per_channel.
+
+        Linear takes the same per-channel activation spec as conv, so the same
+        drift shows up at linear boundaries -- but ConvReluConv has no aten.linear
+        node, so nothing exercised that path.
+        """
+        self._assert_qat_matches_ptq(
+            self._requantize_counts(LinearReluLinear, (torch.randn(2, 16),))
         )
 
 
