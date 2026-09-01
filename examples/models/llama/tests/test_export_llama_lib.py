@@ -13,6 +13,7 @@ from unittest.mock import patch
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.etrecord import parse_etrecord
+from executorch.devtools.etrecord._etrecord import ETRecord
 
 try:
     from executorch.backends.arm.quantizer.arm_quantizer import (
@@ -37,6 +38,7 @@ from executorch.examples.models.llama.export_llama_lib import (
 from executorch.extension.llm.export.builder import LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import (
     LlmConfig,
+    MethodConfig,
     Pt2eQuantize,
     VgfQuantizeScope,
 )
@@ -120,66 +122,119 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertTrue(target.call_args.kwargs["coreml"])
         self.assertTrue(target.call_args.kwargs["vulkan"])
 
-    def _run_tiny_export(self, generate_etrecord):
+    def _run_tiny_export(
+        self, generate_etrecord, directory, output_name="tiny.pte", output_dir=None
+    ):
+        """Export the tiny model, writing the .pte into `directory`.
+
+        The builder is pointed at a directory rather than chdir'ing the process, because these
+        tests run under pytest-xdist where the cwd is shared between tests in a worker.
+
+        `output_dir` defaults to `directory`, and is set separately only by the test that
+        checks a `.pte` output name does not separate the model from its record.
+        """
         llm_config = LlmConfig()
         llm_config.backend.xnnpack.enabled = True
         llm_config.debug.generate_etrecord = generate_etrecord
-        llm_config.export.output_name = "tiny.pte"
+        llm_config.export.output_dir = output_dir or directory
+        llm_config.export.output_name = os.path.join(directory, output_name)
+        builder = _tiny_llm_builder().set_output_dir(output_dir or directory)
         with patch(
             "executorch.examples.models.llama.export_llama_lib._prepare_for_llama_export",
-            return_value=_tiny_llm_builder(),
+            return_value=builder,
         ):
             _export_llama(llm_config)
+        return sorted(os.listdir(directory))
 
-    def test_export_saves_the_etrecord_it_generates(self):
-        """A lowering that generates an etrecord must also write it.
+    def test_export_saves_the_etrecord_beside_the_model(self):
+        """The record must be written, and land beside the model.
 
-        `to_edge_transform_and_lower` builds the record when asked and carries it to the ExecuTorch
-        program, but nothing saved it, so the flag produced no file and no warning while still
-        paying for the record.
+        A `.pte` output name is used as the path verbatim, so `output_dir` points somewhere
+        else here: a record keyed off `output_dir` would separate it from the model.
         """
-        with tempfile.TemporaryDirectory() as directory:
-            previous = os.getcwd()
-            os.chdir(directory)
-            try:
-                self._run_tiny_export(generate_etrecord=True)
-                self.assertEqual(sorted(os.listdir(".")), ["etrecord.bin", "tiny.pte"])
-                # An empty file would satisfy the listing, so load it back.
-                self.assertIsNotNone(
-                    parse_etrecord("etrecord.bin").edge_dialect_program
-                )
-            finally:
-                os.chdir(previous)
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as elsewhere:
+            self.assertEqual(
+                self._run_tiny_export(
+                    generate_etrecord=True, directory=directory, output_dir=elsewhere
+                ),
+                ["etrecord.bin", "tiny.pte"],
+            )
+            # An empty file would satisfy the listing, so load it back.
+            self.assertIsNotNone(
+                parse_etrecord(
+                    os.path.join(directory, "etrecord.bin")
+                ).edge_dialect_program
+            )
 
     def test_export_writes_no_etrecord_when_not_asked(self):
         """The common case must stay silent rather than raise or leave a stray file."""
         with tempfile.TemporaryDirectory() as directory:
-            previous = os.getcwd()
-            os.chdir(directory)
-            try:
-                self._run_tiny_export(generate_etrecord=False)
-                self.assertEqual(os.listdir("."), ["tiny.pte"])
-            finally:
-                os.chdir(previous)
+            with self.assertNoLogs(level="WARNING"):
+                landed = self._run_tiny_export(
+                    generate_etrecord=False, directory=directory
+                )
+            self.assertEqual(landed, ["tiny.pte"])
 
     def test_export_keeps_the_model_when_the_etrecord_cannot_be_written(self):
         """A debug artifact must not cost the caller the export.
 
-        The record is written after the model, so a failure to write it costs the record and not
-        the .pte. A full disk is the likely trigger, since the record is the larger of the two.
+        The record is written after the model, so a failed record write costs the record and
+        not the .pte. A full disk is the likely trigger, since the record is the larger.
         """
         with tempfile.TemporaryDirectory() as directory:
-            previous = os.getcwd()
-            os.chdir(directory)
-            try:
-                # A directory of that name makes the write fail without touching permissions.
-                os.mkdir("etrecord.bin")
-                with self.assertLogs(level="WARNING") as logs:
-                    self._run_tiny_export(generate_etrecord=True)
-                self.assertIn("tiny.pte", os.listdir("."))
-                self.assertTrue(any("Could not write" in line for line in logs.output))
-            finally:
-                os.chdir(previous)
+            # A directory of that name makes the rename fail without touching permissions.
+            os.mkdir(os.path.join(directory, "etrecord.bin"))
+            with self.assertLogs(level="WARNING") as logs:
+                landed = self._run_tiny_export(
+                    generate_etrecord=True, directory=directory
+                )
+            self.assertIn("tiny.pte", landed)
+            self.assertTrue(any("Could not write" in line for line in logs.output))
+            # The staged record must not be left behind next to the model.
+            self.assertEqual(landed, ["etrecord.bin", "tiny.pte"])
+
+    def test_export_keeps_the_previous_etrecord_when_a_rewrite_fails(self):
+        """A failed rewrite must not destroy the record that was already there.
+
+        The record format truncates its target on open, so writing in place would leave a
+        short file under the real name and report only a warning.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            self._run_tiny_export(generate_etrecord=True, directory=directory)
+            record = os.path.join(directory, "etrecord.bin")
+            good = os.path.getsize(record)
+
+            with patch.object(
+                ETRecord, "_save_graph_map", side_effect=RuntimeError("disk full")
+            ):
+                with self.assertLogs(level="WARNING"):
+                    self._run_tiny_export(generate_etrecord=True, directory=directory)
+
+            self.assertEqual(os.path.getsize(record), good)
+            self.assertIsNotNone(parse_etrecord(record).edge_dialect_program)
+
+    def test_multimethod_export_saves_the_etrecord_beside_the_model(self):
+        """The multimethod path must write the record too.
+
+        It builds a record the same way the single-method paths do, so leaving out the save
+        would reproduce the silent-flag bug on that path alone.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            llm_config = LlmConfig()
+            llm_config.backend.xnnpack.enabled = True
+            llm_config.debug.generate_etrecord = True
+            llm_config.multimethod.methods = [MethodConfig(method_name="forward")]
+            llm_config.export.output_dir = directory
+            llm_config.export.output_name = os.path.join(directory, "tiny.pte")
+            with patch.object(
+                export_llama_lib,
+                "_prepare_for_llama_export",
+                side_effect=lambda _: _tiny_llm_builder().set_output_dir(directory),
+            ):
+                _export_llama(llm_config)
+            self.assertEqual(
+                sorted(os.listdir(directory)), ["etrecord.bin", "tiny.pte"]
+            )
 
     def test_has_expected_ops_and_op_counts(self):
         """

@@ -17,6 +17,7 @@ import math
 import os
 import re
 import shlex
+import tempfile
 from functools import partial
 from importlib import resources as _resources
 from json import JSONDecodeError
@@ -763,7 +764,6 @@ def _ensure_static_kvq_out_variants(llm_config: LlmConfig) -> None:
         libraries = [llm_config.export.so_library]
     else:
         import glob
-        import os
 
         import executorch
         from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
@@ -1214,22 +1214,57 @@ def _to_edge_and_lower_llama_xnnpack(
     )
 
 
-def _save_etrecord_if_generated(builder) -> None:
-    """Write the etrecord the lowering attached, if there is one.
+def _etrecord_path_beside_model(builder) -> str:
+    """Where to write the etrecord so it lands beside the model.
 
-    Called after the model is written, and never allowed to raise, because a debug artifact
-    must not cost a caller the export itself. A record twice the size of the model makes a
-    full disk the likely trigger.
+    `save_pte_program` uses an output name ending in `.pte` as the path verbatim, ignoring
+    `output_dir`, so the model's own directory is the only reliable anchor. Falls back to
+    `output_dir` before the model is saved.
     """
-    try:
-        etrecord = builder.export_program.get_etrecord()
-    except RuntimeError:
-        # Not generated, which is the normal case.
-        return
+    saved = builder.get_saved_pte_filename()
+    directory = os.path.dirname(saved) if saved else builder.output_dir
+    return os.path.join(directory, "etrecord.bin")
 
-    path = os.path.join(builder.output_dir, "etrecord.bin")
+
+def _save_etrecord_if_generated(builder) -> None:
+    """Write the etrecord the lowering produced, if there is one.
+
+    The record goes beside the model rather than under `output_dir`, because an output name
+    ending in `.pte` is used as the path verbatim and so bypasses `output_dir`.
+
+    A failed write costs the record and not the export, because a debug artifact must not
+    cost a caller the model. The record is staged under a temporary name and moved into
+    place, so a failure part way cannot leave a half-written record under the real name.
+    """
+    edge_program = getattr(builder, "etrecord_edge_program", None)
+    if edge_program is None:
+        try:
+            etrecord = builder.export_program.get_etrecord()
+        except RuntimeError:
+            # Not generated, which is the normal case.
+            return
+    else:
+        etrecord = None
+
+    path = _etrecord_path_beside_model(builder)
     try:
-        etrecord.save(path)
+        with tempfile.NamedTemporaryFile(
+            dir=os.path.dirname(path) or ".", suffix=".bin", delete=False
+        ) as temporary:
+            staged = temporary.name
+        try:
+            if etrecord is not None:
+                etrecord.save(staged)
+            else:
+                generate_etrecord_func(
+                    et_record=staged,
+                    edge_dialect_program=edge_program,
+                    executorch_program=builder.export_program,
+                )
+            os.replace(staged, path)
+        except BaseException:
+            os.unlink(staged)
+            raise
     except Exception as error:
         logging.warning("Could not write %s: %s", path, error)
         return
@@ -1567,19 +1602,10 @@ def _to_edge_and_lower_llama(  # noqa: C901
             passes=additional_passes,
         )
 
-        # Generate ETRecord
+        # The record is written after the model, by _save_etrecord_if_generated, so a failed
+        # record write cannot cost the export and the record lands beside the .pte.
         if edge_manager_copy:
-            et_record_path = os.path.join(builder.output_dir, "etrecord.bin")
-            try:
-                generate_etrecord_func(
-                    et_record=et_record_path,
-                    edge_dialect_program=edge_manager_copy,
-                    executorch_program=builder.export_program,
-                )
-            except Exception as error:
-                logging.warning("Could not write %s: %s", et_record_path, error)
-            else:
-                logging.info("Generated %s", et_record_path)
+            builder.etrecord_edge_program = edge_manager_copy
     else:
         builder = builder_exported_to_edge.to_backend(partitioners)
         if verbose:
