@@ -37,6 +37,7 @@
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/core/event_tracer.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -66,6 +67,14 @@ DEFINE_string(
     "Model serialized in flatbuffer format.");
 DEFINE_string(data_path, "", "Path to data file (.ptd).");
 DEFINE_string(inputs, "", "Comma-separated list of input files");
+DEFINE_string(
+    input_shapes,
+    "",
+    "Comma-separated per-input shapes, dims joined by 'x' (e.g. "
+    "\"1x98,1x50x256,1x1x98\"). Inputs are resized to these shapes before "
+    "execute. This is the only way to run a model with dynamic shapes below "
+    "its upper bound from this runner; without it every execution uses the "
+    "bound. Input files are still upper-bound sized, the surplus is ignored.");
 DEFINE_string(
     output_file,
     "",
@@ -299,6 +308,54 @@ bool is_expected_vgf_dump_stop(Error status) {
   return false;
 #endif
 }
+
+namespace {
+
+/**
+ * Resize the method's inputs to the shapes given by --input_shapes.
+ *
+ * Without this, a model exported with dynamic shapes can only ever be run at
+ * its upper bound, because prepare_input_tensors() sizes every input from the
+ * bound recorded in the method metadata. Several classes of backend bug are
+ * invisible at the bound and only appear below it, so being able to ask for a
+ * smaller shape matters for debugging.
+ */
+void resize_inputs_to(Method& method, const std::string& shapes_spec) {
+  std::stringstream shape_list(shapes_spec);
+  std::string spec;
+  size_t input_idx = 0;
+  while (std::getline(shape_list, spec, ',')) {
+    std::vector<executorch::aten::SizesType> sizes;
+    std::stringstream dim_list(spec);
+    std::string dim;
+    while (std::getline(dim_list, dim, 'x')) {
+      sizes.push_back(
+          static_cast<executorch::aten::SizesType>(std::stoi(dim)));
+    }
+    ET_CHECK_MSG(
+        input_idx < method.inputs_size(),
+        "--input_shapes lists more entries than the method has inputs (%zu)",
+        method.inputs_size());
+    const auto& input = method.get_input(input_idx);
+    ET_CHECK_MSG(
+        input.isTensor(), "input %zu is not a tensor", input_idx);
+    auto tensor = input.toTensor();
+    const Error status = executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
+        tensor,
+        executorch::aten::ArrayRef<executorch::aten::SizesType>(
+            sizes.data(), sizes.size()));
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Resizing input %zu to %s failed with 0x%" PRIx32,
+        input_idx,
+        spec.c_str(),
+        static_cast<uint32_t>(status));
+    ++input_idx;
+  }
+  ET_LOG(Info, "Inputs resized to %s", shapes_spec.c_str());
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
@@ -673,6 +730,9 @@ int main(int argc, char** argv) {
             (uint32_t)res.error());
         inputs.emplace(std::move(res.get()));
         ET_LOG(Debug, "Inputs prepared.");
+        if (!FLAGS_input_shapes.empty()) {
+          resize_inputs_to(*method, FLAGS_input_shapes);
+        }
       }
 
       Error status = method->execute();
@@ -754,6 +814,9 @@ int main(int argc, char** argv) {
           (uint32_t)res.error());
       inputs.emplace(std::move(res.get()));
       ET_LOG(Debug, "Inputs prepared.");
+      if (!FLAGS_input_shapes.empty()) {
+        resize_inputs_to(*method, FLAGS_input_shapes);
+      }
     }
 
     const et_timestamp_t before_execute =
