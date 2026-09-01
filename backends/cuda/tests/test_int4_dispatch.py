@@ -34,7 +34,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
-from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
+from executorch.backends.cuda.optimization_config import cuda_optimization_context
+from executorch.backends.cuda.quantize_op_dispatch.q4k_dequant import dequant_matmul
 from executorch.backends.cuda.target_arch import cuda_targets_are_sm90_or_newer
 from executorch.examples.models.gemma4_31b.cuda_packers import pack_linear_for_cuda
 from executorch.extension.llm.export.int4 import ExportableInt4Tensor
@@ -118,7 +119,7 @@ class TestFLinearDispatch(unittest.TestCase):
         x = torch.randn(64, 512, dtype=torch.bfloat16, device="cuda")
         out = module(x)
         weight = module.weight
-        ref = _dequant_matmul(
+        ref = dequant_matmul(
             x,
             weight.qdata,
             weight.scale,
@@ -274,7 +275,7 @@ def _record_int4_plain_mm():
 
     def _fake(self, qdata, scale, scale_step, zero, zero_point_step, group_size):
         calls.append((tuple(self.shape), group_size))
-        return _dequant_matmul(
+        return dequant_matmul(
             self, qdata, scale, scale_step, zero, zero_point_step, group_size
         )
 
@@ -352,6 +353,17 @@ class TestDispatchRouting(unittest.TestCase):
             strict=True,
         )
         self.assertIn("triton.q4k_fp8_linear", exported.graph_module.code)
+
+    def test_fp8_compile_gate_falls_back_to_bfloat16_dequant(self):
+        module, _ = _make_int4_linear(256, 512, group_size=32)
+        x = torch.randn(8, 512, dtype=torch.bfloat16, device="cuda")
+        with cuda_optimization_context(q4k_fp8_prefill=False), mock.patch(
+            "executorch.backends.cuda.triton.kernels.q4k_fp8_linear.dequant_matmul",
+            wraps=dequant_matmul,
+        ) as fallback:
+            out = module(x)
+        fallback.assert_called_once()
+        self.assertEqual(out.shape, (8, 256))
 
     def test_target_arch_override_controls_fp8_gate(self):
         with mock.patch.dict(

@@ -11,6 +11,8 @@ from __future__ import annotations
 import torch
 import triton
 import triton.language as tl
+from executorch.backends.cuda.optimization_config import q4k_fp8_prefill_enabled
+from executorch.backends.cuda.quantize_op_dispatch.q4k_dequant import dequant_matmul
 from torch.library import triton_op, wrap_triton
 
 
@@ -150,6 +152,11 @@ def q4k_fp8_linear(
     group_size: int,
 ) -> torch.Tensor:
     """Run Q4_K prefill linear through FP8 tensor cores on SM90+."""
+    if not q4k_fp8_prefill_enabled():
+        return dequant_matmul(
+            x, qdata, scale, scale_step, zero, zero_point_step, group_size
+        )
+
     M, K = x.shape
     N = qdata.shape[0]
     _validate_q4k_fp8_inputs(x, qdata, group_size)

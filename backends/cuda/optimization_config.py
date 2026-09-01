@@ -11,9 +11,16 @@ import contextvars
 from typing import Iterator
 
 
+_Q4K_FP8_PREFILL_ENABLED = contextvars.ContextVar(
+    "q4k_fp8_prefill_enabled", default=True
+)
 _TMA_CAUSAL_PREFILL_ENABLED = contextvars.ContextVar(
     "tma_causal_prefill_enabled", default=False
 )
+
+
+def q4k_fp8_prefill_enabled() -> bool:
+    return _Q4K_FP8_PREFILL_ENABLED.get()
 
 
 def tma_causal_prefill_enabled() -> bool:
@@ -21,9 +28,13 @@ def tma_causal_prefill_enabled() -> bool:
 
 
 @contextlib.contextmanager
-def cuda_optimization_context(*, tma_causal_prefill: bool) -> Iterator[None]:
+def cuda_optimization_context(
+    *, q4k_fp8_prefill: bool, tma_causal_prefill: bool = False
+) -> Iterator[None]:
+    q4k_token = _Q4K_FP8_PREFILL_ENABLED.set(q4k_fp8_prefill)
     tma_token = _TMA_CAUSAL_PREFILL_ENABLED.set(tma_causal_prefill)
     try:
         yield
     finally:
         _TMA_CAUSAL_PREFILL_ENABLED.reset(tma_token)
+        _Q4K_FP8_PREFILL_ENABLED.reset(q4k_token)

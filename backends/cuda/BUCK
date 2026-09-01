@@ -45,6 +45,31 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "optimization_config",
+    srcs = [
+        "optimization_config.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "q4k_dequant",
+    srcs = [
+        "quantize_op_dispatch/q4k_dequant.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "dp4a_planar_int5_tensor",
     srcs = [
         "dp4a_planar_int5_tensor.py",
@@ -91,6 +116,7 @@ fbcode_target(
         ":coalesced_int4_tensor",
         ":dp4a_planar_int5_tensor",
         ":dp4a_planar_int6_tensor",
+        ":q4k_dequant",
         ":target_arch",
         ":triton_kernels",
         "//caffe2:torch",
@@ -168,6 +194,7 @@ fbcode_target(
     ],
     deps = [
         ":optimization_config",
+        ":q4k_dequant",
         ":target_arch",
         "//caffe2:torch",
     ],

@@ -865,10 +865,11 @@ class CudaBackend(AotiBackend, BackendDetails):
         through the unmodified AOTI codepath, which avoids regressions in
         their cuda CI exports.
         """
-        # Parse compile_specs for low_memory_mode (default OFF). compile_specs
+        # Parse compile_specs for opt-in features (default OFF). compile_specs
         # may be None when called without specs (parity with base default).
         low_memory_mode = "OFF"
         tma_causal_prefill = False
+        q4k_fp8_prefill = False
         for spec in compile_specs or []:
             if spec.key == "low_memory_mode":
                 mode = spec.value.decode("utf-8").upper()
@@ -879,12 +880,19 @@ class CudaBackend(AotiBackend, BackendDetails):
                 low_memory_mode = mode
             elif spec.key == "enable_tma_causal_prefill":
                 tma_causal_prefill = _on_off_compile_spec_value(spec)
+            elif spec.key == "enable_q4k_fp8_prefill":
+                q4k_fp8_prefill = _on_off_compile_spec_value(spec)
 
         if tma_causal_prefill and not cuda_targets_are_sm90_or_newer():
             logging.warning(
                 "enable_tma_causal_prefill requires an SM90+ CUDA target; disabling it"
             )
             tma_causal_prefill = False
+        if q4k_fp8_prefill and not cuda_targets_are_sm90_or_newer():
+            logging.warning(
+                "enable_q4k_fp8_prefill requires an SM90+ CUDA target; disabling it"
+            )
+            q4k_fp8_prefill = False
 
         @contextlib.contextmanager
         def _combined():
@@ -897,7 +905,10 @@ class CudaBackend(AotiBackend, BackendDetails):
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
                 stack.enter_context(target_smem_context())
                 stack.enter_context(
-                    cuda_optimization_context(tma_causal_prefill=tma_causal_prefill)
+                    cuda_optimization_context(
+                        q4k_fp8_prefill=q4k_fp8_prefill,
+                        tma_causal_prefill=tma_causal_prefill,
+                    )
                 )
                 if low_memory_mode == "ON":
                     # Force AOTI's mutated-buffer clones onto CPU during
