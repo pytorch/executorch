@@ -89,6 +89,10 @@ def _setup_qnn_sdk_locked() -> None:
     try:
         installed = module.install_qnn_sdk()
     except ModuleNotFoundError as error:
+        # Only when the downloader itself is absent. A dependency missing from inside it is a
+        # different problem and is left to speak for itself.
+        if not (error.name or "").startswith(f"{__name__}.scripts"):
+            raise
         # This build does not carry the downloader, so an SDK cannot be fetched here. Say what to
         # do rather than surfacing a missing module from a packaging detail.
         raise RuntimeError(
