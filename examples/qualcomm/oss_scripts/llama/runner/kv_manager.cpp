@@ -62,6 +62,58 @@ void fill_mask(
     }
   }
 }
+
+template <typename T>
+void mask_oldest_visible_impl(
+    T* buf,
+    size_t size,
+    size_t count,
+    T visible_value,
+    T mask_value) {
+  // Lookahead rows can be sparse, and an AR chunk can be longer than the
+  // window, so the entries to drop are not necessarily a contiguous prefix.
+  for (size_t i = 0; i < size && count > 0; i++) {
+    if (buf[i] == visible_value) {
+      buf[i] = mask_value;
+      --count;
+    }
+  }
+}
+
+void mask_oldest_visible(
+    executorch::aten::ScalarType scalar_type,
+    std::byte* buf,
+    size_t size,
+    size_t count) {
+  switch (scalar_type) {
+    case executorch::aten::ScalarType::UInt16:
+      mask_oldest_visible_impl(
+          reinterpret_cast<uint16_t*>(buf),
+          size,
+          count,
+          static_cast<uint16_t>(65535),
+          static_cast<uint16_t>(0));
+      break;
+    case executorch::aten::ScalarType::Byte:
+      mask_oldest_visible_impl(
+          reinterpret_cast<uint8_t*>(buf),
+          size,
+          count,
+          static_cast<uint8_t>(255),
+          static_cast<uint8_t>(0));
+      break;
+    case executorch::aten::ScalarType::Float:
+      mask_oldest_visible_impl(
+          reinterpret_cast<float*>(buf), size, count, 0.0f, -65535.0f);
+      break;
+    default:
+      ET_CHECK_MSG(
+          false,
+          "Unsupported scalar type %s",
+          executorch::runtime::toString(scalar_type));
+      break;
+  }
+}
 } // namespace
 
 KVManager::KVManager(Metadata metadata, std::unique_ptr<MethodMeta> method_meta)
@@ -196,7 +248,7 @@ void KVManager::init_attention_mask(
     int32_t ar_len,
     int32_t n_past,
     int32_t sliding_window,
-    const std::vector<int32_t>& position_offset) {
+    const std::vector<int32_t>& /*position_offset*/) {
   ET_CHECK_MSG(
       attention_map.size() <= ar_len,
       "The size of attention_map (%zu) doesn't match with ar_len (%d)",
@@ -213,8 +265,11 @@ void KVManager::init_attention_mask(
   std::byte* past_ptr = attention_mask;
   std::byte* new_ptr = attention_mask +
       (metadata_.context_len - ar_len) * getDtypeSize(attention_mask_dtype_);
+  const size_t window_size = static_cast<size_t>(sliding_window);
+  std::vector<size_t> visible_counts(ar_len);
   // All inputs will necessarily attend to n_past and itself
   for (int i = 0; i < ar_len; i++) {
+    size_t visible_count;
     // Iterate across ar_len
     if (attention_map[i] < 0) {
       // If negative, attend to only past tokens
@@ -223,6 +278,7 @@ void KVManager::init_attention_mask(
           past_ptr,
           n_past,
           /*use_pos_value=*/true);
+      visible_count = n_past;
     } else {
       // If positive, copy attention map from (relative to 0th input) parent
       // Parent token index
@@ -233,6 +289,7 @@ void KVManager::init_attention_mask(
           past_ptr,
           parent_ptr,
           metadata_.context_len * getDtypeSize(attention_mask_dtype_));
+      visible_count = visible_counts[pidx];
     }
     // Attend to itself
     fill_mask(
@@ -240,20 +297,16 @@ void KVManager::init_attention_mask(
         new_ptr + i * getDtypeSize(attention_mask_dtype_),
         1,
         /*use_pos_value=*/true);
-
-    // mask by limitation of sliding_window
-    int32_t available_context_len = position_offset.empty()
-        ? sliding_window - (i + 1) - n_past
-        : sliding_window - (position_offset[i] + 1) - n_past;
-    // if available_context_len is less than 0, it means we need to mask some
-    // tokens in the past to avoid exceeding the sliding window
-    if (available_context_len < 0) {
-      fill_mask(
+    ++visible_count;
+    if (visible_count > window_size) {
+      mask_oldest_visible(
           attention_mask_dtype_,
           past_ptr,
-          -available_context_len,
-          /*use_pos_value=*/false);
+          metadata_.context_len,
+          visible_count - window_size);
+      visible_count = window_size;
     }
+    visible_counts[i] = visible_count;
 
     past_ptr += metadata_.context_len * getDtypeSize(attention_mask_dtype_);
     new_ptr += metadata_.context_len * getDtypeSize(attention_mask_dtype_);
@@ -283,18 +336,20 @@ void KVManager::update_attention_mask(
     const std::vector<int32_t>& position_offset) {
   std::byte* cur_ptr =
       attention_mask + n_past * getDtypeSize(attention_mask_dtype_);
+  const size_t window_size = static_cast<size_t>(sliding_window);
 
   for (int i = 0; i < ar_len; i++) {
     fill_mask(attention_mask_dtype_, cur_ptr, n_update, /*use_pos_value=*/true);
-    int32_t available_cache_len = position_offset.empty()
-        ? sliding_window - (i + 1)
-        : sliding_window - (position_offset[i] + 1);
-    if (n_past + n_update > available_cache_len) {
-      fill_mask(
+    const int32_t position = position_offset.empty() ? i : position_offset[i];
+    const size_t visible_count =
+        std::min(static_cast<size_t>(n_past + position + 1), window_size) +
+        n_update;
+    if (visible_count > window_size) {
+      mask_oldest_visible(
           attention_mask_dtype_,
           cur_ptr - n_past * getDtypeSize(attention_mask_dtype_),
-          n_past + n_update - available_cache_len,
-          /*use_pos_value=*/false);
+          metadata_.context_len,
+          visible_count - window_size);
     }
     cur_ptr += metadata_.context_len * getDtypeSize(attention_mask_dtype_);
   }

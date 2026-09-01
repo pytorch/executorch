@@ -11,6 +11,7 @@ from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.cortex_m.passes.passes_utils import (
     get_activation_bounds,
     quantize_val,
+    skips_quantized_max_pool2d,
 )
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -177,6 +178,14 @@ class ActivationFusionPass(ExportPass):
             if len(input_node.users.values()) > 1:
                 logger.warning(
                     f"Cannot fuse activation {node.name} as input node {input_node.name} has multiple users."
+                )
+                continue
+            if skips_quantized_max_pool2d(input_node):
+                # Fusing means narrowing the producer's output range and erasing
+                # this node. A pool that will not lower runs on the portable
+                # kernel, which reads no range, so the activation would be lost.
+                logger.warning(
+                    f"Cannot fuse activation {node.name} as input node {input_node.name} will not lower."
                 )
                 continue
 
