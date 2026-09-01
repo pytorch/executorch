@@ -6,6 +6,10 @@
 from typing import Any
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
 from executorch.backends.transforms.fuse_duplicate_users_pass import (
     FuseDuplicateUsersPass as _FuseDuplicateUsersPass,
 )
@@ -23,8 +27,8 @@ TOSA_EXCLUDED_TARGETS = frozenset({exir_ops.backend.tosa.RESCALE.default})
 
 def quantization_metadata_key(node: Node) -> tuple[Any, Any]:
     return (
-        node.meta.get("input_qparams", {}),
-        node.meta.get("output_qparams", {}),
+        get_input_qparams(node) if node.meta.get("input_qparams") else {},
+        get_output_qparams(node) if node.meta.get("output_qparams") else {},
     )
 
 
