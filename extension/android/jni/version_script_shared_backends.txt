@@ -1,0 +1,23 @@
+{
+  global:
+    JNI_OnLoad;
+    Java_*;
+    # A backend built as its own .so (EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED /
+    # EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED) carries its own statically linked
+    # copy of executorch_core, and therefore its own backend registry. Its call
+    # to register_backend goes through the PLT, so exporting the registry entry
+    # points here lets the dynamic linker bind that call to this library's
+    # registry - the one the runtime actually reads from.
+    extern "C++" {
+      executorch::runtime*::register_backend*;
+      executorch::runtime*::get_backend_class*;
+      executorch::runtime*::get_backend_name*;
+      executorch::runtime*::get_num_registered_backends*;
+    };
+    # Same reason, for the thread pool the split XNNPACK backend runs on: bind
+    # its pthreadpool calls to the pool extension_threadpool configures here
+    # rather than to a second, unconfigured copy inside the backend .so.
+    pthreadpool_*;
+  local:
+    *;
+};
