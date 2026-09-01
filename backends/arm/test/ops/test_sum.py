@@ -8,6 +8,7 @@ from typing import Callable, Tuple
 import pytest
 
 import torch
+from executorch.backends.arm._passes import ConvertBoolSumToInt32Pass
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -17,6 +18,13 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
+from torch._export.utils import _get_shape_env_from_gm
+from torch._subclasses import FakeTensorMode
+from torch.fx import Graph, GraphModule
 
 aten_op = "torch.ops.aten.sum.dim_IntList"
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -62,6 +70,94 @@ class Sum(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
         return x.sum(dim=dim, keepdim=keepdim)
+
+
+def test_sum_bool_tosa_FP() -> None:
+    pipeline = TosaPipelineFP(
+        Sum(),
+        (torch.ones(1, dtype=torch.bool), [], False),
+        aten_op,
+        exir_op=[],
+        transform_passes=[ConvertBoolSumToInt32Pass()],
+    )
+    pipeline.run()
+
+
+def test_sum_bool_tosa_INT() -> None:
+    pipeline = TosaPipelineINT(
+        Sum(),
+        (torch.ones(1, dtype=torch.bool), [], False),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
+
+
+def test_sum_bool_skips_int32_overflow() -> None:
+    graph = Graph()
+    with FakeTensorMode():
+        fake_input = torch.empty(torch.iinfo(torch.int32).max + 1, dtype=torch.bool)
+        fake_output = torch.empty((), dtype=torch.int64)
+    x = graph.placeholder("x")
+    x.meta["val"] = fake_input
+    output = graph.call_function(torch.ops.aten.sum.dim_IntList, (x, [0], False))
+    output.meta["val"] = fake_output
+    graph.output(output)
+
+    result = ConvertBoolSumToInt32Pass().call(GraphModule(torch.nn.Module(), graph))
+
+    assert [
+        node.target
+        for node in result.graph_module.graph.nodes
+        if node.op == "call_function"
+    ] == [torch.ops.aten.sum.dim_IntList]
+
+
+def test_sum_bool_skips_dynamic_int32_overflow() -> None:
+    dynamic_dim = torch.export.Dim(
+        "dynamic_dim", min=1, max=torch.iinfo(torch.int32).max + 1
+    )
+    exported_program = torch.export.export(
+        Sum(),
+        (torch.ones(2, dtype=torch.bool), 0, False),
+        dynamic_shapes=({0: dynamic_dim}, None, None),
+    )
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
+        _get_shape_env_from_gm(exported_program.graph_module),
+    ):
+        result = ConvertBoolSumToInt32Pass().call(exported_program.graph_module)
+
+    assert [
+        node.target
+        for node in result.graph_module.graph.nodes
+        if node.op == "call_function"
+    ] == [torch.ops.aten.sum.dim_IntList]
+
+
+def test_sum_bool_supports_safe_dynamic_shape() -> None:
+    dynamic_dim = torch.export.Dim("dynamic_dim", min=1, max=1024)
+    exported_program = torch.export.export(
+        Sum(),
+        (torch.ones(2, dtype=torch.bool), 0, False),
+        dynamic_shapes=({0: dynamic_dim}, None, None),
+    )
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
+        _get_shape_env_from_gm(exported_program.graph_module),
+    ):
+        result = ConvertBoolSumToInt32Pass().call(exported_program.graph_module)
+    sum_node = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.sum.dim_IntList
+    )
+    (output,) = result.graph_module(torch.ones(5, dtype=torch.bool), 0, False)
+
+    assert sum_node.kwargs["dtype"] == torch.int32
+    assert output == 5
 
 
 @common.parametrize(
