@@ -1,5 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
 # Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -11,24 +9,27 @@ from numbers import Number
 from typing import Dict, Optional, Union
 
 import torch
+from executorch.backends.transforms.utils import create_constant_placeholder
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 from torch._ops import OpOverload
+from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind
 
 ScalarOp = Union[EdgeOpOverload, OpOverload]
 
 
-class LiftConstantScalarOperandsPass(ExportPass):
+class LiftConstantScalarOperandsPass(XNNPACKPass):
     """
     Lift scalar operands into tensor constants for selected binary ops.
 
     XNNPACK already supports the tensor overloads for these binary operations.
     This pass converts explicitly listed scalar overloads to their tensor
     overloads by replacing constant scalar operands with small tensor constants.
-    The constants are registered as buffers so they do not become portable
-    ``full`` kernels. Keep the op map narrow until each new scalar overload is
-    covered by tests.
+    The constants are registered as exported-program constant tensor inputs.
+    Keep the op map narrow until each new scalar overload is covered by tests.
     """
 
     default_scalar_to_tensor_ops: Dict[ScalarOp, ScalarOp] = {
@@ -37,9 +38,10 @@ class LiftConstantScalarOperandsPass(ExportPass):
 
     def __init__(
         self,
+        exported_program: ExportedProgram,
         scalar_to_tensor_ops: Optional[Dict[ScalarOp, ScalarOp]] = None,
     ) -> None:
-        super().__init__()
+        super().__init__(exported_program)
         self.scalar_to_tensor_ops = (
             scalar_to_tensor_ops
             if scalar_to_tensor_ops is not None
@@ -58,24 +60,28 @@ class LiftConstantScalarOperandsPass(ExportPass):
 
         input_value = input_node.meta["val"]
         tensor = torch.tensor(value, dtype=input_value.dtype, device=input_value.device)
-        name = self._get_new_attr_name(graph_module)
-        # ExportPass has no ExportedProgram access to create a constant placeholder.
-        # Keep constants as module attributes so the portable path can emit them
-        # without introducing aten.full, while XNNPACK can still read them as params.
-        graph_module.register_buffer(name, tensor)
-
-        fake_mode = node.meta["val"].fake_mode
-        with graph_module.graph.inserting_before(node):
-            constant_node = graph_module.graph.get_attr(name)
-            constant_node.meta["val"] = fake_mode.from_tensor(
-                tensor, static_shapes=True
+        name = self._get_new_constant_name(graph_module)
+        first_placeholder = next(
+            graph_node
+            for graph_node in graph_module.graph.nodes
+            if graph_node.op == "placeholder"
+        )
+        with graph_module.graph.inserting_before(first_placeholder):
+            return create_constant_placeholder(
+                self.exported_program,
+                graph_module.graph,
+                name,
+                InputKind.CONSTANT_TENSOR,
+                tensor,
             )
-        return constant_node
 
-    def _get_new_attr_name(self, graph_module: torch.fx.GraphModule) -> str:
+    def _get_new_constant_name(self, graph_module: torch.fx.GraphModule) -> str:
         prefix = "_tensor_constant_"
+        existing_names = {node.name for node in graph_module.graph.nodes}
+        existing_names.update(self.exported_program.constants)
+        existing_names.update(self.exported_program.state_dict)
         index = 0
-        while hasattr(graph_module, f"{prefix}{index}"):
+        while f"{prefix}{index}" in existing_names:
             index += 1
         return f"{prefix}{index}"
 
@@ -95,8 +101,8 @@ class LiftConstantScalarOperandsPass(ExportPass):
             input_value = node.args[0].meta.get("val")
             output_value = node.meta.get("val")
             if (
-                input_value is None
-                or output_value is None
+                not isinstance(input_value, torch.Tensor)
+                or not isinstance(output_value, torch.Tensor)
                 or input_value.dtype != output_value.dtype
             ):
                 continue

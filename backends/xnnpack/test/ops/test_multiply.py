@@ -9,10 +9,6 @@ import unittest
 
 import torch
 from executorch.backends.xnnpack.test.tester import Tester
-from executorch.backends.xnnpack.utils.configs import (
-    get_transform_passes,
-    get_xnnpack_edge_compile_config,
-)
 
 
 class TestMul(unittest.TestCase):
@@ -71,12 +67,7 @@ class TestMul(unittest.TestCase):
         (
             Tester(self.MulScalar(), (torch.randn(2, 3),))
             .export()
-            .to_edge_transform_and_lower(
-                transform_passes=get_transform_passes(),
-                edge_compile_config=get_xnnpack_edge_compile_config(
-                    skip_dim_order=True
-                ),
-            )
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

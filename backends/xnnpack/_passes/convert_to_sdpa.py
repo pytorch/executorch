@@ -11,12 +11,11 @@ from typing import Optional
 
 import torch
 from executorch.backends.transforms import get_shape
-from executorch.backends.xnnpack._passes.lift_constant_scalar_operands_pass import (
-    LiftConstantScalarOperandsPass,
+from executorch.backends.xnnpack._passes.remove_noop_expand_copy_pass import (
+    RemoveNoopExpandCopyPass,
 )
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.partition.graphs import sdpa
-from executorch.backends.xnnpack.utils.utils import get_param_tensor
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
@@ -30,29 +29,17 @@ class ConvertToSDPAPass(XNNPACKPass):
         """
         Return the SDPA scale recovered from the matched pre-QK^T multiplications.
 
-        The multiplier may be a scalar literal or a constant tensor introduced by
-        scalar lifting. The decomposition applies the square root of the attention
-        scale before QK^T, so the extracted multiplier is squared to recover the
-        original value.
+        The decomposition applies the square root of the attention scale before
+        QK^T, so the extracted multiplier is squared to recover the original value.
         """
         for node in match.nodes_map.values():
-            if node.op != "call_function" or node.target not in {
-                exir_ops.edge.aten.mul.Scalar,
-                exir_ops.edge.aten.mul.Tensor,
-            }:
+            if (
+                node.op != "call_function"
+                or node.target != exir_ops.edge.aten.mul.Scalar
+            ):
                 continue
 
             scale = node.args[1]
-
-            # Extract the scale from the constant tensor introduced by scalar
-            # lifting.
-            if node.target == exir_ops.edge.aten.mul.Tensor:
-                if not isinstance(scale, torch.fx.Node):
-                    continue
-                scale_tensor = get_param_tensor(self.exported_program, scale)
-                if scale_tensor is None or scale_tensor.numel() != 1:
-                    continue
-                scale = scale_tensor.item()
 
             dtype = torch.float
             mul_val = node.meta.get("val", None)
@@ -116,14 +103,11 @@ class ConvertToSDPAPass(XNNPACKPass):
         logger.debug(graph_module.print_readable(print_output=False))
 
         for scalar_pattern in sdpa.get_graphs():
-            # Deep-copy the cached scalar pattern so lifting it does not modify the
-            # pattern used by non-lifted flows.
-            tensor_pattern = deepcopy(scalar_pattern)
-            tensor_pattern = LiftConstantScalarOperandsPass()(
-                tensor_pattern
+            normalized_pattern = RemoveNoopExpandCopyPass()(
+                deepcopy(scalar_pattern)
             ).graph_module
 
-            for pattern in (scalar_pattern, tensor_pattern):
+            for pattern in (scalar_pattern, normalized_pattern):
                 sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
                 matches = list(sm.match(graph_module.graph))
                 for partition_to_replace in matches:

@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 import logging
+from numbers import Number
 from typing import cast, List, Optional
 
 import numpy as np
@@ -334,6 +335,35 @@ class MulConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class MulScalarConfig(GenericNodePartitionerConfig):
+    target_name = "mul.Scalar"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        if (
+            len(node.args) != 2
+            or not isinstance(node.args[0], torch.fx.Node)
+            or not isinstance(node.args[1], Number)
+        ):
+            return False
+
+        input_value = node.args[0].meta.get("val")
+        output_value = node.meta.get("val")
+        return (
+            isinstance(input_value, torch.Tensor)
+            and isinstance(output_value, torch.Tensor)
+            and input_value.dtype == output_value.dtype
+        )
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.mul.Scalar
 
 
 class MaximumConfig(GenericNodePartitionerConfig):
