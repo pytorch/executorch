@@ -1716,7 +1716,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         # Build
-        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -Bcmake-out .
+        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DCMAKE_CXX_FLAGS="-DEXTERNAL_MEM" -Bcmake-out .
         cmake --build cmake-out --target executorch_delegate_neutron --config Release
 
         # Build check for the neutron backend library
