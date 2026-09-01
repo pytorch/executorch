@@ -357,7 +357,6 @@ def enable_attention_sink(
     params: ModelArgs,
     sink_size: int,
     window_size: int,
-    max_seq_len: int,
 ) -> torch.nn.Module:
     """
     Transform the model to be able to run inference with Attention Sink.
@@ -370,6 +369,9 @@ def enable_attention_sink(
         window_size=window_size,
         sink_size=sink_size,
     )
+    max_seq_len = getattr(params, "max_seq_len", None)
+    if max_seq_len is None:
+        max_seq_len = params.max_context_len
     _replace_rope(module, rope_with_attention_sink)
     _replace_attention(
         module=module,
