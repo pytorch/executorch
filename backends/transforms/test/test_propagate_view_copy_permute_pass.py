@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import pytest
 import torch
 from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass,
@@ -56,6 +57,21 @@ def _permute_counts(graph: torch.fx.Graph) -> tuple[int, int, int]:
     after_down = count()
     graph_module = PropagateViewCopyPermuteUpPass().call(graph_module).graph_module
     return before, after_down, count()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="The shared driver does not distribute an upward permute across a "
+    "multi-input elementwise node unless a backend explicitly opts in.",
+)
+def test_mixed_reconvergence_fork_does_not_strand_a_permute() -> None:
+    graph = torch.fx.Graph()
+    left, right, diverging = _forked_permute(graph, branches=3)
+    rejoin = graph.call_function(ADD, args=(left, right))
+    rejoin.meta["val"] = torch.empty(PERMUTED_SHAPE)
+    graph.output((rejoin, diverging))
+
+    assert _permute_counts(graph) == (1, 1, 1)
 
 
 def test_fork_split_still_applies_when_every_branch_rejoins() -> None:

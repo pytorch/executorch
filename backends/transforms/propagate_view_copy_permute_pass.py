@@ -344,6 +344,12 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         frontier: torch.fx.Node,
         next_node: torch.fx.Node,
     ) -> bool:
+        """Optionally distribute an upward-moving permute over multiple inputs.
+
+        The shared driver leaves this disabled because distribution can increase
+        the number of layout copies. Backends may opt in when their layout
+        strategy requires crossing a reconvergent elementwise node.
+        """
         return False
 
     def _maybe_split_fork(
