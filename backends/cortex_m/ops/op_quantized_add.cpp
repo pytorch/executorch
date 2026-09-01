@@ -11,8 +11,6 @@
 
 #include <algorithm>
 
-#include "arm_nnsupportfunctions.h"
-
 namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
@@ -111,28 +109,10 @@ Tensor& quantized_add_out(
       std::swap<int>(input1_shift_val, input2_shift_val);
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
+    // The broadcast operand holds one value per channel and channels are
+    // contiguous, so its element count is the repeat length.
     adds_per_loop = static_cast<int32_t>(
         std::min(input1_int8.numel(), input2_int8.numel()));
-    if (adds_per_loop == 1) {
-      // CMSIS-NN's add API only accepts equal-length vectors. Follow its
-      // shape-aware min/max kernels by handling scalar broadcast directly.
-      const int32_t input2 = arm_nn_requantize(
-          (static_cast<int32_t>(input2_ptr[0]) - zp2) << left_shift,
-          input2_mult,
-          input2_shift_val);
-      int8_t* output = out.mutable_data_ptr<int8_t>();
-      for (int64_t i = 0; i < out.numel(); ++i) {
-        int32_t input1 = (static_cast<int32_t>(input1_ptr[i]) - zp1)
-            << left_shift;
-        input1 = arm_nn_requantize(input1, input1_mult, input1_shift_val);
-        int32_t sum =
-            arm_nn_requantize(input1 + input2, output_mult, output_shift_val) +
-            out_zp;
-        output[i] =
-            static_cast<int8_t>(std::max(act_min, std::min(act_max, sum)));
-      }
-      return out;
-    }
   } else {
     adds_per_loop = out.numel();
   }

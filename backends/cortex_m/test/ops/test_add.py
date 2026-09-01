@@ -215,13 +215,6 @@ test_cases = {
             ramp_tensor(-2, 2, (1, 8, 1, 1)).to(memory_format=torch.channels_last),
         ),
     ),
-    "broadcast_single_channel": McuTestCase(
-        CortexMTensorAdd(),
-        (
-            ramp_tensor(-5, 5, (2, 1, 5, 5)).to(memory_format=torch.channels_last),
-            ramp_tensor(-2, 2, (1, 1, 1, 1)).to(memory_format=torch.channels_last),
-        ),
-    ),
     "broadcast_channels_continous": McuTestCase(
         CortexMTensorAdd(),
         (

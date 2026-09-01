@@ -9,8 +9,6 @@
 
 #include <algorithm>
 
-#include "arm_nnsupportfunctions.h"
-
 namespace cortex_m {
 namespace native {
 namespace {
@@ -79,22 +77,10 @@ Tensor& quantized_mul_out(
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
 
+    // The broadcast operand holds one value per channel and channels are
+    // contiguous, so its element count is the repeat length.
     muls_per_loop = static_cast<int32_t>(
         std::min(input1_int8.numel(), input2_int8.numel()));
-    if (muls_per_loop == 1) {
-      // CMSIS-NN's mul API only accepts equal-length vectors. Follow its
-      // shape-aware min/max kernels by handling scalar broadcast directly.
-      const int32_t input2 = static_cast<int32_t>(input2_ptr[0]) - zp2;
-      int8_t* output = out.mutable_data_ptr<int8_t>();
-      for (int64_t i = 0; i < out.numel(); ++i) {
-        int32_t product = (static_cast<int32_t>(input1_ptr[i]) - zp1) * input2;
-        product =
-            arm_nn_requantize(product, output_mult, output_shift_val) + out_zp;
-        output[i] = static_cast<int8_t>(std::max(
-            kInt8ActivationMin, std::min(kInt8ActivationMax, product)));
-      }
-      return out;
-    }
   } else {
     muls_per_loop = out.numel();
   }
