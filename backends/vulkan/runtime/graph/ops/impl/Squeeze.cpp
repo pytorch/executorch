@@ -14,6 +14,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <algorithm>
+
 namespace vkcompute {
 
 void add_squeeze_copy_dims_node(
