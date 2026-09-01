@@ -53,7 +53,13 @@ GlobalWorkGrid pick_softmax_gwg(
   utils::uvec3 lwg_extents{1u, 1u, 1u};
   lwg_extents[reduce_dim] = 4u;
   if (graph->is_buffer_storage(out)) {
-    lwg_extents[reduce_dim] = softmax_nworkers(graph, in, reduce_dim);
+    // NWORKERS is baked into softmax_buffer as a specialization constant when
+    // the node is built, so it reflects the dynamic upper bound. Recomputing it
+    // here from the resized extent would launch fewer threads than the shader's
+    // tree reduction indexes over, leaving it to fold in shared memory slots
+    // that no thread wrote. Read the count the node was built with instead.
+    lwg_extents[reduce_dim] =
+        static_cast<uint32_t>(graph->extract_scalar<int32_t>(resize_args.at(1)));
     utils::uvec3 extents = {
         graph->size_at<uint32_t>(-1, out),
         graph->size_at<uint32_t>(-2, out),
@@ -121,11 +127,13 @@ void add_softmax_node(
 
   const int dim_val = graph.extract_scalar<int>(dim_ref);
 
-  vkapi::SpecVarList spec_constants = {
-      reduce_dim_xyz,
-      utils::safe_downcast<int32_t>(
-          softmax_nworkers(&graph, in, reduce_dim_xyz))};
-  std::vector<ValueRef> resize_args = {dim_val};
+  // Computed once here so the launch in pick_softmax_global_wg_size() uses the
+  // same count that is baked into the shader.
+  const int32_t buffer_nworkers = utils::safe_downcast<int32_t>(
+      softmax_nworkers(&graph, in, reduce_dim_xyz));
+  vkapi::SpecVarList spec_constants = {reduce_dim_xyz, buffer_nworkers};
+  std::vector<ValueRef> resize_args = {
+      dim_val, graph.get_or_add_value_for_int(buffer_nworkers)};
 
   if (!graph.is_buffer_storage(out)) {
     const int other_dim_1 = (reduce_dim_xyz + 1) % 3;
