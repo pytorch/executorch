@@ -848,24 +848,22 @@ void cpu_flash_attention(
       buf_reduced = scratch_reduced.get();
     }
   }
-  int64_t size_per_thread_qdq_vec = 0;
+  int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
+  // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
+  // by padding with right number of per thread elements
+  int64_t size_per_thread_qdq_bytes = size_per_thread_qdq_vec * sizeof(accum_t);
+  int64_t size_qdq_bytes = size_per_thread_qdq_bytes * num_thread;
   std::unique_ptr<char[]> allocated_buf_for_qdq;
-  accum_t* scratch_for_quant_dequant = nullptr;
-  if (is_quantized_sdpa) {
-    size_per_thread_qdq_vec = kvSplitSize * headSize;
-    const int64_t size_per_thread_qdq_bytes =
-        size_per_thread_qdq_vec * sizeof(accum_t);
-    const int64_t size_qdq_bytes = size_per_thread_qdq_bytes * num_thread;
-    Result<void*> scratch_for_quant_dequant_res =
-        ctx.allocate_temp(size_qdq_bytes, 64);
-    if (!scratch_for_quant_dequant_res.ok()) {
-      allocated_buf_for_qdq = std::make_unique<char[]>(size_qdq_bytes);
-      scratch_for_quant_dequant =
-          reinterpret_cast<accum_t*>(allocated_buf_for_qdq.get());
-    } else {
-      scratch_for_quant_dequant =
-          reinterpret_cast<accum_t*>(scratch_for_quant_dequant_res.get());
-    }
+  accum_t* scratch_for_quant_dequant;
+  Result<void*> scratch_for_quant_dequant_res =
+      ctx.allocate_temp(size_qdq_bytes, 64);
+  if (!scratch_for_quant_dequant_res.ok()) {
+    allocated_buf_for_qdq = std::make_unique<char[]>(size_qdq_bytes);
+    scratch_for_quant_dequant =
+        reinterpret_cast<accum_t*>(allocated_buf_for_qdq.get());
+  } else {
+    scratch_for_quant_dequant =
+        reinterpret_cast<accum_t*>(scratch_for_quant_dequant_res.get());
   }
 
   // Data ptrs
@@ -1011,9 +1009,8 @@ void cpu_flash_attention(
     scalar_t* qk_reduced_data = is_reduced_type
         ? buf_reduced_data + ompIdx * qSplitSize * kvSplitSize
         : nullptr;
-    accum_t* buf_qdq_ptr = is_quantized_sdpa
-        ? scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec
-        : nullptr;
+    accum_t* buf_qdq_ptr =
+        scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec;
 
     for (int64_t z = begin; z < end; z++) {
       int64_t m = k * qSplitSize;
