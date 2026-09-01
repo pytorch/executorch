@@ -334,6 +334,8 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_sm90_prefill_export_captures_fp8_linear(self):
         """CPU example tensors must still capture the CUDA-target FP8 op."""
+        if torch.version.hip is not None:
+            self.skipTest("Q4_K-to-FP8 prefill is CUDA-only")
         if not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 9:
             self.skipTest("SM90+ CUDA target required")
 
@@ -371,13 +373,14 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertEqual(out.shape, (8, 256))
 
     def test_target_arch_override_controls_fp8_gate(self):
-        with mock.patch.dict(
-            os.environ, {"TORCH_CUDA_ARCH_LIST": "8.0"}
-        ), mock.patch.object(torch.cuda, "get_device_capability") as capability:
-            self.assertFalse(cuda_targets_are_sm90_or_newer())
-            capability.assert_not_called()
-        with mock.patch.dict(os.environ, {"TORCH_CUDA_ARCH_LIST": "9.0;12.0+PTX"}):
-            self.assertTrue(cuda_targets_are_sm90_or_newer())
+        with mock.patch.object(torch.version, "hip", None):
+            with mock.patch.dict(
+                os.environ, {"TORCH_CUDA_ARCH_LIST": "8.0"}
+            ), mock.patch.object(torch.cuda, "get_device_capability") as capability:
+                self.assertFalse(cuda_targets_are_sm90_or_newer())
+                capability.assert_not_called()
+            with mock.patch.dict(os.environ, {"TORCH_CUDA_ARCH_LIST": "9.0;12.0+PTX"}):
+                self.assertTrue(cuda_targets_are_sm90_or_newer())
         with mock.patch.object(torch.version, "hip", "6.3"), mock.patch.dict(
             os.environ, {"TORCH_CUDA_ARCH_LIST": "9.0"}
         ):

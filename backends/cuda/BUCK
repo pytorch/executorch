@@ -5,17 +5,6 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
-    name = "optimization_config",
-    srcs = [
-        "optimization_config.py",
-    ],
-    visibility = [
-        "//executorch/backends/cuda/...",
-    ],
-)
-
-fbcode_target(
-    _kind = runtime.python_library,
     name = "coalesced_int4_tensor",
     srcs = [
         "coalesced_int4_tensor.py",
