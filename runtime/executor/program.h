@@ -76,6 +76,15 @@ class Program final {
   };
 
   /**
+   * The highest program schema version that this runtime can read.
+   *
+   * Keep in sync with EXECUTORCH_SCHEMA_VERSION in
+   * //executorch/exir/version.py, which is the version that the exporter stamps
+   * into every PTE file.
+   */
+  static constexpr uint32_t kMaxSupportedSchemaVersion = 0;
+
+  /**
    * Loads a Program from the provided loader. The Program will hold a pointer
    * to the loader, which must outlive the returned Program instance.
    *

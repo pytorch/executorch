@@ -12,6 +12,10 @@ from typing import cast
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import (
+    is_permute_copy,
+    PERMUTE_COPY_TARGETS,
+)
 from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -162,9 +166,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         Flattening such a tensor -- e.g. the ``[1, C, 1, 1] -> [1, C]`` after a
         global pool -- is permutation-invariant: every layout of the input
         produces the identical output (the single non-unit run of elements is
-        contiguous regardless of which axis holds it). A permutation propagating
-        into it therefore simply dies, so the region can terminate here with no
-        compensating permute.
+        contiguous regardless of which axis holds it). The region may terminate
+        here without a compensating permute when downstream consumers do not use
+        the output shape for layout-dependent broadcasting.
         """
         if node.target not in self._VIEW_OPS:
             return False
@@ -175,6 +179,40 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # are treated as non-unit, i.e. conservatively not a sink).
         non_unit = [d for d in shape if not (isinstance(d, int) and d == 1)]
         return len(non_unit) <= 1
+
+    def _sink_users_are_layout_invariant(self, sink: torch.fx.Node) -> bool:
+        """Return whether dropping layout at ``sink`` is safe for its consumers."""
+        frontier = [(user, sink) for user in sink.users]
+        visited: set[torch.fx.Node] = set()
+        while frontier:
+            node, producer = frontier.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+
+            if node.op == "output":
+                continue
+            if node.target == exir_ops.edge.aten.permute_copy.default:
+                # This explicit transform re-establishes the downstream layout,
+                # so consumers beyond it do not depend on the sink's layout.
+                continue
+            if self._is_permutation_sink_view(node):
+                continue
+
+            tensor_inputs = [
+                input_node
+                for input_node in node.all_input_nodes
+                if input_node.meta.get("val") is not None
+            ]
+            if any(
+                input_node is not producer and input_node.meta["val"].numel() != 1
+                for input_node in tensor_inputs
+            ):
+                return False
+            if not self.is_node_permutable(node):
+                return False
+            frontier.extend((user, node) for user in node.users)
+        return True
 
     def _inserted_unit_dim(self, node: torch.fx.Node) -> int | None:
         """Position of the size-1 dim ``node`` inserts, else None.
@@ -325,9 +363,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         self._interleave_cache.clear()
         subgraphs_found: list[RemovePermutesAroundElementwiseOps.Subgraph] = []
         processed_nodes: set[torch.fx.Node] = set()
-        for node in graph_module.graph.find_nodes(
-            op="call_function", target=exir_ops.edge.aten.permute_copy.default
-        ):
+        for node in graph_module.graph.nodes:
+            if not is_permute_copy(node):
+                continue
             start_permute = self.get_permutation(node)
             if start_permute is None:
                 continue
@@ -483,7 +521,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         # Traverse downstream:
         for user in users_source.users:
-            if user.target == exir_ops.edge.aten.permute_copy.default:
+            if user.target in PERMUTE_COPY_TARGETS:
                 user_perm = self.get_permutation(user)
                 if user_perm == downstream_end:
                     subgraph.edges_out.add((users_source, user))
@@ -514,12 +552,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             elif user.op == "output":
                 return False
             elif self._is_permutation_sink_view(user):
-                # The permutation dies at this reshape (see
-                # _is_permutation_sink_view), so terminate the region here with
-                # no compensating permute and no further downstream traversal.
-                # Checked before the rank-change handling below: a sink always
-                # terminates cleanly, whereas crossing it would leave the region
-                # hunting for an end permute that layout-invariance made moot.
+                # The tensor's element order is invariant at this reshape, but
+                # its output shape can still carry broadcast-axis meaning.
+                if not self._sink_users_are_layout_invariant(user):
+                    return False
                 continue
             elif not self.visit(
                 user, subgraph, processed_nodes, downstream_end, downstream_start
@@ -528,7 +564,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         # Traverse upstream:
         for inp in node.all_input_nodes:
-            if inp.target == exir_ops.edge.aten.permute_copy.default:
+            if inp.target in PERMUTE_COPY_TARGETS:
                 if self.get_permutation(inp) != current_start_permute:
                     return False
                 subgraph.edges_in.add((inp, node))
@@ -712,7 +748,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         # Skip incoming permutes.
         for inp, out in subgraph.edges_in:
-            assert inp.target == exir_ops.edge.aten.permute_copy.default
+            assert inp.target in PERMUTE_COPY_TARGETS
             if len(inp.args) >= 1:
                 out.replace_input_with(inp, cast(torch.fx.Node, inp.args[0]))
             else:
@@ -755,7 +791,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         # Skip outgoing permutes.
         for inp, out in subgraph.edges_out:
-            assert out.target == exir_ops.edge.aten.permute_copy.default
+            assert out.target in PERMUTE_COPY_TARGETS
             out.replace_all_uses_with(inp)
 
         return True
@@ -763,17 +799,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def _subgraph_edges_are_current(self, subgraph: Subgraph) -> bool:
         """Return false if an earlier rewrite invalidated this candidate."""
         for inp, out in subgraph.edges_in:
-            if (
-                inp.target != exir_ops.edge.aten.permute_copy.default
-                or inp not in out.all_input_nodes
-            ):
+            if inp.target not in PERMUTE_COPY_TARGETS or inp not in out.all_input_nodes:
                 return False
 
         for inp, out in subgraph.edges_out:
-            if (
-                out.target != exir_ops.edge.aten.permute_copy.default
-                or out not in inp.users
-            ):
+            if out.target not in PERMUTE_COPY_TARGETS or out not in inp.users:
                 return False
 
         for const_node, user_node in subgraph.constant_edges_in:
@@ -892,7 +922,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             node.update_arg(1, new_shape)
 
     def get_permutation(self, permute_node: torch.fx.Node) -> list[int] | None:
-        assert permute_node.target == exir_ops.edge.aten.permute_copy.default
+        assert permute_node.target in PERMUTE_COPY_TARGETS
         raw_permute: list[int]
         if len(permute_node.args) >= 2:
             raw_permute = list(cast(list[int], permute_node.args[1]))

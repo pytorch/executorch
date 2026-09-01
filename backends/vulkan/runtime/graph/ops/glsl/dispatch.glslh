@@ -1,0 +1,19 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef DISPATCH_GLSLH
+#define DISPATCH_GLSLH
+
+uint linear_idx_from_gid() {
+  // Extend this to include Z if two-dimensional linear dispatches become
+  // insufficient.
+  return gl_GlobalInvocationID.x +
+      gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+}
+
+#endif // DISPATCH_GLSLH

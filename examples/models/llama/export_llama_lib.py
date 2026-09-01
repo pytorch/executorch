@@ -35,7 +35,6 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
-    get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
     get_tosa_partitioner,
@@ -460,6 +459,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
     parser.add_argument(
+        "--xnnpack-enable-bf16",
+        action="store_true",
+        help="Delegate BF16 operators to XNNPACK. Requires runtime hardware support.",
+    )
+    parser.add_argument(
         "--use-torchao-kernels",
         action="store_true",
         help="Delegate tied-embedding and quantized linear ops to torchao kernels",
@@ -488,7 +492,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         choices=["full", "linear"],
         help="VGF quantization scope. Use 'linear' to quantize only Linear modules.",
     )
-    parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
         "--coreml-enable-state",
@@ -952,7 +955,6 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             ethosu=llm_config.backend.ethosu.enabled,
             use_qnn_sha=llm_config.backend.qnn.use_sha,
             optimized_rotation_path=llm_config.backend.qnn.optimized_rotation_path,
-            mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             coreml_ios=llm_config.backend.coreml.ios,
             vulkan=llm_config.backend.vulkan.enabled,
@@ -1107,12 +1109,10 @@ def _validate_args(llm_config):
             f"max_context_length {llm_config.export.max_context_length} must be >= max_seq_len {llm_config.export.max_seq_length}. max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. Please use --max_context_length to specify context length."
         )
     if llm_config.model.enable_dynamic_shape and (
-        llm_config.backend.coreml.enabled
-        or llm_config.backend.mps.enabled
-        or llm_config.backend.qnn.enabled
+        llm_config.backend.coreml.enabled or llm_config.backend.qnn.enabled
     ):
         raise ValueError(
-            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            "Dynamic shape is not supported with coreml or qnn backends."
             " Please use --disable_dynamic_shape."
         )
 
@@ -1142,12 +1142,11 @@ def _validate_args(llm_config):
             llm_config.backend.coreml.enabled
             or llm_config.backend.vulkan.enabled
             or llm_config.backend.qnn.enabled
-            or llm_config.backend.mps.enabled
             or llm_config.backend.openvino.enabled
         ):
             raise ValueError(
                 "multimethod export only supports XNNPACK backend or portable ops. "
-                "Please disable other backends (coreml, vulkan, qnn, mps, openvino)."
+                "Please disable other backends (coreml, vulkan, qnn, openvino)."
             )
 
 
@@ -1350,6 +1349,52 @@ def _to_edge_and_lower_llama_mlx(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _to_edge_and_lower_llama_coreml(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    embedding_quantize: Optional[str] = None,
+    pt2e_quantize: Optional[str] = None,
+    coreml_ios: int = 15,
+    coreml_quantize: Optional[str] = None,
+    coreml_compute_units: str = "cpu_only",
+    generate_etrecord: bool = False,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    """
+    Lower Llama model to Core ML using to_edge_transform_and_lower.
+
+    The deprecated export_to_edge() + to_backend() split decomposes the graph
+    before the partitioner runs, so the ops Core ML has its own implementations
+    for are already broken into primitives by the time it sees them.
+    CoreMLPartitioner.ops_to_not_decompose() asks to keep every op Core ML
+    supports, and only to_edge_transform_and_lower honours that request.
+    """
+    logging.info("Lowering model using Core ML partitioner")
+
+    partitioners = [
+        get_coreml_partitioner(
+            coreml_ios,
+            embedding_quantize,
+            pt2e_quantize,
+            coreml_quantize,
+            coreml_compute_units,
+        )
+    ]
+
+    builder_exported.generate_etrecord = generate_etrecord
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
 def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
@@ -1358,7 +1403,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
     quantizers,
     quant_dtype,
     vulkan: bool = False,
-    mps: bool = False,
     coreml: bool = False,
     qnn: bool = False,
     dtype_override: str = "fp32",
@@ -1391,10 +1435,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
         )
         modelname = f"vulkan_{modelname}"
-
-    if mps:
-        partitioners.append(get_mps_partitioner(use_kv_cache))
-        modelname = f"mps_{modelname}"
 
     if coreml:
         coreml_partitioner = get_coreml_partitioner(
@@ -1534,11 +1574,17 @@ def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitione
     # both xnnpack and xnnpack_extended_ops are enabled.
     if llm_config.backend.xnnpack.enabled:
         partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
+            get_xnnpack_partitioner(
+                dynamic_quant_only_partitioner=True,
+                enable_bf16=llm_config.backend.xnnpack.enable_bf16,
+            )
         )
         if llm_config.backend.xnnpack.extended_ops:
             partitioners.append(
-                get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+                get_xnnpack_partitioner(
+                    dynamic_quant_only_partitioner=False,
+                    enable_bf16=llm_config.backend.xnnpack.enable_bf16,
+                )
             )
 
     return partitioners if partitioners else None
@@ -1724,6 +1770,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
             gen_tag_fn=gen_tag_fn,
+            enable_bf16=llm_config.backend.xnnpack.enable_bf16,
         )
     elif llm_config.backend.openvino.enabled:
         builder = _to_edge_and_lower_llama_openvino(
@@ -1757,6 +1804,30 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             additional_passes,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.coreml.enabled and not (
+        llm_config.backend.vulkan.enabled or llm_config.backend.qnn.enabled
+    ):
+        builder = _to_edge_and_lower_llama_coreml(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            embedding_quantize=llm_config.quantization.embedding_quantize,
+            pt2e_quantize=(
+                llm_config.quantization.pt2e_quantize.value
+                if llm_config.quantization.pt2e_quantize
+                else None
+            ),
+            coreml_ios=llm_config.backend.coreml.ios,
+            coreml_quantize=(
+                llm_config.backend.coreml.quantize.value
+                if llm_config.backend.coreml.quantize
+                else None
+            ),
+            coreml_compute_units=llm_config.backend.coreml.compute_units.value,
+            generate_etrecord=llm_config.debug.generate_etrecord,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -1766,7 +1837,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quantizers,
             quant_dtype,
             vulkan=llm_config.backend.vulkan.enabled,
-            mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             qnn=llm_config.backend.qnn.enabled,
             dtype_override=llm_config.model.dtype_override.value,
@@ -1942,7 +2012,6 @@ def _get_source_transforms(  # noqa
     ethosu: bool = False,
     use_qnn_sha: bool = False,
     optimized_rotation_path: Optional[str] = None,
-    mps: bool = False,
     coreml: bool = False,
     coreml_ios: int = 15,
     vulkan: bool = False,
@@ -1984,7 +2053,6 @@ def _get_source_transforms(  # noqa
         ethosu: Whether to use Ethos-U.
         use_qnn_sha: Whether to use QNN SHA.
         optimized_rotation_path: Path to optimized rotation.
-        mps: Whether to use MPS.
         coreml: Whether to use CoreML.
         coreml_ios: CoreML iOS version.
         vulkan: Whether to use Vulkan.
@@ -2143,12 +2211,6 @@ def _get_source_transforms(  # noqa
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))
                 # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
-
-        elif mps:
-            # Currently mps doesn't support sdpa op, use the simpler decomposition
-            # to get free perf gain.
-            transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_causal_mask)
 
         elif coreml:
             # iOS 18 introduced fused sdpa op

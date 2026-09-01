@@ -36,9 +36,12 @@ static TestCase create_test_case_from_config(
   int64_t H_out = config.get_output_height();
   int64_t W_out = config.get_output_width();
 
-  // Input tensor (float/half) - [1, C_in, H_in, W_in] (batch size always 1)
+  // Input tensor (float/half) - [N, C_in, H_in, W_in]
   std::vector<int64_t> input_size = {
-      1, config.channels.in, config.input_size.h, config.input_size.w};
+      config.batch,
+      config.channels.in,
+      config.input_size.h,
+      config.input_size.w};
 
   utils::GPUMemoryLayout fp_memory_layout = fp_storage_type == utils::kBuffer
       ? utils::kWidthPacked
@@ -47,7 +50,8 @@ static TestCase create_test_case_from_config(
   // Create test case name
   std::string prefix = config.test_case_name.substr(0, 4); // "ACCU" or "PERF"
   std::string dtype_str = dtype_short(input_dtype);
-  std::string in_shape = "[1," + std::to_string(config.channels.in) + "," +
+  std::string in_shape = "[" + std::to_string(config.batch) + "," +
+      std::to_string(config.channels.in) + "," +
       std::to_string(config.input_size.h) + "," +
       std::to_string(config.input_size.w) + "]";
   std::string weight_shape = "[" + std::to_string(config.channels.out) + "," +
@@ -160,9 +164,9 @@ static TestCase create_test_case_from_config(
   // Kernel size parameters
   ValueSpec kernel_size({config.kernel.h, config.kernel.w});
 
-  // Output tensor (float/half) - [1, C_out, H_out, W_out] (batch size always 1)
+  // Output tensor (float/half) - [N, C_out, H_out, W_out]
   ValueSpec output(
-      {1, config.channels.out, H_out, W_out},
+      {config.batch, config.channels.out, H_out, W_out},
       input_dtype,
       fp_storage_type,
       fp_memory_layout,
@@ -350,6 +354,46 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
               /*impl_selector=*/"legacy_4w4c"));
         }
       }
+    }
+  }
+
+  std::vector<Conv2dConfig> batch_configs = {
+      {OutInChannels(8, 8),
+       InputSize2D(8, 8),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1,
+       2},
+      {OutInChannels(64, 32),
+       InputSize2D(128, 128),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1,
+       1},
+      {OutInChannels(64, 32),
+       InputSize2D(128, 128),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(0, 0),
+       Dilation(1, 1),
+       1,
+       60}};
+
+  for (auto& config : batch_configs) {
+    const bool is_performance = config.input_size.h > kRefDimSizeLimit ||
+        config.input_size.w > kRefDimSizeLimit;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name = make_test_case_name(
+        config, is_performance, utils::kTexture3D, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4C1W));
+    if (config.batch == 2) {
+      test_cases.push_back(create_test_case_from_config(
+          config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4W4C));
     }
   }
 

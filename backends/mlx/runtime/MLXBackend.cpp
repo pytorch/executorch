@@ -7,6 +7,7 @@
 //
 
 #include "MLXCache.h"
+#include "MLXCellCache.h"
 #include "MLXExecutor.h"
 #include "MLXInterpreter.h"
 #include "MLXLoader.h"
@@ -190,7 +191,12 @@ struct MLXHandle {
   // Each FreeableBuffer must outlive the MLX arrays that reference it
   std::vector<FreeableBuffer> constant_buffers;
 
-  MLXHandle() : stream(::mlx::core::new_stream(::mlx::core::Device::gpu)) {}
+  // Delegate handles may be loaded on one host thread and executed on another.
+  // Module forbids concurrent use of a handle, and mlx_global_mutex()
+  // serializes graph construction and command submission across handles.
+  MLXHandle()
+      : stream(
+            ::mlx::core::new_thread_unsafe_stream(::mlx::core::Device::gpu)) {}
   ~MLXHandle() = default;
 
   MLXHandle(const MLXHandle&) = delete;
@@ -560,6 +566,11 @@ const int cache_builders_registered = [] {
       kMLXBackendId, "seq", [](const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::CacheBase>(
             std::make_shared<MLXSequenceCache>(cfg));
+      });
+  cache::CacheBuilderRegistry::global().register_builder(
+      kMLXBackendId, "cell", [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::CacheBase>(
+            std::make_shared<MLXCellCache>(cfg));
       });
   return 0;
 }();

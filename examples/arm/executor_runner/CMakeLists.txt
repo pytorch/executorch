@@ -47,12 +47,6 @@ if(NOT COMMAND executorch_target_link_options_shared_lib)
   include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 endif()
 
-option(
-  ET_MODEL_PTE_ADDR
-  "Place in memory that the PTE file is located/flashed, if set to OFF the PTE is built into the code as a big data area."
-  OFF
-)
-
 set(ET_NUM_INFERENCES
     "1"
     CACHE STRING "Number of inferences to run"
@@ -96,87 +90,18 @@ set(ET_DEBUG_BUFFER_SIZE
 
 option(SEMIHOSTING "Enable semihosting" OFF)
 
-option(
-  ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE
-  "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size"
-  OFF
-)
 set(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE
     ""
     CACHE STRING
           "Size of the SRAM-backed planned fast memory pool used for mem_id=3"
 )
 
-if(NOT DEFINED PYTHON_EXECUTABLE)
-  find_package(
-    Python3
-    COMPONENTS Interpreter
-    REQUIRED
-  )
-  set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
-endif()
-
-include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
-include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmEthosUSDK.cmake)
 include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmRunnerUtils.cmake)
 
+arm_runner_define_cache_options()
+arm_runner_validate_model_source(ALLOW_SEMIHOSTING)
+arm_runner_require_python()
 arm_runner_require_baremetal_targets()
-
-# Keep the default scratch location aligned with the scratch tree used by
-# setup.sh/run.sh so developers who just ran those scripts do not need extra
-# CMake flags.
-set(ETHOS_SDK_PATH
-    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
-    CACHE PATH "Path to Ethos-U bare metal driver/env"
-)
-
-arm_ethos_u_default_fetch("${ETHOS_SDK_PATH}" _fetch_ethos_u_default)
-option(FETCH_ETHOS_U_CONTENT
-       "Fetch ethos_u dependencies instead of relying on pre-downloads"
-       ${_fetch_ethos_u_default}
-)
-arm_ensure_ethos_u_content(
-  "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
-)
-
-set(ET_PTE_FILE_PATH
-    ""
-    CACHE PATH "Path to ExecuTorch model pte"
-)
-
-if(NOT ET_MODEL_PTE_ADDR
-   AND "${ET_PTE_FILE_PATH}" STREQUAL ""
-   AND NOT SEMIHOSTING
-)
-  message(
-    FATAL_ERROR
-      "You must specify one of "
-      "ET_MODEL_PTE_ADDR - .pte (or .bpte) on address, "
-      "ET_PTE_FILE_PATH - .pte (or .bpte) built into the binary or "
-      "SEMIHOSTING - pte and input via host filesystem (use by pytest)"
-  )
-endif()
-
-if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
-  if(NOT EXISTS "${ET_PTE_FILE_PATH}")
-    message(
-      FATAL_ERROR
-        "ET_PTE_FILE_PATH is set to ${ET_PTE_FILE_PATH}, but no file was found. Generate the model first or point ET_PTE_FILE_PATH at an existing .pte/.bpte."
-    )
-  endif()
-endif()
-
-# Selects timing adapter values matching system_config. Default is
-# Ethos_U55_High_End_Embedded, simulating optimal hardware for the
-# Corestone-300.
-set(SYSTEM_CONFIG
-    "Ethos_U55_High_End_Embedded"
-    CACHE STRING "System config"
-)
-set(MEMORY_MODE
-    "Shared_Sram"
-    CACHE STRING "Vela memory mode"
-)
 
 message(STATUS "SYSTEM_CONFIG is ${SYSTEM_CONFIG}")
 message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
@@ -186,17 +111,10 @@ message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 # for the temporary scratch buffer and derive the fast scratch buffer size from
 # the memory mode suffix, e.g. Dedicated_Sram_384KB. Allow -D overrides.
 if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
-  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
-  endif()
   if(NOT DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     set_ethosu_dedicated_sram_fast_scratch_size(
       ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE "${MEMORY_MODE}"
     )
-  endif()
-else()
-  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
   endif()
 endif()
 message(
@@ -212,133 +130,25 @@ message(
     "ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE = ${ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE}"
 )
 
-# Dependencies from the Ethos-U Core This is the platform target of
-# Corstone-300, that includes ethosu_core_driver and bare-metal bringup
-# libraries. We link against ethosu_target_init which includes all of these
-# dependencies.
-add_corstone_subdirectory(${SYSTEM_CONFIG} ${ETHOS_SDK_PATH})
-configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
-
-if(NOT CMAKE_SKIP_INSTALL_RULES AND TARGET ethosu_core_driver)
-  get_property(
-    _et_ethosu_core_driver_exported GLOBAL
-    PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED
-  )
-  if(NOT _et_ethosu_core_driver_exported)
-    install(
-      TARGETS ethosu_core_driver
-      EXPORT ExecuTorchTargets
-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    )
-    set_property(GLOBAL PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED TRUE)
-  endif()
-endif()
-
-# Convert pte to header
-if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
-  add_custom_target(
-    gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-  )
-
-  add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/pte_to_header.py
-            --pte ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${ET_PTE_FILE_PATH}
-  )
-endif()
+arm_runner_configure_ethos_u_platform(
+  SDK_PATH "${ETHOS_SDK_PATH}" SYSTEM_CONFIG "${SYSTEM_CONFIG}" MEMORY_MODE
+  "${MEMORY_MODE}"
+)
 
 # The arm_executor_runner executable
 add_executable(arm_executor_runner)
 
 target_sources(
   arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp
-                              arm_memory_allocator.cpp
+                              ../common/arm_memory_allocator.cpp
 )
 
-# Check for "U55" in SYSTEM_CONFIG
-string(FIND "${SYSTEM_CONFIG}" "U55" U55_FOUND)
-
-# Check for "U65" in SYSTEM_CONFIG
-string(FIND "${SYSTEM_CONFIG}" "U65" U65_FOUND)
-
-# Check for "U85" in SYSTEM_CONFIG
-string(FIND "${SYSTEM_CONFIG}" "U85" U85_FOUND)
-
-# Check if neither "U55", "U65" nor "U85" was found
-if(U55_FOUND EQUAL -1
-   AND U65_FOUND EQUAL -1
-   AND U85_FOUND EQUAL -1
+arm_runner_configure_linker_script(
+  TARGET arm_executor_runner SYSTEM_CONFIG "${SYSTEM_CONFIG}"
 )
-  message(
-    FATAL_ERROR
-      "SYSTEM_CONFIG does not contain 'U55', 'U65' or 'U85'. Configuration aborting."
-  )
-endif()
-
-# Proceed with specific actions if either is found
-if(NOT U55_FOUND EQUAL -1)
-  message(STATUS "SYSTEM_CONFIG contains 'U55'.")
-  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
-endif()
-
-if(NOT U65_FOUND EQUAL -1)
-  message(STATUS "SYSTEM_CONFIG contains 'U65'.")
-  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
-endif()
-
-if(NOT U85_FOUND EQUAL -1)
-  message(STATUS "SYSTEM_CONFIG contains 'U85'.")
-  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-320.ld")
-endif()
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(LINK_FILE_EXT ld)
-  set(LINK_FILE_OPTION "-T")
-  set(COMPILER_PREPROCESSOR_OPTIONS -E -x c -P)
-endif()
-
-set(_arm_runner_linker_preprocessor_options ${COMPILER_PREPROCESSOR_OPTIONS})
-foreach(_arm_runner_linker_define IN ITEMS HEAP_SIZE STACK_SIZE ETHOSU_MODEL
-                                           ETHOSU_ARENA
-)
-  if(DEFINED ${_arm_runner_linker_define})
-    list(APPEND _arm_runner_linker_preprocessor_options
-         "-D${_arm_runner_linker_define}=${${_arm_runner_linker_define}}"
-    )
-  endif()
-endforeach()
-
-get_filename_component(LINK_FILE_OUT_BASE "${LINK_FILE}" NAME)
-set(LINK_FILE_OUT
-    "${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}"
-)
-
-execute_process(
-  COMMAND ${CMAKE_C_COMPILER} ${_arm_runner_linker_preprocessor_options} -o
-          ${LINK_FILE_OUT} ${LINK_FILE_IN}
-)
-target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
 if(EXECUTORCH_OPTIMIZE_SIZE)
   arm_runner_link_minimal_specs(arm_executor_runner)
 endif()
-
-set(arm_executor_runner_link)
-list(
-  APPEND
-  arm_executor_runner_link
-  -Wl,--start-group
-  extension_runner_util
-  ethosu_target_init
-  -Wl,--whole-archive
-  executorch_delegate_ethos_u
-  -Wl,--no-whole-archive
-  executorch_core
-  -Wl,--end-group
-  -Xlinker
-  -Map=arm_executor_runner.map
-)
 
 # Create ops libraries from included operators. Handle portable, cortex_m, and
 # quantized ops.
@@ -349,38 +159,25 @@ if(NOT ET_PTE_FILE_PATH)
   set(_arm_runner_dtype_selective_build "")
 endif()
 
-set(_arm_runner_selected_ops_libs)
-set(_arm_runner_normal_archive_libs)
-
-arm_runner_create_selected_ops_lib(
-  LIB_NAME
-  "arm_portable_ops_lib"
-  FUNCTIONS_YAML
-  "${EXECUTORCH_ROOT}/kernels/portable/functions.yaml"
+arm_runner_create_default_selected_ops_libs(
+  PREFIX
+  arm
+  SUFFIX
+  _lib
   OP_LIST
   "${EXECUTORCH_SELECT_OPS_LIST}"
   OPS_FROM_MODEL
   "${ET_PTE_FILE_PATH}"
   DTYPE_SELECTIVE_BUILD
   "${_arm_runner_dtype_selective_build}"
-  KERNEL_LIBS
-  portable_kernels
   DEPS
   executorch_core
-)
-list(APPEND _arm_runner_selected_ops_libs arm_portable_ops_lib)
-set(_arm_runner_portable_archive_libs portable_kernels kernels_util_all_deps)
-verify_targets_exist(
-  CONTEXT arm_executor_runner TARGETS ${_arm_runner_portable_archive_libs}
-)
-list(APPEND _arm_runner_normal_archive_libs
-     ${_arm_runner_portable_archive_libs}
 )
 
 arm_runner_create_selected_ops_lib(
   PRIM_OPS
   LIB_NAME
-  "arm_prim_ops_lib"
+  arm_prim_ops_lib
   OP_LIST
   "${EXECUTORCH_SELECT_OPS_LIST}"
   OPS_FROM_MODEL
@@ -388,87 +185,41 @@ arm_runner_create_selected_ops_lib(
   DEPS
   executorch_core
 )
-list(APPEND _arm_runner_selected_ops_libs arm_prim_ops_lib)
-set(_arm_runner_prim_archive_libs arm_prim_ops_lib_impl)
-verify_targets_exist(
-  CONTEXT arm_executor_runner TARGETS ${_arm_runner_prim_archive_libs}
-)
-list(APPEND _arm_runner_normal_archive_libs ${_arm_runner_prim_archive_libs})
 
-arm_runner_create_selected_ops_lib(
-  LIB_NAME
-  "arm_quantized_ops_lib"
-  CUSTOM_OPS_YAML
-  "${EXECUTORCH_ROOT}/kernels/quantized/quantized.yaml"
-  OP_LIST
-  "${EXECUTORCH_SELECT_OPS_LIST}"
-  OPS_FROM_MODEL
-  "${ET_PTE_FILE_PATH}"
-  KERNEL_LIBS
-  quantized_kernels
-  DEPS
+set(_arm_runner_selected_ops_libs arm_portable_ops_lib arm_prim_ops_lib
+                                  arm_quantized_ops_lib arm_cortex_m_ops_lib
+)
+set(_arm_runner_normal_archive_libs
+    portable_kernels kernels_util_all_deps arm_prim_ops_lib_impl
+    quantized_kernels cortex_m_kernels cmsis-nn
+)
+arm_runner_link_registration_libraries(
+  TARGET
+  arm_executor_runner
+  SCOPE
+  PUBLIC
+  BASE_LIBS
+  extension_runner_util
+  ethosu_target_init
+  REGISTRATION_LIBS
+  executorch_delegate_ethos_u
+  ${_arm_runner_selected_ops_libs}
+  NORMAL_LIBS
   executorch_core
+  ${_arm_runner_normal_archive_libs}
+  SUPPRESS_LIBS
+  executorch
 )
-list(APPEND _arm_runner_selected_ops_libs arm_quantized_ops_lib)
-set(_arm_runner_quantized_archive_libs quantized_kernels portable_kernels
-                                       kernels_util_all_deps
-)
-verify_targets_exist(
-  CONTEXT arm_executor_runner TARGETS ${_arm_runner_quantized_archive_libs}
-)
-list(APPEND _arm_runner_normal_archive_libs
-     ${_arm_runner_quantized_archive_libs}
-)
-
-arm_runner_create_selected_ops_lib(
-  LIB_NAME
-  "arm_cortex_m_ops_lib"
-  CUSTOM_OPS_YAML
-  "${EXECUTORCH_ROOT}/backends/cortex_m/ops/operators.yaml"
-  OP_LIST
-  "${EXECUTORCH_SELECT_OPS_LIST}"
-  OPS_FROM_MODEL
-  "${ET_PTE_FILE_PATH}"
-  KERNEL_LIBS
-  cortex_m_kernels
-  DEPS
-  executorch_core
-)
-list(APPEND _arm_runner_selected_ops_libs arm_cortex_m_ops_lib)
-set(_arm_runner_cortex_m_archive_libs cortex_m_kernels portable_kernels
-                                      cmsis-nn kernels_util_all_deps
-)
-verify_targets_exist(
-  CONTEXT arm_executor_runner TARGETS ${_arm_runner_cortex_m_archive_libs}
-)
-list(APPEND _arm_runner_normal_archive_libs
-     ${_arm_runner_cortex_m_archive_libs}
-)
-
-list(FIND arm_executor_runner_link -Wl,--no-whole-archive
-     _arm_runner_no_whole_archive_idx
-)
-list(INSERT arm_executor_runner_link ${_arm_runner_no_whole_archive_idx}
-     ${_arm_runner_selected_ops_libs}
-)
-
-if(_arm_runner_normal_archive_libs)
-  list(REMOVE_DUPLICATES _arm_runner_normal_archive_libs)
-  list(FIND arm_executor_runner_link -Wl,--end-group _arm_runner_end_group_idx)
-  list(INSERT arm_executor_runner_link ${_arm_runner_end_group_idx}
-       ${_arm_runner_normal_archive_libs}
-  )
-endif()
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
-  target_compile_options(arm_executor_runner PUBLIC -DET_EVENT_TRACER_ENABLED)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_EVENT_TRACER_ENABLED)
 
-  list(APPEND arm_executor_runner_link etdump flatccrt)
+  target_link_libraries(arm_executor_runner PUBLIC etdump flatccrt)
 endif()
 
 if(ET_BUNDLE_IO)
   if(TARGET bundled_program)
-    list(APPEND arm_executor_runner_link bundled_program)
+    target_link_libraries(arm_executor_runner PUBLIC bundled_program)
     target_link_directories(
       arm_executor_runner PRIVATE $<TARGET_FILE_DIR:bundled_program>
     )
@@ -504,7 +255,9 @@ if(ET_BUNDLE_IO)
       )
     endif()
     if(_bundled_program_library)
-      list(APPEND arm_executor_runner_link ${_bundled_program_library})
+      target_link_libraries(
+        arm_executor_runner PUBLIC ${_bundled_program_library}
+      )
     else()
       message(
         FATAL_ERROR
@@ -513,27 +266,6 @@ if(ET_BUNDLE_IO)
     endif()
   endif()
 endif()
-
-# Keep static registration libraries force-loaded, but do it in the executable
-# link list rather than through INTERFACE_LINK_OPTIONS. The latter is emitted
-# before this target's objects and before the runner's dependency closure, which
-# breaks bare-metal archive resolution for the runner. The same needs to be done
-# for the executorch target, that can be transitively included from the bundled
-# program lib. the executorch lib registers all prim-ops, but we want to include
-# them selectively.
-set(_suppress_interface_link_options_targets
-    executorch executorch_delegate_ethos_u ${_arm_runner_selected_ops_libs}
-)
-foreach(_target_to_suppress IN LISTS _suppress_interface_link_options_targets)
-  if(TARGET ${_target_to_suppress})
-    set_property(
-      TARGET ${_target_to_suppress} PROPERTY INTERFACE_LINK_OPTIONS ""
-    )
-  endif()
-endforeach()
-
-# Need whole-archive to ensure C++ ctors are called for registration targets.
-target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 # Ensure the ELF lands next to the CMake build tree so run.sh (and downstream
 # tooling) can locate it deterministically regardless of multi-config vs
@@ -579,26 +311,26 @@ if(CMAKE_BUILD_TYPE MATCHES "AddressSanitizer")
 endif()
 
 # ET headers and generated headers includes
-set(_arm_runner_include_dirs
-    ${ET_INCLUDE_PATH} ${ET_INCLUDE_PATH}/runtime/core/portable_type/c10
-    ${CMAKE_CURRENT_BINARY_DIR}
-)
 target_include_directories(
-  arm_executor_runner PRIVATE ${_arm_runner_include_dirs}
+  arm_executor_runner
+  PRIVATE ${ET_INCLUDE_PATH} ${ET_INCLUDE_PATH}/runtime/core/portable_type/c10
+          ${EXECUTORCH_ROOT}/examples/arm/common ${CMAKE_CURRENT_BINARY_DIR}
 )
 target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
-  add_dependencies(arm_executor_runner gen_model_header)
-endif()
-
-if(ET_MODEL_PTE_ADDR)
-  target_compile_definitions(
-    arm_executor_runner PUBLIC -DET_MODEL_PTE_ADDR=${ET_MODEL_PTE_ADDR}
-  )
-endif()
+arm_runner_configure_model(
+  PUBLIC
+  TARGET
+  arm_executor_runner
+  PTE_FILE
+  "${ET_PTE_FILE_PATH}"
+  MODEL_PTE_ADDR
+  "${ET_MODEL_PTE_ADDR}"
+  MODEL_PTE_SIZE
+  "${ET_MODEL_PTE_SIZE}"
+)
 
 if(ET_NUM_INFERENCES)
   target_compile_definitions(
@@ -607,18 +339,18 @@ if(ET_NUM_INFERENCES)
 endif()
 
 if(ET_LOG_DUMP_INPUT)
-  target_compile_definitions(arm_executor_runner PUBLIC -DET_LOG_DUMP_INPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_LOG_DUMP_INPUT)
 endif()
 
 if(ET_LOG_DUMP_OUTPUT)
-  target_compile_definitions(arm_executor_runner PUBLIC -DET_LOG_DUMP_OUTPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_LOG_DUMP_OUTPUT)
 endif()
 
 # Devtool BundleIO: Use Bundle PTE with input and reference output included to
 # check if it matches.
 
 if(ET_BUNDLE_IO)
-  target_compile_definitions(arm_executor_runner PUBLIC -DET_BUNDLE_IO)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_BUNDLE_IO)
 endif()
 
 if(ET_ATOL)
@@ -632,12 +364,12 @@ endif()
 # Devtools ETDump: Speed and dumping output
 
 if(ET_DUMP_OUTPUTS)
-  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUTS)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_DUMP_OUTPUTS)
 endif()
 
 if(ET_DUMP_INTERMEDIATE_OUTPUTS)
   target_compile_definitions(
-    arm_executor_runner PUBLIC -DET_DUMP_INTERMEDIATE_OUTPUTS
+    arm_executor_runner PUBLIC ET_DUMP_INTERMEDIATE_OUTPUTS
   )
 endif()
 
@@ -651,10 +383,6 @@ endif()
 
 if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
-endif()
-
-if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
-  target_compile_definitions(arm_executor_runner PUBLIC ET_COMPILED_PTE)
 endif()
 
 # Memory buffer sizes for Executorch flow

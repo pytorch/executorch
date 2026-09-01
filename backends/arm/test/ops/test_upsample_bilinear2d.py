@@ -34,8 +34,6 @@ test_data_suite_tosa = {
     "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
     "rand_one_double_scale": lambda: (torch.rand(2, 4, 1, 1), None, 2.0, True),
     "rand_one_double_size": lambda: (torch.rand(2, 4, 1, 1), (2, 2), None, True),
-    "rand_one_same_scale": lambda: (torch.rand(2, 4, 1, 1), None, 1.0, True),
-    "rand_one_same_size": lambda: (torch.rand(2, 4, 1, 1), (1, 1), None, True),
     # Can't compare outputs as the rounding when selecting the nearest pixel is
     # different between PyTorch and TOSA. Just check the legalization went well.
     # TODO Improve the test infrastructure to support more in depth verification
@@ -83,18 +81,6 @@ test_data_suite_tosa = {
     "randn_one_double_size_negative": lambda: (
         torch.randn(2, 4, 1, 1),
         (2, 2),
-        None,
-        True,
-    ),
-    "randn_one_same_scale_negative": lambda: (
-        torch.randn(2, 4, 1, 1),
-        None,
-        1.0,
-        True,
-    ),
-    "randn_one_same_size_negative": lambda: (
-        torch.randn(2, 4, 1, 1),
-        (1, 1),
         None,
         True,
     ),

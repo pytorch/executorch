@@ -76,7 +76,7 @@ if _spec.loader is None:
     raise ImportError(f"Module spec has no loader for {_install_utils_path}")
 _spec.loader.exec_module(install_utils)
 
-from setuptools import Extension, find_namespace_packages, setup
+from setuptools import Distribution, Extension, find_namespace_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
@@ -614,6 +614,32 @@ def _package_relative_depth(library: Path) -> int:
     return max(len(parts) - index - 2, 0)
 
 
+def _torchao_requirement() -> str:
+    """The torchao dependency, pinned to the series install_requirements.py installs.
+
+    Derived from that module rather than written out, so a nightly bump cannot move the
+    pin without moving this bound with it. A bump into the next series would otherwise
+    silently stop satisfying the lower bound, and installing this package over a
+    development checkout would replace the torchao that was just installed.
+
+    Loaded by path, the way install_utils is above, because setuptools executes this
+    file without the project directory on sys.path, so a plain import does not resolve.
+    """
+    path = Path(__file__).parent / "install_requirements.py"
+    spec = importlib.util.spec_from_file_location("install_requirements", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    # The module imports install_utils by name at import time, which only resolves
+    # because that name is registered below.
+    sys.modules.setdefault("install_utils", install_utils)
+    spec.loader.exec_module(module)
+
+    version = module.TORCHAO_NIGHTLY_VERSION
+    major, minor = (int(part) for part in version.split(".")[:2])
+    return f"torchao>={version},<{major}.{minor + 1}"
+
+
 def _base_dependencies() -> List[str]:
     """Runtime dependencies for the full wheel.
 
@@ -639,6 +665,21 @@ def _base_dependencies() -> List[str]:
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
+        # Shipped code imports torchao at module scope in many places, so a plain install cannot
+        # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
+        # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
+        # The MLX backend needs it too, though indirectly: it registers a torchao operator that
+        # only exists once torchao has been imported.
+        #
+        # The lower bound is the nightly install_requirements.py pins, so that installing this
+        # package over a development checkout leaves that pin in place. A bound at the stable
+        # release instead would evict it, because a dev release sorts below its own final.
+        #
+        # The upper bound is what makes naming a pre-release safe. A specifier that names one
+        # accepts pre-releases for this requirement, so without the bound pip would resolve a
+        # pre-release of the next series wherever one is published, such as an index carrying
+        # nightlies. Keep both bounds in the same series.
+        _torchao_requirement(),
         "pyyaml",
         "ruamel.yaml",
         "sympy",
@@ -646,9 +687,31 @@ def _base_dependencies() -> List[str]:
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-        "coremltools==9.0; (platform_system == 'Darwin' or platform_system == 'Linux') and python_version < '3.14'",
-        # scikit-learn is used to support palettization in the coreml backend.
-        "scikit-learn>=1.7.1",
+        # Linux is deliberate: the Core ML export flow runs there, so a model can be lowered
+        # for Apple hardware from a Linux machine. Linux is narrowed to x86_64 because that is
+        # the only Linux architecture coremltools publishes a build for. Everywhere else pip
+        # falls back to the source archive and produces a py3-none-any install with none of the
+        # compiled extensions, which imports and then cannot write a model, because
+        # libmilstoragepython, which stores the weights of an mlprogram, is absent. Measured
+        # with coremltools 9.0 on a Linux aarch64 machine. Keep this in sync with the condition
+        # in conftest.py; .ci/scripts/tests/test_coreml_markers.py checks that the two agree.
+        "coremltools==9.0; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
+        # coremltools needs scikit-learn to palettize weights, so it follows coremltools.
+        # Without a marker it also installed where coremltools does not, most visibly on
+        # Windows, and brought scipy with it.
+        #
+        # Nothing here imports scikit-learn directly. coremltools does, and not through the
+        # _HAS_SKLEARN flag it sets: quantization_utils.py imports sklearn.cluster.KMeans at the
+        # point of use, and that is the default clustering path, taken unless the weight is a
+        # single column of at least ten thousand float16 values. So the CODEBOOK_WEIGHT_ONLY
+        # recipe raises ModuleNotFoundError without this, whatever _HAS_SKLEARN says.
+        #
+        # The floor is above the version coremltools accepts for its own scikit-learn model
+        # converter, which is why that converter reports itself disabled. That is a separate
+        # feature nothing here uses, and palettization does not check the version, so the two
+        # are unrelated. Measured with coremltools 9.0 and scikit-learn 1.9.0: the converter is
+        # off and palettization works.
+        "scikit-learn>=1.7.1; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]
@@ -799,6 +862,12 @@ def get_executable_name(name: str) -> str:
 
 class _BaseExtension(Extension):
     """A base class that maps an abstract source to an abstract destination."""
+
+    # Prefix of the synthetic name a BuiltFile carries. A built file is not a Python
+    # module, so its name is deliberately not a module path, and setuptools has to be
+    # able to tell it apart from a real extension. See _ExecuTorchDistribution, which
+    # keeps these names out of the metadata setuptools derives from ext_modules.
+    SYNTHETIC_NAME_PREFIX = "@EXECUTORCH_BuiltFile_"
 
     def __init__(
         self,
@@ -955,7 +1024,7 @@ class BuiltFile(_BaseExtension):
         super().__init__(
             src=src,
             dst=dst,
-            name=f"@EXECUTORCH_BuiltFile_{src}:{dst}",
+            name=f"{_BaseExtension.SYNTHETIC_NAME_PREFIX}{src}:{dst}",
             dependent_cmake_flags=dependent_cmake_flags,
         )
 
@@ -1203,6 +1272,14 @@ class InstallerBuildExt(build_ext):
             self.get_finalized_command("build"), "cmake_cache_dir", None
         )
         _strip_absolute_runtime_paths(dst_file, _cuda_libraries_built(cmake_cache_dir))
+        # After the rewrite rather than before it, because each tool re-signs the file ad hoc when
+        # it finishes, so whichever runs last owns the signature. Running strip last keeps the
+        # signature over the bytes that ship. Functionally either order works: measured, the two
+        # produce the same size, the same exported symbols, the same rpaths, and both verify.
+        #
+        # Only the wheel copy is stripped; the editable copy above is a developer's own build
+        # output, where the local symbols are what a debugger and a profiler read.
+        _strip_local_symbols(dst_file)
 
 
 def _append_relative_search_paths(entries: List[str], depth: int = 1) -> None:
@@ -1282,6 +1359,39 @@ def _run_install_name_tool(command: List[str], library: Path) -> None:
         raise RuntimeError(
             f"{' '.join(command[1:3])} failed on {library.name}, so its runtime search paths are not "
             f"what this build intended: {(result.stderr or result.stdout).decode(errors='replace').strip()}"
+        )
+
+
+def _strip_local_symbols(library: Path) -> None:
+    """Discard the local symbol table from a Mach-O file the wheel ships.
+
+    Only on macOS, and only because its linker keeps these where the GNU one does not. The Linux
+    shared libraries ship with no .symtab section, while the macOS ones carried a local symbol for
+    every internal function: 448 in the runtime, 4190 in the merged kernels, and 35496 in flatc,
+    which alone was 6 MB of the 7 MB this removes.
+
+    `-x` removes local symbols and keeps every external one, so what a consumer can link against
+    does not change. Anything beyond that would strip exported symbols and break linking, so the
+    flag matters.
+
+    A failure here is not fatal. The file is correct either way, and a wheel that is larger than
+    intended is better than a build that stops. That also covers the files this runs on that are
+    not Mach-O at all, such as the Metal library and a template: strip declines them, and on BSD
+    it declines them with a zero exit, leaving the file byte for byte as it was.
+    """
+    if not _is_macos():
+        return
+    strip = shutil.which("strip")
+    if strip is None:
+        return
+    result = subprocess.run(
+        [strip, "-x", os.fspath(library)], capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        print(
+            f"warning: could not strip local symbols from {library.name}, shipping it as "
+            f"built: {(result.stderr or result.stdout).decode(errors='replace').strip()}",
+            flush=True,
         )
 
 
@@ -2117,6 +2227,8 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
                 cmake_build_args += ["--target", "executorch_shared"]
                 cmake_build_args += ["--target", "etdump"]
+                if cmake_cache.is_enabled("EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT"):
+                    cmake_build_args += ["--target", "coremldelegate"]
                 if cmake_cache.is_enabled(
                     "EXECUTORCH_BUILD_PTHREADPOOL"
                 ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
@@ -2125,6 +2237,8 @@ class CustomBuild(build):
                     cmake_build_args += ["--target", "optimized_native_cpu_ops_lib"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED"):
                     cmake_build_args += ["--target", "executorch_quantized_ops"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_TORCHAO"):
+                    cmake_build_args += ["--target", "executorch_kernels_torchao"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
                     cmake_build_args += ["--target", "xnnpack_backend"]
 
@@ -2151,6 +2265,24 @@ class CustomBuild(build):
         build.run(self)
 
 
+class _ExecuTorchDistribution(Distribution):
+    """A Distribution that hides the synthetic BuiltFile names from metadata.
+
+    A prebuilt file that the wheel merely copies is declared as an Extension, because
+    a non-empty ext_modules is how setuptools decides a wheel is platform specific.
+    Those entries are not Python modules, so they carry a synthetic name rather than a
+    module path. setuptools does not know that: it derives top_level.txt from every
+    ext_modules entry's name, so each recipe string was landing in the published
+    metadata as a top level import name.
+    """
+
+    def iter_distribution_names(self):
+        for name in super().iter_distribution_names():
+            if name.startswith(_BaseExtension.SYNTHETIC_NAME_PREFIX):
+                continue
+            yield name
+
+
 setup_kwargs = {}
 if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
@@ -2163,6 +2295,7 @@ else:
 
 setup(
     version=Version.string(),
+    distclass=_ExecuTorchDistribution,
     cmdclass={
         "build": CustomBuild,
         "build_ext": InstallerBuildExt,
@@ -2297,6 +2430,20 @@ setup(
                         "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
                     ],
                 ),
+                # The TorchAO kernels, so a C++ application running a model that
+                # uses them can link them from the wheel. The Apple framework build
+                # already ships these; this is the wheel's equivalent. Written to
+                # the cache root because the wrapper target is declared there.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name=get_dynamic_lib_name("executorch_kernels_torchao"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_kernels_torchao"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_TORCHAO",
+                    ],
+                ),
                 # The OpenVINO delegate, so a C++ application can link it from the
                 # wheel. Only the adapter ships here: the OpenVINO runtime itself is
                 # loaded at run time and comes from the openvino extra.
@@ -2321,6 +2468,32 @@ setup(
                         "EXECUTORCH_BUILD_XNNPACK",
                     ],
                 ),
+                # Install the MLX delegate beside them, so a C++ consumer can link
+                # it out of the wheel rather than only reaching it from Python.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/mlx/",
+                    src_name=get_dynamic_lib_name("executorch_backend_mlx"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_mlx"),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_MLX",
+                    ],
+                ),
+                # Install the Core ML delegate beside them, so a C++ consumer can
+                # link it out of the wheel rather than only reaching it from Python.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/apple/coreml/",
+                    src_name=get_dynamic_lib_name("executorch_backend_coreml"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_coreml"),
+                    dependent_cmake_flags=[
+                        # Not EXECUTORCH_BUILD_COREML: that is also on for the Python
+                        # extension on non-Apple platforms, where this shared library
+                        # is not built. This flag is set only when it actually is.
+                        "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
+                    ],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
@@ -2336,15 +2509,28 @@ setup(
                     modpath="executorch.extension.pybindings.data_loader",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
                 ),
-                # MLX metallib (Metal GPU kernels) must be colocated with _C.so
-                # because MLX uses dladdr() to find the directory containing the library,
-                # then looks for mlx.metallib in that directory at runtime.
+                # MLX metallib (Metal GPU kernels) must be colocated with the image
+                # that carries MLX code, because MLX resolves its own address with
+                # dladdr() and looks for mlx.metallib in that directory at runtime.
+                # Which image that is depends on how the delegate was built: a shared
+                # delegate carries MLX itself, while a static one is absorbed into the
+                # Python extension. The build decides which of these two entries
+                # applies, so exactly one copy ships.
                 # After submodule migration, the path is backends/mlx/mlx/...
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
                     src_name="mlx.metallib",
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_MLX",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
+                    src_name="mlx.metallib",
                     dst="executorch/extension/pybindings/",
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
+                    dependent_cmake_flags=["EXECUTORCH_MLX_METALLIB_IN_PYBINDINGS"],
                 ),
                 BuiltExtension(
                     src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh

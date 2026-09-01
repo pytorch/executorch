@@ -50,8 +50,10 @@ def _is_power_of_2(n: int) -> bool:
 # triton.sdpa_decode_splitk.
 _SPLITK_LKV_THRESHOLD = 256
 
-# FlashDecoding++ unified-max constant used by the split-K decode path.
-_DEFAULT_SPLITK_PHI = 5.0
+
+def _decode_splitk_config(L_kv: int) -> tuple[int, int]:
+    num_splits = min(max(triton.cdiv(L_kv, _SPLITK_LKV_THRESHOLD), 1), 128)
+    return num_splits, triton.cdiv(L_kv, num_splits)
 
 
 def _next_power_of_2(x: int) -> int:
@@ -1027,7 +1029,6 @@ def sdpa(
                 stride_mq,
                 stride_mk,
                 num_groups,
-                _DEFAULT_SPLITK_PHI,
                 kv_len_t,
                 HAS_KV_LEN,
             )
@@ -1051,7 +1052,6 @@ def sdpa(
                 stride_mq,
                 stride_mk,
                 num_groups,
-                _DEFAULT_SPLITK_PHI,
                 kv_len_t,
                 HAS_KV_LEN,
             )
@@ -1174,6 +1174,7 @@ def _sdpa_decode_splitk_kernel(
     K_ptr,
     V_ptr,
     O_partial_ptr,
+    M_partial_ptr,
     L_partial_ptr,
     Mask_ptr,
     KV_LEN_ptr,
@@ -1196,6 +1197,9 @@ def _sdpa_decode_splitk_kernel(
     stride_op_b,
     stride_op_h,
     stride_op_d,
+    stride_mp_s,
+    stride_mp_b,
+    stride_mp_h,
     stride_lp_s,
     stride_lp_b,
     stride_lp_h,
@@ -1203,7 +1207,6 @@ def _sdpa_decode_splitk_kernel(
     stride_mq,
     stride_mk,
     sm_scale: tl.float32,
-    phi: tl.float32,
     chunk_size,
     HAS_MASK: tl.constexpr,
     HAS_KV_LEN: tl.constexpr,
@@ -1218,9 +1221,8 @@ def _sdpa_decode_splitk_kernel(
     h_kv = pid_bh % H_kv
 
     start_n = split_id * chunk_size
-    # Bound the decode KV sweep to the valid (filled) positions. Splits whose
-    # chunk starts past kv_len do no work (end_n <= start_n) and store the zero
-    # partials they were initialized with, so the reduce is unaffected. kv_len is
+    # Bound the decode KV sweep to the valid (filled) positions. Empty splits
+    # store m = -inf and l = acc = 0, which the reduce weights to zero. kv_len is
     # read on-device (CUDA-graph safe); falls back to Lk when not provided.
     if HAS_KV_LEN:
         kv_len = tl.load(KV_LEN_ptr)
@@ -1242,7 +1244,7 @@ def _sdpa_decode_splitk_kernel(
     )
     q = tl.load(q_ptrs, mask=g_valid[:, None], other=0.0).to(tl.bfloat16)
 
-    # FlashDecoding++ async softmax: use unified max phi instead of tracking m_i
+    m_i = tl.full([BLOCK_G], -float("inf"), dtype=tl.float32)
     l_i = tl.zeros([BLOCK_G], dtype=tl.float32)
     acc = tl.zeros([BLOCK_G, HEAD_DIM], dtype=tl.float32)
 
@@ -1279,10 +1281,14 @@ def _sdpa_decode_splitk_kernel(
                 mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
             )
 
-        # FlashDecoding++ async softmax: subtract unified phi instead of local max
-        safe_diff = tl.where(qk > -float("inf"), qk - phi, -float("inf"))
+        m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
+        safe_diff = tl.where(
+            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
+        )
         p_f32 = tl.exp(safe_diff).to(tl.float32)
         l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
+        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
+        alpha = tl.exp(safe_alpha_diff).to(tl.float32)
 
         v_ptrs = V_ptr + (
             b * stride_vb
@@ -1293,10 +1299,11 @@ def _sdpa_decode_splitk_kernel(
         v = tl.load(v_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
 
         p_bf16 = p_f32.to(tl.bfloat16)
-        acc = (acc + tl.dot(p_bf16, v)).to(tl.float32)
-        l_i = (l_i + l_ij).to(tl.float32)
+        acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
+        l_i = (l_i * alpha + l_ij).to(tl.float32)
+        m_i = m_ij
 
-    # Store partial results for valid groups only
+    # Padded group lanes can alias later heads, so all three stores need g_valid.
     h_q_all = h_kv * NUM_GROUPS + offs_g  # [BLOCK_G]
     o_ptrs = O_partial_ptr + (
         split_id * stride_op_s
@@ -1305,6 +1312,11 @@ def _sdpa_decode_splitk_kernel(
         + offs_d[None, :] * stride_op_d
     )
     tl.store(o_ptrs, acc, mask=g_valid[:, None])
+
+    m_ptrs = M_partial_ptr + (
+        split_id * stride_mp_s + b * stride_mp_b + h_q_all * stride_mp_h
+    )
+    tl.store(m_ptrs, m_i, mask=g_valid)
 
     ll_ptrs = L_partial_ptr + (
         split_id * stride_lp_s + b * stride_lp_b + h_q_all * stride_lp_h
@@ -1315,40 +1327,47 @@ def _sdpa_decode_splitk_kernel(
 @triton.jit
 def _sdpa_decode_reduce_kernel(
     O_partial_ptr,
+    M_partial_ptr,
     L_partial_ptr,
     O_ptr,
     num_splits,
     stride_op_s,
-    stride_op_b,
     stride_op_h,
     stride_op_d,
+    stride_mp_s,
+    stride_mp_h,
     stride_lp_s,
-    stride_lp_b,
     stride_lp_h,
-    stride_ob,
     stride_oh,
-    stride_om,
     stride_od,
+    BLOCK_S: tl.constexpr,
     HEAD_DIM: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
+    offs_s = tl.arange(0, BLOCK_S)
     offs_d = tl.arange(0, HEAD_DIM)
+    s_valid = offs_s < num_splits
 
-    # FlashDecoding++ async softmax: no rescaling needed, just sum partials
-    acc = tl.zeros([HEAD_DIM], dtype=tl.float32)
-    l_global = tl.zeros([1], dtype=tl.float32)
+    m_ptrs = M_partial_ptr + offs_s * stride_mp_s + pid * stride_mp_h
+    m = tl.load(m_ptrs, mask=s_valid, other=-float("inf"))
+    m_global = tl.max(m, axis=0)
+    alpha = tl.where(
+        s_valid & (m > -float("inf")) & (m_global > -float("inf")),
+        tl.exp(m - m_global),
+        0.0,
+    )
 
-    for s in tl.range(0, num_splits):
-        l_ptr = L_partial_ptr + s * stride_lp_s + pid * stride_lp_h
-        o_ptrs = O_partial_ptr + (
-            s * stride_op_s + pid * stride_op_h + offs_d * stride_op_d
-        )
+    l_ptrs = L_partial_ptr + offs_s * stride_lp_s + pid * stride_lp_h
+    l_values = tl.load(l_ptrs, mask=s_valid, other=0.0)
+    o_ptrs = O_partial_ptr + (
+        offs_s[:, None] * stride_op_s
+        + pid * stride_op_h
+        + offs_d[None, :] * stride_op_d
+    )
+    o = tl.load(o_ptrs, mask=s_valid[:, None], other=0.0)
 
-        l_s = tl.load(l_ptr)
-        o_s = tl.load(o_ptrs)
-
-        acc += o_s
-        l_global += l_s
+    l_global = tl.sum(l_values * alpha, axis=0)
+    acc = tl.sum(o * alpha[:, None], axis=0)
 
     inv_l = tl.where(l_global > 0, 1.0 / l_global, 0.0)
     acc = acc * inv_l
@@ -1374,25 +1393,29 @@ def _launch_decode_splitk(
     stride_mq: int,
     stride_mk: int,
     num_groups: int,
-    phi: float,
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
 ) -> None:
-    num_splits = min(max(triton.cdiv(L_kv, 256), 1), 128)
-    chunk_size = triton.cdiv(L_kv, num_splits)
+    num_splits, chunk_size = _decode_splitk_config(L_kv)
 
+    # Each valid (split, batch, query head) slot belongs to exactly one program,
+    # and empty KV ranges still reach the stores with m=-inf and l=acc=0.
     O_partial = torch.empty(
         (num_splits, B, H_q, D), device=query.device, dtype=torch.float32
     )
-    L_partial = torch.zeros(
+    M_partial = torch.empty(
+        (num_splits, B, H_q), device=query.device, dtype=torch.float32
+    )
+    L_partial = torch.empty(
         (num_splits, B, H_q), device=query.device, dtype=torch.float32
     )
 
     stride_qb, stride_qh, stride_qm, stride_qd = query.stride()
     stride_kb, stride_kh, stride_kn, stride_kd = key.stride()
     stride_vb, stride_vh, stride_vn, stride_vd = value.stride()
-    stride_ob, stride_oh, stride_om, stride_od = out.stride()
+    _, stride_oh, _, stride_od = out.stride()
     stride_op_s, stride_op_b, stride_op_h, stride_op_d = O_partial.stride()
+    stride_mp_s, stride_mp_b, stride_mp_h = M_partial.stride()
     stride_lp_s, stride_lp_b, stride_lp_h = L_partial.stride()
 
     grid_split = (num_splits, B * H_kv)
@@ -1401,6 +1424,7 @@ def _launch_decode_splitk(
         key,
         value,
         O_partial,
+        M_partial,
         L_partial,
         Mask_ptr if HAS_MASK else 0,
         kv_len_ptr if HAS_KV_LEN else 0,
@@ -1423,6 +1447,9 @@ def _launch_decode_splitk(
         stride_op_b,
         stride_op_h,
         stride_op_d,
+        stride_mp_s,
+        stride_mp_b,
+        stride_mp_h,
         stride_lp_s,
         stride_lp_b,
         stride_lp_h,
@@ -1430,7 +1457,6 @@ def _launch_decode_splitk(
         stride_mq,
         stride_mk,
         sm_scale,
-        phi,
         chunk_size,
         HAS_MASK=HAS_MASK,
         HAS_KV_LEN=HAS_KV_LEN,
@@ -1442,20 +1468,20 @@ def _launch_decode_splitk(
     grid_reduce = (B * H_q,)
     wrap_triton(_sdpa_decode_reduce_kernel)[grid_reduce](
         O_partial,
+        M_partial,
         L_partial,
         out,
         num_splits,
         stride_op_s,
-        stride_op_b,
         stride_op_h,
         stride_op_d,
+        stride_mp_s,
+        stride_mp_h,
         stride_lp_s,
-        stride_lp_b,
         stride_lp_h,
-        stride_ob,
         stride_oh,
-        stride_om,
         stride_od,
+        BLOCK_S=_next_power_of_2_unclamped(num_splits),
         HEAD_DIM=D,
         num_warps=4,
         num_stages=1,
@@ -1477,8 +1503,8 @@ def sdpa_decode_splitk(
 ) -> torch.Tensor:
     """Split-K flash-decoding SDPA for L_q=1 (decode step).
 
-    Uses FlashDecoding++ async softmax with unified maximum value (phi)
-    to eliminate per-split max tracking and cross-split rescaling.
+    Tracks a stable online-softmax maximum per split, then rescales partial
+    results by the global maximum during reduction.
 
     Signature mirrors sdpa() for drop-in use with torch.cond dispatch.
     enable_gqa is accepted but ignored — GQA is handled natively via
@@ -1487,6 +1513,8 @@ def sdpa_decode_splitk(
     kv_len: optional GPU int scalar bounding the KV sweep to the valid
     (filled) positions (O(context) instead of O(max_seq_len)). Read
     on-device, CUDA-graph safe. When None, sweeps the full L_kv.
+
+    phi is deprecated, accepted for operator-schema compatibility, and ignored.
     """
     _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa)
 
@@ -1547,7 +1575,6 @@ def sdpa_decode_splitk(
         stride_mq,
         stride_mk,
         num_groups,
-        phi,
         kv_len_t,
         HAS_KV_LEN,
     )
@@ -1602,6 +1629,7 @@ def _sdpa_small_query_splitk_kernel(
     K_ptr,
     V_ptr,
     O_partial_ptr,
+    M_partial_ptr,
     L_partial_ptr,
     Mask_ptr,
     KV_LEN_ptr,
@@ -1625,6 +1653,10 @@ def _sdpa_small_query_splitk_kernel(
     stride_op_h,
     stride_op_m,
     stride_op_d,
+    stride_mp_s,
+    stride_mp_b,
+    stride_mp_h,
+    stride_mp_m,
     stride_lp_s,
     stride_lp_b,
     stride_lp_h,
@@ -1633,7 +1665,6 @@ def _sdpa_small_query_splitk_kernel(
     stride_mq,
     stride_mk,
     sm_scale: tl.float32,
-    phi: tl.float32,
     chunk_size,
     HAS_MASK: tl.constexpr,
     HAS_KV_LEN: tl.constexpr,
@@ -1650,9 +1681,8 @@ def _sdpa_small_query_splitk_kernel(
     h_kv = pid_bh % H_kv
 
     start_n = split_id * chunk_size
-    # Bound the decode KV sweep to the valid (filled) positions. Splits whose
-    # chunk starts past kv_len do no work (end_n <= start_n) and store the zero
-    # partials they were initialized with, so the reduce is unaffected. kv_len is
+    # Bound the decode KV sweep to the valid (filled) positions. Empty splits
+    # store m = -inf and l = acc = 0, which the reduce weights to zero. kv_len is
     # read on-device (CUDA-graph safe); falls back to Lk when not provided.
     if HAS_KV_LEN:
         kv_len = tl.load(KV_LEN_ptr)
@@ -1677,8 +1707,7 @@ def _sdpa_small_query_splitk_kernel(
     )
     q = tl.load(q_ptrs, mask=row_valid[:, None], other=0.0).to(tl.bfloat16)
 
-    # FlashDecoding++ async softmax: use unified max phi instead of tracking m_i.
-    # Each query/head row keeps an independent numerator and denominator.
+    m_i = tl.full([BLOCK_M], -float("inf"), dtype=tl.float32)
     l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
     acc = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)
 
@@ -1721,10 +1750,14 @@ def _sdpa_small_query_splitk_kernel(
                 mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
             )
 
-        # FlashDecoding++ async softmax: subtract unified phi instead of local max
-        safe_diff = tl.where(qk > -float("inf"), qk - phi, -float("inf"))
+        m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
+        safe_diff = tl.where(
+            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
+        )
         p_f32 = tl.exp(safe_diff).to(tl.float32)
         l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
+        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
+        alpha = tl.exp(safe_alpha_diff).to(tl.float32)
 
         v_ptrs = V_ptr + (
             b * stride_vb
@@ -1735,10 +1768,11 @@ def _sdpa_small_query_splitk_kernel(
         v = tl.load(v_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
 
         p_bf16 = p_f32.to(tl.bfloat16)
-        acc = (acc + tl.dot(p_bf16, v)).to(tl.float32)
-        l_i = (l_i + l_ij).to(tl.float32)
+        acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
+        l_i = (l_i * alpha + l_ij).to(tl.float32)
+        m_i = m_ij
 
-    # Store one partial numerator/denominator per query row and query head.
+    # Padded query/head rows can alias valid outputs, so all stores need row_valid.
     o_ptrs = O_partial_ptr + (
         split_id * stride_op_s
         + b * stride_op_b
@@ -1747,6 +1781,14 @@ def _sdpa_small_query_splitk_kernel(
         + offs_d[None, :] * stride_op_d
     )
     tl.store(o_ptrs, acc, mask=row_valid[:, None])
+
+    m_ptrs = M_partial_ptr + (
+        split_id * stride_mp_s
+        + b * stride_mp_b
+        + h_q_heads * stride_mp_h
+        + query_rows * stride_mp_m
+    )
+    tl.store(m_ptrs, m_i, mask=row_valid)
 
     ll_ptrs = L_partial_ptr + (
         split_id * stride_lp_s
@@ -1760,6 +1802,7 @@ def _sdpa_small_query_splitk_kernel(
 @triton.jit
 def _sdpa_small_query_reduce_kernel(
     O_partial_ptr,
+    M_partial_ptr,
     L_partial_ptr,
     O_ptr,
     num_splits,
@@ -1768,6 +1811,10 @@ def _sdpa_small_query_reduce_kernel(
     stride_op_h,
     stride_op_m,
     stride_op_d,
+    stride_mp_s,
+    stride_mp_b,
+    stride_mp_h,
+    stride_mp_m,
     stride_lp_s,
     stride_lp_b,
     stride_lp_h,
@@ -1777,6 +1824,7 @@ def _sdpa_small_query_reduce_kernel(
     stride_om,
     stride_od,
     H_Q,
+    BLOCK_S: tl.constexpr,
     LQ: tl.constexpr,
     HEAD_DIM: tl.constexpr,
 ):
@@ -1784,33 +1832,44 @@ def _sdpa_small_query_reduce_kernel(
     query_row = pid % LQ
     h_q = (pid // LQ) % H_Q
     b = pid // (LQ * H_Q)
+    offs_s = tl.arange(0, BLOCK_S)
     offs_d = tl.arange(0, HEAD_DIM)
+    s_valid = offs_s < num_splits
 
-    # FlashDecoding++ async softmax: no rescaling needed, just sum partials
-    acc = tl.zeros([HEAD_DIM], dtype=tl.float32)
-    l_global = tl.zeros([1], dtype=tl.float32)
+    m_ptrs = (
+        M_partial_ptr
+        + offs_s * stride_mp_s
+        + b * stride_mp_b
+        + h_q * stride_mp_h
+        + query_row * stride_mp_m
+    )
+    m = tl.load(m_ptrs, mask=s_valid, other=-float("inf"))
+    m_global = tl.max(m, axis=0)
+    alpha = tl.where(
+        s_valid & (m > -float("inf")) & (m_global > -float("inf")),
+        tl.exp(m - m_global),
+        0.0,
+    )
 
-    for s in tl.range(0, num_splits):
-        l_ptr = (
-            L_partial_ptr
-            + s * stride_lp_s
-            + b * stride_lp_b
-            + h_q * stride_lp_h
-            + query_row * stride_lp_m
-        )
-        o_ptrs = O_partial_ptr + (
-            s * stride_op_s
-            + b * stride_op_b
-            + h_q * stride_op_h
-            + query_row * stride_op_m
-            + offs_d * stride_op_d
-        )
+    l_ptrs = (
+        L_partial_ptr
+        + offs_s * stride_lp_s
+        + b * stride_lp_b
+        + h_q * stride_lp_h
+        + query_row * stride_lp_m
+    )
+    l_values = tl.load(l_ptrs, mask=s_valid, other=0.0)
+    o_ptrs = O_partial_ptr + (
+        offs_s[:, None] * stride_op_s
+        + b * stride_op_b
+        + h_q * stride_op_h
+        + query_row * stride_op_m
+        + offs_d[None, :] * stride_op_d
+    )
+    o = tl.load(o_ptrs, mask=s_valid[:, None], other=0.0)
 
-        l_s = tl.load(l_ptr)
-        o_s = tl.load(o_ptrs)
-
-        acc += o_s
-        l_global += l_s
+    l_global = tl.sum(l_values * alpha, axis=0)
+    acc = tl.sum(o * alpha[:, None], axis=0)
 
     inv_l = tl.where(l_global > 0, 1.0 / l_global, 0.0)
     acc = acc * inv_l
@@ -1843,17 +1902,20 @@ def _launch_small_query_splitk(
     stride_mq: int,
     stride_mk: int,
     num_groups: int,
-    phi: float,
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
 ) -> None:
-    num_splits = min(max(triton.cdiv(L_kv, 256), 1), 128)
-    chunk_size = triton.cdiv(L_kv, num_splits)
+    num_splits, chunk_size = _decode_splitk_config(L_kv)
 
+    # Each valid (split, batch, query head, query row) slot belongs to exactly
+    # one program, and empty KV ranges still store m=-inf and l=acc=0.
     O_partial = torch.empty(
         (num_splits, B, H_q, L_q, D), device=query.device, dtype=torch.float32
     )
-    L_partial = torch.zeros(
+    M_partial = torch.empty(
+        (num_splits, B, H_q, L_q), device=query.device, dtype=torch.float32
+    )
+    L_partial = torch.empty(
         (num_splits, B, H_q, L_q), device=query.device, dtype=torch.float32
     )
 
@@ -1862,6 +1924,7 @@ def _launch_small_query_splitk(
     stride_vb, stride_vh, stride_vn, stride_vd = value.stride()
     stride_ob, stride_oh, stride_om, stride_od = out.stride()
     stride_op_s, stride_op_b, stride_op_h, stride_op_m, stride_op_d = O_partial.stride()
+    stride_mp_s, stride_mp_b, stride_mp_h, stride_mp_m = M_partial.stride()
     stride_lp_s, stride_lp_b, stride_lp_h, stride_lp_m = L_partial.stride()
 
     block_g = _next_power_of_2_unclamped(num_groups)
@@ -1871,6 +1934,7 @@ def _launch_small_query_splitk(
         key,
         value,
         O_partial,
+        M_partial,
         L_partial,
         Mask_ptr if HAS_MASK else 0,
         kv_len_ptr if HAS_KV_LEN else 0,
@@ -1894,6 +1958,10 @@ def _launch_small_query_splitk(
         stride_op_h,
         stride_op_m,
         stride_op_d,
+        stride_mp_s,
+        stride_mp_b,
+        stride_mp_h,
+        stride_mp_m,
         stride_lp_s,
         stride_lp_b,
         stride_lp_h,
@@ -1902,7 +1970,6 @@ def _launch_small_query_splitk(
         stride_mq,
         stride_mk,
         sm_scale,
-        phi,
         chunk_size,
         HAS_MASK=HAS_MASK,
         HAS_KV_LEN=HAS_KV_LEN,
@@ -1916,6 +1983,7 @@ def _launch_small_query_splitk(
     grid_reduce = (B * H_q * L_q,)
     wrap_triton(_sdpa_small_query_reduce_kernel)[grid_reduce](
         O_partial,
+        M_partial,
         L_partial,
         out,
         num_splits,
@@ -1924,6 +1992,10 @@ def _launch_small_query_splitk(
         stride_op_h,
         stride_op_m,
         stride_op_d,
+        stride_mp_s,
+        stride_mp_b,
+        stride_mp_h,
+        stride_mp_m,
         stride_lp_s,
         stride_lp_b,
         stride_lp_h,
@@ -1933,6 +2005,7 @@ def _launch_small_query_splitk(
         stride_om,
         stride_od,
         H_q,
+        BLOCK_S=_next_power_of_2_unclamped(num_splits),
         LQ=L_q,
         HEAD_DIM=D,
         num_warps=4,
@@ -1955,8 +2028,8 @@ def sdpa_small_query_splitk(
 ) -> torch.Tensor:
     """Split-K flash-decoding SDPA for small query blocks (2 <= L_q <= 4).
 
-    Uses FlashDecoding++ async softmax with unified maximum value (phi)
-    to eliminate per-split max tracking and cross-split rescaling.
+    Tracks a stable online-softmax maximum per split, then rescales partial
+    results by the global maximum during reduction.
 
     Signature mirrors sdpa() for drop-in use with torch.cond dispatch.
     enable_gqa is accepted but ignored — GQA is handled natively via
@@ -1965,6 +2038,8 @@ def sdpa_small_query_splitk(
     kv_len: optional GPU int scalar bounding the KV sweep to the valid
     (filled) positions (O(context) instead of O(max_seq_len)). Read
     on-device, CUDA-graph safe. When None, sweeps the full L_kv.
+
+    phi is deprecated, accepted for operator-schema compatibility, and ignored.
     """
     _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa)
 
@@ -2029,7 +2104,6 @@ def sdpa_small_query_splitk(
         stride_mq,
         stride_mk,
         num_groups,
-        phi,
         kv_len_t,
         HAS_KV_LEN,
     )

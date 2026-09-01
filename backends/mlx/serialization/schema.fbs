@@ -845,6 +845,11 @@ table NegNode {
     out: Tid (required);
 }
 
+table TruncNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
 // =============================================================================
 // Math ops - Binary element-wise
 // =============================================================================
@@ -1051,6 +1056,12 @@ table MetalKernelNode {
     init_value: float = null;
 }
 
+table FlipNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32] (required);
+}
+
 // =============================================================================
 // Union of all op types
 // =============================================================================
@@ -1191,7 +1202,9 @@ union OpNode {
     BitwiseXorNode,
     IfNode,
     RandomBitsNode,
-    UpdateAndAttendNode
+    UpdateAndAttendNode,
+    TruncNode,
+    FlipNode
     // BC: Add new op nodes here (append only)
 }
 

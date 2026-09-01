@@ -5,10 +5,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+import dataclasses
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.exir import EdgeProgramManager, ExportedProgram
@@ -30,6 +31,46 @@ Export recipe definitions for ExecuTorch.
 This module provides the data structures needed to configure the export process
 for ExecuTorch models, including export configurations and quantization recipes.
 """
+
+
+# Operator lists say which ops to keep, not in what order.
+_UNORDERED_EDGE_CONFIG_FIELDS = ("preserve_ops", "_core_aten_ops_exception_list")
+
+
+def _edge_config_key(config: EdgeCompileConfig) -> tuple:
+    return tuple(
+        (
+            frozenset(getattr(config, f.name) or [])
+            if f.name in _UNORDERED_EDGE_CONFIG_FIELDS
+            else getattr(config, f.name)
+        )
+        for f in dataclasses.fields(config)
+    )
+
+
+def _edge_compile_configs_agree(
+    left: EdgeCompileConfig, right: EdgeCompileConfig
+) -> bool:
+    return left is right or _edge_config_key(left) == _edge_config_key(right)
+
+
+def _edge_compile_config_conflict(configs: List[tuple[str, EdgeCompileConfig]]) -> str:
+    """Report only the fields the configs actually disagree on."""
+
+    def render(config: EdgeCompileConfig, name: str) -> str:
+        value = getattr(config, name)
+        if name in _UNORDERED_EDGE_CONFIG_FIELDS:
+            return str(sorted(str(op) for op in value or []))
+        return str(value)
+
+    keys = [_edge_config_key(config) for _, config in configs]
+    return "; ".join(
+        f"{field.name} ("
+        + ", ".join(f"{name}={render(config, field.name)}" for name, config in configs)
+        + ")"
+        for i, field in enumerate(dataclasses.fields(configs[0][1]))
+        if any(key[i] != keys[0][i] for key in keys[1:])
+    )
 
 
 class RecipeTypeMeta(EnumMeta, ABCMeta):
@@ -118,7 +159,10 @@ class LoweringRecipe:
     to backend-specific representations.
 
     Attributes:
-        partitioners: Optional list of partitioners for model partitioning
+        partitioners: Optional partitioners for model partitioning. Either a list
+                      applied to every method, or a dict mapping method names to
+                      per-method partitioner lists. Use the dict form when
+                      backends need per-method compile specs.
         edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram)
                                and return either List[PassType] or PassManager to be applied during edge lowering.
         edge_manager_transform_passes: Optional list of callables that take EdgeProgramManager as argument
@@ -126,7 +170,9 @@ class LoweringRecipe:
         edge_compile_config: Optional edge compilation configuration
     """
 
-    partitioners: Optional[List[Partitioner]] = None
+    partitioners: Optional[Union[List[Partitioner], Dict[str, List[Partitioner]]]] = (
+        None
+    )
     edge_transform_passes: (
         None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
     ) = None
@@ -249,8 +295,20 @@ class ExportRecipe:
         Returns:
             Combined ExportRecipe for multi-backend deployment
         """
+        overriding = [
+            r.name or f"recipes[{i}]"
+            for i, r in enumerate(backend_recipes)
+            if r.pipeline_stages
+        ]
+        if overriding:
+            raise ValueError(
+                "Cannot combine recipes that override pipeline_stages, there is no "
+                f"correct way to merge the orderings: {overriding}"
+            )
+
         # Extract components from individual recipes
         all_partitioners = []
+        all_partitioners_by_method = {}
         all_quantizers = []
         all_ao_quantization_configs = []
         all_pre_edge_passes = []
@@ -264,7 +322,14 @@ class ExportRecipe:
 
             # Collect partitioners from lowering recipes
             if recipe.lowering_recipe and recipe.lowering_recipe.partitioners:
-                all_partitioners.extend(recipe.lowering_recipe.partitioners)
+                partitioners = recipe.lowering_recipe.partitioners
+                if isinstance(partitioners, dict):
+                    for method_name, method_partitioners in partitioners.items():
+                        all_partitioners_by_method.setdefault(method_name, []).extend(
+                            method_partitioners
+                        )
+                else:
+                    all_partitioners.extend(partitioners)
 
             # Collect transform passes from lowering recipes
             if recipe.lowering_recipe and recipe.lowering_recipe.edge_transform_passes:
@@ -300,20 +365,39 @@ class ExportRecipe:
                 ),
             )
 
-        # Create combined lowering recipe
-        combined_lowering_recipe = None
-        if all_partitioners or all_transform_passes:
-            edge_compile_config = None
-            for recipe in backend_recipes:
-                if (
-                    recipe.lowering_recipe
-                    and recipe.lowering_recipe.edge_compile_config
-                ):
-                    edge_compile_config = recipe.lowering_recipe.edge_compile_config
-                    break
+        if all_partitioners and all_partitioners_by_method:
+            raise ValueError(
+                "Cannot combine recipes that mix list-valued and dict-valued "
+                "partitioners; convert the list-valued recipe to per-method form."
+            )
+        combined_partitioners = all_partitioners_by_method or all_partitioners
 
+        # By value, not identity: every provider builds a fresh config object,
+        # so asking for the same thing twice is not a conflict.
+        distinct: List[tuple[str, EdgeCompileConfig]] = []
+        for i, recipe in enumerate(backend_recipes):
+            config = (
+                recipe.lowering_recipe.edge_compile_config
+                if recipe.lowering_recipe
+                else None
+            )
+            if config is None or any(
+                _edge_compile_configs_agree(config, seen) for _, seen in distinct
+            ):
+                continue
+            distinct.append((recipe.name or f"recipes[{i}]", config))
+
+        if len(distinct) > 1:
+            raise ValueError(
+                "Cannot combine recipes whose edge_compile_configs disagree on "
+                + _edge_compile_config_conflict(distinct)
+            )
+        edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
+
+        combined_lowering_recipe = None
+        if combined_partitioners or all_transform_passes or edge_compile_config:
             combined_lowering_recipe = LoweringRecipe(
-                partitioners=all_partitioners if all_partitioners else None,
+                partitioners=combined_partitioners if combined_partitioners else None,
                 edge_transform_passes=(
                     all_transform_passes if all_transform_passes else None
                 ),
