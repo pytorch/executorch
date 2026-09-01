@@ -5,6 +5,31 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "target_arch",
+    srcs = [
+        "target_arch.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "optimization_config",
+    srcs = [
+        "optimization_config.py",
+    ],
+    visibility = [
+        "//executorch/backends/cuda/...",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "coalesced_int4_tensor",
     srcs = [
         "coalesced_int4_tensor.py",
@@ -99,6 +124,8 @@ fbcode_target(
     visibility = ["PUBLIC"],
     deps = [
         ":cuda_passes",
+        ":optimization_config",
+        ":target_arch",
         ":triton_replacement_pass",
         "//caffe2:torch",
         "//executorch/backends/aoti/passes:passes",
@@ -137,6 +164,8 @@ fbcode_target(
         "//executorch/backends/cuda/...",
     ],
     deps = [
+        ":optimization_config",
+        ":target_arch",
         "//caffe2:torch",
     ],
 )

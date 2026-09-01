@@ -84,19 +84,26 @@ def export_and_lower(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    enable_tma_causal_prefill: bool = False,
 ) -> None:
     if backend == "cuda":
-        _export_cuda(
-            model,
-            config,
-            output_dir,
-            sample=sample,
-            use_turboquant=use_turboquant,
-            vision_model=vision_model,
-            pos_embed_table=pos_embed_table,
-            max_vision_patches=max_vision_patches,
-            vision_fp32_mm=vision_fp32_mm,
+        from executorch.backends.cuda.optimization_config import (
+            cuda_optimization_context,
         )
+
+        with cuda_optimization_context(tma_causal_prefill=enable_tma_causal_prefill):
+            _export_cuda(
+                model,
+                config,
+                output_dir,
+                sample=sample,
+                use_turboquant=use_turboquant,
+                vision_model=vision_model,
+                pos_embed_table=pos_embed_table,
+                max_vision_patches=max_vision_patches,
+                vision_fp32_mm=vision_fp32_mm,
+                enable_tma_causal_prefill=enable_tma_causal_prefill,
+            )
     elif backend == "mlx":
         _export_mlx(
             model,
@@ -158,6 +165,7 @@ def _export_cuda(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    enable_tma_causal_prefill: bool = False,
 ) -> None:
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -279,6 +287,10 @@ def _export_cuda(
             [
                 CudaBackend.generate_method_name_compile_spec(name),
                 CompileSpec("low_memory_mode", b"ON"),
+                CompileSpec(
+                    "enable_tma_causal_prefill",
+                    b"ON" if enable_tma_causal_prefill else b"OFF",
+                ),
             ]
         )
 
@@ -611,6 +623,11 @@ def main() -> None:
         help="Optional FP32-output linear implementation for vision blocks "
         "0-34. The default preserves the original all-BF16 encoder.",
     )
+    parser.add_argument(
+        "--enable-tma-causal-prefill",
+        action="store_true",
+        help="Enable the experimental SM90+ TMA causal prefill attention path.",
+    )
     args = parser.parse_args()
 
     if args.backend == "cuda" and not torch.cuda.is_available():
@@ -685,6 +702,7 @@ def main() -> None:
         pos_embed_table=pos_embed_table,
         max_vision_patches=args.max_vision_patches,
         vision_fp32_mm=args.vision_fp32_mm,
+        enable_tma_causal_prefill=args.enable_tma_causal_prefill,
     )
 
 
