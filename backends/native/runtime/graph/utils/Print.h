@@ -9,6 +9,7 @@
 #include <string>
 
 #include <executorch/backends/native/runtime/graph/Argument.h>
+#include <executorch/backends/native/runtime/graph/Graph.h>
 #include <executorch/backends/native/runtime/graph/Node.h>
 #include <executorch/backends/native/runtime/graph/Scalar.h>
 #include <executorch/backends/native/runtime/graph/TensorMeta.h>
@@ -33,5 +34,9 @@ std::string to_string(const Argument& arg);
 
 // Single line, e.g. "a = aten.add.Tensor(x, y, alpha=1) -> %3".
 std::string to_string(const Node& node);
+
+// Multi-line: inputs, one line per node in `schedule` order (declaration order
+// if `schedule` is empty), outputs, subgraph count.
+std::string to_string(const Graph& graph);
 
 } // namespace ptn
