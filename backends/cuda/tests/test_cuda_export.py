@@ -104,6 +104,43 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
             )
 
+    def test_q4k_fp8_prefill_defaults_off(self):
+        from executorch.backends.cuda.optimization_config import q4k_fp8_prefill_enabled
+
+        with CudaBackend.get_extra_aoti_compile_context_manager([]):
+            self.assertFalse(q4k_fp8_prefill_enabled())
+
+    def test_q4k_fp8_prefill_compile_spec(self):
+        from executorch.backends.cuda.optimization_config import q4k_fp8_prefill_enabled
+
+        with patch(
+            "executorch.backends.cuda.cuda_backend.cuda_targets_are_sm90_or_newer",
+            return_value=True,
+        ), CudaBackend.get_extra_aoti_compile_context_manager(
+            [CompileSpec(key="enable_q4k_fp8_prefill", value=b"ON")]
+        ):
+            self.assertTrue(q4k_fp8_prefill_enabled())
+
+    def test_invalid_q4k_fp8_prefill_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid enable_q4k_fp8_prefill"):
+            CudaBackend.get_extra_aoti_compile_context_manager(
+                [CompileSpec(key="enable_q4k_fp8_prefill", value=b"MAYBE")]
+            )
+
+    def test_q4k_fp8_prefill_unsupported_target_is_disabled(self):
+        from executorch.backends.cuda.optimization_config import q4k_fp8_prefill_enabled
+
+        with patch(
+            "executorch.backends.cuda.cuda_backend.cuda_targets_are_sm90_or_newer",
+            return_value=False,
+        ), self.assertLogs(
+            level="WARNING"
+        ) as logs, CudaBackend.get_extra_aoti_compile_context_manager(
+            [CompileSpec(key="enable_q4k_fp8_prefill", value=b"ON")]
+        ):
+            self.assertFalse(q4k_fp8_prefill_enabled())
+        self.assertIn("requires an SM90+ CUDA target", "\n".join(logs.output))
+
     def test_tma_causal_prefill_defaults_off(self):
         from executorch.backends.cuda.optimization_config import (
             tma_causal_prefill_enabled,

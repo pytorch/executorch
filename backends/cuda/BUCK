@@ -5,6 +5,21 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "coalesced_int4_tensor",
+    srcs = [
+        "coalesced_int4_tensor.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "target_arch",
     srcs = [
         "target_arch.py",
@@ -30,16 +45,15 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
-    name = "coalesced_int4_tensor",
+    name = "q4k_dequant",
     srcs = [
-        "coalesced_int4_tensor.py",
+        "quantize_op_dispatch/q4k_dequant.py",
     ],
     visibility = [
-        "//executorch/...",
+        "//executorch/backends/cuda/...",
     ],
     deps = [
         "//caffe2:torch",
-        "//pytorch/ao:torchao",
     ],
 )
 
@@ -91,6 +105,9 @@ fbcode_target(
         ":coalesced_int4_tensor",
         ":dp4a_planar_int5_tensor",
         ":dp4a_planar_int6_tensor",
+        ":q4k_dequant",
+        ":target_arch",
+        ":triton_kernels",
         "//caffe2:torch",
         "//pytorch/ao:torchao",
     ],
@@ -156,6 +173,7 @@ fbcode_target(
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/int4_matmul.py",
+        "triton/kernels/q4k_fp8_linear.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
@@ -165,6 +183,7 @@ fbcode_target(
     ],
     deps = [
         ":optimization_config",
+        ":q4k_dequant",
         ":target_arch",
         "//caffe2:torch",
     ],

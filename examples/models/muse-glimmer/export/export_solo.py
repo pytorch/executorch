@@ -84,6 +84,7 @@ def export_and_lower(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    enable_q4k_fp8_prefill: bool = False,
     enable_tma_causal_prefill: bool = False,
 ) -> None:
     if backend == "cuda":
@@ -91,7 +92,10 @@ def export_and_lower(
             cuda_optimization_context,
         )
 
-        with cuda_optimization_context(tma_causal_prefill=enable_tma_causal_prefill):
+        with cuda_optimization_context(
+            q4k_fp8_prefill=enable_q4k_fp8_prefill,
+            tma_causal_prefill=enable_tma_causal_prefill,
+        ):
             _export_cuda(
                 model,
                 config,
@@ -102,6 +106,7 @@ def export_and_lower(
                 pos_embed_table=pos_embed_table,
                 max_vision_patches=max_vision_patches,
                 vision_fp32_mm=vision_fp32_mm,
+                enable_q4k_fp8_prefill=enable_q4k_fp8_prefill,
                 enable_tma_causal_prefill=enable_tma_causal_prefill,
             )
     elif backend == "mlx":
@@ -165,6 +170,7 @@ def _export_cuda(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    enable_q4k_fp8_prefill: bool = False,
     enable_tma_causal_prefill: bool = False,
 ) -> None:
     import torch._inductor.config as inductor_config
@@ -287,6 +293,10 @@ def _export_cuda(
             [
                 CudaBackend.generate_method_name_compile_spec(name),
                 CompileSpec("low_memory_mode", b"ON"),
+                CompileSpec(
+                    "enable_q4k_fp8_prefill",
+                    b"ON" if enable_q4k_fp8_prefill else b"OFF",
+                ),
                 CompileSpec(
                     "enable_tma_causal_prefill",
                     b"ON" if enable_tma_causal_prefill else b"OFF",
@@ -624,6 +634,11 @@ def main() -> None:
         "0-34. The default preserves the original all-BF16 encoder.",
     )
     parser.add_argument(
+        "--enable-q4k-fp8-prefill",
+        action="store_true",
+        help="Enable the experimental SM90+ Q4_K-to-FP8 prefill linear path.",
+    )
+    parser.add_argument(
         "--enable-tma-causal-prefill",
         action="store_true",
         help="Enable the experimental SM90+ TMA causal prefill attention path.",
@@ -702,6 +717,7 @@ def main() -> None:
         pos_embed_table=pos_embed_table,
         max_vision_patches=args.max_vision_patches,
         vision_fp32_mm=args.vision_fp32_mm,
+        enable_q4k_fp8_prefill=args.enable_q4k_fp8_prefill,
         enable_tma_causal_prefill=args.enable_tma_causal_prefill,
     )
 

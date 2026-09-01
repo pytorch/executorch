@@ -58,6 +58,7 @@ def export_dflash(
     backend: str = "mlx",
     mmproj: str | None = None,
     max_vision_patches: int = 16384,
+    enable_q4k_fp8_prefill: bool = False,
     enable_tma_causal_prefill: bool = False,
 ) -> None:
     """Export DFlash target + draft to one CUDA or MLX .pte.
@@ -157,7 +158,10 @@ def export_dflash(
             cuda_optimization_context,
         )
 
-        with cuda_optimization_context(tma_causal_prefill=enable_tma_causal_prefill):
+        with cuda_optimization_context(
+            q4k_fp8_prefill=enable_q4k_fp8_prefill,
+            tma_causal_prefill=enable_tma_causal_prefill,
+        ):
             _export_dflash_cuda(
                 target_model,
                 target_config,
@@ -169,6 +173,7 @@ def export_dflash(
                 max_seq_len,
                 activation_dtype,
                 max_vision_patches,
+                enable_q4k_fp8_prefill=enable_q4k_fp8_prefill,
                 enable_tma_causal_prefill=enable_tma_causal_prefill,
             )
 
@@ -442,6 +447,7 @@ def _export_dflash_cuda(
     max_seq_len: int,
     activation_dtype: torch.dtype,
     max_vision_patches: int,
+    enable_q4k_fp8_prefill: bool,
     enable_tma_causal_prefill: bool,
 ) -> None:
     """Export the CUDA DFlash contract.
@@ -649,6 +655,10 @@ def _export_dflash_cuda(
                 CudaBackend.generate_method_name_compile_spec(method),
                 CompileSpec("low_memory_mode", b"ON"),
                 CompileSpec(
+                    "enable_q4k_fp8_prefill",
+                    b"ON" if enable_q4k_fp8_prefill else b"OFF",
+                ),
+                CompileSpec(
                     "enable_tma_causal_prefill",
                     b"ON" if enable_tma_causal_prefill else b"OFF",
                 ),
@@ -797,6 +807,11 @@ def main() -> None:
         "float16 for MLX and bfloat16 for CUDA.",
     )
     parser.add_argument(
+        "--enable-q4k-fp8-prefill",
+        action="store_true",
+        help="Enable the experimental SM90+ Q4_K-to-FP8 prefill linear path.",
+    )
+    parser.add_argument(
         "--enable-tma-causal-prefill",
         action="store_true",
         help="Enable the experimental SM90+ TMA causal prefill attention path.",
@@ -829,6 +844,7 @@ def main() -> None:
         backend=args.backend,
         mmproj=args.mmproj,
         max_vision_patches=args.max_vision_patches,
+        enable_q4k_fp8_prefill=args.enable_q4k_fp8_prefill,
         enable_tma_causal_prefill=args.enable_tma_causal_prefill,
     )
 
