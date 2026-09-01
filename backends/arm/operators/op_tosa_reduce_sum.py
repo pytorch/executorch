@@ -23,7 +23,7 @@ from torch.fx import Node
 
 @register_node_visitor
 class SumVisitor(NodeVisitor):
-    target = "aten.sum.dim_IntList"
+    target = "tosa.REDUCE_SUM.default"
 
     def define_node(
         self,
@@ -32,7 +32,7 @@ class SumVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        validate_num_inputs(self.target, inputs, 3)
+        validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
@@ -42,11 +42,9 @@ class SumVisitor(NodeVisitor):
         )
 
         tensor = inputs[0]
-        input_shape = list(tensor.shape)
-        dim = int(inputs[1].special[0] % len(input_shape))
 
         attr = ts.TosaSerializerAttribute()
-        attr.ReduceSumAttribute(dim)
+        attr.ReduceSumAttribute(node.kwargs["axis"])
 
         self._serialize_operator(
             node,

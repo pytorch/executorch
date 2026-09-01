@@ -1,13 +1,14 @@
-# Copyright 2025-2026 Arm Limited and/or its affiliates.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, cast, List
+from typing import Any
 
+import torch
 import tosa_serializer as ts
 
-from executorch.backends.arm.operators.node_visitor import (  # type: ignore
+from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
@@ -16,43 +17,32 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-
-from executorch.backends.arm.tosa.mapping import TosaArg  # type: ignore
-from torch.fx import Node
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
-class AnyVisitor(NodeVisitor):
-    target = "aten.any.dim"
+class ReduceAllVisitor(NodeVisitor):
+    target = "tosa.REDUCE_ALL.default"
 
     def define_node(
         self,
-        node: Node,
+        node: torch.fx.Node,
         tosa_graph: Any,
-        inputs: List[TosaArg],
+        inputs: list[TosaArg],
         output: TosaArg,
     ) -> None:
-        validate_num_inputs(self.target, inputs, 3)
+        validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target, [inputs[0], output], ts.DType.BOOL, self.tosa_spec
         )
 
-        input_shape = list(inputs[0].shape)
-        dim = cast(int, inputs[1].number) % len(
-            input_shape
-        )  # process the negative index
-        keep_dim = cast(bool, inputs[2].number if len(inputs) > 2 else False)
-        if not keep_dim:
-            raise ValueError("This case should be handled by DecomposeAnyPass")
-
         attr = ts.TosaSerializerAttribute()
-        attr.ReduceAnyAttribute(dim)
-
+        attr.ReduceAllAttribute(node.kwargs["axis"])
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_ANY,
+            ts.Op.REDUCE_ALL,
             [inputs[0].name],
             [output.name],
             attr,

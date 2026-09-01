@@ -24,6 +24,8 @@ from executorch.backends.xnnpack.utils.quant_utils import (
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
+    get_param_tensor,
+    is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
 )
@@ -31,10 +33,88 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
 from executorch.exir.backend.utils import is_shape_dynamic, WhyNoPartition
+from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
+
+
+def _get_q_dq_quantization_params(
+    node: torch.fx.Node,
+) -> tuple[tuple[str, object], ...]:
+    params = []
+    for index, argument in enumerate(node.target._schema.arguments):
+        # These are dequant-only floating output types. The quantized storage
+        # dtype remains part of the parameters and must match.
+        if index == 0 or argument.name in {"out_dtype", "output_dtype"}:
+            continue
+        value = (
+            node.args[index]
+            if index < len(node.args)
+            else node.kwargs.get(argument.name, argument.default_value)
+        )
+        params.append((argument.name, value))
+    return tuple(params)
+
+
+def _q_dq_quantization_param_values_match(
+    dequant_value: object,
+    quant_value: object,
+    ep: ExportedProgram,
+) -> bool:
+    if isinstance(dequant_value, torch.fx.Node) and is_param_node(ep, dequant_value):
+        dequant_value = get_param_tensor(ep, dequant_value)
+    if isinstance(quant_value, torch.fx.Node) and is_param_node(ep, quant_value):
+        quant_value = get_param_tensor(ep, quant_value)
+
+    # to_backend replaces state tensors with data-less FakeTensors before
+    # partitioning, so only object identity is safely comparable in that path.
+    if isinstance(dequant_value, FakeTensor) or isinstance(quant_value, FakeTensor):
+        return dequant_value is quant_value
+
+    if isinstance(dequant_value, torch.Tensor) or isinstance(quant_value, torch.Tensor):
+        return (
+            isinstance(dequant_value, torch.Tensor)
+            and isinstance(quant_value, torch.Tensor)
+            and torch.equal(dequant_value, quant_value)
+        )
+    if isinstance(dequant_value, (list, tuple)) or isinstance(
+        quant_value, (list, tuple)
+    ):
+        return (
+            isinstance(dequant_value, (list, tuple))
+            and isinstance(quant_value, (list, tuple))
+            and len(dequant_value) == len(quant_value)
+            and all(
+                _q_dq_quantization_param_values_match(
+                    dequant_element, quant_element, ep
+                )
+                for dequant_element, quant_element in zip(dequant_value, quant_value)
+            )
+        )
+    return dequant_value == quant_value
+
+
+def _q_dq_quantization_params_match(
+    dequant_node: torch.fx.Node,
+    quant_node: torch.fx.Node,
+    ep: ExportedProgram,
+) -> bool:
+    dequant_params = _get_q_dq_quantization_params(dequant_node)
+    quant_params = _get_q_dq_quantization_params(quant_node)
+    if len(dequant_params) != len(quant_params):
+        return False
+
+    for (dequant_name, dequant_value), (quant_name, quant_value) in zip(
+        dequant_params, quant_params
+    ):
+        if dequant_name != quant_name:
+            return False
+        if not _q_dq_quantization_param_values_match(dequant_value, quant_value, ep):
+            return False
+
+    return True
 
 
 class GenericNodePartitionerConfig(XNNPartitionerConfig):
@@ -668,6 +748,19 @@ class SliceCopyConfig(GenericNodePartitionerConfig):
 
         input_node = get_input_node(node, 0)
         output_node = node
+
+        # Only the single-user dq -> slice -> q pattern is serialized as a
+        # quantized slice. Multi-user slices are serialized as FP32.
+        if is_dequant(input_node) and len(node.users) == 1:
+            quant_node = next(iter(node.users))
+            if is_quant(quant_node) and not _q_dq_quantization_params_match(
+                input_node, quant_node, ep
+            ):
+                why(
+                    node,
+                    reason="XNNPACK static slice requires matching input and output quantization parameters",
+                )
+                return False
 
         input_shape = list(input_node.meta["val"].shape)
         output_shape = list(output_node.meta["val"].shape)

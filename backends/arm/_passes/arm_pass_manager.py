@@ -84,6 +84,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
     DecomposePReLUPass,
+    DecomposeProdPass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -148,6 +149,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     RemoveSafeSoftmaxGuardPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    ResolveViewCopyInferredDimPass,
     RewriteAdaptiveAvgPool2dPass,
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
@@ -182,7 +184,6 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-
 from executorch.exir import ExportedProgram
 from executorch.exir._program_utils import _get_updated_graph_signature
 from executorch.exir.pass_base import (
@@ -647,6 +648,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
                 BroadcastArgsPass(),
+                DecomposeProdPass(),
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
                 RemoveNoopPass(),
@@ -683,6 +685,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 CanonicalizeViewCopyPermutePass(),
                 # Fuse views again after permutes may have been replaced by views.
                 FuseViewCopyTransformPass(),
+                ResolveViewCopyInferredDimPass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]
@@ -822,4 +825,4 @@ class ArmPassManager(ExportedProgramPassManager):
                 ]
             )
 
-            return self._transform_graph_module(graph_module)
+            return GraphModulePassManager(self.passes)(graph_module).graph_module

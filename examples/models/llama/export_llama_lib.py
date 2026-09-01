@@ -459,6 +459,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
     parser.add_argument(
+        "--xnnpack-enable-bf16",
+        action="store_true",
+        help="Delegate BF16 operators to XNNPACK. Requires runtime hardware support.",
+    )
+    parser.add_argument(
         "--use-torchao-kernels",
         action="store_true",
         help="Delegate tied-embedding and quantized linear ops to torchao kernels",
@@ -1344,6 +1349,52 @@ def _to_edge_and_lower_llama_mlx(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _to_edge_and_lower_llama_coreml(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    embedding_quantize: Optional[str] = None,
+    pt2e_quantize: Optional[str] = None,
+    coreml_ios: int = 15,
+    coreml_quantize: Optional[str] = None,
+    coreml_compute_units: str = "cpu_only",
+    generate_etrecord: bool = False,
+    verbose: bool = False,
+) -> LLMEdgeManager:
+    """
+    Lower Llama model to Core ML using to_edge_transform_and_lower.
+
+    The deprecated export_to_edge() + to_backend() split decomposes the graph
+    before the partitioner runs, so the ops Core ML has its own implementations
+    for are already broken into primitives by the time it sees them.
+    CoreMLPartitioner.ops_to_not_decompose() asks to keep every op Core ML
+    supports, and only to_edge_transform_and_lower honours that request.
+    """
+    logging.info("Lowering model using Core ML partitioner")
+
+    partitioners = [
+        get_coreml_partitioner(
+            coreml_ios,
+            embedding_quantize,
+            pt2e_quantize,
+            coreml_quantize,
+            coreml_compute_units,
+        )
+    ]
+
+    builder_exported.generate_etrecord = generate_etrecord
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
 def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
@@ -1523,11 +1574,17 @@ def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitione
     # both xnnpack and xnnpack_extended_ops are enabled.
     if llm_config.backend.xnnpack.enabled:
         partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
+            get_xnnpack_partitioner(
+                dynamic_quant_only_partitioner=True,
+                enable_bf16=llm_config.backend.xnnpack.enable_bf16,
+            )
         )
         if llm_config.backend.xnnpack.extended_ops:
             partitioners.append(
-                get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+                get_xnnpack_partitioner(
+                    dynamic_quant_only_partitioner=False,
+                    enable_bf16=llm_config.backend.xnnpack.enable_bf16,
+                )
             )
 
     return partitioners if partitioners else None
@@ -1713,6 +1770,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
             gen_tag_fn=gen_tag_fn,
+            enable_bf16=llm_config.backend.xnnpack.enable_bf16,
         )
     elif llm_config.backend.openvino.enabled:
         builder = _to_edge_and_lower_llama_openvino(
@@ -1744,6 +1802,30 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             modelname,
             quantizers,
             additional_passes,
+            verbose=llm_config.debug.verbose,
+        )
+    elif llm_config.backend.coreml.enabled and not (
+        llm_config.backend.vulkan.enabled or llm_config.backend.qnn.enabled
+    ):
+        builder = _to_edge_and_lower_llama_coreml(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            embedding_quantize=llm_config.quantization.embedding_quantize,
+            pt2e_quantize=(
+                llm_config.quantization.pt2e_quantize.value
+                if llm_config.quantization.pt2e_quantize
+                else None
+            ),
+            coreml_ios=llm_config.backend.coreml.ios,
+            coreml_quantize=(
+                llm_config.backend.coreml.quantize.value
+                if llm_config.backend.coreml.quantize
+                else None
+            ),
+            coreml_compute_units=llm_config.backend.coreml.compute_units.value,
+            generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
         )
     else:

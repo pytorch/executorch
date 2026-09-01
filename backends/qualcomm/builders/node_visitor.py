@@ -7,7 +7,6 @@
 from typing import Any, Dict, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import (
@@ -33,7 +32,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .utils import (
@@ -45,7 +43,6 @@ from .utils import (
     is_mutable_buffer_output,
     is_parameter,
 )
-
 
 QNN_QUANT_TYPE_MAP = {
     torch.int8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8,
