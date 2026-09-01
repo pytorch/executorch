@@ -86,7 +86,20 @@ def _setup_qnn_sdk_locked() -> None:
         return
 
     module = sys.modules[__name__]
-    if not module.install_qnn_sdk():
+    try:
+        installed = module.install_qnn_sdk()
+    except ModuleNotFoundError as error:
+        # This build does not carry the downloader, so an SDK cannot be fetched here. Say what to
+        # do rather than surfacing a missing module from a packaging detail.
+        raise RuntimeError(
+            "This build cannot download a QNN SDK. Set QNN_SDK_ROOT to an existing "
+            "installation:\n"
+            "       export QNN_SDK_ROOT=/path/to/qualcomm/sdk\n"
+            "       export LD_LIBRARY_PATH="
+            "$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH"
+        ) from error
+
+    if not installed:
         raise RuntimeError(
             "Failed to set up QNN SDK.\n\n"
             "To resolve, try one of:\n"

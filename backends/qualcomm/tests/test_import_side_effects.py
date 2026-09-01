@@ -99,11 +99,16 @@ def test_importing_the_package_does_not_need_the_downloader(monkeypatch):
 
     importlib.reload(qnn)
 
-    assert qnn.setup_qnn_sdk is not None
+    # The case that actually broke: a Linux x86 host with a preinstalled SDK, where setup runs
+    # its early return. That must not touch the downloader.
+    monkeypatch.setattr(qnn, "is_linux_x86", lambda: True)
+    monkeypatch.setattr(qnn, "_sdk_ready", False)
+    monkeypatch.setenv("QNN_SDK_ROOT", "/opt/qcom/sdk")
+    monkeypatch.delenv("EXECUTORCH_BUILDING_WHEEL", raising=False)
+
+    qnn.setup_qnn_sdk()
+
     assert qnn.disable_mkldnn_on_amd is not None
-    # is_linux_x86 has to answer without the downloader, because setup asks it before the
-    # branch that needs one.
-    assert isinstance(qnn.is_linux_x86(), bool)
 
 
 def test_setup_is_idempotent(monkeypatch):
