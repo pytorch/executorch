@@ -124,12 +124,14 @@ typedef struct {
   void (*wait)(uint32_t channel);
 } NeutronConfig;
 
-/// This structure contains a semantic version of the Neutron SDK in the form
-/// major.minor.patch.
+/// This structure contains semantic version of the Neutron SDK (major.minor.patch)
+/// and the SHA version (string and uint32_t).
 typedef struct {
-  uint32_t major;
-  uint32_t minor;
-  uint32_t patch;
+    uint32_t major;
+    uint32_t minor;
+    uint32_t patch;
+    const char *hashString;
+    uint32_t hashUint32;
 } NeutronSdkVersion;
 
 /* Invalid handle, returned by neutronModelPrepare() if an error occurred. */
