@@ -1,93 +1,213 @@
-# QAIRT Visualizer
+# ExecuTorch QNN Debugger & Profiler
 
-[QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/) is a Python package designed to help you visualize and analyze data from Qualcomm AI Engine Direct (QNN) models. It provides tools to generate and interpret op traces (`optrace`) and QNN HTP Analysis Summary (`QHAS`), enabling detailed insights into your model's performance and behavior.
+This directory bundles three independent debugging and profiling flows for the ExecuTorch QNN backend. They are independent and address different failure modes — jump directly to the section you need.
 
-## Installation
+**Table of contents**
 
-You can install the QAIRT Visualizer package directly from [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/):
+- [Executorch QNN HTP Profiling](#executorch-qnn-htp-profiling)
+- [ExecuTorch QNN Intermediate Output Debugger](#executorch-qnn-intermediate-output-debugger)
+- [ExecuTorch QNN HTP Heap Profiling](#executorch-qnn-htp-heap-profiling)
+
+
+---
+# Executorch QNN HTP Profiling
+
+This section shows how to produce HTP profiling results and inspect the output reports.
+
+- The most accurate profiling mode is **on device profiling** with `generate_htp_profile_result()`, this requires a connected android device through ADB, see details in section 2.1.
+
+- Another profiling mode is **on host estimiation** with `estimate_htp_profile_result()` this doesn't require a device and can be run on host machine. However, the accuracy and soc support might be limited, see details in section 2.2. 
+
+
+Different HTP profiling features support different prepare modes, prepare mode is set in AOT config, and decides which format of QNN internal graph is packed in `.pte` file, 
+  * On device profiling support both `online_prepare` and `offline_prepare` 
+  * On host profiling reqruires `online_prepare`
+
+**Host Estimation vs On-Device Generation**
+| Mode          | Source of measurements                 | Requires device? | Requires `QnnConfig.online_prepare=True` for `.pte` generation ? |
+|:--------------|:---------------------------------------|:-----------------|:-----------------|
+| `generate_htp_profile_result` (`"optrace"`)   | On-device hardware counters (real run) | Yes              | No — support both mode (`.dlc` or `.bin`) |
+| `estimate_htp_profile_result` (`"hextimate"`) | Compile-time performance-model estimate | No (host only) | Yes              |
+
+
+**Profile level**
+
+| `profile_level` | QNN configuration | Use |
+|:----------------|:------------------|:----|
+| `0` | Profiling disabled | Default inference. |
+| `2` | `QNN_PROFILE_LEVEL_DETAILED` | Collect QNN graph and per-node timing through the ExecuTorch profiler. |
+| `3` | Detailed + `QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE` | Enable HTP Optrace hardware-trace artifacts for `qnn-profile-viewer`; required at export for offline-prepare Optrace. |
+
+The rest of the guide is arranged here:
+1. **`.pte` generation prepare mode:** 
+We introduce how to trigger each preparation mode in section 1.1 and 1.2:
+    - 1.1 `online_prepare`: controlled by `QnnConfig.online_prepare=True`.
+    - 1.2 `offline_prepare`: controlled by `QnnConfig.online_prepare=False`.
+
+3. **Public Functions for Generating Profiling Results** 
+    + 2.1 `generate_htp_profile_result()`: generates device-based profiling results (Optrace in QNN SDK).
+    + 2.2 `estimate_htp_profile_result()`: estimates host-based profiling results (Hextimate in QNN SDK).
+
+4. **HTP Profile Output Format:**  `QnnHtpProfileArtifacts` contains genrated HTML, JSON and chrometrace files.
+
+5. **Qairt-Visualizer:** QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
+## 1. Select AOT Prepare modes for `.pte` Generation
+Users choose one prepare mode before exporting the `.pte`:
+
+| Prepare mode | QNN config | User-facing behavior |
+|:-------------|:-----------|:---------------------|
+| **online_prepare** | `QnnConfig.online_prepare=True` | Export stores a graph description; profiling tools finish preparation later. |
+| **offline_prepare** | `QnnConfig.online_prepare=False` | Export stores the finalized executable form; on-device profiling requires `profile_level=3`. |
+
+Internal detail: online prepare carries a `.dlc`, and offline prepare carries a finalized QNN context binary (`.bin`). Offline prepare must set `profile_level=3` because OpTrace instrumentation has to be baked into that context binary during export. The schematic file used by `qnn-profile-viewer` is generated or unpacked beside the dumped profiling artifacts.
+
+The example demos keep the profiling route explicit:
+
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_online.py`: on-device OpTrace with `online_prepare`.
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_offline.py`: on-device OpTrace with `offline_prepare`.
+- `examples/qualcomm/util_scripts/htp_profiling_on_host_hextimate.py`: host-only Hextimate with `online_prepare`.
+
+### 1.1 Online Prepare Mode `.pte`
+
+**Demo script**: 
+```bash
+python -m examples.qualcomm.util_scripts.htp_profiling_on_device_op_trace_online \
+    --host ${host} --device ${device} --soc_model ${SOC_MODEL} --build_folder build-android \
+    -a ${path_to_output_folder} --online_prepare
+```
+
+**Export call**:
+The export step does not need to set `profile_level`:
+```python
+build_executorch_binary(
+    model=model,
+    qnn_config=qnn_config,        # online_prepare=True; profile_level not required
+    file_name=f"{args.artifact}/{pte_filename}",
+    dataset=[example_input],
+    quant_dtype=QuantDtype.use_8a8w,
+)
+```
+
+### 1.2 Offline Prepare Mode `.pte`
+**Demo script**: 
+```bash
+python -m examples.qualcomm.util_scripts.htp_profiling_on_device_op_trace_offline \
+    --host ${host} --device ${device} --soc_model ${SOC_MODEL} --build_folder build-android \
+    -a ${path_to_output_folder} --profile_level 3
+```
+
+**Export call**:
+The export step **must** set `profile_level=3`:
+```python
+qnn_config.profile_level = 3
+build_executorch_binary(
+    model=model,
+    qnn_config=qnn_config,        # online_prepare=False (default)
+    file_name=f"{args.artifact}/{pte_filename}",
+    dataset=[example_input],
+    quant_dtype=QuantDtype.use_8a8w,
+)
+```
+
+## 2.1 Generate HTP Profile Result (OpTrace) `generate_htp_profile_result()`
+
+Use `generate_htp_profile_result()` when you want real on-device hardware-counter profiling. This path requires sample inputs and `adb`.
+```python
+from executorch.backends.qualcomm.debugger.utils import generate_htp_profile_result
+
+artifacts = generate_htp_profile_result(
+    artifact_dir=args.artifact,
+    soc_id=get_soc_to_chipset_map()[args.soc_model],
+    pte_path=f"{args.artifact}/{pte_filename}.pte",
+    inputs=example_inputs,
+    adb=adb,
+)
+```
+
+## 2.2 Estimation of HTP profiling on Host (Hextimate) `estimate_htp_profile_result()`
+
+Use `estimate_htp_profile_result()` when you want host-only compile-time performance estimation. This path does not use sample inputs or `adb`.
+
+> [!WARNING]
+> `estimate_htp_profile_result()` hard-errors on SDKs below 2.41 and on unsupported SoCs.
+
+**Demo script**:
+```bash
+python -m examples.qualcomm.util_scripts.htp_profiling_on_host_hextimate \
+    --soc_model QCS9100 -a ${path_to_output_folder} --online_prepare
+```
+
+```python
+from executorch.backends.qualcomm.debugger.utils import estimate_htp_profile_result
+
+estimates = estimate_htp_profile_result(
+    artifact_dir=args.artifact,
+    soc_id=get_soc_to_chipset_map()[args.soc_model],
+    pte_path=f"{args.artifact}/{pte_filename}.pte",
+)
+```
+
+Limitations:
+- Requires `QnnConfig.online_prepare=True`.
+- Requires QNN SDK >= 2.41.
+- Currently supports only the following soc_model:
+  - SA8540
+  - SA8255
+  - QCS9100
+  - SA8797
+
+## 3. HTP Profiling Output `QnnHtpProfileArtifacts`
+Both public functions `estimate_htp_profile_result()` and `generate_htp_profile_result()` return one `QnnHtpProfileArtifacts` per compiled binary in the `.pte` (partitioned graphs yield multiple entries).
+
+Important fields:
+
+- `qhas_html`: QHAS HTML report. This is the most convenient artifact for viewing the QNN HTP Analysis Summary. 
+- `qhas_json`: QHAS JSON report.
+- `chrometrace_json`: Chrome trace JSON. Open it with `chrome://tracing` or Perfetto.
+- `htp_graph_json`: HTP graph JSON after optimization.
+- `htp_graph_before_json`: HTP graph JSON before optimization.
+- `runtrace_json`: runtrace JSON for device profiling, or `None` when not emitted.
+
+Other context fields:
+
+- `binary_path`: dumped internal `.dlc` or `.bin` used by `qnn-profile-viewer`.
+- `mode`: `"optrace"` or `"hextimate"`.
+- `prepare_mode`: `"online"` or `"offline"`.
+
+
+## 4. Viewing HTP Analysis Summary (QHAS) with QAIRT Visualizer
+
+**Install**
 
 ```bash
 pip install qairt-visualizer
 ```
 
-## Quick start
-This command launches an interactive GUI interface to visualize the `optrace` and `QHAS` results.
-```
-python -m examples.qualcomm.util_scripts.qairt_visualizer_demo --host ${host} --device {device} --soc_model ${SOC_MODEL} --build_folder build-android -a ${path_to_output_folder} --online_prepare
-```
-- If online prepare mode is `enabled`, the following artifacts will be generated:
-    - `model`.dlc
-    - `optrace`.json
-    - `QHAS`.json
-- If online prepare mode is `disabled`, the following artifacts will be generated:
-    - `model`.bin
-    - `optrace`.json
-    - `QHAS`.json
+**Usage**
 
-Note: Model visualization is supported only in online prepare mode.
-The `.bin` format is not compatible with the QAIRT visualizer.
-To enable model visualization, please add the `--online_prepare` flag.
-
-## Details
-### 1. Lower to QNN backend
-Generate an ExecuTorch binary for Qualcomm platforms.
-Ensure that qnn_config.profile_level is set to 3, which will generate op_trace.
-```python
-qnn_config.profile_level = 3
-build_executorch_binary(
-    model=model,
-    qnn_config=qnn_config,
-    file_name=f"{args.artifact}/{pte_filename}",
-    dataset=[example_input],
-    quant_dtype=QuantDtype.use_8a8w,
-    online_prepare=args.online_prepare,
-    optrace=True,
-)
-```
-### 2. Generate optrace and QHAS
-Generate optrace and QHAS files using QNN tools under $QNN_SDK_ROOT. After finishing, you will get a `binaries_trace` dictionary.
-``` python
-adb = SimpleADB(
-    qnn_config=qnn_config,
-    pte_path=f"{args.artifact}/{pte_filename}.pte",
-    workspace=f"/data/local/tmp/executorch/{pte_filename}",
-)
-binaries_trace = generate_optrace(
-    args, adb, f"{args.artifact}/{pte_filename}.pte", example_input
-)
-```
-- **`binaries_trace`**: A dictionary where keys are the dumped file paths and values are tuples containing the paths to the generated optrace and QHAS JSON files.
-
-- Example 1: {"forward_0.dlc": (optrace.json, optrace_qnn_htp_analysis_summary.json)}
-- Example 2: {"forward_0.bin": (optrace.json, optrace_qnn_htp_analysis_summary.json)}
-
-### 3. Visualizing and Analyzing optrace and QHAS
-
-Once you have the optrace and QHAS files, you can leverage the QAIRT Visualizer to visualize the model graph, optrace and QHAS data. Here's how you can do it:
+QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
 
 ```python
 import qairt_visualizer
-qairt_visualizer.view(f"{args.artifact}/forward_0.dlc", reports=[optrace, qhas])
+
+for artifact in artifacts:
+    qairt_visualizer.view(reports=artifact.visualizer_reports())
+    print(f"QHAS HTML: {artifact.qhas_html}")
 ```
-or
-```python
-import qairt_visualizer
-qairt_visualizer.view(reports=[optrace, qhas])
-```
+**Example**
+The example scripts already call QAIRT Visualizer after producing artifacts when `qairt-visualizer` is installed. If it is not installed, they still print the generated `qhas_html` path:
 
-- `model`: Path to your QNN model file (e.g., `path_to_your_model.dlc`).
-- **`reports`**: List of report file paths, including the optrace (`optrace.json`) and QHAS (`optrace_qnn_htp_analysis_summary.json`).
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_online.py`
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_offline.py`
+- `examples/qualcomm/util_scripts/htp_profiling_on_host_hextimate.py`
 
-Note: Files ending with `.bin` do not support graph visualization in qairt_visualizer.
-
-## Demo
 
 <figure>
-    <img src="assets/qairt_visualizer_demo.png" alt="QAIRT visualizer demo"> <figcaption>
+    <img src="assets/qairt_visualizer_demo.png" alt="QAIRT Visualizer showing HTP profiling results"> <figcaption>
     </figcaption>
 </figure>
 
-For more details, visit the [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
+For the viewer package, see [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
 
 
 # ExecuTorch QNN Intermediate Output Debugger

@@ -197,10 +197,10 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
     return replace_linear(module)
 
 
-def dump_context_from_pte(pte_path) -> List[str]:
+def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
     """
-    Dump compiled binaries under the same directory of pte_path.
-    For partitioned graph, there will be multiple files with names f"{method_name}_{index}".
+    Dump compiled binaries under output_dir, or the same directory as pte_path
+    when output_dir is not set.
     'method_name' refers to the name of a method in the nn.Module that was traced to
     generate this program, while 'index' indicates the order of execution.
 
@@ -216,7 +216,8 @@ def dump_context_from_pte(pte_path) -> List[str]:
 
     program = deserialize_pte_binary(program_data).program
 
-    ctx_path = os.path.dirname(pte_path)
+    ctx_path = output_dir or os.path.dirname(pte_path)
+    os.makedirs(ctx_path, exist_ok=True)
     dumpfiles = []
     for execution_plan in program.execution_plan:
         for i, delegate in enumerate(execution_plan.delegates):
@@ -1335,6 +1336,7 @@ def get_soc_to_chipset_map():
         "SW6100": QcomChipset.SW6100,
         "QCM6490": QcomChipset.QCM6490,
         "SM8845": QcomChipset.SM8845,
+        "SA8540": QcomChipset.SA8540,
     }
 
 
