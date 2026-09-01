@@ -139,6 +139,28 @@ def _default_postprocess_fn(outputs: np.ndarray, _: str):
     return np.argmax(outputs, axis=-1)
 
 
+def _parse_class_id_from_sample_dir(
+    sample_dir: str, inv_class_dict: dict[str, int]
+) -> int:
+    if not isinstance(sample_dir, str) or len(sample_dir.split("_")) < 3:
+        raise ValueError(
+            f"Sample dir format invalid. Expected format: 'example_classname_0', got {sample_dir}"
+        )
+
+    dir_parts = sample_dir.split("_")
+    first_numerical_index = next(
+        (i for i, s in enumerate(dir_parts) if s.isdigit()), -1
+    )
+
+    if first_numerical_index < 2:
+        raise ValueError(
+            f"Sample dir format invalid. Expected format: 'example_classname_0', got {sample_dir}"
+        )
+
+    class_name = "_".join(dir_parts[1:first_numerical_index])
+    return inv_class_dict[class_name]
+
+
 class ClassificationAccuracyOutputComparator(BaseOutputComparator):
 
     def __init__(
@@ -260,23 +282,7 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
         finetuned_correct_total = 0
         total_samples = 0
 
-        if not isinstance(sample_dir, str) or len(sample_dir.split("_")) < 3:
-            raise ValueError(
-                f"Sample dir format invalid. Expected format: 'example_classname_0', got {sample_dir}"
-            )
-
-        dir_parts = sample_dir.split("_")
-        first_numerical_index = next(
-            (i for i, s in enumerate(dir_parts) if s.isdigit()), -1
-        )
-
-        if first_numerical_index < 2:
-            raise ValueError(
-                f"Sample dir format invalid. Expected format: 'example_classname_0', got {sample_dir}"
-            )
-
-        class_name = "_".join(dir_parts[1:first_numerical_index])
-        class_id = self.inv_class_dict[class_name]
+        class_id = _parse_class_id_from_sample_dir(sample_dir, self.inv_class_dict)
 
         for idx in range(len(baseline_output_tensors)):
             (baseline_output_name, baseline_tensor) = baseline_output_tensors[idx]
@@ -313,6 +319,178 @@ class ClassificationAccuracyOutputComparator(BaseOutputComparator):
             )
 
         return finetuned_correct_total, baseline_correct_total, total_samples
+
+
+class GroundTruthAccuracyComparator(BaseOutputComparator):
+
+    def __init__(
+        self,
+        class_dict: dict[int, str],
+        max_accuracy_drop: float = 0.05,
+        postprocess_fn: Callable[
+            [np.ndarray, str], np.ndarray
+        ] = _default_postprocess_fn,
+        min_cpu_accuracy: float | None = None,
+        parse_class_id_fn: Callable[
+            [str, dict[str, int]], int
+        ] = _parse_class_id_from_sample_dir,
+    ):
+        """
+        Comparator that computes classification accuracy of both the non-delegated
+        (CPU) model and the delegated (NPU) model against the ground-truth annotations
+        encoded in the sample directory names, then fails if the accuracy drop caused
+        by delegation exceeds a configured threshold.
+
+        The ground-truth label is parsed from the sample directory name, which is
+        expected to follow the format produced by `FromCalibrationDataDatasetCreator`,
+        e.g. 'example_classname_0'.
+
+        :param class_dict: Dictionary mapping class indices to class names.
+        :param max_accuracy_drop: Maximum allowed accuracy drop (cpu_accuracy - npu_accuracy).
+                                    The test fails if the delegated (NPU) model accuracy is
+                                    lower than the non-delegated (CPU) model accuracy by more
+                                    than this value. Given as a fraction in the range [0, 1].
+        :param postprocess_fn: An optional callback for postprocessing model output into
+                                classification predictions.
+        :param min_cpu_accuracy: Optional lower bound on the non-delegated (CPU) model accuracy.
+                                    If provided and the CPU accuracy is below this value, the test
+                                    fails - this guards against a meaningless comparison where both
+                                    models are equally bad. Given as a fraction in the range [0, 1].
+        :param parse_class_id_fn: Callback used to derive the ground-truth class index for a sample.
+                                    It receives the sample directory basename and the inverse class
+                                    dictionary (class name to class index) and returns the class index.
+                                    Defaults to `_parse_class_id_from_sample_dir`.
+        """
+        self.postprocess_fn = postprocess_fn
+        self.max_accuracy_drop = max_accuracy_drop
+        self.min_cpu_accuracy = min_cpu_accuracy
+        self.parse_class_id_fn = parse_class_id_fn
+        self.inv_class_dict = {v: k for k, v in class_dict.items()}
+
+    def compare_results(self, cpu_results_dir, npu_results_dir, output_tensor_spec):
+        """
+        Estimate the prediction accuracy of both the non-delegated (CPU) results and the
+        delegated (NPU) results against the ground-truth labels, then fail if the accuracy
+        drop caused by delegation exceeds `max_accuracy_drop`.
+
+        :param cpu_results_dir: Path to directory with non-delegated (CPU) results.
+        :param npu_results_dir: Path to directory with delegated (NPU) results.
+        :param output_tensor_spec: List of output tensor specifications.
+        """
+        sample_dirs = [
+            os.path.join(cpu_results_dir, file) for file in os.listdir(cpu_results_dir)
+        ]
+        sample_dirs = [file for file in sample_dirs if os.path.isdir(file)]
+
+        assert len(sample_dirs), "No samples to compare."
+
+        cpu_num_correct = 0
+        npu_num_correct = 0
+        total_samples = 0
+
+        for sample_dir in sample_dirs:
+            cpu_sample_paths = []
+            npu_sample_paths = []
+
+            cpu_out_tensors = []
+            npu_out_tensors = []
+
+            for idx, out_tensor_name in enumerate(os.listdir(sample_dir)):
+                sample_dir = os.path.basename(sample_dir)
+                tensor_path = os.path.join(sample_dir, out_tensor_name)
+
+                cpu_tensor_path = os.path.join(cpu_results_dir, tensor_path)
+                npu_tensor_path = os.path.join(npu_results_dir, tensor_path)
+
+                tensor_spec = output_tensor_spec[idx]
+
+                cpu_tensor = np.fromfile(
+                    cpu_tensor_path,
+                    dtype=torch_type_to_numpy_type(tensor_spec.dtype),
+                )
+                cpu_tensor = np.reshape(cpu_tensor, tensor_spec.shape)
+                cpu_sample_paths.append(cpu_tensor_path)
+                cpu_out_tensors.append((out_tensor_name, cpu_tensor))
+
+                npu_tensor = np.fromfile(
+                    npu_tensor_path,
+                    dtype=torch_type_to_numpy_type(tensor_spec.dtype),
+                )
+                npu_tensor = np.reshape(npu_tensor, tensor_spec.shape)
+                npu_sample_paths.append(npu_tensor_path)
+                npu_out_tensors.append((out_tensor_name, npu_tensor))
+
+            cpu_correct, npu_correct, total = self.compare_sample(
+                sample_dir,
+                cpu_sample_paths,
+                cpu_out_tensors,
+                npu_sample_paths,
+                npu_out_tensors,
+            )
+
+            cpu_num_correct += cpu_correct
+            npu_num_correct += npu_correct
+            total_samples += total
+
+        cpu_accuracy = cpu_num_correct / total_samples
+        npu_accuracy = npu_num_correct / total_samples
+        accuracy_drop = cpu_accuracy - npu_accuracy
+
+        if self.min_cpu_accuracy is not None and cpu_accuracy < self.min_cpu_accuracy:
+            raise AssertionError(
+                f"Non-delegated (CPU) model accuracy ({cpu_accuracy:.4f}) is below the "
+                f"minimum required accuracy ({self.min_cpu_accuracy:.4f}). "
+                "The accuracy comparison is not meaningful when the reference model is inaccurate."
+            )
+
+        if accuracy_drop > self.max_accuracy_drop:
+            raise AssertionError(
+                f"Delegated (NPU) model accuracy ({npu_accuracy:.4f}) dropped by "
+                f"{accuracy_drop:.4f} relative to the non-delegated (CPU) model accuracy "
+                f"({cpu_accuracy:.4f}), which exceeds the maximum allowed drop "
+                f"({self.max_accuracy_drop:.4f})."
+            )
+
+    def compare_sample(
+        self,
+        sample_dir,
+        cpu_filepaths,
+        cpu_out_tensors,
+        npu_filepaths,
+        npu_out_tensors,
+    ) -> tuple[int, int, int]:
+        cpu_num_correct = 0
+        npu_num_correct = 0
+        total_samples = 0
+
+        class_id = self.parse_class_id_fn(sample_dir, self.inv_class_dict)
+
+        for idx in range(len(cpu_out_tensors)):
+
+            (cpu_out_name, cpu_tensor) = cpu_out_tensors[idx]
+            (npu_out_name, npu_tensor) = npu_out_tensors[idx]
+
+            assert cpu_out_name == npu_out_name
+            assert cpu_tensor.shape == npu_tensor.shape
+            assert np.any(
+                cpu_tensor
+            ), "Output tensor contains only zeros. This is suspicious."
+
+            cpu_class = self.postprocess_fn(cpu_tensor, cpu_filepaths[idx])
+            npu_class = self.postprocess_fn(npu_tensor, npu_filepaths[idx])
+
+            cpu_correct = cpu_class == class_id
+            npu_correct = npu_class == class_id
+
+            cpu_num_correct += (
+                cpu_correct if np.isscalar(cpu_correct) else sum(cpu_correct)
+            )
+            npu_num_correct += (
+                npu_correct if np.isscalar(npu_correct) else sum(npu_correct)
+            )
+            total_samples += 1 if np.isscalar(cpu_correct) else len(cpu_correct)
+
+        return cpu_num_correct, npu_num_correct, total_samples
 
 
 class NumericalStatsOutputComparator(BaseOutputComparator):

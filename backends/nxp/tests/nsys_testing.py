@@ -39,12 +39,15 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     to_quantized_edge_program,
     to_quantized_executorch_program,
 )
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import GraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
+from executorch.backends.nxp.tests.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
 from executorch.backends.nxp.tests.utils import save_pte_program, store_txt_input_tensor
+
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -146,9 +149,8 @@ def _run_delegated_executorch_program(
         raise
 
     exported_program = delegated_program.exported_program()
-    nodes = list(exported_program.graph.nodes)
-    assert any(
-        node.name.startswith("executorch_call_delegate") for node in nodes
+    assert graph_contains_any_of_ops(
+        exported_program.graph, [ExecutorchDelegateCall]
     ), "No delegated parts found in program delegated to NPU!"
     dlg_model_verifier.verify_graph(exported_program.graph)
 
@@ -214,9 +216,8 @@ def _run_non_delegated_executorch_program(
         remove_quant_io_ops=remove_quant_io_ops,
     )
 
-    nodes = list(non_delegated_program.exported_program().graph.nodes)
-    assert all(
-        not node.name.startswith("executorch_call_delegate") for node in nodes
+    assert not graph_contains_any_of_ops(
+        non_delegated_program.exported_program().graph, [ExecutorchDelegateCall]
     ), "Delegated parts found in program executed on CPU!"
 
     save_pte_program(non_delegated_program, test_name + "_non_delegated", test_dir)
@@ -241,9 +242,8 @@ def _save_non_quantized_fp32_executorch_program(
 ) -> ExportedProgram:
     non_quantized_program = to_edge_program(model, input_spec).to_executorch()
 
-    nodes = list(non_quantized_program.exported_program().graph.nodes)
-    assert all(
-        not node.name.startswith("executorch_call_delegate") for node in nodes
+    assert not graph_contains_any_of_ops(
+        non_quantized_program.exported_program().graph, [ExecutorchDelegateCall]
     ), "Delegated parts found in non-quantized FP32 program!"
 
     save_pte_program(non_quantized_program, test_name + "_non_quantized", test_dir)
