@@ -877,13 +877,12 @@ void cpu_flash_attention(
   scalar_t* buf_reduced_data =
       is_reduced_type ? reinterpret_cast<scalar_t*>(buf_reduced) : nullptr;
 
-  // An explicit mask is shared across batches and heads. Precompute the
-  // smallest K/V interval in every (query tile, K/V tile) pair that contains
-  // any non-masked value. Ring attention masks large portions of their 2x
-  // window backing cache with -inf; discovering those ranges once lets every
-  // head skip fully masked tiles and trim the boundary tiles before either
-  // GEMM. Arbitrary additive masks retain their existing behavior because only
-  // values that are exactly -inf are excluded.
+  // An explicit mask is shared across batches and heads. Precompute up to two
+  // useful K/V intervals for every (query tile, K/V tile) pair. Ring attention
+  // can mask large portions of its backing cache with -inf; discovering those
+  // ranges once lets every head skip fully masked tiles and trim the boundary
+  // tiles before either GEMM. Arbitrary additive masks retain their existing
+  // behavior because only values that are exactly -inf are excluded.
   struct MaskBlockRanges {
     int64_t first_begin;
     int64_t first_end;
@@ -1138,57 +1137,16 @@ void cpu_flash_attention(
             kStrideN,
             qk_data);
 
-        // There are 4 cases that is_causal has to cover to fill
-        // not-attendable-position with -inf
-        /* 1. Everything is attended to. This happens when m_start_pos > n +
-        kvSplitSize e.g m_pos [8:15] and n_pos [0:7]. Since you must attend to
-        all previous tokens matrix is full
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           2. Everything is not attended to. However only some tokens at the
-        beginning dont attend to everything. This happens when m_start_pos <=
-        n
-        + kvSplitSize but m_start_pos + qBlockSize > n + kvSplitSize
-        m_start_pos = 8 qBlockSize = 8 n = 4 kvSplitSize = 8 For example m_pos
-        [8:15] but n_pos is [4:11]
-        + + + + + - - -
-        + + + + + + - -
-        + + + + + + + -
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           3. In this case only last few tokens have something to attend to.
-        This happens when m_start_pos < n and m_start_pos + qBlockSize >= n
-        and m_start_pos + qBlockSize <= n + kvSplitSize m_start_pos = 8
-        qBlockSize = 8 n = 13 kvSplitSize = 8 For example m_pos [8:15] but
-        n_pos is [13:20]
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        + - - - - - - -
-        + + - - - - - -
-        + + + - - - - -
-           4. In this no tokens attend to anything, but we dont really have to
-        take care of this case because the loop for (int64_t n = 0; n <
-        num_keys; n += kvSplitSize) will exit before that.
-        */
+        // Apply causal masking relative to the retained range. Each query row
+        // may attend through its own logical position, so last_col is the
+        // number of keys in [kvBlockStart, kvBlockEnd) that are not in its
+        // future. Ranges wholly before the query block need no causal masking.
         if (is_causal && m_start_pos < kvBlockEnd) {
-          // For this fn to work k_split_size > q_split_size
           for (int32_t row = 0;
                row < qBlockSize && (m_start_pos + row < kvBlockEnd - 1);
                ++row) {
             // When last_col is 0, it means that the entire row is not
-            // attended to because m_pos is smaller than n_pos. So everything
-            // in n is for future.
+            // attended to because the range begins after the query position.
             int64_t last_col = kvBlockStart > (m_start_pos + row)
                 ? 0
                 : row + m_start_pos + 1 - kvBlockStart;
