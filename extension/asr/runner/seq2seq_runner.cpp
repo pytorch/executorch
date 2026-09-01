@@ -106,16 +106,8 @@ Error Seq2SeqRunner::load() {
       static_cast<int>(method_names.count(kEncoderMethodName)),
       static_cast<int>(method_names.count(kDecoderMethodName)));
 
-  // Encoder and decoder outputs stay on device and the decoder logits go
-  // straight into the sampler. With device memory planning the delegate inputs
-  // and outputs are GPU-resident and graph-level et_copy ops handle host to
-  // device transfers, while the export-time skip_d2h_for_method_outputs and
-  // skip_h2d_for_method_inputs flags elide the copies that are not needed.
-  // Ordering across methods comes from every method running on the calling
-  // thread's stream, so nothing has to be configured here. That holds because
-  // this runner drives all three methods from one thread; a caller spreading
-  // them across threads would have to order them itself.
-
+  // This runner drives its methods from one thread, so they are ordered by
+  // running on that thread's CUDA stream and nothing has to be configured here.
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kEncoderMethodName));
   encoder_method_loaded_ = true;
 

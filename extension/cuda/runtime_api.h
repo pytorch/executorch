@@ -34,6 +34,10 @@ inline constexpr cudaStreamCaptureMode cudaStreamCaptureModeRelaxed =
 inline constexpr unsigned long long cudaGraphInstantiateFlagAutoFreeOnLaunch =
     hipGraphInstantiateFlagAutoFreeOnLaunch;
 
+// A macro, unlike the aliases above, because hipStreamPerThread casts an
+// integer to a pointer type and so is not a constant expression.
+#define cudaStreamPerThread hipStreamPerThread
+
 struct cudaPointerAttributes {
   cudaMemoryType type{};
   int device = -1;
@@ -136,8 +140,6 @@ inline cudaError_t cudaStreamBeginCapture(
     cudaStreamCaptureMode mode) {
   return hipStreamBeginCapture(stream, mode);
 }
-
-#define cudaStreamPerThread hipStreamPerThread
 
 inline cudaError_t cudaStreamCreate(cudaStream_t* stream) {
   return hipStreamCreate(stream);

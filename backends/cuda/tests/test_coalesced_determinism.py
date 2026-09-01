@@ -24,7 +24,11 @@ import torch
 
 
 def _build_coalesced_pte(outdir):
-    """Export a model split across the TensorRT and CUDA backends."""
+    """Export a model split across the TensorRT and CUDA backends.
+
+    Returns the program path, the inputs, and the eager result for those inputs, so
+    the caller can check the answer is right and not only self-consistent.
+    """
     import torch_tensorrt
     import torch_tensorrt_executorch_runtime  # noqa: F401
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -60,6 +64,7 @@ def _build_coalesced_pte(outdir):
     inputs = (torch.randn(8, 256, device="cuda", generator=gen),)
 
     with torch.inference_mode():
+        eager = model(*inputs).cpu()
         exported = torch.export.export(model, inputs)
         # Withhold one operator from TensorRT so the graph has to split, which is
         # what puts a delegate boundary in the middle of the data flow.
@@ -84,7 +89,7 @@ def _build_coalesced_pte(outdir):
         backend_config=ExecutorchBackendConfig(),
     )
 
-    return pte, inputs
+    return pte, inputs, eager
 
 
 class TestCoalescedDeterminism(unittest.TestCase):
@@ -110,7 +115,7 @@ class TestCoalescedDeterminism(unittest.TestCase):
         from executorch.runtime import Runtime
 
         with tempfile.TemporaryDirectory() as outdir:
-            pte, inputs = _build_coalesced_pte(outdir)
+            pte, inputs, eager = _build_coalesced_pte(outdir)
             # Read the program that will actually run, rather than the graph it
             # came from: the island count is fixed before the ExecuTorch lowering,
             # so it cannot say whether both backends ended up in the file.
@@ -145,6 +150,11 @@ class TestCoalescedDeterminism(unittest.TestCase):
             first = method.execute(host_inputs)
             first = first[0] if isinstance(first, (list, tuple)) else first
             reference = first.clone()
+
+            # Against eager with a tolerance, because a delegate that reads a stale
+            # buffer the same way on every call is self-consistent and still wrong,
+            # which the run-to-run check below cannot see.
+            torch.testing.assert_close(reference, eager, rtol=1e-3, atol=1e-3)
 
             # Exact equality, not a tolerance: a delegate reading a buffer early
             # produces a different answer, not a slightly different one.

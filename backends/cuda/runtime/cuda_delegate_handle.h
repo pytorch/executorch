@@ -170,15 +170,16 @@ struct CudaGraphState {
 };
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
-// This consolidates CUDA stream management into a single location.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 
   // The per-thread stream. Nothing owns it: the value is a fixed sentinel the
   // driver resolves to a different stream on each host thread, so releasing the
-  // holder destroys nothing.
-  cudaStream_t cuda_stream = nullptr;
+  // holder destroys nothing. Initialised to that sentinel rather than null,
+  // because null is the legacy default stream, which is a different stream and
+  // would silently drop the per-thread ordering this handle relies on.
+  cudaStream_t cuda_stream = cudaStreamPerThread;
 
   // The stream this handle's work runs on.
   cudaStream_t get_cuda_stream() const {
