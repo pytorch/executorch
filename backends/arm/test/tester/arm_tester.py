@@ -192,7 +192,6 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
-        compile_spec: Optional[ArmCompileSpec] = None,
     ):
         super().__init__(
             default_partitioner_cls=None,
@@ -474,7 +473,6 @@ class ArmTester(tester.Tester):
                 edge_compile_config,
                 constant_methods=self.constant_methods,
                 transform_passes=self.transform_passes,
-                compile_spec=self.compile_spec,
             )
         else:
             if partitioners is not None:
