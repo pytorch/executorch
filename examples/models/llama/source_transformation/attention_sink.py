@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from executorch.examples.models.llama.attention import (
     _create_causal_mask_for_ring_buffer,
+    _get_ring_cache_size,
     AttentionMHA,
     KVCache,
     RingKVCache,
@@ -23,6 +24,30 @@ from executorch.examples.models.llama.attention import (
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
+
+
+def _get_attention_sink_cache_size(
+    max_context_length: int,
+    window_size: int,
+    sink_size: int,
+    max_seq_len: Optional[int] = None,
+) -> int:
+    """Size a sink cache for fixed sinks, one window, and one input chunk."""
+    assert sink_size >= 0, "Attention sink size must be non-negative"
+    assert window_size > 0, "Sliding-window size must be positive"
+    if max_seq_len is None:
+        max_seq_len = max_context_length
+    assert max_seq_len > 0, "Maximum sequence length must be positive"
+    assert sink_size + window_size <= max_context_length, (
+        f"Attention sink size ({sink_size}) plus sliding-window size "
+        f"({window_size}) cannot exceed the full context length "
+        f"({max_context_length})"
+    )
+    return sink_size + _get_ring_cache_size(
+        max_context_length - sink_size,
+        window_size,
+        max_seq_len,
+    )
 
 
 class RopeWithAttentionSink(Rope):
@@ -37,10 +62,11 @@ class RopeWithAttentionSink(Rope):
       - Window tokens (pos >= sink_size): wrapped into ring buffer range
         [sink_size, sink_size + ring_size) via modulo
 
-    The ring buffer is 2x window_size for write-ahead headroom, not to keep the
-    live window contiguous -- it can span a wrap. Across a wrap two positions
-    remap to a difference that is not their true distance, so RoPE preserves
-    relative distance only within a wrap.
+    The ring buffer holds one retained window plus one maximum-size input
+    chunk. It is larger than the live window for write-ahead headroom, not to
+    keep the live window contiguous -- it can span a wrap. Across a wrap two
+    positions remap to a difference that is not their true distance, so RoPE
+    preserves relative distance only within a wrap.
     """
 
     def __init__(
@@ -52,7 +78,18 @@ class RopeWithAttentionSink(Rope):
         super().__init__(params)
         self.window_size = window_size
         self.sink_size = sink_size
-        self.ring_size = window_size * 2
+        self.max_seq_len = (
+            params.max_context_len
+            if getattr(params, "max_seq_len", None) is None
+            else int(params.max_seq_len)
+        )
+        cache_size = _get_attention_sink_cache_size(
+            params.max_context_len,
+            window_size,
+            sink_size,
+            self.max_seq_len,
+        )
+        self.ring_size = cache_size - sink_size
 
     def _remap_input_pos(self, input_pos: torch.Tensor) -> torch.Tensor:
         """Remap positions: sink tokens stay, window tokens wrap in ring buffer."""
@@ -133,7 +170,7 @@ class CachePositionsManagerWithSink(nn.Module):
     For sink_size=0: behaves exactly like original CachePositionsManager.
     For sink_size>0: sink tokens go to fixed positions, rest uses ring buffer.
 
-    IMPORTANT: cache_size should be the actual cache dimension size (2x window for ring buffer).
+    IMPORTANT: cache_size is the actual cache dimension, including sink slots.
     """
 
     def __init__(self, cache_size: int, sink_size: int = 0):
@@ -191,7 +228,7 @@ class KVCacheWithAttentionSink(KVCache):
     Uses a ring buffer approach for the sliding window portion while keeping
     the first sink_size tokens fixed. This avoids dynamic shape operations.
 
-    Cache layout: [sink: 0 to sink_size-1] [ring_buffer: sink_size to sink_size + window_size*2 - 1]
+    Cache layout: [fixed sink tokens] [ring buffer for one window + one chunk]
     """
 
     def __init__(
@@ -202,16 +239,27 @@ class KVCacheWithAttentionSink(KVCache):
         rope: RopeWithAttentionSink,
         window_size: int,
         sink_size: int,
+        max_context_length: int,
+        max_seq_len: Optional[int] = None,
         max_batch_size: int = 1,
         dtype=torch.float32,
     ):
-        # Total cache size is sink_size + window_size * 2.
-        # The ring buffer needs 2x the window size because at the moment a new
-        # token is written, the previous window_size tokens must still be readable
-        # (they haven't been overwritten yet). With only 1x, writing a new entry
-        # would immediately evict the oldest visible token, leaving fewer than
-        # window_size tokens available for attention.
-        total_cache_size = sink_size + window_size * 2
+        self.full_context_length = max_context_length
+        self.max_seq_len = (
+            max_context_length if max_seq_len is None else int(max_seq_len)
+        )
+        # Keep the fixed sinks separate from the ring space needed for the
+        # retained window and the largest in-flight input chunk.
+        total_cache_size = _get_attention_sink_cache_size(
+            max_context_length,
+            window_size,
+            sink_size,
+            self.max_seq_len,
+        )
+        assert rope.ring_size == total_cache_size - sink_size, (
+            f"RoPE ring size ({rope.ring_size}) must match the KV-cache ring "
+            f"size ({total_cache_size - sink_size})"
+        )
         super().__init__(
             max_batch_size=max_batch_size,
             max_context_length=total_cache_size,
@@ -345,6 +393,8 @@ def _replace_attention(
                     max_batch_size=kv_cache.max_batch_size,
                     window_size=window_size,
                     sink_size=sink_size,
+                    max_context_length=kv_cache.max_context_length,
+                    max_seq_len=max_seq_len,
                     dtype=kv_cache.k_cache.dtype,
                 )
                 child_module.kv_cache = kv_cache_with_attention_sink

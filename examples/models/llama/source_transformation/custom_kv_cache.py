@@ -798,19 +798,30 @@ class CustomKVCacheWithAttentionSink(CustomKVCache):
     def __init__(
         self,
         max_batch_size,
+        max_context_length,
         n_heads,
         head_dim,
         window_size,
         sink_size,
+        max_seq_len=None,
         dtype=torch.float32,
     ):
-        # Total cache size: sink slots + ring buffer (2x window for wrap safety)
-        total_cache_size = sink_size + window_size * 2
-        super().__init__(max_batch_size, total_cache_size, n_heads, head_dim, dtype)
         from executorch.examples.models.llama.source_transformation.attention_sink import (
             CachePositionsManagerWithSink,
+            _get_attention_sink_cache_size,
         )
 
+        self.full_context_length = max_context_length
+        self.max_seq_len = (
+            max_context_length if max_seq_len is None else int(max_seq_len)
+        )
+        total_cache_size = _get_attention_sink_cache_size(
+            max_context_length,
+            window_size,
+            sink_size,
+            self.max_seq_len,
+        )
+        super().__init__(max_batch_size, total_cache_size, n_heads, head_dim, dtype)
         self.cache_positions_manager = CachePositionsManagerWithSink(
             total_cache_size, sink_size
         )
@@ -861,10 +872,12 @@ class CustomKVCacheWithAttentionSink(CustomKVCache):
         max_batch_size, n_heads, _, head_dim = kv_cache.k_cache.shape
         return cls(
             max_batch_size,
+            kv_cache.full_context_length,
             n_heads,
             head_dim,
             kv_cache.window_size,
             kv_cache.sink_size,
+            max_seq_len=kv_cache.max_seq_len,
             dtype=kv_cache.k_cache.dtype,
         )
 
