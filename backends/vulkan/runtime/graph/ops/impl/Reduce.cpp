@@ -110,8 +110,18 @@ GlobalWorkGrid reduce_gwg(
 
   utils::uvec3 extents = graph->logical_limits_of(out);
   extents[reduce_dim_whcn] = 1;
-  const uint32_t nworkers_per_group =
-      reduce_nworkers(graph, args.at(1).refs.at(0), reduce_dim_whcn);
+  // NWORKERS is baked into the shader as a specialization constant when the
+  // node is built, so it reflects the dynamic upper bound. This callback runs
+  // again after every resize and would see the smaller actual extent, giving a
+  // work group with fewer threads along the reduction dim than the shader's
+  // aggregation loop indexes over -- it would then fold in shared memory slots
+  // that no thread wrote. Read the count the node was built with instead.
+  //
+  // Launching more workers than there are elements is harmless: a worker whose
+  // loop body never runs contributes INIT_ACCUM, which is the identity for sum
+  // and mean and idempotent for amax and amin.
+  const uint32_t nworkers_per_group = utils::safe_downcast<uint32_t>(
+      graph->extract_scalar<int32_t>(resize_args.at(resize_args.size() - 1)));
   utils::uvec3 lwg_extents{1u, 1u, 1u};
   lwg_extents[reduce_dim_whcn] = nworkers_per_group;
   lwg_extents[group_dim_whcn] = kReduceNGroups;
@@ -159,6 +169,9 @@ void add_reduce_node(
   const ValueRef reduce_dim_whcn_ref =
       graph.get_or_add_value_for_int(reduce_dim);
   const ValueRef group_dim_whcn_ref = graph.get_or_add_value_for_int(group_dim);
+  const int32_t nworkers =
+      utils::safe_downcast<int32_t>(reduce_nworkers(&graph, in, reduce_dim));
+  const ValueRef nworkers_ref = graph.get_or_add_value_for_int(nworkers);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -172,13 +185,11 @@ void add_reduce_node(
       // Push Constants
       {},
       // Specialization Constants. NWORKERS must match the local work group
-      // extent reduce_gwg picks, so both go through reduce_nworkers().
-      {graph.packed_dim_of(out),
-       reduce_dim,
-       group_dim,
-       utils::safe_downcast<int32_t>(reduce_nworkers(&graph, in, reduce_dim))},
+      // extent reduce_gwg picks, so the count is computed once here and passed
+      // to reduce_gwg through the resize args.
+      {graph.packed_dim_of(out), reduce_dim, group_dim, nworkers},
       // Resize Args
-      {dim_ref, reduce_dim_whcn_ref, group_dim_whcn_ref},
+      {dim_ref, reduce_dim_whcn_ref, group_dim_whcn_ref, nworkers_ref},
       // Resizing Logic
       resize_reduce_node));
 }
@@ -240,6 +251,9 @@ void add_reduce2d_node(
   const ValueRef reduce_dim2_whcn_ref =
       graph.get_or_add_value_for_int(reduce_dim2);
   const ValueRef group_dim_whcn_ref = graph.get_or_add_value_for_int(group_dim);
+  const int32_t nworkers =
+      utils::safe_downcast<int32_t>(reduce_nworkers(&graph, in, reduce_dim1));
+  const ValueRef nworkers_ref = graph.get_or_add_value_for_int(nworkers);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -253,17 +267,15 @@ void add_reduce2d_node(
       // Push Constants
       {},
       // Specialization Constants. NWORKERS must match the local work group
-      // extent reduce_gwg picks, so both go through reduce_nworkers().
-      {graph.packed_dim_of(out),
-       reduce_dim1,
-       reduce_dim2,
-       group_dim,
-       utils::safe_downcast<int32_t>(reduce_nworkers(&graph, in, reduce_dim1))},
+      // extent reduce_gwg picks, so the count is computed once here and passed
+      // to reduce_gwg through the resize args.
+      {graph.packed_dim_of(out), reduce_dim1, reduce_dim2, group_dim, nworkers},
       // Resize Args
       {dims_ref,
        reduce_dim1_whcn_ref,
        reduce_dim2_whcn_ref,
-       group_dim_whcn_ref},
+       group_dim_whcn_ref,
+       nworkers_ref},
       // Resizing Logic
       resize_reduce2d_node));
 }
