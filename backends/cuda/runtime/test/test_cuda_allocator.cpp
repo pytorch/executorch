@@ -8,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
 
 #include <cstdint>
@@ -32,6 +31,15 @@ class CudaAllocatorTest : public testing::Test {
     cudaError_t err = cudaGetDeviceCount(&device_count_);
     if (err != cudaSuccess || device_count_ == 0) {
       GTEST_SKIP() << "CUDA not available";
+    }
+  }
+
+  // The pool is meant to stay warm, so without this a test that measured
+  // reserved bytes would see whatever an earlier one left behind, and the order
+  // would matter.
+  void TearDown() override {
+    if (device_count_ > 0) {
+      CudaAllocator::release_cached_memory(-1);
     }
   }
 
