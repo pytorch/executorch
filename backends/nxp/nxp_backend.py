@@ -25,8 +25,8 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.neutron_converter_manager import (
-    NeutronConverterManager,
+from executorch.backends.nxp.backend.neutron_compiler_manager import (
+    NeutronCompilerManager,
 )
 
 from executorch.backends.nxp.backend.neutron_map import NeutronMap
@@ -282,9 +282,9 @@ class NeutronBackend(BackendDetails):
             )
 
             with capture_fd_output() as tmp:
-                neutron_model = NeutronConverterManager(
+                neutron_model = NeutronCompilerManager(
                     dump_kernel_selection_code
-                ).convert(
+                ).compile(
                     tflite_model,
                     target,
                     delegation_tag,
