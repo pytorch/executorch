@@ -49,6 +49,7 @@ def _build_compilation_context(compilation_opts):
         cctx.compilationOpts.dumpAfterImport = "console"
         cctx.compilationOpts.dumpAfterGenerate = "console"
         cctx.compilationOpts.verbose = compilation_opts["useProfiling"]
+        cctx.compilationOpts.dumpMicrocode = compilation_opts["useProfiling"]
 
     return cctx
 
