@@ -52,6 +52,7 @@
 // in advance, and a runner it never hands a multi-token Output will never ask
 // it to.
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -67,6 +68,22 @@ namespace batching {
 class ET_EXPERIMENTAL Executor {
  public:
   virtual ~Executor() = default;
+
+  // Optional one-time setup, called on the engine thread before any other
+  // method.
+  //
+  // false = the runner admits no work, so open_session_async() reports nullopt.
+  virtual bool initialize() {
+    return true;
+  }
+
+  // Tokens a batch should carry. At this size one execute() is a single pass
+  // over the weights; a smaller batch leaves part of that pass unused, a wider
+  // one is accepted but splits into slices that each re-read them. Size a
+  // scheduler's batch budget to it. 0 = no preference.
+  virtual std::size_t preferred_batch_tokens() const {
+    return 0;
+  }
 
   // A session to route tasks to. nullopt = at capacity. Every successful id
   // must be unique for the lifetime of the consuming Runner, even after close.
