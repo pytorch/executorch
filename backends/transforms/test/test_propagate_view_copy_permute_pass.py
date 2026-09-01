@@ -13,7 +13,6 @@ from executorch.backends.transforms.propagate_view_copy_permute_pass import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 PERMUTE = exir_ops.edge.aten.permute_copy.default
-VIEW = exir_ops.edge.aten.view_copy.default
 ABS = exir_ops.edge.aten.abs.default
 NEG = exir_ops.edge.aten.neg.default
 SIGMOID = exir_ops.edge.aten.sigmoid.default
@@ -61,8 +60,11 @@ def _permute_counts(graph: torch.fx.Graph) -> tuple[int, int, int]:
 
 @pytest.mark.xfail(
     strict=True,
-    reason="The shared driver does not distribute an upward permute across a "
-    "multi-input elementwise node unless a backend explicitly opts in.",
+    reason="Splitting a fork where some branches rejoin and others do not leaves "
+    "one copy below the meeting node and one at the source, and the up pass has "
+    "no fork split of its own to hoist the first above the rejoin. No model in a "
+    "15-model sweep produces this shape, so the driver does not special-case it; "
+    "the general fix is to stop propagation increasing the copy count at all.",
 )
 def test_mixed_reconvergence_fork_does_not_strand_a_permute() -> None:
     graph = torch.fx.Graph()

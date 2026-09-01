@@ -464,31 +464,6 @@ class TestReplaceOpsWithChannelsLastVariants:
         _, modified = _run_pass(ep)
         assert not modified
 
-    def test_noncontiguous_output_can_be_normalized_by_opt_in_backend(self):
-        ep = _export_to_edge(Conv2dModule(), (torch.randn(1, 4, 8, 8),))
-        conv = _find_nodes(ep.graph_module, exir_ops.edge.aten.convolution.default)[0]
-        conv.meta["val"] = conv.meta["val"].to(memory_format=torch.channels_last)
-
-        result = ReplaceOpsWithChannelsLastVariants(ep)(ep.graph_module)
-
-        assert not result.modified
-
-        ep = _export_to_edge(Conv2dModule(), (torch.randn(1, 4, 8, 8),))
-        conv = _find_nodes(ep.graph_module, exir_ops.edge.aten.convolution.default)[0]
-        conv.meta["val"] = conv.meta["val"].to(memory_format=torch.channels_last)
-        result = ReplaceOpsWithChannelsLastVariants(
-            ep, require_contiguous_output=False
-        )(ep.graph_module)
-
-        assert result.modified
-        assert (
-            _count(
-                result.graph_module,
-                exir_ops.edge.channels_last.convolution.default,
-            )
-            == 1
-        )
-
     def test_empty_op_map_leaves_graph_unchanged(self):
         ep = _export_to_edge(Conv2dModule(), (torch.randn(1, 4, 8, 8),))
 

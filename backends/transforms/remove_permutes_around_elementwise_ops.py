@@ -29,13 +29,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     recognised as a single rank-preserving unit; see _interleave_triple.
 
     ``extra_permutable_ops`` must be layout-equivariant without argument
-    remapping. ``can_propagate`` is the backend's statement that a layout copy
-    may move across a node.
-
-    ``compensate_at_output`` lets a region end at a graph output instead of
-    being abandoned there. It is opt-in because it relocates a layout copy
-    toward the outputs, and a backend that also runs the propagation passes has
-    already chosen where its copies sit.
+    remapping. ``can_propagate`` lets a backend reject nodes that the shared
+    pass would otherwise treat as layout-equivariant.
 
     ``permute_targets`` is the closed family of layout-copy operators the
     backend considers equivalent. A rewritten region must use one member of
@@ -63,11 +58,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         constant_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
             default_factory=set
         )
-        # Region values that are also returned. The permute cannot simply be
-        # dropped there, so it is re-inserted on the output edge instead.
-        output_boundaries: set[tuple[torch.fx.Node, torch.fx.Node, tuple[int, ...]]] = (
-            field(default_factory=set)
-        )
         # Per-node expected end permutation (may differ from end_permute
         # when the subgraph contains rank-changing views).
         node_end_permute: dict[torch.fx.Node, list[int]] = field(default_factory=dict)
@@ -84,12 +74,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         extra_permutable_ops: set | None = None,
         *,
         can_propagate: Callable[[torch.fx.Node], bool] | None = None,
-        compensate_at_output: bool = False,
         permute_targets: set | frozenset | None = None,
     ) -> None:
         super().__init__()
         self.can_propagate = can_propagate
-        self.compensate_at_output = compensate_at_output
         self._permute_targets = frozenset(permute_targets or PERMUTE_COPY_TARGETS)
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
@@ -121,7 +109,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             tuple[int, int, torch.fx.Node, torch.fx.Node] | None,
         ] = {}
 
-    _VIEW_OPS = (exir_ops.edge.aten.view_copy.default,)
+    _VIEW_OPS = (
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.view.default,
+    )
 
     @staticmethod
     def _concrete_shape(node: torch.fx.Node) -> list[int] | None:
@@ -525,20 +516,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                         )
                     )
             elif user.op == "output":
-                if not self.compensate_at_output:
-                    return False
-                subgraph.output_boundaries.add(
-                    (users_source, user, tuple(downstream_start))
-                )
+                return False
             elif self.can_propagate is not None and not self.can_propagate(user):
-                # A backend barrier. With compensation the region ends here
-                # rather than being abandoned: the permute is re-inserted on
-                # this edge so the barrier still sees the layout it expects.
-                if not self.compensate_at_output:
-                    return False
-                subgraph.output_boundaries.add(
-                    (users_source, user, tuple(downstream_start))
-                )
+                return False
             elif self._is_permutation_sink_view(user):
                 # The tensor's element order is invariant at this reshape, but
                 # its output shape can still carry broadcast-axis meaning.
@@ -827,8 +807,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     continue
             user_node.replace_input_with(const_node, new_node)
 
-        self._insert_output_boundary_permutations(subgraph)
-
         # Skip outgoing permutes.
         for inp, out in subgraph.edges_out:
             assert out.target in self._permute_targets
@@ -878,33 +856,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 return False
 
         return True
-
-    def _insert_output_boundary_permutations(self, subgraph: Subgraph) -> None:
-        """Put the region's permutation back on the edges that leave it.
-
-        A returned value still has to be in the layout the caller was promised,
-        so the permute the region cancelled everywhere else is re-inserted here
-        rather than the whole region being abandoned.
-
-        """
-        if not subgraph.output_boundaries:
-            return
-        groups: dict[tuple[torch.fx.Node, tuple[int, ...]], list[torch.fx.Node]] = {}
-        for producer, output_node, permutation in subgraph.output_boundaries:
-            groups.setdefault((producer, permutation), []).append(output_node)
-
-        graph = next(iter(subgraph.output_boundaries))[0].graph
-        node_order = {node: index for index, node in enumerate(graph.nodes)}
-        for (producer, permutation), outputs in groups.items():
-            first_output = min(outputs, key=node_order.__getitem__)
-            with producer.graph.inserting_before(first_output):
-                new_permute = producer.graph.call_function(
-                    subgraph.permute_target,
-                    args=(producer, list(permutation)),
-                )
-            new_permute.meta = dict(producer.meta)
-            for output in outputs:
-                output.replace_input_with(producer, new_permute)
 
     def update_interleave(
         self,

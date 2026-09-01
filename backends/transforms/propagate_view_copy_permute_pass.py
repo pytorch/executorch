@@ -41,19 +41,17 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
     To be used for upwards/downwards propagation by implementing the abstract
     methods for the direction of propagation. Backends may supply a closed set
-    of equivalent permute targets and override the policy hooks when their
-    layout contract permits more movement. Every hook preserves the existing
-    behavior by default.
+    of equivalent permute targets; synthesized permutes retain their source
+    target.
 
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    # Moving an aliasing aten.view.default requires alias-aware reasoning that
-    # this pass does not provide. Restrict propagation to copy semantics.
     _VIEW_TARGET = exir_ops.edge.aten.view_copy.default
+    _VIEW_DEFAULT_TARGET = exir_ops.edge.aten.view.default
     _PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
-    _TARGETS = {_VIEW_TARGET, _PERMUTE_TARGET}
+    _TARGETS = {_VIEW_TARGET, _VIEW_DEFAULT_TARGET, _PERMUTE_TARGET}
     _TRANSPARENT_TARGETS = {
         exir_ops.edge.dim_order_ops._clone_dim_order.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
@@ -83,7 +81,10 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         # Which targets count as a permute. A backend carrying its own layout
         # dialect passes them here.
         self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
-        self._targets = {self._VIEW_TARGET} | self._permute_targets
+        self._targets = {
+            self._VIEW_TARGET,
+            self._VIEW_DEFAULT_TARGET,
+        } | self._permute_targets
 
     @staticmethod
     def _dim_arg(arg: Any) -> int | Sequence[int] | None:
@@ -137,7 +138,6 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         if modified:
             graph_module = self._retrace(graph_module)
-            graph_module.recompile()
 
         return PassResult(graph_module, modified)
 
@@ -241,11 +241,6 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 moved = True
                 continue
 
-            if self._maybe_distribute_upwards_permute_over_elementwise(
-                node, frontier, next_node
-            ):
-                return True
-
             # Concats are a special case since they branch the graph.
             # Perform the swap directly in this case and return.
             # Otherwise break and move the node before the concat
@@ -343,20 +338,6 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """
         return False
 
-    def _maybe_distribute_upwards_permute_over_elementwise(
-        self,
-        node: torch.fx.Node,
-        frontier: torch.fx.Node,
-        next_node: torch.fx.Node,
-    ) -> bool:
-        """Optionally distribute an upward-moving permute over multiple inputs.
-
-        The shared driver leaves this disabled because distribution can increase
-        the number of layout copies. Backends may opt in when their layout
-        strategy requires crossing a reconvergent elementwise node.
-        """
-        return False
-
     def _maybe_split_fork(
         self,
         node: torch.fx.Node,
@@ -377,7 +358,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """
         if node.target in self._permute_targets:
             return self._maybe_swap_permute_args(node, next_node)
-        elif node.target == self._VIEW_TARGET:
+        elif node.target in {self._VIEW_TARGET, self._VIEW_DEFAULT_TARGET}:
             return self._maybe_swap_view_args(node, next_node)
         else:
             raise ValueError(

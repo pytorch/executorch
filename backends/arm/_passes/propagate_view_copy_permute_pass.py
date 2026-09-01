@@ -55,9 +55,6 @@ class TosaPropagationOverrides(_BasePass):
         exir_ops.edge.aten.slice_copy.Tensor,
     }
 
-    def duplicate_user_fusion_key(self, node: torch.fx.Node) -> Any:
-        return quantization_metadata_key(node)
-
     def blocks_moving(
         self,
         moving_node: torch.fx.Node,

@@ -134,8 +134,6 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
 
     By default, all currently implemented channels_last dialect ops are replaced.
     Pass a custom op_map to restrict or extend the set of replacements.
-    ``require_contiguous_output`` preserves the legacy eligibility rule by
-    default; a backend with an explicit logical-layout contract may disable it.
 
     Metadata from each replaced operator is preserved so provenance and backend
     annotations survive the rewrite. ExportPass recomputes shape metadata after
@@ -147,14 +145,12 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
         self,
         exported_program: ExportedProgram,
         op_map: dict[Target, ChannelsLastOpSpec] | None = None,
-        require_contiguous_output: bool = True,
     ) -> None:
         super().__init__()
         self.exported_program = exported_program
         self.op_map: dict[Target, ChannelsLastOpSpec] = (
             op_map if op_map is not None else dict(_DEFAULT_OP_MAP)
         )
-        self.require_contiguous_output = require_contiguous_output
 
     @staticmethod
     def _permute_node_input(
@@ -212,15 +208,12 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
                 continue
             if (spec := self.op_map.get(node.target)) is None:
                 continue
-            if spec.filter_fn is not None and not spec.filter_fn(node):
-                continue
             val = node.meta["val"]
             val = val[0] if isinstance(val, (list, tuple)) else val
             contiguous_dim_order = tuple(range(val.dim()))
-            if (
-                self.require_contiguous_output
-                and val.dim_order() != contiguous_dim_order
-            ):
+            if val.dim_order() != contiguous_dim_order:
+                continue
+            if spec.filter_fn is not None and not spec.filter_fn(node):
                 continue
 
             # In case of implicit batch size, insert also `unsqueeze_copy.default` and `squeeze_copy.dims` operators.
