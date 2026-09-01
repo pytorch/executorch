@@ -115,6 +115,31 @@ if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
 endif()
 
+# EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED /
+# EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED emit a backend as its own .so so a
+# consumer can drop the ones it does not use. A split backend still links
+# executorch_core statically, so it carries a second copy of the backend
+# registry (registered_backends[] in runtime/backend/interface.cpp).
+# Registration reaches the runtime's copy only through PLT interposition: the
+# register_backend call in the backend .so is a JUMP_SLOT relocation, so the
+# dynamic linker binds it to the first definition in the global lookup scope.
+# Two things have to hold for that to be this library's copy:
+#
+# * libexecutorch_jni.so has to export register_backend. The default version
+#   script hides everything but JNI_OnLoad/Java_*, so jni/version_script.txt is
+#   swapped for jni/version_script_shared_backends.txt below whenever a backend
+#   is split out.
+# * The consumer has to load libexecutorch_jni.so ahead of the backend .so in
+#   the same lookup scope. Naming both in the link line of the library that uses
+#   them, runtime first, does that: the runtime lands earlier in DT_NEEDED and
+#   wins the lookup. dlopen()ing a backend .so on its own does not, and the
+#   backend then registers into its own table while the runtime reports
+#   DelegateNotFound.
+#
+# The same interposition is what keeps a split XNNPACK on one thread pool: the
+# pthreadpool symbols are exported from here too, so the backend .so binds to
+# the pool extension_threadpool configures instead of a second, unconfigured
+# copy of its own.
 if(TARGET xnnpack_backend)
   set(_xnnpack_so_link_libs xnnpack_backend XNNPACK pthreadpool cpuinfo
                             xnnpack-microkernels-prod
@@ -124,28 +149,20 @@ if(TARGET xnnpack_backend)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED)
-    # Same rationale as EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED below: ship
-    # xnnpack_backend as its own libxnnpack_executorch_backend.so so the
-    # consumer can opt out at install time. Link only the backend itself
-    # (whole-archived so the register_backend static initializer fires) and the
-    # XNNPACK third-party libs + executorch_core. Kernel registration archives
-    # stay in libexecutorch_jni.so so loading both shared libraries together
-    # does not trigger Error::RegistrationAlreadyRegistered (0x16).
+    # Whole-archive the backend so its register_backend static initializer
+    # fires, and take only the XNNPACK third-party libs with it. The kernel
+    # registration archives stay in libexecutorch_jni.so, so loading both
+    # libraries together does not register a kernel twice
+    # (Error::RegistrationAlreadyRegistered, 0x16).
     add_library(
       xnnpack_executorch_backend SHARED
       ${EXECUTORCH_ROOT}/extension/android/jni/jni_noop.cpp
     )
     executorch_target_link_options_shared_lib(xnnpack_backend)
-    target_link_options(
-      xnnpack_executorch_backend PRIVATE -fopenmp -static-openmp
-    )
     target_link_options_gc_sections(xnnpack_executorch_backend)
     target_link_libraries(
       xnnpack_executorch_backend PRIVATE ${_xnnpack_so_link_libs}
                                          executorch_core log
-    )
-    set_target_properties(
-      xnnpack_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
     )
     # executorch_jni still needs cpuinfo headers / lib for thread count
     # detection.
@@ -158,14 +175,9 @@ endif()
 
 if(TARGET vulkan_backend)
   if(EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED)
-    # Build vulkan_backend as a standalone shared library that React Native
-    # Executorch can ship as an opt-in artifact
-    # (libvulkan_executorch_backend.so). The .so links only vulkan_backend (with
-    # --whole-archive so its register_backend static initializer fires) plus
-    # executorch_core/vulkan_schema. Kernel registration libs
-    # (optimized_native_cpu_ops_lib, custom_ops, etc.) stay in
-    # libexecutorch_jni.so to avoid duplicate Kernel registration when both .so
-    # are loaded together (Error::RegistrationAlreadyRegistered, 0x16).
+    # Same shape as the XNNPACK split above: whole-archive vulkan_backend and
+    # take only vulkan_schema with it, leaving the kernel registration archives
+    # in libexecutorch_jni.so.
     add_library(
       vulkan_executorch_backend SHARED
       ${EXECUTORCH_ROOT}/extension/android/jni/jni_noop.cpp
@@ -175,9 +187,6 @@ if(TARGET vulkan_backend)
     target_link_libraries(
       vulkan_executorch_backend PRIVATE vulkan_backend vulkan_schema
                                         executorch_core log
-    )
-    set_target_properties(
-      vulkan_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
     )
   else()
     executorch_target_link_options_shared_lib(vulkan_backend)
@@ -291,9 +300,21 @@ target_include_directories(
 
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
+if(EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED
+   OR EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED
+)
+  set(_executorch_jni_version_script
+      "${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script_shared_backends.txt"
+  )
+else()
+  set(_executorch_jni_version_script
+      "${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script.txt"
+  )
+endif()
+
 target_link_options(
   executorch_jni PRIVATE
-  "LINKER:--version-script,${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script.txt"
+  "LINKER:--version-script,${_executorch_jni_version_script}"
 )
 target_link_options_gc_sections(executorch_jni)
 
