@@ -60,6 +60,19 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    runtime.cxx_library(
+        name = "argument",
+        srcs = ["Argument.cpp"],
+        exported_headers = [
+            "Argument.h",
+        ],
+        exported_deps = [
+            ":ids",
+            ":scalar_type",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
     # utils/ has no BUCK of its own, so the IR printer's target lives here. Kept
     # separate from the IR libraries so only a consumer that dumps the IR links
     # the formatting code.
@@ -70,6 +83,7 @@ def define_common_targets():
             "utils/Print.h",
         ],
         exported_deps = [
+            ":argument",
             ":scalar",
             ":tensor_meta",
         ],
