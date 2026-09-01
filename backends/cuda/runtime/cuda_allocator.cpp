@@ -471,11 +471,8 @@ void CudaAllocator::deallocate_async(
   }
 }
 
+#if !defined(EXECUTORCH_USE_HIP)
 cudaMemPool_t CudaAllocator::pool_for_device(DeviceIndex index) {
-#if defined(EXECUTORCH_USE_HIP)
-  (void)index;
-  return nullptr;
-#else
   const int device = resolve_device(index);
   if (device < 0) {
     return nullptr;
@@ -484,8 +481,8 @@ cudaMemPool_t CudaAllocator::pool_for_device(DeviceIndex index) {
   const std::lock_guard<std::mutex> lock(state.mutex);
   const auto it = state.pools.find(device);
   return it == state.pools.end() ? nullptr : it->second;
-#endif
 }
+#endif // !EXECUTORCH_USE_HIP
 
 void CudaAllocator::release_cached_memory(DeviceIndex index) {
 #if defined(EXECUTORCH_USE_HIP)

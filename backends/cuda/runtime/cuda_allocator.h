@@ -98,19 +98,22 @@ class CudaAllocator final : public executorch::runtime::DeviceAllocator {
   static void release_cached_memory(
       executorch::runtime::etensor::DeviceIndex index);
 
+#if !defined(EXECUTORCH_USE_HIP)
   /**
    * The memory pool this backend allocates from on a device, or nullptr if it
    * has not allocated there or the pool could not be created.
    *
    * Exposed so a test can observe what the pool is holding, which is not
-   * visible through the device default pool. No production caller; a test
-   * friend would be the tidier shape and would also let the HIP alias for the
-   * pool type go.
+   * visible through the device default pool. No production caller.
+   *
+   * Not declared on ROCm: the pool code is compiled out there, so there is
+   * nothing to observe and the pool type needs no HIP alias.
    *
    * @param index Device to query, or a negative value for the current one.
    */
   static cudaMemPool_t pool_for_device(
       executorch::runtime::etensor::DeviceIndex index);
+#endif // !EXECUTORCH_USE_HIP
 
   /**
    * Copy memory asynchronously on the given CUDA stream.

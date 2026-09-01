@@ -18,7 +18,6 @@ using cudaError_t = hipError_t;
 using cudaGraph_t = hipGraph_t;
 using cudaGraphExec_t = hipGraphExec_t;
 using cudaMemcpyKind = hipMemcpyKind;
-using cudaMemPool_t = hipMemPool_t;
 using cudaMemoryType = hipMemoryType;
 using cudaStreamCaptureMode = hipStreamCaptureMode;
 using cudaStream_t = hipStream_t;
