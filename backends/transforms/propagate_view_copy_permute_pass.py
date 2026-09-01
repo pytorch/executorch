@@ -68,6 +68,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         self,
         compile_spec: Any | None = None,
         exported_program: ExportedProgram | None = None,
+        permute_targets: Iterable[Any] | None = None,
     ) -> None:
         super().__init__()
         if isinstance(compile_spec, ExportedProgram) and exported_program is None:
@@ -75,6 +76,14 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             compile_spec = None
         self.exported_program = exported_program
         self.compile_spec = compile_spec
+        # Which targets count as a permute. A backend carrying its own layout
+        # dialect passes them here; the pass still emits self._PERMUTE_TARGET
+        # when it has to create one.
+        self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
+        self._targets = {
+            self._VIEW_TARGET,
+            self._VIEW_DEFAULT_TARGET,
+        } | self._permute_targets
 
     @staticmethod
     def _dim_arg(arg: Any) -> int | Sequence[int] | None:
@@ -98,22 +107,29 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         while True:
             iteration_modified = False
+            # A rewrite invalidates metadata along its path and downstream.
+            # Defer that region while still batching independent branches.
+            stale_nodes: set[torch.fx.Node] = set()
             for node in list(graph_module.graph.nodes):
-                if node.target in self._TARGETS:
+                if node in stale_nodes:
+                    continue
+                if node.target in self._targets:
                     if len(node.users) == 0:
                         continue
-                    if self._propagate(node):
+                    if self._propagate(node, stale_nodes):
                         iteration_modified = True
-                        break
 
             if iteration_modified:
+                modified = True
                 graph_module = self._retrace(graph_module)
-                result = self.fuse_horizontal(graph_module)
-                graph_module = result.graph_module
-                iteration_modified |= result.modified
-                result = self.fuse_vertical(graph_module)
-                graph_module = result.graph_module
-                iteration_modified |= result.modified
+                continue
+
+            result = self.fuse_horizontal(graph_module)
+            graph_module = result.graph_module
+            iteration_modified = result.modified
+            result = self.fuse_vertical(graph_module)
+            graph_module = result.graph_module
+            iteration_modified |= result.modified
 
             modified |= iteration_modified
             if not iteration_modified:
@@ -124,55 +140,103 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         return PassResult(graph_module, modified)
 
+    @staticmethod
+    def _mark_downstream_nodes_stale(
+        node: torch.fx.Node, stale_nodes: set[torch.fx.Node]
+    ) -> None:
+        pending = [node]
+        while pending:
+            current = pending.pop()
+            if current in stale_nodes:
+                continue
+            stale_nodes.add(current)
+            pending.extend(current.users)
+
+    def _mark_stale_region(
+        self,
+        nodes: Iterable[torch.fx.Node],
+        stale_nodes: set[torch.fx.Node],
+    ) -> None:
+        for node in nodes:
+            self._mark_downstream_nodes_stale(node, stale_nodes)
+
     def _retrace(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         graph_module.graph.eliminate_dead_code()
         graph_module.graph.lint()
         return super().call(graph_module).graph_module
 
-    def _propagate(self, node: torch.fx.Node) -> bool:
-        """Propagate a single permute/view node."""
+    def _validated_next_nodes(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        stale_nodes: set[torch.fx.Node],
+    ) -> list[torch.fx.Node] | None:
+        next_nodes = list(self._get_next_nodes(frontier))
+        if not next_nodes:
+            assert frontier.op in (
+                "placeholder",
+                "output",
+            ), f"{self.__class__.__name__} reached an endpoint node which is not a placeholder or output: {frontier}"
+            return None
+
+        if any(next_node in stale_nodes for next_node in next_nodes):
+            return None
+
+        if not self._can_cross_next_nodes(frontier, next_nodes):
+            return None
+
+        if self.blocks_moving(node, frontier, next_nodes):
+            return None
+
+        return next_nodes
+
+    def _advance_through_next_node(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        if self._can_move_through_elementwise(node, frontier, next_node):
+            return True
+
+        if not self.is_swappable(next_node):
+            return False
+
+        swapped_args = self._maybe_swap_args(node, next_node)
+        if swapped_args is None:
+            return False
+
+        node.args = swapped_args[0]
+        next_node.args = swapped_args[1]
+        return True
+
+    def _propagate(self, node: torch.fx.Node, stale_nodes: set[torch.fx.Node]) -> bool:
+        """Propagate one node without consulting metadata invalidated this
+        scan.
+        """
 
         frontier = node
         previous_frontier = None
+        propagation_path = [node]
         moved = False
         while True:
-            next_nodes = list(self._get_next_nodes(frontier))
-
-            if len(next_nodes) == 0:
-                assert frontier.op in (
-                    "placeholder",
-                    "output",
-                ), f"{self.__class__.__name__} reached an endpoint node which is not a placeholder or output: {frontier}"
-                break
-
-            if not self._can_cross_next_nodes(frontier, next_nodes):
-                break
-
-            if self.blocks_moving(node, frontier, next_nodes):
+            next_nodes = self._validated_next_nodes(node, frontier, stale_nodes)
+            if next_nodes is None:
                 break
 
             if len(next_nodes) > 1:
-                if self._maybe_split_fork(
+                if not self._maybe_split_fork(
                     node, frontier, previous_frontier, next_nodes
                 ):
-                    return True
-                break
+                    break
+                self._mark_stale_region((*propagation_path, *next_nodes), stale_nodes)
+                return True
 
             next_node = next_nodes[0]
-            if self._can_move_through_elementwise(node, frontier, next_node):
+            if self._advance_through_next_node(node, frontier, next_node):
                 previous_frontier = frontier
                 frontier = next_node
-                moved = True
-                continue
-
-            if self.is_swappable(next_node):
-                swapped_args = self._maybe_swap_args(node, next_node)
-                if swapped_args is None:
-                    break
-                node.args = swapped_args[0]
-                next_node.args = swapped_args[1]
-                previous_frontier = frontier
-                frontier = next_node
+                propagation_path.append(next_node)
                 moved = True
                 continue
 
@@ -180,6 +244,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             # Perform the swap directly in this case and return.
             # Otherwise break and move the node before the concat
             if self._maybe_split_upwards_cat_fanout(node, next_node):
+                self._mark_stale_region((*propagation_path, next_node), stale_nodes)
                 return True
 
             # Unhandled case, stop propagation
@@ -190,6 +255,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         assert previous_frontier is not None
         self._move_node(node, frontier, previous_frontier)
+        self._mark_stale_region(propagation_path, stale_nodes)
         return True
 
     def duplicate_user_fusion_exclusions(self) -> frozenset:
@@ -220,7 +286,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             graph_module = result.graph_module
             modified |= result.modified
 
-        result = CanonicalizeViewCopyPermutePass().call(graph_module)
+        result = CanonicalizeViewCopyPermutePass(self._permute_targets).call(
+            graph_module
+        )
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
@@ -283,7 +351,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """If the node can be swapped with its next_node, return the new args
         for the next_node and new shape, otherwise return None.
         """
-        if node.target == self._PERMUTE_TARGET:
+        if node.target in self._permute_targets:
             return self._maybe_swap_permute_args(node, next_node)
         elif node.target in {self._VIEW_TARGET, self._VIEW_DEFAULT_TARGET}:
             return self._maybe_swap_view_args(node, next_node)
@@ -368,9 +436,9 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 else next_node.kwargs.get("keepdim")
             )
             if keep_dim is not True:
-                raise RuntimeError(
-                    f"{self.__class__.__name__} expects keep_dim=True for reduction ops to simplify propagation logic, got {keep_dim} for node {next_node.name}."
-                )
+                # A reduction that drops the dimension changes rank, so the
+                # permutation cannot simply be remapped across it.
+                return False
         return True
 
     def _can_move_through_elementwise(
@@ -410,7 +478,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         ):
             return False
 
-        if moving_node.target != self._PERMUTE_TARGET:
+        if moving_node.target not in self._permute_targets:
             return True
 
         dims = self._dim_arg(moving_node.args[1])
@@ -471,7 +539,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     ) -> bool:
         if super()._can_move_through_elementwise(moving_node, frontier, next_node):
             return True
-        if moving_node.target != self._PERMUTE_TARGET or not self.is_elementwise(
+        if moving_node.target not in self._permute_targets or not self.is_elementwise(
             next_node
         ):
             return False
@@ -645,7 +713,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         """Swap cat([x1,x2]).permute(p) -> cat([x1.permute(p'), x2.permute(p')])
         if permutes before the concat are noops.
         """
-        if node.target != self._PERMUTE_TARGET:
+        if node.target not in self._permute_targets:
             return False
         if next_node.target != exir_ops.edge.aten.cat.default:
             return False
@@ -653,7 +721,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         cat_users = list(next_node.users)
         if len(cat_users) == 0:
             return False
-        if not all(n.target == self._PERMUTE_TARGET for n in cat_users):
+        if not all(n.target in self._permute_targets for n in cat_users):
             return False
 
         permute_args = [self._dim_arg(n.args[1]) for n in cat_users]
@@ -724,7 +792,9 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
 
     def fuse_horizontal(self, graph_module):
         modified = False
-        result = FuseIdenticalInputTransformsPass().call(graph_module)
+        result = FuseIdenticalInputTransformsPass(
+            permute_targets=self._permute_targets
+        ).call(graph_module)
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)
@@ -808,7 +878,7 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         needed when crossing reductions or slices.
 
         """
-        if node.target != self._PERMUTE_TARGET or len(node.all_input_nodes) != 1:
+        if node.target not in self._permute_targets or len(node.all_input_nodes) != 1:
             return None
         producer = node.all_input_nodes[0]
         if not isinstance(producer.meta.get("val"), torch.Tensor):

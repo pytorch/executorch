@@ -3,7 +3,7 @@ name: Resolve CI docker image
 # linux_job_v3 passes `docker-image` straight to the runner pod's container, which
 # is pulled before any step runs, so nothing inside the job can derive it. Callers
 # depend on this workflow and name the image as
-# 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:<name>-<hash>.
+# ${docker-registry}/ci-image:<name>-${ci-docker-hash}.
 #
 # Nothing here waits for docker-builds. A commit that changes .ci/docker needs the
 # ciflow/docker label to build the images it asks for; without them the pod fails
@@ -15,6 +15,12 @@ on:
       ci-docker-hash:
         description: Tag suffix shared by every executorch CI image for this commit.
         value: ${{ jobs.resolve.outputs.ci-docker-hash }}
+      docker-registry:
+        description: |
+          Registry and namespace the CI images live in. An output rather than a
+          literal at each call site, and not an `env`, which GitHub does not
+          allow in a reusable workflow's `with`.
+        value: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch
 
 permissions:
   contents: read

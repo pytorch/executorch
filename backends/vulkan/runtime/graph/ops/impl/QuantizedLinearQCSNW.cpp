@@ -17,7 +17,7 @@
 namespace vkcompute {
 
 // Custom global workgroup size function for linear_qcs8w
-utils::uvec3 linear_qcs8w_global_wg_size(
+GlobalWorkGrid linear_qcs8w_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -25,26 +25,27 @@ utils::uvec3 linear_qcs8w_global_wg_size(
   (void)shader;
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  return {static_cast<uint32_t>(graph->numel_of(out)), 1, 1};
+  return graph->create_linear_gwg(
+      utils::safe_downcast<uint64_t>(graph->numel_of(out)));
 }
 
 // Custom local workgroup size function for linear_qcs8w
-utils::uvec3 linear_qcs8w_local_wg_size(
+LocalWorkGroup linear_qcs8w_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {64, 1, 1};
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 // Custom global workgroup size function for linear_qcsnw_tiled
-utils::uvec3 linear_qcsnw_tiled_global_wg_size(
+GlobalWorkGrid linear_qcsnw_tiled_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -79,34 +80,33 @@ utils::uvec3 linear_qcsnw_tiled_global_wg_size(
   }
 
   utils::uvec3 out_limits = graph->logical_limits_of(out);
-  uint32_t global_wg_x = utils::div_up(out_limits[0], out_tile_ntxcols);
-  return {
-      global_wg_x * (utils::div_up(out_limits[1], out_tile_nrows)),
-      1,
+  uint32_t gwg_x = utils::div_up(out_limits[0], out_tile_ntxcols);
+  const utils::uvec3 extents{
+      gwg_x * (utils::div_up(out_limits[1], out_tile_nrows)),
+      1u,
       out_limits[2]};
+  if (shader.kernel_name.find("_coop") != std::string::npos) {
+    return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(8u, 1u, 8u));
+  }
+  return GlobalWorkGrid(extents, kTiledWorkGrid);
 }
 
 // Custom local workgroup size function for linear_qcsnw_tiled
-utils::uvec3 linear_qcsnw_tiled_local_wg_size(
+LocalWorkGroup linear_qcsnw_tiled_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
 
-  // Check if using cooperative algorithm from shader name
-  bool use_coop_algorithm =
-      shader.kernel_name.find("_coop") != std::string::npos;
-
-  if (use_coop_algorithm) {
-    return {8, 1, 8};
-  } else {
-    return {64, 1, 1};
+  if (gwg.required_lwg_size().is_valid()) {
+    return pick_required_lwg(graph, shader, gwg, args, resize_args);
   }
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 void check_linear_qcsnw_args(
@@ -229,15 +229,11 @@ void add_linear_qcs8w_node(
         graph.sizes_pc_of(q_mat2)};
   }
 
-  const utils::uvec3 global_wg = {
-      static_cast<uint32_t>(graph.numel_of(out_W_packed)), 1, 1};
-  const utils::uvec3 local_wg{64, 1, 1};
-
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      linear_qcs8w_global_wg_size,
-      linear_qcs8w_local_wg_size,
+      linear_qcs8w_gwg,
+      linear_qcs8w_lwg,
       // Inputs and Outputs
       {{out_W_packed, vkapi::MemoryAccessType::WRITE},
        {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
@@ -309,44 +305,21 @@ void add_linear_qcsnw_tiled_node(
 
   std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1);
   const int64_t M = utils::val_at(-2, mat1_sizes);
-  uint32_t out_tile_nrows = 1;
   if (M % 3 == 0) {
     kernel_name += "_o4x3";
-    out_tile_nrows = 3;
   } else if (M % 4 == 0) {
     kernel_name += "_o4x4";
-    out_tile_nrows = 4;
   } else if (M % 2 == 0) {
     kernel_name += "_o4x2";
-    out_tile_nrows = 2;
   } else {
     kernel_name += "_o4x1";
-    out_tile_nrows = 1;
-  }
-
-  // Number of output texels in the output tile
-  uint32_t out_tile_ntxcols = 1;
-  if (quant_nbits == 4) {
-    out_tile_ntxcols = 2;
-  }
-
-  utils::uvec3 out_limits = graph.logical_limits_of(out);
-  uint32_t global_wg_x = utils::div_up(out_limits[0], out_tile_ntxcols);
-  utils::uvec3 global_wg_size = {
-      global_wg_x * (utils::div_up(out_limits[1], out_tile_nrows)),
-      1,
-      out_limits[2]};
-
-  utils::uvec3 local_wg_size{64, 1, 1};
-  if (use_coop_algorithm) {
-    local_wg_size = {8, 1, 8};
   }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      linear_qcsnw_tiled_global_wg_size,
-      linear_qcsnw_tiled_local_wg_size,
+      linear_qcsnw_tiled_gwg,
+      linear_qcsnw_tiled_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, q_mat2, scales}, vkapi::kRead}},
       // Shader params buffers
