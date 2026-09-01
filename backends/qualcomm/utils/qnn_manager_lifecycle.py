@@ -4,7 +4,6 @@ import threading
 from typing import Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,

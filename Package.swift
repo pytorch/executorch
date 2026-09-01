@@ -70,6 +70,11 @@ let products = deliverables([
       "c++",
     ],
   ],
+  "executorch_dump": [
+    "targets": [
+      "executorch",
+    ],
+  ],
   "executorch_llm": [
     "targets": [
       "executorch",
@@ -189,6 +194,11 @@ if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_mul_coreml.pte") 
   objcTestResources.append(.copy("add_mul_coreml.pte"))
 }
 
+// The dump test fixture is committed under the target, the way the sibling tests
+// target's fixture is, so the test bundle always ships it and SwiftPM synthesizes
+// Bundle.module.
+let dumpTestResources: [Resource] = [.copy("resources/add.pte")]
+
 let testLinkerSettings: [LinkerSetting] = [
   // The test targets depend on the executorch binary target directly, which
   // carries no linker settings, rather than the with-dependencies target that
@@ -237,6 +247,17 @@ let package = Package(
       path: "extension/apple/ExecuTorch/__tests__/ObjC",
       exclude: [".gitignore"],
       resources: objcTestResources,
+      linkerSettings: testLinkerSettings
+    ),
+    .testTarget(
+      name: "dump_tests",
+      dependencies: [
+        .target(name: "executorch_dump\(debug_suffix)\(dependencies_suffix)"),
+        .target(name: "kernels_optimized\(dependencies_suffix)"),
+        .target(name: "backend_coreml\(dependencies_suffix)"),
+      ],
+      path: "extension/apple/dump/ExecuTorchDump/__tests__",
+      resources: dumpTestResources,
       linkerSettings: testLinkerSettings
     )
   ]

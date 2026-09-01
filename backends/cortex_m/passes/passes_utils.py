@@ -185,6 +185,19 @@ def is_foldable_alpha(alpha: Any) -> TypeGuard[int]:
     return isinstance(alpha, int)
 
 
+def skips_quantized_max_pool2d(node: Node) -> bool:
+    """Whether CortexMMaxPool2DCheck tagged this pool as one that cannot lower.
+
+    The checker annotates the node before tagging it, so a tagged pool still
+    carries qparams and looks lowerable to anything that only reads those.
+    """
+    return (
+        node.meta.get("custom", {})
+        .get("cortex_m", {})
+        .get("skip_quantized_max_pool2d", False)
+    )
+
+
 def is_qualified_int8_node(args) -> bool:
     try:
         if len(args) < 6:

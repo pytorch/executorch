@@ -266,12 +266,11 @@ ExternalProject_Add(
   CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${_mlx_build_type}"
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
              ${_mlx_cxx_flags_arg}
-             # The preset's DEPLOYMENT_TARGET carries the correct per-slice
-             # minimum (iOS 17, macOS 14); the ios.toolchain leaves
-             # CMAKE_OSX_DEPLOYMENT_TARGET at 12.0 on the iOS slices and only
-             # syncs it for MAC. The shader-flag patch reads
-             # CMAKE_OSX_DEPLOYMENT_TARGET, so feed the preset value in as that,
-             # or the iOS metallib is stamped -mios-version-min=12.0.
+             # Feed the preset's per-slice DEPLOYMENT_TARGET in as
+             # CMAKE_OSX_DEPLOYMENT_TARGET: the ios.toolchain does not reliably
+             # carry it to this sub-build, and the shader-flag patch reads
+             # CMAKE_OSX_DEPLOYMENT_TARGET to stamp the metallib's minimum OS
+             # version, so without this the iOS metallib gets the wrong floor.
              -DCMAKE_OSX_DEPLOYMENT_TARGET=${_mlx_osx_deployment_target}
              -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
              -DPLATFORM=${PLATFORM}

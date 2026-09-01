@@ -1805,9 +1805,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             verbose=llm_config.debug.verbose,
         )
     elif llm_config.backend.coreml.enabled and not (
-        llm_config.backend.vulkan.enabled
-        or llm_config.backend.mps.enabled
-        or llm_config.backend.qnn.enabled
+        llm_config.backend.vulkan.enabled or llm_config.backend.qnn.enabled
     ):
         builder = _to_edge_and_lower_llama_coreml(
             builder_exported,

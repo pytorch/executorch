@@ -17,27 +17,28 @@
 
 namespace vkcompute {
 
-utils::uvec3 group_norm_local_wg_size(
+GlobalWorkGrid group_norm_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
   (void)resize_args;
 
-  return {1u, 1u, 64u};
+  const ValueRef mean = args.at(0).refs.at(0);
+  const LocalWorkGroup lwg(1u, 1u, 64u);
+  GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(graph->numel_of(mean)), 1u, 1u},
+      kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(
+      graph->context()->adapter_ptr()->max_compute_workgroup_count(), lwg);
+  return gwg;
 }
 
 void resize_group_norm_texture_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  VK_CHECK_COND(graph != nullptr);
-
   // Extract tensor references from args
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef in = args.at(1).refs.at(0);
@@ -105,8 +106,8 @@ void add_native_group_norm_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      group_norm_local_wg_size,
+      group_norm_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{{mean, rstd}, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -138,8 +139,8 @@ void add_native_group_norm_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(norm_kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite},
        {{in, arg_weight, arg_bias, mean, rstd}, vkapi::kRead}},
