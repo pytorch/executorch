@@ -6,7 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#if __has_include(<ExecuTorch/ExecuTorchEventTracer.h>)
+#import <ExecuTorch/ExecuTorchEventTracer.h>
+#else
 #import "ExecuTorchEventTracer.h"
+#endif
 
 #ifdef __cplusplus
 
