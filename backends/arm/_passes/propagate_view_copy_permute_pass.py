@@ -20,7 +20,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 from .arm_pass import ArmPass
-from .fuse_duplicate_users_pass import TOSA_EXCLUDED_TARGETS
+from .fuse_duplicate_users_pass import quantization_metadata_key, TOSA_EXCLUDED_TARGETS
 from .remove_permutes_around_elementwise_tosa_ops import (
     RemovePermutesAroundElementwiseTosaOps,
 )
@@ -36,6 +36,9 @@ class TosaPropagationOverrides(_BasePass):
 
     def duplicate_user_fusion_exclusions(self) -> frozenset:
         return TOSA_EXCLUDED_TARGETS
+
+    def duplicate_user_fusion_key(self, node: torch.fx.Node) -> Any:
+        return quantization_metadata_key(node)
 
     _REDUCTION_TARGETS = {
         exir_ops.edge.aten.mean.dim,

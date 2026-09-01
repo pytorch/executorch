@@ -5,7 +5,7 @@
 
 import operator
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, Deque, Dict, Hashable, List, Set, Tuple, Type
 
 import torch
@@ -32,6 +32,8 @@ class FuseDuplicateUsersPass(ExportPass):
         may_alias_outputs: Whether independently returned duplicate values may
             be merged. Callers enabling this must restore unique output nodes
             before serialization.
+        allowed_targets: Optional closed set of operator targets eligible for
+            fusion.
         semantic_key: Optional backend metadata included in the duplicate
             signature, represented as an FX argument tree.
 
@@ -45,6 +47,7 @@ class FuseDuplicateUsersPass(ExportPass):
         excluded_targets: frozenset | None = None,
         may_alias_outputs: bool = False,
         *,
+        allowed_targets: Iterable[Any] | None = None,
         semantic_key: Callable[[Node], Argument] | None = None,
     ) -> None:
         super().__init__()
@@ -52,6 +55,9 @@ class FuseDuplicateUsersPass(ExportPass):
         # unsound for any op whose consumers a later stage assumes are distinct,
         # so backends name those here rather than the pass guessing.
         self._excluded_targets = excluded_targets or frozenset()
+        self._allowed_targets = (
+            frozenset(allowed_targets) if allowed_targets is not None else None
+        )
         self._semantic_key = semantic_key
         self._may_alias_outputs = may_alias_outputs
 
@@ -176,6 +182,12 @@ class FuseDuplicateUsersPass(ExportPass):
                 continue
 
             if user.target in self._excluded_targets:
+                continue
+
+            if (
+                self._allowed_targets is not None
+                and user.target not in self._allowed_targets
+            ):
                 continue
 
             if not self._is_safe_to_fuse(user):

@@ -266,6 +266,10 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """
         return frozenset()
 
+    def duplicate_user_fusion_key(self, node: torch.fx.Node) -> Any:
+        """Return backend metadata that must match before users are fused."""
+        return None
+
     def make_fusion_pass(self) -> ExportPass | None:
         """The region-cancellation engine to run before canonicalization.
 
@@ -508,9 +512,11 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
 
     def fuse_horizontal(self, graph_module):
         modified = False
-        result = FuseDuplicateUsersPass(self.duplicate_user_fusion_exclusions()).call(
-            graph_module
-        )
+        result = FuseDuplicateUsersPass(
+            self.duplicate_user_fusion_exclusions(),
+            allowed_targets=self._targets,
+            semantic_key=self.duplicate_user_fusion_key,
+        ).call(graph_module)
         graph_module = result.graph_module
         modified |= result.modified
         return PassResult(graph_module, modified)

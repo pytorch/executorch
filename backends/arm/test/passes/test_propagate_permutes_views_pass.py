@@ -344,6 +344,30 @@ def _run_pass_on_graph(
     ]
 
 
+def test_horizontal_fusion_preserves_distinct_quantization_metadata() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((2, 3))
+    views = []
+    for scale in (0.1, 0.2):
+        view = graph.call_function(VIEW, args=(x, [3, 2]))
+        view.meta["val"] = torch.empty((3, 2))
+        view.meta["output_qparams"] = {0: (scale, 0)}
+        views.append(view)
+    add = graph.call_function(ADD, args=tuple(views))
+    add.meta["val"] = torch.empty((3, 2))
+    graph.output(add)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    result = PropagateViewCopyPermuteUpPass().fuse_horizontal(graph_module)
+
+    remaining_views = [
+        node for node in result.graph_module.graph.nodes if node.target == VIEW
+    ]
+    assert not result.modified
+    assert len(remaining_views) == 2
+
+
 def test_is_swappable_rejects_unnormalized_keep_dim_operator() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
