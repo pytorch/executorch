@@ -324,8 +324,8 @@ TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
 
   std::vector<uint8_t> buffer(
       fbb.GetBufferPointer(), fbb.GetBufferPointer() + fbb.GetSize());
-  if (buffer.size() < 64) {
-    buffer.resize(64, 0);
+  if (buffer.size() < Program::kMinHeadBytes) {
+    buffer.resize(Program::kMinHeadBytes, 0);
   }
 
   BufferDataLoader loader(buffer.data(), buffer.size());

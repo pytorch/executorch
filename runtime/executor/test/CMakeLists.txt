@@ -53,6 +53,7 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
   COMMAND ${_export_program_cmd}
   COMMAND
@@ -62,6 +63,9 @@ add_custom_command(
     ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
     "ModuleAddMul" --backend_id "StubBackend" --outdir
     "${CMAKE_CURRENT_BINARY_DIR}/delegated/"
+  COMMAND
+    ${PYTHON_EXECUTABLE} -m test.models.export_program_with_device_info
+    --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
@@ -77,6 +81,7 @@ add_custom_target(
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleMultipleEntry.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
 )
 
 set(test_env
@@ -92,6 +97,7 @@ set(test_env
     "ET_MODULE_SIMPLE_TRAIN_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
     "ET_MODULE_STATEFUL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
     "ET_MODULE_ADD_MUL_DELEGATED_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
+    "ET_MODULE_ADD_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
 )
 
 et_cxx_test(
@@ -130,8 +136,16 @@ et_cxx_test(
 add_dependencies(method_test generated_pte_files)
 set_property(TEST method_test PROPERTY ENVIRONMENT ${test_env})
 
-# TODO(T191569140): Enable this test. et_cxx_test(method_meta_test SOURCES
-# method_meta_test.cpp EXTRA_LIBS extension_data_loader)
+et_cxx_test(
+  method_meta_test
+  SOURCES
+  method_meta_test.cpp
+  EXTRA_LIBS
+  extension_data_loader
+  program_schema
+)
+add_dependencies(method_meta_test generated_pte_files)
+set_property(TEST method_meta_test PROPERTY ENVIRONMENT ${test_env})
 
 et_cxx_test(
   program_test SOURCES program_test.cpp EXTRA_LIBS extension_data_loader

@@ -408,6 +408,9 @@ bool MethodMeta::uses_backend(const char* backend_name) const {
   }
   for (size_t i = 0; i < delegates->size(); i++) {
     auto delegate = delegates->Get(i);
+    if (delegate == nullptr || delegate->id() == nullptr) {
+      continue;
+    }
     auto backend_name_len = std::strlen(backend_name);
     auto delegate_id_len = delegate->id()->size();
     if (backend_name_len == delegate_id_len &&
