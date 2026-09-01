@@ -947,10 +947,10 @@ void cpu_flash_attention(
           continue;
         }
 
-        // A wrapped ring window can produce two active intervals within one
-        // K/V tile. Find the largest fully masked interior gap and split around
-        // it when it is large enough to repay the extra pair of GEMM calls.
-        // Other sparse masks remain correct: smaller gaps stay represented by
+        // A wrapped ring window has at most one interior gap. custom_sdpa also
+        // accepts arbitrary additive masks, which may contain several gaps, so
+        // find the largest one and split around it when it is large enough to
+        // repay the extra pair of GEMM calls. Smaller gaps stay represented by
         // their existing -inf values inside one bounding interval.
         int64_t largest_gap_begin = active_begin;
         int64_t largest_gap_end = active_begin;
