@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
@@ -32,6 +33,7 @@ from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass 
     is_exact_tosa_boundary_bilinear_downscale,
 )
 
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -312,6 +314,8 @@ class TOSAPartitioner(Partitioner):
 
     """
 
+    compile_spec: ArmCompileSpec
+
     def __init__(
         self,
         compile_spec: TosaCompileSpec,
@@ -332,11 +336,33 @@ class TOSAPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(
             TOSABackend.__name__, compile_spec._to_list()
         )
+        self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply required Arm passes before default ATen decompositions.
+
+        EXIR invokes this backend extension hook automatically through
+        ``to_edge_transform_and_lower``. Model export users should not call it
+        directly.
+
+        Args:
+            exported_program (ExportedProgram): The ATen-dialect program to
+                transform.
+
+        Returns:
+            ExportedProgram: The transformed ATen-dialect program.
+
+        """
+        return ArmPassManager(
+            self.compile_spec
+        ).transform_for_pre_decomposition_pipeline(exported_program)
 
     def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
         """Register a custom op to be considered supported."""
