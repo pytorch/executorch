@@ -6,7 +6,6 @@
 
 import logging
 import operator
-
 from collections import deque
 from typing import Any
 
@@ -121,8 +120,7 @@ def set_arg_node_repr_or_transition(
         return single_node_impl(arg_node)
     elif isinstance(arg_node, (list, tuple)):
         ret: bool = False
-        for n in arg_node:
-            assert isinstance(n, torch.fx.Node)
+        for n in utils.tensor_nodes_in_arg(arg_node):
             assert utils.is_single_tensor_node(n)
             ret = single_node_impl(n) or ret
 
@@ -193,9 +191,12 @@ class TagMemoryMetaPass(ExportPass):
             return True
 
         if isinstance(node, (tuple, list)):
-            for n in node:
-                if not isinstance(n, torch.fx.Node):
-                    return False
+            # A list argument may carry a None for every dimension the operator
+            # does not touch, as index.Tensor does; only the tensors matter.
+            entries = utils.tensor_nodes_in_arg(node)
+            if len(entries) == 0:
+                return False
+            for n in entries:
                 if not self.is_non_constant_tensor_node(n):
                     return False
 
@@ -259,7 +260,7 @@ class TagMemoryMetaPass(ExportPass):
 
         # Special case for cat - use the first tensor in the list as representative
         if isinstance(arg_node, list):
-            arg_node = arg_node[0]
+            arg_node = utils.tensor_nodes_in_arg(arg_node)[0]
 
         if utils.has_node_repr(arg_node):
             arg_node_repr = utils.get_node_repr(arg_node)
@@ -422,7 +423,7 @@ class TagMemoryMetaPass(ExportPass):
         # First, trace downstream users to discover what layout they prefer.
         arg_node = op_repsets.op_node.args[arg_i]
         if isinstance(arg_node, list):
-            arg_node = arg_node[0]
+            arg_node = utils.tensor_nodes_in_arg(arg_node)[0]
 
         arg_repset = op_repsets.get_arg_repset(arg_i)
         if not arg_repset.is_constrained():
@@ -526,8 +527,7 @@ class TagMemoryMetaPass(ExportPass):
                     or transitions_inserted
                 )
             elif isinstance(arg_node, (list, tuple)):
-                for n in arg_node:
-                    assert isinstance(n, torch.fx.Node)
+                for n in utils.tensor_nodes_in_arg(arg_node):
                     assert utils.is_single_tensor_node(n)
                     transitions_inserted = (
                         set_arg_node_repr_or_transition(

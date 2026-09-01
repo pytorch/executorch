@@ -264,15 +264,29 @@ def is_tensor_node(node: Any) -> bool:
     return False
 
 
-def is_tensor_arg_node(node: Any) -> bool:
-    if isinstance(node, torch.fx.Node):
-        return is_tensor_node(node)
-    elif isinstance(node, (list, tuple)):
-        if len(node) == 0:
-            return False
-        return all(is_tensor_node(n) for n in node)
+def tensor_nodes_in_arg(node: Any) -> List[torch.fx.Node]:
+    """The tensor nodes that an operator argument refers to.
 
-    return False
+    An argument is either a single tensor node or a list of them. A few
+    operators pass a list with a None for every dimension that is not involved:
+    `index.Tensor(x, [None, None, idx])` gathers along dim 2. Those Nones carry
+    no tensor and are skipped, so the tensors that ARE there still get a
+    representation assigned.
+    """
+    if isinstance(node, torch.fx.Node):
+        return [node] if is_tensor_node(node) else []
+    if isinstance(node, (list, tuple)):
+        entries = [n for n in node if n is not None]
+        if len(entries) == 0:
+            return []
+        if all(is_tensor_node(n) for n in entries):
+            return entries
+
+    return []
+
+
+def is_tensor_arg_node(node: Any) -> bool:
+    return len(tensor_nodes_in_arg(node)) > 0
 
 
 def num_tensor_arg_nodes(node: torch.fx.Node) -> int:
@@ -1512,10 +1526,10 @@ class OpRepSets:
                 arg_node.meta["val"], arg_repsets, texture_limits
             )
         elif isinstance(arg_node, list) and all(
-            is_single_tensor_node(n) for n in arg_node
+            is_single_tensor_node(n) for n in tensor_nodes_in_arg(arg_node)
         ):
             return filter_invalid_reprs_for_node_list(
-                arg_repsets, arg_node, texture_limits
+                arg_repsets, tensor_nodes_in_arg(arg_node), texture_limits
             )
         # Special case for getitem; return the repset of the particular val in the
         # list of tensors that is being extracted.

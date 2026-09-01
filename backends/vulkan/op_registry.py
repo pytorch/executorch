@@ -1448,26 +1448,28 @@ def register_index_tensor():
         if self_val is None:
             return None
 
-        # Only support exactly one non-None index tensor, applied to dim 0.
+        # Exactly one index tensor; the position it sits at is the dimension
+        # the gather runs along.
         if not isinstance(indices, (list, tuple)):
             return None
-        non_none = [idx for idx in indices if idx is not None]
-        if len(non_none) != 1 or indices[0] is None:
+        positions = [i for i, idx in enumerate(indices) if idx is not None]
+        if len(positions) != 1:
             return None
-        index_arg = non_none[0]
+        dim = positions[0]
+        index_arg = indices[dim]
         if not isinstance(index_arg, torch.fx.Node):
             return None
         index_val = index_arg.meta.get("val", None)
         if index_val is None:
             return None
 
-        return self_val, index_val
+        return self_val, index_val, dim
 
     def check_index_tensor_node(node: torch.fx.Node) -> bool:
         shapes = _index_tensor_shapes(node)
         if shapes is None:
             return False
-        _, index_val = shapes
+        _, index_val, _ = shapes
         # The gather is expressed as "one index position per output slice", so
         # the index must be 1-D. `self` may be any rank: the buffer shader
         # copies self's trailing dims through unchanged.
@@ -1475,6 +1477,10 @@ def register_index_tensor():
 
     def pick_index_tensor_storage(node: torch.fx.Node):
         shapes = _index_tensor_shapes(node)
+        # A gather on any dimension but 0 is handed to index_select, which reads
+        # and writes channels-packed textures.
+        if shapes is not None and shapes[2] != 0:
+            return utils.CHANNELS_PACKED_TEXTURE, utils.CHANNELS_PACKED_TEXTURE
         # Only the buffer shader handles a higher-rank `self`; the texture
         # variant still assumes the 1-D form (it reads self[idx, 0, 0, 0]).
         if shapes is not None and len(shapes[0].size()) > 1:

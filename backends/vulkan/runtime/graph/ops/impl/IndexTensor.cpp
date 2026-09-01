@@ -72,14 +72,39 @@ void index_tensor(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef indices_list_ref = args[1];
   ValueRef out = args[2];
 
-  ValueListPtr indices_list = graph.get_value_list(indices_list_ref);
-  VK_CHECK_COND(
-      indices_list->size() == 1,
-      "index.Tensor: only one index tensor is supported");
+  // The indices list carries a null for every leading dimension that is not
+  // indexed, so the position of the tensor entry is the dimension the gather
+  // runs along. Exactly one entry may be a tensor.
+  int64_t dim = -1;
+  ValueRef index = kDummyValueRef;
+  {
+    // Scoped: this pointer has to be released before add_scalar() below, which
+    // may reallocate the graph's value store.
+    ValueListPtr indices_list = graph.get_value_list(indices_list_ref);
+    for (size_t i = 0; i < indices_list->size(); ++i) {
+      const ValueRef entry = indices_list->at(i);
+      if (graph.val_is_none(entry)) {
+        continue;
+      }
+      VK_CHECK_COND(
+          dim == -1, "index.Tensor: only one index tensor is supported");
+      dim = static_cast<int64_t>(i);
+      index = entry;
+    }
+  }
+  VK_CHECK_COND(dim != -1, "index.Tensor: no index tensor found");
 
-  ValueRef index = indices_list->at(0);
+  if (dim == 0) {
+    add_index_tensor_node(graph, self, index, out);
+    return;
+  }
 
-  add_index_tensor_node(graph, self, index, out);
+  // Gathering along any other dimension is exactly index_select, which already
+  // handles every dimension. Reusing it leaves the index_tensor shader, which
+  // gathers along the leading dim, untouched.
+  const ValueRef dim_ref = graph.add_scalar<int64_t>(dim);
+  VK_GET_OP_FN("aten.index_select.default")
+  (graph, {self, dim_ref, index, out});
 }
 
 REGISTER_OPERATORS {

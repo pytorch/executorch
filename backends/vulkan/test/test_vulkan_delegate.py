@@ -780,6 +780,23 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(Gather(), sample_inputs)
 
+    def test_vulkan_backend_index_tensor_non_leading_dim(self):
+        # `x[:, :, positions]`: the index sits on the last dim, which is how a
+        # replicate-style gather over a sequence is written. The support check
+        # used to require the index to be on dim 0, so the whole op fell back to
+        # the CPU and cut the graph in two everywhere it appeared.
+        class Gather(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("positions", torch.tensor([0, 0, 1, 3, 3]))
+
+            def forward(self, x):
+                return x[:, :, self.positions] * 2.0
+
+        sample_inputs = (torch.rand(size=(1, 4, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(Gather(), sample_inputs)
+
     @disable_test(
         "Currently this test is failing due to weird partitioning because the eq scalar"
         "operator is not supported yet. Re-enable when the operator is supported."
