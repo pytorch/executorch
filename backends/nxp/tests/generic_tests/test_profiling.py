@@ -260,20 +260,7 @@ class TestProfiling:
             use_neutron_for_format_conversion=False,
             use_profiling=True,
         )
-        neutron_map = extract_map_from_logs(caplog)
-        assert neutron_map == {
-            0: (6,),  # Conv2DStandardV2
-            1: (8,),  # Conv2DDepthwiseV2 (AvgPool)
-            2: (7,),  # MaxPool
-            3: (),  # TransposeCHW
-            4: (),  # TransposeCHW
-            5: (),  # TransposeCHW
-            6: (),  # Slice
-            7: (),  # Pad
-            8: (),  # Conv2DPointwise
-            9: (),  # Slice
-            10: (),  # Neutron Dump
-        }
+        assert extract_map_from_logs(caplog) is None
 
     def test__cifar(self, caplog, request):
         caplog.set_level(logging.INFO)
@@ -305,6 +292,42 @@ class TestProfiling:
         }
         inspector_check(get_test_name(request))
 
+    def test__cifar_batch_2(self, caplog, request):
+        caplog.set_level(logging.INFO)
+        input_shape = (2, 3, 32, 32)
+        model = CifarNetModel()
+        lower_run_compare(
+            model,
+            input_shape,
+            dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
+            output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
+            use_profiling=True,
+        )
+        neutron_map = extract_map_from_logs(caplog)
+        assert neutron_map == {
+            0: (10, 11),  # Pad
+            1: (10, 11),  # Conv2DStandardV1 (first batch item)
+            2: (10, 11),  # Conv2DStandardV1 (second batch item)
+            3: (12,),  # MaxPool (first batch item)
+            4: (12,),  # MaxPool (second batch item)
+            5: (13, 14),  # Conv2DStandardV1 (first batch item)
+            6: (13, 14),  # Conv2DStandardV1 (second batch item)
+            7: (15,),  # MaxPool (first batch item)
+            8: (15,),  # MaxPool (second batch item)
+            9: (16, 17),  # Conv2DStandardV1 (first batch item)
+            10: (16, 17),  # Conv2DStandardV1 (second batch item)
+            11: (18,),  # MaxPool (first batch item)
+            12: (18,),  # MaxPool (second batch item)
+            13: (20,),  # Conv2DPointwise (FullyConnected)
+            14: (20,),  # Slice (FullyConnected)
+            15: (21,),  # Pad
+            16: (21,),  # Softmax
+            17: (21,),  # Slice
+            18: (),  # Neutron Dump
+        }
+
     def test__avg_pool(self, caplog, request):
         caplog.set_level(logging.INFO)
         input_shape = (2, 9, 6, 15)
@@ -321,9 +344,10 @@ class TestProfiling:
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
             0: (2,),  # Pad
-            1: (2,),  # Conv2DDepthwiseDense
-            2: (2,),  # Slice
-            3: (),  # Neutron Dump
+            1: (2,),  # Conv2DDepthwiseDense (first batch item)
+            2: (2,),  # Conv2DDepthwiseDense (second batch item)
+            3: (2,),  # Slice
+            4: (),  # Neutron Dump
         }
 
     def test__parallel_pool(self, caplog, request):
@@ -343,12 +367,14 @@ class TestProfiling:
         assert neutron_map == {
             0: (8, 9),  # Conv2DStandardV1 (Pad + Conv2d)
             1: (10,),  # Conv2DStandardV1
-            2: (11,),  # Add
-            3: (13,),  # Conv2DDepthwiseV2 (AvgPool)
-            4: (12,),  # MaxPool
-            5: (14,),  # StridedSliceConcat
-            6: (15, 16),  # Conv2DPointwise (Conv2D + Relu)
-            7: (),  # Neutron Dump
+            2: (),  # MemCpy
+            3: (11,),  # Add
+            4: (13,),  # Conv2DDepthwiseV2 (AvgPool)
+            5: (12,),  # MaxPool
+            6: (14,),  # StridedSliceConcat
+            7: (14,),  # StridedSliceConcat
+            8: (15, 16),  # Conv2DPointwise (Conv2D + Relu)
+            9: (),  # Neutron Dump
         }
 
     def test__resnet8(self, caplog, request):
@@ -387,6 +413,55 @@ class TestProfiling:
             16: (41,),  # FullyConnected
             17: (),  # Neutron Dump
         }
+
+    def test__resnet8_batch_2(self, caplog, request):
+        # Three-stage residual network for the MLPerf Tiny image-classification.
+        caplog.set_level(logging.INFO)
+        model = ResNet8()
+        input_shape = (2, 3, 32, 32)
+
+        lower_run_compare(
+            model,
+            input_shape,
+            dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
+            output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
+            use_profiling=True,
+        )
+        neutron_map = extract_map_from_logs(caplog)
+        assert neutron_map == {
+            0: (14, 15),  # Conv2DStandardV2 (1/2 batch item)
+            1: (14, 15),  # Conv2DStandardV2 (2/2 batch item)
+            2: (17, 18),  # Conv2DStandardV1 (1/2 batch item)
+            3: (17, 18),  # Conv2DStandardV1 (2/2 batch item)
+            4: (20,),  # Conv2DStandardV1 (1/2 batch item)
+            5: (20,),  # Conv2DStandardV1 (2/2 batch item)
+            6: (21,),  # Add
+            7: (22,),  # GlobalBiasScale (Relu)
+            8: (28,),  # Conv2DStandardV1 (1/2 batch item)
+            9: (28,),  # Conv2DStandardV1 (2/2 batch item)
+            10: (24, 25),  # Conv2DStandardV1 (1/2 batch item)
+            11: (24, 25),  # Conv2DStandardV1 (2/2 batch item)
+            12: (27,),  # Conv2DStandardV1 (1/2 batch item)
+            13: (27,),  # Conv2DStandardV1 (2/2 batch item)
+            14: (29,),  # Add
+            15: (30,),  # GlobalBiasScale (Relu)
+            16: (36,),  # Conv2DStandardV1 (1/2 batch item)
+            17: (36,),  # Conv2DStandardV1 (2/2 batch item)
+            18: (32, 33),  # Conv2DStandardV1 (1/2 batch item)
+            19: (32, 33),  # Conv2DStandardV1 (2/2 batch item)
+            20: (35,),  # Conv2DStandardV1 (1/2 batch item)
+            21: (35,),  # Conv2DStandardV1 (2/2 batch item)
+            22: (37,),  # Add
+            23: (38,),  # GlobalBiasScale (Relu)
+            24: (39,),  # GlobalAvgPool (1/2 batch item)
+            25: (39,),  # GlobalAvgPool (2/2 batch item)
+            26: (41,),  # Conv2DPointwise (FullyConnected)
+            27: (41,),  # Slice (FullyConnected)
+            28: (),  # Neutron Dump
+        }
+        inspector_check(get_test_name(request))
 
     def test__ds_cnn(self, caplog, request):
         # Depthwise Separable CNN used for keyword spotting in MLCommons Tiny.

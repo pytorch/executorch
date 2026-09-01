@@ -5,7 +5,7 @@
 import logging
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # example:  Type: CONV_2D
 #               Inputs:
@@ -25,7 +25,7 @@ PATTERN_NODE = (
 #   Name: quantized_decomposed_dequantize_per_tensor_default_5
 #   Kind: Variable
 PATTERN_TENSOR_KIND = r"Name:\s+(?P<name>\S+)\s+Kind:\s+(?P<kind>[^\r\n]+)"
-# The pattern is very similar to operator pattern.
+# The pattern is very similar to the operator pattern.
 PATTERN_SUBGRAPH = (
     r"^(?P<num>\d+)\s*"
     r"Inputs:(?P<inputs>[\s\S]*?)"
@@ -36,6 +36,8 @@ PATTERN_SUBGRAPH = (
 PATTERN_IO_TENSOR_NAME = r"\[\d+\]:\s+(?P<name>[\S]+)"
 # example: Statistics for NeutronGraph "subgraph_195":
 PATTERN_GRAPH = r"Statistics for NeutronGraph \"subgraph_(?P<num>\d+)\":"
+# example:   numKernelCalls      0x9
+PATTERN_NUM_KERNEL_CALLS = r"numKernelCalls\s+0x([0-9a-fA-F]+)"
 # example:      NeutronOperator "subgraph_001":
 #                       Operators:
 #                           PAD
@@ -50,28 +52,36 @@ PATTERN_VERBOSE_KERNELS = (
     r"Kernels:\s*(?P<kernels>[\s\S]*?)"
     r"\s*(NeutronOperator|^$|=)"
 )
-# Two graphs are expected in the input log: original and converted.
-EXPECTED_GRAPHS = 2
-# Marker for a Variable (dynamic) tensor kind in the converter log.
+# Regex to extract stable weight pointer offsets from a CALLARGS parameter string.
+# Matches filterPtr, biasPtr, outPostScalePtr fields — offsets into the Consts region
+# that remain identical across all batch repetitions of the same operator but differ
+# between sequential operators that happen to share the same kernel type.
+_WEIGHT_PTR_RE = re.compile(r"(?:filterPtr|biasPtr|outPostScalePtr):\s*\(([^)]+)\)")
+
 TENSOR_KIND_VARIABLE = "Variable"
+# Two graphs are expected in the input log: original (TFLite) and converted (Neutron).
+EXPECTED_GRAPHS = 2
 
 
 @dataclass
 class Node:
-    name: str  # Name of the node/operator.
-    inputs: list[str]  # Dynamic (variable) inputs only.
-    outputs: list[str]  # Dynamic (variable) outputs only.
-    location: int  # Location in graph/subgraph.
+    name: str
+    inputs: list[str]  # dynamic (Variable) inputs only
+    outputs: list[str]  # dynamic (Variable) outputs only
+    location: int  # operator location index in its subgraph
 
 
 @dataclass
 class SubgraphInfo:
-    num: int  # Subgraph number.
-    location: int  # Location in neutron graph.
-    inputs: list[str]  # Dynamic inputs.
-    outputs: list[str]  # Dynamic outputs.
-    kernels: int  # Number of neutron kernels in this subgraph.
-    nodes: list[Node]  # Operator nodes (for diagnostics).
+    num: int  # subgraph number as it appears in the converter log
+    location: int  # CALLARGS slot index of the first kernel (batch-aware)
+    inputs: list[str]  # dynamic (Variable) inputs
+    outputs: list[str]  # dynamic (Variable) outputs
+    kernels: int  # number of CALLARGS slots assigned to this subgraph
+    nodes: list[Node]  # operator nodes inside this subgraph (for diagnostics)
+    kernel_names: list[str] = field(
+        default_factory=list
+    )  # kernel names from Extract Graphs
 
 
 def get_tensors_name(tensors: str) -> list[str]:
@@ -110,8 +120,8 @@ def tensors_match(a: str, b: str) -> bool:
          Handles cases where the Neutron converter appends suffixes such as "/pad"
          or "/transpose" to the original name.
 
-    Leaf-name matching is intentionally omitted - short generic names like "Relu"
-    or "pad" appear in many unrelated tensors and cause false positives.
+    Leaf-name matching is intentionally omitted because short generic names like
+    "Relu" or "pad" appear in many unrelated tensors and cause false positives.
 
     :param a: First tensor name.
     :param b: Second tensor name.
@@ -142,7 +152,7 @@ class NeutronMap:
         tflite_nodes (list[Node]): TFLite node information (dynamic I/O only).
         neutron_subgraphs (list[SubgraphInfo]): Neutron subgraph information.
         neutron_graphs (list[int]): Numbers of top-level Neutron graphs.
-        neutron_kernels_num (int): Total number of Neutron kernels.
+        neutron_kernels_num (int): Total number of Neutron kernels (runtime CALLARGS count).
         edge_to_tflite_map (dict[int, tuple[int, ...]]): Edge -> TFLite operator map.
         tflite_to_neutron_map (dict[int, tuple[int, ...]]): TFLite -> Neutron operator map.
         edge_to_neutron_map (dict[int, tuple[int, ...]]): Edge -> Neutron operator map.
@@ -169,7 +179,15 @@ class NeutronMap:
         self.tflite_to_neutron_map: dict[int, tuple[int, ...]] = {}
         self.edge_to_neutron_map: dict[int, tuple[int, ...]] = {}
         self._tflite_tensor_names: set[str] = set()
-        self._split_profiling_log(neutron_compiler_log)
+        # Set to True when neutron_kernels_num was overridden from the microcode
+        # numKernelCalls field (authoritative for batch > 1 / tiling). In that case
+        # the completeness sanity check is enabled.
+        self._microcode_kernels_authoritative: bool = False
+        # Number of CALLARGS slots assigned to NeutronOperators by
+        # _remap_locations_from_microcode. Excludes injected helper slots (MemCpy, etc.)
+        # that have no TFLite counterpart and can never be covered by the mapping.
+        self._coverable_slot_count: int = 0
+        self._split_profiling_log(neutron_converter_log)
 
     # ------------------------------------------------------------------
     # Log parsing
@@ -219,6 +237,21 @@ class NeutronMap:
         )
         if self.neutron_subgraphs:
             self._update_neutron_subgraphs_info(extracted_graph_dump)
+            # Remap subgraph locations and kernel counts from the actual CALLARGS sequence.
+            # This fixes batch > 1 where each operator generates N CALLARGS events and
+            # handles injected helper kernels (MemCpy, extra StridedSliceConcat) that are
+            # not listed in Extract Graphs but do appear in the Microinstructions section.
+            self._remap_locations_from_microcode(optimization_dump)
+
+        # Override neutron_kernels_num with the value from the microcode header when
+        # available. The microcode numKernelCalls field counts the actual CALLARGS
+        # instructions executed at runtime. When it exceeds the Extract Graphs count
+        # the microcode repeats or injects kernels (batch > 1, tiling, helper ops)
+        # and the completeness sanity check becomes meaningful.
+        microcode_kernel_calls = self._parse_num_kernel_calls(optimization_dump)
+        if microcode_kernel_calls > self.neutron_kernels_num:
+            self.neutron_kernels_num = microcode_kernel_calls
+            self._microcode_kernels_authoritative = True
 
     def _parse_neutron_subgraphs(
         self, graph_dump: str, tensor_kinds: dict[str, bool]
@@ -274,6 +307,10 @@ class NeutronMap:
     def _update_neutron_subgraphs_info(self, extracted_graph: str) -> None:
         """Fill in location and kernel count for each Neutron subgraph from verbose output.
 
+        Parses the Extract Graphs section (verbose kernel listing) to determine each
+        NeutronOperator's batch=1 kernel offset and kernel name list. The top-level
+        NeutronGraph entry accumulates the total kernel count into neutron_kernels_num.
+
         :param extracted_graph: Verbose Neutron graph dump (Extract Graphs section).
         """
         location_shift = 0
@@ -281,7 +318,12 @@ class NeutronMap:
             node_info: dict[int, dict] = {}
             running_loc = location_shift
             for m in re.finditer(PATTERN_VERBOSE_KERNELS, graph_text):
-                kernels = [k for k in m.group("kernels").split("\n") if k.strip()]
+                # strip() is required: the Extract Graphs section uses Windows-style
+                # line endings (\r\n) and indented kernel names, so raw splits yield
+                # entries like "Pad\r" or "            Conv2DStandardV2".
+                kernels = [
+                    k.strip() for k in m.group("kernels").split("\n") if k.strip()
+                ]
                 node_info[int(m.group("subgraph"))] = {
                     "location": running_loc,
                     "kernels": kernels,
@@ -300,9 +342,176 @@ class NeutronMap:
                 if sg.num in node_info:
                     sg.kernels = len(node_info[sg.num]["kernels"])
                     sg.location = node_info[sg.num]["location"]
+                    sg.kernel_names = node_info[sg.num]["kernels"]
                 elif sg.num == graph_num:
+                    # Top-level NeutronGraph entry: accumulate total kernel count.
                     sg.kernels = sum(len(v["kernels"]) for v in node_info.values())
                     self.neutron_kernels_num += sg.kernels
+
+    @staticmethod
+    def _parse_num_kernel_calls(optimization_dump: str) -> int:
+        """Return the sum of numKernelCalls across all NeutronGraphs in the microcode header.
+
+        :param optimization_dump: Converter log section between 'Graphs:' splits.
+        :return: Total CALLARGS instruction count, or 0 if the field is absent (older logs).
+        """
+        return sum(
+            int(m.group(1), 16)
+            for m in re.finditer(PATTERN_NUM_KERNEL_CALLS, optimization_dump)
+        )
+
+    @staticmethod
+    def _parse_callargs(
+        optimization_dump: str,
+    ) -> list[tuple[str, tuple[str, ...] | None]]:
+        """Parse CALLARGS entries from the Microinstructions section.
+
+        Returns (kernel_name, fingerprint) pairs where fingerprint is a tuple of
+        weight-pointer offsets (filterPtr, biasPtr, outPostScalePtr) used to distinguish
+        same-type operators across batch repetitions. None when no weight pointers are present.
+
+        :param optimization_dump: Converter log section between 'Graphs:' splits.
+        :return: List of (kernel_name, fingerprint) pairs in CALLARGS order.
+        """
+        result = [
+            (
+                m.group(1),
+                (lambda h: tuple(h) if h else None)(_WEIGHT_PTR_RE.findall(m.group(2))),
+            )
+            for m in re.finditer(
+                r"\bCALLARGS\s+(\w+)\s+@\(\)\s+\{([^}]*)\}", optimization_dump
+            )
+        ]
+        if not result:
+            result = [
+                (m.group(1), None)
+                for m in re.finditer(r"\bCALLARGS\s+(\w+)\b", optimization_dump)
+            ]
+        return result
+
+    @staticmethod
+    def _assign_group_slots(
+        group: list[SubgraphInfo],
+        group_entries: list[tuple[int, tuple[str, ...] | None]],
+    ) -> None:
+        """Assign CALLARGS slot indices to a group of same-first-kernel subgraphs.
+
+        Uses weight-pointer fingerprints to distinguish two cases:
+          - Each subgraph has a unique fingerprint: sequential operators of the same
+            kernel type. Each fingerprint bucket is assigned to one subgraph.
+          - All entries share one fingerprint (or fingerprint count != group size):
+            batch repetitions of the same operator, or an ambiguous case. Slots are
+            divided evenly among group members.
+
+        After assignment, sg.location holds the absolute CALLARGS slot index of the
+        first kernel call for that subgraph, and sg.kernels holds the total count.
+
+        :param group: Subgraphs to assign slots to (a contiguous slice of active[]).
+        :param group_entries: (absolute_slot_index, fingerprint) pairs for this group.
+        """
+        fp_buckets: dict[tuple[str, ...] | None, list[int]] = {}
+        for abs_idx, fp in group_entries:
+            fp_buckets.setdefault(fp, []).append(abs_idx)
+
+        group_size = len(group)
+        if len(fp_buckets) == group_size and group_size > 1:
+            # Each subgraph has a unique fingerprint: assign its own bucket.
+            for sg, indices in zip(group, fp_buckets.values()):
+                sg.location = indices[0]
+                # Each CALLARGS hit counts only the first kernel. The total slot count for
+                # this subgraph is repetitions * kernels_per_subgraph. For batch=1 each
+                # bucket has exactly 1 entry so kernels stays as set by Extract Graphs.
+                sg.kernels = len(indices) * max(len(sg.kernel_names), sg.kernels)
+        else:
+            # Shared fingerprint (batch repetitions) or count mismatch: divide evenly.
+            total = len(group_entries)
+            per = max(total // group_size, 1)
+            slices = [
+                group_entries[m * per : (m + 1) * per] for m in range(group_size - 1)
+            ]
+            slices.append(group_entries[(group_size - 1) * per :])
+            for sg, sl in zip(group, slices):
+                if sl:
+                    sg.location = sl[0][0]
+                    sg.kernels = len(sl) * max(len(sg.kernel_names), sg.kernels)
+
+    def _remap_locations_from_microcode(self, optimization_dump: str) -> None:
+        """Remap each active subgraph's location and kernel count using the actual CALLARGS sequence.
+
+        No-op when no CALLARGS are found (older log format without Microinstructions section).
+
+        :param optimization_dump: Converter log section between 'Graphs:' splits.
+        """
+        callargs_full = self._parse_callargs(optimization_dump)
+        if not callargs_full:
+            return
+
+        callargs = [k for k, _ in callargs_full]
+
+        # Active operator subgraphs with kernel name info, sorted by batch=1 location.
+        active = sorted(
+            [
+                sg
+                for sg in self.neutron_subgraphs
+                if sg.num not in self.neutron_graphs
+                and sg.location >= 0
+                and sg.kernel_names
+            ],
+            key=lambda sg: sg.location,
+        )
+        if not active:
+            return
+
+        i = 0
+        ca_idx = 0
+        while i < len(active):
+            first_kernel = active[i].kernel_names[0]
+
+            # Find the end of the group of subgraphs sharing the same first kernel name.
+            group_end = i + 1
+            while (
+                group_end < len(active)
+                and active[group_end].kernel_names
+                and active[group_end].kernel_names[0] == first_kernel
+            ):
+                group_end += 1
+
+            # Advance to the first CALLARGS slot matching this group's first kernel.
+            while ca_idx < len(callargs) and callargs[ca_idx] != first_kernel:
+                ca_idx += 1
+            if ca_idx >= len(callargs):
+                break
+
+            # Collect all entries for this group, stopping at the next group's first kernel.
+            next_first = (
+                active[group_end].kernel_names[0]
+                if group_end < len(active) and active[group_end].kernel_names
+                else None
+            )
+            group_entries: list[tuple[int, tuple[str, ...] | None]] = []
+            scan_idx = ca_idx
+            while scan_idx < len(callargs_full):
+                k, fp = callargs_full[scan_idx]
+                if next_first is not None and k == next_first:
+                    break
+                if k == first_kernel:
+                    group_entries.append((scan_idx, fp))
+                scan_idx += 1
+
+            if group_entries:
+                self._assign_group_slots(active[i:group_end], group_entries)
+            ca_idx = scan_idx
+            i = group_end
+
+        # Count assigned slots; injected helper kernels (MemCpy, etc.) are excluded.
+        self._coverable_slot_count = len(
+            {
+                idx
+                for sg in active
+                if sg.location >= 0 and sg.kernels > 0
+                for idx in range(sg.location, sg.location + sg.kernels)
+            }
+        )
 
     # ------------------------------------------------------------------
     # Neutron subgraph chain helpers
@@ -321,6 +530,10 @@ class NeutronMap:
              containment. For example, "CifarNet/logits/BiasAdd" (TFLite-level output)
              would hierarchically match "CifarNet/logits/BiasAdd/pad" (Neutron-internal
              input), which would wrongly chain subgraphs across TFLite boundaries.
+
+        Pass-through subgraphs (input name == output name) are always chained after
+        their predecessor — they are injected by the Neutron converter for data routing
+        and always connect to exactly one producer.
         """
         if not consumer.inputs or not producer.outputs:
             return False
@@ -333,7 +546,6 @@ class NeutronMap:
         if not connecting_pairs:
             return False
         # Pass-through subgraph (input name == output name): always chain after predecessor.
-        # These are injected by the Neutron converter purely for data routing.
         if consumer.inputs == consumer.outputs:
             return True
         # Both sides of each connecting pair must be Neutron-internal (not TFLite tensors).
@@ -347,7 +559,9 @@ class NeutronMap:
         """Group active Neutron subgraphs into linearly-connected execution chains.
 
         A chain is a sequence [sg_0, sg_1, ...] where each sg_{i+1} is the unique
-        consumer of sg_i's outputs. Subgraphs not part of a longer chain form singletons.
+        Neutron-internal consumer of sg_i's outputs. Subgraphs not part of a longer
+        chain form singletons. Subgraphs with multiple predecessors (join targets)
+        or multiple successors (fork sources) break the chain.
         """
         active = sorted(
             (
@@ -386,7 +600,7 @@ class NeutronMap:
                 visited.add(successors[0].num)
             chains.append(chain)
 
-        # Any subgraphs unreachable from a chain root become singletons.
+        # Any subgraphs unreachable from a chain root (e.g. fork targets) become singletons.
         for sg in active:
             if sg.num not in visited:
                 chains.append([sg])
@@ -398,8 +612,11 @@ class NeutronMap:
     ) -> tuple[list[str], list[str]]:
         """Return the external (boundary) inputs and outputs of a Neutron subgraph chain.
 
-        Chain inputs = inputs of the first subgraph.
-        Chain outputs = outputs not consumed internally by any later subgraph.
+        Chain inputs  = dynamic inputs of the first subgraph in the chain.
+        Chain outputs = dynamic outputs not consumed internally by any later subgraph.
+
+        :param chain: Ordered list of SubgraphInfo forming one execution chain.
+        :return: (chain_inputs, chain_outputs) as lists of tensor names.
         """
         if not chain:
             return [], []
@@ -427,7 +644,7 @@ class NeutronMap:
         return (
             bool(tf_node.inputs)
             and bool(sg_inputs)
-            and (count_tensor_matches(tf_node.inputs, sg_inputs) == len(tf_node.inputs))
+            and count_tensor_matches(tf_node.inputs, sg_inputs) == len(tf_node.inputs)
                     )
 
     def _outputs_match(self, sg_outputs: list[str], chain_outputs: list[str]) -> bool:
@@ -435,7 +652,7 @@ class NeutronMap:
         return (
             bool(chain_outputs)
             and bool(sg_outputs)
-            and (count_tensor_matches(chain_outputs, sg_outputs) == len(chain_outputs))
+            and count_tensor_matches(chain_outputs, sg_outputs) == len(chain_outputs)
                 )
 
     def _find_matching_tflite_chain(
@@ -448,10 +665,31 @@ class NeutronMap:
           2. For each candidate, check for a 1-to-1 output match.
           3. Otherwise, extend the chain forward greedily until the outputs match sg_outputs.
 
-        :param sg_inputs: Dynamic inputs of the (virtual) Neutron subgraph/chain.
-        :param sg_outputs: Dynamic outputs of the (virtual) Neutron subgraph/chain.
+        When all sg_outputs are Neutron-internal (not in the TFLite tensor name set),
+        the converter renamed the final output tensor (e.g. "newOut" in MobileNetV1
+        GlobalAvgPool or "newOut" in batch>1 FullyConnected). In that case
+        **input-only matching** is used: return the single TFLite node whose inputs
+        match sg_inputs without any extension. This is safe for both intermediate and
+        terminal Neutron chains because it never absorbs TFLite nodes that belong to
+        later Neutron chains.
+
+        :param sg_inputs: Dynamic inputs of the Neutron subgraph / chain boundary.
+        :param sg_outputs: Dynamic outputs of the Neutron subgraph / chain boundary.
         :return: Ordered list of TFLite node locations forming the match, or [].
         """
+        output_is_tflite = any(o in self._tflite_tensor_names for o in sg_outputs)
+
+        if not output_is_tflite:
+            # The converter renamed all outputs of this chain (e.g. "newOut").
+            # Match by inputs only: return the first TFLite node whose inputs match,
+            # without extension. Extending would wrongly absorb successor TFLite
+            # operators that belong to later Neutron chains.
+            for start in (
+                n for n in self.tflite_nodes if self._inputs_match(sg_inputs, n)
+            ):
+                return [start.location]
+            return []
+
         for start in (n for n in self.tflite_nodes if self._inputs_match(sg_inputs, n)):
             chain_locs = [start.location]
             chain_outs = list(start.outputs)
@@ -487,6 +725,12 @@ class NeutronMap:
 
         A node is eligible only if all its dynamic inputs are covered by the current chain
         outputs (no external dependency). A fork (multiple eligible nodes) returns None.
+
+        :param chain_locs: Locations of nodes already in the chain.
+        :param chain_outputs: Current cumulative outputs of the chain.
+        :param node_by_loc: Location -> Node lookup map.
+        :param input_to_locs: Tensor name -> list of consumer locations map.
+        :return: Location of the unique eligible next node, or None.
         """
         chain_loc_set = set(chain_locs)
         chain_out_set = set(chain_outputs)
@@ -522,16 +766,24 @@ class NeutronMap:
     # ------------------------------------------------------------------
 
     def get_tflite_to_neutron_map(self) -> dict[int, tuple[int, ...]]:
-        """Map TFLite node locations to Neutron kernel indices.
+        """Map TFLite node locations to Neutron kernel CALLARGS indices.
 
-        Neutron subgraphs are first grouped into chains; each chain is matched as a unit
-        against a TFLite operator chain using dynamic I/O tensor names.
+        Neutron subgraphs are first grouped into chains; each chain is matched as a
+        unit against a TFLite operator chain using dynamic I/O tensor names.
 
-        :return: Dict: TFLite node location -> tuple of Neutron kernel indices.
+        When the microcode header is authoritative (batch > 1 logs) a completeness
+        check verifies that every coverable CALLARGS slot is covered. Injected helper
+        slots (MemCpy, etc.) that have no TFLite counterpart are excluded from the
+        requirement via _coverable_slot_count. If the check fails the method returns
+        an empty map to avoid silently producing wrong profiling data.
+
+        :return: Dict: TFLite node location -> tuple of Neutron kernel CALLARGS indices.
         """
         result: dict[int, set[int]] = {}
 
-        for chain in self._get_neutron_subgraph_chains():
+        chains = self._get_neutron_subgraph_chains()
+
+        for chain in chains:
             chain_inputs, chain_outputs = self._get_chain_boundary_io(chain)
             if not chain_inputs or not chain_outputs:
                 continue
@@ -554,12 +806,30 @@ class NeutronMap:
                 result.setdefault(loc, set()).update(neutron_indices)
 
         self.tflite_to_neutron_map = {k: tuple(sorted(v)) for k, v in result.items()}
+
+        # Sanity check (batch-aware logs only): every coverable CALLARGS slot must be
+        # mapped. A gap means the remapping failed and the partial map would produce
+        # wrong profiling data. For batch=1 logs (no microcode header override) partial
+        # coverage is expected for fork/join topologies and no check is applied.
+        if self._microcode_kernels_authoritative:
+            required = self._coverable_slot_count or self.neutron_kernels_num
+            mapped = {idx for v in self.tflite_to_neutron_map.values() for idx in v}
+            if len(mapped) < required:
+                logging.info(
+                    f"NeutronMap: {len(mapped)}/{required} coverable slots mapped "
+                    f"(neutron_kernels_num={self.neutron_kernels_num}). Returning empty map."
+                )
+                self.tflite_to_neutron_map = {}
+
         return self.tflite_to_neutron_map
 
     def get_edge_to_neutron_map(self) -> dict[int, tuple[int, ...]]:
-        """Map Edge node handles to Neutron kernel indices.
+        """Map Edge node handles to Neutron kernel CALLARGS indices.
 
-        :return: Dict: Edge handle -> tuple of Neutron kernel indices.
+        Calls get_tflite_to_neutron_map() if not already computed, then composes
+        it with the edge_to_tflite_map supplied at construction time.
+
+        :return: Dict: Edge handle -> tuple of Neutron kernel CALLARGS indices.
         """
         self.get_tflite_to_neutron_map()
         result: dict[int, tuple[int, ...]] = {}
@@ -577,9 +847,13 @@ class NeutronMap:
     def get_neutron_to_edge_map(self) -> dict[int, tuple[int, ...]]:
         """Return the inverse of the Edge-to-Neutron map.
 
-        :return: Dict: Neutron kernel index -> tuple of Edge handles.
+        Every CALLARGS slot index from 0 to neutron_kernels_num (inclusive) is
+        present in the result. Slots with no corresponding Edge operator map to an
+        empty tuple. One extra entry (at index neutron_kernels_num) covers the
+        Neutron Dump event emitted at the end of each inference.
+
+        :return: Dict: Neutron kernel CALLARGS index -> tuple of Edge handles.
                  All indices up to neutron_kernels_num are present (empty tuple if unmapped).
-                 One extra entry is added for the Neutron Dump event at the end.
         """
         if not self.edge_to_neutron_map:
             self.get_edge_to_neutron_map()
