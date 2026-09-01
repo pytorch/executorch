@@ -123,7 +123,12 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertTrue(target.call_args.kwargs["vulkan"])
 
     def _run_tiny_export(
-        self, generate_etrecord, directory, output_name="tiny.pte", output_dir=None
+        self,
+        generate_etrecord,
+        directory,
+        output_name="tiny.pte",
+        output_dir=None,
+        xnnpack=True,
     ):
         """Export the tiny model, writing the .pte into `directory`.
 
@@ -132,10 +137,14 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         `output_dir` defaults to `directory`, and is set separately only by the test that
         checks a `.pte` output name does not separate the model from its record.
+
+        `xnnpack=False` selects the combined lowering, which reaches the edge export by a
+        different route than the backend-specific helpers.
         """
         llm_config = LlmConfig()
-        llm_config.backend.xnnpack.enabled = True
+        llm_config.backend.xnnpack.enabled = xnnpack
         llm_config.debug.generate_etrecord = generate_etrecord
+        llm_config.model.enable_dynamic_shape = False
         llm_config.export.output_dir = output_dir or directory
         llm_config.export.output_name = os.path.join(directory, output_name)
         builder = _tiny_llm_builder().set_output_dir(output_dir or directory)
@@ -145,6 +154,25 @@ class ExportLlamaLibTest(unittest.TestCase):
         ):
             _export_llama(llm_config)
         return sorted(os.listdir(directory))
+
+    def test_combined_lowering_saves_the_etrecord_beside_the_model(self):
+        """The combined lowering must write a record too.
+
+        It reaches the edge export by a different route than the backend helpers, so the flag
+        has to be set on the builder before that export rather than at the lowering.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(
+                self._run_tiny_export(
+                    generate_etrecord=True, directory=directory, xnnpack=False
+                ),
+                ["etrecord.bin", "tiny.pte"],
+            )
+            self.assertIsNotNone(
+                parse_etrecord(
+                    os.path.join(directory, "etrecord.bin")
+                ).edge_dialect_program
+            )
 
     def test_export_saves_the_etrecord_beside_the_model(self):
         """The record must be written, and land beside the model.

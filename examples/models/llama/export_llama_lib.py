@@ -26,7 +26,6 @@ from typing import Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.devtools.backend_debug import print_delegation_info
-from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
@@ -1236,15 +1235,11 @@ def _save_etrecord_if_generated(builder) -> None:
     cost a caller the model. The record is staged under a temporary name and moved into
     place, so a failure part way cannot leave a half-written record under the real name.
     """
-    edge_program = getattr(builder, "etrecord_edge_program", None)
-    if edge_program is None:
-        try:
-            etrecord = builder.export_program.get_etrecord()
-        except RuntimeError:
-            # Not generated, which is the normal case.
-            return
-    else:
-        etrecord = None
+    try:
+        etrecord = builder.export_program.get_etrecord()
+    except RuntimeError:
+        # Not generated, which is the normal case.
+        return
 
     path = _etrecord_path_beside_model(builder)
     try:
@@ -1253,14 +1248,7 @@ def _save_etrecord_if_generated(builder) -> None:
         ) as temporary:
             staged = temporary.name
         try:
-            if etrecord is not None:
-                etrecord.save(staged)
-            else:
-                generate_etrecord_func(
-                    et_record=staged,
-                    edge_dialect_program=edge_program,
-                    executorch_program=builder.export_program,
-                )
+            etrecord.save(staged)
             os.replace(staged, path)
         except BaseException:
             os.unlink(staged)
@@ -1478,6 +1466,8 @@ def _to_edge_and_lower_llama(  # noqa: C901
     generate_etrecord: bool = False,
     verbose: bool = False,
 ):
+    # Set before the edge export, because that is where the record is created.
+    builder_exported.generate_etrecord = generate_etrecord
     builder_exported_to_edge = builder_exported.pt2e_quantize(
         quantizers
     ).export_to_edge()
@@ -1586,9 +1576,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
-        logging.info("Generating etrecord")
-        # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
-        edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
         builder = builder_exported_to_edge.to_backend(partitioners)
         if verbose:
             print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1601,11 +1588,8 @@ def _to_edge_and_lower_llama(  # noqa: C901
         builder = builder.to_executorch(
             passes=additional_passes,
         )
-
-        # The record is written after the model, by _save_etrecord_if_generated, so a failed
-        # record write cannot cost the export and the record lands beside the .pte.
-        if edge_manager_copy:
-            builder.etrecord_edge_program = edge_manager_copy
+        # The record rides along with the program, so _save_etrecord_if_generated writes it
+        # after the model like every other path.
     else:
         builder = builder_exported_to_edge.to_backend(partitioners)
         if verbose:
