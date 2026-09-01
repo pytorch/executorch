@@ -31,6 +31,8 @@
 #include <memory>
 #include <mutex>
 
+#include <TargetConditionals.h>
+
 namespace executorch {
 namespace backends {
 namespace mlx {
@@ -217,7 +219,16 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
   ~MLXBackend() override = default;
 
   bool is_available() const override {
+#if TARGET_OS_SIMULATOR
+    // The simulator's Metal device reports no architecture, which MLX reads
+    // without a null check while constructing its device. Past that, requesting
+    // a shared storage heap traps inside Metal itself, so MLX never gets a
+    // value it could fall back from. This is a build switch rather than a
+    // probe: it can go once the simulator has a usable Metal device.
+    return false;
+#else
     return ::mlx::core::metal::is_available();
+#endif
   }
 
   Result<DelegateHandle*> init(
