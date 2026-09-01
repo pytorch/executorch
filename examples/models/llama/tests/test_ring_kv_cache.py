@@ -61,7 +61,6 @@ class TestRingKVCache(unittest.TestCase):
             enable_dynamic_shape=True,
             dtype=self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         ).cuda()
         input_pos = torch.tensor([0], dtype=torch.long, device="cuda")
         seq_len = 3
@@ -106,7 +105,6 @@ class TestRingKVCache(unittest.TestCase):
             self.enable_dynamic_shape,
             self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors
@@ -158,7 +156,6 @@ class TestRingKVCache(unittest.TestCase):
             self.enable_dynamic_shape,
             self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors for first update
@@ -223,7 +220,6 @@ class TestRingKVCache(unittest.TestCase):
             self.enable_dynamic_shape,
             self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         )
 
         # First update
@@ -355,7 +351,6 @@ class TestRingKVCache(unittest.TestCase):
             self.enable_dynamic_shape,
             self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors
@@ -409,7 +404,6 @@ class TestRingKVCache(unittest.TestCase):
             self.enable_dynamic_shape,
             self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors
@@ -475,7 +469,6 @@ class TestRingKVCache(unittest.TestCase):
             self.enable_dynamic_shape,
             self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         )
 
         # First update at position 10 (will be mapped to position 10 in the ring buffer)
@@ -547,7 +540,6 @@ class TestRingKVCache(unittest.TestCase):
             enable_dynamic_shape=False,
             dtype=self.dtype,
             window_size=self.max_context_length,
-            max_seq_len=self.max_context_length,
         )
 
         # Create input tensors

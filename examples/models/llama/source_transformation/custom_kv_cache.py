@@ -669,12 +669,11 @@ def _replace_kv_cache_with_custom_kv_cache(module):
                 name,
                 CustomRingKVCache(
                     child.max_batch_size,
-                    child.full_context_length,
+                    child.max_context_length,
                     child.n_heads,
                     child.head_dim,
                     dtype=child.k_cache.dtype,
                     window_size=child.window_size,
-                    max_seq_len=child.max_seq_len,
                 ),
             )
             sdpa = getattr(module, "SDPA", None)
@@ -712,14 +711,14 @@ class QuantizedRingKVCache(QuantizedKVCache):
         return_float_values: bool = True,
         *,
         window_size: int,
-        max_seq_len: int,
     ):
-        ring_cache_size = _get_ring_cache_size(
-            max_context_length, window_size, max_seq_len
+        assert max_context_length >= window_size, (
+            f"Ring cache size ({max_context_length}) must be at least the "
+            f"sliding-window size ({window_size})"
         )
         super().__init__(
             max_batch_size,
-            ring_cache_size,
+            max_context_length,
             n_heads,
             head_dim,
             cache_type,
@@ -729,8 +728,6 @@ class QuantizedRingKVCache(QuantizedKVCache):
         self.cache_positions_manager = CachePositionsManager(self.max_context_length)
         self.is_ring_buffer = True
         self.window_size = window_size
-        self.full_context_length = max_context_length
-        self.max_seq_len = max_seq_len
 
     def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
         cache_positions = self.cache_positions_manager.cache_positions
@@ -771,16 +768,18 @@ class QuantizedRingKVCache(QuantizedKVCache):
             kv_cache, QuantizedKVCache
         ), "For QuantizedRingKVCache expect QuantizedKVCache as input kv_cache"
         max_batch_size, max_context_length, n_heads, head_dim = kv_cache.k_cache.shape
+        ring_cache_size = _get_ring_cache_size(
+            max_context_length, sliding_window_size, max_seq_len
+        )
         return cls(
             max_batch_size,
-            max_context_length,
+            ring_cache_size,
             n_heads,
             head_dim,
             kv_cache.cache_type,
             kv_cache.use_custom_update_cache_op,
             kv_cache.return_float_values,
             window_size=sliding_window_size,
-            max_seq_len=max_seq_len,
         )
 
 
@@ -877,17 +876,15 @@ class CustomRingKVCache(CustomKVCache):
         dtype=torch.float32,
         *,
         window_size: int,
-        max_seq_len: int,
     ):
-        ring_cache_size = _get_ring_cache_size(
-            max_context_length, window_size, max_seq_len
+        assert max_context_length >= window_size, (
+            f"Ring cache size ({max_context_length}) must be at least the "
+            f"sliding-window size ({window_size})"
         )
-        super().__init__(max_batch_size, ring_cache_size, n_heads, head_dim, dtype)
+        super().__init__(max_batch_size, max_context_length, n_heads, head_dim, dtype)
         self.cache_positions_manager = CachePositionsManager(self.max_context_length)
         self.is_ring_buffer = True
         self.window_size = window_size
-        self.full_context_length = max_context_length
-        self.max_seq_len = max_seq_len
 
     def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
         cache_positions = self.cache_positions_manager.cache_positions
@@ -926,14 +923,16 @@ class CustomRingKVCache(CustomKVCache):
     ):
         # CustomKVCache storage is [B, S, H, D].
         max_batch_size, max_context_length, n_heads, head_dim = kv_cache.k_cache.shape
+        ring_cache_size = _get_ring_cache_size(
+            max_context_length, sliding_window_size, max_seq_len
+        )
         return cls(
             max_batch_size,
-            max_context_length,
+            ring_cache_size,
             n_heads,
             head_dim,
             dtype=kv_cache.k_cache.dtype,
             window_size=sliding_window_size,
-            max_seq_len=max_seq_len,
         )
 
 
@@ -945,16 +944,18 @@ def _replace_kv_cache_with_ring_kv_cache(
         getattr(attention, "kv_cache", None) is not None
     ), "Attention module must have kv_cache module"
     kv_cache = attention.kv_cache
+    ring_cache_size = _get_ring_cache_size(
+        kv_cache.max_context_length, sliding_window_size, max_seq_len
+    )
     if isinstance(kv_cache, KVCache):
         attention.kv_cache = RingKVCache(
             kv_cache.max_batch_size,
-            kv_cache.max_context_length,
+            ring_cache_size,
             kv_cache.n_heads,
             kv_cache.head_dim,
             kv_cache.enable_dynamic_shape,
             kv_cache.k_cache.dtype,
             window_size=sliding_window_size,
-            max_seq_len=max_seq_len,
         )
     elif isinstance(kv_cache, CustomKVCache):
         attention.kv_cache = CustomRingKVCache.from_custom_kv_cache(

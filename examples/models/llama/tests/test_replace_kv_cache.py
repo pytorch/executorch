@@ -291,7 +291,6 @@ class TestReplaceKVCache(unittest.TestCase):
             self.head_dim,
             self.enable_dynamic_shape,
             window_size=self.max_context_len,
-            max_seq_len=self.max_context_len,
         )
         model = self._create_mock_model([attention])
 

@@ -465,8 +465,14 @@ class AttentionSinkE2ETest(unittest.TestCase):
         model = self._build_model(args, sink_size=0, window_size=16)
 
         cache = model.layers[0].attention.kv_cache
-        self.assertEqual(cache.max_seq_len, 128)
         self.assertEqual(cache.max_context_length, 128)
+
+    def test_sink_zero_uses_configured_max_seq_len(self):
+        args = self._make_args(max_context_len=128)
+        model = self._build_model(args, sink_size=0, window_size=16)
+
+        cache = model.layers[0].attention.kv_cache
+        self.assertEqual(cache.max_context_length, 48)
 
     def _run_generation(self, model, args, num_tokens):
         """Run prefill + decode for num_tokens total, return all outputs."""

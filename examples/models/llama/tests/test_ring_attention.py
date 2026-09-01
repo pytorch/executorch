@@ -9,7 +9,11 @@ import unittest
 from enum import Enum
 
 import torch
-from executorch.examples.models.llama.attention import AttentionMHA, RingKVCache
+from executorch.examples.models.llama.attention import (
+    _get_ring_cache_size,
+    AttentionMHA,
+    RingKVCache,
+)
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
@@ -114,13 +118,14 @@ class TestRingAttention(unittest.TestCase):
             # Replace regular KVCache with RingKVCache
             baseline_attention.kv_cache = RingKVCache(
                 self.args.max_batch_size,
-                self.args.max_context_len,
+                _get_ring_cache_size(
+                    self.args.max_context_len, self.sliding_window, max_seq_len
+                ),
                 self.n_kv_heads,
                 self.head_dim,
                 self.args.enable_dynamic_shape,
                 self.dtype,
                 window_size=self.sliding_window,
-                max_seq_len=max_seq_len,
             )
         return baseline_attention
 

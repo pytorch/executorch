@@ -286,18 +286,17 @@ class RingKVCache(KVCache):
         dtype=torch.float32,
         *,
         window_size: int,
-        max_seq_len: int,
     ):
         self.window_size = window_size
-        self.full_context_length = max_context_length
-        self.max_seq_len = max_seq_len
-        ring_cache_size = _get_ring_cache_size(
-            max_context_length, window_size, max_seq_len
+        assert max_context_length >= window_size, (
+            f"Ring cache size ({max_context_length}) must be at least the "
+            f"sliding-window size ({window_size})"
         )
         """
         The cache needs room for the retained sliding window and the current
         prefill chunk. Its size is window_size + max_seq_len, capped by the
-        full-context cache.
+        full-context cache. Callers resolve that physical size before creating
+        the cache.
 
         Reason why a cache larger than the sliding window is needed:
         Sliding window attention without ringbuffer
@@ -345,7 +344,7 @@ class RingKVCache(KVCache):
         """
         super().__init__(
             max_batch_size,
-            ring_cache_size,
+            max_context_length,
             n_heads,
             head_dim,
             enable_dynamic_shape,
