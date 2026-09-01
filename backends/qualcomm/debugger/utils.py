@@ -11,7 +11,6 @@ import pandas as pd
 import torch
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import dump_context_from_pte
-
 from graphviz import Digraph
 
 

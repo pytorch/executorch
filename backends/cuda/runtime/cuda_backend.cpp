@@ -1048,7 +1048,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Step 1: Enumerate constants and partition into cached/uncached
     size_t num_constants = 0;
-    handle->get_num_constants(handle->container_handle, &num_constants);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->get_num_constants(handle->container_handle, &num_constants),
+        "Failed to enumerate CUDA AOTI constants for method '%s'",
+        method_name.c_str());
     if (num_constants == 0) {
       ET_LOG(Info, "No constants for method '%s'", method_name.c_str());
       return Error::Ok;
@@ -1227,14 +1230,28 @@ class ET_EXPERIMENTAL CudaBackend final
     return Error::Ok;
   }
 
-  // Legacy constant loading: load the entire blob without caching.
-  // Used as fallback when constant management APIs are unavailable.
+  // Binds the whole weights blob at once, without the per-constant cache. Used
+  // for artifacts whose payload names one blob rather than individual
+  // constants, and it also refuses the load when that blob is needed and
+  // unavailable.
   Error load_constants_legacy(
       cuda::CudaDelegateHandle* handle,
       const NamedDataMap* named_data_map,
       const std::string& weights_blob_key) const {
+    // A library built before external weights cannot bind one, so there is
+    // nothing to do here whether or not a blob was supplied.
+    if (handle->update_constants_from_blob == nullptr) {
+      ET_LOG(
+          Info,
+          "weights_blob '%s' is not used: this library cannot bind one",
+          weights_blob_key.c_str());
+      return Error::Ok;
+    }
+
+    // Fetched only once it is known to be wanted: a file-backed data map reads
+    // the whole segment here, which is gigabytes for a large model.
     auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
-    if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
+    if (buffer_res.ok()) {
       ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
       const void* weights_blob = buffer_res->data();
       auto update_err = handle->update_constants_from_blob(
@@ -1246,9 +1263,35 @@ class ET_EXPERIMENTAL CudaBackend final
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
       buffer_res->Free();
     } else {
+      // Without the blob the container's constant pointers stay null and the
+      // failure resurfaces much later as an illegal access inside a generated
+      // kernel, so report it here instead. A model with no constants needs
+      // nothing bound and stays valid, which the count below decides; the count
+      // is an optional symbol, so without it that cannot be established.
+      ET_CHECK_OR_RETURN_ERROR(
+          handle->get_num_constants != nullptr,
+          NotSupported,
+          "weights_blob '%s' is unavailable and this library cannot report its "
+          "constant count",
+          weights_blob_key.c_str());
+      size_t num_constants = 0;
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          handle->get_num_constants(handle->container_handle, &num_constants),
+          "Failed to enumerate CUDA AOTI constants");
+      if (num_constants != 0) {
+        ET_LOG(
+            Error,
+            "weights_blob '%s' is unavailable, but the model has %zu constant(s) "
+            "to bind",
+            weights_blob_key.c_str(),
+            num_constants);
+        // The status from the data map, so a corrupt or unreadable sidecar is
+        // not reported as an absent one.
+        return buffer_res.error();
+      }
       ET_LOG(
           Info,
-          "weights_blob '%s' not found or update fn is null",
+          "weights_blob '%s' is unavailable, and the model has no constants",
           weights_blob_key.c_str());
     }
     return Error::Ok;

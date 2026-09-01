@@ -427,6 +427,30 @@ class Adapter final {
     return physical_device_.properties.limits.maxStorageBufferRange;
   }
 
+  inline utils::uvec3 max_compute_workgroup_count() const {
+    const auto& limits = physical_device_.properties.limits;
+    return {
+        limits.maxComputeWorkGroupCount[0],
+        limits.maxComputeWorkGroupCount[1],
+        limits.maxComputeWorkGroupCount[2]};
+  }
+
+  inline utils::uvec3 max_compute_workgroup_size() const {
+    const auto& limits = physical_device_.properties.limits;
+    return {
+        limits.maxComputeWorkGroupSize[0],
+        limits.maxComputeWorkGroupSize[1],
+        limits.maxComputeWorkGroupSize[2]};
+  }
+
+  inline uint32_t max_compute_workgroup_invocations() const {
+    return physical_device_.properties.limits.maxComputeWorkGroupInvocations;
+  }
+
+  inline uint32_t recommended_lwg_nthreads() const {
+    return 64u;
+  }
+
   // Command Buffer Submission
 
   void submit_cmd(

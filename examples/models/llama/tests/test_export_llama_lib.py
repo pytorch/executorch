@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from unittest.mock import patch
 
 from executorch.devtools.backend_debug import get_delegation_info
 
@@ -23,6 +24,7 @@ except ImportError:
     TOSAQuantizer = None
     VgfQuantizer = None
 
+from executorch.examples.models.llama import export_llama_lib
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
@@ -41,6 +43,59 @@ UNWANTED_OPS = [
 
 
 class ExportLlamaLibTest(unittest.TestCase):
+    def _assert_routes_to(self, lowering, coreml=False, vulkan=False, qnn=False):
+        """Assert which lowering an export routes to, without running one."""
+        llm_config = LlmConfig()
+        llm_config.backend.coreml.enabled = coreml
+        llm_config.backend.vulkan.enabled = vulkan
+        llm_config.backend.qnn.enabled = qnn
+        # _validate_args rejects dynamic shapes when Core ML or QNN is enabled.
+        llm_config.model.enable_dynamic_shape = False
+        # With the KV cache on, the source transforms import the Qualcomm SDK, which routing
+        # does not need and which is not present on most machines.
+        llm_config.model.use_kv_cache = False
+
+        class Reached(Exception):
+            pass
+
+        # Routing is decided before the model is touched, so the export is stubbed out: without
+        # this each case traces and lowers the whole model to check one branch.
+        with patch.object(
+            export_llama_lib, lowering, side_effect=Reached
+        ) as target, patch.object(export_llama_lib, "_prepare_for_llama_export"):
+            with self.assertRaises(Reached):
+                _export_llama(llm_config)
+        target.assert_called_once()
+        return target
+
+    def test_core_ml_alone_routes_to_the_core_ml_lowering(self):
+        """Core ML on its own must reach the Core ML lowering.
+
+        The guard read a backend config field that no longer exists, so this raised AttributeError
+        before reaching any lowering.
+        """
+        self._assert_routes_to("_to_edge_and_lower_llama_coreml", coreml=True)
+
+    def test_core_ml_with_qnn_routes_to_the_combined_lowering(self):
+        """Core ML with QNN must keep the QNN partitioner, so it takes the combined lowering."""
+        target = self._assert_routes_to(
+            "_to_edge_and_lower_llama", coreml=True, qnn=True
+        )
+        self.assertTrue(target.call_args.kwargs["coreml"])
+        self.assertTrue(target.call_args.kwargs["qnn"])
+
+    def test_core_ml_with_vulkan_routes_to_the_combined_lowering(self):
+        """Core ML with Vulkan must keep the Vulkan partitioner the same way.
+
+        This is what pins the Vulkan half of the exclusion clause: the Core ML lowering takes no
+        Vulkan argument, so routing there would drop the partitioner silently.
+        """
+        target = self._assert_routes_to(
+            "_to_edge_and_lower_llama", coreml=True, vulkan=True
+        )
+        self.assertTrue(target.call_args.kwargs["coreml"])
+        self.assertTrue(target.call_args.kwargs["vulkan"])
+
     def test_has_expected_ops_and_op_counts(self):
         """
         Checks the presence of unwanted expensive ops.
@@ -69,6 +124,24 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
+
+    def test_bf16_xnnpack_delegates_linears_when_enabled(self):
+        parser = build_args_parser()
+        args = parser.parse_args([])
+        args.use_kv_cache = True
+        args.xnnpack = True
+        args.xnnpack_extended_ops = True
+        args.xnnpack_enable_bf16 = True
+        args.dtype_override = "bf16"
+
+        llm_config = LlmConfig.from_args(args)
+        builder = _export_llama(llm_config)
+        graph_module = builder.edge_manager.exported_program().graph_module
+        delegation_info = get_delegation_info(graph_module)
+
+        linear = delegation_info.delegation_by_operator["aten_linear_default"]
+        self.assertGreater(linear.delegated, 0)
+        self.assertEqual(linear.non_delegated, 0)
 
     @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
     def test_get_quantizer_and_quant_params_returns_tosa_quantizer(self):
