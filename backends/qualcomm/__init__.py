@@ -1,4 +1,5 @@
 import os
+import platform
 import threading
 
 # The Qualcomm SDK setup below is deferred rather than run here, so that importing this
@@ -11,11 +12,6 @@ import threading
 # Nothing about loading this package needs any of that. The native adaptor does not link
 # the SDK; it resolves QNN symbols with dlopen when a model is actually compiled, and says
 # so plainly when they are missing. So setup happens on the first call that needs it.
-from .scripts.download_qnn_sdk import (  # noqa: F401
-    install_qnn_sdk,
-    is_linux_x86,
-    QNN_ZIP_URL,
-)
 
 _sdk_ready = False
 # Guards the flag above. Python's import lock does not, because the setup is now called from
@@ -57,11 +53,15 @@ def _setup_qnn_sdk_locked() -> None:
         return
 
     # Downloading a prebuilt SDK is only possible for the platform it is published for.
-    if not is_linux_x86():
+    # Decided here rather than by asking the downloader, so that a build which does not
+    # package the downloader still gets this far and returns.
+    if not _is_linux_x86():
         _sdk_ready = True
         return
 
-    if not install_qnn_sdk():
+    if not _install_qnn_sdk():
+        from .scripts.download_qnn_sdk import QNN_ZIP_URL
+
         raise RuntimeError(
             "Failed to set up QNN SDK.\n\n"
             "To resolve, try one of:\n"
@@ -75,6 +75,38 @@ def _setup_qnn_sdk_locked() -> None:
         )
 
     _sdk_ready = True
+
+
+def _is_linux_x86() -> bool:
+    """True when a prebuilt Qualcomm SDK is published for this platform."""
+    return platform.system().lower() == "linux" and platform.machine().lower() in (
+        "x86_64",
+        "amd64",
+        "i386",
+        "i686",
+    )
+
+
+def _install_qnn_sdk() -> bool:
+    # Imported here rather than at module scope because the downloader lives in a sibling
+    # directory that some builds do not package, and it imports the network stack. Importing
+    # this package must not require either.
+    try:
+        from .scripts.download_qnn_sdk import install_qnn_sdk
+    except ModuleNotFoundError as error:
+        # Only when the downloader itself is absent. A dependency missing from inside it is a
+        # different problem and is left to speak for itself.
+        if not (error.name or "").startswith(f"{__name__}.scripts"):
+            raise
+        raise RuntimeError(
+            "This build cannot download a QNN SDK. Set QNN_SDK_ROOT to an existing "
+            "installation:\n"
+            "       export QNN_SDK_ROOT=/path/to/qualcomm/sdk\n"
+            "       export LD_LIBRARY_PATH="
+            "$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH"
+        ) from error
+
+    return install_qnn_sdk()
 
 
 def disable_mkldnn_on_amd() -> None:

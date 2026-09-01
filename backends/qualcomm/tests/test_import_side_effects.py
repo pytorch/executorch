@@ -84,11 +84,67 @@ def test_importing_the_package_does_not_set_up_the_sdk():
     )
 
 
+def test_the_package_imports_without_the_downloader(tmp_path, monkeypatch):
+    """The package must load in a build that does not ship the downloader directory.
+
+    Some builds assemble a package from an explicit file list and leave the sibling `scripts`
+    directory out. A module level import of it then fails, and with it every module in the
+    backend, which is what this guards.
+    """
+    package = tmp_path / "qnnpkg"
+    package.mkdir()
+    (package / "__init__.py").write_text(Path(qnn.__file__).read_text())
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    module = importlib.import_module("qnnpkg")
+
+    assert module.setup_qnn_sdk is not None
+
+
+def test_platform_check_needs_no_downloader(tmp_path, monkeypatch):
+    """Setup must return on a platform with no prebuilt SDK, downloader present or not.
+
+    The platform is decided locally for this reason. Asking the downloader would import it, so
+    a host that needs no download at all would fail on a build that does not ship it.
+    """
+    package = tmp_path / "qnnpkg2"
+    package.mkdir()
+    (package / "__init__.py").write_text(Path(qnn.__file__).read_text())
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delenv("QNN_SDK_ROOT", raising=False)
+    monkeypatch.delenv("EXECUTORCH_BUILDING_WHEEL", raising=False)
+
+    module = importlib.import_module("qnnpkg2")
+    monkeypatch.setattr(module, "_is_linux_x86", lambda: False)
+
+    module.setup_qnn_sdk()
+
+
+def test_a_missing_downloader_names_the_way_out(tmp_path, monkeypatch):
+    """On a platform that would download, an absent downloader has to say what to do instead.
+
+    A bare ModuleNotFoundError names an internal packaging detail and leaves the reader nothing
+    to act on.
+    """
+    package = tmp_path / "qnnpkg3"
+    package.mkdir()
+    (package / "__init__.py").write_text(Path(qnn.__file__).read_text())
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delenv("QNN_SDK_ROOT", raising=False)
+    monkeypatch.delenv("EXECUTORCH_BUILDING_WHEEL", raising=False)
+
+    module = importlib.import_module("qnnpkg3")
+    monkeypatch.setattr(module, "_is_linux_x86", lambda: True)
+
+    with pytest.raises(RuntimeError, match="QNN_SDK_ROOT"):
+        module.setup_qnn_sdk()
+
+
 def test_setup_is_idempotent(monkeypatch):
     """The compile paths each call it, so only the first call may do the work."""
     calls = []
-    monkeypatch.setattr(qnn, "install_qnn_sdk", lambda: calls.append(1) or True)
-    monkeypatch.setattr(qnn, "is_linux_x86", lambda: True)
+    monkeypatch.setattr(qnn, "_install_qnn_sdk", lambda: calls.append(1) or True)
+    monkeypatch.setattr(qnn, "_is_linux_x86", lambda: True)
     monkeypatch.setattr(qnn, "_sdk_ready", False)
     monkeypatch.delenv("QNN_SDK_ROOT", raising=False)
     monkeypatch.delenv("EXECUTORCH_BUILDING_WHEEL", raising=False)
@@ -101,7 +157,7 @@ def test_setup_is_idempotent(monkeypatch):
 
 def test_setup_honours_a_preinstalled_sdk(monkeypatch):
     calls = []
-    monkeypatch.setattr(qnn, "install_qnn_sdk", lambda: calls.append(1) or True)
+    monkeypatch.setattr(qnn, "_install_qnn_sdk", lambda: calls.append(1) or True)
     monkeypatch.setattr(qnn, "_sdk_ready", False)
     monkeypatch.setenv("QNN_SDK_ROOT", "/opt/qcom/sdk")
 
@@ -129,8 +185,8 @@ def test_setup_runs_once_under_concurrent_callers(monkeypatch):
         calls.append(1)
         return True
 
-    monkeypatch.setattr(qnn, "install_qnn_sdk", slow_install)
-    monkeypatch.setattr(qnn, "is_linux_x86", lambda: True)
+    monkeypatch.setattr(qnn, "_install_qnn_sdk", slow_install)
+    monkeypatch.setattr(qnn, "_is_linux_x86", lambda: True)
     monkeypatch.setattr(qnn, "_sdk_ready", False)
     monkeypatch.delenv("QNN_SDK_ROOT", raising=False)
     monkeypatch.delenv("EXECUTORCH_BUILDING_WHEEL", raising=False)
@@ -149,8 +205,8 @@ def test_setup_runs_once_under_concurrent_callers(monkeypatch):
 
 def test_setup_reports_a_failed_install(monkeypatch):
     """A failure has to name the two ways out, since it cannot be resolved automatically."""
-    monkeypatch.setattr(qnn, "install_qnn_sdk", lambda: False)
-    monkeypatch.setattr(qnn, "is_linux_x86", lambda: True)
+    monkeypatch.setattr(qnn, "_install_qnn_sdk", lambda: False)
+    monkeypatch.setattr(qnn, "_is_linux_x86", lambda: True)
     monkeypatch.setattr(qnn, "_sdk_ready", False)
     monkeypatch.delenv("QNN_SDK_ROOT", raising=False)
     monkeypatch.delenv("EXECUTORCH_BUILDING_WHEEL", raising=False)

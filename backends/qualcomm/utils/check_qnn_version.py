@@ -9,12 +9,6 @@ import os
 import platform
 import re
 
-# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
-# here rather than in the package's __init__.
-from executorch.backends.qualcomm import setup_qnn_sdk
-
-setup_qnn_sdk()
-
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
 
