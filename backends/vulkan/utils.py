@@ -1181,6 +1181,33 @@ def make_tensor_repset(tensor_repr: TensorRepr) -> TensorRepSet:
         raise RuntimeError(f"Unsupported storage type {tensor_repr.storage_type}")
 
 
+def upper_bound_size(dim: Union[int, torch.SymInt]) -> Optional[int]:
+    """Largest value a (possibly symbolic) tensor dimension can take.
+
+    Returns None if no finite bound is known.
+
+    A symbolic dim compares against a limit using its *hint* -- the size of the
+    example input the model happened to be traced with -- not the maximum the
+    exported range allows. Sizing decisions must use the bound instead, or a
+    model traced with a small example will make a choice that is invalid once it
+    runs at a larger size.
+    """
+    if not isinstance(dim, torch.SymInt):
+        return int(dim)
+    if not dim.node.expr.free_symbols:
+        return int(dim.node.expr)
+    shape_env = dim.node.shape_env
+    if shape_env is None:
+        return None
+    try:
+        upper = shape_env.bound_sympy(dim.node.expr).upper
+    except Exception:
+        return None
+    if upper is None or not upper.is_finite:
+        return None
+    return int(upper)
+
+
 def filter_invalid_reprs(
     tensor_val: FakeTensor,
     tensor_repset: TensorRepSet,
@@ -1198,11 +1225,17 @@ def filter_invalid_reprs(
     can be used to produce a valid image texture for the given tensor (i.e. fits within
     texture limits).
     """
+    # Size the texture by what the dimension CAN be, not by the example the
+    # model was traced with. An unbounded dim cannot be shown to fit, so it
+    # falls back to buffer storage.
+    bounds = [upper_bound_size(d) for d in tensor_val.shape]
     valid_texture_layouts = set()
-    for memory_layout in tensor_repset.valid_texture_layouts:
-        extents = required_image_extents(tensor_val.shape, memory_layout)
-        if extents_are_valid(extents, texture_limits):
-            valid_texture_layouts.add(memory_layout)
+    if all(b is not None for b in bounds):
+        max_shape = torch.Size(bounds)
+        for memory_layout in tensor_repset.valid_texture_layouts:
+            extents = required_image_extents(max_shape, memory_layout)
+            if extents_are_valid(extents, texture_limits):
+                valid_texture_layouts.add(memory_layout)
 
     # High dimensional tensors require buffer storage
     if len(tensor_val.shape) > 4:
