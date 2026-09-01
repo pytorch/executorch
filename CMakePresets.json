@@ -64,7 +64,7 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "OS64",
         "DEPLOYMENT_TARGET": "17.0",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -82,7 +82,7 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "SIMULATORARM64",
         "DEPLOYMENT_TARGET": "17.0",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
