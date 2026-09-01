@@ -161,3 +161,104 @@ class TestXnnpackPartitioner(unittest.TestCase):
         fwd2_et = executorch_module.run_method("forward_2", example_inputs)
         self.assertTrue(torch.allclose(fwd1_eager, fwd1_et[0], 1e-3))
         self.assertTrue(torch.allclose(fwd2_eager, fwd2_et[0], 1e-3))
+
+    def test_parametrized_weight_is_folded_before_partitioning(self):
+        """
+        A weight computed from parameters (here weight_norm) is folded into a
+        constant before partitioning, so the convolution is delegated instead
+        of falling back to the portable kernels with the weight computation.
+        """
+
+        class ParametrizedConv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.utils.parametrizations.weight_norm(
+                    torch.nn.Conv1d(4, 4, 3)
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        model = ParametrizedConv().eval()
+        example_inputs = (torch.randn(1, 4, 8),)
+        eager = model(*example_inputs)
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        call_functions = [
+            node
+            for node in edge.exported_program().graph_module.graph.nodes
+            if node.op == "call_function"
+        ]
+        delegates = [
+            node
+            for node in call_functions
+            if node.target == torch.ops.higher_order.executorch_call_delegate
+        ]
+        self.assertEqual(len(delegates), 1)
+        # The delegate call and the getitem on its output are all that is left.
+        self.assertEqual(len(call_functions), 2)
+
+        executorch_module = _load_for_executorch_from_buffer(
+            edge.to_executorch().buffer
+        )
+        self.assertTrue(
+            torch.allclose(executorch_module.forward(example_inputs)[0], eager, 1e-5)
+        )
+
+    def test_pre_decomposition_folding_keeps_quantization_primitives(self):
+        """
+        Folding must not touch the Q/DQ chain that convert_pt2e leaves on a
+        quantized weight, or the weight would be dequantized at export time.
+        """
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+        from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+        model = self.SimpleModel().eval()
+        example_inputs = (torch.randn(2, 10),)
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config(is_per_channel=True))
+        prepared = prepare_pt2e(export(model, example_inputs).module(), quantizer)
+        prepared(*example_inputs)
+        converted = convert_pt2e(prepared)
+
+        def quant_targets(ep):
+            return sorted(
+                str(node.target)
+                for node in ep.graph.nodes
+                if node.op == "call_function"
+                and "quantized_decomposed" in str(node.target)
+            )
+
+        class GroupwiseLinear(torch.nn.Module):
+            """A weight stored as int8 groups, the way 4-bit LLM exports do."""
+
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "weight", torch.randint(-8, 8, (8, 16), dtype=torch.int8)
+                )
+                self.register_buffer("scales", torch.rand(8, 2))
+                self.register_buffer("zeros", torch.zeros(8, 2, dtype=torch.int8))
+
+            def forward(self, x):
+                weight = torch.ops.quantized_decomposed.dequantize_per_channel_group(
+                    self.weight, self.scales, self.zeros, -8, 7, torch.int8, 8, x.dtype
+                )
+                return torch.nn.functional.linear(x, weight)
+
+        for model, example_inputs in (
+            (converted, example_inputs),
+            (GroupwiseLinear(), (torch.randn(2, 16),)),
+        ):
+            exported = export(model, example_inputs)
+            before = quant_targets(exported)
+            self.assertGreater(len(before), 0)
+            after = quant_targets(
+                XnnpackPartitioner().transform_for_pre_decomposition(exported)
+            )
+            self.assertEqual(before, after)
