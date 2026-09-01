@@ -84,6 +84,28 @@ def test_importing_the_package_does_not_set_up_the_sdk():
     )
 
 
+def test_importing_the_package_does_not_need_the_downloader(monkeypatch):
+    """Importing must not require the sibling scripts directory.
+
+    Some builds package this backend without it, and a module level import of the downloader
+    made every module that calls setup_qnn_sdk fail to import there with
+    ModuleNotFoundError. Nothing about loading the package needs it: it is only used to
+    download an SDK, which is one branch of setup.
+    """
+    monkeypatch.setitem(
+        sys.modules, "executorch.backends.qualcomm.scripts.download_qnn_sdk", None
+    )
+    monkeypatch.setitem(sys.modules, "executorch.backends.qualcomm.scripts", None)
+
+    importlib.reload(qnn)
+
+    assert qnn.setup_qnn_sdk is not None
+    assert qnn.disable_mkldnn_on_amd is not None
+    # is_linux_x86 has to answer without the downloader, because setup asks it before the
+    # branch that needs one.
+    assert isinstance(qnn.is_linux_x86(), bool)
+
+
 def test_setup_is_idempotent(monkeypatch):
     """The compile paths each call it, so only the first call may do the work."""
     calls = []

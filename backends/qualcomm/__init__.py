@@ -1,4 +1,6 @@
 import os
+import platform
+import sys
 import threading
 
 # The Qualcomm SDK setup below is deferred rather than run here, so that importing this
@@ -11,11 +13,33 @@ import threading
 # Nothing about loading this package needs any of that. The native adaptor does not link
 # the SDK; it resolves QNN symbols with dlopen when a model is actually compiled, and says
 # so plainly when they are missing. So setup happens on the first call that needs it.
-from .scripts.download_qnn_sdk import (  # noqa: F401
-    install_qnn_sdk,
-    is_linux_x86,
-    QNN_ZIP_URL,
-)
+
+# Resolved on first use rather than at import, because the downloader lives in a sibling
+# directory that some builds do not package, and importing this package must not require it.
+# A module level __getattr__ keeps these as ordinary attributes, so callers and tests can still
+# reach and replace them.
+_LAZY_NAMES = ("install_qnn_sdk", "QNN_ZIP_URL")
+
+
+def is_linux_x86() -> bool:
+    """True when a prebuilt Qualcomm SDK is published for this platform."""
+    return platform.system().lower() == "linux" and platform.machine().lower() in (
+        "x86_64",
+        "amd64",
+        "i386",
+        "i686",
+    )
+
+
+def __getattr__(name):
+    if name in _LAZY_NAMES:
+        from .scripts.download_qnn_sdk import install_qnn_sdk, QNN_ZIP_URL
+
+        globals()["install_qnn_sdk"] = install_qnn_sdk
+        globals()["QNN_ZIP_URL"] = QNN_ZIP_URL
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 _sdk_ready = False
 # Guards the flag above. Python's import lock does not, because the setup is now called from
@@ -57,16 +81,17 @@ def _setup_qnn_sdk_locked() -> None:
         return
 
     # Downloading a prebuilt SDK is only possible for the platform it is published for.
-    if not is_linux_x86():
+    if not sys.modules[__name__].is_linux_x86():
         _sdk_ready = True
         return
 
-    if not install_qnn_sdk():
+    module = sys.modules[__name__]
+    if not module.install_qnn_sdk():
         raise RuntimeError(
             "Failed to set up QNN SDK.\n\n"
             "To resolve, try one of:\n"
             "  1. Download the SDK manually from:\n"
-            f"       {QNN_ZIP_URL}\n"
+            f"       {module.QNN_ZIP_URL}\n"
             "     Or go to step 2 if QNN SDK already exists.\n"
             "  2. Set QNN_SDK_ROOT to an existing SDK installation:\n"
             "       export QNN_SDK_ROOT=/path/to/qualcomm/sdk\n"
