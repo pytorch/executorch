@@ -40,12 +40,17 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
     """Abstract implementation of a permute/view_copy propagation pass.
 
     To be used for upwards/downwards propagation by implementing the abstract
-    methods for the direction of propagation.
+    methods for the direction of propagation. Backends may supply a closed set
+    of equivalent permute targets and override the policy hooks when their
+    layout contract permits more movement. Every hook preserves the existing
+    behavior by default.
 
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    # Moving an aliasing aten.view.default requires alias-aware reasoning that
+    # this pass does not provide. Restrict propagation to copy semantics.
     _VIEW_TARGET = exir_ops.edge.aten.view_copy.default
     _PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
     _TARGETS = {_VIEW_TARGET, _PERMUTE_TARGET}

@@ -1020,6 +1020,115 @@ class LayoutDialectHandlingTest(unittest.TestCase):
             "RemovePermutesAroundElementwiseOps",
         )
 
+    def test_layout_copy_constant_compensation_preserves_dialect(self) -> None:
+        bias_data = torch.randn(1, 4, 8, 8)
+        graph_module, x_data = self._layout_add_graph("b_bias", bias_data)
+        before = copy.deepcopy(graph_module)
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps()(graph_module),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            0,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data, bias_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+    def test_layout_copy_output_compensation_preserves_dialect(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 8, 4)
+        x = builder.placeholder("x", x_data)
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 3, 1, 2]),
+        )
+        shifted = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor,
+            args=(to_nchw, 1.0),
+        )
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(shifted, [0, 2, 3, 1]),
+        )
+        builder.output((to_nhwc, shifted))
+        graph_module = builder.get_graph_module()
+        before = copy.deepcopy(graph_module)
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps(compensate_at_output=True)(graph_module),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            0,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+    def test_region_cancellation_rejects_mixed_permute_dialects(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8, 8, 4))
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 3, 1, 2]),
+        )
+        shifted = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor,
+            args=(to_nchw, 1.0),
+        )
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(shifted, [0, 2, 3, 1]),
+        )
+        builder.output([to_nhwc])
+        graph_module = builder.get_graph_module()
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps()(graph_module),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            1,
+        )
+
 
 # ─────────────────────────────────────
 # Tests for ReplaceNopTransposeOrPermuteWithViewPass

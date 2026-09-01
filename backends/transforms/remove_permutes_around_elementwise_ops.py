@@ -9,14 +9,11 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.fx
-from executorch.backends.transforms.channels_last_layout import (
-    ATEN_PERMUTE_COPY,
-    PERMUTE_COPY_TARGETS,
-)
+from executorch.backends.transforms.channels_last_layout import PERMUTE_COPY_TARGETS
 from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -33,18 +30,23 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
     ``extra_permutable_ops`` must be layout-equivariant without argument
     remapping. ``can_propagate`` is the backend's statement that a layout copy
-    must not move across a node.
+    may move across a node.
 
     ``compensate_at_output`` lets a region end at a graph output instead of
     being abandoned there. It is opt-in because it relocates a layout copy
     toward the outputs, and a backend that also runs the propagation passes has
     already chosen where its copies sit.
+
+    ``permute_targets`` is the closed family of layout-copy operators the
+    backend considers equivalent. A rewritten region must use one member of
+    that family consistently, and any synthesized copies retain that member.
     """
 
     @dataclass()
     class Subgraph:
         start_permute: list[int]
         end_permute: list[int]
+        permute_target: Any
         # Nodes in the subgraph, does not include permutes.
         nodes: set[torch.fx.Node] = field(default_factory=set)
         # Incoming edges to the subgraph from permute nodes.
@@ -84,15 +86,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         can_propagate: Callable[[torch.fx.Node], bool] | None = None,
         compensate_at_output: bool = False,
         permute_targets: set | frozenset | None = None,
-        permute_target=None,
     ) -> None:
         super().__init__()
         self.can_propagate = can_propagate
         self.compensate_at_output = compensate_at_output
         self._permute_targets = frozenset(permute_targets or PERMUTE_COPY_TARGETS)
-        self._permute_target = permute_target or ATEN_PERMUTE_COPY
-        if self._permute_target not in self._permute_targets:
-            raise ValueError("permute_target must be included in permute_targets")
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.mul.Tensor,
@@ -410,7 +408,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     and self._interleave_triple(user) is None
                 ):
                     continue
-                subgraph = self.Subgraph(start_permute, end_permute)
+                subgraph = self.Subgraph(start_permute, end_permute, node.target)
                 if self.visit(user, subgraph, processed_nodes):
                     subgraphs_found.append(subgraph)
                     for n in subgraph.nodes:
@@ -509,6 +507,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # Traverse downstream:
         for user in users_source.users:
             if user.target in self._permute_targets:
+                if user.target != subgraph.permute_target:
+                    return False
                 user_perm = self.get_permutation(user)
                 if user_perm == downstream_end:
                     subgraph.edges_out.add((users_source, user))
@@ -553,7 +553,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # Traverse upstream:
         for inp in node.all_input_nodes:
             if inp.target in self._permute_targets:
-                if self.get_permutation(inp) != current_start_permute:
+                if (
+                    inp.target != subgraph.permute_target
+                    or self.get_permutation(inp) != current_start_permute
+                ):
                     return False
                 subgraph.edges_in.add((inp, node))
             elif (inp_val := inp.meta.get("val")) is not None and inp_val.numel() == 1:
@@ -774,7 +777,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if const_rank is not None and const_rank == permute_rank:
                     new_node = graph.create_node(
                         "call_function",
-                        self._permute_target,
+                        subgraph.permute_target,
                         args=(const_node, node_end_perm),
                     )
                 elif (
@@ -817,7 +820,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                         with graph.inserting_after(widened):
                             new_node = graph.create_node(
                                 "call_function",
-                                self._permute_target,
+                                subgraph.permute_target,
                                 args=(widened, node_end_perm),
                             )
                 else:
@@ -896,7 +899,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             first_output = min(outputs, key=node_order.__getitem__)
             with producer.graph.inserting_before(first_output):
                 new_permute = producer.graph.call_function(
-                    self._permute_target,
+                    subgraph.permute_target,
                     args=(producer, list(permutation)),
                 )
             new_permute.meta = dict(producer.meta)

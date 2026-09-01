@@ -134,6 +134,8 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
 
     By default, all currently implemented channels_last dialect ops are replaced.
     Pass a custom op_map to restrict or extend the set of replacements.
+    ``require_contiguous_output`` preserves the legacy eligibility rule by
+    default; a backend with an explicit logical-layout contract may disable it.
 
     Metadata from each replaced operator is preserved so provenance and backend
     annotations survive the rewrite. ExportPass recomputes shape metadata after
