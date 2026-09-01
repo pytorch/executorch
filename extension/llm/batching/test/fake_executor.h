@@ -50,8 +50,15 @@ class FakeExecutor : public Executor {
     }
   };
 
+  bool initialize() override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ++initialize_calls_;
+    return !fail_initialize;
+  }
+
   std::optional<SessionId> open_session() override {
     std::lock_guard<std::mutex> lock(mutex_);
+    note_call_order_();
     if (static_cast<int>(open_.size()) >= capacity) {
       return std::nullopt;
     }
@@ -85,6 +92,7 @@ class FakeExecutor : public Executor {
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    note_call_order_();
     batch_sizes_.push_back(static_cast<int>(batch.inputs.size()));
     for (const Input& input : batch.inputs) {
       if (sampling_.count(input.sid) == 0) {
@@ -122,6 +130,8 @@ class FakeExecutor : public Executor {
   }
 
   int capacity = 8;
+  // Refuse to come up, so the runner should admit no work at all.
+  bool fail_initialize = false;
   // Batch index from which execute() starts failing. Negative never fails.
   int fail_batches_from = -1;
   // Once a session has produced emit_before_stop tokens, every later one is
@@ -207,7 +217,25 @@ class FakeExecutor : public Executor {
     return static_cast<int>(open_.size());
   }
 
+  int initialize_calls() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return initialize_calls_;
+  }
+
+  // Whether anything was asked of the executor before it was initialized.
+  bool called_before_initialize() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return called_before_initialize_;
+  }
+
  private:
+  // Caller holds mutex_.
+  void note_call_order_() {
+    if (initialize_calls_ == 0) {
+      called_before_initialize_ = true;
+    }
+  }
+
   // Decode is inferred from a single-token input, since Input does not carry
   // Task::is_decode. Good enough for a fake: the runner only ever feeds one
   // token to continue.
@@ -267,6 +295,8 @@ class FakeExecutor : public Executor {
   std::vector<int> batch_sizes_;
   std::map<SessionId, int> produced_;
   int batches_ = 0;
+  int initialize_calls_ = 0;
+  bool called_before_initialize_ = false;
 };
 
 } // namespace testing

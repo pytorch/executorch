@@ -1662,3 +1662,57 @@ TEST(ShutdownTest, ConcurrentAdmissionDoesNotStrandCallers) {
   }
   EXPECT_EQ(stranded.load(), 0);
 }
+
+// --- executor initialization -----------------------------------------------
+
+TEST(InitializeTest, RunsOnceBeforeAnythingElseIsAskedOfTheExecutor) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  generate(session, tokens(2), config(2), updates);
+  ASSERT_TRUE(updates->wait());
+
+  session = Session{};
+  fixture.runner.shutdown();
+
+  EXPECT_EQ(executor.initialize_calls(), 1);
+  EXPECT_FALSE(executor.called_before_initialize())
+      << "setup must land before the executor is asked to do any work";
+}
+
+// An executor that cannot come up must not be handed sessions. The failure
+// surfaces as a refused open, since the runner is already running by then.
+TEST(InitializeTest, FailureStopsTheRunnerAndRefusesSessions) {
+  FakeExecutor executor;
+  executor.fail_initialize = true;
+  Fixture fixture(executor);
+
+  auto refused = fixture.runner.open_session_async();
+  ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(refused.get().has_value());
+
+  fixture.runner.shutdown();
+  EXPECT_EQ(executor.initialize_calls(), 1);
+  EXPECT_TRUE(executor.seen().empty()) << "no batch should have run";
+  EXPECT_TRUE(executor.opened().empty())
+      << "a session must not be opened on an executor that failed to start";
+}
+
+// Opens queued while the engine was starting still have to be answered, or a
+// caller blocked on the future would hang.
+TEST(InitializeTest, FailureDoesNotStrandAQueuedOpen) {
+  FakeExecutor executor;
+  executor.fail_initialize = true;
+  Fixture fixture(executor);
+
+  std::vector<std::future<std::optional<Session>>> opens;
+  for (int i = 0; i < 4; ++i) {
+    opens.push_back(fixture.runner.open_session_async());
+  }
+  for (auto& opened : opens) {
+    ASSERT_EQ(opened.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(opened.get().has_value());
+  }
+}

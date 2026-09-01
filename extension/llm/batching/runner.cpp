@@ -624,6 +624,16 @@ void RunnerImpl::notify_engine_() {
 // --- engine thread ---------------------------------------------------------
 
 void RunnerImpl::run_() {
+  // Before the loop and before any command is answered, so a caller is never
+  // handed a session for an executor that did not come up, and so one-time
+  // setup is not charged to whichever generation happened to go first.
+  if (!executor_.initialize()) {
+    // Stop without running work. The drain below still answers whatever was
+    // queued while this was starting, so no caller is left waiting.
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    lifecycle_.store(Lifecycle::Stopping, std::memory_order_release);
+  }
+
   while (is_running_()) {
     process_pending_commands_();
     reap_cancelled_();
