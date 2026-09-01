@@ -202,6 +202,32 @@ uint64_t reserved_bytes(cudaMemPool_t pool) {
 // The delegate allocates from a pool it owns, so its retained memory must not
 // land in the device default pool that other users of the async allocator
 // share.
+// The retention threshold is the whole point of owning a pool: at the default
+// of zero the driver empties it on every synchronize. Nothing else in this
+// suite notices a smaller value, so it is asserted directly.
+TEST_F(CudaAllocatorTest, PoolRetainsMemoryWithoutLimit) {
+  cudaStream_t stream;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  auto res = CudaAllocator::allocate_async(8u << 20, 0, stream);
+  ASSERT_TRUE(res.ok());
+
+  cudaMemPool_t pool = CudaAllocator::pool_for_device(0);
+  ASSERT_NE(pool, nullptr);
+
+  uint64_t threshold = 0;
+  ASSERT_EQ(
+      cudaMemPoolGetAttribute(
+          pool, cudaMemPoolAttrReleaseThreshold, &threshold),
+      cudaSuccess);
+  EXPECT_EQ(threshold, UINT64_MAX)
+      << "the pool must hold on to freed memory rather than return it";
+
+  ASSERT_EQ(CudaAllocator::deallocate_async(res.get(), 0, stream), Error::Ok);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
 TEST_F(CudaAllocatorTest, AllocatesFromItsOwnPool) {
   cudaStream_t stream;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);

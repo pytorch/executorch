@@ -866,6 +866,21 @@ class ET_EXPERIMENTAL CudaBackend final
 
     mutable_state_forget_handle(handle);
 
+    // Waited on before the stream reference goes, so the frees this handle
+    // queued are observed by the driver. Without this the pool trim at the end
+    // of teardown sees them as still pending and gives back nothing, and the
+    // work is being abandoned anyway.
+    if (handle->cuda_stream != nullptr && *handle->cuda_stream != nullptr) {
+      const cudaError_t sync_err = cudaStreamSynchronize(*handle->cuda_stream);
+      if (sync_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaStreamSynchronize failed during teardown: %s.",
+            cudaGetErrorString(sync_err));
+        (void)cudaGetLastError();
+      }
+    }
+
     // The CUDA stream is managed by shared_ptr in the handle.
     // It will be automatically destroyed when the last handle using it
     // is destroyed. Just reset our reference.

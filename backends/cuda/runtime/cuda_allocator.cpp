@@ -36,10 +36,11 @@ namespace {
 //
 // The delegate allocates from a pool it creates rather than the device default
 // pool, because the default one is shared with every other user of the async
-// allocator in this process. Raising a threshold there caps what that user's
-// cache may keep, and trimming it on teardown throws their cached blocks away.
-// Owning the pool means the threshold and the trim only ever affect this
-// backend, with no attempt to remember and restore somebody else's setting.
+// allocator in this process. Raising the threshold there would make that shared
+// pool hold on to memory on their behalf, and trimming it on teardown would
+// throw their cached blocks away. Owning the pool means the threshold and the
+// trim only ever affect this backend, with no attempt to remember and restore
+// somebody else's setting.
 constexpr uint64_t kMemPoolReleaseThreshold = UINT64_MAX;
 
 struct MemPoolState {
@@ -413,8 +414,20 @@ Result<void*> CudaAllocator::allocate_async(
 #else
   // Allocating from this backend's own pool keeps its retained memory out of
   // the device default pool, which other users of the async allocator share.
+  //
+  // The pool has to belong to the device the stream runs on. A pool from
+  // another device returns a pointer that stream cannot touch, and the failure
+  // surfaces later as an illegal access rather than here. The caller's index
+  // and the stream can disagree, so the plain async allocation is used unless
+  // the index names the device that is current for this stream.
   const int device = resolve_device(index);
-  cudaMemPool_t pool = device >= 0 ? mem_pool_for(device) : nullptr;
+  int stream_device = -1;
+  if (cudaGetDevice(&stream_device) != cudaSuccess) {
+    (void)cudaGetLastError();
+    stream_device = -1;
+  }
+  cudaMemPool_t pool =
+      (device >= 0 && device == stream_device) ? mem_pool_for(device) : nullptr;
   if (device >= 0) {
     log_device = device;
   }
@@ -500,11 +513,11 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
   // a later load reuses it rather than paying to create it again.
   for (const auto& [device, pool] : targets) {
     if (pool != nullptr) {
-      // Only frees the driver has already observed can be released, so a caller
-      // that has not synchronized gets less back. Synchronizing here is not an
-      // option: the stream this backend's frees went to is the handle's own,
-      // and destroy() has already destroyed it by the time this runs, so
-      // touching it is undefined behaviour.
+      // Only frees the driver has already observed can be released, and a free
+      // still pending gives back nothing rather than less. The backend waits on
+      // its stream during teardown for that reason, before dropping it. This
+      // cannot wait on anything itself: it holds no stream, and a caller
+      // reaching it directly is responsible for having synchronized.
       const cudaError_t err = cudaMemPoolTrimTo(pool, 0);
       if (err != cudaSuccess) {
         ET_LOG(
