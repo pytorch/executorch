@@ -88,6 +88,15 @@ def get_manifest_python_symbols(manifest: dict) -> dict[str, dict[str, str]]:
     return _collect_python_symbols(python_manifest)
 
 
+def get_manifest_cmake_symbols(manifest: dict) -> dict[str, dict[str, str]]:
+    cmake_manifest = manifest.get("cmake")
+    if cmake_manifest is None:
+        return {}
+    if not isinstance(cmake_manifest, dict):
+        raise ValueError("Manifest [cmake] section must be a table")
+    return _collect_python_symbols(cmake_manifest)
+
+
 def get_current_python_symbols(
     *,
     include_deprecated: bool = False,
@@ -323,16 +332,29 @@ def format_validation_report(manifest_path: Path, issues: list[Issue]) -> str:
 
 
 def validate_manifest(manifest_path: Path) -> list[Issue]:
-    return validate_symbols(
-        get_manifest_python_symbols(read_manifest(manifest_path)),
-        get_current_python_symbols(
-            include_deprecated=manifest_path.name != MANIFEST_PATH.name,
-        ),
-        ignore_new_api_symbols=manifest_path.name != MANIFEST_PATH.name,
-        allow_backward_compatible_signature_changes=(
-            manifest_path.name != MANIFEST_PATH.name
-        ),
+    is_static = manifest_path.name != MANIFEST_PATH.name
+    manifest = read_manifest(manifest_path)
+    current = tomllib.loads(
+        gpam.generate_manifest_from_init(
+            repo_path=REPO_PATH,
+            include_deprecated=is_static,
+        )
     )
+    issues = validate_symbols(
+        get_manifest_python_symbols(manifest),
+        get_manifest_python_symbols(current),
+        ignore_new_api_symbols=is_static,
+        allow_backward_compatible_signature_changes=is_static,
+    )
+    issues.extend(
+        validate_symbols(
+            get_manifest_cmake_symbols(manifest),
+            get_manifest_cmake_symbols(current),
+            ignore_new_api_symbols=is_static,
+            allow_backward_compatible_signature_changes=is_static,
+        )
+    )
+    return issues
 
 
 def parse_args() -> argparse.Namespace:

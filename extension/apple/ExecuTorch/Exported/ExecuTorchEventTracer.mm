@@ -8,7 +8,7 @@
 
 #import "ExecuTorchEventTracer.h"
 
-#import <executorch/extension/apple/ExecuTorch/Internal/ExecuTorchEventTracer+Internal.h>
+#import "ExecuTorchEventTracer+Internal.h"
 
 using executorch::runtime::EventTracer;
 
