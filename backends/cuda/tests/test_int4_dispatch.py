@@ -348,21 +348,26 @@ class TestDispatchRouting(unittest.TestCase):
                 return F.linear(x, self.weight)
 
         exported = torch.export.export(
-            LinearModule(),
-            (torch.randn(8, 256, dtype=torch.bfloat16),),
-            strict=True,
+            LinearModule(), (torch.randn(8, 256, dtype=torch.bfloat16),), strict=True
         )
+        self.assertNotIn("triton.q4k_fp8_linear", exported.graph_module.code)
+
+        with cuda_optimization_context(q4k_fp8_prefill=True):
+            exported = torch.export.export(
+                LinearModule(),
+                (torch.randn(8, 256, dtype=torch.bfloat16),),
+                strict=True,
+            )
         self.assertIn("triton.q4k_fp8_linear", exported.graph_module.code)
 
-    def test_fp8_compile_gate_falls_back_to_bfloat16_dequant(self):
+    def test_fp8_gate_falls_back_to_bfloat16_dequant(self):
         module, _ = _make_int4_linear(256, 512, group_size=32)
         x = torch.randn(8, 512, dtype=torch.bfloat16, device="cuda")
-        with cuda_optimization_context(q4k_fp8_prefill=False), mock.patch(
-            "executorch.backends.cuda.triton.kernels.q4k_fp8_linear.dequant_matmul",
-            wraps=dequant_matmul,
-        ) as fallback:
+        with mock.patch(
+            "executorch.backends.cuda.quantize_op_dispatch.int4_dispatch.q4k_fp8_linear"
+        ) as fp8_linear:
             out = module(x)
-        fallback.assert_called_once()
+        fp8_linear.assert_not_called()
         self.assertEqual(out.shape, (8, 256))
 
     def test_target_arch_override_controls_fp8_gate(self):

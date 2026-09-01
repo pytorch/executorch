@@ -34,6 +34,7 @@ CudaCoalescedInt4Tensor weights::
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+from executorch.backends.cuda.optimization_config import q4k_fp8_prefill_enabled
 from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
 from executorch.backends.cuda.quantize_op_dispatch.q4k_dequant import dequant_matmul
 from executorch.backends.cuda.target_arch import cuda_targets_are_sm90_or_newer
@@ -112,7 +113,8 @@ def _(func, types, args, kwargs):
         # during export even when the target GPU is SM90+.
         cuda_target = x_2d.is_cuda or torch.compiler.is_compiling()
         if (
-            cuda_targets_are_sm90_or_newer()
+            q4k_fp8_prefill_enabled()
+            and cuda_targets_are_sm90_or_newer()
             and cuda_target
             and x_2d.dtype == torch.bfloat16
             and x_2d.is_contiguous()

@@ -12,7 +12,7 @@ from typing import Iterator
 
 
 _Q4K_FP8_PREFILL_ENABLED = contextvars.ContextVar(
-    "q4k_fp8_prefill_enabled", default=True
+    "q4k_fp8_prefill_enabled", default=False
 )
 _TMA_CAUSAL_PREFILL_ENABLED = contextvars.ContextVar(
     "tma_causal_prefill_enabled", default=False
