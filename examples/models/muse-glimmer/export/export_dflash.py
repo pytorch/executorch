@@ -58,6 +58,7 @@ def export_dflash(
     backend: str = "mlx",
     mmproj: str | None = None,
     max_vision_patches: int = 16384,
+    enable_tma_causal_prefill: bool = False,
 ) -> None:
     """Export DFlash target + draft to one CUDA or MLX .pte.
 
@@ -138,19 +139,38 @@ def export_dflash(
             activation_dtype=activation_dtype,
         )
 
-    backend_export = _export_dflash_mlx if backend == "mlx" else _export_dflash_cuda
-    backend_export(
-        target_model,
-        target_config,
-        draft_model,
-        draft_config,
-        vision_model,
-        pos_embed_table,
-        output_dir,
-        max_seq_len,
-        activation_dtype,
-        max_vision_patches,
-    )
+    if backend == "mlx":
+        _export_dflash_mlx(
+            target_model,
+            target_config,
+            draft_model,
+            draft_config,
+            vision_model,
+            pos_embed_table,
+            output_dir,
+            max_seq_len,
+            activation_dtype,
+            max_vision_patches,
+        )
+    else:
+        from executorch.backends.cuda.optimization_config import (
+            cuda_optimization_context,
+        )
+
+        with cuda_optimization_context(tma_causal_prefill=enable_tma_causal_prefill):
+            _export_dflash_cuda(
+                target_model,
+                target_config,
+                draft_model,
+                draft_config,
+                vision_model,
+                pos_embed_table,
+                output_dir,
+                max_seq_len,
+                activation_dtype,
+                max_vision_patches,
+                enable_tma_causal_prefill=enable_tma_causal_prefill,
+            )
 
 
 def _dflash_constant_methods(
@@ -422,6 +442,7 @@ def _export_dflash_cuda(
     max_seq_len: int,
     activation_dtype: torch.dtype,
     max_vision_patches: int,
+    enable_tma_causal_prefill: bool,
 ) -> None:
     """Export the CUDA DFlash contract.
 
@@ -627,6 +648,10 @@ def _export_dflash_cuda(
             [
                 CudaBackend.generate_method_name_compile_spec(method),
                 CompileSpec("low_memory_mode", b"ON"),
+                CompileSpec(
+                    "enable_tma_causal_prefill",
+                    b"ON" if enable_tma_causal_prefill else b"OFF",
+                ),
             ]
         )
 
@@ -771,6 +796,11 @@ def main() -> None:
         help="Activation / KV-cache / unquantized-weight dtype. Defaults to "
         "float16 for MLX and bfloat16 for CUDA.",
     )
+    parser.add_argument(
+        "--enable-tma-causal-prefill",
+        action="store_true",
+        help="Enable the experimental SM90+ TMA causal prefill attention path.",
+    )
     args = parser.parse_args()
 
     try:
@@ -799,6 +829,7 @@ def main() -> None:
         backend=args.backend,
         mmproj=args.mmproj,
         max_vision_patches=args.max_vision_patches,
+        enable_tma_causal_prefill=args.enable_tma_causal_prefill,
     )
 
 

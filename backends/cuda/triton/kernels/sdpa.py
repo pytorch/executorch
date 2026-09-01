@@ -38,6 +38,7 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
+from executorch.backends.cuda.optimization_config import tma_causal_prefill_enabled
 from executorch.backends.cuda.target_arch import cuda_targets_are_sm90_or_newer
 from torch.library import triton_op, wrap_triton
 
@@ -996,7 +997,8 @@ def _launch_pow2_kernel(
     # host sync on the device-resident kv_len scalar.
     tma_config = _tma_prefill_config(D, L_q)
     if (
-        cuda_targets_are_sm90_or_newer()
+        tma_causal_prefill_enabled()
+        and cuda_targets_are_sm90_or_newer()
         and HAS_KV_LEN
         and mask_is_causal
         and not HAS_MASK

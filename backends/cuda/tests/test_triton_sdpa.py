@@ -20,6 +20,7 @@ from unittest import mock
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.cuda.optimization_config import cuda_optimization_context
 
 
 def _skip_if_no_cuda():
@@ -682,7 +683,9 @@ class TestTritonSdpa(unittest.TestCase):
                 kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
                 dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
 
-                with mock.patch.object(
+                with cuda_optimization_context(
+                    tma_causal_prefill=True
+                ), mock.patch.object(
                     sdpa_module, "cuda_targets_are_sm90_or_newer", return_value=True
                 ):
                     out_tma = self.sdpa(
@@ -739,7 +742,8 @@ class TestTritonSdpa(unittest.TestCase):
         kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
         dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
 
-        out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len_t, is_causal=True)
+        with cuda_optimization_context(tma_causal_prefill=True):
+            out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len_t, is_causal=True)
         ref = _reference_sdpa(q, k, v, attn_mask=dense)
 
         self.assertFalse(torch.isnan(out).any())
@@ -768,7 +772,8 @@ class TestTritonSdpa(unittest.TestCase):
         kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
         dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
 
-        out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len_t, is_causal=True)
+        with cuda_optimization_context(tma_causal_prefill=True):
+            out = self.sdpa(q, k, v, enable_gqa=True, kv_len=kv_len_t, is_causal=True)
         ref = _reference_sdpa(q, k, v, attn_mask=dense)
 
         self.assertFalse(torch.isnan(out).any())

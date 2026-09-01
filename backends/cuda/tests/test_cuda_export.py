@@ -104,6 +104,49 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
             )
 
+    def test_tma_causal_prefill_defaults_off(self):
+        from executorch.backends.cuda.optimization_config import (
+            tma_causal_prefill_enabled,
+        )
+
+        with CudaBackend.get_extra_aoti_compile_context_manager([]):
+            self.assertFalse(tma_causal_prefill_enabled())
+
+    def test_tma_causal_prefill_compile_spec(self):
+        from executorch.backends.cuda.optimization_config import (
+            tma_causal_prefill_enabled,
+        )
+
+        with patch(
+            "executorch.backends.cuda.cuda_backend.cuda_targets_are_sm90_or_newer",
+            return_value=True,
+        ), CudaBackend.get_extra_aoti_compile_context_manager(
+            [CompileSpec(key="enable_tma_causal_prefill", value=b"ON")]
+        ):
+            self.assertTrue(tma_causal_prefill_enabled())
+
+    def test_invalid_tma_causal_prefill_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid enable_tma_causal_prefill"):
+            CudaBackend.get_extra_aoti_compile_context_manager(
+                [CompileSpec(key="enable_tma_causal_prefill", value=b"MAYBE")]
+            )
+
+    def test_tma_causal_prefill_unsupported_target_is_disabled(self):
+        from executorch.backends.cuda.optimization_config import (
+            tma_causal_prefill_enabled,
+        )
+
+        with patch(
+            "executorch.backends.cuda.cuda_backend.cuda_targets_are_sm90_or_newer",
+            return_value=False,
+        ), self.assertLogs(
+            level="WARNING"
+        ) as logs, CudaBackend.get_extra_aoti_compile_context_manager(
+            [CompileSpec(key="enable_tma_causal_prefill", value=b"ON")]
+        ):
+            self.assertFalse(tma_causal_prefill_enabled())
+        self.assertIn("requires an SM90+ CUDA target", "\n".join(logs.output))
+
     def test_target_smem_context_is_applied(self):
         with patch(
             "executorch.backends.cuda.cuda_backend.target_smem_context",
