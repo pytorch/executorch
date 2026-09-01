@@ -18,6 +18,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/passes:constant_prop_pass",
     ],
 )
 
