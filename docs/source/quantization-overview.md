@@ -73,3 +73,5 @@ Note that numerics on device can differ those in PyTorch even for unquantized mo
 ## 3. Lower the model
 
 The final step is to lower the quantized_model to the desired backend, as you would an unquantized one.  See [backend-specific pages](backends-overview.md) for lowering information.
+
+For complex Quantization-Aware Training flows — where training loops, checkpointing, and job restarts need to live outside a single export call — see [Using Complex QAT Flows with Recipe-Based Lowering](using-complex-qat-flows-with-recipe-based-lowering.md).
