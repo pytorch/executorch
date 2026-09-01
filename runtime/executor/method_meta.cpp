@@ -403,6 +403,9 @@ Result<etensor::Device> MethodMeta::memory_planned_buffer_device(
 bool MethodMeta::uses_backend(const char* backend_name) const {
   ET_CHECK_MSG(backend_name, "backend name is null");
   const auto delegates = s_plan_->delegates();
+  if (delegates == nullptr) {
+    return false;
+  }
   for (size_t i = 0; i < delegates->size(); i++) {
     auto delegate = delegates->Get(i);
     auto backend_name_len = std::strlen(backend_name);

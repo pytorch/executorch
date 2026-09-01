@@ -12,9 +12,12 @@
 #include <limits>
 #include <vector>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/program.h>
+#include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
@@ -25,6 +28,7 @@ using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
+using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
 namespace executorch {
@@ -72,6 +76,9 @@ class MethodMetaTest : public ::testing::Test {
   }
 
   void SetUp() override {
+    // Required to initialize the PAL timer before tests trigger ET_LOG calls in
+    // et_pal_current_ticks().
+    executorch::runtime::runtime_init();
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
     const char* device_path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
@@ -274,4 +281,59 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
   EXPECT_EQ(
       method_meta->memory_planned_buffer_device(2).error(),
       Error::InvalidArgument);
+}
+
+TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
+  // Construct a minimal schema-valid FlatBuffer program where delegates is
+  // unset (nullptr).
+  flatbuffers::FlatBufferBuilder fbb;
+  std::vector<int32_t> empty_inputs = {};
+  std::vector<int32_t> empty_outputs = {};
+  std::vector<int64_t> non_const_buffer_sizes = {0};
+  auto plan = executorch_flatbuffer::CreateExecutionPlanDirect(
+      fbb,
+      /*name=*/"forward",
+      /*container_meta_type=*/0,
+      /*values=*/nullptr,
+      /*inputs=*/&empty_inputs,
+      /*outputs=*/&empty_outputs,
+      /*chains=*/nullptr,
+      /*operators=*/nullptr,
+      /*delegates=*/nullptr,
+      /*non_const_buffer_sizes=*/&non_const_buffer_sizes,
+      /*non_const_buffer_device=*/nullptr);
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>> plans =
+      {plan};
+
+  auto const_offsets = fbb.CreateVector(std::vector<uint64_t>{0});
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      fbb, /*segment_index=*/0, const_offsets);
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>
+      segments = {executorch_flatbuffer::CreateDataSegment(
+          fbb, /*offset=*/0, /*size=*/0)};
+
+  auto program = executorch_flatbuffer::CreateProgramDirect(
+      fbb,
+      /*version=*/Program::kMaxSupportedSchemaVersion,
+      /*execution_plan=*/&plans,
+      /*constant_buffer=*/nullptr,
+      /*backend_delegate_data=*/nullptr,
+      /*segments=*/&segments,
+      /*constant_segment=*/constant_segment);
+  executorch_flatbuffer::FinishProgramBuffer(fbb, program);
+
+  std::vector<uint8_t> buffer(
+      fbb.GetBufferPointer(), fbb.GetBufferPointer() + fbb.GetSize());
+  if (buffer.size() < 64) {
+    buffer.resize(64, 0);
+  }
+
+  BufferDataLoader loader(buffer.data(), buffer.size());
+  Result<Program> prog = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(prog.error(), Error::Ok);
+
+  Result<MethodMeta> method_meta = prog->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  EXPECT_FALSE(method_meta->uses_backend("xnnpack"));
 }
