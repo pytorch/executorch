@@ -16,9 +16,9 @@
 // cache exists an implementation may number them however it likes.
 //
 // Called only from the runner's engine thread, so implementations need no
-// locking of their own. For the same reason an implementation must not call
-// back into the runner: shutdown() joins the thread it would be running on,
-// and the session and generation calls are queued to it.
+// locking of their own. Nor may an implementation call back into the runner:
+// shutdown() joins that same thread, and the session and generation calls are
+// queued to it.
 //
 // -- Session state ----------------------------------------------------------
 //
@@ -42,15 +42,15 @@
 //
 // Rewinding: an input whose absolute start is below the session's length
 // discards everything from that position up, then commits. Equal appends.
-// Above is a gap, and the batch must fail. The runner rewinds when a stop
-// token, the token budget, or a cancellation ends a generation part way
-// through a multi-token Output, so an implementation must retain whatever
-// rewinding costs it -- a length pointer, a state snapshot -- until the
-// session's next input arrives or the session closes.
+// Above is a gap, and the batch must fail.
 //
-// An implementation that cannot rewind must fail the batch. It cannot say so
-// in advance, and a runner it never hands a multi-token Output will never ask
-// it to.
+// The runner rewinds when a stop token, the token budget, or a cancellation
+// ends a generation part way through a multi-token Output. An implementation
+// must therefore retain whatever rewinding requires -- a length pointer, a
+// state snapshot -- until the session's next input arrives or it closes.
+//
+// An implementation that cannot rewind must fail the batch; there is no way to
+// declare that up front. One never handed a multi-token Output is never asked.
 
 #include <cstddef>
 #include <cstdint>
@@ -93,10 +93,9 @@ class ET_EXPERIMENTAL Executor {
   // double close is not an error, though Runner closes each owned id once.
   virtual void close_session(SessionId session) = 0;
 
-  // Installs the session's sampling policy, immediately before the
-  // generation's tasks are submitted, and holds until the next generation
-  // replaces it. Applies to every input of that session until then, so it does
-  // not ride on each one.
+  // Installs the session's sampling policy, immediately before the generation's
+  // tasks are submitted, and holds until the next generation replaces it, so it
+  // does not ride on each input.
   //
   // A token's randomness should derive from (seed, position), so results do
   // not depend on how batches form or speculative rounds roll back. A nullopt
@@ -119,16 +118,13 @@ class ET_EXPERIMENTAL Executor {
   // speculative executor returns the tokens it accepted plus the model's own
   // next token.
   //
-  // No position is reported. The runner owns the session's length: it knows
-  // what it fed and, from the rule above, which of the tokens returned here
-  // were committed. A rejected speculative round is invisible to it and needs
-  // to be -- those tokens never became Output::tokens, so they never entered
-  // the transcript.
+  // No position is reported: the runner tracks length from what it fed and, by
+  // the rule above, which returned tokens committed. A rejected speculative
+  // round never becomes Output::tokens, so it stays invisible.
   //
-  // Whether to continue is the runner's decision. An executor that produced
-  // tokens past a stop token or the token budget will see them dropped, and
-  // the session rewound below them on its next input. It has no way to end a
-  // generation itself, and needs none.
+  // Whether to continue is the runner's decision. Tokens produced past a stop
+  // token or the budget are dropped and the session rewound below them on its
+  // next input; an executor cannot end a generation itself.
   //
   // A session may appear in more than one input of a batch when consecutive
   // prefill chunks of its prompt land together. They arrive in order, with
