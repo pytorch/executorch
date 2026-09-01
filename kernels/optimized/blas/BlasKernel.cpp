@@ -359,29 +359,36 @@ TARGET_ARM_BF16_ATTRIBUTE static void dot4_with_fp32_arith_bfdot(
     int64_t len,
     float* out) {
   constexpr int64_t kElementsPerIteration = 8;
-  float32x4_t acc[4] = {
-      vdupq_n_f32(0.0f),
-      vdupq_n_f32(0.0f),
-      vdupq_n_f32(0.0f),
-      vdupq_n_f32(0.0f)};
+  float32x4_t acc0 = vdupq_n_f32(0.0f);
+  float32x4_t acc1 = vdupq_n_f32(0.0f);
+  float32x4_t acc2 = vdupq_n_f32(0.0f);
+  float32x4_t acc3 = vdupq_n_f32(0.0f);
   int64_t idx = 0;
   for (; idx + kElementsPerIteration <= len; idx += kElementsPerIteration) {
     // See NOTE[Intrinsics in bfdot variant] above.
     const auto v1 = vld1q_bf16(reinterpret_cast<const bfloat16_t*>(&vec1[idx]));
-    for (int64_t j = 0; j < 4; ++j) {
-      const auto v2 = vld1q_bf16(
-          reinterpret_cast<const bfloat16_t*>(&vec2[j * stride2 + idx]));
-      acc[j] = vbfdotq_f32(acc[j], v1, v2);
-    }
+    const auto v20 =
+        vld1q_bf16(reinterpret_cast<const bfloat16_t*>(&vec2[idx]));
+    const auto v21 =
+        vld1q_bf16(reinterpret_cast<const bfloat16_t*>(&vec2[stride2 + idx]));
+    const auto v22 = vld1q_bf16(
+        reinterpret_cast<const bfloat16_t*>(&vec2[2 * stride2 + idx]));
+    const auto v23 = vld1q_bf16(
+        reinterpret_cast<const bfloat16_t*>(&vec2[3 * stride2 + idx]));
+    acc0 = vbfdotq_f32(acc0, v1, v20);
+    acc1 = vbfdotq_f32(acc1, v1, v21);
+    acc2 = vbfdotq_f32(acc2, v1, v22);
+    acc3 = vbfdotq_f32(acc3, v1, v23);
   }
   const float32x4_t sums =
-      vpaddq_f32(vpaddq_f32(acc[0], acc[1]), vpaddq_f32(acc[2], acc[3]));
+      vpaddq_f32(vpaddq_f32(acc0, acc1), vpaddq_f32(acc2, acc3));
   vst1q_f32(out, sums);
   for (; idx < len; ++idx) {
-    for (int64_t j = 0; j < 4; ++j) {
-      out[j] += static_cast<float>(vec1[idx]) *
-          static_cast<float>(vec2[j * stride2 + idx]);
-    }
+    const float v1 = static_cast<float>(vec1[idx]);
+    out[0] += v1 * static_cast<float>(vec2[idx]);
+    out[1] += v1 * static_cast<float>(vec2[stride2 + idx]);
+    out[2] += v1 * static_cast<float>(vec2[2 * stride2 + idx]);
+    out[3] += v1 * static_cast<float>(vec2[3 * stride2 + idx]);
   }
 }
 
@@ -411,6 +418,123 @@ TARGET_ARM_BF16_ATTRIBUTE static void gemv_transa_with_fp32_arith_bfdot(
 #endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 #if defined(__aarch64__)
+C10_ALWAYS_INLINE float32x4_t
+initialize_gemv_acc_neon(float beta, const float* c) {
+  if (beta == 0.0f) {
+    return vdupq_n_f32(0.0f);
+  }
+  const float32x4_t value = vld1q_f32(c);
+  return beta == 1.0f ? value : vmulq_n_f32(value, beta);
+}
+
+template <typename b_t>
+C10_ALWAYS_INLINE void gemv_notrans_block64_neon(
+    int64_t output_offset,
+    int64_t k,
+    float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const b_t* b,
+    float beta,
+    float* c) {
+  float32x4_t acc0 = initialize_gemv_acc_neon(beta, c + output_offset);
+  float32x4_t acc1 = initialize_gemv_acc_neon(beta, c + output_offset + 4);
+  float32x4_t acc2 = initialize_gemv_acc_neon(beta, c + output_offset + 8);
+  float32x4_t acc3 = initialize_gemv_acc_neon(beta, c + output_offset + 12);
+  float32x4_t acc4 = initialize_gemv_acc_neon(beta, c + output_offset + 16);
+  float32x4_t acc5 = initialize_gemv_acc_neon(beta, c + output_offset + 20);
+  float32x4_t acc6 = initialize_gemv_acc_neon(beta, c + output_offset + 24);
+  float32x4_t acc7 = initialize_gemv_acc_neon(beta, c + output_offset + 28);
+  float32x4_t acc8 = initialize_gemv_acc_neon(beta, c + output_offset + 32);
+  float32x4_t acc9 = initialize_gemv_acc_neon(beta, c + output_offset + 36);
+  float32x4_t acc10 = initialize_gemv_acc_neon(beta, c + output_offset + 40);
+  float32x4_t acc11 = initialize_gemv_acc_neon(beta, c + output_offset + 44);
+  float32x4_t acc12 = initialize_gemv_acc_neon(beta, c + output_offset + 48);
+  float32x4_t acc13 = initialize_gemv_acc_neon(beta, c + output_offset + 52);
+  float32x4_t acc14 = initialize_gemv_acc_neon(beta, c + output_offset + 56);
+  float32x4_t acc15 = initialize_gemv_acc_neon(beta, c + output_offset + 60);
+
+  for (int64_t l = 0; l < k; ++l) {
+    const float b_val = static_cast<float>(b[l]) * alpha;
+    const auto* a_col =
+        reinterpret_cast<const uint16_t*>(a + l * lda + output_offset);
+
+    uint16x8_t a_bf16 = vld1q_u16(a_col);
+    acc0 = vfmaq_n_f32(
+        acc0,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc1 = vfmaq_n_f32(
+        acc1, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+    a_bf16 = vld1q_u16(a_col + 8);
+    acc2 = vfmaq_n_f32(
+        acc2,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc3 = vfmaq_n_f32(
+        acc3, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+    a_bf16 = vld1q_u16(a_col + 16);
+    acc4 = vfmaq_n_f32(
+        acc4,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc5 = vfmaq_n_f32(
+        acc5, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+    a_bf16 = vld1q_u16(a_col + 24);
+    acc6 = vfmaq_n_f32(
+        acc6,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc7 = vfmaq_n_f32(
+        acc7, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+    a_bf16 = vld1q_u16(a_col + 32);
+    acc8 = vfmaq_n_f32(
+        acc8,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc9 = vfmaq_n_f32(
+        acc9, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+    a_bf16 = vld1q_u16(a_col + 40);
+    acc10 = vfmaq_n_f32(
+        acc10,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc11 = vfmaq_n_f32(
+        acc11, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+    a_bf16 = vld1q_u16(a_col + 48);
+    acc12 = vfmaq_n_f32(
+        acc12,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc13 = vfmaq_n_f32(
+        acc13, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+    a_bf16 = vld1q_u16(a_col + 56);
+    acc14 = vfmaq_n_f32(
+        acc14,
+        vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16)),
+        b_val);
+    acc15 = vfmaq_n_f32(
+        acc15, vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16)), b_val);
+  }
+
+  vst1q_f32(c + output_offset, acc0);
+  vst1q_f32(c + output_offset + 4, acc1);
+  vst1q_f32(c + output_offset + 8, acc2);
+  vst1q_f32(c + output_offset + 12, acc3);
+  vst1q_f32(c + output_offset + 16, acc4);
+  vst1q_f32(c + output_offset + 20, acc5);
+  vst1q_f32(c + output_offset + 24, acc6);
+  vst1q_f32(c + output_offset + 28, acc7);
+  vst1q_f32(c + output_offset + 32, acc8);
+  vst1q_f32(c + output_offset + 36, acc9);
+  vst1q_f32(c + output_offset + 40, acc10);
+  vst1q_f32(c + output_offset + 44, acc11);
+  vst1q_f32(c + output_offset + 48, acc12);
+  vst1q_f32(c + output_offset + 52, acc13);
+  vst1q_f32(c + output_offset + 56, acc14);
+  vst1q_f32(c + output_offset + 60, acc15);
+}
+
 template <int64_t kRegisterPairs, typename b_t>
 C10_ALWAYS_INLINE void gemv_notrans_block_neon(
     int64_t output_offset,
@@ -444,7 +568,7 @@ C10_ALWAYS_INLINE void gemv_notrans_block_neon(
       const float32x4_t a_low =
           vreinterpretq_f32_u32(vshll_n_u16(vget_low_u16(a_bf16), 16));
       const float32x4_t a_high =
-          vreinterpretq_f32_u32(vshll_n_u16(vget_high_u16(a_bf16), 16));
+          vreinterpretq_f32_u32(vshll_high_n_u16(a_bf16, 16));
       acc[r * 2] = vfmaq_n_f32(acc[r * 2], a_low, b_val);
       acc[r * 2 + 1] = vfmaq_n_f32(acc[r * 2 + 1], a_high, b_val);
     }
@@ -468,7 +592,7 @@ void gemv_notrans_neon(
     float* c) {
   int64_t i = 0;
   for (; i + 64 <= m; i += 64) {
-    gemv_notrans_block_neon<8>(i, k, alpha, a, lda, b, beta, c);
+    gemv_notrans_block64_neon(i, k, alpha, a, lda, b, beta, c);
   }
   for (; i + 32 <= m; i += 32) {
     gemv_notrans_block_neon<4>(i, k, alpha, a, lda, b, beta, c);
