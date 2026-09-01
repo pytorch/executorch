@@ -129,7 +129,6 @@ class TestRingAttention(unittest.TestCase):
     ):
         """A W+C cache preserves history when the incoming chunk exceeds W."""
         self.sliding_window = 4
-        self.max_context_len = 16
         chunk_size = 6
         baseline_attn = self._create_baseline_attention(12, kv_cache_type)
         ring_attn = self._create_ring_attention(

@@ -955,7 +955,7 @@ class CustomRingKVCache(CustomKVCache):
 
 
 def _replace_kv_cache_with_ring_kv_cache(
-    attention, layer_size: int, max_seq_len: int
+    attention, layer_size: int, max_seq_len: Optional[int]
 ):
     sliding_window_size = layer_size
     assert (
@@ -983,7 +983,9 @@ def _replace_kv_cache_with_ring_kv_cache(
         )
 
 
-def replace_kv_cache_with_ring_kv_cache(module, layer_sizes, max_seq_len: int):
+def replace_kv_cache_with_ring_kv_cache(
+    module, layer_sizes, max_seq_len: Optional[int] = None
+):
     """Replace local-layer caches with window-plus-in-flight ring caches."""
     # This is needed to ensure that custom ops are registered
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
@@ -1000,6 +1002,7 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes, max_seq_len: int):
     logging.info(
         f"Applying local sliding window attention with following pattern {layer_sizes}."
     )
+    logged_full_context_cache = False
     assert len(layer_sizes) == len(
         module.layers
     ), f"Length of layer sizes {len(layer_sizes)} must match the number of layers in the module {len(module.layers)}."
@@ -1011,6 +1014,20 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes, max_seq_len: int):
             getattr(transformer_block, "attention", None) is not None
         ), f"Transfomer block must have attention module. Transformer block {transformer_block}"
         attention = transformer_block.attention
+        full_context_length = attention.kv_cache.max_context_length
+        effective_max_seq_len = (
+            full_context_length if max_seq_len is None else max_seq_len
+        )
+        if (
+            not logged_full_context_cache
+            and sliding_window_size + effective_max_seq_len >= full_context_length
+        ):
+            logging.info(
+                "Local attention KV caches will use the full context length; "
+                "set max_seq_length below max_context_length - window_size "
+                "to retain KV-cache memory savings."
+            )
+            logged_full_context_cache = True
         _replace_kv_cache_with_ring_kv_cache(
             attention, sliding_window_size, max_seq_len
         )

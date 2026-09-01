@@ -34,13 +34,20 @@ def _get_attention_sink_cache_size(
 ) -> int:
     """Size a sink cache for fixed sinks, one window, and one input chunk."""
     assert sink_size >= 0, "Attention sink size must be non-negative"
+    assert sink_size < max_context_length, (
+        f"Attention sink size ({sink_size}) must be smaller than the full "
+        f"context length ({max_context_length})"
+    )
+    assert window_size > 0, "Sliding-window size must be positive"
+    assert sink_size + window_size <= max_context_length, (
+        f"Attention sink size ({sink_size}) plus sliding-window size "
+        f"({window_size}) cannot exceed the full context length "
+        f"({max_context_length})"
+    )
     if max_seq_len is None:
         max_seq_len = max_context_length
-    return sink_size + _get_ring_cache_size(
-        max_context_length - sink_size,
-        window_size,
-        max_seq_len,
-    )
+    assert max_seq_len > 0, "Maximum sequence length must be positive"
+    return sink_size + window_size + max_seq_len
 
 
 class RopeWithAttentionSink(Rope):
@@ -76,13 +83,25 @@ class RopeWithAttentionSink(Rope):
             if getattr(params, "max_seq_len", None) is None
             else int(params.max_seq_len)
         )
-        cache_size = _get_attention_sink_cache_size(
-            params.max_context_len,
-            window_size,
-            sink_size,
-            max_seq_len,
+        cache_size = (
+            _get_ring_cache_size(params.max_context_len, window_size, max_seq_len)
+            if sink_size == 0
+            else _get_attention_sink_cache_size(
+                params.max_context_len,
+                window_size,
+                sink_size,
+                max_seq_len,
+            )
         )
         self.ring_size = cache_size - sink_size
+        if self.freqs_cos.size(0) < cache_size:
+            freqs_cos, freqs_sin = self.precompute_freqs_cis(
+                self.params.head_dim,
+                cache_size,
+                self.params.rope_freq_base,
+            )
+            self.freqs_cos = freqs_cos
+            self.freqs_sin = freqs_sin
 
     def _remap_input_pos(self, input_pos: torch.Tensor) -> torch.Tensor:
         """Remap positions: sink tokens stay, window tokens wrap in ring buffer."""
@@ -367,7 +386,7 @@ def _replace_attention(
             kv_cache = child_module.kv_cache
             if sink_size == 0:
                 # No sink tokens needed — use standard RingKVCache directly
-                child_module.kv_cache = RingKVCache(
+                ring_kv_cache = RingKVCache(
                     kv_cache.max_batch_size,
                     kv_cache.max_context_length,
                     kv_cache.n_heads,
@@ -377,6 +396,10 @@ def _replace_attention(
                     window_size=window_size,
                     max_seq_len=max_seq_len,
                 )
+                assert rope_with_attention_sink.ring_size == (
+                    ring_kv_cache.max_context_length
+                ), "RoPE and KV-cache ring sizes must match"
+                child_module.kv_cache = ring_kv_cache
             else:
                 kv_cache_with_attention_sink = KVCacheWithAttentionSink(
                     n_heads=kv_cache.n_heads,

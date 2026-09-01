@@ -557,7 +557,7 @@ class AttentionSinkE2ETest(unittest.TestCase):
         args.max_seq_len = None
         model = self._build_model(args, sink_size, window_size, use_custom_sdpa=False)
         cache = model.layers[0].attention.kv_cache
-        self.assertEqual(cache.max_context_length, 64)
+        self.assertEqual(cache.max_context_length, 84)
 
         outputs = self._run_generation(model, args, num_tokens=100)
 

@@ -356,67 +356,47 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_105) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected, 1e-4, 1e-4);
 }
 
-TEST(OpScaledDotProductAttentionTest, WrappedSparseMaskMatchesReference) {
+TEST(OpScaledDotProductAttentionTest, SparseMaskRangesMatchReference) {
   TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
-  constexpr int32_t kv_size = 1536;
-  constexpr int32_t active_per_end = 128;
-  std::vector<float> key_values(kv_size * 2, 0.0f);
-  std::vector<float> value_values(kv_size * 2);
+  constexpr int32_t q_size = 64;
+  constexpr int32_t kv_size = 1024;
+  std::vector<float> key_values(kv_size, 0.0f);
+  std::vector<float> value_values(kv_size);
   std::vector<float> mask_values(
-      kv_size, -std::numeric_limits<float>::infinity());
+      q_size * kv_size, -std::numeric_limits<float>::infinity());
+  std::vector<float> expected_values(q_size);
 
   for (int32_t i = 0; i < kv_size; ++i) {
-    value_values[2 * i] = static_cast<float>(i);
-    value_values[2 * i + 1] = static_cast<float>(2 * i + 1);
+    value_values[i] = static_cast<float>(i);
   }
-  for (int32_t i = 0; i < active_per_end; ++i) {
-    mask_values[i] = 0.0f;
-    mask_values[kv_size - active_per_end + i] = 0.0f;
+  // The first 32-row query tile has staggered active columns separated by a
+  // 38-column gap, which is too small to split. This exercises the per-column
+  // union across query rows while retaining the detailed mask inside the range.
+  for (int32_t row = 0; row < 32; ++row) {
+    mask_values[row * kv_size + 10 + row] = 0.0f;
+    mask_values[row * kv_size + 80 + row] = 0.0f;
+    expected_values[row] = 45.0f + row;
+  }
+  // The second query tile uses KV block 1 and has a gap larger than the split
+  // threshold. The zero first range and additive second range exercise both
+  // mask paths while also checking query-tile indexing for k > 0.
+  for (int32_t row = 32; row < q_size; ++row) {
+    mask_values[row * kv_size + 600] = 0.0f;
+    mask_values[row * kv_size + 700] = 1.0986122886681098f; // log(3)
+    expected_values[row] = 675.0f;
   }
 
-  // custom_sdpa uses [batch, sequence, heads, head_dim]. The two active
-  // regions model a logical sliding window that wraps around the physical ring
-  // buffer, leaving the entire middle K/V tile masked.
-  auto query = tfFloat.zeros({1, 1, 1, 2});
-  auto key = tfFloat.make({1, kv_size, 1, 2}, key_values);
-  auto value = tfFloat.make({1, kv_size, 1, 2}, value_values);
-  auto attn_mask = tfFloat.make({1, kv_size}, mask_values);
-  auto out = tfFloat.zeros({1, 1, 1, 2});
-
-  auto result = op_custom_sdpa(query, key, value, attn_mask, out);
-
-  // q and k are zero, so softmax is uniform over the 256 unmasked values.
-  // Their indices are [0, 127] and [1408, 1535].
-  auto expected = tfFloat.make({1, 1, 1, 2}, {767.5f, 1536.0f});
-  EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-5, 1e-5);
-}
-
-TEST(OpScaledDotProductAttentionTest, SparseAdditiveMaskPreservesSoftmax) {
-  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
-
-  constexpr int32_t kv_size = 512;
-  std::vector<float> key_values(kv_size, 0.0f);
-  std::vector<float> value_values(kv_size, 0.0f);
-  std::vector<float> mask_values(
-      kv_size, -std::numeric_limits<float>::infinity());
-
-  // With zero Q/K, these mask values assign probabilities 1/4 and 3/4 to
-  // values 2 and 6. The large masked gap exercises the two-range path.
-  value_values[10] = 2.0f;
-  value_values[500] = 6.0f;
-  mask_values[10] = 0.0f;
-  mask_values[500] = 1.0986122886681098f; // log(3)
-
-  auto query = tfFloat.zeros({1, 1, 1, 1});
+  // custom_sdpa uses [batch, sequence, heads, head_dim].
+  auto query = tfFloat.zeros({1, q_size, 1, 1});
   auto key = tfFloat.make({1, kv_size, 1, 1}, key_values);
   auto value = tfFloat.make({1, kv_size, 1, 1}, value_values);
-  auto attn_mask = tfFloat.make({1, kv_size}, mask_values);
-  auto out = tfFloat.zeros({1, 1, 1, 1});
+  auto attn_mask = tfFloat.make({q_size, kv_size}, mask_values);
+  auto out = tfFloat.zeros({1, q_size, 1, 1});
 
   auto result = op_custom_sdpa(query, key, value, attn_mask, out);
 
-  auto expected = tfFloat.make({1, 1, 1, 1}, {5.0f});
+  auto expected = tfFloat.make({1, q_size, 1, 1}, expected_values);
   EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-5, 1e-5);
 }
 

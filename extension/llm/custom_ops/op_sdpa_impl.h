@@ -16,8 +16,6 @@
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
-#include <vector>
-
 #ifdef ET_USE_THREADPOOL
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
@@ -892,107 +890,168 @@ void cpu_flash_attention(
     bool second_mask_is_zero;
   };
   const int64_t num_kv_blocks = (kvSize - 1) / kvSplitSize + 1;
-  std::vector<MaskBlockRanges> mask_block_ranges;
+  MaskBlockRanges* mask_block_ranges = nullptr;
+  std::unique_ptr<char[]> allocated_mask_block_ranges;
+  uint8_t* column_states_by_thread = nullptr;
+  std::unique_ptr<char[]> allocated_column_states;
+  bool use_mask_ranges = false;
   if (has_attn_mask) {
-    mask_block_ranges.resize(qSlice * num_kv_blocks);
+    const int64_t num_mask_block_ranges = qSlice * num_kv_blocks;
+    const int64_t mask_block_ranges_bytes =
+        num_mask_block_ranges * sizeof(MaskBlockRanges);
+    Result<void*> mask_block_ranges_scratch =
+        ctx.allocate_temp(mask_block_ranges_bytes, 64);
+    if (!mask_block_ranges_scratch.ok()) {
+      allocated_mask_block_ranges =
+          std::make_unique<char[]>(mask_block_ranges_bytes);
+      mask_block_ranges =
+          reinterpret_cast<MaskBlockRanges*>(allocated_mask_block_ranges.get());
+    } else {
+      mask_block_ranges =
+          reinterpret_cast<MaskBlockRanges*>(mask_block_ranges_scratch.get());
+    }
+
     // Bit 0 means at least one query row can attend to the column. Bit 1
     // means every query row has a zero additive mask for the column.
-    std::vector<uint8_t> column_states(kvSplitSize);
+    const int64_t column_states_bytes = kvSplitSize * num_thread + qSlice;
+    Result<void*> column_states_scratch =
+        ctx.allocate_temp(column_states_bytes, 64);
+    if (!column_states_scratch.ok()) {
+      allocated_column_states = std::make_unique<char[]>(column_states_bytes);
+      column_states_by_thread =
+          reinterpret_cast<uint8_t*>(allocated_column_states.get());
+    } else {
+      column_states_by_thread =
+          reinterpret_cast<uint8_t*>(column_states_scratch.get());
+    }
+
     const accum_t neg_inf = -std::numeric_limits<accum_t>::infinity();
-    for (int64_t q_block = 0; q_block < qSlice; ++q_block) {
-      const int64_t query_begin = q_block * qSplitSize;
-      const int64_t query_end = std::min(query_begin + qSplitSize, qSize);
-      for (int64_t kv_block = 0; kv_block < num_kv_blocks; ++kv_block) {
-        const int64_t block_begin = kv_block * kvSplitSize;
-        const int64_t block_end = std::min(block_begin + kvSplitSize, kvSize);
-        const int64_t block_size = block_end - block_begin;
-        std::fill(
-            column_states.begin(),
-            column_states.begin() + block_size,
-            uint8_t{2});
+    uint8_t* useful_mask_ranges =
+        column_states_by_thread + kvSplitSize * num_thread;
+    auto find_mask_ranges = [&](int64_t begin, int64_t end) {
+      const int64_t thread_index = torch::executor::get_thread_num();
+      uint8_t* column_states =
+          column_states_by_thread + thread_index * kvSplitSize;
+      for (int64_t q_block = begin; q_block < end; ++q_block) {
+        bool found_useful_range = false;
+        const int64_t query_begin = q_block * qSplitSize;
+        const int64_t query_end = std::min(query_begin + qSplitSize, qSize);
+        const int64_t causal_end =
+            is_causal ? std::min(start_pos + query_end, kvSize) : kvSize;
+        for (int64_t kv_block = 0; kv_block < num_kv_blocks; ++kv_block) {
+          const int64_t block_begin = kv_block * kvSplitSize;
+          const int64_t block_end =
+              std::min(std::min(block_begin + kvSplitSize, kvSize), causal_end);
+          const int64_t range_index = q_block * num_kv_blocks + kv_block;
+          auto& ranges = mask_block_ranges[range_index];
+          ranges.first_begin = block_begin;
+          ranges.first_end = block_begin;
+          ranges.second_begin = block_begin;
+          ranges.second_end = block_begin;
+          ranges.first_mask_is_zero = false;
+          ranges.second_mask_is_zero = false;
+          if (block_begin >= block_end) {
+            continue;
+          }
 
-        for (int64_t row = query_begin; row < query_end; ++row) {
-          const accum_t* mask_row = mask_data + row * mStrideM;
-          for (int64_t col = block_begin; col < block_end; ++col) {
-            const accum_t mask_value = mask_row[col];
-            auto& state = column_states[col - block_begin];
-            state |= mask_value != neg_inf;
-            if (mask_value != static_cast<accum_t>(0)) {
-              state &= uint8_t{1};
+          const int64_t block_size = block_end - block_begin;
+          std::fill(column_states, column_states + block_size, uint8_t{2});
+
+          for (int64_t row = query_begin; row < query_end; ++row) {
+            const accum_t* mask_row = mask_data + row * mStrideM;
+            for (int64_t col = block_begin; col < block_end; ++col) {
+              const accum_t mask_value = mask_row[col];
+              auto& state = column_states[col - block_begin];
+              state |= mask_value != neg_inf;
+              if (mask_value != static_cast<accum_t>(0)) {
+                state &= uint8_t{1};
+              }
             }
           }
-        }
 
-        int64_t active_begin = block_begin;
-        while (active_begin < block_end &&
-               (column_states[active_begin - block_begin] & uint8_t{1}) == 0) {
-          ++active_begin;
-        }
-        int64_t active_end = block_end;
-        while (active_end > active_begin &&
-               (column_states[active_end - 1 - block_begin] & uint8_t{1}) ==
-                   0) {
-          --active_end;
-        }
-        const int64_t range_index = q_block * num_kv_blocks + kv_block;
-        auto& ranges = mask_block_ranges[range_index];
-        ranges.first_begin = active_begin;
-        ranges.first_end = active_end;
-        ranges.second_begin = block_end;
-        ranges.second_end = block_end;
-        ranges.first_mask_is_zero = false;
-        ranges.second_mask_is_zero = false;
-        if (active_begin >= active_end) {
-          continue;
-        }
-
-        // A wrapped ring window has at most one interior gap. custom_sdpa also
-        // accepts arbitrary additive masks, which may contain several gaps, so
-        // find the largest one and split around it when it is large enough to
-        // repay the extra pair of GEMM calls. Smaller gaps stay represented by
-        // their existing -inf values inside one bounding interval.
-        int64_t largest_gap_begin = active_begin;
-        int64_t largest_gap_end = active_begin;
-        int64_t gap_begin = active_begin;
-        while (gap_begin < active_end) {
-          while (gap_begin < active_end &&
-                 (column_states[gap_begin - block_begin] & uint8_t{1}) != 0) {
-            ++gap_begin;
+          int64_t active_begin = block_begin;
+          while (active_begin < block_end &&
+                 (column_states[active_begin - block_begin] & uint8_t{1}) ==
+                     0) {
+            ++active_begin;
           }
-          int64_t gap_end = gap_begin;
-          while (gap_end < active_end &&
-                 (column_states[gap_end - block_begin] & uint8_t{1}) == 0) {
-            ++gap_end;
+          int64_t active_end = block_end;
+          while (active_end > active_begin &&
+                 (column_states[active_end - 1 - block_begin] & uint8_t{1}) ==
+                     0) {
+            --active_end;
           }
-          if (gap_end - gap_begin > largest_gap_end - largest_gap_begin) {
-            largest_gap_begin = gap_begin;
-            largest_gap_end = gap_end;
+          ranges.first_begin = active_begin;
+          ranges.first_end = active_end;
+          ranges.second_begin = block_end;
+          ranges.second_end = block_end;
+          if (active_begin >= active_end) {
+            found_useful_range = true;
+            continue;
           }
-          gap_begin = gap_end;
-        }
 
-        constexpr int64_t min_gap_to_split = 64;
-        if (largest_gap_end - largest_gap_begin >= min_gap_to_split) {
-          ranges.first_end = largest_gap_begin;
-          ranges.second_begin = largest_gap_end;
-          ranges.second_end = active_end;
-        }
-
-        auto mask_range_is_zero = [&](int64_t begin, int64_t end) {
-          for (int64_t col = begin; col < end; ++col) {
-            if ((column_states[col - block_begin] & uint8_t{2}) == 0) {
-              return false;
+          // A wrapped ring window has at most one interior gap. custom_sdpa
+          // also accepts arbitrary additive masks, which may contain several
+          // gaps, so find the largest one and split around it when it is large
+          // enough to repay the extra pair of GEMM calls. Smaller gaps stay
+          // represented by their existing -inf values inside one bounding
+          // interval.
+          int64_t largest_gap_begin = active_begin;
+          int64_t largest_gap_end = active_begin;
+          int64_t gap_begin = active_begin;
+          while (gap_begin < active_end) {
+            while (gap_begin < active_end &&
+                   (column_states[gap_begin - block_begin] & uint8_t{1}) != 0) {
+              ++gap_begin;
             }
+            int64_t gap_end = gap_begin;
+            while (gap_end < active_end &&
+                   (column_states[gap_end - block_begin] & uint8_t{1}) == 0) {
+              ++gap_end;
+            }
+            if (gap_end - gap_begin > largest_gap_end - largest_gap_begin) {
+              largest_gap_begin = gap_begin;
+              largest_gap_end = gap_end;
+            }
+            gap_begin = gap_end;
           }
-          return true;
-        };
-        ranges.first_mask_is_zero =
-            mask_range_is_zero(ranges.first_begin, ranges.first_end);
-        if (ranges.second_begin < ranges.second_end) {
-          ranges.second_mask_is_zero =
-              mask_range_is_zero(ranges.second_begin, ranges.second_end);
+
+          constexpr int64_t min_gap_to_split = 64;
+          if (largest_gap_end - largest_gap_begin >= min_gap_to_split) {
+            ranges.first_end = largest_gap_begin;
+            ranges.second_begin = largest_gap_end;
+            ranges.second_end = active_end;
+          }
+
+          auto mask_range_is_zero = [&](int64_t range_begin,
+                                        int64_t range_end) {
+            for (int64_t col = range_begin; col < range_end; ++col) {
+              if ((column_states[col - block_begin] & uint8_t{2}) == 0) {
+                return false;
+              }
+            }
+            return true;
+          };
+          ranges.first_mask_is_zero =
+              mask_range_is_zero(ranges.first_begin, ranges.first_end);
+          if (ranges.second_begin < ranges.second_end) {
+            ranges.second_mask_is_zero =
+                mask_range_is_zero(ranges.second_begin, ranges.second_end);
+          }
+
+          const int64_t retained_size = ranges.first_end - ranges.first_begin +
+              ranges.second_end - ranges.second_begin;
+          if (retained_size < block_size || ranges.first_mask_is_zero ||
+              ranges.second_mask_is_zero) {
+            found_useful_range = true;
+          }
         }
+        useful_mask_ranges[q_block] = found_useful_range;
       }
+    };
+    torch::executor::parallel_for(0, qSlice, 1, find_mask_ranges);
+    for (int64_t q_block = 0; q_block < qSlice; ++q_block) {
+      use_mask_ranges |= useful_mask_ranges[q_block];
     }
   }
 
@@ -1051,14 +1110,14 @@ void cpu_flash_attention(
       auto j_kv = j / num_reps;
       fill_stub(dst_data, static_cast<accum_t>(0), qBlockSize * headSize);
       bool has_processed_kv = false;
-      const int64_t num_ranges = has_attn_mask
+      const int64_t num_ranges = use_mask_ranges
           ? 2 * num_kv_blocks
           : (num_keys + kvSplitSize - 1) / kvSplitSize;
       for (int64_t range = 0; range < num_ranges; ++range) {
         int64_t kvBlockStart;
         int64_t kvBlockEnd;
         bool range_mask_is_zero = false;
-        if (has_attn_mask) {
+        if (use_mask_ranges) {
           const int64_t kv_block = range / 2;
           const bool use_second_range = range % 2 != 0;
           const auto& ranges = mask_block_ranges[k * num_kv_blocks + kv_block];

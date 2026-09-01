@@ -1941,7 +1941,7 @@ def _get_source_transforms(  # noqa
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
     local_global_attention: Optional[List[int]] = None,
-    max_seq_len: int,
+    max_seq_len: Optional[int] = None,
     use_torchao_kernels_linear: bool = False,
     use_torchao_kernels_tied_embedding: bool = False,
     quantize_with_hqq: bool = True,
@@ -1982,6 +1982,8 @@ def _get_source_transforms(  # noqa
         preq_mode: Pre-quantization mode.
         preq_group_size: Pre-quantization group size.
         preq_embedding_quantize: Pre-quantization embedding quantize.
+        max_seq_len: Largest input chunk accepted by local-attention layers. If
+            omitted, each layer's full context length is used.
 
     Returns:
         A list of transformation functions.
