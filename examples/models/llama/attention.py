@@ -263,10 +263,14 @@ class CachePositionsManager(nn.Module):
 
 
 def _get_ring_cache_size(
-    max_context_length: int, window_size: int, max_seq_len: int
+    max_context_length: int,
+    window_size: int,
+    max_seq_len: Optional[int] = None,
 ) -> int:
     """Size an SWA cache for one retained window plus one in-flight chunk."""
     assert window_size > 0, "Sliding-window size must be positive"
+    if max_seq_len is None:
+        max_seq_len = max_context_length
     assert max_seq_len > 0, "Maximum sequence length must be positive"
     assert window_size <= max_context_length, (
         f"Sliding-window size ({window_size}) cannot exceed the full context "
@@ -286,17 +290,21 @@ class RingKVCache(KVCache):
         dtype=torch.float32,
         *,
         window_size: int,
+        max_seq_len: Optional[int] = None,
     ):
         self.window_size = window_size
-        assert max_context_length >= window_size, (
-            f"Ring cache size ({max_context_length}) must be at least the "
-            f"sliding-window size ({window_size})"
+        self.full_context_length = max_context_length
+        self.max_seq_len = (
+            max_context_length if max_seq_len is None else int(max_seq_len)
+        )
+        ring_cache_size = _get_ring_cache_size(
+            max_context_length, window_size, self.max_seq_len
         )
         """
         The cache needs room for the retained sliding window and the current
         prefill chunk. Its size is window_size + max_seq_len, capped by the
-        full-context cache. Callers resolve that physical size before creating
-        the cache.
+        full-context cache. If max_seq_len is omitted, the full context length
+        is used.
 
         Reason why a cache larger than the sliding window is needed:
         Sliding window attention without ringbuffer
@@ -344,7 +352,7 @@ class RingKVCache(KVCache):
         """
         super().__init__(
             max_batch_size,
-            max_context_length,
+            ring_cache_size,
             n_heads,
             head_dim,
             enable_dynamic_shape,

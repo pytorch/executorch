@@ -84,10 +84,6 @@ class TestValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             ExportConfig(max_seq_length=256, max_context_length=128)
 
-    def test_export_config_defaults_max_seq_length_to_context_length(self):
-        config = ExportConfig(max_context_length=4096)
-        self.assertEqual(config.max_seq_length, 4096)
-
     def test_invalid_qmode(self):
         with self.assertRaises(ValueError):
             QuantizationConfig(qmode="unknown")

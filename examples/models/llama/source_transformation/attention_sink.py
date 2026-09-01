@@ -16,7 +16,6 @@ import torch
 import torch.nn as nn
 from executorch.examples.models.llama.attention import (
     _create_causal_mask_for_ring_buffer,
-    _get_ring_cache_size,
     AttentionMHA,
     KVCache,
     RingKVCache,
@@ -311,7 +310,7 @@ def _replace_attention(
     rope_with_attention_sink: RopeWithAttentionSink,
     sink_size: int,
     window_size: int,
-    ring_cache_size: int,
+    max_seq_len: Optional[int],
 ):
     for _, child_module in module._modules.items():
         if len(list(child_module.children())) > 0:  # pyre-ignore [16]
@@ -320,7 +319,7 @@ def _replace_attention(
                 rope_with_attention_sink=rope_with_attention_sink,
                 sink_size=sink_size,
                 window_size=window_size,
-                ring_cache_size=ring_cache_size,
+                max_seq_len=max_seq_len,
             )
 
         if isinstance(child_module, AttentionMHA):
@@ -329,12 +328,13 @@ def _replace_attention(
                 # No sink tokens needed — use standard RingKVCache directly
                 child_module.kv_cache = RingKVCache(
                     kv_cache.max_batch_size,
-                    ring_cache_size,
+                    kv_cache.max_context_length,
                     kv_cache.n_heads,
                     kv_cache.head_dim,
                     kv_cache.enable_dynamic_shape,
                     kv_cache.k_cache.dtype,
                     window_size=window_size,
+                    max_seq_len=max_seq_len,
                 )
             else:
                 kv_cache_with_attention_sink = KVCacheWithAttentionSink(
@@ -370,17 +370,12 @@ def enable_attention_sink(
         sink_size=sink_size,
     )
     max_seq_len = getattr(params, "max_seq_len", None)
-    if max_seq_len is None:
-        max_seq_len = params.max_context_len
-    ring_cache_size = _get_ring_cache_size(
-        params.max_context_len, window_size, max_seq_len
-    )
     _replace_rope(module, rope_with_attention_sink)
     _replace_attention(
         module=module,
         rope_with_attention_sink=rope_with_attention_sink,
         sink_size=sink_size,
         window_size=window_size,
-        ring_cache_size=ring_cache_size,
+        max_seq_len=max_seq_len,
     )
     return module

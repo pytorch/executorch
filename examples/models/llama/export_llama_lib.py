@@ -426,8 +426,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max_seq_length",
         type=int,
-        default=None,
-        help="maximum length sequence to evaluate; defaults to max_context_length",
+        default=128,
+        help="maximum length sequence to evaluate",
     )
 
     parser.add_argument(
