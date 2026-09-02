@@ -115,6 +115,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "qwen3_5_4b",
     "phi_4_mini",
     "smollm2",
+    "smollm2_360m",
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
@@ -128,6 +129,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5_coder_32b": "Qwen/Qwen2.5-Coder-32B-Instruct",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM2-135M",
+    "smollm2_360m": "HuggingFaceTB/SmolLM2-360M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
@@ -712,7 +714,7 @@ def export_llama(  # noqa: C901
             from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":
             from executorch.examples.models.phi_4_mini import convert_weights
-        elif model_name == "smollm2":
+        elif model_name in ("smollm2", "smollm2_360m"):
             from executorch.examples.models.smollm2 import convert_weights
         elif model_name.startswith("lfm2"):
             from executorch.examples.models.lfm2 import convert_weights
