@@ -866,21 +866,6 @@ class ET_EXPERIMENTAL CudaBackend final
 
     mutable_state_forget_handle(handle);
 
-    // Waited on before the stream reference goes, so the frees this handle
-    // queued are observed by the driver. Without this the pool trim at the end
-    // of teardown sees them as still pending and gives back nothing, and the
-    // work is being abandoned anyway.
-    if (handle->cuda_stream != nullptr && *handle->cuda_stream != nullptr) {
-      const cudaError_t sync_err = cudaStreamSynchronize(*handle->cuda_stream);
-      if (sync_err != cudaSuccess) {
-        ET_LOG(
-            Error,
-            "cudaStreamSynchronize failed during teardown: %s.",
-            cudaGetErrorString(sync_err));
-        (void)cudaGetLastError();
-      }
-    }
-
     // The CUDA stream is managed by shared_ptr in the handle.
     // It will be automatically destroyed when the last handle using it
     // is destroyed. Just reset our reference.
@@ -915,6 +900,20 @@ class ET_EXPERIMENTAL CudaBackend final
     // this backend once the last handle is gone, so hand that memory back
     // rather than hold it for the life of the process.
     if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      // Only frees the driver has already observed can be released, so without
+      // this the trim gives back nothing rather than less. A device wait rather
+      // than a stream wait because the frees went to whichever stream was
+      // current when the storage was released, which is not necessarily one
+      // this handle recorded, and teardown is not bound to the thread that ran
+      // the method either.
+      const cudaError_t sync_err = cudaDeviceSynchronize();
+      if (sync_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaDeviceSynchronize before releasing the pool failed: %s.",
+            cudaGetErrorString(sync_err));
+        (void)cudaGetLastError();
+      }
       CudaAllocator::release_cached_memory(-1);
     }
   }
@@ -931,14 +930,14 @@ class ET_EXPERIMENTAL CudaBackend final
   mutable std::mutex cuda_stream_mutex_;
   std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
 
-  // Delegates alive right now. The device memory pool is shared, so it can only
-  // be released once none of them are left.
-  mutable std::atomic<size_t> live_handles_{0};
-
   // Whether to enable cross-method caching for legacy dense-blob artifacts.
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
   // OFF; versioned FQN artifacts do not consult this option.
   std::atomic<bool> weight_sharing_across_methods_{false};
+
+  // Delegates alive right now. The device memory pool is shared, so it can only
+  // be released once none of them are left.
+  mutable std::atomic<size_t> live_handles_{0};
 
   // ---------------------------------------------------------------
   // Per-weight constant cache.
