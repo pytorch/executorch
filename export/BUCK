@@ -13,6 +13,7 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:op_backend",
         "//executorch/exir:pass_manager",
         "//executorch/extension/export_util:export_util",
     ]
@@ -46,6 +47,7 @@ fbcode_target(
         ":types",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:op_backend",
         "//executorch/exir:pass_manager",
         "//caffe2:torch",
         "//executorch/devtools/backend_debug:delegation_info",
