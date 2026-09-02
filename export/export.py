@@ -672,13 +672,15 @@ class ExportSession:
             & {StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND}
         )
         if not lowering_stage:
-            RuntimeError(
-                "No delegation info available, atleast one of the lowering stages should be present"
+            raise RuntimeError(
+                "No delegation info available, at least one of the lowering stages should be present"
             )
 
         stage_artifact = self._stage_to_artifacts.get(lowering_stage[0])
         if stage_artifact is None:
-            RuntimeError("No delegation info available, run the lowering stage first")
+            raise RuntimeError(
+                "No delegation info available, run the lowering stage first"
+            )
 
         delegation_info_by_method = stage_artifact.get_context(
             "delegation_info_by_method", None
