@@ -133,6 +133,10 @@ def _lenaware_attention_forward(
     O(context) instead of O(max_seq_len) — and routes L_q==1 decode through the
     length-aware split-K flash-decoding kernel. Sliding-window layers are not
     patched (they already use a bounded ring buffer).
+
+    NOTE: ``attn_mask`` is unused — the full-attention mask is standard causal,
+    so it is reconstructed in the kernel (``is_causal=True`` with ``kv_len``) to
+    save data transfer, exactly as on the TurboQuant path.
     """
     B, T, _ = x.shape
 
@@ -172,14 +176,18 @@ def _lenaware_attention_forward(
 
     # ``scale=self.scaling`` (= 1.0 for Gemma 4) — Gemma's QK-norm has absorbed
     # the 1/sqrt(d) factor into trained weights. ``enable_gqa=True`` lets the
-    # kernel handle the head ratio without materializing expanded K/V.
+    # kernel handle the head ratio without materializing expanded K/V. In-kernel
+    # causal: pass no dense mask; the kernel reconstructs the standard causal
+    # mask analytically (bottom-right aligned via kv_len), so the dense
+    # [1, 1, T, max_seq_len] bool mask is dead code and dropped by DCE -- exactly
+    # as on the TurboQuant path.
     y = torch.ops.triton.sdpa(
         q,
         k,
         v,
-        attn_mask,
+        None,  # attn_mask: reconstruct the causal mask in-kernel
         0.0,  # dropout_p
-        False,  # is_causal: attn_mask already encodes causal masking
+        True,  # is_causal: with kv_len, uses bottom-right aligned causal
         self.scaling,
         True,  # enable_gqa
         kv_len,
