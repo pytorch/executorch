@@ -662,8 +662,8 @@ def _replace_kv_cache_with_custom_kv_cache(module):
             if sdpa is not None and hasattr(sdpa, "use_attention_mask"):
                 sdpa.use_attention_mask = True
         elif isinstance(child, RingKVCache):
-            # RingKVCache (e.g., from attention sink with sink_size=0) needs
-            # CustomRingKVCache, not plain CustomKVCache
+            # Preserve ring-buffer sizing and masking when converting a
+            # local-attention cache to the custom update op.
             setattr(
                 module,
                 name,
@@ -807,8 +807,8 @@ class CustomKVCacheWithAttentionSink(CustomKVCache):
         dtype=torch.float32,
     ):
         from executorch.examples.models.llama.source_transformation.attention_sink import (
-            CachePositionsManagerWithSink,
             _get_attention_sink_cache_size,
+            CachePositionsManagerWithSink,
         )
 
         self.full_context_length = max_context_length

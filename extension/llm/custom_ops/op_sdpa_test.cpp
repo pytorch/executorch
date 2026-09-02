@@ -400,6 +400,110 @@ TEST(OpScaledDotProductAttentionTest, SparseMaskRangesMatchReference) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-5, 1e-5);
 }
 
+TEST(
+    OpScaledDotProductAttentionTest,
+    CausalSparseMaskRangesCoverGqaAndReducedPrecision) {
+  TensorFactory<executorch::aten::ScalarType::Half> tfHalf;
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+
+  constexpr int32_t q_size = 256;
+  constexpr int32_t kv_size = 1024;
+  constexpr int32_t num_query_heads = 2;
+  std::vector<executorch::aten::Half> value_values(kv_size);
+  std::vector<float> mask_values(
+      q_size * kv_size, -std::numeric_limits<float>::infinity());
+  std::vector<executorch::aten::Half> expected_values(
+      num_query_heads * q_size);
+
+  for (int32_t col = 0; col < kv_size; ++col) {
+    value_values[col] = static_cast<executorch::aten::Half>(col);
+  }
+  for (int32_t row = 0; row < q_size; ++row) {
+    mask_values[row * kv_size] = 0.0f;
+    for (int32_t col = 100; col < q_size; ++col) {
+      mask_values[row * kv_size + col] = 0.0f;
+    }
+    const float expected = row < 100
+        ? 0.0f
+        : (100.0f + row) * (row - 99) / (2.0f * (row - 98));
+    for (int32_t head = 0; head < num_query_heads; ++head) {
+      expected_values[head * q_size + row] =
+          static_cast<executorch::aten::Half>(expected);
+    }
+  }
+
+  auto query = tfHalf.zeros({1, num_query_heads, q_size, 1});
+  auto key = tfHalf.zeros({1, 1, kv_size, 1});
+  auto value = tfHalf.make({1, 1, kv_size, 1}, value_values);
+  auto attn_mask = tfFloat.make({q_size, kv_size}, mask_values);
+  auto out = tfHalf.zeros({1, num_query_heads, q_size, 1});
+
+  auto result = op_scaled_dot_product_attention(
+      query,
+      key,
+      value,
+      attn_mask,
+      /*dropout_p=*/0.0,
+      /*is_causal=*/true,
+      /*scale=*/std::nullopt,
+      out);
+
+  auto expected =
+      tfHalf.make({1, num_query_heads, q_size, 1}, expected_values);
+  EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-2, 1e-2);
+}
+
+TEST(OpScaledDotProductAttentionTest, QuantizedSparseMaskTrimmedBoundary) {
+  TensorFactory<executorch::aten::ScalarType::Char> tfChar;
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+
+  constexpr int32_t kv_size = 1024;
+  std::vector<int8_t> value_values(kv_size);
+  std::vector<float> mask_values(
+      kv_size, -std::numeric_limits<float>::infinity());
+  for (int32_t col = 0; col < kv_size; ++col) {
+    value_values[col] = static_cast<int8_t>(col % 100);
+  }
+  for (int32_t col = 100; col < 200; ++col) {
+    mask_values[col] = 0.0f;
+  }
+
+  auto query = tfChar.zeros({1, 1, 1, 1});
+  auto key = tfChar.zeros({1, kv_size, 1, 1});
+  auto value = tfChar.make({1, kv_size, 1, 1}, value_values);
+  auto query_zero_points = tfChar.zeros({1, 1, 1, 1});
+  auto key_zero_points = tfChar.zeros({1, kv_size, 1, 1});
+  auto value_zero_points = tfChar.zeros({1, kv_size, 1, 1});
+  auto query_scales = tfFloat.ones({1, 1, 1, 1});
+  auto key_scales = tfFloat.ones({1, kv_size, 1, 1});
+  auto value_scales = tfFloat.ones({1, kv_size, 1, 1});
+  auto attn_mask = tfFloat.make({1, kv_size}, mask_values);
+  auto out = tfFloat.zeros({1, 1, 1, 1});
+
+  executorch::runtime::KernelRuntimeContext context{};
+  auto result = torch::executor::native::custom_quantized_sdpa_out(
+      context,
+      query,
+      key,
+      value,
+      /*start_pos=*/0,
+      attn_mask,
+      /*dropout_p=*/0.0,
+      /*is_causal=*/false,
+      /*scale=*/std::nullopt,
+      query_zero_points,
+      query_scales,
+      key_zero_points,
+      key_scales,
+      value_zero_points,
+      value_scales,
+      /*is_seq_at_dim_2=*/false,
+      out);
+
+  auto expected = tfFloat.make({1, 1, 1, 1}, {49.5f});
+  EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-4, 1e-4);
+}
+
 TEST(OpScaledDotProductAttentionTest, CorrectnessTest_11) {
   TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 

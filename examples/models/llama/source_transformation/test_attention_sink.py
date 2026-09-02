@@ -378,14 +378,15 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
     )
     def test_no_sink_degenerates_to_ring_buffer(self, sink_size):
         """With sink_size=0, behavior should match a plain ring buffer."""
+        window_size = 100
         params = ModelArgs(
             use_kv_cache=True,
             enable_dynamic_shape=True,
-            max_context_len=256,
-            max_seq_len=self.window_size,
+            max_context_len=128,
+            max_seq_len=64,
         )
         rope = RopeWithAttentionSink(
-            params=params, window_size=self.window_size, sink_size=0
+            params=params, window_size=window_size, sink_size=0
         )
         cache = KVCacheWithAttentionSink(
             n_heads=params.n_heads,
@@ -393,13 +394,16 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
             enable_dynamic_shape=params.enable_dynamic_shape,
             rope=rope,
             max_batch_size=1,
-            window_size=self.window_size,
+            window_size=window_size,
             sink_size=0,
             max_context_length=params.max_context_len,
             max_seq_len=params.max_seq_len,
             dtype=self.dtype,
         )
-        cache_size = self.window_size * 2  # 56
+        cache_size = window_size + params.max_seq_len
+        self.assertEqual(cache_size, 164)
+        self.assertEqual(rope.ring_size, cache_size)
+        self.assertEqual(cache.max_context_length, cache_size)
 
         # Fill and wrap
         k_init, v_init = self._rand_kv(cache_size)
@@ -477,7 +481,7 @@ class AttentionSinkE2ETest(unittest.TestCase):
 
         cache = model.layers[0].attention.kv_cache
         self.assertEqual(cache.max_seq_len, 128)
-        self.assertEqual(cache.max_context_length, 128)
+        self.assertEqual(cache.max_context_length, 144)
 
     def test_sink_zero_uses_configured_max_seq_len(self):
         args = self._make_args(max_context_len=128)

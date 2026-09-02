@@ -1049,7 +1049,7 @@ void cpu_flash_attention(
         useful_mask_ranges[q_block] = found_useful_range;
       }
     };
-    torch::executor::parallel_for(0, qSlice, 1, find_mask_ranges);
+    ET_CHECK(torch::executor::parallel_for(0, qSlice, 1, find_mask_ranges));
     for (int64_t q_block = 0; q_block < qSlice; ++q_block) {
       use_mask_ranges |= useful_mask_ranges[q_block];
     }
@@ -1196,10 +1196,20 @@ void cpu_flash_attention(
             kStrideN,
             qk_data);
 
-        // Apply causal masking relative to the retained range. Each query row
-        // may attend through its own logical position, so last_col is the
-        // number of keys in [kvBlockStart, kvBlockEnd) that are not in its
-        // future. Ranges wholly before the query block need no causal masking.
+        // Apply causal masking relative to the retained range. These are the
+        // two boundary cases; a range wholly before the query block needs no
+        // causal masking:
+        //
+        // Query starts inside the range:       Range starts inside the query:
+        //   + + + - - -                         - - - - - -
+        //   + + + + - -                         - - - - - -
+        //   + + + + + -                         + - - - - -
+        //   + + + + + +                         + + - - - -
+        //   + + + + + +                         + + + - - -
+        //
+        // Each row may attend through its own logical position, so last_col
+        // is the number of keys in [kvBlockStart, kvBlockEnd) that are not in
+        // its future.
         if (is_causal && m_start_pos < kvBlockEnd) {
           for (int32_t row = 0;
                row < qBlockSize && (m_start_pos + row < kvBlockEnd - 1);
