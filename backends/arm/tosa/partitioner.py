@@ -50,6 +50,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -152,9 +153,22 @@ def _is_noop_as_strided_copy(node: torch.fx.Node) -> bool:
         input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
         output_tensor = get_first_fake_tensor(node)
         return (
-            input_tensor.shape == output_tensor.shape
-            and input_tensor.stride() == output_tensor.stride()
-            and input_tensor.storage_offset() == output_tensor.storage_offset()
+            len(input_tensor.shape) == len(output_tensor.shape)
+            and all(
+                statically_known_true(input_dim == output_dim)
+                for input_dim, output_dim in zip(
+                    input_tensor.shape, output_tensor.shape
+                )
+            )
+            and all(
+                statically_known_true(input_stride == output_stride)
+                for input_stride, output_stride in zip(
+                    input_tensor.stride(), output_tensor.stride()
+                )
+            )
+            and statically_known_true(
+                input_tensor.storage_offset() == output_tensor.storage_offset()
+            )
         )
 
 
