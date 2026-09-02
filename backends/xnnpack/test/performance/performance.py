@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import json
 import logging
 import math
@@ -26,11 +27,12 @@ PERF_UPDATE_ENV = "EXECUTORCH_XNNPACK_PYTEST_PERF_UPDATE"
 PERF_RUNS_ENV = "EXECUTORCH_XNNPACK_PYTEST_PERF_RUNS"
 PERF_WARMUP_ENV = "EXECUTORCH_XNNPACK_PYTEST_PERF_WARMUP_RUNS"
 PERF_THRESHOLD_ENV = "EXECUTORCH_XNNPACK_PYTEST_PERF_THRESHOLD_PCT"
+PERF_THREADS_ENV = "EXECUTORCH_XNNPACK_PYTEST_PERF_THREADS"
 
 _DEFAULT_RUNS = 10
 _DEFAULT_WARMUP_RUNS = 2
 _DEFAULT_THRESHOLD_PCT = 10.0
-_FORCED_THREAD_COUNT = 1
+_DEFAULT_THREAD_COUNT = 1
 _LINUX_ML_FEATURES = (
     "fp",
     "asimd",
@@ -86,6 +88,7 @@ def maybe_run_performance_test(
     timed_runs = _env_int(PERF_RUNS_ENV, _DEFAULT_RUNS)
     warmup_runs = _env_int(PERF_WARMUP_ENV, _DEFAULT_WARMUP_RUNS)
     threshold_pct = _env_float(PERF_THRESHOLD_ENV, _DEFAULT_THRESHOLD_PCT)
+    thread_count = _env_int(PERF_THREADS_ENV, _DEFAULT_THREAD_COUNT)
 
     record = _measure_latency(
         serialized_buffer=serialized_buffer,
@@ -94,6 +97,7 @@ def maybe_run_performance_test(
         timed_runs=timed_runs,
         warmup_runs=warmup_runs,
         threshold_pct=threshold_pct,
+        thread_count=thread_count,
     )
 
     path = Path(results_path) if results_path else _default_results_path(test_id)
@@ -135,6 +139,7 @@ def _measure_latency(
     timed_runs: int,
     warmup_runs: int,
     threshold_pct: float,
+    thread_count: int,
 ) -> Dict[str, Any]:
     """Measure in-process pybinding runtime latency for a serialized PTE."""
     from executorch.extension.pybindings import _portable_lib as portable_native
@@ -147,11 +152,11 @@ def _measure_latency(
 
     native_path = Path(portable_native.__file__).resolve()
     host = _host_identity()
-    timing_runtime = _timing_runtime_identity(native_path, host)
+    timing_runtime = _timing_runtime_identity(native_path, host, thread_count)
     inputs_flattened, _ = tree_flatten(inputs)
 
     original_thread_count = _threadpool_get_thread_count()
-    _unsafe_reset_threadpool(_FORCED_THREAD_COUNT)
+    _unsafe_reset_threadpool(thread_count)
     observed_thread_count = _threadpool_get_thread_count()
 
     try:
@@ -182,7 +187,7 @@ def _measure_latency(
             "load_mode": "buffer",
             "warmup_runs": warmup_runs,
             "timed_runs": timed_runs,
-            "thread_count_requested": _FORCED_THREAD_COUNT,
+            "thread_count_requested": thread_count,
             "thread_count_observed": observed_thread_count,
             "median_ms": statistics.median(elapsed_ms),
             "mean_ms": mean_ms,
@@ -266,9 +271,14 @@ def _current_pytest_test_id() -> str:
             f"Could not derive XNNPACK pytest perf id from {current_test}"
         )
 
-    namespace = _pytest_module_namespace(Path(test_path))
-    test_name = node_parts[-1]
-    return ".".join(_slug(part) for part in ("xnnpack", *namespace, test_name))
+    identity_parts = (
+        "xnnpack",
+        *_pytest_module_namespace(Path(test_path)),
+        *node_parts,
+    )
+    identity = json.dumps(identity_parts, ensure_ascii=False, separators=(",", ":"))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+    return ".".join((*(_slug(part) for part in identity_parts), digest))
 
 
 def _pytest_module_namespace(path: Path) -> list[str]:
@@ -281,17 +291,19 @@ def _pytest_module_namespace(path: Path) -> list[str]:
     return [path.stem]
 
 
-def _timing_runtime_identity(native_path: Path, host: Dict[str, Any]) -> Dict[str, Any]:
+def _timing_runtime_identity(
+    native_path: Path, host: Dict[str, Any], thread_count: int
+) -> Dict[str, Any]:
     """Build the runtime identity used to separate recorded perf results."""
     return {
         "kind": "pybinding",
-        "runtime_key": _runtime_key(native_path, host),
+        "runtime_key": _runtime_key(native_path, host, thread_count),
         "native_path": _display_path(native_path),
         "native_mtime_utc": datetime.fromtimestamp(
             native_path.stat().st_mtime, timezone.utc
         ).isoformat(),
         "pte_load_mode": "buffer",
-        "thread_count": _FORCED_THREAD_COUNT,
+        "thread_count": thread_count,
         **_runtime_symbol_hints(native_path),
     }
 
@@ -431,11 +443,11 @@ def _expected_x86_hardware_path(
     return "unknown"
 
 
-def _runtime_key(native_path: Path, host: Dict[str, Any]) -> str:
+def _runtime_key(native_path: Path, host: Dict[str, Any], thread_count: int) -> str:
     """Build a key that separates host, runtime, load mode, and threads."""
     stem = f"{host['system']}-{host['machine']}-{host['cpu_id']}"
     sme2 = "sme2" if host["sme2_available"] else "nosme2"
-    runtime = f"pybinding-buffer-threads{_FORCED_THREAD_COUNT}"
+    runtime = f"pybinding-buffer-threads{thread_count}"
     return _slug(f"{stem}-{sme2}-{runtime}-{native_path.name}")
 
 

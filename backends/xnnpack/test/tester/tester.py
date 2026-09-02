@@ -23,9 +23,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationConfig,
 )
-from executorch.backends.xnnpack.test.tester.performance import (
-    maybe_run_performance_test,
-)
+from executorch.backends.xnnpack.test.performance import maybe_run_performance_test
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.partitioner import Partitioner

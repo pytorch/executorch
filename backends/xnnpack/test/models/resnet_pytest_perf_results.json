@@ -1,6 +1,6 @@
 {
   "entries": {
-    "xnnpack.models.resnet.test_fp32_resnet18": {
+    "xnnpack.models.resnet.testresnet18.test_fp32_resnet18.68745d2d8d5d": {
       "darwin-arm64-apple-m3-pro-mac15-6-nosme2-pybinding-buffer-threads1-_portable_lib.cpython-313-darwin.so": {
         "host": {
           "cpu_id": "apple-m3-pro-mac15-6",
@@ -84,7 +84,7 @@
           "warmup_runs": 2
         },
         "recorded_at_utc": "2026-06-25T09:24:37.854788+00:00",
-        "test_id": "xnnpack.models.resnet.test_fp32_resnet18",
+        "test_id": "xnnpack.models.resnet.testresnet18.test_fp32_resnet18.68745d2d8d5d",
         "threshold_pct": 10.0,
         "timing_runtime": {
           "avx2_symbols_present": false,
@@ -215,7 +215,7 @@
           "warmup_runs": 2
         },
         "recorded_at_utc": "2026-06-26T13:41:33.202559+00:00",
-        "test_id": "xnnpack.models.resnet.test_fp32_resnet18",
+        "test_id": "xnnpack.models.resnet.testresnet18.test_fp32_resnet18.68745d2d8d5d",
         "threshold_pct": 10.0,
         "timing_runtime": {
           "avx2_symbols_present": false,

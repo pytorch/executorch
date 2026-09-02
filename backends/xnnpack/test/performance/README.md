@@ -48,6 +48,15 @@ python3 -m pytest -q \
 backends/xnnpack/test/models/resnet.py::TestResNet18::test_fp32_resnet18
 ```
 
+Run with a specific ExecuTorch threadpool size:
+
+```bash
+EXECUTORCH_XNNPACK_PYTEST_PERF=1 \
+EXECUTORCH_XNNPACK_PYTEST_PERF_THREADS=4 \
+python3 -m pytest -q \
+backends/xnnpack/test/models/resnet.py::TestResNet18::test_fp32_resnet18
+```
+
 ### Environment Variables
 
 | Variable                                       | Default | Meaning                                          |
@@ -57,11 +66,13 @@ backends/xnnpack/test/models/resnet.py::TestResNet18::test_fp32_resnet18
 | `EXECUTORCH_XNNPACK_PYTEST_PERF_RUNS`          |    `10` | Number of timed runs.                            |
 | `EXECUTORCH_XNNPACK_PYTEST_PERF_WARMUP_RUNS`   |     `2` | Number of warmup runs.                           |
 | `EXECUTORCH_XNNPACK_PYTEST_PERF_THRESHOLD_PCT` |  `10.0` | Allowed slowdown before comparison fails.        |
+| `EXECUTORCH_XNNPACK_PYTEST_PERF_THREADS`       |     `1` | ExecuTorch threadpool size used while timing.     |
 
 Boolean variables accept values such as `1`, `true`, `yes`, and `on`.
 
-The perf stage forces the ExecuTorch threadpool to one thread while timing,
-then restores the previous thread count after the run.
+The perf stage uses the configured ExecuTorch threadpool size while timing,
+then restores the previous thread count after the run. Results for different
+thread counts use distinct runtime keys and baselines.
 
 ### Results
 
