@@ -14,7 +14,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-add_library(extension_llm_batching runner.cpp)
+add_library(extension_llm_batching runner.cpp metrics.cpp)
 # std::optional, std::function, and std::future in the public headers.
 target_compile_features(extension_llm_batching PUBLIC cxx_std_17)
 target_include_directories(
