@@ -37,6 +37,14 @@ class TosaPropagationOverrides(_BasePass):
     def duplicate_user_fusion_exclusions(self) -> frozenset:
         return TOSA_EXCLUDED_TARGETS
 
+    _REDUCTION_TARGETS = {
+        exir_ops.edge.aten.mean.dim,
+    }
+    _ARG_UPDATE_TARGETS = {
+        *_REDUCTION_TARGETS,
+        exir_ops.edge.aten.slice_copy.Tensor,
+    }
+
     def blocks_moving(
         self,
         moving_node: torch.fx.Node,

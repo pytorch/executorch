@@ -2,11 +2,10 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Any, List
+from typing import Any, cast, List
 
 import tosa_serializer as ts
 
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -21,8 +20,8 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class MaxVisitor(NodeVisitor):
-    target = "aten.amax.default"
+class MinVisitor(NodeVisitor):
+    target = "tosa.REDUCE_MIN.default"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -34,7 +33,7 @@ class MaxVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        validate_num_inputs(self.target, inputs, 3)
+        validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         valid_dtypes = [
             ts.DType.INT8,
@@ -54,26 +53,16 @@ class MaxVisitor(NodeVisitor):
         )
 
         input = inputs[0]
-        dim = inputs[1].number
-
-        if dim < 0:
-            tensor = get_first_fake_tensor(node)
-            rank = len(tensor.size())
-            dim = rank + dim
-
-        keep_dims = inputs[2].number
-        if not keep_dims:
-            raise RuntimeError(
-                "TOSA only supports keepdims == True; Did you run the convert_minmax pass?"
-            )
 
         attr = ts.TosaSerializerAttribute()
-        nan_mode = ts.NanPropagationMode.PROPAGATE
-        attr.ReduceMaxAttribute(axis=dim, nan_mode=nan_mode)
+        nan_mode = getattr(
+            ts.NanPropagationMode, cast(str, node.kwargs.get("nan_mode", "PROPAGATE"))
+        )
+        attr.ReduceMinAttribute(axis=node.kwargs["axis"], nan_mode=nan_mode)
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_MAX,
+            ts.Op.REDUCE_MIN,
             [input.name],
             [output.name],
             attr,

@@ -84,6 +84,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
     DecomposePReLUPass,
+    DecomposeProdPass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -148,6 +149,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     RemoveSafeSoftmaxGuardPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    ResolveViewCopyInferredDimPass,
     RewriteAdaptiveAvgPool2dPass,
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
@@ -646,6 +648,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
                 BroadcastArgsPass(),
+                DecomposeProdPass(),
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
                 RemoveNoopPass(),
@@ -682,6 +685,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 CanonicalizeViewCopyPermutePass(),
                 # Fuse views again after permutes may have been replaced by views.
                 FuseViewCopyTransformPass(),
+                ResolveViewCopyInferredDimPass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]

@@ -23,6 +23,7 @@ from executorch.backends.qualcomm.utils.check_qnn_version import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import setup_qnn_sdk
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
@@ -118,9 +119,18 @@ def process_model_args(
     model_args.kv_io_bit_width = quant_recipe.get_kv_io_bit_width()
 
     if config.masked_softmax:
+        # Before the version check, because setup may install a newer SDK than this process can
+        # currently see, and asking first could disable the feature on an SDK that supports it.
+        setup_qnn_sdk()
         if is_qnn_sdk_version_less_than("2.35"):
+            # Read once, because building this message by querying again raises when there is no
+            # SDK, so the warning that disables the feature would fail instead of disabling it.
+            try:
+                current = get_sdk_build_id()
+            except Exception:
+                current = "unknown, no usable SDK found"
             logging.warning(
-                f"Masked softmax is supported after QNN SDK 2.35. Given sdk version {get_sdk_build_id()}"
+                f"Masked softmax is supported after QNN SDK 2.35. Given sdk version {current}"
                 " is lower the target version. Disabling the feature."
             )
             model_args.enable_masked_softmax = False
