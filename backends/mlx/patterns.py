@@ -44,6 +44,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
     AddNode,
     AsTypeNode,
+    ExpandDimsNode,
     IndexCopyNode,
     IntOrVid,
     ModIntNode,
@@ -52,10 +53,12 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     SdpaNode,
     SliceNode,
     SliceUpdateNode,
+    SqueezeNode,
     SubtractIntNode,
     SymSizeNode,
 )
 from torch.export.exported_program import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.node import Node
 
 
@@ -528,6 +531,61 @@ class SDPAHandler(PatternHandler):
         return base, body
 
     @classmethod
+    def _kernel_can_compute(cls, sdpa_node: Node) -> bool:
+        """Whether the fused kernel can compute this call faithfully.
+
+        Its preconditions are narrower than what PyTorch accepts, and a claimed call
+        that the kernel cannot compute fails loudly at execute rather than falling
+        back, so declining it here is what sends it to decomposition instead.
+        """
+        q, k, v, attn_mask, _, is_causal, _, _ = cls._parse_sdpa_args_and_kwargs(
+            sdpa_node
+        )
+        operand_vals = [
+            operand.meta.get("val") if isinstance(operand, Node) else None
+            for operand in (q, k, v)
+        ]
+        if any(val is None for val in operand_vals):
+            return False
+
+        # Ranks 2 and 3 are lifted to 4 on emission. Beyond 4 the leading dimensions
+        # would have to fold together, and a fold pairs the wrong operands as soon as
+        # one of them broadcasts a batch the others do not.
+        ranks = {val.dim() for val in operand_vals}
+        if len(ranks) != 1 or not 2 <= next(iter(ranks)) <= 4:
+            return False
+
+        # Torch anchors a causal mask at the top left and MLX at the bottom right, so
+        # the two agree only when the query and key lengths are equal. Rank 4 already
+        # reaches the kernel today and is left alone; the lower ranks are newly lifted
+        # here, so do not open a path that returns wrong values with no error.
+        if (
+            next(iter(ranks)) < 4
+            and is_causal
+            and not statically_known_true(
+                operand_vals[0].shape[-2] == operand_vals[1].shape[-2]
+            )
+        ):
+            return False
+
+        # The kernel requires the batch sizes to match and rejects the call otherwise,
+        # so a broadcast batch has to be decomposed rather than fused.
+        if next(iter(ranks)) == 4 and any(
+            not statically_known_true(val.shape[0] == operand_vals[0].shape[0])
+            for val in operand_vals[1:]
+        ):
+            return False
+
+        if attn_mask is not None:
+            mask_val = (
+                attn_mask.meta.get("val") if isinstance(attn_mask, Node) else None
+            )
+            if mask_val is None or mask_val.dim() > 4:
+                return False
+
+        return True
+
+    @classmethod
     def maybe_create(cls, ep: ExportedProgram, head: Node) -> Optional["SDPAHandler"]:
         sdpa_node = head
         if not match_target(
@@ -535,15 +593,23 @@ class SDPAHandler(PatternHandler):
         ):
             return None
 
+        if not cls._kernel_can_compute(sdpa_node):
+            return None
+
         q, k, v, _, _, _, _, _ = cls._parse_sdpa_args_and_kwargs(sdpa_node)
 
-        # Detect grouped kv attention pattern with repeat_interleave before SDPA
+        # Detect grouped kv attention pattern with repeat_interleave before SDPA.
+        # Both unwraps below key on dim 1, which is the head dimension only at rank 4.
+        # At a lower rank dim 1 is the key sequence, and absorbing a repeat there
+        # drops keys, which a causal mask then turns into a wrong answer.
+        is_rank4 = q.meta["val"].dim() == 4 if isinstance(q, Node) else False
         is_grouped_kv = False
         k_base = k
         v_base = v
         body: List[Node] = []
         if (
-            match_target(k, torch.ops.aten.repeat_interleave.self_int)
+            is_rank4
+            and match_target(k, torch.ops.aten.repeat_interleave.self_int)
             and has_single_user(k)
             and (len(k.args) == 3)
             and (len(k.kwargs) == 0)
@@ -563,7 +629,7 @@ class SDPAHandler(PatternHandler):
 
         # Detect HuggingFace repeat_kv pattern:
         # unsqueeze(dim=2) → expand → clone → view
-        if not is_grouped_kv:
+        if is_rank4 and not is_grouped_kv:
             k_unwrap = cls._try_unwrap_repeat_kv(k)
             v_unwrap = cls._try_unwrap_repeat_kv(v)
             if k_unwrap is not None and v_unwrap is not None:
@@ -571,6 +637,27 @@ class SDPAHandler(PatternHandler):
                 v_base, v_body = v_unwrap
                 is_grouped_kv = True
                 body = k_body + v_body
+
+        # Checked after the unwrapping above, because grouped-query attention reaches
+        # the kernel with its original head counts. MLX pairs heads only when the key
+        # and value agree and the query is a whole multiple of them.
+        kernel_vals = [
+            node.meta.get("val") if isinstance(node, Node) else None
+            for node in (q, k_base, v_base)
+        ]
+        if any(val is None for val in kernel_vals):
+            return None
+        q_heads, k_heads, v_heads = (
+            1 if val.dim() == 2 else val.shape[-3] for val in kernel_vals
+        )
+        # A zero head count would make the multiple test below divide by zero, and a
+        # raise here aborts the whole export rather than declining this one node.
+        if not statically_known_true(k_heads > 0):
+            return None
+        if not statically_known_true(k_heads == v_heads):
+            return None
+        if not statically_known_true(q_heads % k_heads == 0):
+            return None
 
         head = sdpa_node
         if not is_grouped_kv:
@@ -593,19 +680,49 @@ class SDPAHandler(PatternHandler):
         assert dropout_p == 0.0, "SDPA with dropout is not supported"
 
         q, k, v, attn_mask = P.slot_map([q, k, v, attn_mask])
+        # Add the dimensions the kernel is missing at the front, never in the middle.
+        # For a rank-3 input the first dimension is already the head one, so inserting
+        # there would move it into the batch slot and misalign masks and grouped heads.
+        input_nodes = (self.q_node, self.k_node, self.v_node)
+        inputs = [q, k, v]
+        for i, input_node in enumerate(input_nodes):
+            for _ in range(4 - input_node.meta["val"].dim()):
+                _, expanded = P.make_tmp_slot()
+                P.emit(
+                    ExpandDimsNode(
+                        x=P.slot_to_tid(inputs[i]),
+                        out=P.slot_to_tid(expanded),
+                        axis=0,
+                    )
+                )
+                inputs[i] = expanded
+
+        output_rank = n.meta["val"].dim()
+
         out = P.make_or_get_slot(n)
+        sdpa_out = out
+        if output_rank < 4:
+            _, sdpa_out = P.make_tmp_slot()
 
         P.emit(
             SdpaNode(
-                q=P.slot_to_tid(q),
-                k=P.slot_to_tid(k),
-                v=P.slot_to_tid(v),
-                out=P.slot_to_tid(out),
+                q=P.slot_to_tid(inputs[0]),
+                k=P.slot_to_tid(inputs[1]),
+                v=P.slot_to_tid(inputs[2]),
+                out=P.slot_to_tid(sdpa_out),
                 scale=scale,
                 mask=P.slot_to_tid(attn_mask) if attn_mask else None,
                 causal=is_causal,
             )
         )
+        if output_rank < 4:
+            P.emit(
+                SqueezeNode(
+                    x=P.slot_to_tid(sdpa_out),
+                    out=P.slot_to_tid(out),
+                    dims=list(range(4 - output_rank)),
+                )
+            )
         return out
 
 
