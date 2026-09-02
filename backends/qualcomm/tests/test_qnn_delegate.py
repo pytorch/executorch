@@ -1241,8 +1241,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             Gather(),  # noqa: F405
             # TODO: resolve accuracy problem
             # GatherArgmin(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # GatherWhere(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
         ]
         # shape = (2, 2, 3, 4)
         sample_inputs = [
@@ -2767,8 +2766,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # WhereConstantAll(),  # noqa: F405
+            WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
@@ -2839,11 +2837,6 @@ class TestQNNFloatingPointModel(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
-    # TODO: Needs to be fixed in HTP
-    @unittest.skipIf(
-        is_qnn_sdk_version_greater_than("2.37"),
-        "Failed to prepare the graph because of an index operation with argmin output.",
-    )
     def test_qnn_backend_argmin_view_squeeze_conv2d(self):
         module = ArgminViewSqueezeConv2D()  # noqa: F405
         sample_input = (torch.randn(32), torch.randn(32, 3, 32, 32))
@@ -2885,7 +2878,8 @@ class TestQNNFloatingPointModel(TestQNN):
 
     # TODO: Needs to be fixed in HTP
     @unittest.skipIf(
-        is_qnn_sdk_version_greater_than("2.40"),
+        is_qnn_sdk_version_greater_than("2.40")
+        and is_qnn_sdk_version_less_than("2.49"),
         "UT did not pass because of aten.mean.dim when using keep_dim for some devices after QNN 2.41.",
     )
     def test_qnn_backend_conv2d_bn_hardtanh_mean(self):
@@ -4396,8 +4390,7 @@ class TestQNNQuantizedOperator(TestQNN):
             Gather(),  # noqa: F405
             # TODO: resolve accuracy problem
             # GatherArgmin(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # GatherWhere(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
         ]
         # shape = (2, 2, 3, 4)
         sample_inputs = [
@@ -6402,8 +6395,7 @@ class TestQNNQuantizedOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # WhereConstantAll(),  # noqa: F405
+            WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
