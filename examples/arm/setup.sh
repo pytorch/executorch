@@ -234,6 +234,23 @@ function setup_cortex_m_tools() {
     pip install --no-dependencies -r $et_dir/backends/cortex_m/requirements-cortex-m.txt
 }
 
+function warn_if_mlsdk_python_is_untested() {
+    if [[ "${enable_model_converter}" -eq 0 && \
+          "${enable_vgf_lib}" -eq 0 && \
+          "${enable_emulation_layer}" -eq 0 ]]; then
+        return
+    fi
+
+    local py_version
+    py_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    if ! python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then
+        log_step "mlsdk" \
+            "Warning: Python 3.12 is the recommended minimum for ML SDK 0.10 VGF; detected Python ${py_version}."
+        log_step "mlsdk" \
+            "Older ExecuTorch-supported Python versions may work, but are not the reference VGF configuration."
+    fi
+}
+
 function setup_mlsdk_dependencies() {
     log_step "mlsdk" "Installing MLSDK dependencies"
     if [[ "${enable_model_converter}" -eq 1 || "${enable_emulation_layer}" -eq 1 ]]; then
@@ -363,6 +380,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
         setup_fvp
         install_fvp
     fi
+
+    warn_if_mlsdk_python_is_untested
 
     # Setup Vulkan SDK
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
