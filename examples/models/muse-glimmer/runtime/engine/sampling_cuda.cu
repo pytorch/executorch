@@ -11,6 +11,7 @@
 #include <cuda_runtime.h>
 #include <cub/device/device_segmented_radix_sort.cuh>
 #include <cub/device/device_scan.cuh>
+#include <curand_kernel.h>
 #include <math_constants.h>
 
 #include <algorithm>
@@ -26,6 +27,12 @@ constexpr int kSamplingThreads = 256;
 struct ArgmaxCandidate {
   float value;
   uint64_t index;
+};
+
+struct DeviceRngState {
+  uint64_t seed;
+  unsigned long long counter;
+  unsigned long long base;
 };
 
 __device__ ArgmaxCandidate better_candidate(
@@ -180,6 +187,71 @@ __global__ void scatter_probabilities_kernel(
       : 0.0f;
 }
 
+__global__ void initialize_rng_kernel(DeviceRngState* state, uint64_t seed) {
+  if (blockIdx.x == 0 && threadIdx.x == 0) {
+    state->seed = seed;
+    state->counter = 0;
+    state->base = 0;
+  }
+}
+
+__global__ void advance_rng_kernel(
+    DeviceRngState* state,
+    unsigned long long count) {
+  if (blockIdx.x == 0 && threadIdx.x == 0) {
+    state->base = atomicAdd(&state->counter, count);
+  }
+}
+
+__global__ void probabilities_to_double_kernel(
+    const float* probabilities,
+    int64_t total_size,
+    double* values) {
+  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (offset < total_size) {
+    values[offset] = static_cast<double>(probabilities[offset]);
+  }
+}
+
+__device__ float uniform_from_uint32(uint32_t value) {
+  constexpr uint32_t kMantissaMask = (uint32_t{1} << 24) - 1;
+  constexpr float kScale = 1.0f / static_cast<float>(uint32_t{1} << 24);
+  return static_cast<float>(value & kMantissaMask) * kScale;
+}
+
+__global__ void categorical_sample_kernel(
+    const double* cumulative,
+    int64_t row_count,
+    int64_t row_size,
+    DeviceRngState* rng,
+    uint64_t* tokens) {
+  const int64_t row = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (row >= row_count) {
+    return;
+  }
+  curandStatePhilox4_32_10_t local_rng;
+  curand_init(rng->seed, 0, rng->base + row, &local_rng);
+  const double coin = static_cast<double>(uniform_from_uint32(curand(&local_rng)));
+  const int64_t row_start = row * row_size;
+  int64_t low = 0;
+  int64_t high = row_size - 1;
+  if (coin > cumulative[row_start + high]) {
+    tokens[row] = static_cast<uint64_t>(high);
+    return;
+  }
+  while (low < high) {
+    const int64_t middle = low + (high - low) / 2;
+    if (cumulative[row_start + middle] >= coin) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  tokens[row] = static_cast<uint64_t>(low);
+}
+
 } // namespace
 
 struct SamplingWorkspace::Impl {
@@ -195,10 +267,12 @@ struct SamplingWorkspace::Impl {
   int64_t* offsets{nullptr};
   int32_t* cutoffs{nullptr};
   float* denominators{nullptr};
+  DeviceRngState* rng{nullptr};
   void* temporary_storage{nullptr};
   size_t temporary_storage_bytes{0};
 
   void release() {
+    cudaFree(rng);
     cudaFree(temporary_storage);
     cudaFree(denominators);
     cudaFree(cutoffs);
@@ -259,6 +333,7 @@ cudaError_t SamplingWorkspace::reserve(
   MUSE_GLIMMER_CUDA_ALLOCATE(offsets, row_count + 1);
   MUSE_GLIMMER_CUDA_ALLOCATE(cutoffs, row_count);
   MUSE_GLIMMER_CUDA_ALLOCATE(denominators, row_count);
+  MUSE_GLIMMER_CUDA_ALLOCATE(rng, 1);
 
 #undef MUSE_GLIMMER_CUDA_ALLOCATE
 
@@ -267,6 +342,12 @@ cudaError_t SamplingWorkspace::reserve(
   initialize_offsets_kernel<<<offset_blocks, kSamplingThreads, 0, stream>>>(
       impl_->offsets, row_count, row_size);
   cudaError_t error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    impl_->release();
+    return error;
+  }
+  initialize_rng_kernel<<<1, 1, 0, stream>>>(impl_->rng, 0);
+  error = cudaGetLastError();
   if (error != cudaSuccess) {
     impl_->release();
     return error;
@@ -312,6 +393,14 @@ cudaError_t SamplingWorkspace::reserve(
     impl_->release();
   }
   return error;
+}
+
+cudaError_t SamplingWorkspace::set_seed(uint64_t seed, cudaStream_t stream) {
+  if (impl_->rng == nullptr) {
+    return cudaErrorInvalidValue;
+  }
+  initialize_rng_kernel<<<1, 1, 0, stream>>>(impl_->rng, seed);
+  return cudaGetLastError();
 }
 
 cudaError_t argmax_index(
@@ -443,6 +532,58 @@ cudaError_t fill_sampling_probabilities(
       total_size,
       row_size,
       probabilities);
+  return cudaGetLastError();
+}
+
+cudaError_t categorical_sample(
+    const float* probabilities,
+    int64_t row_count,
+    int64_t row_size,
+    uint64_t* tokens,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream) {
+  if (probabilities == nullptr || tokens == nullptr || row_count <= 0 ||
+      row_size <= 0 || row_count > std::numeric_limits<int>::max() ||
+      row_size > std::numeric_limits<int>::max() / row_count) {
+    return cudaErrorInvalidValue;
+  }
+  cudaError_t error = workspace.reserve(row_count, row_size, stream);
+  if (error != cudaSuccess) {
+    return error;
+  }
+  auto& state = *workspace.impl_;
+  const int64_t total_size = state.total_size;
+  const int item_blocks = static_cast<int>(
+      (total_size + kSamplingThreads - 1) / kSamplingThreads);
+  probabilities_to_double_kernel<<<
+      item_blocks, kSamplingThreads, 0, stream>>>(
+      probabilities, total_size, state.weights);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+
+  for (int64_t row = 0; row < row_count; ++row) {
+    error = cub::DeviceScan::InclusiveSum(
+        state.temporary_storage,
+        state.temporary_storage_bytes,
+        state.weights + row * row_size,
+        state.cumulative + row * row_size,
+        static_cast<int>(row_size),
+        stream);
+    if (error != cudaSuccess) {
+      return error;
+    }
+  }
+  advance_rng_kernel<<<1, 1, 0, stream>>>(state.rng, row_count);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  const int row_blocks = static_cast<int>(
+      (row_count + kSamplingThreads - 1) / kSamplingThreads);
+  categorical_sample_kernel<<<row_blocks, kSamplingThreads, 0, stream>>>(
+      state.cumulative, row_count, row_size, state.rng, tokens);
   return cudaGetLastError();
 }
 
