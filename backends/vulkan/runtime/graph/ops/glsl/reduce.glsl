@@ -86,19 +86,24 @@ int tid_to_smi(const ivec2 tid) {
  * This case is simpler because each element of a texel belongs to a separate
  * reduction "group", meaning we don't have to perform reduction along a texel.
  */
-void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
+void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos, const bool in_bounds) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
-  scan_pos[reduce_dim] = 0;
-  vec4 accum = INIT_ACCUM(load_texel(tin, scan_pos));
+  // Out of bounds threads must not load or accumulate, but they must still
+  // reach the barrier below, so the work is guarded rather than returned from.
+  vec4 accum = vec4(0);
+  if (in_bounds) {
+    scan_pos[reduce_dim] = 0;
+    accum = INIT_ACCUM(load_texel(tin, scan_pos));
 
-  scan_pos[reduce_dim] = tid.x;
-  // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ... of
-  // the reduction row
-  for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim);
-       i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
-    accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
+    scan_pos[reduce_dim] = tid.x;
+    // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ... of
+    // the reduction row
+    for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim);
+         i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
+      accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
+    }
   }
   // Write partial output to shared memory and synchronize work group
   shared_vecs[smi] = accum;
@@ -106,7 +111,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
 
   // Since the reduction row is reduced to only one element, only the "main"
   // thread in the group needs aggregate the partial outputs
-  if (tid.x == 0) {
+  if (in_bounds && tid.x == 0) {
     // Iterate over the partial outputs to obtain the overall output
     int group_i = tid.y * NWORKERS;
     accum = shared_vecs[group_i++];
@@ -141,7 +146,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
  * elements in texels (which occur when the size of the packed dim is not a
  * multiple of 4) so that they do not influence the output of reduction.
  */
-void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
+void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos, const bool in_bounds) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
@@ -151,23 +156,28 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // handled specially if it has padding elements.
   const int reduce_len = safe_idx(tin_sizes, packed_dim) - nspill;
 
-  scan_pos[reduce_dim] = 0;
-  vec4 accum = INIT_ACCUM(vec4(load_texel(tin, scan_pos).x));
+  // Out of bounds threads must not load or accumulate, but they must still
+  // reach the barrier below, so the work is guarded rather than returned from.
+  vec4 accum = vec4(0);
+  if (in_bounds) {
+    scan_pos[reduce_dim] = 0;
+    accum = INIT_ACCUM(vec4(load_texel(tin, scan_pos).x));
 
-  // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ... of
-  // the reduction row
-  scan_pos[reduce_dim] = tid.x;
-  for (int i = tid.x * 4; i < reduce_len;
-       i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
-    accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
-  }
-  // For the last texel in the dim, if there are padding elements then each
-  // element of the texel needs to be processed individually such that the
-  // padding elements are ignored
-  if (scan_pos[reduce_dim] == safe_idx(tin_limits, reduce_dim) - 1 && nspill > 0) {
-    const vec4 intex = load_texel(tin, scan_pos);
-    for (int i = 0; i < nspill; i++) {
-      accum.x = UPDATE_ACCUM(accum.x, intex[i]);
+    // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ... of
+    // the reduction row
+    scan_pos[reduce_dim] = tid.x;
+    for (int i = tid.x * 4; i < reduce_len;
+         i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
+      accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
+    }
+    // For the last texel in the dim, if there are padding elements then each
+    // element of the texel needs to be processed individually such that the
+    // padding elements are ignored
+    if (scan_pos[reduce_dim] == safe_idx(tin_limits, reduce_dim) - 1 && nspill > 0) {
+      const vec4 intex = load_texel(tin, scan_pos);
+      for (int i = 0; i < nspill; i++) {
+        accum.x = UPDATE_ACCUM(accum.x, intex[i]);
+      }
     }
   }
   // Write partial output to shared memory and synchronize work group
@@ -176,7 +186,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
 
   // Since the reduction row is reduced to only one element, only the "main"
   // thread in the group needs aggregate the partial outputs
-  if (tid.x == 0) {
+  if (in_bounds && tid.x == 0) {
     // Iterate over the partial maximums to obtain the overall maximum
     int group_i = tid.y * NWORKERS;
     accum = shared_vecs[group_i++];
@@ -203,13 +213,14 @@ void main() {
       gl_LocalInvocationID[reduce_dim],
       gl_LocalInvocationID[group_dim]);
 
-  if (any(greaterThanEqual(scan_pos, tin_limits))) {
-    return;
-  }
+  // Do not return early here. Both reduction routines contain a barrier(), and
+  // returning would leave it in non-uniform control flow, which is undefined
+  // and hangs the GPU on some drivers. Carry the bounds check instead.
+  const bool in_bounds = !any(greaterThanEqual(scan_pos, tin_limits));
 
   if (reduce_dim != packed_dim) {
-    reduce_nonpacked_dim(tid, scan_pos);
+    reduce_nonpacked_dim(tid, scan_pos, in_bounds);
   } else {
-    reduce_packed_dim(tid, scan_pos);
+    reduce_packed_dim(tid, scan_pos, in_bounds);
   }
 }

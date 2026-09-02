@@ -65,7 +65,7 @@ VEC4_T calculate_variance(VEC4_T sum, VEC4_T sum_sq, int count) {
   return variance;
 }
 
-void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
+void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos, const bool in_bounds) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
@@ -73,13 +73,15 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
   VEC4_T sum_sq = VEC4_T(0);
   int count = 0;
 
-  scan_pos[reduce_dim] = tid.x;
-  for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim);
-       i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
-    VEC4_T val = load_texel(tin, scan_pos);
-    sum += val;
-    sum_sq += val * val;
-    count += 1;
+  if (in_bounds) {
+    scan_pos[reduce_dim] = tid.x;
+    for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim);
+         i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
+      VEC4_T val = load_texel(tin, scan_pos);
+      sum += val;
+      sum_sq += val * val;
+      count += 1;
+    }
   }
   // Write partial output to shared memory and synchronize work group
   shared_sum[smi] = sum;
@@ -89,7 +91,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
 
   // Since the reduction row is reduced to only one element, only the "main"
   // thread in the group needs aggregate the partial outputs
-  if (tid.x == 0) {
+  if (in_bounds && tid.x == 0) {
     int group_i = tid.y * NWORKERS;
     sum = shared_sum[group_i];
     sum_sq = shared_sum_sq[group_i];
@@ -132,7 +134,7 @@ void reduce_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
  * elements in texels (which occur when the size of the packed dim is not a
  * multiple of 4) so that they do not influence the output of reduction.
  */
-void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
+void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos, const bool in_bounds) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
@@ -175,7 +177,7 @@ void reduce_packed_dim(const ivec2 tid, ivec3 scan_pos) {
 
   // Since the reduction row is reduced to only one element, only the "main"
   // thread in the group needs aggregate the partial outputs
-  if (tid.x == 0) {
+  if (in_bounds && tid.x == 0) {
     sum = shared_sum[tid.y * NWORKERS];
     sum_sq = shared_sum_sq[tid.y * NWORKERS];
     count = shared_count[tid.y * NWORKERS];
@@ -211,13 +213,14 @@ void main() {
       gl_LocalInvocationID[reduce_dim],
       gl_LocalInvocationID[group_dim]);
 
-  if (any(greaterThanEqual(scan_pos, tin_limits))) {
-    return;
-  }
+  // Do not return early here. The routines below contain barrier() calls, and
+  // returning would leave them in non-uniform control flow, which is undefined
+  // and hangs the GPU on some drivers. Carry the bounds check instead.
+  const bool in_bounds = !any(greaterThanEqual(scan_pos, tin_limits));
 
   if (reduce_dim != packed_dim) {
-    reduce_nonpacked_dim(tid, scan_pos);
+    reduce_nonpacked_dim(tid, scan_pos, in_bounds);
   } else {
-    reduce_packed_dim(tid, scan_pos);
+    reduce_packed_dim(tid, scan_pos, in_bounds);
   }
 }
