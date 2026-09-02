@@ -1045,11 +1045,16 @@ void cpu_flash_attention(
           is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
-      fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
+      fill_stub(dst_data, static_cast<accum_t>(0), qBlockSize * headSize);
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
-        int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
+        // Only the first num_keys columns are attendable; the rest would be
+        // masked to -inf and contribute nothing, so clamping here keeps the
+        // result identical while skipping the work for them. This matters for
+        // the leading query blocks of a prefill, where num_keys is much
+        // smaller than the key-cache extent.
+        int64_t kvBlockSize = std::min(kvSplitSize, num_keys - n);
         // Calculate scale * q @ k.T
-        fill_stub(qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
+        fill_stub(qk_data, static_cast<accum_t>(0), qBlockSize * kvBlockSize);
 
         const void* q_sub_matrix_data_ptr;
         const void* k_sub_matrix_data_ptr;
@@ -1147,10 +1152,10 @@ void cpu_flash_attention(
         take care of this case because the loop for (int64_t n = 0; n <
         num_keys; n += kvSplitSize) will exit before that.
         */
-        if (is_causal && m_start_pos <= n + kvSplitSize) {
+        if (is_causal && m_start_pos <= n + kvBlockSize) {
           // For this fn to work k_split_size > q_split_size
           for (int32_t row = 0;
-               row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1));
+               row < qBlockSize && (m_start_pos + row < n + (kvBlockSize - 1));
                ++row) {
             // When last_col is 0, it means that the entire row is not attended
             // to because m_pos is smaller than n_pos. So everything in n is for
