@@ -556,4 +556,157 @@ TEST(CudaSamplingTest, SampleTokenMatchesHostModes) {
   ASSERT_CUDA_SUCCESS(cudaFree(device_logits));
 }
 
+TEST(CudaSamplingTest, GreedySpeculativeSamplingMatchesHostFlow) {
+  constexpr int64_t kVerifyLength = 4;
+  const std::array<uint64_t, kVerifyLength> target_tokens = {11, 12, 13, 14};
+  const std::array<uint64_t, kVerifyLength> rejected_candidates = {
+      10, 11, 99, 13};
+  const std::array<uint64_t, kVerifyLength> accepted_candidates = {
+      10, 11, 12, 13};
+
+  uint64_t* device_target_tokens = nullptr;
+  uint64_t* device_candidates = nullptr;
+  int64_t* device_accepted_count = nullptr;
+  uint64_t* device_correction_token = nullptr;
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&device_target_tokens, target_tokens.size() * sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&device_candidates, rejected_candidates.size() * sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_accepted_count, sizeof(int64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_correction_token, sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_target_tokens,
+      target_tokens.data(),
+      target_tokens.size() * sizeof(uint64_t),
+      cudaMemcpyHostToDevice));
+
+  auto verify = [&](const auto& candidates,
+                    int64_t expected_count,
+                    uint64_t expected_correction) {
+    ASSERT_CUDA_SUCCESS(cudaMemcpy(
+        device_candidates,
+        candidates.data(),
+        candidates.size() * sizeof(uint64_t),
+        cudaMemcpyHostToDevice));
+    ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::greedy_speculative_sample(
+        device_target_tokens,
+        device_candidates,
+        kVerifyLength,
+        device_accepted_count,
+        device_correction_token,
+        nullptr));
+    int64_t accepted_count = 0;
+    uint64_t correction_token = 0;
+    ASSERT_CUDA_SUCCESS(cudaMemcpy(
+        &accepted_count,
+        device_accepted_count,
+        sizeof(int64_t),
+        cudaMemcpyDeviceToHost));
+    ASSERT_CUDA_SUCCESS(cudaMemcpy(
+        &correction_token,
+        device_correction_token,
+        sizeof(uint64_t),
+        cudaMemcpyDeviceToHost));
+    EXPECT_EQ(accepted_count, expected_count);
+    EXPECT_EQ(correction_token, expected_correction);
+  };
+  verify(rejected_candidates, 2, 12);
+  verify(accepted_candidates, 4, 14);
+
+  ASSERT_CUDA_SUCCESS(cudaFree(device_correction_token));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_accepted_count));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_candidates));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_target_tokens));
+}
+
+TEST(CudaSamplingTest, StochasticSpeculativeSamplingHandlesAcceptAndReject) {
+  constexpr int64_t kVerifyLength = 4;
+  constexpr int64_t kRowSize = 4;
+  const std::array<uint64_t, kVerifyLength> candidates = {0, 1, 2, 3};
+  const std::array<float, kVerifyLength * kRowSize> all_accepted_target = {
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+      0, 0, 0, 1,
+  };
+  const std::array<float, kVerifyLength * kRowSize> all_accepted_draft = {
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+  };
+  auto rejected_target = all_accepted_target;
+  rejected_target[0] = 1.0f;
+  rejected_target[1] = 0.0f;
+
+  float* device_target = nullptr;
+  float* device_draft = nullptr;
+  uint64_t* device_candidates = nullptr;
+  int64_t* device_accepted_count = nullptr;
+  uint64_t* device_correction_token = nullptr;
+  const size_t probabilities_bytes = all_accepted_target.size() * sizeof(float);
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_target, probabilities_bytes));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_draft, probabilities_bytes));
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&device_candidates, candidates.size() * sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_accepted_count, sizeof(int64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_correction_token, sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_candidates,
+      candidates.data(),
+      candidates.size() * sizeof(uint64_t),
+      cudaMemcpyHostToDevice));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_draft,
+      all_accepted_draft.data(),
+      probabilities_bytes,
+      cudaMemcpyHostToDevice));
+
+  muse_glimmer::cuda::SamplingWorkspace workspace;
+  ASSERT_CUDA_SUCCESS(workspace.reserve(kVerifyLength, kRowSize, nullptr));
+  ASSERT_CUDA_SUCCESS(workspace.set_seed(7890, nullptr));
+  auto verify = [&](const auto& target,
+                    int64_t expected_count,
+                    uint64_t expected_correction) {
+    ASSERT_CUDA_SUCCESS(cudaMemcpy(
+        device_target,
+        target.data(),
+        probabilities_bytes,
+        cudaMemcpyHostToDevice));
+    ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::stochastic_speculative_sample(
+        device_target,
+        device_draft,
+        device_candidates,
+        kVerifyLength,
+        kRowSize,
+        false,
+        device_accepted_count,
+        device_correction_token,
+        workspace,
+        nullptr));
+    int64_t accepted_count = 0;
+    uint64_t correction_token = 0;
+    ASSERT_CUDA_SUCCESS(cudaMemcpy(
+        &accepted_count,
+        device_accepted_count,
+        sizeof(int64_t),
+        cudaMemcpyDeviceToHost));
+    ASSERT_CUDA_SUCCESS(cudaMemcpy(
+        &correction_token,
+        device_correction_token,
+        sizeof(uint64_t),
+        cudaMemcpyDeviceToHost));
+    EXPECT_EQ(accepted_count, expected_count);
+    EXPECT_EQ(correction_token, expected_correction);
+  };
+  verify(all_accepted_target, 4, 3);
+  verify(rejected_target, 1, 0);
+
+  ASSERT_CUDA_SUCCESS(cudaFree(device_correction_token));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_accepted_count));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_candidates));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_draft));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_target));
+}
+
 } // namespace
