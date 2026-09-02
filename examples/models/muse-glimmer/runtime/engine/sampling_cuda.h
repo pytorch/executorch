@@ -77,6 +77,18 @@ class SamplingWorkspace {
       uint64_t*,
       SamplingWorkspace&,
       cudaStream_t);
+  friend cudaError_t sample_token(
+      const float*,
+      int64_t,
+      int64_t,
+      double,
+      int32_t,
+      double,
+      uint64_t*,
+      float*,
+      bool,
+      SamplingWorkspace&,
+      cudaStream_t);
 };
 
 // Computes one argmax per contiguous row of `values`.
@@ -145,6 +157,22 @@ cudaError_t sample_from_residual_in_place(
     int64_t row_count,
     int64_t row_size,
     uint64_t* sampled_tokens,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream);
+
+// CUDA counterpart of muse_glimmer::sample_token for contiguous logits rows.
+// `out_probabilities` may be null. When it is non-null and `probabilities_only`
+// is true, normalized probabilities are produced without consuming RNG state.
+cudaError_t sample_token(
+    const float* logits,
+    int64_t row_count,
+    int64_t row_size,
+    double temperature,
+    int32_t top_k,
+    double top_p,
+    uint64_t* sampled_tokens,
+    float* out_probabilities,
+    bool probabilities_only,
     SamplingWorkspace& workspace,
     cudaStream_t stream);
 
