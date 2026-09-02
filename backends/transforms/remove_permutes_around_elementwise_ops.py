@@ -765,44 +765,15 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     and const_rank < permute_rank
                     and const_node.meta.get("val") is not None
                 ):
-                    # Broadcasting widens the constant to the region's rank
-                    # before the permutation applies.
                     original_shape = list(const_node.meta["val"].shape)
                     padded = [1] * (permute_rank - const_rank) + original_shape
-                    target_shape = [padded[dim] for dim in node_end_perm]
-
-                    # Where each non-unit axis ends up. Unit axes carry no
-                    # elements, so only the order of these decides whether the
-                    # permutation rearranges data or merely reshapes.
-                    destinations = [
-                        node_end_perm.index(axis)
-                        for axis, size in enumerate(padded)
-                        if size != 1
-                    ]
-                    if destinations == sorted(destinations):
-                        # Only unit extents moved, so this is a pure reshape and
-                        # a view says it exactly -- and says it for free, since
-                        # view_copy later becomes a memory.view alias.
-                        new_node = graph.create_node(
-                            "call_function",
-                            exir_ops.edge.aten.view_copy.default,
-                            args=(const_node, target_shape),
-                        )
-                    else:
-                        # Reordering a non-unit extent moves data. A view would
-                        # reinterpret the strides and read different elements,
-                        # so widen with a view and permute at full rank.
-                        widened = graph.create_node(
-                            "call_function",
-                            exir_ops.edge.aten.view_copy.default,
-                            args=(const_node, padded),
-                        )
-                        with graph.inserting_after(widened):
-                            new_node = graph.create_node(
-                                "call_function",
-                                subgraph.permute_target,
-                                args=(widened, node_end_perm),
-                            )
+                    target_shape = [padded[d] for d in node_end_perm]
+                    target_shape = target_shape[permute_rank - const_rank :]
+                    new_node = graph.create_node(
+                        "call_function",
+                        exir_ops.edge.aten.view_copy.default,
+                        args=(const_node, target_shape),
+                    )
                 else:
                     continue
             user_node.replace_input_with(const_node, new_node)
