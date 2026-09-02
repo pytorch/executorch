@@ -268,18 +268,20 @@ class GenAIPipeline:
         if self._compilation_stage is not None:
             logger.info("[GenAIPipeline] CompilationStage started")
             start = time.monotonic()
-            # Fall back to the prepared module when quantization was skipped
-            # (FP16 / GPU flows), so the model isn't silently dropped.
-            model = quant_output.graphs or model_prep_output.model_module
             input_config = CompilationInputConfig(
                 # Note: context.soc_model is str; str→QcomChipset conversion is
                 # deferred to the strategy/adapter layer (see PR5).
                 soc_model=context.soc_model,
                 backend_type=self._engine_proxy.backend_type,
-                model=model,
+                model=model_prep_output.model_module,
                 # Export inputs come from the model, not from calibration_data.
                 example_inputs=model_prep_output.example_inputs,
                 artifact_dir=Path(context.artifact_dir),
+                # The per-component graph map, when quantization produced one.
+                # A strategy prefers it over ``model``.
+                graphs=quant_output.graphs,
+                num_sharding=model_prep_output.num_shardings or 1,
+                meta=model_prep_output.meta,
             )
             output = self._compilation_stage.invoke(context, input_config)
             elapsed = time.monotonic() - start

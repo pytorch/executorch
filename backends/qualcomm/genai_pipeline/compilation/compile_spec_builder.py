@@ -142,7 +142,8 @@ class QnnCompileSpecBuilder:
     ``enable_x86_64`` is a constructor argument because the emulator's
     restrictions are properties of the target: it supports neither weight
     sharing nor shared buffers, so both default to off when it is set. Passing
-    those explicitly to :meth:`build` still overrides the default.
+    those explicitly to :meth:`build` still overrides the default, though for
+    ``shared_buffer`` a caller should normally not (see :meth:`build`).
 
     Example::
 
@@ -211,20 +212,23 @@ class QnnCompileSpecBuilder:
                 only; ignored for GPU, whose precision comes from the tensor
                 data types.
             use_multi_contexts: Emit multiple contexts within one ``.pte`` so a
-                single spill-fill allocation can be reused across them. Set
-                this when the graph is sharded. Sizing that allocation is a
-                post-lowering step and is not done here.
+                single spill-fill allocation can be reused across them. HTP
+                only -- no other backend has the mechanism -- and set when the
+                graph is sharded. Sizing that allocation is a post-lowering
+                step and is not done here.
             use_weight_sharing: Share identical weights across the graphs of a
                 multi-method ``.pte``. Defaults to on unless targeting the
                 emulator, which does not support it.
             shared_buffer: Use a shared buffer for graph I/O. Defaults to on
                 unless targeting the emulator, which does not support it.
 
-                Note that this default is *not* ``ControlArgs.shared_buffer``,
-                which defaults to ``False`` to match ``llama.py``'s parser. A
-                caller driving this from a ``ControlArgs`` must therefore pass
-                ``shared_buffer=control_args.shared_buffer`` explicitly;
-                omitting it silently turns the feature on for a device target.
+                A caller driving this from a ``ControlArgs`` should **leave this
+                default alone** rather than pass ``control_args.shared_buffer``.
+                Despite the shared name they are different settings: the
+                ``ControlArgs`` field is a *runner* flag, and every legacy
+                compile-spec site passes ``not enable_x86_64`` instead, which is
+                this default. Forwarding the runner flag would turn shared
+                buffers off for a device build.
             online_prepare: Compose the QNN graph on device. Cannot be combined
                 with ``use_multi_contexts``, which the underlying spec
                 generation rejects.

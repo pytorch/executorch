@@ -8,11 +8,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, runtime_checkable, Tuple
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    runtime_checkable,
+    Tuple,
+    TYPE_CHECKING,
+)
 
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ARTIFACT_TEXT_DECODER,
 )
+
+if TYPE_CHECKING:
+    from executorch.backends.qualcomm.genai_pipeline.graph_bundle import GraphBundle
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 @dataclass
@@ -42,14 +55,15 @@ class CompilerAdapter(Protocol):
     mirrors that function so that no required lowering input has to travel as a
     string-keyed option.
 
-    .. note::
-        ``compile_model`` lowers a **single graph**, mirroring the underlying
-        ``to_edge_transform_and_lower_to_qnn`` API. Models exported as several
-        graphs from the same weights (a hybrid decoder's AR-N prefill and AR-1
-        decode, plus an optional token-embedding graph) are looped over by the
-        **compilation strategy**; adapters that group them into one multi-method
-        ``.pte`` may return a single artifact path covering several methods.
+    Two entry points, because they are different units of work:
+    ``compile_model`` lowers one graph to one ``.pte``, while
+    ``compile_graph_group`` lowers several graphs into one multi-method ``.pte``
+    so they share weights. The group form cannot be expressed as repeated
+    single-graph calls -- weight sharing is a property of the one lowering call
+    -- but *which* graphs form a group stays a decision of the compilation
+    strategy.
 
+    .. note::
         Only *deployed* graphs reach this adapter. A hybrid decoder additionally
         builds a full-auto-regressive calibration graph, but that exists purely
         to source quantization encodings and is never lowered.
@@ -64,6 +78,7 @@ class CompilerAdapter(Protocol):
         file_name: str,
         soc_model: Any,
         backend_type: Any,
+        executorch_config: Any,
         constant_methods: Optional[Dict[str, Any]] = None,
         dep_table: Optional[Dict] = None,
         passes_job: Optional[Any] = None,
@@ -92,6 +107,8 @@ class CompilerAdapter(Protocol):
                 fail only on device.
             backend_type: QNN backend type (HTP, GPU, LPAI). Carried in
                 ``compile_specs`` as well; see ``soc_model``.
+            executorch_config: The ``to_executorch`` configuration. Chosen by
+                the strategy per component, since memory planning differs.
             constant_methods: Methods returning constants in eager mode. For a
                 decoder this carries the quantization attributes written during
                 quantization, so it is only complete after that stage.
@@ -104,12 +121,61 @@ class CompilerAdapter(Protocol):
                 artifacts by name.
             extra_options: Optional tuning knobs (``skip_node_id_set``,
                 ``skip_node_op_set``, ``skip_mutable_buffer``,
-                ``convert_linear_to_conv2d``, ``generate_etrecord``,
-                ``executorch_backend_config``).
+                ``convert_linear_to_conv2d``, ``generate_etrecord``).
 
         Returns:
-            CompilationResult with artifact paths and optional etrecord. May hold
-            several artifact paths, or a single multi-method .pte, depending on
-            how the implementation groups graphs.
+            CompilationResult with artifact paths and optional etrecord.
+        """
+        ...
+
+    def compile_graph_group(
+        self,
+        graphs: Dict[str, "GraphBundle"],
+        compile_specs: Dict[str, List["CompileSpec"]],
+        artifact_dir: Path,
+        file_name: str,
+        soc_model: Any,
+        backend_type: Any,
+        executorch_config: Any,
+        constant_methods: Optional[Dict[str, Any]] = None,
+        dep_table: Optional[Dict[str, Any]] = None,
+        passes_job: Optional[Dict[str, Any]] = None,
+        artifact_key: str = ARTIFACT_TEXT_DECODER,
+        extra_options: Optional[Dict[str, Any]] = None,
+    ) -> CompilationResult:
+        """Lower several graphs into one multi-method ``.pte``.
+
+        Each graph has its own module, example inputs, dependency table and pass
+        configuration, so the lowering call takes graph-name-keyed dicts.
+        Grouping them into one call is what lets them share weights, and is also
+        what makes a single spill-fill allocation sizeable across their contexts.
+
+        Args:
+            graphs: The graphs to lower, keyed by graph name (see
+                ``graph_names``). All of them land in one ``.pte``.
+            compile_specs: QNN compiler specifications, keyed by the same graph
+                names. Keys must match ``graphs`` exactly.
+            artifact_dir: Directory to store the compiled .pte artifact.
+            file_name: Base name for the output .pte file.
+            soc_model: Target SoC chipset; checked against ``compile_specs``.
+            backend_type: QNN backend type; checked against ``compile_specs``.
+            executorch_config: The ``to_executorch`` configuration. One for the
+                whole ``.pte``.
+            constant_methods: Methods returning constants in eager mode. One set
+                covers the whole ``.pte``, so a caller with several graphs picks
+                the authoritative one -- for a decoder, the decode graph's
+                ``meta``.
+            dep_table: Pass dependency tables, keyed by the same graph names.
+                Derived by the strategy, as ``compile_specs`` is: sharding and
+                quantized-IO tagging are settings of this lowering call rather
+                than properties a graph carries.
+            passes_job: Pass configurations, keyed by the same graph names.
+            artifact_key: Name to key the resulting artifact under (see
+                ``artifact_keys``).
+            extra_options: Optional tuning knobs, as for ``compile_model``.
+
+        Returns:
+            CompilationResult holding the one written artifact under
+            ``artifact_key``, and the ETRecord when one was requested.
         """
         ...
