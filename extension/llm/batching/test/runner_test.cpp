@@ -1741,7 +1741,10 @@ TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
   EXPECT_EQ(m.total_prompt_tokens, 10);
   EXPECT_EQ(m.total_generated_tokens, 3);
   EXPECT_EQ(m.ttft_count, 1u);
-  EXPECT_GT(m.min_ttft_us(), 0);
+  // The one sample is the minimum and the whole sum. Stated as a relation
+  // rather than "> 0" so it holds however fast the machine is.
+  EXPECT_EQ(m.min_ttft_us(), m.ttft_sum_us);
+  EXPECT_EQ(m.ttft_max_us, m.ttft_sum_us);
   expect_balanced(m, 1);
   EXPECT_EQ(m.finished_token_limit, 1u);
 }
@@ -1933,7 +1936,11 @@ TEST(EngineMetricsTest, ReportsContextConcurrencyAndRefusals) {
   // context is summed across the batch, so the mean is at least one prompt.
   EXPECT_GT(m.mean_context_per_step(), 0.0);
   EXPECT_GE(m.context_max, 4);
-  EXPECT_GT(m.decode_only_tokens_per_sec(), 0.0);
+  // Counts, not the rate derived from them: a fake executor's whole run is a
+  // few microseconds, so us_between can floor it to 0 and the rate accessor
+  // then reports exactly 0.0. That says nothing about the metric.
+  EXPECT_GT(m.decode_only_steps(), 0u);
+  EXPECT_GT(m.decode_only_tokens, 0u);
   EXPECT_GT(m.mean_decode_step_sessions(), 0.0);
 }
 
