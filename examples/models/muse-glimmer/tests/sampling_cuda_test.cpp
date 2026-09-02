@@ -263,4 +263,59 @@ TEST(CudaSamplingTest, CategoricalSampleMatchesHostDistribution) {
   ASSERT_CUDA_SUCCESS(cudaFree(device_probabilities));
 }
 
+TEST(CudaSamplingTest, AcceptanceMatchesHostSemantics) {
+  constexpr int64_t kSamplesPerProbability = 10000;
+  constexpr std::array<float, 4> kProbabilities = {0.0f, 0.25f, 0.75f, 1.0f};
+  std::vector<float> probabilities;
+  probabilities.reserve(kSamplesPerProbability * kProbabilities.size());
+  for (const float probability : kProbabilities) {
+    probabilities.insert(
+        probabilities.end(), kSamplesPerProbability, probability);
+  }
+
+  float* device_probabilities = nullptr;
+  uint8_t* device_accepted = nullptr;
+  ASSERT_CUDA_SUCCESS(cudaMalloc(
+      &device_probabilities, probabilities.size() * sizeof(float)));
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&device_accepted, probabilities.size() * sizeof(uint8_t)));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_probabilities,
+      probabilities.data(),
+      probabilities.size() * sizeof(float),
+      cudaMemcpyHostToDevice));
+
+  muse_glimmer::cuda::SamplingWorkspace workspace;
+  ASSERT_CUDA_SUCCESS(workspace.reserve(1, 1, nullptr));
+  ASSERT_CUDA_SUCCESS(workspace.set_seed(5678, nullptr));
+  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::accept_with_probability(
+      device_probabilities,
+      probabilities.size(),
+      device_accepted,
+      workspace,
+      nullptr));
+  std::vector<uint8_t> accepted(probabilities.size());
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      accepted.data(),
+      device_accepted,
+      accepted.size() * sizeof(uint8_t),
+      cudaMemcpyDeviceToHost));
+
+  for (size_t probability_index = 0;
+       probability_index < kProbabilities.size();
+       ++probability_index) {
+    int64_t accepted_count = 0;
+    const size_t begin = probability_index * kSamplesPerProbability;
+    for (size_t index = begin; index < begin + kSamplesPerProbability; ++index) {
+      accepted_count += accepted[index];
+    }
+    const double frequency =
+        static_cast<double>(accepted_count) / kSamplesPerProbability;
+    EXPECT_NEAR(frequency, kProbabilities[probability_index], 0.02);
+  }
+
+  ASSERT_CUDA_SUCCESS(cudaFree(device_accepted));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_probabilities));
+}
+
 } // namespace
