@@ -681,6 +681,26 @@ def _export_dflash_cuda(
     )
     gc.collect()
 
+    # The whole target path is device-resident so the DFlash decode loop never
+    # round-trips activations through the host: embed_text takes the candidate
+    # token ids straight from CUDA and hands its embeddings to the target without
+    # a copy. Host callers (prefill, the image splice, the host-sampler baseline)
+    # stage their own inputs with clone_tensor_ptr_to and read outputs back with
+    # an explicit device-to-host copy.
+    device_resident = PropagateDeviceConfig(
+        skip_h2d_for_method_inputs=True,
+        skip_d2h_for_method_outputs=True,
+    )
+    propagate_device_config = {
+        "embed_text": device_resident,
+        "target_forward_from_embeddings": device_resident,
+        "target_prefill_from_embeddings": device_resident,
+        # draft_forward/draft_prefill still take host tokens and host target
+        # hidden state; only their logits stay on device for CUDA sampling.
+        "draft_forward": PropagateDeviceConfig(skip_d2h_for_method_outputs=True),
+        "draft_prefill": PropagateDeviceConfig(skip_d2h_for_method_outputs=True),
+    }
+
     et_program = et_prog.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
@@ -690,14 +710,7 @@ def _export_dflash_cuda(
                 share_mutable_buffers=_share_graph_mutable_buffers("cuda"),
             ),
             emit_mutable_buffer_names=True,
-            propagate_device_config={
-                "target_prefill_from_embeddings": PropagateDeviceConfig(
-                    skip_d2h_for_method_outputs=True
-                ),
-                "draft_prefill": PropagateDeviceConfig(
-                    skip_d2h_for_method_outputs=True
-                ),
-            },
+            propagate_device_config=propagate_device_config,
         ),
     )
 
