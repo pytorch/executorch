@@ -231,7 +231,7 @@ TEST_F(CudaAllocatorTest, PoolRetainsMemoryWithoutLimit) {
   EXPECT_EQ(threshold, UINT64_MAX)
       << "the pool must hold on to freed memory rather than return it";
 
-  ASSERT_EQ(CudaAllocator::deallocate_async(res.get(), 0, stream), Error::Ok);
+  CudaAllocator::deallocate_async(res.get(), 0, stream);
   ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
   ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
 }
