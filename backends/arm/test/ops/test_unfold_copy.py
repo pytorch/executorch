@@ -8,13 +8,16 @@ from typing import Tuple
 import torch
 
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class UnfoldCopy(torch.nn.Module):
@@ -206,10 +209,47 @@ def test_unfold_copy_tosa_INT(test_data: input_params):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_int | test_data_fp)
+test_data_u55 = {
+    "rank1_dim0": test_data_fp["test_fp32_1d_dim0"],
+    "rank2_dim1": test_data_fp["test_fp32_2d_dim1"],
+    "rank2_max_windows": (torch.rand(1, 17), 1, 2, 1),
+    "rank3_dim1": test_data_int["test_int8_3d_dim1"],
+    "rank3_dim_neg1": test_data_fp["test_fp32_3d_dim_neg1"],
+}
+
+
+@common.parametrize("test_data", test_data_u55)
 @common.XfailIfNoCorstone300
 def test_unfold_copy_u55_INT(test_data: input_params):
-    # Gather op is not supported on U55
+    pipeline = EthosU55PipelineINT[input_params](
+        UnfoldCopy(),
+        test_data,
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+def test_unfold_copy_u55_INT_a16w8():
+    pipeline = EthosU55PipelineINT[input_params](
+        UnfoldCopy(),
+        test_data_fp["test_fp32_2d_dim1"],
+        aten_ops=[],
+        exir_ops=[],
+        a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    {
+        "bool": test_data_int["test_bool_1d_dim_neg1"],
+        "too_many_windows": (torch.rand(1, 20), 1, 2, 1),
+    },
+)
+def test_unfold_copy_u55_INT_not_delegated(test_data: input_params):
     pipeline = OpNotSupportedPipeline[input_params](
         UnfoldCopy(),
         test_data,
@@ -219,6 +259,29 @@ def test_unfold_copy_u55_INT(test_data: input_params):
         n_expected_delegates=0,
     )
     pipeline.run()
+
+
+def test_unfold_copy_u55_INT_symbolic_dim_not_delegated():
+    length = torch.export.Dim("length", min=4, max=12)
+    tester = ArmTester(
+        UnfoldCopy(),
+        (torch.rand(2, 6), 1, 3, 1),
+        common.get_u55_compile_spec(),
+        dynamic_shapes={
+            "input_": {1: length},
+            "dim_": None,
+            "size_": None,
+            "step_": None,
+        },
+    )
+    tester.quantize().export().to_edge().partition()
+
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+    assert exir_ops.edge.aten.unfold_copy.default in targets
+    assert torch.ops.higher_order.executorch_call_delegate not in targets
 
 
 @common.parametrize(
