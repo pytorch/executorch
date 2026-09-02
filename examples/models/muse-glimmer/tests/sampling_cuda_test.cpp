@@ -389,4 +389,93 @@ TEST(CudaSamplingTest, ExcludingTokenMatchesHostSemantics) {
   ASSERT_CUDA_SUCCESS(cudaFree(device_probabilities));
 }
 
+TEST(CudaSamplingTest, ResidualCorrectionMatchesHostSemantics) {
+  constexpr int64_t kRowsPerCase = 8000;
+  constexpr int64_t kRows = 2 * kRowsPerCase;
+  constexpr int64_t kRowSize = 3;
+  const std::array<float, kRowSize> target_a = {0.5f, 0.3f, 0.2f};
+  const std::array<float, kRowSize> draft_a = {0.2f, 0.4f, 0.1f};
+  const std::array<float, kRowSize> target_b = {0.1f, 0.6f, 0.3f};
+  std::vector<float> target(kRows * kRowSize);
+  std::vector<float> draft(kRows * kRowSize);
+  for (int64_t row = 0; row < kRows; ++row) {
+    const auto& row_target = row < kRowsPerCase ? target_a : target_b;
+    const auto& row_draft = row < kRowsPerCase ? draft_a : target_b;
+    std::copy(
+        row_target.begin(),
+        row_target.end(),
+        target.begin() + row * kRowSize);
+    std::copy(
+        row_draft.begin(),
+        row_draft.end(),
+        draft.begin() + row * kRowSize);
+  }
+
+  float* device_target = nullptr;
+  float* device_draft = nullptr;
+  uint64_t* device_tokens = nullptr;
+  const size_t probability_bytes = target.size() * sizeof(float);
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_target, probability_bytes));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_draft, probability_bytes));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_tokens, kRows * sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_target,
+      target.data(),
+      probability_bytes,
+      cudaMemcpyHostToDevice));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_draft,
+      draft.data(),
+      probability_bytes,
+      cudaMemcpyHostToDevice));
+
+  muse_glimmer::cuda::SamplingWorkspace workspace;
+  ASSERT_CUDA_SUCCESS(workspace.reserve(kRows, kRowSize, nullptr));
+  ASSERT_CUDA_SUCCESS(workspace.set_seed(3456, nullptr));
+  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::sample_from_residual_in_place(
+      device_target,
+      device_draft,
+      kRows,
+      kRowSize,
+      device_tokens,
+      workspace,
+      nullptr));
+  std::vector<uint64_t> tokens(kRows);
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      tokens.data(),
+      device_tokens,
+      tokens.size() * sizeof(uint64_t),
+      cudaMemcpyDeviceToHost));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      target.data(),
+      device_target,
+      probability_bytes,
+      cudaMemcpyDeviceToHost));
+
+  std::array<int64_t, kRowSize> counts_a{};
+  std::array<int64_t, kRowSize> counts_b{};
+  for (int64_t row = 0; row < kRows; ++row) {
+    ASSERT_LT(tokens[row], kRowSize);
+    auto& counts = row < kRowsPerCase ? counts_a : counts_b;
+    ++counts[tokens[row]];
+  }
+  const std::array<float, kRowSize> expected_a = {0.75f, 0.0f, 0.25f};
+  for (int64_t token = 0; token < kRowSize; ++token) {
+    EXPECT_NEAR(target[token], expected_a[token], 1e-6f);
+    EXPECT_NEAR(
+        static_cast<double>(counts_a[token]) / kRowsPerCase,
+        expected_a[token],
+        0.025);
+    EXPECT_NEAR(target[kRowsPerCase * kRowSize + token], target_b[token], 1e-6f);
+    EXPECT_NEAR(
+        static_cast<double>(counts_b[token]) / kRowsPerCase,
+        target_b[token],
+        0.025);
+  }
+
+  ASSERT_CUDA_SUCCESS(cudaFree(device_tokens));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_draft));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_target));
+}
+
 } // namespace
