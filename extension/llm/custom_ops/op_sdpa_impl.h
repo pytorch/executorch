@@ -1111,113 +1111,57 @@ void cpu_flash_attention(
             (widen_qk && qBlockSize >= kMinQBlockForWidenedQK) ? widen_ptr
                                                                : nullptr);
 
-        // There are 4 cases that is_causal has to cover to fill
-        // not-attendable-position with -inf
-        /* 1. Everything is attended to. This happens when m_start_pos > n +
-        kvSplitSize e.g m_pos [8:15] and n_pos [0:7]. Since you must attend to
-        all previous tokens matrix is full
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           2. Everything is not attended to. However only some tokens at the
-        beginning dont attend to everything. This happens when m_start_pos <= n
-        + kvSplitSize but m_start_pos + qBlockSize > n + kvSplitSize m_start_pos
-        = 8 qBlockSize = 8 n = 4 kvSplitSize = 8 For example m_pos [8:15] but
-        n_pos is [4:11]
-        + + + + + - - -
-        + + + + + + - -
-        + + + + + + + -
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           3. In this case only last few tokens have something to attend to.
-        This happens when m_start_pos < n and m_start_pos + qBlockSize >= n and
-        m_start_pos + qBlockSize <= n + kvSplitSize m_start_pos = 8 qBlockSize =
-        8 n = 13 kvSplitSize = 8 For example m_pos [8:15] but n_pos is [13:20]
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        + - - - - - - -
-        + + - - - - - -
-        + + + - - - - -
-           4. In this no tokens attend to anything, but we dont really have to
-        take care of this case because the loop for (int64_t n = 0; n <
-        num_keys; n += kvSplitSize) will exit before that.
-        */
-        if (is_causal && m_start_pos <= n + kvBlockSize) {
-          // For this fn to work k_split_size > q_split_size
-          for (int32_t row = 0;
-               row < qBlockSize && (m_start_pos + row < n + (kvBlockSize - 1));
-               ++row) {
-            // When last_col is 0, it means that the entire row is not attended
-            // to because m_pos is smaller than n_pos. So everything in n is for
-            // future.
-            int64_t last_col =
-                n > (m_start_pos + row) ? 0 : row + m_start_pos + 1 - n;
-            accum_t* row_ptr = qk_data + row * kvBlockSize;
-            fill_stub(
-                row_ptr + last_col,
-                -std::numeric_limits<accum_t>::infinity(),
-                kvBlockSize - last_col);
+        // Update coefficients with scaling, attention mask, and softmax.
+        accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
+        for (int64_t row = 0; row < qBlockSize; ++row) {
+          accum_t* const qk_row = qk_data + row * kvBlockSize;
+          // The outer loop excludes fully masked KV blocks. In the final
+          // block, each query row may still have a different causal prefix;
+          // num_valid is relative to this block's starting key position.
+          const int64_t num_valid = is_causal
+              ? std::min(
+                    std::max<int64_t>(m_start_pos + row + 1 - n, 0),
+                    kvBlockSize)
+              : kvBlockSize;
+          if (num_valid == 0) {
+            fill_stub(qk_row, static_cast<accum_t>(0), kvBlockSize);
+            continue;
           }
-        }
-        // Update attention weights with attention mask
-        // And apply scaling factor
-        // qk <- qk * scaling + attn_mask
-        if (has_attn_mask) {
-          for (int64_t row = 0; row < qBlockSize; ++row) {
+          if (has_attn_mask) {
             vec::map2<accum_t>(
                 [scaling_factor](Vec x, Vec y) {
                   return x * Vec(scaling_factor) + y;
                 },
-                qk_data + row * kvBlockSize,
-                qk_data + row * kvBlockSize,
+                qk_row,
+                qk_row,
                 mask_data + i * mStrideB + j * mStrideH + (m + row) * mStrideM +
                     n,
-                kvBlockSize);
-          }
-        }
-        // Update coefficients with Softmax
-        accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
-        for (int64_t row = 0; row < qBlockSize; ++row) {
-          if (has_attn_mask) {
+                num_valid);
             // max per row
             tmp_max = vec::reduce_all<accum_t>(
                 [](Vec& x, Vec& y) { return vec::maximum(x, y); },
-                qk_data + row * kvBlockSize,
-                kvBlockSize);
+                qk_row,
+                num_valid);
           } else {
             // apply scaling factor and max per row in fusion
             _mul_reduce_max_fusion_kernel(
-                qk_data + row * kvBlockSize,
-                scaling_factor,
-                kvBlockSize,
-                qk_data + row * kvBlockSize,
-                tmp_max);
+                qk_row, scaling_factor, num_valid, qk_row, tmp_max);
           }
           tmp_max = qk_max_data[row] > tmp_max ? qk_max_data[row] : tmp_max;
           if (tmp_max == -std::numeric_limits<accum_t>::infinity()) {
             // to avoid `nan = exp2f(-inf - (-inf))`
-            fill_stub(
-                qk_data + row * kvBlockSize,
-                static_cast<accum_t>(0),
-                kvBlockSize);
+            fill_stub(qk_row, static_cast<accum_t>(0), kvBlockSize);
           } else {
             // qk <- exp(qk - max) and sum per row
             tmp_sum = tmp_max;
             _exp_reduce_sum_fusion_kernel(
-                qk_data + row * kvBlockSize,
-                kvBlockSize,
-                qk_data + row * kvBlockSize,
-                tmp_sum);
+                qk_row, num_valid, qk_row, tmp_sum);
+            if (num_valid < kvBlockSize) {
+              fill_stub(
+                  qk_row + num_valid,
+                  static_cast<accum_t>(0),
+                  kvBlockSize - num_valid);
+            }
             // exp_tmp <- exp(max[row] - max)
             exp_tmp = std::exp(qk_max_data[row] - tmp_max);
             // sum[row] <- sum + exp_tmp * sum[row]
