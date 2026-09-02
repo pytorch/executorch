@@ -167,8 +167,9 @@ endif()
 # with add_subdirectory would drop its whole project into ExecuTorch's
 # target/option namespace, which collides with shared deps MLX fetches (e.g.
 # nlohmann_json) and leaks MLX's MLX_BUILD_* options into our cache. The
-# isolated scope runs MLX's FetchContent in its own namespace, so no collision
-# and no submodule patching are needed.
+# isolated scope runs MLX's FetchContent in its own namespace, so dependency
+# collisions do not require patching. The platform packaging patches below are
+# still applied before the external configure step.
 include(ExternalProject)
 
 set(_mlx_binary_dir ${CMAKE_CURRENT_BINARY_DIR}/mlx)
@@ -185,9 +186,6 @@ message(
 # mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
 )
