@@ -252,6 +252,22 @@ __global__ void categorical_sample_kernel(
   tokens[row] = static_cast<uint64_t>(low);
 }
 
+__global__ void accept_with_probability_kernel(
+    const float* probabilities,
+    int64_t count,
+    DeviceRngState* rng,
+    uint8_t* accepted) {
+  const int64_t index = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (index >= count) {
+    return;
+  }
+  curandStatePhilox4_32_10_t local_rng;
+  curand_init(rng->seed, 0, rng->base + index, &local_rng);
+  accepted[index] =
+      uniform_from_uint32(curand(&local_rng)) < probabilities[index];
+}
+
 } // namespace
 
 struct SamplingWorkspace::Impl {
@@ -584,6 +600,29 @@ cudaError_t categorical_sample(
       (row_count + kSamplingThreads - 1) / kSamplingThreads);
   categorical_sample_kernel<<<row_blocks, kSamplingThreads, 0, stream>>>(
       state.cumulative, row_count, row_size, state.rng, tokens);
+  return cudaGetLastError();
+}
+
+cudaError_t accept_with_probability(
+    const float* probabilities,
+    int64_t count,
+    uint8_t* accepted,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream) {
+  if (probabilities == nullptr || accepted == nullptr || count <= 0 ||
+      workspace.impl_->rng == nullptr) {
+    return cudaErrorInvalidValue;
+  }
+  auto& state = *workspace.impl_;
+  advance_rng_kernel<<<1, 1, 0, stream>>>(state.rng, count);
+  cudaError_t error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  const int blocks =
+      static_cast<int>((count + kSamplingThreads - 1) / kSamplingThreads);
+  accept_with_probability_kernel<<<blocks, kSamplingThreads, 0, stream>>>(
+      probabilities, count, state.rng, accepted);
   return cudaGetLastError();
 }
 
