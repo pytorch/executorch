@@ -4,24 +4,27 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Batched LLM serving: the scheduler that packs batches, and the executor seam
-# they run through. Both are header-only and free of ExecuTorch runtime types,
-# so this is an INTERFACE target; it becomes a real library once the runner
-# lands with a .cpp.
+# Batched LLM serving: the scheduler that packs batches, the executor seam they
+# run through, and the runner that carries whole generations across them. The
+# scheduler and the executor seam are header-only and free of ExecuTorch runtime
+# types; the runner owns a thread, so this is a static library rather than an
+# INTERFACE target.
 
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-add_library(extension_llm_batching INTERFACE)
-# std::optional in the public headers.
-target_compile_features(extension_llm_batching INTERFACE cxx_std_17)
+add_library(extension_llm_batching runner.cpp)
+# std::optional, std::function, and std::future in the public headers.
+target_compile_features(extension_llm_batching PUBLIC cxx_std_17)
 target_include_directories(
-  extension_llm_batching INTERFACE ${_common_include_directories}
+  extension_llm_batching PUBLIC ${_common_include_directories}
 )
-target_compile_options(
-  extension_llm_batching INTERFACE ${_common_compile_options}
-)
+target_compile_options(extension_llm_batching PUBLIC ${_common_compile_options})
+
+# std::thread and friends need -pthread on glibc; a no-op where they do not.
+find_package(Threads REQUIRED)
+target_link_libraries(extension_llm_batching PUBLIC Threads::Threads)
 
 install(
   TARGETS extension_llm_batching
