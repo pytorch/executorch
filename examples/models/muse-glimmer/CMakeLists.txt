@@ -53,6 +53,17 @@ list(
 # Backend: CUDA or MLX (exactly one required)
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  enable_language(CUDA)
+  add_library(muse_glimmer_sampling_cuda STATIC runtime/engine/sampling_cuda.cu)
+  set_target_properties(
+    muse_glimmer_sampling_cuda
+    PROPERTIES CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED ON
+  )
+  target_include_directories(
+    muse_glimmer_sampling_cuda PUBLIC ${_common_include_directories}
+  )
+  target_link_libraries(muse_glimmer_sampling_cuda PUBLIC CUDA::cudart)
+  list(APPEND link_libraries muse_glimmer_sampling_cuda)
   list(APPEND link_libraries aoti_cuda_backend)
   executorch_target_link_options_shared_lib(aoti_cuda_backend)
   add_compile_definitions(EXECUTORCH_BUILD_CUDA)
