@@ -150,7 +150,7 @@ test_cmake_select_ops_in_model() {
     # the .pte via gen_selected_max_kernel_num().
     retry cmake -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
             -DEXECUTORCH_SELECT_OPS_MODEL="./${model_export_name}" \
-            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
+            -DEXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD=ON \
             -DEXECUTORCH_OPTIMIZE_SIZE=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
@@ -170,6 +170,58 @@ test_cmake_select_ops_in_model() {
     grep -q "EXECUTORCH_SELECTED_MAX_KERNEL_NUM" "${generated_header}" \
       || { echo "ERROR: header missing expected define"; exit 1; }
     echo "Generated: $(cat ${generated_header} | tail -1)"
+
+    echo "Verifying dtype-selective variant header was generated"
+    local generated_variant_header
+    generated_variant_header=$(find "${build_dir}" -name selected_op_variants.h -print -quit)
+    if [[ -z "${generated_variant_header}" ]]; then
+      echo "ERROR: selected_op_variants.h not generated"
+      exit 1
+    fi
+
+    echo 'Running selective build test'
+    ${build_dir}/selective_build_test --model_path="./${model_export_name}"
+
+    echo "Removing ${model_export_name}"
+    rm "./${model_export_name}"
+}
+
+test_cmake_select_ops_in_model_and_list() {
+    local model_name="add_mul"
+    local model_export_name="${model_name}.pte"
+    echo "Exporting ${model_name}"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="${model_name}"
+    local example_dir=examples/selective_build/basic
+    local build_dir=cmake-out/${example_dir}_combined
+    rm -rf ${build_dir}
+    retry cmake -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
+            -DEXECUTORCH_SELECT_OPS_MODEL="./${model_export_name}" \
+            -DEXECUTORCH_SELECT_OPS_LIST="aten::relu.out" \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -B${build_dir} \
+            ${example_dir}
+
+    echo "Building ${example_dir} with model and list selectors"
+    cmake --build ${build_dir} -j9 --config $CMAKE_BUILD_TYPE
+
+    echo "Verifying merged selected_operators.yaml contains both selector inputs"
+    local selected_operators_yaml=${build_dir}/executorch/executorch_selected_kernels/selected_operators.yaml
+    if [[ ! -f "${selected_operators_yaml}" ]]; then
+      echo "ERROR: selected_operators.yaml not generated"
+      exit 1
+    fi
+    ${PYTHON_EXECUTABLE} - <<PY
+import yaml
+
+with open("${selected_operators_yaml}") as f:
+    ops = set(yaml.safe_load(f)["operators"].keys())
+
+expected = {"aten::add.out", "aten::mm.out", "aten::relu.out"}
+missing = expected - ops
+if missing:
+    raise RuntimeError(f"Missing merged ops: {sorted(missing)}")
+PY
 
     echo 'Running selective build test'
     ${build_dir}/selective_build_test --model_path="./${model_export_name}"
@@ -199,6 +251,7 @@ then
     test_cmake_select_ops_in_list
     test_cmake_select_ops_in_yaml
     test_cmake_select_ops_in_model
+    test_cmake_select_ops_in_model_and_list
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
