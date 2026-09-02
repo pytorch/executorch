@@ -328,6 +328,14 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_to_copy",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:op_to_copy",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_where",
         deps = [
             "//executorch/extension/threadpool:threadpool",
