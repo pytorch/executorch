@@ -157,6 +157,9 @@ def define_common_targets():
         srcs = ["utils.py"],
         visibility = [
             "//executorch/backends/...",
+            # create_constant_placeholder is the sanctioned way for an OpBackend
+            # to add a constant, so exir's OpBackend tests exercise it directly.
+            "//executorch/exir/backend/test/...",
         ],
         deps = [
             "//caffe2:torch",
