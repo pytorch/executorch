@@ -1023,9 +1023,10 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      # No runner-linux: the suite exports whole models on one worker per core,
-      # which exhausts a linux.2xlarge and gets the job killed. Inherit the
-      # memory-optimized default instead, as the standalone QNN workflow does.
+      # No runner-linux, so this takes the memory-optimized default. The suite
+      # runs one export worker per core, so what matters is memory per core, not
+      # core count: the previous instance gave each worker about 4 GiB and the
+      # job was killed. The memory-optimized default gives each worker more.
 
   test-qnn-passes-linux:
     name: test-qnn-passes-linux
