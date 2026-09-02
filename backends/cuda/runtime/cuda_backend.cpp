@@ -470,6 +470,8 @@ class ET_EXPERIMENTAL CudaBackend final
 
     mutable_state_note_handle(handle);
 
+    live_handles_.fetch_add(1, std::memory_order_acq_rel);
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -892,6 +894,28 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     delete handle;
+
+    // The allocator lets the device pool keep freed memory so that repeated
+    // delegate execution does not pay to map it again. Nothing is running on
+    // this backend once the last handle is gone, so hand that memory back
+    // rather than hold it for the life of the process.
+    if (live_handles_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      // Only frees the driver has already observed can be released, so without
+      // this the trim gives back nothing rather than less. A device wait rather
+      // than a stream wait because the frees went to whichever stream was
+      // current when the storage was released, which is not necessarily one
+      // this handle recorded, and teardown is not bound to the thread that ran
+      // the method either.
+      const cudaError_t sync_err = cudaDeviceSynchronize();
+      if (sync_err != cudaSuccess) {
+        ET_LOG(
+            Error,
+            "cudaDeviceSynchronize before releasing the pool failed: %s.",
+            cudaGetErrorString(sync_err));
+        (void)cudaGetLastError();
+      }
+      CudaAllocator::release_cached_memory(-1);
+    }
   }
 
  private:
@@ -910,6 +934,10 @@ class ET_EXPERIMENTAL CudaBackend final
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
   // OFF; versioned FQN artifacts do not consult this option.
   std::atomic<bool> weight_sharing_across_methods_{false};
+
+  // Delegates alive right now. The device memory pool is shared, so it can only
+  // be released once none of them are left.
+  mutable std::atomic<size_t> live_handles_{0};
 
   // ---------------------------------------------------------------
   // Per-weight constant cache.
