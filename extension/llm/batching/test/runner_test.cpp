@@ -29,6 +29,7 @@
 #include <gtest/gtest.h>
 
 using executorch::extension::llm::batching::DecodeFirstScheduler;
+using executorch::extension::llm::batching::EngineMetrics;
 using executorch::extension::llm::batching::Executor;
 using executorch::extension::llm::batching::FinishReason;
 using executorch::extension::llm::batching::GenConfig;
@@ -1017,6 +1018,27 @@ TEST(GenerationTest, ImmediateStopTokenIsDeliveredAndWinsOverBudget) {
       << "the prompt produces STOP, so no continuation is scheduled";
 }
 
+TEST(SpeculativeTest, FirstBurstRecordsIntraBurstTokenLatencies) {
+  FakeExecutor executor;
+  executor.tokens_per_prefill = 3;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  GenerationHandle handle = generate(session, tokens(2), config(3), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+
+  const auto metrics = handle.metrics();
+  EXPECT_EQ(metrics.n_generated_tokens, 3);
+  EXPECT_EQ(metrics.itl_count, 2);
+  EXPECT_EQ(metrics.itl_sum_us, 0);
+  EXPECT_EQ(metrics.itl_min_us, 0);
+  EXPECT_EQ(metrics.itl_max_us, 0);
+  EXPECT_EQ(
+      metrics.decode_tokens_per_sec(), std::numeric_limits<double>::infinity());
+}
+
 // Regression: the runner counts a step's produced tokens as far as the
 // executor committed them, so the next turn resumes past them rather than on
 // top of them. The last token of a run is not committed until it is fed back,
@@ -1663,6 +1685,309 @@ TEST(ShutdownTest, ConcurrentAdmissionDoesNotStrandCallers) {
   EXPECT_EQ(stranded.load(), 0);
 }
 
+// --- engine-tier metrics ---------------------------------------------------
+//
+// EngineMetrics is only stable once the engine thread is joined, so every test
+// here shuts the runner down before reading it.
+
+namespace {
+
+// The four terminal reasons partition the completions, so this is the tally
+// that reveals a terminal path which forgot to account for itself.
+void expect_balanced(const EngineMetrics& m, std::uint64_t expected_starts) {
+  EXPECT_EQ(m.generations_started, expected_starts);
+  EXPECT_EQ(m.generations_completed, m.generations_started)
+      << "every generation the engine started must also be counted as done";
+  EXPECT_EQ(
+      m.finished_stop_token + m.finished_token_limit + m.finished_cancelled +
+          m.finished_failed,
+      m.generations_completed)
+      << "the per-reason tallies must partition the completions";
+}
+
+} // namespace
+
+TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
+  FakeExecutor executor;
+  // Chunk 8 with a 20-token budget, so a 10-token prompt arrives as 8 + 2 and
+  // both chunks still fit in one batch.
+  Fixture fixture(executor, 4, 8);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  GenerationHandle handle = generate(session, tokens(10), config(3), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_EQ(updates->finish(), FinishReason::NewTokenLimit);
+
+  session = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  // One prefill step carrying both chunks, then one decode step per token
+  // after the first, which the prefill produced.
+  EXPECT_EQ(m.steps, 3u);
+  EXPECT_EQ(m.steps_failed, 0u);
+  EXPECT_EQ(m.steps_with_prefill, 1u);
+  EXPECT_EQ(m.steps_with_decode, 2u);
+  // Charged once per session per step, not once per chunk.
+  EXPECT_EQ(m.prefill_sessions_total, 1u);
+  EXPECT_EQ(m.decode_sessions_total, 2u);
+  EXPECT_EQ(m.prefill_tokens_total, 10u);
+  EXPECT_EQ(m.decode_tokens_total, 2u);
+  // The prompt plus the tokens fed back. The last token delivered is still
+  // pending, so it was never an input.
+  EXPECT_EQ(m.model_input_tokens(), 12u);
+  EXPECT_EQ(m.total_prompt_tokens, 10);
+  EXPECT_EQ(m.total_generated_tokens, 3);
+  EXPECT_EQ(m.ttft_count, 1u);
+  EXPECT_GT(m.min_ttft_us(), 0);
+  expect_balanced(m, 1);
+  EXPECT_EQ(m.finished_token_limit, 1u);
+}
+
+TEST(EngineMetricsTest, StartsAndCompletionsBalanceAcrossMixedOutcomes) {
+  FakeExecutor executor;
+  executor.stop_token = 999;
+  executor.emit_before_stop = 1;
+  Fixture fixture(executor);
+
+  // Runs to a stop token.
+  Session stopping = open(fixture.runner);
+  GenConfig stop_config = config(50);
+  stop_config.stop_tokens = {999};
+  auto stopped = std::make_shared<Updates>();
+  generate(stopping, tokens(2), stop_config, stopped);
+  ASSERT_TRUE(stopped->wait());
+
+  // Rejected by validation once it reaches the engine.
+  Session invalid = open(fixture.runner);
+  auto rejected = std::make_shared<Updates>();
+  generate(invalid, tokens(2), config(0), rejected);
+  ASSERT_TRUE(rejected->wait());
+
+  // Cancelled explicitly.
+  Session cancelling = open(fixture.runner);
+  auto cancelled = std::make_shared<Updates>();
+  GenerationHandle doomed =
+      generate(cancelling, tokens(2), config(100000), cancelled);
+  doomed.cancel();
+  ASSERT_TRUE(cancelled->wait());
+
+  stopping = Session{};
+  invalid = Session{};
+  cancelling = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  expect_balanced(m, 3);
+  EXPECT_EQ(m.finished_stop_token, 1u);
+  EXPECT_EQ(m.finished_failed, 1u) << "the rejected budget is a failure";
+  EXPECT_EQ(m.finished_cancelled, 1u);
+  EXPECT_EQ(m.finished_token_limit, 0u);
+}
+
+TEST(EngineMetricsTest, FailedBatchIsCountedWithoutCreditingItsTokens) {
+  FakeExecutor executor;
+  executor.fail_batches_from = 0;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  generate(session, tokens(4), config(2), updates);
+  ASSERT_TRUE(updates->wait());
+  ASSERT_EQ(updates->finish(), FinishReason::Failed);
+
+  session = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  EXPECT_EQ(m.steps, 1u);
+  EXPECT_EQ(m.steps_failed, 1u);
+  // The sequence was in the batch, but a failed execute leaves what the model
+  // consumed unknown, so its tokens are not credited as throughput.
+  EXPECT_EQ(m.prefill_sessions_total, 1u);
+  EXPECT_EQ(m.prefill_tokens_total, 0u);
+  EXPECT_EQ(m.model_input_tokens(), 0u);
+  EXPECT_EQ(m.total_generated_tokens, 0);
+  // Never reached a first token, so it contributes no TTFT sample and leaves
+  // the minimum untouched.
+  EXPECT_EQ(m.ttft_count, 0u);
+  EXPECT_EQ(m.min_ttft_us(), 0);
+  expect_balanced(m, 1);
+  EXPECT_EQ(m.finished_failed, 1u);
+}
+
+TEST(EngineMetricsTest, SingleTokenGenerationReportsZeroMinimumItl) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  GenerationHandle handle = generate(session, tokens(2), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+
+  // One token means no gap was ever sampled. The raw field still holds its
+  // sentinel; the accessor is what callers should read.
+  const auto m = handle.metrics();
+  EXPECT_EQ(m.n_generated_tokens, 1);
+  EXPECT_EQ(m.itl_count, 0);
+  EXPECT_EQ(m.min_itl_us(), 0);
+  EXPECT_EQ(m.itl_mean_us(), 0.0);
+  EXPECT_EQ(m.itl_min_us, std::numeric_limits<std::int64_t>::max());
+}
+
+#if ET_HAS_EXCEPTIONS
+// Regression: this path claims the terminal itself rather than going through
+// complete_generation_, so it once published nothing and counted nothing,
+// leaving completions permanently behind starts.
+TEST(EngineMetricsTest, CallbackExceptionIsCountedAsACompletedFailure) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+
+  GenerationHandle failed = session.generate_async(
+      tokens(2), config(4), [](const GenerationUpdate& update) {
+        if (!update.finish_reason) {
+          throw std::runtime_error("callback failed");
+        }
+      });
+  failed.wait();
+  ASSERT_EQ(failed.finish_reason(), FinishReason::Failed);
+
+  session = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  expect_balanced(m, 1);
+  EXPECT_EQ(m.finished_failed, 1u);
+  // The tokens delivered before the callback threw still count as generated.
+  EXPECT_GT(m.total_generated_tokens, 0);
+}
+#endif
+
+// The three latency buckets are a partition of step_latency_sum_us: every step
+// holds decode, prefill, or both, and its whole latency lands in exactly one.
+// Without this, a step kind added later could quietly go unaccounted.
+TEST(EngineMetricsTest, LatencyBucketsPartitionTotalStepTime) {
+  FakeExecutor executor;
+  // Chunk 2 with a 10-token budget, so a 6-token prompt needs several chunks
+  // and the run produces decode-only, prefill-only, and mixed steps.
+  Fixture fixture(executor, 2, 2);
+  Session first = open(fixture.runner);
+  Session second = open(fixture.runner);
+
+  auto first_updates = std::make_shared<Updates>();
+  generate(first, tokens(6), config(6), first_updates);
+  auto second_updates = std::make_shared<Updates>();
+  generate(second, tokens(6), config(6), second_updates);
+  ASSERT_TRUE(first_updates->wait());
+  ASSERT_TRUE(second_updates->wait());
+
+  first = Session{};
+  second = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  EXPECT_EQ(
+      m.decode_only_latency_sum_us + m.mixed_latency_sum_us +
+          m.prefill_only_latency_sum_us,
+      m.step_latency_sum_us);
+  EXPECT_EQ(
+      m.decode_only_steps() + m.mixed_steps() + m.prefill_only_steps(),
+      m.steps);
+  // Only the attributable subset feeds the decode-only rate.
+  EXPECT_LE(m.decode_only_tokens, m.decode_tokens_total);
+  expect_balanced(m, 2);
+}
+
+TEST(EngineMetricsTest, ReportsContextConcurrencyAndRefusals) {
+  FakeExecutor executor;
+  executor.capacity = 2;
+  Fixture fixture(executor);
+  Session first = open(fixture.runner);
+  Session second = open(fixture.runner);
+
+  // A third open has nowhere to go, which is invisible without the counter.
+  auto refused = fixture.runner.open_session_async();
+  ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(refused.get().has_value());
+
+  auto first_updates = std::make_shared<Updates>();
+  generate(first, tokens(4), config(3), first_updates);
+  auto second_updates = std::make_shared<Updates>();
+  generate(second, tokens(4), config(3), second_updates);
+  ASSERT_TRUE(first_updates->wait());
+  ASSERT_TRUE(second_updates->wait());
+
+  first = Session{};
+  second = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  EXPECT_EQ(m.sessions_refused, 1u);
+  EXPECT_GE(m.peak_concurrent_generations, 1u);
+  EXPECT_LE(m.peak_concurrent_generations, 2u);
+  // Each session ends holding its prompt plus the tokens it was fed back, and
+  // context is summed across the batch, so the mean is at least one prompt.
+  EXPECT_GT(m.mean_context_per_step(), 0.0);
+  EXPECT_GE(m.context_max, 4);
+  EXPECT_GT(m.decode_only_tokens_per_sec(), 0.0);
+  EXPECT_GT(m.mean_decode_step_sessions(), 0.0);
+}
+
+// Regression: context is a property of a session, not of a task. A prompt that
+// arrives as several chunks of one step is one context; summing per chunk
+// counted it once per chunk and inflated the total.
+TEST(EngineMetricsTest, MultiChunkPromptCountsContextOncePerSession) {
+  FakeExecutor executor;
+  // Chunk 2 with a 6-token budget, so a 6-token prompt fits as 3 chunks in a
+  // single step. max_new_tokens 1 ends the generation on that step's output,
+  // leaving exactly one step to account for.
+  Fixture fixture(executor, 2, 2);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  generate(session, tokens(6), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  ASSERT_EQ(updates->finish(), FinishReason::NewTokenLimit);
+
+  session = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  ASSERT_EQ(m.steps, 1u) << "the whole prompt should fit in one step";
+  // The session ends that step holding 6 tokens. Per-chunk summing would give
+  // 2 + 4 + 6 = 12.
+  EXPECT_EQ(m.context_sum, 6);
+  EXPECT_EQ(m.context_max, 6);
+  EXPECT_DOUBLE_EQ(m.mean_context_per_step(), 6.0);
+}
+
+TEST(EngineMetricsTest, InitializationIsTimedAndKeptOutOfTheWall) {
+  FakeExecutor executor;
+  // Large enough to dwarf the fake's steps, so the comparison below is not a
+  // race between two similar durations.
+  executor.initialize_delay = std::chrono::milliseconds(50);
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+
+  generate(session, tokens(2), config(2), updates);
+  ASSERT_TRUE(updates->wait());
+
+  session = Session{};
+  fixture.runner.shutdown();
+  const EngineMetrics m = fixture.runner.metrics();
+
+  EXPECT_GE(m.init_us, 40000) << "setup should be measured, not dropped";
+  // wall_us() starts at the first step. Were setup folded into it, the wall
+  // could not be shorter than setup.
+  EXPECT_GT(static_cast<double>(m.init_us), m.wall_us())
+      << "one-time setup must stay outside the run window";
+}
+
 // --- executor initialization -----------------------------------------------
 
 TEST(InitializeTest, RunsOnceBeforeAnythingElseIsAskedOfTheExecutor) {
@@ -1695,6 +2020,7 @@ TEST(InitializeTest, FailureStopsTheRunnerAndRefusesSessions) {
 
   fixture.runner.shutdown();
   EXPECT_EQ(executor.initialize_calls(), 1);
+  EXPECT_EQ(fixture.runner.metrics().steps, 0u);
   EXPECT_TRUE(executor.seen().empty()) << "no batch should have run";
   EXPECT_TRUE(executor.opened().empty())
       << "a session must not be opened on an executor that failed to start";

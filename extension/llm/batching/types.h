@@ -26,7 +26,7 @@ namespace extension {
 namespace llm {
 namespace batching {
 
-using Token = std::int64_t;
+using Token = std::uint64_t;
 using SessionId = std::int64_t;
 using Position = std::int32_t;
 // Wide enough that a monotonically issued id cannot wrap in any realistic
