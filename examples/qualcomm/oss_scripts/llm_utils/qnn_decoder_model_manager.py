@@ -16,7 +16,6 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
@@ -32,16 +31,28 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.qualcomm.oss_scripts.llm_utils.decoder_model_wrapper import (
     QnnCausalLMExportableModule,
 )
+from executorch.examples.qualcomm.oss_scripts.llm_utils.llm_quant_recipe import (
+    DefaultQuantRecipe,
+    Granite_3_3_2B_Instruct_HFQuantRecipe,
+    Llama3_2_1B_HFQuantRecipe,
+    Qwen2_5_0_5B_HFQuantRecipe,
+    Qwen2_5_1_5B_HFQuantRecipe,
+    Qwen3_0_6B_HFQuantRecipe,
+    Smollm2_HFQuantRecipe,
+)
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from pytorch_tokenizers import get_tokenizer
-from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from transformers import AutoConfig, AutoModelForCausalLM, GenerationConfig
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+# Method name the shared qnn_llama_runner expects for the KV path
+# (see examples/qualcomm/oss_scripts/llama/runner/runner.cpp).
+KV_FORWARD = "kv_forward"
 
 HUGGING_FACE_REPO_IDS = {
     "llama3_2-1b": "NousResearch/Llama-3.2-1B",
@@ -53,8 +64,21 @@ HUGGING_FACE_REPO_IDS = {
     "granite-3_3-2b": "ibm-granite/granite-3.3-2b-instruct",
 }
 
+# TODO: This dict is temporary and will require a refactor later.
+# Will create a file similar to executorch/examples/qualcomm/oss_scripts/llama/__init__.py
+# and migrate model specific configs there.
+HUGGING_FACE_QUANT_RECIPES = {
+    "llama3_2-1b": Llama3_2_1B_HFQuantRecipe,
+    "qwen2_5-0_5b": Qwen2_5_0_5B_HFQuantRecipe,
+    "qwen2_5-0_5b_instruct": Qwen2_5_0_5B_HFQuantRecipe,
+    "qwen2_5-1_5b_instruct": Qwen2_5_1_5B_HFQuantRecipe,
+    "qwen3-0_6b": Qwen3_0_6B_HFQuantRecipe,
+    "smollm2_135m": Smollm2_HFQuantRecipe,
+    "granite-3_3-2b": Granite_3_3_2B_Instruct_HFQuantRecipe,
+}
 
-def get_qnn_llm_edge_manager(model_name, max_seq_len=128, enable_spinquant_r3=True):
+
+def get_qnn_llm_edge_manager(model_name, max_seq_len=128):
     model_id = HUGGING_FACE_REPO_IDS[model_name]
     config = AutoConfig.from_pretrained(model_id)
     device = "cpu"
@@ -67,7 +91,6 @@ def get_qnn_llm_edge_manager(model_name, max_seq_len=128, enable_spinquant_r3=Tr
     config.max_seq_len = max_seq_len
     config.ar_len = 1  # kv mode
     config.max_batch_size = batch_size
-    config.enable_spinquant_r3 = enable_spinquant_r3
     config.use_cache = True
 
     # Some config has head_dim provided that is different from equation below(e.g., qwen3)
@@ -106,6 +129,12 @@ class QnnLLMEdgeManager:
         self.passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
         self.edge_prog_mgr = None
         self.logits_quant_attrs = None
+        recipe_cls = HUGGING_FACE_QUANT_RECIPES.get(model_name, DefaultQuantRecipe)
+        if recipe_cls == DefaultQuantRecipe:
+            logging.warning(
+                f"{model_name} does not have customized quant recipe using default quant recipe."
+            )
+        self.quant_recipe = recipe_cls(verbose)
 
     def source_transform(
         self, transforms: List[Callable[[torch.nn.Module], torch.nn.Module]]
@@ -126,13 +155,16 @@ class QnnLLMEdgeManager:
         return self
 
     def _tag_ios(self, node, fixed_point_type, config):
-        # shape of k caches and v caches
+        # static_llama layout: K is transposed (seq last), V is seq-major.
+        #   K in:  [B, H, head_dim, past_len]   K out: [B, H, head_dim, ar_len]
+        #   V in:  [B, H, past_len, head_dim]   V out: [B, H, ar_len, head_dim]
+        past_len = config.max_seq_len - config.ar_len
         kv_cache_shape = {
-            # single head, kv input
-            (config.head_dim, config.max_seq_len),
-            (config.max_seq_len, config.head_dim),
-            # single head, kv output
+            # K (head_dim, seq)
+            (config.head_dim, past_len),
             (config.head_dim, config.ar_len),
+            # V (seq, head_dim)
+            (past_len, config.head_dim),
             (config.ar_len, config.head_dim),
         }
 
@@ -144,16 +176,30 @@ class QnnLLMEdgeManager:
             )
         }
 
+        atten_mask_shape = {
+            (
+                config.max_batch_size,
+                1,
+                config.ar_len,
+                config.max_seq_len,
+            )
+        }
+
         quant_io_type = None
 
         if node.op == "placeholder":
             if (
-                len(users := list(node.users)) == 1
-                and users[0].meta["val"].size()[-2:] in kv_cache_shape
+                node.meta["val"].dim() == 4
+                and node.meta["val"].size()[-2:] in kv_cache_shape
             ):
                 quant_io_type = fixed_point_type["kv_type"]
+            elif node.meta["val"].size() in atten_mask_shape:
+                quant_io_type = fixed_point_type["io_type"]
         if is_graph_output(node):
-            if node.meta["val"].size()[-2:] in kv_cache_shape:
+            if (
+                node.meta["val"].dim() == 4
+                and node.meta["val"].size()[-2:] in kv_cache_shape
+            ):
                 quant_io_type = fixed_point_type["kv_type"]
             elif node.meta["val"].size() in logit_out_shape:
                 quant_io_type = fixed_point_type["io_type"]
@@ -176,22 +222,68 @@ class QnnLLMEdgeManager:
         calibration_data,
         tokenizer_path,
     ):
+        assert calibration_tasks is None, "Task calibration is temporary unsupported."
         tokenizer = get_tokenizer(tokenizer_path)
         logging.info(
             f"Calibrating with tasks: {calibration_tasks}, limit: {calibration_limit}, calibration_data: {calibration_data}, tokenizer_path: {tokenizer_path}, seq_length: {self.config.max_seq_len}"
         )
 
+        def _empty_past():
+            past_k = [
+                torch.zeros(
+                    1,
+                    self.model_wrapper.num_kv_heads,
+                    self.model_wrapper.head_dim,
+                    self.model_wrapper.past_len,
+                )
+                for _ in range(self.model_wrapper.num_layers)
+            ]
+            past_v = [
+                torch.zeros(
+                    1,
+                    self.model_wrapper.num_kv_heads,
+                    self.model_wrapper.past_len,
+                    self.model_wrapper.head_dim,
+                )
+                for _ in range(self.model_wrapper.num_layers)
+            ]
+            return past_k, past_v
+
+        def _build_mask(n_past, past_len, context_len):
+            mask = torch.full((1, 1, 1, context_len), -65535.0)
+            mask[..., :n_past] = 0.0
+            mask[..., past_len:] = 0.0
+            return mask
+
         def calibrate_template(
             module: torch.fx.GraphModule, tokenizer, prompts: str, max_len: int
         ):
-            # TODO: change criteria & support batch inputs if necessary
             pos = 0
             token_list = tokenizer.encode(prompts, bos=True, eos=False)
+            past_k, past_v = _empty_past()
+            past_len = self.model_wrapper.past_len
+            context_len = self.model_wrapper.max_seq_len
+            # The prefix buffer holds at most past_len slots, so we can advance
+            # the position at most past_len times (matching the runner, whose
+            # seq_len is clamped to context_len).
+            max_len = min(max_len, past_len)
 
             with torch.no_grad():
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
-                    cur_pos = torch.tensor([pos], dtype=torch.long)
-                    logits = module(torch.full((1, 1), token_list[pos]), cur_pos)
+                    n_past = min(pos, past_len)
+                    atten_mask = _build_mask(n_past, past_len, context_len)
+                    input_pos = torch.tensor([[n_past]], dtype=torch.int32)
+                    logits, new_k, new_v = module(
+                        torch.full((1, 1), token_list[pos], dtype=torch.int32),
+                        atten_mask,
+                        input_pos,
+                        past_k,
+                        past_v,
+                    )
+                    # Prefix append: write the new slot into buffer at slot n_past.
+                    for layer in range(self.model_wrapper.num_layers):
+                        past_k[layer][..., :, n_past] = new_k[layer][..., :, 0]
+                        past_v[layer][..., n_past, :] = new_v[layer][..., 0, :]
                     pos += 1
                     if pos >= len(token_list):
                         token_list.append(torch.argmax(logits, dim=-1).item())
@@ -240,7 +332,6 @@ class QnnLLMEdgeManager:
 
     def pt2e_quantize(
         self,
-        quant_dtype,
         fixed_point_type,
         calibration_tasks,
         calibration_limit,
@@ -251,27 +342,10 @@ class QnnLLMEdgeManager:
     ):
         self.export()
 
-        quantizer = make_quantizer(
-            quant_dtype=quant_dtype,
-            per_channel_linear=True,
-            per_channel_conv=True,
-            act_observer=MinMaxObserver,
-            backend=backend,
-            soc_model=soc_model,
-        )
-        if quant_dtype == QuantDtype.use_16a4w_block:
+        quantizer = make_quantizer(backend=backend, soc_model=soc_model)
+        quantizer.set_recipe(self.quant_recipe.recipe)
+        quantizer.set_convert_linear_to_conv2d(True)
 
-            def extract_linear_nodes(graph):
-                linear_nodes = []
-                for node in graph.nodes:
-                    if node.target == torch.ops.aten.linear.default:
-                        linear_nodes.append(node)  # linear node
-                        linear_nodes.append(node.args[1])  # weight node
-                return linear_nodes
-
-            linear_nodes = extract_linear_nodes(self.graph_module.graph)
-            block_size_map = {n.name: (1, 16) for n in linear_nodes}
-            quantizer.set_block_size_map(block_size_map)
         self.graph_module = prepare_pt2e(self.graph_module, quantizer)
         self.pt2e_calibrate(
             calibration_tasks,
@@ -297,11 +371,12 @@ class QnnLLMEdgeManager:
         compiler_spec = generate_qnn_executorch_compiler_spec(
             soc_model=get_soc_to_chipset_map()[soc_model],
             backend_options=backend_options,
+            use_mha2sha=True,
         )
         with torch.no_grad():
             self.edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-                self.graph_module,
-                self.model_wrapper.get_example_inputs(),
+                {KV_FORWARD: self.graph_module},
+                {KV_FORWARD: self.model_wrapper.get_example_inputs()},
                 compiler_spec,
                 constant_methods=self.model_wrapper.get_metadata(),
                 passes_job=self.passes_job,
@@ -310,7 +385,9 @@ class QnnLLMEdgeManager:
                 convert_linear_to_conv2d=True,
             )
 
-        print_delegation_info(self.edge_prog_mgr.exported_program().graph_module)
+        print_delegation_info(
+            self.edge_prog_mgr.exported_program(KV_FORWARD).graph_module
+        )
         if not self.use_fp16:
             logit_out_shape = {
                 (
@@ -319,7 +396,7 @@ class QnnLLMEdgeManager:
                     self.config.vocab_size,
                 )
             }
-            for n in self.edge_prog_mgr.exported_program().graph.nodes:
+            for n in self.edge_prog_mgr.exported_program(KV_FORWARD).graph.nodes:
                 if n.op == "output":
                     for node, output_encoding in n.meta[QCOM_QUANT_ATTRS_MAP].items():
                         if node.meta["val"].size() in logit_out_shape:
@@ -332,6 +409,7 @@ class QnnLLMEdgeManager:
         executorch_config = ExecutorchBackendConfig(
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
+                alloc_graph_output=False,
             ),
             passes=[BuildQuantIo()],
         )

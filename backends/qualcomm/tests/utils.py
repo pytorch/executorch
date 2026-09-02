@@ -765,6 +765,7 @@ class TestQNN(unittest.TestCase):
         bypass_check: bool = False,
         block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
+        convert_linear_to_conv2d: bool = False,
     ) -> torch.fx.GraphModule:
         m = torch.export.export(
             module, inputs, dynamic_shapes=dynamic_shapes, strict=True
@@ -780,6 +781,7 @@ class TestQNN(unittest.TestCase):
             backend=get_backend_type(self.backend),
             soc_model=self.soc_model,
         )
+        quantizer.set_convert_linear_to_conv2d(convert_linear_to_conv2d)
         if block_size_map is not None:
             quantizer.set_block_size_map(block_size_map)
         prepared = prepare_pt2e(m, quantizer)

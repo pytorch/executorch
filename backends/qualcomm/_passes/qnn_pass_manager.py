@@ -56,6 +56,7 @@ from executorch.backends.qualcomm._passes import (
     FixedLinearKeepDim,
     FoldQDQ,
     FuseConsecutiveCast,
+    FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertCastForFpActQuantizedWeight,
@@ -149,6 +150,7 @@ class QnnPassManager(PassManager):
             (ExpandBroadcastTensorShape, True),
             (FixedLinearKeepDim, True),
             (FoldQDQ, True),
+            (FuseConsecutiveReshape, True),
             (I64toI32, True),
             (InsertCastForFpActQuantizedWeight, True),
             (LayoutTransform, True),
@@ -162,9 +164,9 @@ class QnnPassManager(PassManager):
         ]
 
     @classmethod
-    def get_annotation_passes(cls):
+    def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
-        return [
+        passes = [
             RemoveRedundancy,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
@@ -201,6 +203,11 @@ class QnnPassManager(PassManager):
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
         ]
+
+        if convert_linear_to_conv2d:
+            passes.append(ConvertLinearToConv2d)
+
+        return passes
 
     @classmethod
     def get_export_passes(cls):
@@ -295,6 +302,7 @@ class QnnPassManager(PassManager):
             DecomposeAny: [RemoveRedundancy],
             DecomposeAtan2: [RemoveRedundancy],
             DecomposeColIm: [FoldQDQ],
+            FuseConsecutiveReshape: [FoldQDQ],
             DecomposePDist: [RemoveRedundancy],
             DecomposeDiagonal: [RemoveRedundancy],
             DecomposeDivMode: [RemoveRedundancy],
@@ -426,9 +434,12 @@ class QnnPassManager(PassManager):
     def transform_for_annotation_pipeline(
         self,
         graph_module: GraphModule,
+        convert_linear_to_conv2d: bool = False,
     ):
         self._instantiate_passes(
-            self.get_annotation_passes(),
+            self.get_annotation_passes(
+                convert_linear_to_conv2d=convert_linear_to_conv2d,
+            ),
             quantization_capture=True,
         )
         return self._transform(graph_module)
