@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,6 +12,8 @@ from executorch.backends.arm._passes import ConvertInt64OutputOpsToInt32Pass
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
+from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Graph, GraphModule
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -117,6 +119,145 @@ def test_convert_int64_output_ops_to_int32_tosa_FP_insert_cast(arg_op, aten_op_s
         transform_passes=[ConvertInt64OutputOpsToInt32Pass()],
     )
     pipeline.run()
+
+
+@pytest.mark.parametrize(
+    "arg_op",
+    [torch.argmax, torch.argmin],
+    ids=["argmax", "argmin"],
+)
+def test_arg_op_safe_edge_scalar_constant_is_cast_to_int32(arg_op):
+    class SafeScalarArithmetic(torch.nn.Module):
+        def forward(self, x: torch.Tensor):
+            return arg_op(x, dim=1) * 10
+
+    module = SafeScalarArithmetic()
+    test_input = torch.randn(2, 8)
+    exported_program = to_edge(
+        torch.export.export(module, (test_input,)),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+
+    result = ConvertInt64OutputOpsToInt32Pass().call(exported_program.graph_module)
+
+    mul = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.mul.Tensor
+    )
+    assert mul.args[0].meta["val"].dtype == torch.int32
+    assert mul.args[1].meta["val"].dtype == torch.int32
+
+    actual = result.graph_module(torch.tensor(10), test_input)[0]
+    expected = module(test_input)
+    assert actual.dtype == torch.int64
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "arg_op",
+    [torch.argmax, torch.argmin],
+    ids=["argmax", "argmin"],
+)
+@pytest.mark.parametrize("use_edge_ops", [False, True], ids=["aten", "edge"])
+def test_arg_op_unsafe_arithmetic_stays_int64(arg_op, use_edge_ops: bool):
+    class UnsafeArithmetic(torch.nn.Module):
+        def forward(self, x: torch.Tensor):
+            indices = arg_op(x, dim=1).unsqueeze(-1)
+            return indices * indices, indices
+
+    module = UnsafeArithmetic()
+    test_input = torch.zeros(1, 50001)
+    test_input[0, -1] = 1 if arg_op is torch.argmax else -1
+    exported_program = torch.export.export(module, (test_input,))
+    if use_edge_ops:
+        exported_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).exported_program()
+
+    result = ConvertInt64OutputOpsToInt32Pass().call(exported_program.graph_module)
+
+    mul_targets = {
+        torch.ops.aten.mul.Tensor,
+        exir_ops.edge.aten.mul.Tensor,
+    }
+    relay_targets = {
+        torch.ops.aten.unsqueeze.default,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+    }
+    mul = next(
+        node for node in result.graph_module.graph.nodes if node.target in mul_targets
+    )
+    relay = next(
+        node for node in result.graph_module.graph.nodes if node.target in relay_targets
+    )
+    assert mul.args[0].meta["val"].dtype == torch.int64
+    assert mul.args[1].meta["val"].dtype == torch.int64
+    assert relay.args[0].meta["val"].dtype == torch.int32
+
+    expected = module(test_input)
+    actual = result.graph_module(test_input)
+    assert actual[0].item() == 2_500_000_000
+    assert actual[1].dtype == torch.int64
+    for actual_output, expected_output in zip(actual, expected, strict=True):
+        torch.testing.assert_close(actual_output, expected_output)
+
+
+@pytest.mark.parametrize(
+    "arg_op",
+    [torch.argmax, torch.argmin],
+    ids=["argmax", "argmin"],
+)
+def test_arg_op_direct_output_is_unchanged(arg_op):
+    class DirectOutput(torch.nn.Module):
+        def forward(self, x: torch.Tensor):
+            return arg_op(x, dim=1)
+
+    exported_program = torch.export.export(DirectOutput(), (torch.randn(2, 8),))
+    result = ConvertInt64OutputOpsToInt32Pass().call(exported_program.graph_module)
+
+    assert not result.modified
+    assert result.graph_module(torch.randn(2, 8))[0].dtype == torch.int64
+
+
+def test_arg_op_ignores_unrelated_node_without_value_metadata():
+    from torch._subclasses import FakeTensorMode
+
+    graph = Graph()
+    with FakeTensorMode():
+        fake_input = torch.empty(2, 8)
+        fake_output = torch.empty(2, dtype=torch.int64)
+    x = graph.placeholder("x")
+    x.meta["val"] = fake_input
+    argmax = graph.call_function(torch.ops.aten.argmax.default, (x, 1))
+    argmax.meta["val"] = fake_output
+    graph.call_function(
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        (x,),
+        {"dtype": torch.int64},
+    )
+    graph.output(argmax)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    result = ConvertInt64OutputOpsToInt32Pass().call(graph_module)
+
+    assert not result.modified
+
+
+def test_live_supported_node_without_value_metadata_raises():
+    graph = Graph()
+    x = graph.placeholder("x")
+    cast = graph.call_function(
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        (x,),
+        {"dtype": torch.int64},
+    )
+    graph.output(cast)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    with pytest.raises(KeyError, match="val"):
+        ConvertInt64OutputOpsToInt32Pass().call(graph_module)
 
 
 ##############################################################

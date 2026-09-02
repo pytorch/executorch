@@ -159,6 +159,104 @@ jobs:
           ./cmake-out/executor_runner --model_path "./${model}.pte" --data_path "./aoti_cuda_blob.ptd"
         done
 
+  export-cuda-target-smem-cross-arch:
+    name: export-cuda-target-smem-cross-arch-a100
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: mt-l-x86iavx512-11-125-a100
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      use-custom-docker-registry: false
+      submodules: recursive
+      upload-artifact: cuda-target-smem-cross-arch
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        # A10G (sm_86) supports 99 KiB of opt-in shared memory per block.
+        export ET_CUDA_TARGET_SMEM_BYTES=101376
+        # The A100 exporter has an AVX-512 host CPU while the A10G runner has
+        # AVX2. Keep the generated AOTI host wrapper compatible with both.
+        export ATEN_CPU_CAPABILITY=avx2
+        export TORCHINDUCTOR_CPP_MARCH=x86-64-v3
+
+        python - <<'PY'
+        import torch
+
+        capability = torch.cuda.get_device_capability()
+        assert capability == (8, 0), f"Expected A100 sm_80 exporter, got {capability}"
+        PY
+
+        for model in linear sdpa; do
+          model_dir="${RUNNER_ARTIFACT_DIR}/${model}"
+          mkdir -p "${model_dir}"
+          python -m examples.cuda.scripts.export \
+            --model_name="${model}" \
+            --output_dir "${model_dir}"
+        done
+
+  test-cuda-target-smem-cross-arch:
+    name: test-cuda-target-smem-cross-arch-a10g
+    needs: [export-cuda-target-smem-cross-arch]
+    if: needs.export-cuda-target-smem-cross-arch.result == 'success'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: mt-l-x86aavx2-29-113-a10g
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: cuda-target-smem-cross-arch
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+        python - <<'PY'
+        import torch
+
+        capability = torch.cuda.get_device_capability()
+        assert capability == (8, 6), f"Expected A10G sm_86 runner, got {capability}"
+        properties = torch.cuda.get_device_properties(0)
+        target = 101376
+        assert properties.shared_memory_per_block_optin >= target, (
+            properties.shared_memory_per_block_optin,
+            target,
+        )
+        PY
+
+        cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_CUDA=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out --target executor_runner -j4
+
+        for model in linear sdpa; do
+          model_dir="${RUNNER_ARTIFACT_DIR}/${model}"
+          ./cmake-out/executor_runner \
+            --model_path "${model_dir}/${model}.pte" \
+            --data_path "${model_dir}/aoti_cuda_blob.ptd"
+        done
+
   unittest-cuda:
     name: unittest-cuda
     needs: [changed-files, run-decision]
@@ -273,9 +371,10 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
 
   test-model-cuda-e2e:
     name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}

@@ -8,13 +8,14 @@
 
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
-from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (  # noqa
-    CanonicalizeViewCopyPermutePass,
+from executorch.backends.transforms.fuse_identical_input_transforms_pass import (  # noqa
+    NormalizeTransformInputPlaceholdersPass,
 )
 
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
+from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
@@ -90,6 +91,7 @@ from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
 from .decompose_prelu_pass import DecomposePReLUPass  # noqa
+from .decompose_prod_pass import DecomposeProdPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
@@ -139,7 +141,6 @@ from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_identical_input_transforms_pass import (  # noqa
     FuseIdenticalInputTransformsPass,
-    NormalizeTransformInputPlaceholdersPass,
 )
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
@@ -180,9 +181,11 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .remove_permutes_around_elementwise_tosa_ops import (  # noqa
     RemovePermutesAroundElementwiseTosaOps,
 )
+from .remove_safe_softmax_guard_pass import RemoveSafeSoftmaxGuardPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
+from .resolve_view_copy_inferred_dim_pass import ResolveViewCopyInferredDimPass  # noqa
 from .rewrite_adaptive_avg_pool2d import RewriteAdaptiveAvgPool2dPass  # noqa
 from .rewrite_avg_pool2d_pass import RewriteAvgPool2dPass  # noqa
 from .rewrite_bool_bitwise_to_logical_pass import (  # noqa

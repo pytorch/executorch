@@ -12,6 +12,9 @@ from executorch.backends.arm._passes.aten_to_tosa_activation_functions import (
 from executorch.backends.arm._passes.aten_to_tosa_data_layout import (
     rewrite_data_layout_operator,
 )
+from executorch.backends.arm._passes.aten_to_tosa_reduction import (
+    rewrite_reduction_operator,
+)
 from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
     rewrite_argmax,
     rewrite_binary_operator,
@@ -133,6 +136,20 @@ def _get_ternary_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return rewrite_ternary_operator(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.amin.default,
+    exir_ops.edge.aten.any.dim,
+    exir_ops.edge.aten.any.dims,
+    exir_ops.edge.aten.prod.dim_int,
+    exir_ops.edge.aten.sum.dim_IntList,
+)
+def _get_reduction_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_reduction_operator(node, pass_)
 
 
 @register_dialect_substitutions(

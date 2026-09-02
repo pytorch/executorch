@@ -41,6 +41,12 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
         # Outgoing edges of the subgraph to permute nodes.
         edges_out: set[tuple[torch.fx.Node, torch.fx.Node]] = field(default_factory=set)
+        # Outgoing edges to permutes that do not match end_permute. Those are
+        # kept and their permutation rewritten to absorb the removed start
+        # permute, as (producer, permute node, new permutation).
+        edges_out_to_update: set[
+            tuple[torch.fx.Node, torch.fx.Node, tuple[int, ...]]
+        ] = field(default_factory=set)
         # Incoming edges from constant nodes that need a compensating permute.
         constant_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
             default_factory=set
@@ -166,9 +172,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         Flattening such a tensor -- e.g. the ``[1, C, 1, 1] -> [1, C]`` after a
         global pool -- is permutation-invariant: every layout of the input
         produces the identical output (the single non-unit run of elements is
-        contiguous regardless of which axis holds it). A permutation propagating
-        into it therefore simply dies, so the region can terminate here with no
-        compensating permute.
+        contiguous regardless of which axis holds it). The region may terminate
+        here without a compensating permute when downstream consumers do not use
+        the output shape for layout-dependent broadcasting.
         """
         if node.target not in self._VIEW_OPS:
             return False
@@ -179,6 +185,40 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         # are treated as non-unit, i.e. conservatively not a sink).
         non_unit = [d for d in shape if not (isinstance(d, int) and d == 1)]
         return len(non_unit) <= 1
+
+    def _sink_users_are_layout_invariant(self, sink: torch.fx.Node) -> bool:
+        """Return whether dropping layout at ``sink`` is safe for its consumers."""
+        frontier = [(user, sink) for user in sink.users]
+        visited: set[torch.fx.Node] = set()
+        while frontier:
+            node, producer = frontier.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+
+            if node.op == "output":
+                continue
+            if node.target == exir_ops.edge.aten.permute_copy.default:
+                # This explicit transform re-establishes the downstream layout,
+                # so consumers beyond it do not depend on the sink's layout.
+                continue
+            if self._is_permutation_sink_view(node):
+                continue
+
+            tensor_inputs = [
+                input_node
+                for input_node in node.all_input_nodes
+                if input_node.meta.get("val") is not None
+            ]
+            if any(
+                input_node is not producer and input_node.meta["val"].numel() != 1
+                for input_node in tensor_inputs
+            ):
+                return False
+            if not self.is_node_permutable(node):
+                return False
+            frontier.extend((user, node) for user in node.users)
+        return True
 
     def _inserted_unit_dim(self, node: torch.fx.Node) -> int | None:
         """Position of the size-1 dim ``node`` inserts, else None.
@@ -338,7 +378,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             # Expected end permutation for the subgraph.
             end_permute = [start_permute.index(i) for i in range(len(start_permute))]
 
-            # Try direct users first (same-rank matching)
             for user in node.users:
                 if (
                     not self.is_node_permutable(user)
@@ -350,50 +389,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     subgraphs_found.append(subgraph)
                     for n in subgraph.nodes:
                         processed_nodes.add(n)
-
-            # Also try: permute → view(squeeze/unsqueeze) → chain → ...
-            # If the permute's sole user is a squeeze/unsqueeze view,
-            # adapt the permutation across the view and search for a
-            # matching end permute at the new rank.
-            users = list(node.users.keys())
-            if (
-                len(users) == 1
-                and self._is_squeeze_unsqueeze_view(users[0])
-                and node not in processed_nodes
-            ):
-                view_node = users[0]
-                adapted_start = self._adapt_permute_across_view(
-                    start_permute, view_node
-                )
-                if adapted_start is not None:
-                    adapted_end = [
-                        adapted_start.index(i) for i in range(len(adapted_start))
-                    ]
-                    for view_user in view_node.users:
-                        if (
-                            not self.is_node_permutable(view_user)
-                            and self._interleave_triple(view_user) is None
-                        ):
-                            continue
-                        subgraph = self.Subgraph(adapted_start, adapted_end)
-                        # Include the view in the subgraph
-                        subgraph.nodes.add(view_node)
-                        subgraph.node_end_permute[view_node] = adapted_end
-                        # Use the ORIGINAL start_permute for the view node
-                        # so update_view_copy can remap its shape correctly
-                        subgraph.node_start_permute[view_node] = start_permute
-                        # The start permute feeds into the view
-                        subgraph.edges_in.add((node, view_node))
-                        if self.visit(
-                            view_user,
-                            subgraph,
-                            processed_nodes,
-                            adapted_end,
-                            adapted_start,
-                        ):
-                            subgraphs_found.append(subgraph)
-                            for n in subgraph.nodes:
-                                processed_nodes.add(n)
 
         modified = False
         for subgraph in subgraphs_found:
@@ -492,38 +487,24 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if user_perm == downstream_end:
                     subgraph.edges_out.add((users_source, user))
                 else:
-                    # Check if permute → view(squeeze/unsqueeze) forms an
-                    # end boundary at a different rank.
-                    user_users = list(user.users.keys())
-                    if len(user_users) == 1 and self._is_squeeze_unsqueeze_view(
-                        user_users[0]
-                    ):
-                        view_after: torch.fx.Node = user_users[0]
-                        # Adapt the start permute across the view and derive
-                        # the expected end permute as its inverse.
-                        adapted_start_after = self._adapt_permute_across_view(
-                            downstream_start, view_after
+                    # Non-matching permute: keep it and fold the start permute into it
+                    # rather than discarding the region.
+                    if user_perm is None or len(user_perm) != len(downstream_start):
+                        return False
+                    subgraph.edges_out_to_update.add(
+                        (
+                            users_source,
+                            user,
+                            tuple(downstream_start[d] for d in user_perm),
                         )
-                        if adapted_start_after is not None:
-                            adapted = [
-                                adapted_start_after.index(i)
-                                for i in range(len(adapted_start_after))
-                            ]
-                            if user_perm == adapted:
-                                # Include both the permute and the view as end edges
-                                subgraph.edges_out.add((users_source, user))
-                                # Mark the view for inclusion so it gets preserved
-                                continue
-                    return False
+                    )
             elif user.op == "output":
                 return False
             elif self._is_permutation_sink_view(user):
-                # The permutation dies at this reshape (see
-                # _is_permutation_sink_view), so terminate the region here with
-                # no compensating permute and no further downstream traversal.
-                # Checked before the rank-change handling below: a sink always
-                # terminates cleanly, whereas crossing it would leave the region
-                # hunting for an end permute that layout-invariance made moot.
+                # The tensor's element order is invariant at this reshape, but
+                # its output shape can still carry broadcast-axis meaning.
+                if not self._sink_users_are_layout_invariant(user):
+                    return False
                 continue
             elif not self.visit(
                 user, subgraph, processed_nodes, downstream_end, downstream_start
@@ -650,9 +631,25 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
         return True
 
+    def _removes_a_permute(self, subgraph: Subgraph) -> bool:
+        """Whether rewriting this region reduces the number of permutes."""
+        if subgraph.edges_out:
+            return True
+        rewired = set(subgraph.edges_in)
+        for permute, _ in subgraph.edges_in:
+            if all((permute, user) in rewired for user in permute.users):
+                return True
+        return False
+
     def permute_subgraph(self, subgraph: Subgraph) -> bool:  # noqa: C901
         # Ensure that the subgraph's edges have not been modified by an earlier rewrite before applying changes.
         if not self._subgraph_edges_are_current(subgraph):
+            return False
+
+        # Folding an end permute only pays for itself if some permute goes away.
+        # Otherwise the region is rewritten for nothing, and the composed
+        # permutation is a worse fusion candidate for the passes downstream.
+        if subgraph.edges_out_to_update and not self._removes_a_permute(subgraph):
             return False
 
         # Nodes belonging to a repeat_interleave triple are rewritten as a unit
@@ -762,6 +759,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             assert out.target in PERMUTE_COPY_TARGETS
             out.replace_all_uses_with(inp)
 
+        # Update outgoing permutes that can't be eliminated.
+        for _, out, new_permutation in subgraph.edges_out_to_update:
+            assert out.target in PERMUTE_COPY_TARGETS
+            set_arg(out, "dims", list(new_permutation))
+
         return True
 
     def _subgraph_edges_are_current(self, subgraph: Subgraph) -> bool:
@@ -770,7 +772,17 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             if inp.target not in PERMUTE_COPY_TARGETS or inp not in out.all_input_nodes:
                 return False
 
+            # edges_out_to_update can rewrite a permute in place, leaving it wired.
+            if self.get_permutation(inp) != subgraph.node_start_permute.get(
+                out, subgraph.start_permute
+            ):
+                return False
+
         for inp, out in subgraph.edges_out:
+            if out.target not in PERMUTE_COPY_TARGETS or out not in inp.users:
+                return False
+
+        for inp, out, _ in subgraph.edges_out_to_update:
             if out.target not in PERMUTE_COPY_TARGETS or out not in inp.users:
                 return False
 

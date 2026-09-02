@@ -159,6 +159,50 @@ class CondTwoArgsTwoOutputs(torch.nn.Module):
         return torch.cond(predicate, true_branch, false_branch, [lhs, rhs])
 
 
+class CondConv1d(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.true_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+        self.false_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        def true_branch(arg: torch.Tensor) -> torch.Tensor:
+            return self.true_conv(arg)
+
+        def false_branch(arg: torch.Tensor) -> torch.Tensor:
+            return self.false_conv(arg)
+
+        return torch.cond(x.sum() > 0, true_branch, false_branch, [x])
+
+
+class NestedCondConv1d(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.inner_true_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+        self.inner_false_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+        self.outer_false_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        def outer_true(arg: torch.Tensor) -> torch.Tensor:
+            def inner_true(inner_arg: torch.Tensor) -> torch.Tensor:
+                return self.inner_true_conv(inner_arg)
+
+            def inner_false(inner_arg: torch.Tensor) -> torch.Tensor:
+                return self.inner_false_conv(inner_arg)
+
+            return torch.cond(
+                arg.mean() > 0.5,
+                inner_true,
+                inner_false,
+                [arg],
+            )
+
+        def outer_false(arg: torch.Tensor) -> torch.Tensor:
+            return self.outer_false_conv(arg)
+
+        return torch.cond(x.sum() > 0, outer_true, outer_false, [x])
+
+
 def _single_input_case(
     module_factory: Callable[[], torch.nn.Module]
 ) -> Callable[[], tuple[torch.nn.Module, input_t1]]:
@@ -242,6 +286,70 @@ def test_cond_tosa_FP(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     pipeline.run()
 
 
+def test_cond_conv1d_tosa_FP():
+    TosaPipelineFP[tuple](
+        CondConv1d(),
+        (torch.randn(1, 2, 8),),
+        aten_op,
+        tosa_extensions=["cf"],
+    ).run()
+
+
+def test_cond_conv1d_tosa_INT():
+    # Regression test for a quantized Conv1d whose weight and bias are captured
+    # by a branch. RewriteConvPass must resolve them in the enclosing graph.
+    module = CondConv1d()
+    example_inputs = (torch.randn(1, 2, 8),)
+    pipeline = TosaPipelineINT[tuple](
+        module,
+        example_inputs,
+        aten_op,
+        tosa_extensions=["cf"],
+    )
+    _set_branch_calibration_samples(pipeline, module, example_inputs)
+    pipeline.run()
+
+
+def test_cond_conv1d_tosa_INT_branches():
+    # Exercise both branch graphs explicitly. A single random input only checks
+    # the selected branch at runtime even though both branches are lowered.
+    for example_input in (torch.rand(1, 2, 8), -torch.rand(1, 2, 8)):
+        module = CondConv1d()
+        example_inputs = (example_input,)
+        pipeline = TosaPipelineINT[tuple](
+            module,
+            example_inputs,
+            aten_op,
+            tosa_extensions=["cf"],
+        )
+        _set_branch_calibration_samples(pipeline, module, example_inputs)
+        pipeline.run()
+
+
+def test_nested_cond_conv1d_tosa_INT():
+    # These samples select inner-true, inner-false, and outer-false respectively.
+    # They prove that constant provenance and rescale chains survive more than
+    # one control-flow boundary, not only a single torch.cond.
+    calibration_samples = (
+        (torch.ones(1, 2, 8),),
+        (torch.full((1, 2, 8), 0.1),),
+        (-torch.ones(1, 2, 8),),
+    )
+    for example_inputs in calibration_samples:
+        pipeline = TosaPipelineINT[tuple](
+            NestedCondConv1d(),
+            example_inputs,
+            aten_op,
+            tosa_extensions=["cf"],
+        )
+        quant_stage_pos = pipeline.find_pos("quantize")
+        quant_stage = pipeline._stages[quant_stage_pos].args[0]
+        # Calibrate all paths for every runtime case; otherwise the result could
+        # fail because an unselected branch lacks quantization observations.
+        quant_stage.calibration_samples = calibration_samples
+        pipeline.run()
+
+
 @common.parametrize("case", test_cases)
 def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
@@ -265,13 +373,18 @@ def test_cond_tosa_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
 @common.parametrize("case", test_cases)
 def test_cond_u55_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
-    pipeline = OpNotSupportedPipeline[tuple](module, example_inputs, {aten_op: 1})
+    pipeline = OpNotSupportedPipeline[tuple](
+        module,
+        example_inputs,
+        {aten_op: 1},
+        quantize=True,
+        u55_subset=True,
+    )
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
 @common.parametrize("case", test_cases)
-@common.XfailIfNoCorstone320.with_args(raises=None)
 def test_cond_u85_INT(case: Callable[[], tuple[torch.nn.Module, tuple]]):
     module, example_inputs = case()
     pipeline = EthosU85PipelineINT[tuple](module, example_inputs, aten_op, exir_op)

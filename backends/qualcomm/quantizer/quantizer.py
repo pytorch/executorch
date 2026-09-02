@@ -40,12 +40,15 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ANNOTATION_KEY
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import disable_mkldnn_on_amd
 from torch._ops import OpOverload
 
 from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
 from torchao.quantization.pt2e.quantizer import Quantizer, SharedQuantizationSpec
+
+from .conv_bn import annotate_conv_bn_partitions
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
@@ -388,6 +391,11 @@ class QnnQuantizer(Quantizer):
         self.supported_ops: Set[OpOverload] = set(self._rules_map.keys())
         self.quant_ops: Set[OpOverload] = self.supported_ops.copy()
 
+        # Applied when the quantizer is built, because that is upstream of calibration, and
+        # calibration runs the model eagerly. The AMD crash this prevents needs a real
+        # convolution, so a guard applied at lowering time comes after the risk has passed.
+        disable_mkldnn_on_amd()
+
         # Load backend_opinfo of current backend and soc_model
         self.backend_opinfo = get_backend_opinfo(str(backend), soc_model)
 
@@ -513,6 +521,13 @@ class QnnQuantizer(Quantizer):
         if self._recipe:
             self._recipe.annotate(model, self._rules_map)
         else:
+            if self.default_quant_config.is_qat:
+                # Conv+BN has to be claimed as one partition before the per-node
+                # pass. PTQ is left alone: batchnorm is already folded into the
+                # conv by the time it is quantized there.
+                annotate_conv_bn_partitions(
+                    model, self._get_quant_config, self.discard_nodes
+                )
             self._annotate(model)
             self._annotate_custom_annotation(model)
 

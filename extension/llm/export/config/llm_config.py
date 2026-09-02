@@ -528,10 +528,13 @@ class XNNPackConfig:
     Attributes:
         enabled: :)
         extended_ops: Whether to match more types of ops to delegates to XNNPack.
+        enable_bf16: Whether to delegate BF16 ops to XNNPack. The target runtime
+            must have hardware support for XNNPACK's BF16 kernels.
     """
 
     enabled: bool = False
     extended_ops: bool = False
+    enable_bf16: bool = False
 
 
 class CoreMLQuantize(str, Enum):
@@ -586,15 +589,6 @@ class QNNConfig:
     use_qnn_sha: bool = False
     optimized_rotation_path: Optional[str] = None
     num_sharding: int = 0
-
-
-@dataclass
-class MPSConfig:
-    """
-    Configures the MPS backend.
-    """
-
-    enabled: bool = False
 
 
 @dataclass
@@ -680,7 +674,6 @@ class BackendConfig:
     coreml: CoreMLConfig = field(default_factory=CoreMLConfig)
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
-    mps: MPSConfig = field(default_factory=MPSConfig)
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
@@ -822,6 +815,8 @@ class LlmConfig:
             llm_config.backend.xnnpack.enabled = args.xnnpack
         if hasattr(args, "xnnpack_extended_ops"):
             llm_config.backend.xnnpack.extended_ops = args.xnnpack_extended_ops
+        if hasattr(args, "xnnpack_enable_bf16"):
+            llm_config.backend.xnnpack.enable_bf16 = args.xnnpack_enable_bf16
 
         # CoreML
         if hasattr(args, "coreml"):
@@ -860,10 +855,6 @@ class LlmConfig:
             )
         if hasattr(args, "num_sharding"):
             llm_config.backend.qnn.num_sharding = args.num_sharding
-
-        # MPS
-        if hasattr(args, "mps"):
-            llm_config.backend.mps.enabled = args.mps
 
         # MLX - auto-enable use_kv_cache when MLX is enabled
         if hasattr(args, "mlx"):

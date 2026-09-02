@@ -297,9 +297,7 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       /*share_memory_arenas=*/share_memory_arenas);
 
 #ifdef EXECUTORCH_BUILD_CUDA
-  executorch::runtime::BackendOptions<3> cuda_opts;
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      cuda_opts.set_option("use_shared_cuda_stream", true));
+  executorch::runtime::BackendOptions<2> cuda_opts;
   ET_CHECK_OK_OR_RETURN_ERROR(
       cuda_opts.set_option("weight_sharing_across_methods", true));
   if (config.enable_cuda_graph) {
