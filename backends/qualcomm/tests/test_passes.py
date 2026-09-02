@@ -936,5 +936,191 @@ class TestPasses(unittest.TestCase):
         )
 
 
+# Attributes PT2E compares in _union_input_edge_with when deciding whether an
+# input edge and its producer's output can share one observer.
+_SHARING_ATTRS = (
+    "dtype",
+    "is_dynamic",
+    "quant_min",
+    "quant_max",
+    "qscheme",
+    "ch_axis",
+    "scale",
+    "zero_point",
+)
+
+# (quant_dtype, is_qat, act_symmetric) combinations whose default and per-channel
+# activation specs are known not to match yet. Every 16-bit config sets
+# quant_min/quant_max unconditionally while the per-channel config omits them when
+# act_symmetric, so the two cannot share an observer. Fixing that changes the
+# observed zero_point on a path that works today, so it is left for a follow-up.
+_KNOWN_UNSHAREABLE = {
+    (QuantDtype.use_16a16w, False, True),
+    (QuantDtype.use_16a2w, False, True),
+    (QuantDtype.use_16a4w, False, True),
+    (QuantDtype.use_16a4w, True, True),
+    (QuantDtype.use_16a4w_block, False, True),
+    (QuantDtype.use_16a4w_block, True, True),
+    (QuantDtype.use_16a8w, False, True),
+    (QuantDtype.use_16a8w, True, True),
+}
+
+_Q_PER_TENSOR = {
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_tensor.tensor,
+}
+_DQ_PER_TENSOR = {
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor,
+}
+
+
+def _count_requantize_clusters(graph_module):
+    """Quantize nodes fed directly by a dequantize: two observers on one edge."""
+    return sum(
+        1
+        for node in graph_module.graph.nodes
+        if node.op == "call_function"
+        and node.target in _Q_PER_TENSOR
+        and isinstance(node.args[0], torch.fx.Node)
+        and node.args[0].target in _DQ_PER_TENSOR
+    )
+
+
+class ConvReluConv(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+        self.conv2 = torch.nn.Conv2d(8, 8, 3, padding=1)
+
+    def forward(self, x):
+        return torch.relu(self.conv2(torch.relu(self.conv1(x))))
+
+
+class LinearReluLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = torch.nn.Linear(16, 32)
+        self.fc2 = torch.nn.Linear(32, 8)
+
+    def forward(self, x):
+        return torch.relu(self.fc2(torch.relu(self.fc1(x))))
+
+
+class TestActivationSpecSharing(unittest.TestCase):
+    """A per-channel op's activation spec must match the default one.
+
+    QNN uses two activation specs: the default config for most ops and the
+    per-channel config for conv and linear. PT2E gives an edge one observer only
+    when the producer's output qspec and the consumer's input qspec agree on every
+    attribute in _SHARING_ATTRS -- observer_or_fake_quant_ctr is deliberately not
+    compared, so this is about attributes, not spec identity or
+    SharedQuantizationSpec. Any drift leaves two observers on one edge, which
+    convert_pt2e materializes as a dequantize immediately followed by a quantize
+    at every conv boundary.
+    """
+
+    def test_default_and_per_channel_act_specs_can_share_an_observer(self):
+        from executorch.backends.qualcomm.quantizer.quantizer import QUANT_CONFIG_DICT
+        from torchao.quantization.pt2e.prepare import _has_same_attr
+
+        for (quant_dtype, is_qat), funcs in QUANT_CONFIG_DICT.items():
+            default_fn, per_channel_fn = funcs[0], funcs[1]
+            if default_fn is None or per_channel_fn is None:
+                continue
+            for act_symmetric in (False, True):
+                combination = (quant_dtype, is_qat, act_symmetric)
+                with self.subTest(combination=combination):
+                    default_act = default_fn(
+                        act_symmetric=act_symmetric
+                    ).output_activation
+                    per_channel_act = per_channel_fn(
+                        act_symmetric=act_symmetric, ch_axis=0
+                    ).input_activation
+                    if default_act is None or per_channel_act is None:
+                        # fp16a8w keeps activations in float.
+                        continue
+                    mismatched = [
+                        attr
+                        for attr in _SHARING_ATTRS
+                        if not _has_same_attr(default_act, per_channel_act, attr)
+                    ]
+                    if combination in _KNOWN_UNSHAREABLE:
+                        self.assertNotEqual(
+                            mismatched,
+                            [],
+                            f"{combination} is listed in _KNOWN_UNSHAREABLE but now "
+                            "matches; remove it from the list",
+                        )
+                        continue
+                    self.assertEqual(
+                        mismatched,
+                        [],
+                        f"{combination} cannot share an observer, mismatched on "
+                        + ", ".join(
+                            f"{attr}: {getattr(default_act, attr, None)} vs "
+                            f"{getattr(per_channel_act, attr, None)}"
+                            for attr in mismatched
+                        ),
+                    )
+
+    def _requantize_counts(self, module_cls, example_inputs):
+        """Redundant dequantize->quantize clusters under PTQ and QAT."""
+        from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
+
+        counts = {}
+        for is_qat in (False, True):
+            quantizer = QnnQuantizer()
+            quantizer.set_default_quant_config(
+                QuantDtype.use_8a8w,
+                is_qat=is_qat,
+                is_conv_per_channel=True,
+                is_linear_per_channel=True,
+            )
+            module = module_cls()
+            module = module.train() if is_qat else module.eval()
+            exported = torch.export.export(module, example_inputs, strict=True).module()
+            prepared = (
+                prepare_qat_pt2e(exported, quantizer)
+                if is_qat
+                else prepare_pt2e(exported, quantizer)
+            )
+            prepared(*example_inputs)
+            counts[is_qat] = _count_requantize_clusters(convert_pt2e(prepared))
+        return counts
+
+    def _assert_qat_matches_ptq(self, counts):
+        self.assertEqual(counts[False], 0, "PTQ regressed")
+        self.assertEqual(
+            counts[True],
+            counts[False],
+            "QAT inserts a dequantize->quantize round trip that PTQ does not; the "
+            "default and per-channel activation specs have drifted apart",
+        )
+
+    def test_8a8w_qat_does_not_double_quantize_conv_boundaries(self):
+        """End-to-end guard for the same invariant.
+
+        This model has no BatchNorm, so it isolates the activation-spec mismatch
+        from anything conv-bn related. Before the act_symmetric split in
+        get_8a8w_qnn_qat_config, QAT produced three redundant clusters here while
+        PTQ produced none.
+        """
+        self._assert_qat_matches_ptq(
+            self._requantize_counts(ConvReluConv, (torch.randn(2, 3, 8, 8),))
+        )
+
+    def test_8a8w_qat_does_not_double_quantize_linear_boundaries(self):
+        """The conv case above never reaches is_linear_per_channel.
+
+        Linear takes the same per-channel activation spec as conv, so the same
+        drift shows up at linear boundaries -- but ConvReluConv has no aten.linear
+        node, so nothing exercised that path.
+        """
+        self._assert_qat_matches_ptq(
+            self._requantize_counts(LinearReluLinear, (torch.randn(2, 16),))
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
