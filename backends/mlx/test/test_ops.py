@@ -6275,6 +6275,30 @@ class SDPATest(OpTestCase):
         return (q, k, v)
 
 
+@register_test
+class SDPARank3Test(OpTestCase):
+    """Attention on rank-3 tensors, which PyTorch accepts and the fused kernel does not.
+
+    The node counts are the point of the test: they assert the fused kernel is still
+    used, rather than the operator having been decomposed into primitives.
+    """
+
+    name = "sdpa_rank3"
+    rtol = 1e-3
+    atol = 1e-3
+    expected_node_counts = {
+        "SdpaNode": 1,
+        "ExpandDimsNode": 3,
+        "SqueezeNode": 1,
+    }
+
+    def create_model(self) -> nn.Module:
+        return SDPAModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return tuple(torch.randn(2, 16, 64) for _ in range(3))
+
+
 class CustomSDPAModel(nn.Module):
     """
     Test model for mlx::custom_sdpa with KVCache.
