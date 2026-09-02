@@ -265,7 +265,8 @@ TEST(TextStreamTest, ToleratesAnAbsentSink) {
 }
 
 // A four-byte codepoint takes the len == 4 branch, which the three-byte cases
-// above leave untested, and is the widest split a byte-level tokenizer can make.
+// above leave untested, and is the widest split a byte-level tokenizer can
+// make.
 TEST(TextStreamTest, HoldsBackAFourByteCharacterUntilItCompletes) {
   FakeTokenizer tokenizer;
   tokenizer.pieces = {
