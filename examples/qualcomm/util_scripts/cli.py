@@ -38,6 +38,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchLpaiTargetEnv,
 )
 from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import setup_qnn_sdk
 from executorch.backends.qualcomm.utils.utils import (
     draw_graph,
     dump_context_from_pte,
@@ -297,6 +298,10 @@ def compile(args):
 
 def execute(args):
     logger = get_logger()
+
+    # The SDK has to be usable before the graph metadata is read below, because that opens a
+    # native QNN manager. It used to be set up as a side effect of importing the backend.
+    setup_qnn_sdk()
 
     pte_name = Path(args.artifact).stem
 

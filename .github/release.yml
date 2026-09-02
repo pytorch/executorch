@@ -32,7 +32,6 @@ changelog:
       labels:
         - "release notes: apple"
         - "module: coreml"
-        - "module: mps"
     - title: Android
       labels:
         - "module: android"

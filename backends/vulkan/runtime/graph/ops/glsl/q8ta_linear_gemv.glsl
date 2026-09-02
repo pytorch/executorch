@@ -59,6 +59,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 #include "common.glslh"
 #include "linear_int8_weight_tile_load.glslh"
 #include "linear_fp_output_tile_int8_int8_compute.glslh"
@@ -75,7 +77,7 @@ shared ivec4 partial_accums[WGS][TILE_N4];
 
 void main() {
   const int lid = int(gl_LocalInvocationID.z);
-  const int n4 = int(gl_GlobalInvocationID.x) * TILE_N4;
+  const int n4 = int(linear_idx_from_gid()) * TILE_N4;
 
   const int n = mul_4(n4);
 

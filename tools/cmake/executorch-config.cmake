@@ -96,7 +96,6 @@ set(optional_lib_list
     coreml_util
     coreml_inmemoryfs
     coremldelegate
-    mpsdelegate
     mlxdelegate
     mlx
     metal_backend

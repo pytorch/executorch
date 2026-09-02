@@ -95,6 +95,8 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
 
     @app.get("/health")
     async def health():
+        if not serving.healthy:
+            return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ok"}
 
     @app.get("/v1/models")

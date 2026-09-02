@@ -18,6 +18,7 @@ from executorch.backends.cortex_m.library import cmsis_nn
 
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,
+    is_foldable_alpha,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
@@ -305,10 +306,16 @@ def _has_qparams(node: Node) -> bool:
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.tanh.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.silu.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.gelu.default)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log.default)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log2.default)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log10.default)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.log1p.default)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.sqrt.default)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.rsqrt.default)
 def _get_activation_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    """Lower a standalone quantized sigmoid / tanh / silu to a single
+    """Lower a standalone quantized unary activation to a single
     cortex_m.quantized_activation call backed by an AoT-built 256-entry
     int8 LUT. The kernel is shape-agnostic; the LUT encodes both the
     activation function and the input/output qparams.
@@ -901,12 +908,26 @@ def _get_dequantize_per_tensor_replacement(
 
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.add.Tensor)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.sub.Tensor)
 def _get_add_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     del dialect_pass
     if not _has_qparams(node):
         return None
+
+    # CortexMAddMulCheck declines an alpha the kernel cannot express, so reaching
+    # here with one means some other quantizer annotated the node -- by which
+    # point FoldAndAnnotateQParamsPass has removed the dq pair and returning None
+    # would leave an fp32 add over raw int8.
+    alpha = node.kwargs.get("alpha", 1)
+    if not is_foldable_alpha(alpha):
+        raise RuntimeError(
+            f"{node.target} carries alpha={alpha!r}; quantized_add can only "
+            "express an integer one."
+        )
+
+    is_sub = node.target is exir_ops.edge.aten.sub.Tensor
 
     scale1 = node.meta["input_qparams"][0].scale
     zero_point1 = node.meta["input_qparams"][0].zp
@@ -915,12 +936,45 @@ def _get_add_replacement(
     output_scale = node.meta["output_qparams"][0].scale
     output_zero_point = node.meta["output_qparams"][0].zp
 
+    # quantized_add carries a multiplier per operand, and the second operand's
+    # coefficient is the only place alpha appears in the arithmetic. Subtraction
+    # is the alpha = -1 case of the same fold.
+    coefficient = -alpha if is_sub else alpha
+    scale2 = abs(coefficient) * scale2
+
     max_scale_2x = 2 * max(scale1, scale2)
     input1_mult, input1_shift = quantize_multiplier_aot(scale1 / max_scale_2x)
     input2_mult, input2_shift = quantize_multiplier_aot(scale2 / max_scale_2x)
+    if coefficient < 0:
+        input2_mult = -input2_mult
     output_mult, output_shift = quantize_multiplier_aot(
         max_scale_2x / (output_scale * (1 << SHIFT_INT8))
     )
+
+    # A positive output shift takes arm_nn_requantize's left-shift branch, which
+    # evaluates val * (1 << shift) in int32, and past a point the summed operands
+    # wrap there and saturate to the opposite rail. Re-splitting the scaling does
+    # not help -- the product below is invariant under the choice of
+    # max_scale_2x -- so refuse instead.
+    if output_shift > 0:
+        qparams1 = node.meta["input_qparams"][0]
+        qparams2 = node.meta["input_qparams"][1]
+        span1 = (qparams1.qmin - zero_point1, qparams1.qmax - zero_point1)
+        span2 = (qparams2.qmin - zero_point2, qparams2.qmax - zero_point2)
+        sign = -1 if coefficient < 0 else 1
+        worst_case_sum = (
+            max(abs(d1 * scale1 + sign * d2 * scale2) for d1 in span1 for d2 in span2)
+            * (1 << SHIFT_INT8)
+            / max_scale_2x
+        )
+        if worst_case_sum * (2**output_shift) >= 2**31:
+            raise RuntimeError(
+                f"{node.target}: an output scale of {output_scale} against "
+                f"operand scales of {scale1} and {scale2} needs a "
+                "requantization the int32 kernel cannot hold. The operands "
+                "nearly cancel over the calibration set; calibrate on data "
+                "where they do not."
+            )
 
     activation_min = node.meta["output_qparams"][0].qmin
     activation_max = node.meta["output_qparams"][0].qmax
