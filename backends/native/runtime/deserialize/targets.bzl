@@ -28,3 +28,16 @@ def define_common_targets():
         exported_deps = [":byte_span"],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    # safetensors index reader.
+    runtime.cxx_library(
+        name = "safetensors_reader",
+        srcs = ["SafeTensorsReader.cpp"],
+        exported_headers = ["SafeTensorsReader.h"],
+        exported_deps = [
+            ":byte_span",
+            "//executorch/backends/native/runtime/graph:scalar_type",
+        ],
+        deps = [":json_parser"],
+        visibility = ["//executorch/backends/native/..."],
+    )
