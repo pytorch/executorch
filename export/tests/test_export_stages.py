@@ -7,7 +7,7 @@
 # pyre-strict
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import call, Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
@@ -191,6 +191,7 @@ class TestEdgeTransformAndLowerStage(unittest.TestCase):
         mock_graph_module = Mock()
         mock_exported_program.graph_module = mock_graph_module
         mock_edge_program_manager.exported_program.return_value = mock_exported_program
+        mock_edge_program_manager.methods = {"forward"}
         mock_to_edge_transform_and_lower.return_value = mock_edge_program_manager
 
         stage = EdgeTransformAndLowerStage(
@@ -231,6 +232,39 @@ class TestEdgeTransformAndLowerStage(unittest.TestCase):
         self.assertEqual(
             result_artifact.get_context("delegation_info"), mock_delegation_info
         )
+
+    @patch("executorch.export.stages.to_edge_transform_and_lower")
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_multi_method_without_forward(
+        self, mock_get_delegation_info: Mock, mock_to_edge_transform_and_lower: Mock
+    ) -> None:
+        """Delegation info is collected per method when there is no `forward`."""
+        programs = {name: Mock() for name in ("decode", "prefill")}
+        for program in programs.values():
+            program.graph_module = Mock()
+        delegation_by_graph_module = {
+            program.graph_module: f"{name}-info" for name, program in programs.items()
+        }
+
+        mock_edge_program_manager = Mock(spec=EdgeProgramManager)
+        mock_edge_program_manager.methods = set(programs)
+        mock_edge_program_manager.exported_program.side_effect = programs.__getitem__
+        mock_to_edge_transform_and_lower.return_value = mock_edge_program_manager
+        mock_get_delegation_info.side_effect = delegation_by_graph_module.__getitem__
+
+        stage = EdgeTransformAndLowerStage()
+        artifact = PipelineArtifact(
+            data={name: Mock(spec=ExportedProgram) for name in programs},
+            context=self.context,
+        )
+        stage.run(artifact)
+
+        self.assertEqual(
+            stage.delegation_info_by_method,
+            {"decode": "decode-info", "prefill": "prefill-info"},
+        )
+        # No `forward` method, so the first method by name is reported.
+        self.assertEqual(stage.delegation_info, "decode-info")
 
 
 class TestExecutorchStage(unittest.TestCase):
@@ -545,6 +579,68 @@ class TestToBackendStage(unittest.TestCase):
             result_artifact.get_context("delegation_info"), mock_delegation_info
         )
 
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_multi_method_without_forward(
+        self, mock_get_delegation_info: Mock
+    ) -> None:
+        """Delegation info is collected per method when there is no `forward`."""
+        programs = {name: Mock() for name in ("decode", "prefill")}
+        for program in programs.values():
+            program.graph_module = Mock()
+        delegation_by_graph_module = {
+            program.graph_module: f"{name}-info" for name, program in programs.items()
+        }
+
+        self.mock_edge_manager.methods = set(programs)
+        self.mock_edge_manager.exported_program.side_effect = programs.__getitem__
+        mock_get_delegation_info.side_effect = delegation_by_graph_module.__getitem__
+
+        stage = ToBackendStage()
+        stage.run(PipelineArtifact(data=self.mock_edge_manager, context=self.context))
+
+        self.assertEqual(
+            stage.delegation_info_by_method,
+            {"decode": "decode-info", "prefill": "prefill-info"},
+        )
+        # No `forward` method, so the first method by name is reported.
+        self.assertEqual(stage.delegation_info, "decode-info")
+
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_with_per_method_partitioners(
+        self, mock_get_delegation_info: Mock
+    ) -> None:
+        """A dict of partitioners lowers each method with its own partitioners."""
+        mock_get_delegation_info.return_value = {"delegation": "info"}
+        exported_program = Mock()
+        exported_program.graph_module = Mock()
+        self.mock_edge_manager.methods = {"decode", "prefill"}
+        self.mock_edge_manager.exported_program.return_value = exported_program
+        self.mock_edge_manager.to_backend.return_value = self.mock_edge_manager
+
+        decode_partitioner = Mock()
+        second_decode_partitioner = Mock()
+        prefill_partitioner = Mock()
+        stage = ToBackendStage(
+            partitioners={
+                "decode": [decode_partitioner, second_decode_partitioner],
+                "prefill": [prefill_partitioner],
+            }
+        )
+        stage.run(PipelineArtifact(data=self.mock_edge_manager, context=self.context))
+
+        self.mock_edge_manager.to_backend.assert_has_calls(
+            [
+                call(
+                    {
+                        "decode": decode_partitioner,
+                        "prefill": prefill_partitioner,
+                    }
+                ),
+                call({"decode": second_decode_partitioner}),
+            ]
+        )
+        self.assertEqual(self.mock_edge_manager.to_backend.call_count, 2)
+
     def test_run_edge_manager_none(self) -> None:
         stage = ToBackendStage()
         artifact = PipelineArtifact(data=None, context=self.context)
@@ -592,7 +688,9 @@ class TestEmptyPassDictIsNotApplied(unittest.TestCase):
     def test_lower_stage_passes_none_not_empty_dict(
         self, mock_lower: Mock, mock_delegation_info: Mock
     ) -> None:
-        mock_lower.return_value = Mock(spec=EdgeProgramManager)
+        mock_edge_program_manager = Mock(spec=EdgeProgramManager)
+        mock_edge_program_manager.methods = {"forward"}
+        mock_lower.return_value = mock_edge_program_manager
         mock_delegation_info.return_value = {}
         stage = EdgeTransformAndLowerStage()
         stage.run(

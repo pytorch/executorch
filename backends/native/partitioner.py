@@ -9,15 +9,17 @@ Native backend partitioner.
 
 Claims core ATen ops (torch.Tag.core) plus an explicit opt-in set, and delegates
 whole torch.cond control-flow ops whose branches are fully supported. Graph
-cleanup (CSE) runs before lowering via transform_passes, since ExecuTorch forbids
-a partitioner from mutating the graph module.
+cleanup (CSE, reinplace) runs before lowering via transform_passes, since
+ExecuTorch forbids a partitioner from mutating the graph module.
 """
 
 from typing import Callable, final, List, Mapping, Optional, Tuple
 
 import torch
+from executorch.backends.native.passes import backend_inplace_aten_variants
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -52,7 +54,7 @@ PTN_SERIALIZATION_KEY = "serialize_as_ptn"
 
 
 class NativeSupportedOperators(OperatorSupportBase):
-    _NON_CORE = set(_SUPPORTED_NON_CORE_OPS)
+    _NON_CORE = set(_SUPPORTED_NON_CORE_OPS) | backend_inplace_aten_variants()
 
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: Node

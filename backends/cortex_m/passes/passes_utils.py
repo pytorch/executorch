@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Any, Callable
+from typing import Any, Callable, TypeGuard
 
 import torch
 
@@ -173,6 +173,29 @@ def coerce_int_pair(raw, default: tuple[int, int]) -> tuple[int, int]:
     if len(items) == 1:
         return (items[0], items[0])
     return (items[0], items[1])
+
+
+def is_foldable_alpha(alpha: Any) -> TypeGuard[int]:
+    """Whether quantized_add can absorb this alpha into an operand multiplier.
+
+    Only an integer can get that far. FoldAndAnnotateQParamsPass re-traces once
+    the dequantize nodes are gone, and aten refuses a float alpha on an int8
+    add before the lowering ever sees the node.
+    """
+    return isinstance(alpha, int)
+
+
+def skips_quantized_max_pool2d(node: Node) -> bool:
+    """Whether CortexMMaxPool2DCheck tagged this pool as one that cannot lower.
+
+    The checker annotates the node before tagging it, so a tagged pool still
+    carries qparams and looks lowerable to anything that only reads those.
+    """
+    return (
+        node.meta.get("custom", {})
+        .get("cortex_m", {})
+        .get("skip_quantized_max_pool2d", False)
+    )
 
 
 def is_qualified_int8_node(args) -> bool:

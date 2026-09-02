@@ -73,16 +73,11 @@ void Context::cmd_reset_querypool() {
 
 void Context::report_shader_dispatch_start(
     const std::string& shader_name,
-    const utils::uvec3& global_wg_size,
-    const utils::WorkgroupSize& local_wg_size,
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg,
     const uint32_t dispatch_id) {
   if (querypool_) {
-    querypool_.shader_profile_begin(
-        cmd_,
-        dispatch_id,
-        shader_name,
-        vkapi::create_extent3d(global_wg_size),
-        vkapi::create_extent3d((utils::uvec3)local_wg_size));
+    querypool_.shader_profile_begin(cmd_, dispatch_id, shader_name, gwg, lwg);
   }
 }
 
@@ -133,7 +128,7 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
 
 vkapi::DescriptorSet Context::get_descriptor_set(
     const vkapi::ShaderInfo& shader_descriptor,
-    const utils::WorkgroupSize& local_workgroup_size,
+    const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& additional_constants,
     const uint32_t push_constants_size) {
   VkDescriptorSetLayout shader_layout =
@@ -142,10 +137,7 @@ vkapi::DescriptorSet Context::get_descriptor_set(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  vkapi::SpecVarList spec_constants = {
-      SV(local_workgroup_size[0u]),
-      SV(local_workgroup_size[1u]),
-      SV(local_workgroup_size[2u])};
+  vkapi::SpecVarList spec_constants = {SV(lwg[0u]), SV(lwg[1u]), SV(lwg[2u])};
 
   spec_constants.append(additional_constants);
 
@@ -158,7 +150,7 @@ vkapi::DescriptorSet Context::get_descriptor_set(
        spec_constants,
        resolved_required_subgroup_size});
 
-  cmd_.bind_pipeline(pipeline, pipeline_layout, local_workgroup_size);
+  cmd_.bind_pipeline(pipeline, pipeline_layout, lwg);
 
   return descriptor_pool().get_descriptor_set(
       shader_layout, shader_descriptor.kernel_layout);
@@ -168,30 +160,35 @@ void Context::register_shader_dispatch(
     const vkapi::DescriptorSet& descriptors,
     vkapi::PipelineBarrier& pipeline_barrier,
     const vkapi::ShaderInfo& shader_descriptor,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg,
     const void* push_constants_data,
     const uint32_t push_constants_size) {
+  vkapi::Adapter* const adapter = adapter_ptr();
+  const LocalWorkGroup& dispatch_lwg =
+      gwg.required_lwg_size().is_valid() ? gwg.required_lwg_size() : lwg;
+  dispatch_lwg.validate(
+      adapter->max_compute_workgroup_size(),
+      adapter->max_compute_workgroup_invocations());
+  gwg.validate(
+      dispatch_lwg,
+      adapter->max_compute_workgroup_count(),
+      shader_descriptor.out_tile_size);
+
   // Adjust the global workgroup size based on the output tile size
-  uint32_t global_wg_w = utils::div_up(
-      global_workgroup_size[0u], shader_descriptor.out_tile_size[0u]);
-  uint32_t global_wg_h = utils::div_up(
-      global_workgroup_size[1u], shader_descriptor.out_tile_size[1u]);
-  uint32_t global_wg_d = utils::div_up(
-      global_workgroup_size[2u], shader_descriptor.out_tile_size[2u]);
+  uint32_t gwg_w = utils::div_up(gwg[0u], shader_descriptor.out_tile_size[0u]);
+  uint32_t gwg_h = utils::div_up(gwg[1u], shader_descriptor.out_tile_size[1u]);
+  uint32_t gwg_d = utils::div_up(gwg[2u], shader_descriptor.out_tile_size[2u]);
 
   // Submitting a global work group size of 0 is undefined behaviour. If this is
   // detected then submit a single workgroup instead.
-  if (global_wg_w == 0u || global_wg_h == 0u || global_wg_d == 0u) {
-    global_wg_w = 1u;
-    global_wg_h = 1u;
-    global_wg_d = 1u;
+  if (gwg_w == 0u || gwg_h == 0u || gwg_d == 0u) {
+    gwg_w = 1u;
+    gwg_h = 1u;
+    gwg_d = 1u;
   }
 
-  const utils::uvec3 effective_global_wg = {
-      global_wg_w,
-      global_wg_h,
-      global_wg_d,
-  };
+  const GlobalWorkGrid effective_gwg({gwg_w, gwg_h, gwg_d}, kExplicitWorkGrid);
 
   cmd_.bind_descriptors(descriptors.get_bind_handle());
   cmd_.insert_barrier(pipeline_barrier);
@@ -205,7 +202,7 @@ void Context::register_shader_dispatch(
         pipeline_layout, push_constants_data, push_constants_size);
   }
 
-  cmd_.dispatch(effective_global_wg);
+  cmd_.dispatch(effective_gwg, dispatch_lwg);
 }
 
 void Context::register_barrier(vkapi::PipelineBarrier& pipeline_barrier) {
@@ -324,11 +321,8 @@ VkPipeline Context::get_shader_pipeline(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
-  vkapi::SpecVarList spec_constants = {
-      SV(local_workgroup_size[0u]),
-      SV(local_workgroup_size[1u]),
-      SV(local_workgroup_size[2u])};
+  const LocalWorkGroup lwg(4u, 4u, 1u);
+  vkapi::SpecVarList spec_constants = {SV(lwg[0u]), SV(lwg[1u]), SV(lwg[2u])};
 
   spec_constants.append(additional_constants);
 

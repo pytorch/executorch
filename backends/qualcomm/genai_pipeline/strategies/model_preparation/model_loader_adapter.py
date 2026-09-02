@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, Optional, Protocol, runtime_checkable, Tuple
 
 
 @runtime_checkable
@@ -79,6 +79,31 @@ class ModelLoaderAdapter(Protocol):
 
         Returns:
             The tokenizer instance.
+        """
+        ...
+
+    def get_example_inputs(
+        self,
+        model: Any,
+        extra_options: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Any, ...]:
+        """Build the positional example inputs for ``torch.export``.
+
+        These come from the **model**, never from the calibration dataset: the
+        tuple defines the exported graph's positional signature, including the
+        zero-initialized KV cache entries a dataset sample does not carry, and
+        it bakes in the AR length (HTP has no dynamic shapes). The dependency
+        runs model -> dataset, not the reverse: the reference flow derives the
+        dataset's attention-mask schema *from* the example input
+        (``LLMWrapper.attn_mask`` returns ``example_input[1]``).
+
+        Args:
+            model: The module previously returned by :meth:`load_model`.
+            extra_options: Additional options controlling the example shapes.
+
+        Returns:
+            A flat tuple positionally matching ``model.forward``, ready to pass
+            straight to ``torch.export.export(model, example_inputs)``.
         """
         ...
 
