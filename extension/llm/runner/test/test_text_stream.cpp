@@ -263,3 +263,55 @@ TEST(TextStreamTest, ToleratesAnAbsentSink) {
   EXPECT_EQ(stream.append(1u), Error::Ok);
   stream.flush();
 }
+
+// A four-byte codepoint takes the len == 4 branch, which the three-byte cases
+// above leave untested, and is the widest split a byte-level tokenizer can make.
+TEST(TextStreamTest, HoldsBackAFourByteCharacterUntilItCompletes) {
+  FakeTokenizer tokenizer;
+  tokenizer.pieces = {
+      {1, "\xF0"}, {2, "\x9F"}, {3, "\x98"}, {4, "\x80"}}; // U+1F600
+  Sink sink;
+  TextStream stream = stream_into(tokenizer, sink);
+
+  for (uint64_t id : {1u, 2u, 3u}) {
+    ASSERT_EQ(stream.append(id), Error::Ok);
+    EXPECT_TRUE(sink.joined.empty()) << "emitted before the character finished";
+    EXPECT_TRUE(stream.has_pending());
+  }
+  ASSERT_EQ(stream.append(4u), Error::Ok);
+  EXPECT_EQ(sink.joined, "\xF0\x9F\x98\x80");
+  EXPECT_FALSE(stream.has_pending());
+}
+
+// A lead byte promises continuation bytes that never arrive. Holding them would
+// stall the stream for good, so they go out as-is: the sink can see invalid
+// UTF-8 here, which is the documented trade for never blocking.
+TEST(TextStreamTest, AMalformedSequenceIsEmittedRatherThanHeldForever) {
+  FakeTokenizer tokenizer;
+  tokenizer.pieces = {{1, "\xE4\x41"}}; // 3-byte lead, then ASCII 'A'
+  Sink sink;
+  TextStream stream = stream_into(tokenizer, sink);
+
+  ASSERT_EQ(stream.append(1u), Error::Ok);
+  EXPECT_EQ(sink.joined, "\xE4\x41");
+  EXPECT_FALSE(stream.has_pending()) << "a malformed tail must not be held";
+}
+
+// The bytes held when a decode fails are not lost: the stream is sticky-failed,
+// but flush() still surrenders what it was holding.
+TEST(TextStreamTest, FlushAfterAFailureStillReleasesTheHeldBytes) {
+  FakeTokenizer tokenizer;
+  tokenizer.pieces = {{1, kCjkByte0}};
+  tokenizer.rejected = {2};
+  Sink sink;
+  TextStream stream = stream_into(tokenizer, sink);
+
+  ASSERT_EQ(stream.append(1u), Error::Ok);
+  ASSERT_TRUE(stream.has_pending());
+  EXPECT_NE(stream.append(2u), Error::Ok);
+  EXPECT_TRUE(stream.has_pending()) << "a failure keeps what was held";
+
+  stream.flush();
+  EXPECT_EQ(sink.joined, kCjkByte0);
+  EXPECT_FALSE(stream.has_pending());
+}

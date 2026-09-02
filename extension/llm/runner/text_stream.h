@@ -44,8 +44,10 @@ class ET_EXPERIMENTAL TextStream {
   //
   // `previous` is the token the next one follows, normally the last token of
   // the prompt. Only a SentencePiece tokenizer reads it, to drop the leading
-  // space of the first token after BOS; every BPETokenizerBase discards it. The
-  // default suits a BPE tokenizer, where the value cannot be observed.
+  // space of the first token after BOS; every BPETokenizerBase discards it.
+  // The default is for BPE, which cannot observe the value. A SentencePiece
+  // caller must pass the real previous token: 0 is a valid id there, so
+  // leaving it defaulted silently mis-handles the space on the first token.
   TextStream(
       const tokenizers::Tokenizer& tokenizer,
       Sink on_text,
