@@ -159,7 +159,7 @@ Error QnnExecuTorchBackend::execute(
     }
   }
   ET_CHECK_OR_RETURN_ERROR(
-      bindable_inputs + bindable_outputs <= args.size(),
+      bindable_inputs + bindable_outputs == args.size(),
       Internal,
       "Method %s: the QNN context binary binds %zu tensors (%zu graph inputs, "
       "%zu graph outputs) but ExecuTorch passed %zu arguments. The binary and "
@@ -170,14 +170,6 @@ Error QnnExecuTorchBackend::execute(
       bindable_inputs,
       bindable_outputs,
       args.size());
-  if (bindable_inputs + bindable_outputs != args.size()) {
-    QNN_EXECUTORCH_LOG_WARN(
-        "Method %s: ExecuTorch passed %zu arguments but the QNN graph binds "
-        "only %zu; the trailing arguments are unused.",
-        method_name.c_str(),
-        args.size(),
-        bindable_inputs + bindable_outputs);
-  }
 
   int args_index = 0;
   input_tensor_structs.reserve(input_tensors.size());
