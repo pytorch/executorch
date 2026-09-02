@@ -45,6 +45,10 @@ from executorch.backends.qualcomm.utils.constants import (
     HEXAGON_SDK_ROOT,
     HEXAGON_TOOLS_ROOT,
 )
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import (
+    disable_mkldnn_on_amd,
+    setup_qnn_sdk,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
@@ -129,9 +133,14 @@ class QnnConfig:
         assert not (
             self.compile_only and self.pre_gen_pte
         ), "Cannot set both compile_only and pre_gen_pte as true"
-        assert (
-            "QNN_SDK_ROOT" in os.environ
-        ), "Environment variable QNN_SDK_ROOT must be set."
+        # Every example script builds this config before doing anything else, and the check
+        # below needs the SDK path. It used to be set as a side effect of importing the backend.
+        setup_qnn_sdk()
+        # A usable path, not merely the key being present, because everything below builds real
+        # paths from it. Raised rather than asserted: an assert is stripped under `python -O`,
+        # which would turn this into a confusing failure much later.
+        if not os.environ.get("QNN_SDK_ROOT"):
+            raise EnvironmentError("Environment variable QNN_SDK_ROOT must be set.")
         if (not self.compile_only and not self.enable_x86_64) and self.device is None:
             raise RuntimeError(
                 "device serial is required if not compile only or run on x86 emulator. Please specify a device serial."
@@ -146,9 +155,15 @@ class QnnConfig:
             elif get_soc_to_lpai_hw_ver_map()[
                 self.soc_model
             ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
+                # Read once, because building this message by querying again raises when there is
+                # no SDK, which replaces the useful error below with a confusing one.
+                try:
+                    current = get_sdk_build_id()
+                except Exception:
+                    current = "unknown, no usable SDK found"
                 raise RuntimeError(
                     f"Target soc_model({self.soc_model}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
-                    f"Current QNN SDK version: {get_sdk_build_id()}"
+                    f"Current QNN SDK version: {current}"
                 )
         if self.seed:
             torch.manual_seed(self.seed)
@@ -538,6 +553,13 @@ def build_executorch_binary(
             f"Skip build_executorch_binary, using {file_name} under {qnn_config.pre_gen_pte}."
         )
         return
+
+    # Both applied here rather than deeper in the lowering. The quantized path below runs the
+    # model once per calibration sample, which is a real eager run and so needs the AMD guard
+    # first, and the SDK setup can re-execute the interpreter, which must not happen after a
+    # model has been traced and calibrated.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
 
     sample_input = dataset[0]
     if (
