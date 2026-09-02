@@ -10,6 +10,10 @@ from collections.abc import Sequence
 from typing import Any
 
 import torch
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.propagate_view_copy_permute_pass import (
     PropagateViewCopyPermuteDownPass as _DownPass,
@@ -20,7 +24,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 from .arm_pass import ArmPass
-from .fuse_duplicate_users_pass import quantization_metadata_key, TOSA_EXCLUDED_TARGETS
+from .fuse_duplicate_users_pass import TOSA_EXCLUDED_TARGETS
 from .remove_permutes_around_elementwise_tosa_ops import (
     RemovePermutesAroundElementwiseTosaOps,
 )
@@ -38,7 +42,10 @@ class TosaPropagationOverrides(_BasePass):
         return TOSA_EXCLUDED_TARGETS
 
     def duplicate_user_fusion_key(self, node: torch.fx.Node) -> Any:
-        return quantization_metadata_key(node)
+        return (
+            get_input_qparams(node) if node.meta.get("input_qparams") else {},
+            get_output_qparams(node) if node.meta.get("output_qparams") else {},
+        )
 
     _REDUCTION_TARGETS = {
         exir_ops.edge.aten.mean.dim,

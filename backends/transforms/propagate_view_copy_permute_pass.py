@@ -514,7 +514,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         modified = False
         result = FuseDuplicateUsersPass(
             self.duplicate_user_fusion_exclusions(),
-            allowed_targets=self._targets,
+            allowed_targets={self._VIEW_TARGET, *self._permute_targets},
             semantic_key=self.duplicate_user_fusion_key,
         ).call(graph_module)
         graph_module = result.graph_module

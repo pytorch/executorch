@@ -368,6 +368,23 @@ def test_horizontal_fusion_preserves_distinct_quantization_metadata() -> None:
     assert len(remaining_views) == 2
 
 
+def test_horizontal_fusion_ignores_non_layout_users() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((2, 3))
+    first = graph.call_function(NEG, args=(x,))
+    first.meta["val"] = torch.empty((2, 3))
+    second = graph.call_function(NEG, args=(x,))
+    second.meta["val"] = torch.empty((2, 3))
+    graph.output((first, second))
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    result = PropagateViewCopyPermuteUpPass().fuse_horizontal(graph_module)
+
+    assert not result.modified
+    assert sum(node.target == NEG for node in result.graph_module.graph.nodes) == 2
+
+
 def test_is_swappable_rejects_unnormalized_keep_dim_operator() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
