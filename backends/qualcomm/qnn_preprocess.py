@@ -8,6 +8,7 @@ import logging
 from collections import defaultdict
 from typing import Dict, final, List
 
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch  # noqa: F401
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
@@ -44,6 +45,49 @@ DEFAULT_GRAPH_NAME = "forward"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+def _check_io_binding(edge_program: ExportedProgram, nodes_to_wrappers) -> None:
+    """Fail here if QNN's graph I/O will not line up with the delegate signature.
+
+    At runtime the delegate binds its arguments positionally: it walks the tensor
+    lists recovered from the context binary and consumes one argument per tensor
+    the name prefixes mark as bindable (QnnExecuTorchBackend::execute). Nothing
+    reconciles that walk with the number of arguments ExecuTorch actually passes,
+    so a graph that publishes extra I/O reads past the end of the argument list on
+    device. Catching it here costs one pass over the wrappers and reports the
+    offending tensor names instead of a register dump.
+    """
+    qnn_inputs, qnn_outputs = set(), set()
+    for wrappers in nodes_to_wrappers.values():
+        for wrapper in wrappers.values():
+            name = PyQnnManager.PyQnnTensorWrapper(wrapper).GetName()
+            # Mutable buffers are threaded through separately and never consume a
+            # delegate argument; the runtime skips them by the same marker.
+            if "mutbuf_" in name:
+                continue
+            if name.startswith("input_"):
+                qnn_inputs.add(name)
+            elif name.startswith("output_"):
+                qnn_outputs.add(name)
+
+    signature = edge_program.graph_signature
+    num_inputs = len(signature.user_inputs)
+    num_outputs = len(signature.user_outputs)
+    if len(qnn_inputs) == num_inputs and len(qnn_outputs) == num_outputs:
+        return
+
+    raise RuntimeError(
+        "QNN graph I/O does not match the delegated program signature. QNN "
+        f"declares {len(qnn_inputs)} graph inputs and {len(qnn_outputs)} graph "
+        f"outputs; the signature declares {num_inputs} user inputs and "
+        f"{num_outputs} user outputs. The runtime binds delegate arguments "
+        "positionally, so this reads past the end of the argument list on device."
+        f"\n  qnn inputs        : {sorted(qnn_inputs)}"
+        f"\n  qnn outputs       : {sorted(qnn_outputs)}"
+        f"\n  signature inputs  : {list(signature.user_inputs)}"
+        f"\n  signature outputs : {list(signature.user_outputs)}"
+    )
 
 
 @final
@@ -111,6 +155,7 @@ class QnnBackend(BackendDetails):
             else:
                 raise RuntimeError(f"{node.op} is not supported in Qnn")
 
+        _check_io_binding(edge_program, nodes_to_wrappers)
         return py_op_wrapper_list
 
     @staticmethod

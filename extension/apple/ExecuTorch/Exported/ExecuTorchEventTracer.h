@@ -30,6 +30,24 @@ NS_SWIFT_NAME(EventTracer)
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
+/**
+ * Initializes a tracer with a native std::unique_ptr<EventTracer> instance.
+ *
+ * @param nativeInstance A pointer to a native std::unique_ptr<EventTracer>
+ * instance.
+ * @return An initialized ExecuTorchEventTracer instance.
+ */
+- (instancetype)initWithNativeInstance:(void *)nativeInstance
+    NS_DESIGNATED_INITIALIZER NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Pointer to the underlying native std::unique_ptr<EventTracer> instance.
+ *
+ * @return A raw pointer to the native std::unique_ptr<EventTracer> held by this
+ * class.
+ */
+@property(nonatomic, readonly) void *nativeInstance NS_SWIFT_UNAVAILABLE("");
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -23,6 +23,8 @@ Link your binary with the ExecuTorch runtime and any backends or kernels used by
 
 **Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details.
 
+**Note:** The MLX backend links and registers on the iOS simulator, so an app builds for both destinations, but it reports itself unavailable there because the simulator has no Metal device it can use. A model delegated to MLX will not load on the simulator. Use a real device or a Mac to run one.
+
 ### Swift Package Manager
 
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift PM](https://www.swift.org/documentation/package-manager/) package.
