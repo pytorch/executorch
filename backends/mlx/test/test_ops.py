@@ -6270,16 +6270,16 @@ class SDPATest(OpTestCase):
 
         if self.use_mask:
             # Additive float mask: 0 = attend, -inf = masked
-            mask = torch.zeros(self.batch_size, 1, self.seq_len, self.seq_len)
-            mask[:, :, :, : self.seq_len // 4] = float("-inf")
+            mask = torch.zeros(self.batch_size, 1, self.seq_len, self.kv_seq_len)
+            mask[:, :, :, : self.kv_seq_len // 4] = float("-inf")
             return (q, k, v, mask)
         elif self.use_bool_mask:
             # Boolean mask: True = attend, False = masked
             # This tests that the backend correctly converts bool -> additive format
             mask = torch.ones(
-                self.batch_size, 1, self.seq_len, self.seq_len, dtype=torch.bool
+                self.batch_size, 1, self.seq_len, self.kv_seq_len, dtype=torch.bool
             )
-            mask[:, :, :, : self.seq_len // 4] = False  # Mask out first quarter
+            mask[:, :, :, : self.kv_seq_len // 4] = False  # Mask out first quarter
             return (q, k, v, mask)
         return (q, k, v)
 

@@ -21,6 +21,7 @@ import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_quantized_biases,
     emit_quantized_gather,
+    emit_shape,
     emit_stop_position,
     mlx_qparams_supported,
     parse_dequant_int4_node,
@@ -583,9 +584,11 @@ class SDPAHandler(PatternHandler):
             if mask_val is None or mask_val.dim() > 4:
                 return False
 
-        # A causal query longer than its keys is left to decompose. Torch clamps each
-        # row to the keys that exist, and neither the kernel's own mask nor slicing the
-        # keys to the query length reproduces that.
+        # Causal attention is only taken when the query is known to be no longer than
+        # the keys. Torch clamps a longer query to the keys that exist, and neither the
+        # kernel's own mask nor slicing the keys reproduces that. A query length that
+        # cannot be compared at build time, two unrelated dynamic dimensions for
+        # instance, is also declined, because the relation has to hold for every call.
         if is_causal and not statically_known_true(
             operand_vals[0].shape[-2] <= operand_vals[1].shape[-2]
         ):
@@ -720,10 +723,9 @@ class SDPAHandler(PatternHandler):
         q_len = self.q_node.meta["val"].shape[-2]
         k_len = self.k_node.meta["val"].shape[-2]
         if is_causal and not statically_known_true(q_len == k_len):
-            _, rows = P.slot_manager.make_tmp_value_slot()
-            P.emit(
-                SymSizeNode(a=P.slot_to_tid(inputs[0]), dim=2, out=P.slot_to_vid(rows))
-            )
+            # A literal when the query length is known at build time, which is the
+            # decode case this exists for, and a size node only when it is symbolic.
+            rows = emit_shape(P, self.q_node, inputs[0])[-2]
             for i in (1, 2):
                 _, sliced = P.make_tmp_slot()
                 P.emit(
@@ -732,7 +734,7 @@ class SDPAHandler(PatternHandler):
                         out=P.slot_to_tid(sliced),
                         axis=IntOrVid.from_literal(2),
                         start=IntOrVid.from_literal(0),
-                        stop=P.to_int_or_vid(rows),
+                        stop=rows,
                     )
                 )
                 inputs[i] = sliced
