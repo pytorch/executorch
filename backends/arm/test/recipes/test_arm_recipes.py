@@ -6,9 +6,9 @@
 """Tests for the Arm ExportRecipe provider.
 
 Building a recipe only assembles a compile spec, a quantizer and a partitioner,
-so none of these tests need Vela, the model converter or an FVP. Class and
-method names route each test to exactly one of the existing target-less, TOSA
-and VGF suites; see the ``-k`` filters in
+so no test here needs the model converter or an FVP, and only the Ethos-U
+round-trip needs Vela. Class and method names route each test to exactly one of
+the existing target-less, TOSA, U55 and VGF suites; see the ``-k`` filters in
 ``backends/arm/test/test_arm_backend.sh``.
 
 """
@@ -418,53 +418,52 @@ class TestQuantizedRecipeLowering(_ArmRecipeTestCase):
         )
 
 
+def _export_program(
+    recipe: ExportRecipe,
+    model: torch.nn.Module,
+    example_inputs: tuple,
+):
+    from executorch.export import export
+
+    session = export(
+        model=model,
+        example_inputs=[example_inputs],
+        export_recipe=recipe,
+    )
+    return session.get_executorch_program()
+
+
+def _instruction_kinds(program) -> tuple[list, list]:
+    from executorch.exir.schema import DelegateCall, KernelCall
+
+    instructions = program.execution_plan[0].chains[0].instructions
+    assert instructions is not None
+    operators = program.execution_plan[0].operators
+    delegate_calls = [i for i in instructions if isinstance(i.instr_args, DelegateCall)]
+    kernel_op_names = [
+        operators[i.instr_args.op_index].name
+        for i in instructions
+        if isinstance(i.instr_args, KernelCall)
+    ]
+    return delegate_calls, kernel_op_names
+
+
 class TestTosaAOTRoundTrip(_ArmRecipeTestCase):
     """End-to-end exports through the recipe pipeline.
 
-    Ethos-U and VGF round-trips need a real compiler and are deferred to an FVP-
-    bearing follow-up.
+    VGF round-trips need a real compiler and are deferred to an FVP-bearing
+    follow-up; the Ethos-U one lives in ``TestEthosUCortexMComposition``.
 
     """
 
-    def _export(
-        self,
-        recipe: ExportRecipe,
-        model: torch.nn.Module,
-        example_inputs: tuple,
-    ):
-        from executorch.export import export
-
-        session = export(
-            model=model,
-            example_inputs=[example_inputs],
-            export_recipe=recipe,
-        )
-        return session.get_executorch_program()
-
-    def _instruction_kinds(self, program) -> tuple[list, list]:
-        from executorch.exir.schema import DelegateCall, KernelCall
-
-        instructions = program.execution_plan[0].chains[0].instructions
-        assert instructions is not None
-        operators = program.execution_plan[0].operators
-        delegate_calls = [
-            i for i in instructions if isinstance(i.instr_args, DelegateCall)
-        ]
-        kernel_op_names = [
-            operators[i.instr_args.op_index].name
-            for i in instructions
-            if isinstance(i.instr_args, KernelCall)
-        ]
-        return delegate_calls, kernel_op_names
-
     def test_tosa_fp_export(self) -> None:
         # FP path: no quant ops, expect full delegation (Add is supported by TOSA).
-        program = self._export(
+        program = _export_program(
             ExportRecipe.get_recipe(ArmRecipeType.TOSA_FP),
             _AddModule(),
             (torch.randn(2, 3), torch.randn(2, 3)),
         )
-        delegates, kernels = self._instruction_kinds(program)
+        delegates, kernels = _instruction_kinds(program)
         self.assertEqual(len(delegates), 1, "Add should produce one TOSA delegate")
         self.assertEqual(
             kernels, [], f"Expected full delegation, got kernels {kernels}"
@@ -473,17 +472,59 @@ class TestTosaAOTRoundTrip(_ArmRecipeTestCase):
     def test_tosa_int8_export(self) -> None:
         # INT8 path: boundary quantize/dequantize remain outside the delegate
         # and ReplaceQuantNodesPass rewrites them to cortex_m::*.
-        program = self._export(
+        program = _export_program(
             ExportRecipe.get_recipe(ArmRecipeType.TOSA_INT8),
             _ConvReluModule(),
             (torch.randn(1, 3, 8, 8),),
         )
-        delegates, kernels = self._instruction_kinds(program)
+        delegates, kernels = _instruction_kinds(program)
         self.assertGreaterEqual(len(delegates), 1, "Conv+ReLU should delegate")
         for op_name in kernels:
             self.assertTrue(
                 op_name.startswith("cortex_m::"),
                 f"Non-delegate kernels must be cortex_m boundary ops; got {op_name}",
+            )
+
+
+class TestEthosUCortexMComposition(_ArmRecipeTestCase):
+    """The NPU-plus-CPU-fallback pairing ``ExportRecipe.combine`` serves.
+
+    Without the combining rule the two are refused: they disagree on
+    ``preserve_ops``, which Cortex-M fills and Ethos-U leaves to its partitioner.
+
+    The method name carries ``u55`` so ``test_arm_backend.sh`` routes it to the
+    Vela-bearing job; the class name avoids ``tosa``, which would drag it into
+    the suite that has no compiler.
+
+    """
+
+    @unittest.skipUnless(_VELA_INSTALLED, "Compiling for Ethos-U needs Vela")
+    def test_u55_with_cortex_m_fallback_exports(self) -> None:
+        from executorch.backends.cortex_m.recipes.cortex_m_recipe_types import (
+            CortexMRecipeType,
+        )
+
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe.get_recipe(ArmRecipeType.ETHOS_U55_INT8),
+                ExportRecipe.get_recipe(CortexMRecipeType.INT8),
+            ]
+        )
+        # Cortex-M's quantizer annotates against the layout the first example
+        # carries, and rejects a convolution that is not channels_last.
+        program = _export_program(
+            combined,
+            _ConvReluModule(),
+            (torch.randn(1, 3, 16, 16).to(memory_format=torch.channels_last),),
+        )
+        delegates, kernels = _instruction_kinds(program)
+        # Conv+ReLU fits the U55 whole, so the fallback only picks up the
+        # boundary quantize/dequantize pair.
+        self.assertEqual(len(delegates), 1, "Conv+ReLU should be one U55 delegate")
+        for op_name in kernels:
+            self.assertTrue(
+                op_name.startswith("cortex_m::"),
+                f"Everything the U55 declined should land on Cortex-M; got {op_name}",
             )
 
 
