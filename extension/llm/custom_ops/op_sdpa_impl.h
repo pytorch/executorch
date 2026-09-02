@@ -1049,7 +1049,14 @@ void cpu_flash_attention(
         useful_mask_ranges[q_block] = found_useful_range;
       }
     };
-    ET_CHECK(torch::executor::parallel_for(0, qSlice, 1, find_mask_ranges));
+    const bool mask_ranges_computed =
+        torch::executor::parallel_for(0, qSlice, 1, find_mask_ranges);
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        mask_ranges_computed,
+        Internal,
+        ,
+        "parallel_for failed while precomputing attention mask ranges");
     for (int64_t q_block = 0; q_block < qSlice; ++q_block) {
       use_mask_ranges |= useful_mask_ranges[q_block];
     }
