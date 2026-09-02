@@ -205,6 +205,7 @@ from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
 from .rewrite_bool_to_fp32_cast_via_int8_pass import (  # noqa
     RewriteBoolToFp32CastViaInt8Pass,
 )
+from .rewrite_cat_slice_pass import RewriteCatSlicePass  # noqa
 from .rewrite_conv_pass import RewriteConvPass  # noqa
 from .rewrite_high_rank_singleton_permute_pass import (  # noqa
     RewriteHighRankSingletonPermutePass,
