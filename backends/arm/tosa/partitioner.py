@@ -191,6 +191,41 @@ def _is_noop_flip(node: torch.fx.node.Node) -> bool:
     return isinstance(dims, (list, tuple)) and len(dims) == 0
 
 
+def _is_noop_permute(node: torch.fx.Node) -> bool:
+    """Return whether a permute preserves the order of every dimension.
+
+    Quantized identity-permute models can produce a partition containing only
+    boundary Q/DQ nodes and the identity permute::
+
+        DQ -> PERMUTE([0, 1, ..., rank - 1]) -> Q
+
+    TOSA lowering removes the boundary Q/DQ nodes and canonicalization removes
+    the identity permute. Delegating that partition would therefore create an
+    empty TOSA graph whose declared output has no writer.
+
+    Args:
+        node (torch.fx.Node): FX node to classify.
+
+    Returns:
+        bool: True when the node is an identity ``permute_copy``.
+
+    """
+    if node.target != exir_ops.edge.aten.permute_copy.default:
+        return False
+
+    dims = node.args[1]
+    if not isinstance(dims, (list, tuple)) or not all(
+        isinstance(dim, int) for dim in dims
+    ):
+        return False
+
+    rank = len(dims)
+    normalized_dims = tuple(
+        dim if dim >= 0 else dim + rank for dim in cast(Sequence[int], dims)
+    )
+    return normalized_dims == tuple(range(rank))
+
+
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
     return node.target == exir_ops.edge.aten.view_copy.default
 
@@ -588,6 +623,7 @@ class TOSAPartitioner(Partitioner):
                     or _is_noop_to_dim_order_copy(node)
                     or _is_noop_squeeze(node)
                     or _is_noop_flip(node)
+                    or _is_noop_permute(node)
                     or _is_view_copy(node)
                     or _is_noop_as_strided_copy(node)
                     or node.target in Q_OPS
