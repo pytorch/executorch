@@ -2152,6 +2152,233 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   }
 }
 
+TEST(VulkanComputeGraphTest, was_value_updated_tracks_tensor_changes) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef tensor = graph.add_tensor({2, 4}, vkapi::kFloat);
+
+  EXPECT_FALSE(graph.was_value_updated(kDummyValueRef));
+  EXPECT_FALSE(graph.was_value_updated(tensor));
+
+  graph.virtual_resize(tensor, {2, 4});
+  EXPECT_FALSE(graph.was_value_updated(tensor));
+
+  graph.virtual_resize(tensor, {1, 4});
+  EXPECT_TRUE(graph.was_value_updated(tensor));
+}
+
+TEST(VulkanComputeGraphTest, was_value_updated_tracks_symint_changes) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef symint = graph.add_symint(3);
+
+  EXPECT_FALSE(graph.was_value_updated(symint));
+
+  graph.set_symint(symint, 3);
+  EXPECT_FALSE(graph.was_value_updated(symint));
+
+  graph.set_symint(symint, 5);
+  EXPECT_TRUE(graph.was_value_updated(symint));
+}
+
+TEST(VulkanComputeGraphTest, was_value_updated_checks_nested_value_lists) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef unchanged = graph.add_symint(1);
+  const ValueRef changed = graph.add_symint(2);
+  const ValueRef inner_list = graph.add_value_list({unchanged, changed});
+  const ValueRef outer_list =
+      graph.add_value_list({kDummyValueRef, inner_list});
+
+  EXPECT_FALSE(graph.was_value_updated(inner_list));
+  EXPECT_FALSE(graph.was_value_updated(outer_list));
+
+  graph.set_symint(changed, 3);
+
+  EXPECT_FALSE(graph.was_value_updated(unchanged));
+  EXPECT_TRUE(graph.was_value_updated(changed));
+  EXPECT_TRUE(graph.was_value_updated(inner_list));
+  EXPECT_TRUE(graph.was_value_updated(outer_list));
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_read_arg_updates) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef output = graph.add_symint(1);
+  const ValueRef input = graph.add_symint(2);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}});
+
+  graph.set_symint(input, 3);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_write_arg_updates) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef output = graph.add_symint(1);
+  const ValueRef input = graph.add_symint(2);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}});
+
+  graph.set_symint(output, 3);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_read_write_updates) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef value = graph.add_symint(1);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{value, vkapi::kReadWrite}});
+
+  graph.set_symint(value, 2);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_nested_resize_args) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef value = graph.add_symint(1);
+  const ValueRef inner_list = graph.add_value_list({value});
+  const ValueRef outer_list = graph.add_value_list({inner_list});
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {outer_list});
+
+  graph.set_symint(value, 2);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_skips_unchanged_args) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef output = graph.add_symint(1);
+  const ValueRef input = graph.add_symint(2);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}});
+
+  EXPECT_FALSE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 0);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_force_resize_ignores_arg_updates) {
+  GraphConfig config;
+  config.force_resize = true;
+  ComputeGraph graph(config);
+
+  size_t resize_count = 0;
+  ExecuteNode node([&resize_count](ComputeGraph*, const auto&, const auto&) {
+    ++resize_count;
+  });
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(
+    VulkanComputeGraphTest,
+    execute_node_data_dependent_resize_is_unconditional) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {},
+      "data_dependent_node",
+      true);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, resize_input_marks_staging_value_updated) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const IOValueRef input = graph.add_input_tensor({2, 4}, vkapi::kFloat);
+
+  EXPECT_FALSE(graph.was_value_updated(input.value));
+  EXPECT_FALSE(graph.was_value_updated(input.staging));
+
+  graph.resize_input(0, {2, 4});
+
+  EXPECT_FALSE(graph.was_value_updated(input.value));
+  EXPECT_TRUE(graph.was_value_updated(input.staging));
+}
+
+TEST(VulkanComputeGraphTest, execute_advances_value_update_generation) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef symint = graph.add_symint(1);
+  const ValueRef values = graph.add_value_list({symint});
+
+  graph.prepare();
+  graph.set_symint(symint, 2);
+
+  EXPECT_TRUE(graph.was_value_updated(symint));
+  EXPECT_TRUE(graph.was_value_updated(values));
+
+  graph.execute();
+
+  EXPECT_FALSE(graph.was_value_updated(symint));
+  EXPECT_FALSE(graph.was_value_updated(values));
+
+  graph.set_symint(symint, 3);
+
+  EXPECT_TRUE(graph.was_value_updated(symint));
+  EXPECT_TRUE(graph.was_value_updated(values));
+
+  graph.execute();
+
+  EXPECT_FALSE(graph.was_value_updated(symint));
+  EXPECT_FALSE(graph.was_value_updated(values));
+}
+
 #define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)              \
   std::vector<float> data_##name(utils::multiply_integers(sizes)); \
   std::fill(data_##name.begin(), data_##name.end(), val);          \
