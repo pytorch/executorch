@@ -139,33 +139,6 @@ class ET_EXPERIMENTAL CudaBackend final
     return method_in_csv(method_name, cuda_graph_method_);
   }
 
-  // Create the shared CUDA stream. Called when use_shared_cuda_stream option
-  // is set to true. The presence of shared_cuda_stream_ indicates shared mode.
-  void create_shared_cuda_stream() {
-    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
-    if (shared_cuda_stream_ != nullptr) {
-      return; // Already created
-    }
-    shared_cuda_stream_ = cuda::create_cuda_stream();
-    if (shared_cuda_stream_ == nullptr) {
-      ET_LOG(Error, "Failed to create shared CUDA stream");
-      return;
-    }
-    ET_LOG(Info, "Created shared CUDA stream: %p", *shared_cuda_stream_);
-  }
-
-  // Get the shared CUDA stream. Returns nullptr if not in shared mode.
-  std::shared_ptr<cudaStream_t> get_shared_cuda_stream() const {
-    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
-    return shared_cuda_stream_;
-  }
-
-  // Check if we're using shared CUDA stream mode.
-  bool is_using_shared_cuda_stream() const {
-    std::lock_guard<std::mutex> guard(cuda_stream_mutex_);
-    return shared_cuda_stream_ != nullptr;
-  }
-
   // Enable the legacy dense-blob per-FQN cache. New FQN artifacts use
   // their FQN-addressed data keys automatically.
   void set_weight_sharing_across_methods(bool enabled) {
@@ -262,9 +235,20 @@ class ET_EXPERIMENTAL CudaBackend final
             "effect; ignoring it.",
             kSkipCopyOutputToCpuForMethod);
       } else if (std::strcmp(option.key, kUseSharedCudaStream) == 0) {
+        // Refused rather than ignored: this option was the only thing ordering
+        // methods driven from different threads, so silently dropping it would
+        // give such a caller unordered device work and wrong results. Methods
+        // now run on the calling thread's stream, which orders methods called
+        // from one thread but not across threads; a caller that needs that must
+        // order the calls itself.
         if (auto* val = std::get_if<bool>(&option.value)) {
           if (*val) {
-            create_shared_cuda_stream();
+            ET_LOG(
+                Error,
+                "Option %s is deprecated and no longer orders methods across "
+                "threads. See the comment at this check for what to do instead.",
+                kUseSharedCudaStream);
+            return Error::NotSupported;
           }
         } else {
           ET_LOG(Error, "Option %s must be a boolean.", kUseSharedCudaStream);
@@ -432,30 +416,19 @@ class ET_EXPERIMENTAL CudaBackend final
           load_constants_legacy(handle, named_data_map, weights_blob_key));
     }
 
-    // Use shared CUDA stream if enabled via options, otherwise create one.
-    // A shared stream ensures proper ordering across multiple methods
-    // (e.g., encoder, decoder, sampler) when using skip-copy optimization.
-    if (is_using_shared_cuda_stream()) {
-      // Shared stream mode: all handles share the same stream.
-      handle->cuda_stream = get_shared_cuda_stream();
-      ET_LOG(
-          Info,
-          "Using shared CUDA stream %p for method %s",
-          handle->get_cuda_stream(),
-          method_name.c_str());
-    } else {
-      // Per-handle stream mode: each handle owns its own stream.
-      handle->cuda_stream = cuda::create_cuda_stream();
-      if (handle->cuda_stream == nullptr) {
-        delete handle;
-        return Error::Internal;
-      }
-      ET_LOG(
-          Info,
-          "Created new CUDA stream %p for method %s",
-          handle->get_cuda_stream(),
-          method_name.c_str());
-    }
+    // Handles on one thread share that thread's stream, so one delegate's
+    // output is ordered against the next one's read, which a stream per handle
+    // left unordered. cudaStreamPerThread is a different stream on each host
+    // thread, so this orders delegates called from the same thread and not
+    // delegates called from different ones. The TensorRT delegate falls back to
+    // the same stream, in its executorch backend, so a split program on one
+    // thread is ordered too.
+    handle->cuda_stream = cudaStreamPerThread;
+    ET_LOG(
+        Info,
+        "Using the per-thread CUDA stream %p for method %s",
+        handle->get_cuda_stream(),
+        method_name.c_str());
 
     // Initialize CUDA graph state if enabled for this method.
     if (should_use_cuda_graph_for_method(method_name)) {
@@ -489,15 +462,17 @@ class ET_EXPERIMENTAL CudaBackend final
     handle->get_num_outputs(handle->container_handle, &n_outputs);
 
     // Run on the caller-selected stream when one is active on this thread (e.g.
-    // a CUDA green-context stream), otherwise the handle's own stream. Every
+    // a CUDA green-context stream), otherwise the per-thread stream. Every
     // kernel and boundary copy reads getCurrentCUDAStream, so installing the
     // choice here routes the whole execution; restore the prior selection on
     // return so a caller stream does not linger for later work on this thread.
     const std::optional<cudaStream_t> caller_stream =
         executorch::extension::cuda::getCallerStream();
 
-    // A captured CUDA graph is bound to its capture stream and cannot be safely
-    // replayed on a different, caller-provided stream.
+    // Replaying a captured graph on a caller-provided stream is not itself a
+    // CUDA error, but the static buffers this path pins are shared by every
+    // replay, so two callers on two streams would race over them. Refused
+    // rather than synchronized, which predates this change.
     ET_CHECK_OR_RETURN_ERROR(
         !(caller_stream &&
           handle->cuda_graph_state.phase != CudaGraphPhase::Disabled),
@@ -640,6 +615,67 @@ class ET_EXPERIMENTAL CudaBackend final
     std::vector<SlimTensor*> slim_inputs(n_inputs);
     std::vector<SlimTensor*> slim_outputs(n_outputs);
 
+    // Undoes a capture attempt that an early return would otherwise abandon.
+    //
+    // The buffers this attempt pinned would otherwise stay in their vectors
+    // with the phase still at warmup and no steps left, so the next call
+    // captures again and appends a second set. Replay then reads the second set
+    // while the input copies target the first, and every execute returns
+    // whatever those buffers held at capture time, with nothing reporting an
+    // error.
+    //
+    // Ending the capture itself is a separate guard, declared after the tensor
+    // cleanup below so that it runs before it: freeing a device buffer on a
+    // still-capturing stream fails with invalid argument and leaks the block.
+    //
+    // Disarmed once the capture step has fully succeeded.
+    class CaptureGuard {
+     public:
+      ~CaptureGuard() {
+        if (state_ == nullptr) {
+          return;
+        }
+        // Free what this attempt pinned and disable graphs for this method, so
+        // a capture that cannot succeed costs one error rather than one on
+        // every fourth call for the life of the process. Eager execution is
+        // correct, just slower.
+        for (void* ptr : state_->static_input_ptrs) {
+          (void)cudaFree(ptr);
+        }
+        state_->static_input_ptrs.clear();
+        state_->static_output_ptrs.clear();
+        state_->static_input_nbytes.clear();
+        state_->static_output_nbytes.clear();
+        // Same order as ~CudaGraphState: the exec depends on the graph.
+        if (state_->graph_exec != nullptr) {
+          (void)cudaGraphExecDestroy(state_->graph_exec);
+          state_->graph_exec = nullptr;
+        }
+        if (state_->graph != nullptr) {
+          (void)cudaGraphDestroy(state_->graph);
+          state_->graph = nullptr;
+        }
+        state_->phase = CudaGraphPhase::Disabled;
+        state_->warmup_remaining = 0;
+        (void)cudaGetLastError();
+      }
+      // Before capture begins. From here a failure still unwinds the pinned
+      // buffers.
+      void arm(cuda::CudaGraphState* state) {
+        state_ = state;
+      }
+      void disarm() {
+        state_ = nullptr;
+      }
+
+     private:
+      cuda::CudaGraphState* state_ = nullptr;
+    } capture_guard;
+
+    if (is_capture_step) {
+      capture_guard.arm(&handle->cuda_graph_state);
+    }
+
     // Process input tensors: wrap the GPU-resident ETensor buffers directly.
     for (size_t i = 0; i < n_inputs; i++) {
       auto* et_input = &(args[i]->toTensor());
@@ -658,14 +694,16 @@ class ET_EXPERIMENTAL CudaBackend final
             i,
             cudaGetErrorString(merr));
 
+        // Tracked before the seeding copy, so a failed copy still unwinds
+        // through the guard instead of leaking this allocation.
+        handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
+        handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
+
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
             static_ptr,
             et_input->const_data_ptr(),
             nbytes,
             cudaMemcpyDeviceToDevice));
-
-        handle->cuda_graph_state.static_input_ptrs.push_back(static_ptr);
-        handle->cuda_graph_state.static_input_nbytes.push_back(nbytes);
 
         slim_inputs[i] = make_slimtensor_from_blob_with_etensor_metadata(
             static_ptr, et_input);
@@ -706,6 +744,43 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     });
 
+    // Ends a capture that an early return would otherwise leave running.
+    // Declared after `cleanup` so it is destroyed before it: a device buffer
+    // freed on a still-capturing stream fails with invalid argument and leaks
+    // the block.
+    //
+    // Leaving the stream capturing matters because handles share the per-thread
+    // stream: the next delegate on this thread would have its kernels captured
+    // instead of run, and later synchronizes would fail.
+    class EndCaptureGuard {
+     public:
+      ~EndCaptureGuard() {
+        if (stream_ == nullptr) {
+          return;
+        }
+        cudaGraph_t abandoned = nullptr;
+        if (cudaStreamEndCapture(stream_, &abandoned) == cudaSuccess) {
+          if (abandoned != nullptr) {
+            (void)cudaGraphDestroy(abandoned);
+          }
+        } else {
+          // Clears the sticky error so the next unrelated CUDA call on this
+          // thread does not inherit it. This clears whatever error is pending,
+          // not only the one from above.
+          (void)cudaGetLastError();
+        }
+      }
+      void arm(cudaStream_t stream) {
+        stream_ = stream;
+      }
+      void disarm() {
+        stream_ = nullptr;
+      }
+
+     private:
+      cudaStream_t stream_ = nullptr;
+    } end_capture_guard;
+
     // Run the AOTI container.
     // NOTE: run() steals input handles (RAII wraps them at the start of
     // run_impl) and may replace output handles with its own.
@@ -727,6 +802,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaStreamBeginCapture failed: %s",
           cudaGetErrorString(cerr));
+      end_capture_guard.arm(cuda_stream);
     }
 
     AOTIRuntimeError error = handle->run(
@@ -758,6 +834,9 @@ class ET_EXPERIMENTAL CudaBackend final
       // End capture → instantiate graph
       cudaError_t gerr =
           cudaStreamEndCapture(cuda_stream, &handle->cuda_graph_state.graph);
+      // The stream has left capture either way, so the guard must not end it
+      // again; the state guard below still unwinds what the attempt pinned.
+      end_capture_guard.disarm();
       ET_CHECK_OR_RETURN_ERROR(
           gerr == cudaSuccess,
           Internal,
@@ -774,11 +853,15 @@ class ET_EXPERIMENTAL CudaBackend final
           "cudaGraphInstantiate failed: %s",
           cudaGetErrorString(gerr));
 
-      // Record static output pointers (stable under graph replay)
+      // Record static output pointers (stable under graph replay). Releasing
+      // them from slim_outputs here, before the copies below, keeps the cleanup
+      // guard from deleting buffers the AOTI runtime owns if one of those
+      // copies fails.
       for (size_t i = 0; i < n_outputs; i++) {
         SlimTensor* out = slim_outputs[i];
         handle->cuda_graph_state.static_output_ptrs.push_back(out->data_ptr());
         handle->cuda_graph_state.static_output_nbytes.push_back(out->nbytes());
+        slim_outputs[i] = nullptr;
       }
 
       handle->cuda_graph_state.phase = CudaGraphPhase::Replay;
@@ -804,11 +887,12 @@ class ET_EXPERIMENTAL CudaBackend final
             handle->cuda_graph_state.static_output_nbytes[i],
             cudaMemcpyDeviceToDevice,
             cuda_stream));
-        // Don't delete — static buffers are owned by the AOTI runtime.
-        slim_outputs[i] = nullptr;
       }
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cuda_stream));
 
+      // Last failure point is behind us, so the captured state is now the state
+      // the next call should replay from.
+      capture_guard.disarm();
       return Error::Ok;
     }
 
@@ -866,11 +950,6 @@ class ET_EXPERIMENTAL CudaBackend final
 
     mutable_state_forget_handle(handle);
 
-    // The CUDA stream is managed by shared_ptr in the handle.
-    // It will be automatically destroyed when the last handle using it
-    // is destroyed. Just reset our reference.
-    handle->cuda_stream.reset();
-
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
     // which causes segmentation faults when attempting to delete other
@@ -921,14 +1000,6 @@ class ET_EXPERIMENTAL CudaBackend final
  private:
   mutable std::mutex cuda_graph_method_mutex_;
   std::string cuda_graph_method_;
-
-  // Shared CUDA stream for all methods. When set (non-null), all methods use
-  // the same stream to ensure proper ordering across methods that hand off
-  // GPU-resident tensors (e.g. encoder -> decoder -> sampler). Created when
-  // use_shared_cuda_stream option is set to true. Managed via shared_ptr so
-  // it's automatically cleaned up when last handle is destroyed.
-  mutable std::mutex cuda_stream_mutex_;
-  std::shared_ptr<cudaStream_t> shared_cuda_stream_ = nullptr;
 
   // Whether to enable cross-method caching for legacy dense-blob artifacts.
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
