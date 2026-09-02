@@ -701,7 +701,6 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
-            "//executorch/exir/dialects/_ops:ops",
         ],
     )
 
@@ -713,6 +712,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
             ":enforce_contiguous_dim_order",
         ],
     )

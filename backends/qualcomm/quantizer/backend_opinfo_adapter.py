@@ -45,6 +45,39 @@ except Exception:
     backend_opinfo = None
     _HAS_BACKEND_OPINFO = False
 
+_WARNED_ABOUT_FALLBACK = False
+
+
+def _load_backend_opinfo() -> bool:
+    """Looks for the SDK's op info again, once the SDK has been set up.
+
+    The attempt above runs while this module is imported, which can be before anything has made
+    the SDK usable. Deciding only there would cache the no-op fallback for the rest of the
+    process, silently dropping every quantization constraint check.
+    """
+    global backend_opinfo, _HAS_BACKEND_OPINFO
+    if _HAS_BACKEND_OPINFO:
+        return True
+
+    from executorch.backends.qualcomm.utils.qnn_sdk_setup import setup_qnn_sdk
+
+    try:
+        # Inside the try, because a failure here means the same thing as an SDK without this API:
+        # the op info is unavailable. Letting it escape would make building a quantizer raise on
+        # any host with no usable SDK, where it used to fall back.
+        setup_qnn_sdk()
+        add_qnn_python_path()
+        from qti.aisw.converters.common import backend_opinfo as loaded
+    except Exception:
+        # Logged rather than dropped, because the fallback below is silent about which of the
+        # several possible causes applied: no SDK, an SDK without this API, or a real error.
+        logging.debug("The QNN op info could not be loaded", exc_info=True)
+        return False
+
+    backend_opinfo = loaded
+    _HAS_BACKEND_OPINFO = True
+    return True
+
 
 class _NoOpBackendOpInfo:
     def __init__(self, *args, **kwargs):
@@ -57,21 +90,18 @@ class _NoOpBackendOpInfo:
         return []
 
 
-class _NoOpNamespace:
-    HTP = 1
-    LPAI = 3
-    BackendOpInfo = _NoOpBackendOpInfo
-
-
-if not _HAS_BACKEND_OPINFO:
+def _warn_once_about_the_fallback() -> None:
+    global _WARNED_ABOUT_FALLBACK
+    if _WARNED_ABOUT_FALLBACK:
+        return
+    _WARNED_ABOUT_FALLBACK = True
     logging.warning(
         "The backend_opinfo module couldn't be imported, so the abstract implementation will be used instead. This might be because $QNN_SDK_ROOT/lib/python isn't included in your PYTHONPATH, or the `BackendOpInfo` API isn't available in your QNN SDK version. Note that the `BackendOpInfo` API is supported starting from QNN SDK 2.41 and above."
     )
-    backend_opinfo = _NoOpNamespace()
 
 
 @lru_cache()
-def get_backend_opinfo(backend: str, soc_model: QcomChipset):
+def _get_backend_opinfo_cached(backend: str, soc_model: QcomChipset):
     backend_type = getattr(backend_opinfo, backend.upper())
     # For qnn 2.41, it only supports HTP backend
     # It will support LPAI backend as soon as possible.
@@ -80,10 +110,26 @@ def get_backend_opinfo(backend: str, soc_model: QcomChipset):
     try:
         return backend_opinfo.BackendOpInfo(backend_type, soc_model)
     except Exception:
-        print(
-            f"The 'BackendOpInfo' APIs may not be available for this backend {backend}."
+        logging.warning(
+            "The 'BackendOpInfo' APIs may not be available for this backend %s.",
+            backend,
         )
         return _NoOpBackendOpInfo()
+
+
+def get_backend_opinfo(backend: str, soc_model: QcomChipset):
+    # The SDK is looked for again here rather than only while this module was imported, because
+    # that ran before anything had made the SDK usable.
+    #
+    # Deliberately not cached itself, so a later successful setup can still recover the real
+    # constraint checks. The inner function is cached, and it does return the do-nothing checker
+    # for a backend the SDK has no op info for, which is a fixed fact about that backend rather
+    # than something a later setup changes.
+    if not _load_backend_opinfo():
+        _warn_once_about_the_fallback()
+        return _NoOpBackendOpInfo()
+
+    return _get_backend_opinfo_cached(backend, soc_model)
 
 
 # Helper functions for normalizing OpInfo objects (moved from backend_opinfo_adapter)
