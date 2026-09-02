@@ -16,6 +16,37 @@
 
 namespace muse_glimmer::cuda {
 
+class SamplingWorkspace {
+ public:
+  SamplingWorkspace();
+  ~SamplingWorkspace();
+
+  SamplingWorkspace(const SamplingWorkspace&) = delete;
+  SamplingWorkspace& operator=(const SamplingWorkspace&) = delete;
+
+  // Allocates all scratch buffers needed for this fixed batch shape. Call
+  // before CUDA graph capture; repeated calls for the same shape are no-ops.
+  cudaError_t reserve(
+      int64_t row_count,
+      int64_t row_size,
+      cudaStream_t stream);
+
+ private:
+  struct Impl;
+  Impl* impl_;
+
+  friend cudaError_t fill_sampling_probabilities(
+      const float*,
+      int64_t,
+      int64_t,
+      double,
+      int32_t,
+      double,
+      float*,
+      SamplingWorkspace&,
+      cudaStream_t);
+};
+
 // Computes one argmax per contiguous row of `values`.
 //
 // `values` and `indices` must point to CUDA memory. Equal maxima select the
@@ -26,6 +57,21 @@ cudaError_t argmax_index(
     int64_t row_count,
     int64_t row_size,
     uint64_t* indices,
+    cudaStream_t stream);
+
+// CUDA counterpart of muse_glimmer::fill_sampling_probabilities for contiguous rows.
+// Applies temperature, then top-k, then top-p, and writes normalized dense
+// probabilities in original token order. All tensor pointers are device
+// pointers and the launch sequence is asynchronous with respect to `stream`.
+cudaError_t fill_sampling_probabilities(
+    const float* logits,
+    int64_t row_count,
+    int64_t row_size,
+    double temperature,
+    int32_t top_k,
+    double top_p,
+    float* probabilities,
+    SamplingWorkspace& workspace,
     cudaStream_t stream);
 
 } // namespace muse_glimmer::cuda
