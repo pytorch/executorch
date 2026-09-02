@@ -13,6 +13,7 @@ cleanup (CSE, reinplace) runs before lowering via transform_passes, since
 ExecuTorch forbids a partitioner from mutating the graph module.
 """
 
+import operator
 from typing import Callable, final, List, Mapping, Optional, Tuple
 
 import torch
@@ -65,6 +66,16 @@ class NativeSupportedOperators(OperatorSupportBase):
             return False
         if isinstance(node.target, torch._ops.HigherOrderOperator):
             return False
+
+        # A multi-output op's results are read through getitem, which the
+        # serializer folds into the producer's Output list. Rejecting it makes
+        # every such op a partition barrier. Claim it only when its producer is
+        # claimed, so an undelegated producer cannot leave a lone getitem behind.
+        if node.target is operator.getitem:
+            producer = node.args[0] if node.args else None
+            return isinstance(producer, Node) and self.is_node_supported(
+                submodules, producer
+            )
 
         from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
