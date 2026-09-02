@@ -95,6 +95,7 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
       submodules: recursive
       upload-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
+      upload-artifact-to-s3: true
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -142,7 +143,11 @@ jobs:
         if [ "${{ matrix.model_name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
           VR_MODE="vr-offline"
         fi
-        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
+        # Namespace exports per matrix cell: S3 uploads share one run-level
+        # prefix, so same-named files (model.pte) would otherwise collide.
+        ARTIFACT_SUBDIR="${RUNNER_ARTIFACT_DIR}/${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}"
+        mkdir -p "${ARTIFACT_SUBDIR}"
+        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${ARTIFACT_SUBDIR}" "${VR_MODE}"
 
   test-model-cuda-windows-e2e:
     name: test-model-cuda-windows-e2e
@@ -194,7 +199,6 @@ jobs:
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      download-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         git config --global http.sslBackend openssl
@@ -213,8 +217,9 @@ jobs:
           .ci/scripts/setup-windows.ps1
           \$artifactDir = \$env:RUNNER_ARTIFACT_DIR
           if ([string]::IsNullOrWhiteSpace(\$artifactDir)) {
-            throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
+            throw 'RUNNER_ARTIFACT_DIR is not set by windows_job.yml.'
           }
+          aws s3 cp --recursive 's3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}/' \$artifactDir
 
           .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.0'
         }"

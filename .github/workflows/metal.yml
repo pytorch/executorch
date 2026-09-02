@@ -252,6 +252,7 @@ jobs:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
       upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
@@ -284,7 +285,11 @@ jobs:
         if [ "${{ matrix.model.name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
           VR_MODE="vr-offline"
         fi
-        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
+        # Namespace exports per matrix cell: S3 uploads share one run-level
+        # prefix, so same-named files (model.pte) would otherwise collide.
+        ARTIFACT_SUBDIR="${RUNNER_ARTIFACT_DIR}/${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}"
+        mkdir -p "${ARTIFACT_SUBDIR}"
+        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${ARTIFACT_SUBDIR}" "${VR_MODE}"
 
   test-model-metal-e2e:
     name: test-model-metal-e2e
@@ -335,9 +340,16 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
-      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
       script: |
         set -eux
+
+        echo "::group::Download model artifacts from S3"
+        ${CONDA_RUN} pip install awscli==1.37.21
+        ${CONDA_RUN} aws s3 cp --recursive \
+          "s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}/" \
+          "${RUNNER_ARTIFACT_DIR}/"
+        ls -lah "${RUNNER_ARTIFACT_DIR}"
+        echo "::endgroup::"
 
         echo "::group::Print machine info"
         uname -a
