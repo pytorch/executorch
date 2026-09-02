@@ -6,6 +6,7 @@
 from collections import Counter
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm._passes.arm_pass_manager import (
     _ExportedProgramGraphPassAdapter,
@@ -194,3 +195,53 @@ def test_does_not_fold_when_conv_has_multiple_users() -> None:
     mul_count = mul_tensor_count + mul_scalar_count
     assert mul_count == 1
     torch.testing.assert_close(module(*inputs), transformed.module()(*inputs))
+
+
+class StatefulConvMul(torch.nn.Module):
+    """Conv output * scale is written into a mutable buffer (carried state).
+
+    ``state`` is read at the start and written at the end of ``forward``, so
+    the (scaled) conv output crosses a carried/stateful quantization boundary.
+    Folding the scale into the conv weights would shift that requantization, so
+    the fold must be skipped here.
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, 3, padding=1)
+        self.register_buffer("state", torch.zeros(1, 3, 8, 8))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.conv(x + self.state) * 0.25  # type: ignore[operator]
+        self.state.copy_(y)  # type: ignore[operator]
+        return y
+
+
+# FoldScalarMulIntoConv is not yet carried-state-aware at this point in the stack,
+# so the test below FAILS here (the fold happens and removes the mul). It is marked
+# xfail.
+@pytest.mark.xfail(
+    reason="FoldScalarMulIntoConv carried-state guard is added in the following diff",
+    strict=True,
+)
+def test_does_not_fold_when_output_feeds_stateful_buffer() -> None:
+    """The scale must survive when the conv output crosses a carried-state
+    boundary.
+
+    Folding would move the scale into the conv weights and shift the conv output
+    requantization, drifting the quantized value persisted in the mutable
+    buffer.
+
+    """
+    module = StatefulConvMul().eval()
+    inputs = (torch.randn(1, 3, 8, 8),)
+
+    transformed = _run_pass(module, inputs)
+    counts = _op_counts(transformed)
+
+    assert counts[exir_ops.edge.aten.convolution.default] == 1
+    mul_count = (
+        counts[exir_ops.edge.aten.mul.Tensor] + counts[exir_ops.edge.aten.mul.Scalar]
+    )
+    assert mul_count == 1
