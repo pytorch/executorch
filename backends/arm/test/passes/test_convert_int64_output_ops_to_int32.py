@@ -221,6 +221,45 @@ def test_arg_op_direct_output_is_unchanged(arg_op):
     assert result.graph_module(torch.randn(2, 8))[0].dtype == torch.int64
 
 
+def test_arg_op_ignores_unrelated_node_without_value_metadata():
+    from torch._subclasses import FakeTensorMode
+
+    graph = Graph()
+    with FakeTensorMode():
+        fake_input = torch.empty(2, 8)
+        fake_output = torch.empty(2, dtype=torch.int64)
+    x = graph.placeholder("x")
+    x.meta["val"] = fake_input
+    argmax = graph.call_function(torch.ops.aten.argmax.default, (x, 1))
+    argmax.meta["val"] = fake_output
+    graph.call_function(
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        (x,),
+        {"dtype": torch.int64},
+    )
+    graph.output(argmax)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    result = ConvertInt64OutputOpsToInt32Pass().call(graph_module)
+
+    assert not result.modified
+
+
+def test_live_supported_node_without_value_metadata_raises():
+    graph = Graph()
+    x = graph.placeholder("x")
+    cast = graph.call_function(
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        (x,),
+        {"dtype": torch.int64},
+    )
+    graph.output(cast)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+
+    with pytest.raises(KeyError, match="val"):
+        ConvertInt64OutputOpsToInt32Pass().call(graph_module)
+
+
 ##############################################################
 ## Test on_overflow range check for argmax/argmin           ##
 ##############################################################

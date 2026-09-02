@@ -3,12 +3,6 @@ import logging
 import threading
 from typing import Dict, List
 
-# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
-# here rather than in the package's __init__.
-from executorch.backends.qualcomm import setup_qnn_sdk
-
-setup_qnn_sdk()
-
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -16,6 +10,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
+)
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import (
+    disable_mkldnn_on_amd,
+    setup_qnn_sdk,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -31,6 +29,12 @@ class QnnManagerRegistry:
     def get_or_create_qnn_manager(
         self, backend_type: QnnExecuTorchBackendType, option: bytes
     ) -> PyQnnManager.QnnManager:
+        # Outside the branch below, so reusing a cached manager still re-applies them. Both are
+        # cheap on a repeat call, and the AMD guard has to hold for every lowering, not only the
+        # one that happened to build the manager.
+        setup_qnn_sdk()
+        disable_mkldnn_on_amd()
+
         if backend_type not in self._registry:
             qnn_manager = PyQnnManager.QnnManager(option)
             err = qnn_manager.InitBackend()
@@ -96,4 +100,8 @@ def get_current_qnn_manager(
         return QnnManagerRegistry().get_or_create_qnn_manager(
             backend_type, generate_qnn_executorch_option(compile_specs)
         )
+
+    # Re-applied even though the manager already exists, because a caller may have turned the
+    # setting back on since it was built, and this is a lowering about to run.
+    disable_mkldnn_on_amd()
     return active_registry._registry[backend_type]

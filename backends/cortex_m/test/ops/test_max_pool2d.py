@@ -77,6 +77,33 @@ class CortexMMaxPool2dIndices(torch.nn.Module):
         return self.pool(x)[1]
 
 
+class CortexMMaxPool2dRelu(torch.nn.Module):
+    """A pool that declines to lower, with an activation after it.
+
+    ActivationFusionPass folds the activation into the producer's output range
+    and erases its node. The portable fallback reads no range, so a pool that
+    declines has to keep the activation as a node of its own.
+    """
+
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
+    }
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_max_pool2d_default": 0,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.pool = torch.nn.MaxPool2d(*args, **kwargs)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.relu(self.pool(x))
+
+
 test_cases = {
     "maxpool_2x2": McuTestCase(
         CortexMMaxPool2d(kernel_size=2, stride=2),
@@ -162,6 +189,17 @@ def test_dialect_max_pool2d_fallback(test_case, cortex_m_target):
         },
         qtol=1,
     )
+
+
+def test_activation_after_a_declining_pool_survives(cortex_m_target):
+    """Erasing it would be silent: the graph still runs, just unclamped."""
+    model = CortexMMaxPool2dRelu(kernel_size=2, stride=1, dilation=2)
+    tester = CortexMTester(
+        model,
+        ((torch.randn(1, 4, 8, 8) * 20),),
+        target_config=cortex_m_target,
+    )
+    tester.test_dialect(model.ops_before_transforms, model.ops_after_transforms, qtol=1)
 
 
 @parametrize("test_case", fallback_test_cases)

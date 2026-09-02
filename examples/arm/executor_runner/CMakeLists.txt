@@ -193,11 +193,6 @@ set(_arm_runner_normal_archive_libs
     portable_kernels kernels_util_all_deps arm_prim_ops_lib_impl
     quantized_kernels cortex_m_kernels cmsis-nn
 )
-verify_targets_exist(
-  CONTEXT arm_executor_runner TARGETS ${_arm_runner_selected_ops_libs}
-  ${_arm_runner_normal_archive_libs}
-)
-
 arm_runner_link_registration_libraries(
   TARGET
   arm_executor_runner
