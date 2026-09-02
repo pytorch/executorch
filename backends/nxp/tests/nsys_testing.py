@@ -34,16 +34,20 @@ from executorch.backends.nxp.tests.dataset_creator import (
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_calibration_inputs_fn_from_dataset_dir,
     ModelInputSpec,
+    to_edge_program,
     to_model_input_spec,
     to_quantized_edge_program,
     to_quantized_executorch_program,
 )
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import GraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
+from executorch.backends.nxp.tests.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
 from executorch.backends.nxp.tests.utils import save_pte_program, store_txt_input_tensor
+
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
@@ -145,9 +149,8 @@ def _run_delegated_executorch_program(
         raise
 
     exported_program = delegated_program.exported_program()
-    nodes = list(exported_program.graph.nodes)
-    assert any(
-        node.name.startswith("executorch_call_delegate") for node in nodes
+    assert graph_contains_any_of_ops(
+        exported_program.graph, [ExecutorchDelegateCall]
     ), "No delegated parts found in program delegated to NPU!"
     dlg_model_verifier.verify_graph(exported_program.graph)
 
@@ -213,9 +216,8 @@ def _run_non_delegated_executorch_program(
         remove_quant_io_ops=remove_quant_io_ops,
     )
 
-    nodes = list(non_delegated_program.exported_program().graph.nodes)
-    assert all(
-        not node.name.startswith("executorch_call_delegate") for node in nodes
+    assert not graph_contains_any_of_ops(
+        non_delegated_program.exported_program().graph, [ExecutorchDelegateCall]
     ), "Delegated parts found in program executed on CPU!"
 
     save_pte_program(non_delegated_program, test_name + "_non_delegated", test_dir)
@@ -230,6 +232,23 @@ def _run_non_delegated_executorch_program(
     execute_cmd(non_delegated_cmd)
 
     return non_delegated_program.exported_program()
+
+
+def _save_non_quantized_fp32_executorch_program(
+    model,
+    test_dir,
+    test_name,
+    input_spec,
+) -> ExportedProgram:
+    non_quantized_program = to_edge_program(model, input_spec).to_executorch()
+
+    assert not graph_contains_any_of_ops(
+        non_quantized_program.exported_program().graph, [ExecutorchDelegateCall]
+    ), "Delegated parts found in non-quantized FP32 program!"
+
+    save_pte_program(non_quantized_program, test_name + "_non_quantized", test_dir)
+
+    return non_quantized_program.exported_program()
 
 
 def read_prepared_samples(
@@ -457,6 +476,7 @@ def lower_run_compare(
 
     model_to_delegate = model
     model_to_not_delegate = deepcopy(model)
+    model_to_export_fp32 = deepcopy(model)
 
     test_name = get_test_name(request)
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
@@ -474,6 +494,13 @@ def lower_run_compare(
 
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
+
+    _save_non_quantized_fp32_executorch_program(
+        model_to_export_fp32,
+        test_dir,
+        test_name,
+        input_spec,
+    )
 
     delegated_program, testing_dataset_dir = _run_delegated_executorch_program(
         model_to_delegate,
@@ -782,13 +809,19 @@ def get_executorch_git_info() -> dict[str, str]:
 def dump_debug_test_summary(test_name: str, test_dir: str):
     git_info = get_executorch_git_info()
 
+    # During development, the NSYS in virtual env is not used.
+    nsys_version = (
+        "Internal build from executorch-integration"
+        if NSYS_PATH is not None
+        else version("eiq_nsys")
+    )
     summary = {
         "test_name": test_name,
         "date_time": datetime.datetime.now().isoformat(),
         "git_branch": git_info["git_branch"],
         "git_commit": git_info["git_commit"],
         "eiq_neutron_sdk_version": version("eiq_neutron_sdk"),
-        "eiq_nsys_version": version("eiq_nsys"),
+        "eiq_nsys_version": nsys_version,
     }
     with open(os.path.join(test_dir, "summary.yaml"), "w") as f:
         yaml.dump(summary, f)
