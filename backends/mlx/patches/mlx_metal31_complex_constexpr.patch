@@ -1,21 +1,22 @@
 Keep the common Metal JIT preamble compatible with Metal 3.1.
 
 MLX supports macOS 14 and selects Metal language 3.1 there. The generic complex
-implementation added compile-time half and bfloat16 arithmetic probes which are
-accepted by newer Metal frontends but cannot be constant-evaluated by the Xcode
-15.4 runtime compiler. Since complex.h is embedded in metal::utils(), that
-prevents every runtime-JIT kernel from compiling, including kernels unrelated
-to complex operations.
+implementation added compile-time half and bfloat16 arithmetic probes and inline
+static data members which are accepted by newer Metal frontends but rejected by
+the Xcode 15.4 runtime compiler. Since complex.h and utils.h are embedded in
+metal::utils(), that prevents every runtime-JIT kernel from compiling, including
+kernels unrelated to complex operations.
 
-Keep the modern generic complex implementation intact. Give the layout checks
-C++11-style diagnostic messages and retain the arithmetic probes on Metal 3.2+
-where the frontend supports them. The probes are compile-time validation only;
-this does not change generated kernels or runtime behavior on Metal 3.1.
+Keep the generic complex implementation intact. Give the layout checks
+C++11-style diagnostic messages, retain the arithmetic probes on Metal 3.2+
+where the frontend supports them, and use the existing static constexpr form for
+the complex Limits members. The probes are compile-time validation only; these
+changes do not alter generated kernels or runtime behavior on Metal 3.1.
 
 Upstream candidate; carried locally until MLX includes the compatibility fix.
 
 diff --git a/mlx/backend/metal/kernels/complex.h b/mlx/backend/metal/kernels/complex.h
-index fe78e005..adc45c36 100644
+index fe78e005..f558b10a 100644
 --- a/mlx/backend/metal/kernels/complex.h
 +++ b/mlx/backend/metal/kernels/complex.h
 @@ -154,9 +154,15 @@ struct complex_t {
@@ -54,3 +55,19 @@ index fe78e005..adc45c36 100644
 +        .real == bfloat16_t(-5.0f),
 +    "bfloat16 complex multiplication must preserve lane precision");
 +#endif
+diff --git a/mlx/backend/metal/kernels/utils.h b/mlx/backend/metal/kernels/utils.h
+index f1592828..46462399 100644
+--- a/mlx/backend/metal/kernels/utils.h
++++ b/mlx/backend/metal/kernels/utils.h
+@@ -78,9 +78,9 @@
+ template <typename T>
+ struct Limits<complex_t<T>> {
+-  inline static constexpr constant complex_t<T> max = complex_t<T>(
++  static constexpr constant complex_t<T> max = complex_t<T>(
+       metal::numeric_limits<T>::infinity(),
+       metal::numeric_limits<T>::infinity());
+-  inline static constexpr constant complex_t<T> min = complex_t<T>(
++  static constexpr constant complex_t<T> min = complex_t<T>(
+       -metal::numeric_limits<T>::infinity(),
+       -metal::numeric_limits<T>::infinity());
+ };
