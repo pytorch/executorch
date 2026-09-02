@@ -14,7 +14,8 @@ on:
 jobs:
   stale:
     if: ${{ github.repository == 'pytorch/executorch' }}
-    runs-on: linux.large
+    # Pure GitHub API work, so it needs neither an EC2 nor an OSDC runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write

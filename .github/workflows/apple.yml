@@ -126,7 +126,13 @@ jobs:
   # Upload the test demo app to S3
   upload-demo-ios:
     needs: build-demo-ios
-    runs-on: linux.2xlarge
+    # Moving an artifact from GitHub to S3 needs no ExecuTorch toolchain, so
+    # this runs on a GitHub-hosted runner rather than moving to OSDC; the upload
+    # that used to ride on the EC2 instance role assumes role/arc through OIDC.
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Download the artifacts from GitHub
         uses: actions/download-artifact@v4
@@ -141,6 +147,12 @@ jobs:
         run: |
           set -eux
           ls -lah ./
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/arc
+          aws-region: us-east-1
 
       - name: Upload the artifacts to S3
         uses: seemethere/upload-artifact-s3@v5
@@ -163,7 +175,9 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     with:
       device-type: ios
-      # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
+      # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS.
+      # Still an EC2 label: mobile_job.yml resolves its actions by relative path
+      # (./test-infra/.github/actions/...), which does not work on OSDC.
       runner: linux.2xlarge
       test-infra-ref: main
       # This is the ARN of ExecuTorch project on AWS

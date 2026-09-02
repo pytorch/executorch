@@ -73,7 +73,13 @@ jobs:
   package-golden-artifacts:
     if: ${{ inputs.run-linux }}
     needs: test-backend-linux
-    runs-on: linux.2xlarge
+    # Repackaging artifacts needs no ExecuTorch toolchain, so this runs on a
+    # GitHub-hosted runner rather than moving to OSDC; the S3 upload that used
+    # to ride on the EC2 instance role assumes role/arc through OIDC instead.
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Download model test artifacts
         uses: actions/download-artifact@v4
@@ -113,6 +119,13 @@ jobs:
           name: golden-artifacts-${{ inputs.backend }}
           path: golden_artifacts_*.zip
           if-no-files-found: ignore
+
+      - name: Configure AWS credentials
+        if: ${{ hashFiles('golden_artifacts_*.zip') != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/arc
+          aws-region: us-east-1
 
       - name: Upload golden artifacts to S3
         uses: seemethere/upload-artifact-s3@v5
