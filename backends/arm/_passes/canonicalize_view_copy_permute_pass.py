@@ -18,3 +18,5 @@ class CanonicalizeViewCopyPermutePass(_CanonicalizeViewCopyPermutePass, ArmPass)
     mismatch.
 
     """
+
+    _recompile_before_retrace = False

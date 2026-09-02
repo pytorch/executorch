@@ -16,8 +16,14 @@ The MLX delegate is experimental and under active development.
 
 ## Target Requirements
 
-- Apple Silicon Mac (M1 or later)
-- [macOS](https://developer.apple.com/macos) >= 14.0
+One of:
+
+- [macOS](https://developer.apple.com/macos) >= 14.0 on an Apple Silicon Mac (M1 or later)
+- [iOS](https://developer.apple.com/ios) or [iPadOS](https://developer.apple.com/ipados) >= 17.0
+  on a real device (experimental). The backend is built and shipped for iOS, but
+  running a model on a physical device is not yet covered by CI. The iOS simulator
+  has no Metal device MLX can use, so the backend reports itself unavailable there
+  and a model delegated to it will not load.
 
 ## Development Requirements
 
