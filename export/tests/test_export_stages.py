@@ -7,11 +7,18 @@
 # pyre-strict
 
 import unittest
+from typing import List
 from unittest.mock import call, Mock, patch
 
 import torch
+from executorch.exir.backend.op_backend import OpBackend
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
-from executorch.export import AOQuantizationConfig, QuantizationRecipe, StageType
+from executorch.export import (
+    AOQuantizationConfig,
+    LoweringRecipe,
+    QuantizationRecipe,
+    StageType,
+)
 from executorch.export.stages import (
     EdgeProgramManagerTransformStage,
     EdgeTransformAndLowerStage,
@@ -698,6 +705,135 @@ class TestEmptyPassDictIsNotApplied(unittest.TestCase):
         )
 
         self.assertIsNone(mock_lower.call_args.kwargs["transform_passes"])
+
+
+class _StubOpBackend(OpBackend):
+    """Records what it lowered and optionally applies a real pass.
+
+    Each instance stamps its name into the graph module's metadata and records
+    the stamps already there, which is how a later backend can be shown the
+    earlier one's output. Identity cannot show it: every backend is handed its
+    own copy.
+
+    """
+
+    def __init__(self, apply_pass: bool = False, name: str = "stub") -> None:
+        self.seen: List[str] = []
+        self.upstream: List[List[str]] = []
+        self._apply_pass = apply_pass
+        self._name = name
+
+    def lower(self, exported_program, method_name):
+        from executorch.exir.pass_base import ExportPass
+        from executorch.exir.program._program import _transform
+
+        self.seen.append(method_name)
+        self.upstream.append(
+            list(exported_program.graph_module.meta.get("lowered_by", []))
+        )
+        lowered = (
+            _transform(exported_program, ExportPass())
+            if self._apply_pass
+            else exported_program
+        )
+        lowered.graph_module.meta.setdefault("lowered_by", []).append(self._name)
+        return lowered
+
+
+def _real_manager(methods=("forward",)) -> EdgeProgramManager:
+    from executorch.exir import to_edge
+
+    model = SimpleTestModel()
+    inputs = (torch.randn(1, 10),)
+    return to_edge({name: torch.export.export(model, inputs) for name in methods})
+
+
+class TestOpBackends(unittest.TestCase):
+    def test_every_backend_sees_every_method(self) -> None:
+        first, second = _StubOpBackend(), _StubOpBackend()
+        stage = EdgeProgramManagerTransformStage(op_backends=[first, second])
+        stage.run(PipelineArtifact(data=_real_manager(("beta", "alpha")), context={}))
+
+        self.assertCountEqual(first.seen, ["alpha", "beta"])
+        self.assertCountEqual(second.seen, ["alpha", "beta"])
+
+    def test_a_backend_receives_the_previous_backend_s_output(self) -> None:
+        first = _StubOpBackend(apply_pass=True, name="first")
+        second = _StubOpBackend(name="second")
+        stage = EdgeProgramManagerTransformStage(op_backends=[first, second])
+        stage.run(PipelineArtifact(data=_real_manager(), context={}))
+
+        self.assertEqual(first.upstream[0], [])
+        self.assertEqual(second.upstream[0], ["first"])
+
+    def test_input_manager_is_not_rewritten(self) -> None:
+        # It is also the previous stage's recorded artifact.
+        manager = _real_manager()
+        before = manager.exported_program("forward")
+        stage = EdgeProgramManagerTransformStage(
+            op_backends=[_StubOpBackend(apply_pass=True)]
+        )
+        stage.run(PipelineArtifact(data=manager, context={}))
+
+        self.assertIsNot(stage.get_artifacts().data, manager)
+        self.assertIs(manager.exported_program("forward"), before)
+
+    def test_transform_passes_are_suppressed_when_tetal_has_them(self) -> None:
+        # Both stages read edge_transform_passes. The session hands them to
+        # only one; without that, the default pipeline applies each pass twice.
+        seen = []
+        recipe = LoweringRecipe(
+            edge_transform_passes=[lambda name, ep: seen.append(name) or []]
+        )
+
+        with_them = EdgeProgramManagerTransformStage.from_recipe(recipe)
+        with_them.run(PipelineArtifact(data=_real_manager(), context={}))
+        self.assertEqual(seen, ["forward"])
+
+        seen.clear()
+        without = EdgeProgramManagerTransformStage.from_recipe(
+            recipe, with_transform_passes=False
+        )
+        without.run(PipelineArtifact(data=_real_manager(), context={}))
+        self.assertEqual(seen, [])
+
+    def test_no_backends_passes_the_manager_through(self) -> None:
+        manager = _real_manager()
+        stage = EdgeProgramManagerTransformStage()
+        stage.run(PipelineArtifact(data=manager, context={}))
+        self.assertIs(stage.get_artifacts().data, manager)
+
+    def test_from_recipe_reads_the_lowering_recipe(self) -> None:
+        backend = _StubOpBackend()
+        stage = EdgeProgramManagerTransformStage.from_recipe(
+            LoweringRecipe(op_backends=[backend])
+        )
+        self.assertEqual(stage._op_backends, [backend])
+        self.assertEqual(
+            EdgeProgramManagerTransformStage.from_recipe(None)._op_backends, []
+        )
+
+    def test_a_transform_only_stage_follows_any_edge_stage(self) -> None:
+        # TO_EDGE is kept because the stage predates op_backends and still
+        # serves recipes that only transform.
+        self.assertEqual(
+            set(EdgeProgramManagerTransformStage().valid_predecessor_stages),
+            {
+                StageType.TO_EDGE,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_BACKEND,
+            },
+        )
+
+    def test_op_backends_require_a_partitioning_predecessor(self) -> None:
+        # Otherwise TO_EDGE -> EPMT -> TO_BACKEND is a legal pipeline that runs
+        # the operator backends first, against the documented contract.
+        stage = EdgeProgramManagerTransformStage(op_backends=[_StubOpBackend()])
+        self.assertNotIn(StageType.TO_EDGE, stage.valid_predecessor_stages)
+        self.assertEqual(
+            set(stage.valid_predecessor_stages),
+            {StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND},
+        )
 
 
 class TestUnknownStageIsNotRegistered(unittest.TestCase):

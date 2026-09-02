@@ -16,6 +16,7 @@ from executorch.exir import EdgeProgramManager, ExportedProgram
 
 from executorch.exir._warnings import experimental
 
+from executorch.exir.backend.op_backend import OpBackend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.pass_manager import PassManager, PassType
@@ -165,8 +166,12 @@ class LoweringRecipe:
                       backends need per-method compile specs.
         edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram)
                                and return either List[PassType] or PassManager to be applied during edge lowering.
-        edge_manager_transform_passes: Optional list of callables that take EdgeProgramManager as argument
-                                        and return passes to be applied. Applied sequentially after TO_EDGE stage.
+        op_backends: Optional list of OpBackends, which lower by rewriting
+                               operators rather than by delegating a subgraph. Run in
+                               their own stage after partitioning, so they see what
+                               the delegates left behind.
+        edge_manager_transform_passes: Optional list of callables handed the whole
+                               EdgeProgramManager, which return passes to apply to it.
         edge_compile_config: Optional edge compilation configuration
     """
 
@@ -182,6 +187,8 @@ class LoweringRecipe:
     ) = None
     # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = None
+    # pyre-ignore[11]: Type not defined
+    op_backends: Optional[List[OpBackend]] = None
 
 
 @experimental(
@@ -313,6 +320,7 @@ class ExportRecipe:
         all_ao_quantization_configs = []
         all_pre_edge_passes = []
         all_transform_passes = []
+        all_op_backends = []
         combined_backend_config = None
 
         for recipe in backend_recipes:
@@ -336,6 +344,9 @@ class ExportRecipe:
                 all_transform_passes.extend(
                     recipe.lowering_recipe.edge_transform_passes
                 )
+
+            if recipe.lowering_recipe and recipe.lowering_recipe.op_backends:
+                all_op_backends.extend(recipe.lowering_recipe.op_backends)
 
             # Collect for quantize stage
             if quantization_recipe := recipe.quantization_recipe:
@@ -395,12 +406,18 @@ class ExportRecipe:
         edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
 
         combined_lowering_recipe = None
-        if combined_partitioners or all_transform_passes or edge_compile_config:
+        if (
+            combined_partitioners
+            or all_transform_passes
+            or all_op_backends
+            or edge_compile_config
+        ):
             combined_lowering_recipe = LoweringRecipe(
                 partitioners=combined_partitioners if combined_partitioners else None,
                 edge_transform_passes=(
                     all_transform_passes if all_transform_passes else None
                 ),
+                op_backends=(all_op_backends if all_op_backends else None),
                 edge_compile_config=edge_compile_config or EdgeCompileConfig(),
             )
 
