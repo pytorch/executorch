@@ -86,6 +86,15 @@ Result<ExynosFileDataLoader> ExynosFileDataLoader::from(
       "Alignment %zu is not a power of 2",
       alignment);
 
+  const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+  ET_CHECK_OR_RETURN_ERROR(
+      alignment <= page_size,
+      InvalidArgument,
+      "Alignment %zu exceeds page size %zu; ENN shared memory buffers "
+      "are only guaranteed to be page-aligned",
+      alignment,
+      page_size);
+
   ET_CHECK_OR_RETURN_ERROR(
       file_name != nullptr, InvalidArgument, "File name cannot be empty.");
 
@@ -136,7 +145,7 @@ Result<FreeableBuffer> ExynosFileDataLoader::load(
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      size <= file_size_ && offset <= file_size_ - size,
       InvalidArgument,
       "File %s: offset %zu + size %zu > file_size_ %zu",
       file_name_,
@@ -190,7 +199,7 @@ ET_NODISCARD Error ExynosFileDataLoader::load_into(
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      size <= file_size_ && offset <= file_size_ - size,
       InvalidArgument,
       "File %s: offset %zu + size %zu > file_size_ %zu",
       file_name_,

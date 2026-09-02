@@ -24,6 +24,8 @@ Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
   auto sm_instance = executorch::backends::enn::shared_memory_manager::
       SharedMemoryManager::getInstance();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
+  ET_CHECK_OR_RETURN_ERROR(
+      enn_api_inst->isInitialized(), Internal, "Enn initialize failed.");
   EnnReturn ret = ENN_RET_SUCCESS;
 
   ET_LOG(Info, "Start to open model %p, %zu", binary_buf_addr, buf_size);

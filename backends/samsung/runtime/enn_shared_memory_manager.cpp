@@ -12,6 +12,7 @@
 #include <executorch/backends/samsung/runtime/logging.h>
 
 #include <inttypes.h>
+#include <limits>
 #include <mutex>
 
 namespace executorch {
@@ -43,6 +44,11 @@ SharedMemoryManager::~SharedMemoryManager() {
 }
 
 void* SharedMemoryManager::alloc(const size_t size) {
+  if (size > std::numeric_limits<uint32_t>::max()) {
+    ET_LOG(
+        Error, "Requested size %zu exceeds ENN buffer limit (uint32_t)", size);
+    return nullptr;
+  }
   std::lock_guard<std::mutex> lgd(instance_mutex_);
   auto enn_api_inst = EnnApi::getEnnApiInstance();
   EnnBufferPtr bufferPtr;
@@ -88,15 +94,19 @@ void SharedMemoryManager::free(void* ptr) {
   auto enn_api_inst = EnnApi::getEnnApiInstance();
   for (auto it = buffers_.begin(); it != buffers_.end(); ++it) {
     if ((*it)->va == ptr) {
+      if (enn_api_inst->EnnReleaseBuffer(*it)) {
+        ET_LOG(
+            Error,
+            "Failed to destroy buffer: %p, keeping tracked for retry",
+            ptr);
+        return;
+      }
       ET_LOG(
           Info,
           "va(%p), size(%" PRIu32 "), offset(%" PRIu32 ") is erased from LUT",
           ptr,
           (*it)->size,
           (*it)->offset);
-      if (enn_api_inst->EnnReleaseBuffer(*it)) {
-        ET_LOG(Error, "Failed to destroy buffer: %p", ptr);
-      }
       buffers_.erase(it);
       return;
     }

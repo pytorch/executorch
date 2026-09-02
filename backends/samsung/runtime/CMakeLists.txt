@@ -7,7 +7,7 @@
 # logging
 target_sources(
   enn_logging
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/logging.h
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/logging.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/logging.cpp
 )
 

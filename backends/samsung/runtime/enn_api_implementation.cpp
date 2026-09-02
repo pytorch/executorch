@@ -40,13 +40,18 @@ EnnApi* EnnApi::getEnnApiInstance() {
 
 EnnApi::EnnApi() {
   auto status = loadApiLib();
-  if (status == Error::Ok) {
-    ET_LOG(Info, "Loading ENN API library Completed.");
-    EnnInitialize();
-    initialize_ = true;
-  } else {
+  if (status != Error::Ok) {
     ET_LOG(Error, "Failed to load enn api library. %s", dlerror());
+    return;
   }
+  auto ret = EnnInitialize();
+  if (ret != ENN_RET_SUCCESS) {
+    ET_LOG(Error, "EnnInitialize failed: %d", static_cast<int>(ret));
+    unloadApiLib();
+    return;
+  }
+  ET_LOG(Info, "Loading ENN API library Completed.");
+  initialize_ = true;
 }
 
 EnnApi::~EnnApi() {
@@ -54,6 +59,10 @@ EnnApi::~EnnApi() {
     EnnDeinitialize();
     unloadApiLib();
   }
+}
+
+bool EnnApi::isInitialized() const {
+  return initialize_;
 }
 
 Error EnnApi::loadApiLib() {

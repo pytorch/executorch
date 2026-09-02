@@ -28,6 +28,7 @@ class EnnApi {
   ~EnnApi();
 
   static EnnApi* getEnnApiInstance();
+  bool isInitialized() const;
 
   EnnReturn (*EnnInitialize)(void);
   EnnReturn (*EnnSetPreferencePerfMode)(const uint32_t val);
@@ -84,7 +85,6 @@ class EnnApi {
   static std::atomic<int> ref_count_;
 
   EnnApi();
-  bool getInitialize() const;
   Error loadApiLib();
   Error unloadApiLib();
 };
