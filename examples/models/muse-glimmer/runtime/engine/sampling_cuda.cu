@@ -268,6 +268,33 @@ __global__ void accept_with_probability_kernel(
       uniform_from_uint32(curand(&local_rng)) < probabilities[index];
 }
 
+__global__ void exclude_tokens_kernel(
+    float* probabilities,
+    int64_t row_count,
+    int64_t row_size,
+    const uint64_t* excluded_tokens) {
+  const int64_t row = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (row < row_count && excluded_tokens[row] < row_size) {
+    probabilities[row * row_size + excluded_tokens[row]] = 0.0f;
+  }
+}
+
+__global__ void normalize_probability_rows_kernel(
+    float* probabilities,
+    const double* cumulative,
+    int64_t total_size,
+    int64_t row_size) {
+  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (offset < total_size) {
+    const int64_t row = offset / row_size;
+    const float denominator = static_cast<float>(
+        cumulative[row * row_size + row_size - 1]);
+    probabilities[offset] /= denominator;
+  }
+}
+
 } // namespace
 
 struct SamplingWorkspace::Impl {
@@ -624,6 +651,72 @@ cudaError_t accept_with_probability(
   accept_with_probability_kernel<<<blocks, kSamplingThreads, 0, stream>>>(
       probabilities, count, state.rng, accepted);
   return cudaGetLastError();
+}
+
+cudaError_t sample_excluding_token_in_place(
+    float* probabilities,
+    int64_t row_count,
+    int64_t row_size,
+    const uint64_t* excluded_tokens,
+    uint64_t* sampled_tokens,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream) {
+  if (probabilities == nullptr || excluded_tokens == nullptr ||
+      sampled_tokens == nullptr || row_count <= 0 || row_size <= 0 ||
+      row_count > std::numeric_limits<int>::max() ||
+      row_size > std::numeric_limits<int>::max() / row_count) {
+    return cudaErrorInvalidValue;
+  }
+  cudaError_t error = workspace.reserve(row_count, row_size, stream);
+  if (error != cudaSuccess) {
+    return error;
+  }
+  auto& state = *workspace.impl_;
+  const int row_blocks = static_cast<int>(
+      (row_count + kSamplingThreads - 1) / kSamplingThreads);
+  exclude_tokens_kernel<<<row_blocks, kSamplingThreads, 0, stream>>>(
+      probabilities, row_count, row_size, excluded_tokens);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+
+  const int64_t total_size = state.total_size;
+  const int item_blocks = static_cast<int>(
+      (total_size + kSamplingThreads - 1) / kSamplingThreads);
+  probabilities_to_double_kernel<<<
+      item_blocks, kSamplingThreads, 0, stream>>>(
+      probabilities, total_size, state.weights);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  for (int64_t row = 0; row < row_count; ++row) {
+    error = cub::DeviceScan::InclusiveSum(
+        state.temporary_storage,
+        state.temporary_storage_bytes,
+        state.weights + row * row_size,
+        state.cumulative + row * row_size,
+        static_cast<int>(row_size),
+        stream);
+    if (error != cudaSuccess) {
+      return error;
+    }
+  }
+  normalize_probability_rows_kernel<<<
+      item_blocks, kSamplingThreads, 0, stream>>>(
+      probabilities, state.cumulative, total_size, row_size);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  return categorical_sample(
+      probabilities,
+      row_count,
+      row_size,
+      sampled_tokens,
+      workspace,
+      stream);
 }
 
 } // namespace muse_glimmer::cuda

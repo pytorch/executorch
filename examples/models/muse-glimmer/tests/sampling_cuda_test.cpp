@@ -318,4 +318,75 @@ TEST(CudaSamplingTest, AcceptanceMatchesHostSemantics) {
   ASSERT_CUDA_SUCCESS(cudaFree(device_probabilities));
 }
 
+TEST(CudaSamplingTest, ExcludingTokenMatchesHostSemantics) {
+  constexpr int64_t kRows = 12000;
+  constexpr int64_t kRowSize = 3;
+  const std::array<float, kRowSize> distribution = {0.2f, 0.5f, 0.3f};
+  std::vector<float> probabilities(kRows * kRowSize);
+  for (int64_t row = 0; row < kRows; ++row) {
+    std::copy(
+        distribution.begin(),
+        distribution.end(),
+        probabilities.begin() + row * kRowSize);
+  }
+  std::vector<uint64_t> excluded(kRows, 1);
+
+  float* device_probabilities = nullptr;
+  uint64_t* device_excluded = nullptr;
+  uint64_t* device_tokens = nullptr;
+  ASSERT_CUDA_SUCCESS(cudaMalloc(
+      &device_probabilities, probabilities.size() * sizeof(float)));
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&device_excluded, excluded.size() * sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&device_tokens, kRows * sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_probabilities,
+      probabilities.data(),
+      probabilities.size() * sizeof(float),
+      cudaMemcpyHostToDevice));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_excluded,
+      excluded.data(),
+      excluded.size() * sizeof(uint64_t),
+      cudaMemcpyHostToDevice));
+
+  muse_glimmer::cuda::SamplingWorkspace workspace;
+  ASSERT_CUDA_SUCCESS(workspace.reserve(kRows, kRowSize, nullptr));
+  ASSERT_CUDA_SUCCESS(workspace.set_seed(9012, nullptr));
+  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::sample_excluding_token_in_place(
+      device_probabilities,
+      kRows,
+      kRowSize,
+      device_excluded,
+      device_tokens,
+      workspace,
+      nullptr));
+  std::vector<uint64_t> tokens(kRows);
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      tokens.data(),
+      device_tokens,
+      tokens.size() * sizeof(uint64_t),
+      cudaMemcpyDeviceToHost));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      probabilities.data(),
+      device_probabilities,
+      probabilities.size() * sizeof(float),
+      cudaMemcpyDeviceToHost));
+
+  int64_t token_zero_count = 0;
+  for (int64_t row = 0; row < kRows; ++row) {
+    EXPECT_NEAR(probabilities[row * kRowSize], 0.4f, 1e-6f);
+    EXPECT_EQ(probabilities[row * kRowSize + 1], 0.0f);
+    EXPECT_NEAR(probabilities[row * kRowSize + 2], 0.6f, 1e-6f);
+    ASSERT_NE(tokens[row], 1);
+    token_zero_count += tokens[row] == 0;
+  }
+  EXPECT_NEAR(static_cast<double>(token_zero_count) / kRows, 0.4, 0.02);
+
+  ASSERT_CUDA_SUCCESS(cudaFree(device_tokens));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_excluded));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_probabilities));
+}
+
 } // namespace
