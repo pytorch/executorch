@@ -583,6 +583,14 @@ class SDPAHandler(PatternHandler):
             if mask_val is None or mask_val.dim() > 4:
                 return False
 
+        # A causal query longer than its keys is left to decompose. Torch clamps each
+        # row to the keys that exist, and neither the kernel's own mask nor slicing the
+        # keys to the query length reproduces that.
+        if is_causal and not statically_known_true(
+            operand_vals[0].shape[-2] <= operand_vals[1].shape[-2]
+        ):
+            return False
+
         return True
 
     @classmethod
@@ -703,6 +711,31 @@ class SDPAHandler(PatternHandler):
         sdpa_out = out
         if output_rank < 4:
             _, sdpa_out = P.make_tmp_slot()
+
+        # MLX anchors its causal mask at the bottom right and torch at the top left, so
+        # the flag alone only means the same thing when the lengths are equal. Slicing
+        # the keys and values to the query length makes the problem square, where the
+        # two conventions agree, and it is what torch computes: a query at row i attends
+        # to keys 0..i, so keys past the last query row are never read.
+        q_len = self.q_node.meta["val"].shape[-2]
+        k_len = self.k_node.meta["val"].shape[-2]
+        if is_causal and not statically_known_true(q_len == k_len):
+            _, rows = P.slot_manager.make_tmp_value_slot()
+            P.emit(
+                SymSizeNode(a=P.slot_to_tid(inputs[0]), dim=2, out=P.slot_to_vid(rows))
+            )
+            for i in (1, 2):
+                _, sliced = P.make_tmp_slot()
+                P.emit(
+                    SliceNode(
+                        x=P.slot_to_tid(inputs[i]),
+                        out=P.slot_to_tid(sliced),
+                        axis=IntOrVid.from_literal(2),
+                        start=IntOrVid.from_literal(0),
+                        stop=P.to_int_or_vid(rows),
+                    )
+                )
+                inputs[i] = sliced
 
         P.emit(
             SdpaNode(
