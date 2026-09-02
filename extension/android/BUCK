@@ -1,12 +1,11 @@
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
 load("@fbsource//tools/build_defs/android:fb_android_library.bzl", "fb_android_library")
 
 oncall("executorch")
 
-non_fbcode_target(_kind = fb_android_library,
+non_fbcode_target(
+    _kind = fb_android_library,
     name = "executorch",
-    warnings_as_errors = False,
-    required_for_source_only_abi = True,
     srcs = [
         "executorch_android/src/main/java/org/pytorch/executorch/BackendOptionsMap.kt",
         "executorch_android/src/main/java/org/pytorch/executorch/DType.kt",
@@ -19,26 +18,35 @@ non_fbcode_target(_kind = fb_android_library,
         "executorch_android/src/main/java/org/pytorch/executorch/annotations/Experimental.kt",
     ],
     autoglob = False,
+    extra_kotlinc_arguments = ["-Xjvm-default=all"],
     language = "KOTLIN",
     pure_kotlin = False,
-    extra_kotlinc_arguments = ["-Xjvm-default=all"],
+    required_for_source_only_abi = True,
+    warnings_as_errors = False,
+    warnings_as_errors_k22 = False,
     deps = [
         "//fbandroid/java/com/facebook/jni:jni",
         "//fbandroid/libraries/soloader/java/com/facebook/soloader/nativeloader:nativeloader",
-    ] + ([
-        "//xplat/executorch/backends/vulkan:vulkan_backend_lib_static",
-    ] if read_config("executorch", "minimal_jni", "false") == "false" else []),
+    ]
+    + (
+        [
+            "//xplat/executorch/backends/vulkan:vulkan_backend_lib_static",
+        ]
+        if read_config("executorch", "minimal_jni", "false") == "false"
+        else []
+    ),
 )
 
-non_fbcode_target(_kind = fb_android_library,
+non_fbcode_target(
+    _kind = fb_android_library,
     name = "executorch_training",
-    warnings_as_errors = False,
     srcs = [
         "executorch_android/src/main/java/org/pytorch/executorch/training/SGD.kt",
         "executorch_android/src/main/java/org/pytorch/executorch/training/TrainingModule.kt",
     ],
     autoglob = False,
     language = "KOTLIN",
+    warnings_as_errors = False,
     deps = [
         ":executorch",
         "//fbandroid/java/com/facebook/jni:jni",
@@ -46,9 +54,9 @@ non_fbcode_target(_kind = fb_android_library,
     ],
 )
 
-non_fbcode_target(_kind = fb_android_library,
+non_fbcode_target(
+    _kind = fb_android_library,
     name = "executorch_llama",
-    warnings_as_errors = False,
     srcs = [
         "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmCallback.kt",
         "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmGenerationConfig.kt",
@@ -56,8 +64,10 @@ non_fbcode_target(_kind = fb_android_library,
         "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmModuleConfig.kt",
     ],
     autoglob = False,
-    language = "KOTLIN",
     extra_kotlinc_arguments = ["-Xjvm-default=all"],
+    language = "KOTLIN",
+    warnings_as_errors = False,
+    warnings_as_errors_k22 = False,
     deps = [
         ":executorch",
         "//fbandroid/java/com/facebook/jni:jni",
