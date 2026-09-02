@@ -65,21 +65,21 @@ def get_neutron_driver_version(etdump_path: str) -> str:
         return ""
 
 
-def get_neutron_converter_version() -> str:
+def get_neutron_compiler_version() -> str:
     """
-    Get the Neutron Converter version reported by the neutron_converter tool.
+    Get the Neutron Compiler version reported by the neutron_compiler tool.
 
-    Executes `neutron_converter --version` and returns the version as
+    Executes `neutron_compiler --version` and returns the version as
     {major}.{minor}.{patch} string.
 
-    :return: The version string returned by neutron_converter, or empty string if
+    :return: The version string returned by neutron_compiler, or empty string if
     the command fails, times out, or the executable is not available.
     Errors are logged instead of being raised.
     """
 
     try:
         proc = subprocess.Popen(
-            ["neutron_converter", "--version"],
+            ["neutron_compiler", "--version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -87,7 +87,7 @@ def get_neutron_converter_version() -> str:
         stdout, stderr = proc.communicate(timeout=10)
         if proc.returncode != 0:
             logging.error(
-                "Failed to get converter version: %s",
+                "Failed to get compiler version: %s",
                 stderr.strip(),
             )
             return ""
@@ -96,31 +96,31 @@ def get_neutron_converter_version() -> str:
             return version_match.group(1)
         else:
             logging.exception(
-                "Unexpected error while getting neutron converter version"
+                "Unexpected error while getting neutron compiler version"
             )
             return ""
     except Exception:
-        logging.exception("Error while getting neutron converter version")
+        logging.exception("Error while getting neutron compiler version")
         return ""
 
 
 def get_neutron_kernel_kinds(target: str = "imxrt700") -> dict[int, str]:
     """
-    Retrieve kernel kinds supported by neutron_converter for the specified target.
+    Retrieve kernel kinds supported by neutron_compiler for the specified target.
 
-    Executes the neutron_converter command with the --show-kernel-kinds option,
+    Executes the neutron_compiler command with the --show-kernel-kinds option,
     parses its output, and returns a dictionary mapping kernel IDs to kernel
     names.
 
     :param target: Target platform for which kernel kinds should be queried.
     Defaults to "imxrt700".
-    :return: Returns empty dict if neutron_converter exits with an error.
+    :return: Returns empty dict if neutron_compiler exits with an error.
     Otherwise, a dictionary where:
             - key: kernel ID (int)
             - value: kernel name (str)
     """
     proc = subprocess.Popen(
-        ["neutron_converter", "--target", target, "--show-kernel-kinds"],
+        ["neutron_compiler", "--target", target, "--show-kernel-kinds"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -128,7 +128,7 @@ def get_neutron_kernel_kinds(target: str = "imxrt700") -> dict[int, str]:
     stdout, stderr = proc.communicate(timeout=10)
     if proc.returncode != 0:
         logging.error(
-            "Failed to get kernrl kinds from neutron_converter: %s",
+            "Failed to get kernrl kinds from neutron_compiler: %s",
             stderr.strip(),
         )
         return {}

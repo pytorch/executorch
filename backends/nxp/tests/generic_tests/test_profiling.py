@@ -23,7 +23,7 @@ from executorch.backends.nxp.tests.nsys_testing import (
 )
 
 from executorch.backends.nxp.tests.profiling_utils import (
-    get_neutron_converter_version,
+    get_neutron_compiler_version,
     get_neutron_driver_version,
     get_neutron_kernel_kinds,
 )
@@ -110,14 +110,14 @@ def inspector_check(test_name: str) -> None:
             file_path
         ), f"Required profiling file does not exist: {file_path}"
 
-    # Validate driver/converter version compatibility and load kernel names
+    # Validate driver/compiler version compatibility and load kernel names
     # used to decode delegate metadata.
     driver_version = get_neutron_driver_version(etdump_path)
-    converter_version = get_neutron_converter_version()
+    compiler_version = get_neutron_compiler_version()
     if driver_version:
         assert (
-            driver_version == converter_version
-        ), "Driver and converter versions do not match"
+            driver_version == compiler_version
+        ), "Driver and compiler versions do not match"
         kernel_kinds = get_neutron_kernel_kinds()
 
     # Create Inspector and parse profiling data.

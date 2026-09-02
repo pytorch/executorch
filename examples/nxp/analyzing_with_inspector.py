@@ -8,7 +8,7 @@
 from typing import Any, Union
 
 from executorch.backends.nxp.tests.profiling_utils import (
-    get_neutron_converter_version,
+    get_neutron_compiler_version,
     get_neutron_driver_version,
     get_neutron_kernel_kinds,
 )
@@ -54,8 +54,8 @@ if __name__ == "__main__":
         etdump_path = "etdump/trace.etdump"
 
         driver_version = get_neutron_driver_version(etdump_path)
-        converter_version = get_neutron_converter_version()
-        if driver_version and driver_version == converter_version:
+        compiler_version = get_neutron_compiler_version()
+        if driver_version and driver_version == compiler_version:
             kernel_kinds = get_neutron_kernel_kinds()
 
         inspector = Inspector(
