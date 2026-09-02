@@ -418,15 +418,26 @@ class VkGraphBuilder:
             raise RuntimeError(f"Cannot create value for arg of type {type(arg)}")
 
     def process_placeholder_node(self, node: Node) -> None:
-        # ignores any tensors that don't get used in any ops
-        if len(node.users) == 0:
+        # A non-param placeholder occupies a slot in the delegate call's
+        # argument list whether or not this graph goes on to use it, and
+        # VulkanBackend::execute matches `args` to graph inputs positionally.
+        # Dropping an unused one from input_ids desynchronises the two, and the
+        # runtime then rejects the call because it was handed more arguments
+        # than the graph declares inputs and outputs. That happens in practice
+        # when a placeholder's only consumers are folded away by the passes
+        # that run after partitioning, so the graph the partitioner tagged and
+        # the graph serialized here disagree about which inputs are live.
+        if is_param_node(self.program, node):
+            # Params are serialized into the blob rather than passed at call
+            # time, so an unused one costs nothing to skip.
+            if len(node.users) > 0:
+                self.create_node_value(node)
             return None
         ids = self.create_node_value(node)
-        if not is_param_node(self.program, node):
-            if isinstance(ids, int):
-                self.input_ids.append(ids)
-            else:
-                self.input_ids += ids
+        if isinstance(ids, int):
+            self.input_ids.append(ids)
+        else:
+            self.input_ids += ids
 
     def process_getitem_node(self, node: Node) -> None:
         # Find ValueList id from the collection node.
