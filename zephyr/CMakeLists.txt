@@ -13,6 +13,10 @@ if(CONFIG_EXECUTORCH)
   message(STATUS "EXECUTORCH_DIR set to: ${EXECUTORCH_DIR}")
   include(${EXECUTORCH_DIR}/tools/cmake/common/preset.cmake)
   include(${EXECUTORCH_DIR}/tools/cmake/preset/zephyr.cmake)
+  include(${EXECUTORCH_DIR}/tools/cmake/Utils.cmake)
+  executorch_get_build_include_dir(
+    "${EXECUTORCH_DIR}" EXECUTORCH_SOURCE_INCLUDE_DIR
+  )
 
   # Prefer a local CMSIS-NN checkout from the Zephyr workspace if available.
   if(NOT DEFINED CMSIS_NN_LOCAL_PATH OR CMSIS_NN_LOCAL_PATH STREQUAL "")
@@ -26,12 +30,7 @@ if(CONFIG_EXECUTORCH)
     endif()
   endif()
 
-  # HACK: Force the parent directory of executorch into the global include path.
-  # This is needed because the executorch CMake scripts generate a relative
-  # include path ("../") that doesn't resolve correctly in a Zephyr out-of-tree
-  # module build.
-  get_filename_component(EXECUTORCH_PARENT_DIR ${EXECUTORCH_DIR} DIRECTORY)
-  include_directories(${EXECUTORCH_PARENT_DIR})
+  include_directories(${EXECUTORCH_SOURCE_INCLUDE_DIR})
 
   # Note: We don't create executorch_pal as a separate library to avoid circular
   # dependencies with Zephyr's build system. Instead, we'll add the PAL source

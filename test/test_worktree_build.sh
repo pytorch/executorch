@@ -12,7 +12,7 @@ test_root="$(mktemp -d "${TMPDIR:-/tmp}/executorch-worktree-build.XXXXXX")"
 trap 'rm -rf "${test_root}"' EXIT
 
 source_dir="${test_root}/arbitrary-checkout-name"
-build_dir="${test_root}/build"
+build_dir="${source_dir}/cmake-out"
 mkdir "${source_dir}"
 while IFS= read -r entry; do
   cmake -E create_symlink "${repo_root}/${entry}" "${source_dir}/${entry}"
@@ -26,11 +26,6 @@ printf '#error "included headers from a sibling checkout"\n' \
 mkdir -p "${test_root}/executorch/runtime/platform"
 printf '#error "included headers from a sibling checkout"\n' \
   > "${test_root}/executorch/runtime/platform/assert.h"
-
-if [[ $# -gt 0 ]]; then
-  EXECUTORCH_CMAKE_SOURCE_DIR="${source_dir}" "$@"
-  exit
-fi
 
 cmake \
   -S "${source_dir}" \
@@ -47,6 +42,13 @@ cmake \
   -DEXECUTORCH_BUILD_XNNPACK=OFF \
   -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-python3}"
 
+test ! -L "${build_dir}/executorch_source_include/executorch"
+test "${build_dir}/executorch_source_include/executorch/runtime" \
+  -ef "${source_dir}/runtime"
+rm "${build_dir}/executorch_source_include/executorch/runtime"
+cmake -E create_symlink "${test_root}/missing-runtime" \
+  "${build_dir}/executorch_source_include/executorch/runtime"
 cmake -S "${source_dir}" -B "${build_dir}"
-test "${build_dir}/executorch_source_include/executorch" -ef "${source_dir}"
+test "${build_dir}/executorch_source_include/executorch/runtime" \
+  -ef "${source_dir}/runtime"
 cmake --build "${build_dir}" --target executorch selective_build --parallel 2

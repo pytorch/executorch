@@ -11,10 +11,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
-if [[ "$BUILD_TOOL" == "cmake" && -z "${EXECUTORCH_CMAKE_SOURCE_DIR:-}" ]]; then
-    exec bash test/test_worktree_build.sh "$0" "$@"
-fi
-
 # The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
 CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -35,6 +31,9 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     .ci/scripts/setup-linux.sh "$@"
 
     .ci/scripts/unittest-linux-cmake.sh
+    if [[ "$BUILD_MODE" == "Debug" && "$EDITABLE" == "false" ]]; then
+        bash test/test_worktree_build.sh
+    fi
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     # Removing this breaks sccache in the Buck build, apparently
     # because TMPDIR gets messed up? Please feel free to fix this and

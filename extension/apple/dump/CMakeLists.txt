@@ -50,7 +50,7 @@ target_include_directories(
   PRIVATE ExecuTorchDump/Internal
           ${_etdump_core_headers_dir}
           # For <executorch/...> includes reached through etdump_flatcc.h.
-          ${EXECUTORCH_ROOT}/..
+          ${EXECUTORCH_SOURCE_INCLUDE_DIR}
           # For the c10 portable types those headers pull in.
           ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
           # For <flatcc/...>, used directly by the wrapper. It also arrives

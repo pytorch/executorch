@@ -18,6 +18,50 @@
 # It should also be cmake-lint clean.
 #
 
+# Create a directory link without requiring elevated privileges on Windows.
+function(_executorch_create_source_directory_link source_dir link_dir)
+  get_filename_component(source_dir_real "${source_dir}" REALPATH)
+  if(CMAKE_HOST_WIN32)
+    file(TO_NATIVE_PATH "${link_dir}" link_dir_native)
+    file(TO_NATIVE_PATH "${source_dir_real}" source_dir_native)
+    execute_process(
+      COMMAND cmd /c rmdir "${link_dir_native}" OUTPUT_QUIET ERROR_QUIET
+    )
+    execute_process(
+      COMMAND cmd /c mklink /J "${link_dir_native}" "${source_dir_native}"
+      RESULT_VARIABLE link_result
+      OUTPUT_VARIABLE link_output
+      ERROR_VARIABLE link_error
+    )
+  else()
+    if(EXISTS "${link_dir}")
+      get_filename_component(linked_dir_real "${link_dir}" REALPATH)
+      if("${linked_dir_real}" STREQUAL "${source_dir_real}")
+        return()
+      endif()
+      if(NOT IS_SYMLINK "${link_dir}")
+        message(FATAL_ERROR "${link_dir} exists and is not a symbolic link.")
+      endif()
+      file(REMOVE "${link_dir}")
+    elseif(IS_SYMLINK "${link_dir}")
+      file(REMOVE "${link_dir}")
+    endif()
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" -E create_symlink "${source_dir_real}"
+              "${link_dir}"
+      RESULT_VARIABLE link_result
+      OUTPUT_VARIABLE link_output
+      ERROR_VARIABLE link_error
+    )
+  endif()
+
+  if(NOT link_result EQUAL 0)
+    message(FATAL_ERROR "Failed to create source include link at ${link_dir}: "
+                        "${link_output}${link_error}"
+    )
+  endif()
+endfunction()
+
 # Create an include root that exposes this checkout as `executorch/`, regardless
 # of the checkout directory's name. Source headers keep their public `#include
 # <executorch/...>` spelling without relying on the repository's parent
@@ -25,7 +69,7 @@
 function(executorch_get_build_include_dir source_root out_var)
   get_filename_component(source_root_real "${source_root}" REALPATH)
   set(include_root "${CMAKE_BINARY_DIR}/executorch_source_include")
-  set(source_link "${include_root}/executorch")
+  set(source_namespace "${include_root}/executorch")
 
   get_property(
     configured_source_root GLOBAL PROPERTY EXECUTORCH_BUILD_INCLUDE_SOURCE_ROOT
@@ -46,58 +90,57 @@ function(executorch_get_build_include_dir source_root out_var)
   endif()
 
   file(MAKE_DIRECTORY "${include_root}")
-  if(CMAKE_HOST_WIN32)
-    file(TO_NATIVE_PATH "${source_link}" source_link_native)
-    file(TO_NATIVE_PATH "${source_root_real}" source_root_native)
+  set(include_tree_marker "${source_namespace}/.executorch_include_tree")
+  if(CMAKE_HOST_WIN32 AND NOT EXISTS "${include_tree_marker}")
+    file(TO_NATIVE_PATH "${source_namespace}" source_namespace_native)
     execute_process(
-      COMMAND cmd /c rmdir "${source_link_native}" OUTPUT_QUIET ERROR_QUIET
+      COMMAND cmd /c rmdir "${source_namespace_native}"
+      RESULT_VARIABLE remove_result
+      OUTPUT_QUIET ERROR_QUIET
     )
-    execute_process(
-      COMMAND cmd /c mklink /J "${source_link_native}" "${source_root_native}"
-      RESULT_VARIABLE link_result
-      OUTPUT_VARIABLE link_output
-      ERROR_VARIABLE link_error
-    )
-    if(NOT link_result EQUAL 0)
+    if(NOT remove_result EQUAL 0 AND EXISTS "${source_namespace}")
       message(
         FATAL_ERROR
-          "Failed to create the ExecuTorch source include junction at "
-          "${source_link}: ${link_output}${link_error}"
+          "${source_namespace} exists and is not an ExecuTorch include tree."
       )
     endif()
-  elseif(EXISTS "${source_link}")
-    get_filename_component(linked_root "${source_link}" REALPATH)
-    if(NOT "${linked_root}" STREQUAL "${source_root_real}")
-      message(
-        FATAL_ERROR
-          "${source_link} points to ${linked_root}, not ${source_root_real}. "
-          "Remove the build directory and configure again."
-      )
-    endif()
-  elseif(IS_SYMLINK "${source_link}")
-    message(
-      FATAL_ERROR
-        "${source_link} is a broken symbolic link. Remove the build directory "
-        "and configure again."
-    )
-  else()
-    execute_process(
-      COMMAND "${CMAKE_COMMAND}" -E create_symlink "${source_root_real}"
-              "${source_link}"
-      RESULT_VARIABLE link_result
-      OUTPUT_VARIABLE link_output
-      ERROR_VARIABLE link_error
-    )
-    if(NOT link_result EQUAL 0)
-      message(
-        FATAL_ERROR "Failed to create the ExecuTorch source include symlink at "
-                    "${source_link}: ${link_output}${link_error}"
-      )
-    endif()
+  elseif(IS_SYMLINK "${source_namespace}")
+    file(REMOVE "${source_namespace}")
   endif()
+
+  file(MAKE_DIRECTORY "${source_namespace}")
+  file(WRITE "${include_tree_marker}" "${source_root_real}\n")
+  # Link public source trees individually so an in-tree build directory is not
+  # reachable through the include namespace.
+  set(source_include_roots
+      backends
+      codegen
+      devtools
+      examples
+      exir
+      extension
+      kernels
+      runtime
+      schema
+      test
+      third-party
+      util
+  )
+  foreach(source_include_root IN LISTS source_include_roots)
+    set(source_path "${source_root_real}/${source_include_root}")
+    if(EXISTS "${source_path}")
+      _executorch_create_source_directory_link(
+        "${source_path}" "${source_namespace}/${source_include_root}"
+      )
+    endif()
+  endforeach()
 
   set_property(
     GLOBAL PROPERTY EXECUTORCH_BUILD_INCLUDE_SOURCE_ROOT "${source_root_real}"
+  )
+  set(EXECUTORCH_SOURCE_INCLUDE_DIR
+      "${include_root}"
+      CACHE INTERNAL "ExecuTorch build-tree include root" FORCE
   )
   set(${out_var}
       "${include_root}"
