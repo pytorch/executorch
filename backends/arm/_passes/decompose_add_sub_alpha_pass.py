@@ -129,6 +129,7 @@ class DecomposeAddSubAlphaPass(ArmOpTargetedPass):
         the alpha scales the first operand. Scaling it here rather than building
         the subtraction keeps the second operand a scalar, which is what
         ScalarsToAttributePass expects when it rewrites rsub into sub.
+
         """
         alpha = args[2] if len(args) > 2 else 1
         if not _should_decompose(alpha):

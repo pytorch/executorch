@@ -27,6 +27,7 @@ def lower_alpha(module, inputs):
 
     The decomposition folds alpha away first, so the scalar rewrite only ever
     sees an rsub whose alpha is one.
+
     """
     exported = torch.export.export(module, inputs).module()
     folded = DecomposeAddSubAlphaPass().call(exported).graph_module
@@ -46,7 +47,7 @@ def subs(graph_module):
 
 
 def carries_alpha(node):
-    """rsub takes alpha positionally, add and sub keep it keyword-only."""
+    """Rsub takes alpha positionally, add and sub keep it keyword-only."""
     if node.target is torch.ops.aten.rsub.Scalar:
         return len(node.args) > 2
     return "alpha" in node.kwargs
@@ -71,10 +72,11 @@ alpha_test_data = {
 
 @common.parametrize("alpha", alpha_test_data)
 def test_rsub_alpha_is_folded_into_a_multiply(alpha) -> None:
-    """alpha scales the operand the swap moves, so it becomes a multiply.
+    """Alpha scales the operand the swap moves, so it becomes a multiply.
 
     Nothing may reach the backend still carrying it: the TOSA operators take
     two arguments and reject a third.
+
     """
     module = Rsub(alpha).eval()
     inputs = (torch.tensor([0.7, -0.25, 2.0]),)
