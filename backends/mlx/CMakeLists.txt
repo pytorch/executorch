@@ -188,6 +188,7 @@ message(
 set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal31_complex_constexpr.patch
 )
 # In a framework build the delegate is static, so MLX cannot find a colocated
 # metallib and instead loads one from a SwiftPM resource bundle. SWIFTPM_BUNDLE

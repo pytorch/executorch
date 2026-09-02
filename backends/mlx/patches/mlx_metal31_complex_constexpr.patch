@@ -1,0 +1,56 @@
+Keep the common Metal JIT preamble compatible with Metal 3.1.
+
+MLX supports macOS 14 and selects Metal language 3.1 there. The generic complex
+implementation added compile-time half and bfloat16 arithmetic probes which are
+accepted by newer Metal frontends but cannot be constant-evaluated by the Xcode
+15.4 runtime compiler. Since complex.h is embedded in metal::utils(), that
+prevents every runtime-JIT kernel from compiling, including kernels unrelated
+to complex operations.
+
+Keep the modern generic complex implementation intact. Give the layout checks
+C++11-style diagnostic messages and retain the arithmetic probes on Metal 3.2+
+where the frontend supports them. The probes are compile-time validation only;
+this does not change generated kernels or runtime behavior on Metal 3.1.
+
+Upstream candidate; carried locally until MLX includes the compatibility fix.
+
+diff --git a/mlx/backend/metal/kernels/complex.h b/mlx/backend/metal/kernels/complex.h
+index fe78e005..adc45c36 100644
+--- a/mlx/backend/metal/kernels/complex.h
++++ b/mlx/backend/metal/kernels/complex.h
+@@ -154,9 +154,15 @@ struct complex_t {
+ using complex32_t = complex_t<half>;
+ using complex64_t = complex_t<float>;
+ 
+-static_assert(sizeof(complex32_t) == 2 * sizeof(half));
+-static_assert(sizeof(complex64_t) == 2 * sizeof(float));
+-static_assert(sizeof(complex_t<bfloat16_t>) == 2 * sizeof(bfloat16_t));
++static_assert(
++    sizeof(complex32_t) == 2 * sizeof(half),
++    "complex32_t must contain exactly two half lanes");
++static_assert(
++    sizeof(complex64_t) == 2 * sizeof(float),
++    "complex64_t must contain exactly two float lanes");
++static_assert(
++    sizeof(complex_t<bfloat16_t>) == 2 * sizeof(bfloat16_t),
++    "complex bfloat16 must contain exactly two bfloat16 lanes");
+ 
+ template <typename T>
+ constexpr complex_t<T> operator-(complex_t<T> x) {
+@@ -295,9 +301,14 @@ constexpr complex_t<T> operator%(complex_t<T> a, complex_t<T> b) {
+   return {real, imag};
+ }
+ 
++// Metal 3.1 cannot constant-evaluate half and bfloat16 arithmetic.
++#if __METAL_VERSION__ >= 320
+ static_assert(
+-    (complex_t<half>{1.0h, 2.0h} * complex_t<half>{3.0h, 4.0h}).real == -5.0h);
++    (complex_t<half>{1.0h, 2.0h} * complex_t<half>{3.0h, 4.0h}).real == -5.0h,
++    "half complex multiplication must preserve lane precision");
+ static_assert(
+     (complex_t<bfloat16_t>{bfloat16_t(1.0f), bfloat16_t(2.0f)} *
+      complex_t<bfloat16_t>{bfloat16_t(3.0f), bfloat16_t(4.0f)})
+-        .real == bfloat16_t(-5.0f));
++        .real == bfloat16_t(-5.0f),
++    "bfloat16 complex multiplication must preserve lane precision");
++#endif
