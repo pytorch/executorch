@@ -32,7 +32,7 @@ class QnnGpuPassManager(QnnPassManager):
         return deps
 
     @classmethod
-    def get_annotation_passes(cls):
+    def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
         # The annotation pipeline is skipped for the GPU backend, as it does not
         # support quantized data types. Return an empty list to indicate a no-op.
         return []

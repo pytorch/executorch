@@ -64,9 +64,13 @@ class QnnLpaiPassManager(QnnPassManager):
         ), "Please ensure LpaiPartitionFallbackSupport is the last edge pass before ResolveDebugHandle."
 
     @classmethod
-    def get_annotation_passes(cls):
+    def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
         passes = [DecomposeHardsigmoid, DecomposeReciprocal]
-        passes.extend(super().get_annotation_passes())
+        passes.extend(
+            super().get_annotation_passes(
+                convert_linear_to_conv2d=convert_linear_to_conv2d,
+            )
+        )
         return passes
 
     @classmethod
