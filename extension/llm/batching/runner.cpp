@@ -193,8 +193,6 @@ void finalize_terminal(
   completion->finish(std::move(outcome), GenerationMetrics{});
 }
 
-// --- GenerationHandle ---
-
 // --- GenerationHandle ------------------------------------------------------
 
 bool GenerationHandle::valid() const noexcept {
@@ -944,12 +942,18 @@ bool RunnerImpl::execute_one_batch_() {
     metrics_.context_sum += entry.second;
   }
 
+  // The forward and the batch handed to it, timed apart from step_start. The
+  // scans above are measurement, and folding them into the buckets would bias
+  // exactly the numbers metrics.h offers for comparison against other engines;
+  // they are also the parts that grow with concurrency, so the bias would not
+  // be constant. step_start still marks the step for the generation timeline.
+  const MetricsTime exec_start = MetricsClock::now();
   BatchInput batch = to_batch_input(tasks);
   BatchOutput out;
   const bool ok = executor_.execute(batch, out);
   const MetricsTime step_end = MetricsClock::now();
 
-  const std::int64_t latency = us_between(step_start, step_end);
+  const std::int64_t latency = us_between(exec_start, step_end);
   ++metrics_.steps;
   metrics_.decode_sessions_total += decode_sessions;
   metrics_.prefill_sessions_total += prefill_sessions;
@@ -1620,8 +1624,11 @@ void RunnerImpl::record_completion_(
   // Zero for a generation that never reached a first token. Counted
   // separately from completions so the mean divides by the samples it has,
   // and so the minimum stays untouched when there are none.
-  const std::int64_t ttft = m.ttft_us();
-  if (ttft > 0) {
+  // Gated on the event, not on it having taken measurable time: a first token
+  // in the same microsecond as the submit is still a first token, and stamped()
+  // is what "happened" means everywhere else here.
+  if (stamped(m.t_first_token)) {
+    const std::int64_t ttft = m.ttft_us();
     ++metrics_.ttft_count;
     metrics_.ttft_sum_us += ttft;
     metrics_.ttft_min_us = std::min(metrics_.ttft_min_us, ttft);
