@@ -147,14 +147,16 @@ Error QnnExecuTorchBackend::execute(
   // than reading out of bounds.
   size_t bindable_inputs = 0;
   for (const auto& input_tensor : input_tensors) {
-    if (input_tensor->GetName().find("mutbuf_") == std::string::npos) {
+    const auto& name = input_tensor->GetName();
+    if (name.find("mutbuf_") == std::string::npos) {
       ++bindable_inputs;
     }
   }
   size_t bindable_outputs = 0;
   for (const auto& output_tensor : output_tensors) {
-    if (output_tensor->GetName().rfind("output_", 0) == 0 &&
-        output_tensor->GetName().find("mutbuf_") == std::string::npos) {
+    const auto& name = output_tensor->GetName();
+    if (name.rfind("output_", 0) == 0 &&
+        name.find("mutbuf_") == std::string::npos) {
       ++bindable_outputs;
     }
   }
@@ -171,7 +173,7 @@ Error QnnExecuTorchBackend::execute(
       bindable_outputs,
       args.size());
 
-  int args_index = 0;
+  size_t args_index = 0;
   input_tensor_structs.reserve(input_tensors.size());
   for (const auto& input_tensor : input_tensors) {
     if (input_tensor->GetName().find("mutbuf_") == std::string::npos) {
