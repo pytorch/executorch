@@ -86,25 +86,29 @@ target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 # The MoE kernel always compiles with a reference fallback (unpack + dequant +
 # cpublas::gemm) using the torchao weight_packing headers from third-party/ao
 # (already on the include path).  Pass
-# -DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON to additionally link the
-# optimized torchao linear_operator (fused INT8-dyn-act GEMM, aarch64 NEON
+# -DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED=ON to additionally link
+# the optimized torchao linear_operator (fused INT8-dyn-act GEMM, aarch64 NEON
 # dotprod).
-option(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE
+option(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED
        "Link the optimized torchao linear kernel for llama::quantized_moe_ffn"
        OFF
 )
-if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE)
+
+if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED)
   if(NOT TARGET torchao_ops_linear_8bit_act_xbit_weight_executorch)
     message(
       FATAL_ERROR
-        "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON requires target "
+        "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED=ON requires target "
         "torchao_ops_linear_8bit_act_xbit_weight_executorch, which is not "
         "defined. Build the torchao ops or set this option OFF."
     )
   endif()
   # Compile definition and link must be gated on the same condition, else the
-  # ENABLE_QUANTIZED_MOE_FFN path compiles without the library that defines it.
-  target_compile_definitions(custom_ops PUBLIC ENABLE_QUANTIZED_MOE_FFN=1)
+  # EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO path compiles without the library that
+  # defines it.
+  target_compile_definitions(
+    custom_ops PUBLIC EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO=1
+  )
   target_link_libraries(
     custom_ops PUBLIC torchao_ops_linear_8bit_act_xbit_weight_executorch
   )
@@ -190,17 +194,17 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     custom_ops_aot_lib PUBLIC cpublas torch extension_tensor
                               extension_threadpool
   )
-  if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE)
+  if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED)
     if(NOT TARGET torchao_ops_linear_8bit_act_xbit_weight_executorch)
       message(
         FATAL_ERROR
-          "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON requires target "
+          "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED=ON requires target "
           "torchao_ops_linear_8bit_act_xbit_weight_executorch, which is not "
           "defined. Build the torchao ops or set this option OFF."
       )
     endif()
     target_compile_definitions(
-      custom_ops_aot_lib PUBLIC ENABLE_QUANTIZED_MOE_FFN=1
+      custom_ops_aot_lib PUBLIC EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO=1
     )
     target_link_libraries(
       custom_ops_aot_lib

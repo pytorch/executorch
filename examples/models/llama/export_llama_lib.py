@@ -591,8 +591,8 @@ def build_args_parser() -> argparse.ArgumentParser:
             "Replace eager MoE feed-forward modules with the "
             "`llama::quantized_moe_ffn` portable-runtime custom op (INT4 "
             "weights, INT8 dyn-quant activations via torchao). On aarch64 "
-            "with ENABLE_QUANTIZED_MOE_FFN the optimized torchao kernel is "
-            "used; otherwise a portable reference fallback runs."
+            "an optimized runtime build uses the torchao kernel; otherwise "
+            "a portable reference fallback runs."
         ),
     )
 

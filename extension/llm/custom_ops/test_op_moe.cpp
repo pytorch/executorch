@@ -44,8 +44,8 @@ TEST(OpQuantizedMoeFfnTest, RegistrationSmokeTest) {
   Tensor expert_bias = tff.zeros({0});
 
   // Use empty packed buffers; the kernel will fail loudly if it tries to
-  // dereference them. With ENABLE_QUANTIZED_MOE_FFN unset (CI x86 build
-  // without torchao linkage) the kernel ET_CHECK_MSGs out before doing
+  // dereference them. With EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO unset (CI x86
+  // build without torchao linkage) the kernel ET_CHECK_MSGs out before doing
   // any real work, which is what we want this test to verify.
   Tensor packed_w1 = tfb.zeros({E, 1});
   Tensor packed_w3 = tfb.zeros({E, 1});

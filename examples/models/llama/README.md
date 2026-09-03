@@ -561,15 +561,14 @@ registered in `executorch.extension.llm.custom_ops.custom_ops`.
 
 The runtime kernel ships in `extension/llm/custom_ops/op_moe.cpp`. It
 always compiles with a portable reference fallback (unpack + dequant +
-`cpublas::gemm`) that works on any platform. `ENABLE_QUANTIZED_MOE_FFN`
-is an **optimization gate**, not a correctness requirement — when
-defined, the kernel uses torchao's fused `linear_operator` (NEON
-i8mm/dotprod on aarch64) instead of the reference path.
+`cpublas::gemm`) that works on any platform. The optimized build option
+uses torchao's fused `linear_operator` (NEON i8mm/dotprod on aarch64)
+instead of the reference path.
 
 In CMake, opt in to the optimized path with:
 
 ```cmake
--DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON
+-DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED=ON
 ```
 
 In Buck, `_get_quantized_moe_deps()` in `targets.bzl` wires:

@@ -17,11 +17,11 @@
 #include <torchao/csrc/cpu/shared_kernels/internal/packed_weights_header.h>
 #include <torchao/csrc/cpu/torch_free_kernels/weight_packing/weight_packing.h>
 
-#ifdef ENABLE_QUANTIZED_MOE_FFN
+#ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
 #include <torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight/kernel_selector.h>
 #include <torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight/linear_8bit_act_xbit_weight.h>
 #include <optional> // std::nullopt, used only by the optimized aarch64 path
-#endif // ENABLE_QUANTIZED_MOE_FFN
+#endif // EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
 
 #include <array>
 #include <cmath>
@@ -189,7 +189,7 @@ inline void reference_linear(
 
 // Dispatch a single per-expert grouped GEMM through torchao's
 // linear_operator (optimized, aarch64) or reference unpack+dequant+gemm.
-#ifdef ENABLE_QUANTIZED_MOE_FFN
+#ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
 template <int kWeightNbit>
 inline void torchao_linear(
     const uint8_t* packed_w_blob,
@@ -258,7 +258,7 @@ inline void torchao_linear(
       /*clamp_min=*/0.0f,
       /*clamp_max=*/0.0f);
 }
-#endif // ENABLE_QUANTIZED_MOE_FFN
+#endif // EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
 
 inline void expert_linear_dispatch(
     int64_t weight_nbit,
@@ -270,7 +270,7 @@ inline void expert_linear_dispatch(
     int64_t k,
     int64_t group_size,
     float* out) {
-#ifndef ENABLE_QUANTIZED_MOE_FFN
+#ifndef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
   // Reference path only: it unpacks the universal layout, so validate the blob
   // holds the header plus the universal packed weight-data bytes for the
   // claimed dims before any path dereferences it. The torchao path validates
@@ -299,10 +299,10 @@ inline void expert_linear_dispatch(
       static_cast<long long>(k),
       static_cast<long long>(group_size),
       static_cast<long long>(weight_nbit));
-#endif // !ENABLE_QUANTIZED_MOE_FFN
+#endif // !EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
   switch (weight_nbit) {
     case 4:
-#ifdef ENABLE_QUANTIZED_MOE_FFN
+#ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
       torchao_linear<4>(
           packed_w_blob, packed_blob_bytes, x, m, n, k, group_size, out);
 #else
@@ -311,7 +311,7 @@ inline void expert_linear_dispatch(
 #endif
       return;
     case 8:
-#ifdef ENABLE_QUANTIZED_MOE_FFN
+#ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
       torchao_linear<8>(
           packed_w_blob, packed_blob_bytes, x, m, n, k, group_size, out);
 #else
@@ -634,7 +634,7 @@ Tensor& quantized_moe_ffn_out(
     }
   };
 
-#ifdef ENABLE_QUANTIZED_MOE_FFN
+#ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
   // torchao linear path (perf-sensitive). The kernel threads internally on the
   // shared pool in the common config, or runs single-threaded when only the
   // thread-pool-free variant is linked. Distribute experts across the pool

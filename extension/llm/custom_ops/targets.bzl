@@ -63,7 +63,7 @@ def _get_quantized_moe_preproc_flags():
         return select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [
-                "-DENABLE_QUANTIZED_MOE_FFN",
+                "-DEXECUTORCH_QUANTIZED_MOE_USE_TORCHAO",
                 "-DTORCHAO_BUILD_CPU_AARCH64=1",
                 "-DTORCHAO_ENABLE_ARM_NEON_DOT=1",
             ],
