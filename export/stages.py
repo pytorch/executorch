@@ -525,6 +525,11 @@ class QuantizeStage(Stage):
                     {0: batch} if isinstance(t, torch.Tensor) else None for t in inputs
                 )
 
+            # QAT requires the model to be in training mode at capture time so
+            # that batch_norm and dropout decompose with training-mode semantics.
+            if recipe.is_qat:
+                model.train()
+
             captured_graph = torch.export.export(
                 model, inputs, dynamic_shapes=export_dynamic_shapes, strict=True
             ).module()
