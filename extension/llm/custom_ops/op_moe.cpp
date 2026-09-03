@@ -9,17 +9,18 @@
 #include <executorch/extension/llm/custom_ops/op_moe.h>
 
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
-#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 #include <torchao/csrc/cpu/shared_kernels/internal/packed_weights_header.h>
 #include <torchao/csrc/cpu/torch_free_kernels/weight_packing/weight_packing.h>
 
 #ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
-#include <torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight/kernel_selector.h>
+#include <cpuinfo.h>
+#include <torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight/kernel_config.h>
 #include <torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight/linear_8bit_act_xbit_weight.h>
+#include <torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight/packed_weights_format.h>
+#include <torchao/csrc/cpu/torch_free_kernels/aarch64/linear/channelwise_8bit_activation_groupwise_lowbit_weight/channelwise_8bit_activation_groupwise_lowbit_weight.h>
 #include <optional> // std::nullopt, used only by the optimized aarch64 path
 #endif // EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
 
@@ -36,6 +37,49 @@ namespace native {
 namespace {
 
 using ::executorch::aten::string_view;
+
+#ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
+template <int kWeightNbit>
+const torchao::ops::linear_8bit_act_xbit_weight::UKernelConfig&
+universal_ukernel_config() {
+  using torchao::ops::linear_8bit_act_xbit_weight::UKernelConfig;
+  namespace kernel = torchao::kernels::cpu::aarch64::linear::
+      channelwise_8bit_activation_groupwise_lowbit_weight;
+
+  static const auto config = [] {
+    ET_CHECK_MSG(
+        cpuinfo_initialize() && cpuinfo_has_arm_neon_dot(),
+        "quantized_moe_ffn optimized path requires Arm NEON dot product");
+    auto result = UKernelConfig::make(
+        /*preferred_alignment=*/16,
+        /*n_step=*/8,
+        /*nr=*/8,
+        /*kr=*/16,
+        /*sr=*/2,
+        kWeightNbit,
+        /*has_weight_zeros=*/false,
+        /*has_bias=*/false,
+        &torchao::weight_packing::packed_weights_size,
+        &torchao::weight_packing::packed_weights_offset,
+        &torchao::weight_packing::pack_weights<kWeightNbit, 8, 16, 2>,
+        {});
+    result.linear_configs[0] = UKernelConfig::linear_config_type({
+        /*m_step=*/1,
+        /*mr=*/1,
+        &kernel::packed_activations_size,
+        &kernel::packed_activations_offset,
+        &kernel::pack_activations<1, 16, 2>,
+        &kernel::kernel_1x8x16_f32_neondot<
+            kWeightNbit,
+            /*has_weight_zeros=*/false,
+            /*has_lut=*/false>,
+    });
+    result.validate();
+    return result;
+  }();
+  return config;
+}
+#endif
 
 // Numerically-stable sigmoid. Branching on sign keeps exp()'s argument
 // non-positive on both sides, so it can never overflow.
@@ -205,21 +249,22 @@ inline void torchao_linear(
           static_cast<int64_t>(torchao::ops::PackedWeightsHeader::size()),
       "torchao packed blob too small to contain header");
   auto header = torchao::ops::PackedWeightsHeader::read(packed_w_blob);
-  // Select the ukernel from the format declared in the header. This resolves
-  // the universal or kleidi packing automatically; a format whose kernels are
-  // not compiled into this build (e.g. kleidi when TORCHAO_ENABLE_KLEIDI is
-  // unset) throws here instead of being silently mis-read.
-  // TODO: enable KleidiAI here — build this op on xplat arm64 with
-  // -DTORCHAO_ENABLE_KLEIDI (+ -DTORCHAO_ENABLE_ARM_I8MM) and link the kleidi
-  // kernel target so a kleidi header actually resolves to a kleidi ukernel.
-  // Must be coordinated with the AoT packer emitting kleidi headers (see
-  // targets.bzl).
-  auto uk = torchao::ops::linear_8bit_act_xbit_weight::select_ukernel_config<
-      kWeightNbit>(header);
+  ET_CHECK_MSG(
+      header.type ==
+          torchao::ops::PackedWeightsType::
+              linear_8bit_act_xbit_weight_universal,
+      "quantized_moe_ffn requires universal torchao packed weights");
+  const auto format = torchao::ops::linear_8bit_act_xbit_weight::
+      PackedWeightsFormat::from_packed_weights_header(header);
+  ET_CHECK_MSG(
+      format.weight_nbit == kWeightNbit && !format.has_weight_zeros &&
+          !format.has_bias && format.nr == 8 && format.kr == 16 &&
+          format.sr == 2,
+      "quantized_moe_ffn received an unsupported universal weight format");
+  const auto& uk = universal_ukernel_config<kWeightNbit>();
 
-  // Validate the blob against the *selected* format's layout. nr/kr/sr and the
-  // size formula differ between universal and kleidi, so derive them from the
-  // chosen config rather than assuming a fixed layout.
+  // Validate the blob against the universal config's layout without
+  // duplicating its packed-weight size formula.
   const int64_t required_bytes =
       static_cast<int64_t>(torchao::ops::PackedWeightsHeader::size()) +
       static_cast<int64_t>(uk.packed_weights_size(
@@ -274,8 +319,7 @@ inline void expert_linear_dispatch(
   // Reference path only: it unpacks the universal layout, so validate the blob
   // holds the header plus the universal packed weight-data bytes for the
   // claimed dims before any path dereferences it. The torchao path validates
-  // against its own selected format (universal or kleidi) inside
-  // torchao_linear.
+  // the same required universal format inside torchao_linear.
   constexpr int kNr = 8, kKr = 16, kSr = 2;
   const int64_t required_bytes =
       static_cast<int64_t>(torchao::ops::PackedWeightsHeader::size()) +
@@ -634,26 +678,7 @@ Tensor& quantized_moe_ffn_out(
     }
   };
 
-#ifdef EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO
-  // torchao linear path (perf-sensitive). The kernel threads internally on the
-  // shared pool in the common config, or runs single-threaded when only the
-  // thread-pool-free variant is linked. Distribute experts across the pool
-  // ourselves only when the kernel won't and the pool has more than one thread
-  // -- running both would nest on one pthreadpool and deadlock.
-  const bool parallelize_experts = torchao::ops::linear_8bit_act_xbit_weight::
-                                       linear_operator_num_threads() == 1 &&
-      ::executorch::extension::threadpool::get_threadpool()
-              ->get_thread_count() > 1;
-#else
-  // Portable reference path: prefer simplicity over speed and run experts
-  // serially.
-  const bool parallelize_experts = false;
-#endif
-  if (parallelize_experts) {
-    torch::executor::parallel_for(0, E, /*grain_size=*/1, run_experts);
-  } else {
-    run_experts(0, E);
-  }
+  run_experts(0, E);
 
   // ----- 7. Weighted scatter-add unpermute (cross-expert reduction) -----
   // Each token sums the contributions of its top-k experts; run serially to
