@@ -195,6 +195,24 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor) {
+  (void)ndim;
+  (void)sizes_ptr;
+  (void)strides_ptr;
+  (void)dtype;
+  (void)device_type;
+  (void)device_index;
+  (void)ret_new_tensor;
+  return Error::NotSupported;
+}
+
 AOTITorchError aoti_torch_delete_tensor_object(SlimTensor* tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       tensor != nullptr,

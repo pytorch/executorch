@@ -62,6 +62,11 @@ aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel);
 
+// Reports whether the handle refers to a real tensor. PyTorch has an undefined
+// tensor state that ExecuTorch has no equivalent for, so this is a null check.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_is_defined(Tensor* tensor, bool* ret_is_defined);
+
 // Utility functions for device and layout information
 AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();

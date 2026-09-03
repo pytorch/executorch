@@ -96,6 +96,26 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     SlimTensor** ret_new_tensor);
 
 /**
+ * Reports that pinned host memory is unavailable.
+ *
+ * Generated wrappers call this to stage constants through page-locked host
+ * memory, which lets the copy to the device run asynchronously. There is no
+ * pinned allocator here, so this always fails and the caller uses the
+ * synchronous copy it already falls back to. Correct, and slower only while
+ * loading.
+ *
+ * @return Error::NotSupported
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor);
+
+/**
  * Deletes a tensor object and frees associated resources.
  *
  * For SlimTensor, the underlying storage uses SharedPtr-based reference
