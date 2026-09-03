@@ -1105,6 +1105,11 @@ def _is_share_obs_or_fq_op(op: Callable) -> bool:
         torch.ops.aten.slice.Tensor,
         torch.ops.aten.slice_copy.Tensor,
         torch.ops.aten.flatten.using_ints,
+        # Identity once the model is not training, which is how it is deployed.
+        # The training argument on the node cannot be read here: it is a switch
+        # that is flipped after this runs, which the train/eval test asserts.
+        torch.ops.aten.dropout.default,
+        torch.ops.aten.dropout_.default,
     ]
 
 
