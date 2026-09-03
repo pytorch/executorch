@@ -26,7 +26,7 @@ using executorch::extension::llm::cache::Cache;
 using executorch::extension::llm::cache::CacheFactory;
 using executorch::extension::llm::cache::CacheConfig;
 using executorch::extension::llm::cache::CacheRegistry;
-using executorch::extension::llm::cache::CacheLease;
+using executorch::extension::llm::cache::InstallGuard;
 using executorch::extension::llm::cache::CellCache;
 using executorch::extension::llm::cache::CellStep;
 using executorch::extension::llm::cache::CellStepper;
@@ -231,16 +231,19 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
       Error::InvalidArgument);
 }
 
-TEST_F(CacheTest, LeaseInstallsOnCtorErasesOnDtor) {
+TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
+  auto cache = std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
   std::string key;
   {
-    CacheLease lease(
-        std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}}));
-    key = lease.key();
-    EXPECT_NE(CacheRegistry::global().get(key), nullptr);
-    EXPECT_TRUE(lease.cache()->as<SequenceControl>()->can_extend(4));
+    InstallGuard guard(cache);
+    key = guard.key();
+    // The published entry is the same object the caller still holds.
+    EXPECT_EQ(CacheRegistry::global().get(key).get(), cache.get());
+    EXPECT_TRUE(cache->as<SequenceControl>()->can_extend(4));
   }
   EXPECT_EQ(CacheRegistry::global().get(key), nullptr);
+  // The guard held only the registry entry; the cache outlives it.
+  EXPECT_TRUE(cache->as<SequenceControl>()->can_extend(4));
 }
 
 // ---- ET adapter (maps core bool/optional to Error/Result) ------------------

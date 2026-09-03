@@ -303,7 +303,7 @@ int main(int argc, char* argv[]) {
     // Build and install the off-graph KV cache before the Module, so the
     // registry entry exists by the time the delegate's init() looks it up.
     // Declared here so the lease outlives the module.
-    std::optional<cache::CacheLease> cache_lease;
+    std::optional<cache::InstallGuard> cache_lease;
     if (!kv_cache_spec.empty()) {
       cache::CacheConfig cfg{};
       if (!parse_kv_cache_spec(kv_cache_spec, cfg)) {

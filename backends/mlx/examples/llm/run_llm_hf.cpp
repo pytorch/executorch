@@ -351,15 +351,10 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    // Off-graph models (update_and_attend) need a cache bound via cache_key;
-    // in-graph models (mlx::kv_cache_update) don't -- omit --kv-max-capacity
-    // for those. lease/options are outer-scoped: lease must outlive the
-    // Module (it keeps the cache in the registry) and mlx_opts must outlive
-    // load_method() (the map holds a view into it).
-    std::optional<cache::CacheLease> lease;
+    // Outer-scoped because mlx_opts must outlive load_method(): the map holds
+    // a view into it.
     ::executorch::runtime::BackendOptions<1> mlx_opts;
     ::executorch::runtime::LoadBackendOptionsMap options_map;
-    const bool off_graph = kv_capacity > 0;
     // Tokens per prefill step, from the .pte. 0 means one step: an
     // in-graph model publishes no chunk and has no ring to bound.
     int prefill_chunk = 0;
@@ -374,337 +369,355 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    if (off_graph) {
-      cache::CacheConfig cfg{};
-      cfg.capacity = kv_capacity;
-      cfg.kv_dtype = storage_dtype(kv_dtype);
-      if (cfg.kv_dtype < 0) {
-        std::cerr << "Invalid --kv-storage-dtype: " << kv_dtype
-                  << " (bf16|fp16|fp32)" << std::endl;
+    // Everything past load_method is identical for both model kinds; only
+    // setup differs. ctl is null for an in-graph model, which owns its cache
+    // inside the graph and exposes no control face.
+    auto run = [&](cache::SequenceControl* ctl,
+                   const ::executorch::runtime::LoadBackendOptionsMap*
+                       load_opts) -> int {
+      if (module.load_method(
+              "forward",
+              /*planned_memory=*/nullptr,
+              /*event_tracer=*/nullptr,
+              load_opts) != Error::Ok) {
+        std::cerr << "Failed to load forward" << std::endl;
         return 1;
       }
-      if (!read_kv_layout(module, cfg)) {
-        std::cerr << "No KV cache layout in " << pte
-                  << "; re-export with --use-offgraph-cache" << std::endl;
-        return 1;
-      }
-      if (!kv_windows.empty() && !apply_window_override(kv_windows, cfg)) {
-        std::cerr << "Invalid --kv-windows: " << kv_windows << std::endl;
-        return 1;
-      }
-      if (!cache::valid(cfg)) {
-        std::cerr << "Invalid cache config" << std::endl;
-        return 1;
-      }
-      if (initial_capacity >= 0) {
-        cfg.initial_capacity = initial_capacity;
-      }
-      auto built = cache::CacheFactory::global().build(
-          ::executorch::backends::mlx::kMLXBackendId, cache::kind::kSingle, cfg);
-      if (!built.ok()) {
-        std::cerr << "Failed to build cache: "
-                  << static_cast<int>(built.error()) << std::endl;
-        return 1;
-      }
-      prefill_chunk = cfg.max_write ? *cfg.max_write : 0;
-      lease.emplace(built.get());
+      // Timings reported at the end, in the shared runner's format.
+      ::executorch::extension::llm::Stats stats;
+      stats.model_load_start_ms = load_start_ms;
+      stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
 
-      print_cache_summary(cfg);
-      if (mlx_opts.set_option(
-              ::executorch::backends::mlx::kCacheKeyKey,
-              lease->key().c_str()) != Error::Ok ||
-          options_map.set_options(
-              ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
-              Error::Ok) {
-        std::cerr << "Failed to set cache_key option" << std::endl;
+      // Weights-only baseline, so the deltas below isolate the cache.
+      const double mem_at_load = ::mlx::core::get_active_memory() / 1048576.0;
+      std::cout << "[mem]   after load  : " << mem_at_load << " MiB" << std::endl;
+
+      // Encode. HFTokenizer maps special-token markers in the string to their
+      // ids, so the template's <|...|> tokens encode correctly; it already
+      // carries <|begin_of_text|>, so pass bos=0 to avoid a doubled BOS.
+      std::string enc_input;
+      if (!wrap_turn(chat, prompt, /*with_bos=*/true, enc_input)) {
+        std::cerr << "Unknown --chat template: " << chat
+                  << " (expected llama3, gemma, gemma4, or 0)" << std::endl;
         return 1;
       }
-    }
-
-    if (module.load_method(
-            "forward",
-            /*planned_memory=*/nullptr,
-            /*event_tracer=*/nullptr,
-            off_graph ? &options_map : nullptr) != Error::Ok) {
-      std::cerr << "Failed to load forward" << std::endl;
-      return 1;
-    }
-    // Timings reported at the end, in the shared runner's format.
-    ::executorch::extension::llm::Stats stats;
-    stats.model_load_start_ms = load_start_ms;
-    stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
-
-    // Weights-only baseline, so the deltas below isolate the cache.
-    const double mem_at_load = ::mlx::core::get_active_memory() / 1048576.0;
-    std::cout << "[mem]   after load  : " << mem_at_load << " MiB" << std::endl;
-
-    // Encode. HFTokenizer maps special-token markers in the string to their
-    // ids, so the template's <|...|> tokens encode correctly; it already
-    // carries <|begin_of_text|>, so pass bos=0 to avoid a doubled BOS.
-    std::string enc_input;
-    if (!wrap_turn(chat, prompt, /*with_bos=*/true, enc_input)) {
-      std::cerr << "Unknown --chat template: " << chat
-                << " (expected llama3, gemma, gemma4, or 0)" << std::endl;
-      return 1;
-    }
-    // The template carries its own BOS, so only a raw prompt asks for one.
-    const int8_t bos = chat == "0" ? 1 : 0;
-    auto enc = tokenizer->encode(enc_input, bos, /*eos=*/0);
-    if (!enc.ok()) {
-      std::cerr << "Encode failed" << std::endl;
-      return 1;
-    }
-    std::vector<uint64_t> tokens = std::move(*enc);
-    const int prompt_len = static_cast<int>(tokens.size());
-
-    // End-of-text from the model's metadata when it publishes any, else the
-    // tokenizer's. The turn-end token is ours: it depends on --chat, which the
-    // .pte knows nothing about.
-    std::unordered_set<uint64_t> stop_ids =
-        ::executorch::extension::llm::get_eos_ids(tokenizer.get(), &module);
-    std::optional<int64_t> turn_end_id;
-    if (chat != "0") {
-      const char* turn_end = chat == "llama3" ? "<|eot_id|>"
-          : chat == "gemma4"                  ? "<turn|>"
-                                              : "<end_of_turn>";
-      if (auto eot = tokenizer->piece_to_id(turn_end); eot.ok()) {
-        turn_end_id = static_cast<int64_t>(*eot);
-        stop_ids.insert(*eot);
+      // The template carries its own BOS, so only a raw prompt asks for one.
+      const int8_t bos = chat == "0" ? 1 : 0;
+      auto enc = tokenizer->encode(enc_input, bos, /*eos=*/0);
+      if (!enc.ok()) {
+        std::cerr << "Encode failed" << std::endl;
+        return 1;
       }
-    }
-    auto is_stop = [&](int64_t t) {
-      for (uint64_t s : stop_ids) {
-        if (t == static_cast<int64_t>(s)) {
-          return true;
+      std::vector<uint64_t> tokens = std::move(*enc);
+      const int prompt_len = static_cast<int>(tokens.size());
+
+      // End-of-text from the model's metadata when it publishes any, else the
+      // tokenizer's. The turn-end token is ours: it depends on --chat, which the
+      // .pte knows nothing about.
+      std::unordered_set<uint64_t> stop_ids =
+          ::executorch::extension::llm::get_eos_ids(tokenizer.get(), &module);
+      std::optional<int64_t> turn_end_id;
+      if (chat != "0") {
+        const char* turn_end = chat == "llama3" ? "<|eot_id|>"
+            : chat == "gemma4"                  ? "<turn|>"
+                                                : "<end_of_turn>";
+        if (auto eot = tokenizer->piece_to_id(turn_end); eot.ok()) {
+          turn_end_id = static_cast<int64_t>(*eot);
+          stop_ids.insert(*eot);
         }
       }
-      return false;
-    };
-
-    // One Sampler for the whole run, as the shared runner does: constructing
-    // one per token would reseed its RNG from the wall clock every time. Built
-    // on first use because the vocab size comes from the logits -- this export
-    // publishes no get_vocab_size.
-    std::optional<::executorch::extension::llm::Sampler> sampler;
-
-    auto step = [&](const std::vector<int64_t>& ids,
-                    const std::vector<int64_t>& pos) {
-      auto in =
-          make_tensor_ptr({1, (int)ids.size()}, std::vector<int64_t>(ids));
-      auto cp = make_tensor_ptr({(int)pos.size()}, std::vector<int64_t>(pos));
-      auto out = module.execute("forward", {in, cp});
-      if (!out.ok()) {
-        throw std::runtime_error("execute failed");
-      }
-      const auto& logits = out->at(0).toTensor();
-      if (!sampler) {
-        sampler.emplace(
-            static_cast<int32_t>(logits.size(logits.dim() - 1)), temperature);
-      }
-      stats.on_sampling_begin();
-      const int32_t tok =
-          ::executorch::extension::llm::sample_from_logits(logits, *sampler);
-      stats.on_sampling_end();
-      return static_cast<int64_t>(tok);
-    };
-
-    // Prefill in chunks, so a ring layer holds window + chunk - 1 slots rather
-    // than growing with the prompt. Only the last chunk's token is kept; the
-    // earlier ones exist to place their K/V in the cache.
-    auto prefill = [&](const std::vector<int64_t>& ids,
-                       const std::vector<int64_t>& pos) {
-      const size_t step_size =
-          prefill_chunk > 0 ? static_cast<size_t>(prefill_chunk) : ids.size();
-      int64_t next = 0;
-      for (size_t off = 0; off < ids.size(); off += step_size) {
-        const size_t n = std::min(step_size, ids.size() - off);
-        next = step(
-            {ids.begin() + off, ids.begin() + off + n},
-            {pos.begin() + off, pos.begin() + off + n});
-      }
-      return next;
-    };
-
-    // Multi-turn: history stays in the cache, so each turn only prefills its
-    // own tokens at the running position. /reset and /undo drive the cache's
-    // control face directly -- off-graph only, since an in-graph cache gives
-    // the runner no handle to its state.
-    if (interactive) {
-      if (!off_graph) {
-        std::cerr << "--interactive requires --kv-max-capacity\n";
-        return 1;
-      }
-      auto* control = lease->cache()->as<cache::SequenceControl>();
-      std::cout << "Multi-turn chat. /reset clears, /undo drops the last turn, "
-                   "/undo N drops N tokens, /quit exits.\n";
-      int64_t position = 0;
-      int64_t turn_start = 0; // position this turn began at, for /undo
-      std::string line;
-      while (std::cout << "\n> " && std::getline(std::cin, line)) {
-        if (line == "/quit") {
-          break;
+      auto is_stop = [&](int64_t t) {
+        for (uint64_t s : stop_ids) {
+          if (t == static_cast<int64_t>(s)) {
+            return true;
+          }
         }
-        if (line == "/reset") {
-          control->clear();
-          position = turn_start = 0;
-          std::cout << "[cleared]\n";
-          continue;
+        return false;
+      };
+
+      // One Sampler for the whole run, as the shared runner does: constructing
+      // one per token would reseed its RNG from the wall clock every time. Built
+      // on first use because the vocab size comes from the logits -- this export
+      // publishes no get_vocab_size.
+      std::optional<::executorch::extension::llm::Sampler> sampler;
+
+      auto step = [&](const std::vector<int64_t>& ids,
+                      const std::vector<int64_t>& pos) {
+        auto in =
+            make_tensor_ptr({1, (int)ids.size()}, std::vector<int64_t>(ids));
+        auto cp = make_tensor_ptr({(int)pos.size()}, std::vector<int64_t>(pos));
+        auto out = module.execute("forward", {in, cp});
+        if (!out.ok()) {
+          throw std::runtime_error("execute failed");
         }
-        if (line == "/undo" || line.rfind("/undo ", 0) == 0) {
-          // Bare /undo drops the last turn; /undo N drops N tokens.
-          int64_t target = turn_start;
-          if (line.size() > 6) {
-            try {
-              const int64_t n = std::stoll(line.substr(6));
-              target = n >= position ? 0 : position - n;
-            } catch (const std::exception&) {
-              std::cout << "[usage: /undo [n_tokens]]\n";
-              continue;
+        const auto& logits = out->at(0).toTensor();
+        if (!sampler) {
+          sampler.emplace(
+              static_cast<int32_t>(logits.size(logits.dim() - 1)), temperature);
+        }
+        stats.on_sampling_begin();
+        const int32_t tok =
+            ::executorch::extension::llm::sample_from_logits(logits, *sampler);
+        stats.on_sampling_end();
+        return static_cast<int64_t>(tok);
+      };
+
+      // Prefill in chunks, so a ring layer holds window + chunk - 1 slots rather
+      // than growing with the prompt. Only the last chunk's token is kept; the
+      // earlier ones exist to place their K/V in the cache.
+      auto prefill = [&](const std::vector<int64_t>& ids,
+                         const std::vector<int64_t>& pos) {
+        const size_t step_size =
+            prefill_chunk > 0 ? static_cast<size_t>(prefill_chunk) : ids.size();
+        int64_t next = 0;
+        for (size_t off = 0; off < ids.size(); off += step_size) {
+          const size_t n = std::min(step_size, ids.size() - off);
+          next = step(
+              {ids.begin() + off, ids.begin() + off + n},
+              {pos.begin() + off, pos.begin() + off + n});
+        }
+        return next;
+      };
+
+      // Multi-turn: history stays in the cache, so each turn only prefills its
+      // own tokens at the running position. /reset and /undo drive the cache's
+      // control face directly -- off-graph only, since an in-graph cache gives
+      // the runner no handle to its state.
+      if (interactive) {
+        if (ctl == nullptr) {
+          std::cerr << "--interactive requires --kv-max-capacity\n";
+          return 1;
+        }
+        auto* control = ctl;
+        std::cout << "Multi-turn chat. /reset clears, /undo drops the last turn, "
+                     "/undo N drops N tokens, /quit exits.\n";
+        int64_t position = 0;
+        int64_t turn_start = 0; // position this turn began at, for /undo
+        std::string line;
+        while (std::cout << "\n> " && std::getline(std::cin, line)) {
+          if (line == "/quit") {
+            break;
+          }
+          if (line == "/reset") {
+            control->clear();
+            position = turn_start = 0;
+            std::cout << "[cleared]\n";
+            continue;
+          }
+          if (line == "/undo" || line.rfind("/undo ", 0) == 0) {
+            // Bare /undo drops the last turn; /undo N drops N tokens.
+            int64_t target = turn_start;
+            if (line.size() > 6) {
+              try {
+                const int64_t n = std::stoll(line.substr(6));
+                target = n >= position ? 0 : position - n;
+              } catch (const std::exception&) {
+                std::cout << "[usage: /undo [n_tokens]]\n";
+                continue;
+              }
+            }
+            if (control->rewind(static_cast<int>(target))) {
+              position = target;
+              turn_start = std::min(turn_start, position);
+              std::cout << "[rewound to " << position << "]\n";
+            } else {
+              // A sliding-window layer has physically dropped those cells.
+              std::cout << "[cannot rewind to " << target << "]\n";
+            }
+            continue;
+          }
+          if (line.empty()) {
+            continue;
+          }
+
+          std::string turn;
+          wrap_turn(chat, line, /*with_bos=*/position == 0, turn);
+          auto te = tokenizer->encode(turn, /*bos=*/chat == "0" ? 1 : 0, 0);
+          if (!te.ok()) {
+            std::cerr << "Encode failed\n";
+            continue;
+          }
+          const int n = static_cast<int>(te->size());
+          // Admit the turn if its prompt plus one token fits; reserving the whole
+          // max_new budget up front would report "full" with most of the cache
+          // still free. Generation is then clamped to the room that remains.
+          if (!control->can_extend(n + 1)) {
+            std::cout << "[cache full: " << position << "/" << control->capacity()
+                      << ", turn " << n << " tokens"
+                      << (control->can_extend(1) ? "" : ", length at capacity")
+                      << ", use /reset]\n";
+            continue;
+          }
+          const int budget = std::min(
+              max_new, control->capacity() - static_cast<int>(position) - n);
+
+          turn_start = position;
+          std::vector<int64_t> tin(te->begin(), te->end()), tpos;
+          for (int i = 0; i < n; ++i) {
+            tpos.push_back(position + i);
+          }
+          int64_t next = prefill(tin, tpos);
+          position += n;
+
+          uint64_t prev = te->back();
+          for (int i = 0; i < budget && !is_stop(next); ++i) {
+            if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
+                piece.ok()) {
+              std::cout << *piece << std::flush;
+            }
+            prev = static_cast<uint64_t>(next);
+            next = step({next}, {position});
+            ++position;
+          }
+          // The turn-end token stops generation, so it is neither printed nor
+          // fed back -- but the next turn opens without closing this one, and an
+          // unterminated assistant turn compounds over a session. Commit it, at
+          // the cost of one extra step per turn.
+          if (turn_end_id && next == *turn_end_id && control->can_extend(1)) {
+            step({next}, {position});
+            ++position;
+          }
+          std::cout << "\n[" << position << "/" << control->capacity()
+                    << " tokens"
+                    << (budget < max_new ? ", generation capped by capacity" : "")
+                    << "]\n";
+        }
+        return 0;
+      }
+
+      std::vector<int64_t> ids(tokens.begin(), tokens.end()), prefill_pos;
+      for (int i = 0; i < prompt_len; ++i) {
+        prefill_pos.push_back(i);
+      }
+      auto ms = [](auto a, auto b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+      };
+      // Sequence length against the configured ceiling, with what MLX actually
+      // holds for it. Pools start at initial_capacity and grow by doubling, so
+      // the bytes lag the token count in steps; bf16 storage (kv_dtype 15) halves
+      // them vs fp32 (6).
+      auto print_footprint = [&](const char* when, int len) {
+        if (ctl == nullptr) {
+          return;
+        }
+        const int cap = ctl->capacity();
+        const double pct = cap > 0 ? 100.0 * len / cap : 0.0;
+        std::cout << "[cache] " << when << ": " << len << " / " << cap
+                  << " tokens (" << pct << "%)" << std::endl;
+        const double mem = ::mlx::core::get_active_memory() / 1048576.0;
+        std::cout << "[mem]   " << when << ": " << mem << " MiB (+"
+                  << (mem - mem_at_load) << " MiB since load)" << std::endl;
+      };
+
+      // One optional warmup run to absorb JIT and pool growth, then one measured
+      // run, as the shared LLM runners do. Repeats belong in a harness that
+      // restarts the process: clear() rewinds the sequence but leaves the pools
+      // at their grown size, so an in-process repeat cannot see reallocation.
+      for (int iter = 0; iter < (warmup ? 2 : 1); ++iter) {
+        const bool measured = !warmup || iter == 1;
+        if (iter > 0 && ctl != nullptr) {
+          ctl->clear();
+        }
+        stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
+        int64_t next = prefill(ids, prefill_pos);
+        stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
+        // prefill returns the first generated token, so TTFT ends with prefill
+        stats.first_token_ms = stats.prompt_eval_end_ms;
+        if (measured) {
+          std::cout << "\n";
+          print_footprint("after prefill", prompt_len);
+          std::cout << "\n"; // blank line before the streamed generation
+        }
+
+        uint64_t prev = tokens.back();
+        int generated = 0;
+        for (int i = 0; i < max_new; ++i) {
+          if (is_stop(next)) {
+            break;
+          }
+          if (measured) {
+            if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
+                piece.ok()) {
+              ::executorch::extension::llm::safe_printf(piece->c_str());
+              fflush(stdout);
             }
           }
-          if (control->rewind(static_cast<int>(target))) {
-            position = target;
-            turn_start = std::min(turn_start, position);
-            std::cout << "[rewound to " << position << "]\n";
-          } else {
-            // A sliding-window layer has physically dropped those cells.
-            std::cout << "[cannot rewind to " << target << "]\n";
-          }
-          continue;
-        }
-        if (line.empty()) {
-          continue;
-        }
-
-        std::string turn;
-        wrap_turn(chat, line, /*with_bos=*/position == 0, turn);
-        auto te = tokenizer->encode(turn, /*bos=*/chat == "0" ? 1 : 0, 0);
-        if (!te.ok()) {
-          std::cerr << "Encode failed\n";
-          continue;
-        }
-        const int n = static_cast<int>(te->size());
-        // Admit the turn if its prompt plus one token fits; reserving the whole
-        // max_new budget up front would report "full" with most of the cache
-        // still free. Generation is then clamped to the room that remains.
-        if (!control->can_extend(n + 1)) {
-          std::cout << "[cache full: " << position << "/" << control->capacity()
-                    << ", turn " << n << " tokens"
-                    << (control->can_extend(1) ? "" : ", length at capacity")
-                    << ", use /reset]\n";
-          continue;
-        }
-        const int budget = std::min(
-            max_new, control->capacity() - static_cast<int>(position) - n);
-
-        turn_start = position;
-        std::vector<int64_t> tin(te->begin(), te->end()), tpos;
-        for (int i = 0; i < n; ++i) {
-          tpos.push_back(position + i);
-        }
-        int64_t next = prefill(tin, tpos);
-        position += n;
-
-        uint64_t prev = te->back();
-        for (int i = 0; i < budget && !is_stop(next); ++i) {
-          if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
-              piece.ok()) {
-            std::cout << *piece << std::flush;
-          }
           prev = static_cast<uint64_t>(next);
-          next = step({next}, {position});
-          ++position;
+          ++generated;
+          next = step({next}, {prompt_len + i});
         }
-        // The turn-end token stops generation, so it is neither printed nor
-        // fed back -- but the next turn opens without closing this one, and an
-        // unterminated assistant turn compounds over a session. Commit it, at
-        // the cost of one extra step per turn.
-        if (turn_end_id && next == *turn_end_id && control->can_extend(1)) {
-          step({next}, {position});
-          ++position;
-        }
-        std::cout << "\n[" << position << "/" << control->capacity()
-                  << " tokens"
-                  << (budget < max_new ? ", generation capped by capacity" : "")
-                  << "]\n";
-      }
-      return 0;
-    }
-
-    std::vector<int64_t> ids(tokens.begin(), tokens.end()), prefill_pos;
-    for (int i = 0; i < prompt_len; ++i) {
-      prefill_pos.push_back(i);
-    }
-    auto ms = [](auto a, auto b) {
-      return std::chrono::duration<double, std::milli>(b - a).count();
-    };
-    // Sequence length against the configured ceiling, with what MLX actually
-    // holds for it. Pools start at initial_capacity and grow by doubling, so
-    // the bytes lag the token count in steps; bf16 storage (kv_dtype 15) halves
-    // them vs fp32 (6).
-    auto print_footprint = [&](const char* when, int len) {
-      if (!lease) {
-        return;
-      }
-      const int cap =
-          lease->cache()->as<cache::SequenceControl>()->capacity();
-      const double pct = cap > 0 ? 100.0 * len / cap : 0.0;
-      std::cout << "[cache] " << when << ": " << len << " / " << cap
-                << " tokens (" << pct << "%)" << std::endl;
-      const double mem = ::mlx::core::get_active_memory() / 1048576.0;
-      std::cout << "[mem]   " << when << ": " << mem << " MiB (+"
-                << (mem - mem_at_load) << " MiB since load)" << std::endl;
-    };
-
-    // One optional warmup run to absorb JIT and pool growth, then one measured
-    // run, as the shared LLM runners do. Repeats belong in a harness that
-    // restarts the process: clear() rewinds the sequence but leaves the pools
-    // at their grown size, so an in-process repeat cannot see reallocation.
-    for (int iter = 0; iter < (warmup ? 2 : 1); ++iter) {
-      const bool measured = !warmup || iter == 1;
-      if (iter > 0 && off_graph) {
-        lease->cache()->as<cache::SequenceControl>()->clear();
-      }
-      stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
-      int64_t next = prefill(ids, prefill_pos);
-      stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
-      // prefill returns the first generated token, so TTFT ends with prefill
-      stats.first_token_ms = stats.prompt_eval_end_ms;
-      if (measured) {
-        std::cout << "\n";
-        print_footprint("after prefill", prompt_len);
-        std::cout << "\n"; // blank line before the streamed generation
-      }
-
-      uint64_t prev = tokens.back();
-      int generated = 0;
-      for (int i = 0; i < max_new; ++i) {
-        if (is_stop(next)) {
-          break;
-        }
+        stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
         if (measured) {
-          if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
-              piece.ok()) {
-            ::executorch::extension::llm::safe_printf(piece->c_str());
-            fflush(stdout);
-          }
+          std::cout << "\n\n"; // close the generation line + blank separator
+          // trailing space aligns the colon with the "after prefill" line above
+          print_footprint("after decode ", prompt_len + generated);
+          stats.num_prompt_tokens = prompt_len;
+          stats.num_generated_tokens = generated;
         }
-        prev = static_cast<uint64_t>(next);
-        ++generated;
-        next = step({next}, {prompt_len + i});
       }
-      stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
-      if (measured) {
-        std::cout << "\n\n"; // close the generation line + blank separator
-        // trailing space aligns the colon with the "after prefill" line above
-        print_footprint("after decode ", prompt_len + generated);
-        stats.num_prompt_tokens = prompt_len;
-        stats.num_generated_tokens = generated;
-      }
+      std::cout << std::endl;
+      ::executorch::extension::llm::print_report(stats);
+      return 0;
+    };
+
+    // An in-graph model (mlx::kv_cache_update) binds no cache: nothing to
+    // build, no key to hand the delegate, and so no registry entry to guard.
+    if (kv_capacity <= 0) {
+      return run(/*ctl=*/nullptr, /*load_opts=*/nullptr);
     }
-    std::cout << std::endl;
-    ::executorch::extension::llm::print_report(stats);
-    return 0;
+
+    cache::CacheConfig cfg{};
+    cfg.capacity = kv_capacity;
+    cfg.kv_dtype = storage_dtype(kv_dtype);
+    if (cfg.kv_dtype < 0) {
+      std::cerr << "Invalid --kv-storage-dtype: " << kv_dtype
+                << " (bf16|fp16|fp32)" << std::endl;
+      return 1;
+    }
+    if (!read_kv_layout(module, cfg)) {
+      std::cerr << "No KV cache layout in " << pte
+                << "; re-export with --use-offgraph-cache" << std::endl;
+      return 1;
+    }
+    if (!kv_windows.empty() && !apply_window_override(kv_windows, cfg)) {
+      std::cerr << "Invalid --kv-windows: " << kv_windows << std::endl;
+      return 1;
+    }
+    if (!cache::valid(cfg)) {
+      std::cerr << "Invalid cache config" << std::endl;
+      return 1;
+    }
+    if (initial_capacity >= 0) {
+      cfg.initial_capacity = initial_capacity;
+    }
+
+    auto built = cache::CacheFactory::global().build(
+        ::executorch::backends::mlx::kMLXBackendId, cache::kind::kSingle, cfg);
+    if (!built.ok()) {
+      std::cerr << "Failed to build cache: " << static_cast<int>(built.error())
+                << std::endl;
+      return 1;
+    }
+    const std::shared_ptr<cache::Cache> kv = built.get();
+    prefill_chunk = cfg.max_write ? *cfg.max_write : 0;
+
+    // Published for the delegate to find by key, and erased when this scope
+    // exits -- which is after run() returns, so the entry is still there for
+    // the load_method() inside it.
+    const cache::InstallGuard guard{kv};
+
+    print_cache_summary(cfg);
+    if (mlx_opts.set_option(
+            ::executorch::backends::mlx::kCacheKeyKey,
+            guard.key().c_str()) != Error::Ok ||
+        options_map.set_options(
+            ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
+            Error::Ok) {
+      std::cerr << "Failed to set cache_key option" << std::endl;
+      return 1;
+    }
+
+    return run(kv->as<cache::SequenceControl>(), &options_map);
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;
