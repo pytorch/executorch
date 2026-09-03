@@ -39,7 +39,7 @@ using ::executorch::runtime::Result;
 // Process-global map<cache_key, shared_ptr<Cache>>. Ownership is shared:
 // the registry entry, the runner's guard, and the delegate handle all hold
 // the cache, so erasing the entry mid-method is safe.
-class CacheRegistry {
+class ET_EXPERIMENTAL CacheRegistry {
  public:
   static CacheRegistry& global();
 
@@ -74,7 +74,7 @@ inline constexpr const char* kBatchedCell = "batched-cell";
 // lookup tag.
 using CacheBuilder = std::function<std::shared_ptr<Cache>(const CacheConfig&)>;
 
-class CacheFactory {
+class ET_EXPERIMENTAL CacheFactory {
  public:
   static CacheFactory& global();
 
@@ -108,7 +108,7 @@ class CacheFactory {
 //
 // Destruction removes discoverability only. A shared_ptr already returned by
 // CacheRegistry::get() remains valid independently.
-class InstallGuard {
+class ET_EXPERIMENTAL InstallGuard {
  public:
   explicit InstallGuard(std::shared_ptr<Cache> cache);
   ~InstallGuard();

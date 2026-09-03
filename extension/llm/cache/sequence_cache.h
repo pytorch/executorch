@@ -32,7 +32,7 @@ namespace llm {
 namespace cache {
 
 // A contiguous span of physical rows in a layer's pool.
-struct Run {
+struct ET_EXPERIMENTAL Run {
   int start;
   int len;
 };
@@ -40,7 +40,7 @@ struct Run {
 // Integer-only handoff to the backend byte layer. Runs are in logical order
 // (oldest -> newest); a flat layer uses one, a ring layer two when it wraps.
 // read_base_pos is the logical position of read[0].start.
-struct SeqStepPlan {
+struct ET_EXPERIMENTAL SeqStepPlan {
   Run write[2];
   int n_write;
   Run read[2];
@@ -51,7 +51,7 @@ struct SeqStepPlan {
 // Backend face. plan() is const: it computes a layer's layout without changing
 // state, and commit() advances the shared logical length. nullopt = the step
 // exceeds capacity, or `layer` is out of range.
-class SequencePlanner {
+class ET_EXPERIMENTAL SequencePlanner {
  public:
   static constexpr const char* kFaceName = "et.cache.SequencePlanner";
 
@@ -64,7 +64,7 @@ class SequencePlanner {
 };
 
 // Per-layer layout: flat keeps all history, ring slides a window. Stateless.
-class LayoutPolicy {
+class ET_EXPERIMENTAL LayoutPolicy {
  public:
   virtual ~LayoutPolicy() = default;
   // Write/read runs for T cells at logical `position`. Precondition: T fits the
@@ -76,7 +76,7 @@ class LayoutPolicy {
 };
 
 // Full history [0, length): one contiguous write run, read over all history.
-class FlatPolicy final : public LayoutPolicy {
+class ET_EXPERIMENTAL FlatPolicy final : public LayoutPolicy {
  public:
   int retained_from(int /*length*/) const override {
     return 0; // keeps all history
@@ -97,7 +97,7 @@ class FlatPolicy final : public LayoutPolicy {
 // slots. The ring is oversized so a step of up to max_write tokens fits without
 // overwriting cells earlier queries in the same step still attend to; the
 // backend masks each query to its own window within the read span.
-class RingPolicy final : public LayoutPolicy {
+class ET_EXPERIMENTAL RingPolicy final : public LayoutPolicy {
  public:
   RingPolicy(int window, int max_write)
       : window_(window), ring_size_(window + max_write - 1) {}
@@ -141,9 +141,9 @@ class RingPolicy final : public LayoutPolicy {
 // rewind; dispatches per-layer layout to a shared LayoutPolicy. Policies are
 // deduped by (kind, window), so a uniform or two-kind (gemma4) model holds one
 // or two policy objects.
-class SequenceCache : public Cache,
-                      public SequenceControl,
-                      public SequencePlanner {
+class ET_EXPERIMENTAL SequenceCache : public Cache,
+                                      public SequenceControl,
+                                      public SequencePlanner {
  public:
   explicit SequenceCache(const CacheConfig& cfg)
       : capacity_(cfg.capacity), max_write_(cfg.max_write) {

@@ -29,7 +29,7 @@ namespace cache {
 
 // Integer-only handoff to the byte layer, covering the whole forward: a cell
 // means the same token in every layer's pool.
-struct CellStep {
+struct ET_EXPERIMENTAL CellStep {
   int length;
   int read_len; // the window is cells [0, read_len)
   std::vector<int32_t> cells; // cell per query token
@@ -42,7 +42,7 @@ struct CellStep {
 // forward. The returned step is owned by the cache and valid until the next
 // verb. nullptr = no declaration, a token count disagreeing with it, a position
 // a sequence already holds, a layer out of range, or a layer served twice.
-class CellStepper {
+class ET_EXPERIMENTAL CellStepper {
  public:
   static constexpr const char* kFaceName = "et.cache.CellStepper";
 
@@ -51,7 +51,9 @@ class CellStepper {
   place_step(int layer, const int32_t* positions, int length) = 0;
 };
 
-class CellCache : public Cache, public BatchControl, public CellStepper {
+class ET_EXPERIMENTAL CellCache : public Cache,
+                                  public BatchControl,
+                                  public CellStepper {
  public:
   // One bit per sequence in the owner bitset.
   static constexpr int kMaxSeqs = 64;

@@ -23,6 +23,8 @@
 #include <optional>
 #include <vector>
 
+#include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
+
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -35,7 +37,7 @@ using FaceId = const char*;
 
 // Pointer equality covers the common case. The strcmp catches a cache built in
 // one shared object and queried from another, where the literals may differ.
-inline bool same_face(FaceId a, FaceId b) {
+ET_EXPERIMENTAL inline bool same_face(FaceId a, FaceId b) {
   return a != nullptr && b != nullptr && (a == b || std::strcmp(a, b) == 0);
 }
 
@@ -44,7 +46,7 @@ inline bool same_face(FaceId a, FaceId b) {
 // and refuses to compile if Self does not derive from it. Each cast is bound to
 // its own name in the pack, so a name cannot be paired with the wrong face.
 template <class... Fs, class Self>
-void* expose(Self* self, FaceId id) {
+ET_EXPERIMENTAL void* expose(Self* self, FaceId id) {
   void* out = nullptr;
   const bool matched[] = {
       (same_face(id, Fs::kFaceName) ? (out = static_cast<Fs*>(self), true)
@@ -55,7 +57,7 @@ void* expose(Self* self, FaceId id) {
 
 // Registry ownership anchor. A cache names the faces it implements from
 // face(); everything else it is asked for comes back null.
-class Cache {
+class ET_EXPERIMENTAL Cache {
  public:
   virtual ~Cache() = default;
 
@@ -73,7 +75,7 @@ class Cache {
 };
 
 // Lifecycle and admission, tensor-free.
-class CacheControl {
+class ET_EXPERIMENTAL CacheControl {
  public:
   virtual ~CacheControl() = default;
   virtual bool can_extend(int n = 1) const = 0; // admission / hard-stop
@@ -82,7 +84,7 @@ class CacheControl {
 };
 
 // Application face of a single-sequence cache: one length to rewind.
-class SequenceControl : public CacheControl {
+class ET_EXPERIMENTAL SequenceControl : public CacheControl {
  public:
   static constexpr const char* kFaceName = "et.cache.SequenceControl";
 
@@ -93,7 +95,7 @@ class SequenceControl : public CacheControl {
 
 // Application face of any multi-sequence cache: the sequence verbs. They run
 // between forwards, never during one.
-class BatchControl : public CacheControl {
+class ET_EXPERIMENTAL BatchControl : public CacheControl {
  public:
   static constexpr const char* kFaceName = "et.cache.BatchControl";
 
@@ -124,7 +126,7 @@ class BatchControl : public CacheControl {
 };
 
 // Per-layer cache kind and its parameters.
-struct LayerPolicy {
+struct ET_EXPERIMENTAL LayerPolicy {
   enum class Kind : int {
     Flat = 0,
     Ring = 1
@@ -134,7 +136,7 @@ struct LayerPolicy {
 };
 
 // Per-layer architecture facts + cache policy.
-struct LayerConfig {
+struct ET_EXPERIMENTAL LayerConfig {
   LayerPolicy policy; // default Flat
   int n_kv_heads;
   int head_dim;
@@ -142,7 +144,7 @@ struct LayerConfig {
 
 // Model facts and the policy the byte layer sizes its pools from. `layers` is
 // per-layer: size 1 applies to every layer, else one entry each.
-struct CacheConfig {
+struct ET_EXPERIMENTAL CacheConfig {
   int capacity; // logical cap in cells
   int n_layers;
   std::vector<LayerConfig> layers;
@@ -154,7 +156,7 @@ struct CacheConfig {
 };
 
 // Whether `cfg` satisfies the contract above.
-inline bool valid(const CacheConfig& cfg) {
+ET_EXPERIMENTAL inline bool valid(const CacheConfig& cfg) {
   // initial_capacity may be 0 but not negative, and may exceed capacity -- the
   // byte layer clamps it.
   return cfg.capacity > 0 && cfg.n_layers > 0 && cfg.initial_capacity >= 0 &&
