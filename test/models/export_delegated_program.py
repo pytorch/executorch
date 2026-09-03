@@ -18,7 +18,11 @@ import executorch.exir as exir
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    DelegateScratchSpec,
+    PreprocessResult,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
@@ -119,9 +123,21 @@ class ModuleLinear(torch.nn.Module):
 class StubBackend(BackendDetails):
     """No-op backend to test serialization/init."""
 
+    # Bytes of memory-planned scratch to declare, as decimal ASCII.
+    SCRATCH_BYTES_KEY = "scratch_bytes"
+
     @staticmethod
-    def preprocess(*args, **kwargs) -> PreprocessResult:
-        return PreprocessResult(processed_bytes=b"StubBackend:data")
+    def preprocess(edge_program, compile_specs) -> PreprocessResult:
+        scratch_bytes = 0
+        for spec in compile_specs:
+            if spec.key == StubBackend.SCRATCH_BYTES_KEY:
+                scratch_bytes = int(spec.value)
+        return PreprocessResult(
+            processed_bytes=b"StubBackend:data",
+            scratch_specs=(
+                [DelegateScratchSpec(nbytes=scratch_bytes)] if scratch_bytes else []
+            ),
+        )
 
 
 #
@@ -138,6 +154,7 @@ def export_module_to_program(
     delegate_alignment: Optional[int] = None,
     method_name: str = "forward",
     external_constants: bool = False,
+    scratch_bytes: int = 0,
 ) -> ExecutorchProgramManager:
     eager_module = module_class().eval()
     inputs = ()
@@ -186,11 +203,21 @@ def export_module_to_program(
         ).to_executorch(config=et_config)
     else:
         edge: exir.EdgeProgramManager = to_edge(exported_program)
+        compile_specs = [
+            # Just for the demo executor_backend.
+            CompileSpec(key="external_constants", value=b"")
+        ]
+        if scratch_bytes:
+            compile_specs.append(
+                CompileSpec(
+                    key=StubBackend.SCRATCH_BYTES_KEY,
+                    value=str(scratch_bytes).encode(),
+                )
+            )
         lowered_module = to_backend(  # type: ignore[call-arg]
             backend_id,
             edge.exported_program(),
-            # Just for the demo executor_backend.
-            compile_specs=[CompileSpec(key="external_constants", value=b"")],
+            compile_specs=compile_specs,
         )
 
         class CompositeModule(nn.Module):
@@ -251,6 +278,12 @@ def main() -> None:
         help="Export the model with all constants saved to an external file.",
     )
     parser.add_argument(
+        "--scratch_bytes",
+        type=int,
+        default=0,
+        help="Bytes of memory-planned scratch for StubBackend to declare.",
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         required=True,
@@ -278,6 +311,8 @@ def main() -> None:
             suffix += f"-da{args.delegate_alignment}"
         if args.external_constants:
             suffix += "-e"
+        if args.scratch_bytes:
+            suffix += "-scratch"
         outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
         executorch_program = export_module_to_program(
             module_class,
@@ -285,6 +320,7 @@ def main() -> None:
             extract_delegate_segments=not args.inline_delegate_segments,
             delegate_alignment=args.delegate_alignment,
             external_constants=args.external_constants,
+            scratch_bytes=args.scratch_bytes,
         )
         with open(outfile, "wb") as fp:
             fp.write(executorch_program.buffer)

@@ -6,11 +6,12 @@
 
 import copy
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir._warnings import experimental
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -19,6 +20,32 @@ from torch.export.exported_program import ExportedProgram
 def enforcedmethod(func):
     func.__enforcedmethod__ = True
     return func
+
+
+@experimental("This API is experimental and subject to change without notice.")
+@dataclass
+class DelegateScratchSpec:
+    """A scratch buffer the delegate needs for the duration of one execute() call.
+
+    The memory planner places these in the arena and may reuse the bytes for
+    anything whose lifetime does not overlap the delegate call. They arrive at
+    ``execute()`` through ``BackendExecutionContext::scratch_buffers()``, which
+    documents the contract the backend must honor, including the fact that no
+    absolute alignment is guaranteed.
+
+    Which memory pool a buffer lands in is a property of the target rather than
+    of the backend, so it is not expressed here. An integrator who needs
+    scratch in a particular pool sets ``mem_id`` on the allocation from their
+    own memory planning pass.
+    """
+
+    nbytes: int
+
+    def __post_init__(self) -> None:
+        if self.nbytes <= 0:
+            raise ValueError(
+                f"Scratch buffer size must be positive, got {self.nbytes} bytes."
+            )
 
 
 @dataclass
@@ -37,6 +64,11 @@ class PreprocessResult:
     # lowered_module.meta field in the graph, but not directly serialized
     # into the PTE file.
     _delegate_info_meta: Optional[Any] = None
+
+    # Scratch buffers the delegate needs at execute() time, memory planned into
+    # the arena and delivered through BackendExecutionContext::scratch_buffers()
+    # in this order. They are not arguments of the delegate call.
+    scratch_specs: List[DelegateScratchSpec] = field(default_factory=list)
 
 
 """

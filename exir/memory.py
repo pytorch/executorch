@@ -9,6 +9,7 @@
 from typing import List, Tuple, Union
 
 import torch
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.sym_util import eval_shape
 from executorch.exir.tensor import TensorSpec
 
@@ -31,6 +32,26 @@ def alloc(spec: AllocSpec) -> pytree.PyTree:
     # in python for testing
     shape = eval_shape(shape)
     return torch.empty(shape, dtype=dtype)
+
+
+DELEGATE_SCRATCH_SPECS_META_KEY = "delegate_scratch_specs"
+
+
+def delegate_scratch_specs(node: torch.fx.Node) -> List[TensorSpec]:
+    """Returns the scratch buffers a delegate call needs while it executes.
+
+    ``DelegateScratchSpecPass`` puts them here, the memory planner places them,
+    and the emitter serializes the result onto the delegate call. They are not
+    values the node produces, so they are kept out of ``meta["spec"]``.
+
+    The target check is what keeps the key from meaning anything anywhere else.
+    Any pass can write metadata, and only a delegate call is ever asked for its
+    scratch, so a stray key elsewhere would otherwise be planned into the arena
+    and never emitted.
+    """
+    if node.target is not executorch_call_delegate:
+        return []
+    return node.meta.get(DELEGATE_SCRATCH_SPECS_META_KEY, [])
 
 
 def free(spec: TensorSpec) -> None:

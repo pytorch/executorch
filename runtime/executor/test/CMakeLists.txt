@@ -54,6 +54,7 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul-scratch.pte"
   COMMAND ${_export_program_cmd}
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
@@ -61,6 +62,10 @@ add_custom_command(
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
     "ModuleAddMul" --backend_id "StubBackend" --outdir
+    "${CMAKE_CURRENT_BINARY_DIR}/delegated/"
+  COMMAND
+    ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
+    "ModuleAddMul" --backend_id "StubBackend" --scratch_bytes 1024 --outdir
     "${CMAKE_CURRENT_BINARY_DIR}/delegated/"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
@@ -92,6 +97,7 @@ set(test_env
     "ET_MODULE_SIMPLE_TRAIN_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
     "ET_MODULE_STATEFUL_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
     "ET_MODULE_ADD_MUL_DELEGATED_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
+    "ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH=${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul-scratch.pte"
 )
 
 et_cxx_test(
