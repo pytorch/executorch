@@ -52,9 +52,6 @@ def _setup_qnn_sdk_locked() -> None:
     # An empty value counts as set, because a caller that exports the variable at all has taken
     # charge of the SDK, often supplying it through LD_LIBRARY_PATH instead. Treating that as
     # unset downloads a second copy and rewrites both variables underneath them.
-    #
-    # Anywhere that goes on to build a real path from the value rejects an empty one. Read the
-    # two rules together as: empty means "not mine to fetch", not "a usable SDK lives here".
     qnn_sdk_root = os.getenv("QNN_SDK_ROOT")
     if qnn_sdk_root is not None:
         # Reported differently when empty, because naming it as a path would read as though a
@@ -74,14 +71,31 @@ def _setup_qnn_sdk_locked() -> None:
         _sdk_ready = True
         return
 
-    if not _install_qnn_sdk():
-        from executorch.backends.qualcomm.scripts.download_qnn_sdk import QNN_ZIP_URL
+    # Read before the attempt, because the installer writes both variables while working and a
+    # failure has to leave neither behind. It treats the QNN libraries being findable through
+    # LD_LIBRARY_PATH as proof that a usable SDK is present, so a leftover value makes the next
+    # call report success with no SDK path set at all.
+    sdk_root_before = os.environ.get("QNN_SDK_ROOT")
+    ld_path_before = os.environ.get("LD_LIBRARY_PATH")
 
-        # Cleared because the installer writes QNN_SDK_ROOT before it tries to load the library,
-        # so a failure here leaves it pointing at a tree that does not work. Left in place, the
-        # next call would take the preinstalled branch above and report success on a broken SDK,
-        # and a later version query aborts the interpreter rather than raising.
-        os.environ.pop("QNN_SDK_ROOT", None)
+    # In a finally, because the installer raises as well as returning False: a missing unpacking
+    # tool and an unrecognised archive both escape it.
+    installed = False
+    try:
+        installed = _install_qnn_sdk()
+    finally:
+        if not installed:
+            for name, previous in (
+                ("QNN_SDK_ROOT", sdk_root_before),
+                ("LD_LIBRARY_PATH", ld_path_before),
+            ):
+                if previous is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = previous
+
+    if not installed:
+        from executorch.backends.qualcomm.scripts.download_qnn_sdk import QNN_ZIP_URL
 
         raise RuntimeError(
             "Failed to set up QNN SDK.\n\n"
@@ -120,13 +134,15 @@ def _install_qnn_sdk() -> bool:
         # different problem and is left to speak for itself.
         if not (error.name or "").startswith("executorch.backends.qualcomm.scripts"):
             raise
-        raise RuntimeError(
-            "This build cannot download a QNN SDK. Set QNN_SDK_ROOT to an existing "
-            "installation:\n"
-            "       export QNN_SDK_ROOT=/path/to/qualcomm/sdk\n"
-            "       export LD_LIBRARY_PATH="
-            "$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH"
-        ) from error
+        # Treated like a platform with no published SDK rather than an error, because a build that
+        # leaves the downloader out supplies the libraries some other way, through the loader path
+        # its own build rules set up. Raising here fails a lowering that would otherwise work, and
+        # a genuinely missing library still reports itself when the backend starts.
+        logging.info(
+            "[QNN] This build does not package the SDK downloader, so the SDK is left to it. "
+            "Set QNN_SDK_ROOT to choose an installation explicitly."
+        )
+        return True
 
     return install_qnn_sdk()
 
@@ -134,9 +150,8 @@ def _install_qnn_sdk() -> bool:
 def disable_mkldnn_on_amd() -> None:
     """Turn off PyTorch's MKLDNN backend on an AMD host.
 
-    MKLDNN crashes on some AMD hosts, which is why this exists. The original comment described
-    it as producing wrong results; what was measured is a core dump, from a plain convolution
-    with nothing from this backend involved.
+    MKLDNN core dumps on some AMD hosts, on a plain convolution with nothing from this backend
+    involved.
 
     This changes a global PyTorch setting, so it is applied by the calls that start a backend
     rather than at import, where it would also change how unrelated models run in the same

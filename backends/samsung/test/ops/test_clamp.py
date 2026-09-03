@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class Clamp(torch.nn.Module):
@@ -33,7 +34,7 @@ class Clamp(torch.nn.Module):
 class TestClamp(unittest.TestCase):
     def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
-            module, inputs, [gen_samsung_backend_compile_spec("E9955")]
+            module, inputs, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
         )
         (
             tester.export()
@@ -45,6 +46,25 @@ class TestClamp(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=inputs)
         )
 
+    def _test_a8w8(self, module: torch.nn.Module, inputs):
+        tester = SamsungTester(
+            module, inputs, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
+        )
+        (
+            tester.quantize()
+            .export()
+            .check_count({"torch.ops.aten.clamp.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.2)
+        )
+
     def test_fp32_clamp(self):
         inputs = (torch.randn(1, 16, 8, 8),)
         self._test(Clamp(minimum=0, maximum=2.0), inputs)
+
+    def test_a8w8_clamp(self):
+        inputs = (torch.randn(1, 16, 8, 8),)
+        self._test_a8w8(Clamp(minimum=0, maximum=2.0), inputs)

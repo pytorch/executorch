@@ -207,7 +207,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.select_scatter.default,
         exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.scatter_add.default,
-        exir_ops.edge.aten.unfold_copy.default,  # GATHER
         exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
         exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
         exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
@@ -353,6 +352,50 @@ class EthosU55ReverseCheck(OperatorSupportBase):
             self.reporter.report_reject(
                 node,
                 "U55 flip support is limited to rank-4 channel or height reversal.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55UnfoldCopyCheck(OperatorSupportBase):
+    """Accept bounded static unfold_copy cases that lower to slices."""
+
+    max_windows = 16
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.unfold_copy.default:
+            return True
+
+        input_arg, dim, size, step = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        input_tensor = get_first_fake_tensor(input_node)
+        input_shape = input_tensor.shape
+        if (
+            input_tensor.dtype == torch.bool
+            or not all(isinstance(arg, int) for arg in (dim, size, step))
+            or any(not isinstance(value, int) for value in input_shape)
+        ):
+            self.reporter.report_reject(
+                node, "U55 unfold_copy requires static non-BOOL input."
+            )
+            return False
+
+        rank = len(input_shape)
+        dim = typing.cast(int, dim) % rank
+        size = typing.cast(int, size)
+        step = typing.cast(int, step)
+        windows = (input_shape[dim] - size) // step + 1
+        if windows > self.max_windows:
+            self.reporter.report_reject(
+                node,
+                f"U55 unfold_copy supports at most {self.max_windows} windows.",
             )
             return False
 
