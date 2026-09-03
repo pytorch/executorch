@@ -39,6 +39,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.mul.Scalar,
     exir_ops.edge.aten.div.Scalar,
     exir_ops.edge.aten.clone.default,
+    exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.as_strided_copy.default,
 ]
 
