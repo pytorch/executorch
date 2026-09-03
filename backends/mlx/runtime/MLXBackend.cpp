@@ -12,6 +12,7 @@
 #include "MLXInterpreter.h"
 #include "MLXLoader.h"
 #include "MLXSequenceCache.h"
+#include "SwiftPMMetallibPath.h"
 #include "mlx_mutable_state.h"
 
 #include <executorch/extension/llm/cache/cache_registry.h>
@@ -214,11 +215,25 @@ static std::mutex& mlx_global_mutex() {
   return m;
 }
 
+// Must be called while holding mlx_global_mutex() and before any MLX operation.
+// A missing SwiftPM bundle is normal for wheel and local CMake builds, so leave
+// MLX's native lookup unchanged and retry on the next backend entry point.
+void configure_metallib_path_locked() {
+  if (!::mlx::core::metal::get_metallib_path().empty()) {
+    return;
+  }
+  if (auto path = resolve_swiftpm_metallib_path()) {
+    ::mlx::core::metal::set_metallib_path(*path);
+  }
+}
+
 class MLXBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~MLXBackend() override = default;
 
   bool is_available() const override {
+    std::lock_guard<std::mutex> lock(mlx_global_mutex());
+    configure_metallib_path_locked();
 #if TARGET_OS_SIMULATOR
     // The simulator's Metal device reports no architecture, which MLX reads
     // without a null check while constructing its device. Past that, requesting
@@ -236,6 +251,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     std::lock_guard<std::mutex> lock(mlx_global_mutex());
+    configure_metallib_path_locked();
     auto* handle =
         context.get_runtime_allocator()->allocateInstance<MLXHandle>();
     if (handle == nullptr) {
