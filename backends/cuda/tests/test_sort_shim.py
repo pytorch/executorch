@@ -37,6 +37,7 @@ from torch.export import export
 _CUDA_FALLBACK_KERNELS = frozenset(
     {
         "at::_ops::_weight_int4pack_mm::call",
+        "aoti_torch_cuda__weight_int4pack_mm",
         "at::_ops::sort_stable::call",
         "aoti_torch_cuda_randint_low_out",
         "executorch_cuda::int4_plain_mm",

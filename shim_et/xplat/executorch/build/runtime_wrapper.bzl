@@ -145,6 +145,18 @@ def _has_pytorch_dep(dep_list):
                 return True
     return False
 
+def _is_aten_target(kwargs):
+    """Whether a target compiles against ATen.
+
+    Keyed on exact dep names, not a substring: every label contains "torch".
+    """
+    aten_external_deps = ["c10", "libtorch", "libtorch_python", "torch-core-cpp"]
+    for key in ["external_deps", "exported_external_deps"]:
+        for dep in kwargs.get(key) or []:
+            if dep in aten_external_deps:
+                return True
+    return False
+
 def _patch_test_compiler_flags(kwargs):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
@@ -154,16 +166,14 @@ def _patch_test_compiler_flags(kwargs):
     # non-aten tests are pinned to C++17 for embedded.
     name = kwargs.get("name", "")
     external_deps = kwargs.get("external_deps", [])
-    deps = kwargs.get("deps", [])
     xplat_deps = kwargs.get("xplat_deps", [])
     fbcode_deps = kwargs.get("fbcode_deps", [])
     is_aten_test = (
         "_aten" in name or
         "aten_" in name or
-        "libtorch" in external_deps or
         "gtest_aten" in external_deps or
         "gmock_aten" in external_deps or
-        _has_pytorch_dep(deps) or
+        _is_aten_target(kwargs) or
         _has_pytorch_dep(xplat_deps) or
         _has_pytorch_dep(fbcode_deps)
     )
@@ -267,27 +277,26 @@ def _patch_kwargs_cxx(kwargs):
     env.remove_platform_specific_args(kwargs)
     return _patch_kwargs_common(kwargs)
 
-def _is_aten_target(kwargs):
-    """Whether a target compiles against ATen, and so needs C++20.
+def _patch_aten_mode_std(kwargs, aten_mode):
+    """Raises an ATen-mode target to C++20, which PyTorch's headers require.
 
-    Keyed on the external dep names the build maps onto libtorch, rather than on
-    a substring of the label: every ExecuTorch label contains "torch".
+    A plain compiler flag, which the prelude places after the toolchain's.
     """
-    aten_external_deps = ["c10", "libtorch", "libtorch_python", "torch-core-cpp"]
-    for key in ["external_deps", "exported_external_deps"]:
-        for dep in kwargs.get(key) or []:
-            if dep in aten_external_deps:
-                return True
-    return False
+    if aten_mode:
+        kwargs["compiler_flags"] = kwargs.get("compiler_flags", []) + ["-std=c++20"]
+    return kwargs
 
 def _cxx_library_common(*args, **kwargs):
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
+    _patch_aten_mode_std(kwargs, aten_mode)
 
     env.patch_platform_build_mode_flags(kwargs)
     env.patch_headers(kwargs)
     env.patch_pp_flags(kwargs)
-    env.patch_cxx_compiler_flags(kwargs, aten_mode = _is_aten_target(kwargs))
+    env.patch_cxx_compiler_flags(kwargs)
     env.patch_force_static(kwargs)
 
     env.cxx_library(*args, **kwargs)
@@ -307,10 +316,13 @@ def _cxx_library(*args, **kwargs):
         _cxx_library_common(*args, **kwargs)
 
 def _cxx_binary_helper(*args, **kwargs):
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
+    _patch_aten_mode_std(kwargs, aten_mode)
     env.patch_platform_build_mode_flags(kwargs)
-    env.patch_cxx_compiler_flags(kwargs, aten_mode = _is_aten_target(kwargs))
+    env.patch_cxx_compiler_flags(kwargs)
 
     env.cxx_binary(*args, **kwargs)
 
