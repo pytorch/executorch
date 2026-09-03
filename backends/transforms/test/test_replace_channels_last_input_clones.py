@@ -130,8 +130,9 @@ def _count(gm: GraphModule, target: Target) -> int:
     return len(_find_nodes(gm, target))
 
 
-def _run_pass(ep: ExportedProgram) -> tuple[GraphModule, bool]:
-    result = ReplaceChannelsLastInputClones()(ep.graph_module)
+def _run_pass(ep_or_result) -> tuple[GraphModule, bool]:
+    gm = ep_or_result.graph_module
+    result = ReplaceChannelsLastInputClones()(gm)
     return result.graph_module, result.modified
 
 
@@ -257,6 +258,36 @@ class TestReplaceChannelsLastInputDimOrderCopies:
         assert not modified
         assert _count(gm, _TO_DIM_ORDER_COPY) == to_dim_order_copies_before
 
+    @pytest.mark.parametrize(
+        "extra_kwarg",
+        [
+            # dtype differs from the source tensor's dtype -> cast must not be silently dropped.
+            {"dtype": torch.float64},
+            # layout, device, and pin_memory are in _ALLOWED_KWARGS and are allowed through
+            # when their value matches the source tensor (which is always the case on CPU
+            # hardware). The whitelist guards against UNKNOWN kwargs; value checks guard
+            # against CHANGED TensorOptions. These cases verify that a differing dtype is
+            # caught; layout/device/pin_memory rejection can only be tested by providing a
+            # value that actually differs from the source tensor (not possible on CPU-only).
+        ],
+    )
+    def test__not_applied__dtype_cast_kwarg(self, extra_kwarg):
+        # Verify that a `_to_dim_order_copy` carrying a dtype change is not replaced.
+        # The guard must not drop the cast silently, so replacement is blocked.
+        g = torch.fx.Graph()
+        ph = g.placeholder("x")
+        ph.meta["val"] = torch.randn(1, 3, 8, 8).to(memory_format=torch.channels_last)
+        kwargs = {"dim_order": [0, 1, 2, 3], **extra_kwarg}
+        clone = g.call_function(_TO_DIM_ORDER_COPY, args=(ph,), kwargs=kwargs)
+        clone.meta["val"] = torch.randn(1, 3, 8, 8)
+        g.output((clone,))
+        gm = torch.fx.GraphModule({}, g)
+
+        result = ReplaceChannelsLastInputClones()(gm)
+
+        assert not result.modified
+        assert _count(result.graph_module, _TO_DIM_ORDER_COPY) == 1
+
 
 class TestReplaceChannelsLastInputCloneDimOrders:
     """These tests use channels last example inputs for export and apply the `EnforceContiguousDimOrder` pass which
@@ -282,7 +313,7 @@ class TestReplaceChannelsLastInputCloneDimOrders:
         )  # 1 input + 1 output boundary
 
         output_before = ep.module()(*example_inputs)
-        gm, modified = _run_pass(ep)
+        gm, modified = _run_pass(res1)
 
         assert modified
         assert _count(gm, _TO_DIM_ORDER_COPY) == 0

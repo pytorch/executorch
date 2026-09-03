@@ -21,6 +21,20 @@ _DIM_ORDER_CHANGING_OPS: frozenset = frozenset(
     }
 )
 
+# kwargs that carry no tensor semantics and require no value inspection.
+_PASS_THROUGH_KWARGS: frozenset = frozenset({"dim_order", "non_blocking"})
+
+# TensorOptions that the exporter may annotate explicitly on `_to_dim_order_copy` nodes even
+# when no actual change occurs. These are allowed only when their value is identical to the
+# source tensor's property (i.e. truly a no-op). Any value that would actually change the
+# tensor (e.g. a different dtype) blocks replacement. Any kwarg not in either set is unknown
+# and is also rejected.
+_TENSOR_OPTION_KWARGS: frozenset = frozenset(
+    {"dtype", "layout", "device", "pin_memory"}
+)
+
+_ALLOWED_KWARGS: frozenset = _PASS_THROUGH_KWARGS | _TENSOR_OPTION_KWARGS
+
 _TO_NHWC_PERMUTATION: list[int] = [0, 2, 3, 1]
 _TO_NCHW_PERMUTATION: list[int] = [0, 3, 1, 2]
 
@@ -48,11 +62,25 @@ def _is_replaceable_input_boundary_clone(op, args, kwargs) -> bool:
     if not isinstance(src, torch.fx.Node) or src.op != "placeholder":
         return False
     val = src.meta.get("val")
-    return (
-        isinstance(val, torch.Tensor)
-        and _is_4d_channels_last(val.dim_order())
-        and _is_4d_contiguous(kwargs.get("dim_order", []))
-        and kwargs.get("dtype") in (None, val.dtype)  # bail out if op also casts dtype
+    if not isinstance(val, torch.Tensor):
+        return False
+    # Primary guard: reject any kwarg outside the known set. Unknown kwargs may carry
+    # semantics we cannot reason about, so we conservatively block replacement.
+    if not set(kwargs.keys()) <= _ALLOWED_KWARGS:
+        return False
+    # Secondary guard: each TensorOption that is present must be a no-op relative to the
+    # source tensor. The exporter annotates these even when no actual change occurs, but a
+    # differing value (e.g. a dtype cast) must not be silently dropped by the replacement.
+    if kwargs.get("dtype") not in (None, val.dtype):
+        return False
+    if kwargs.get("layout") not in (None, val.layout):
+        return False
+    if kwargs.get("device") not in (None, val.device):
+        return False
+    if kwargs.get("pin_memory") not in (None, False):
+        return False
+    return _is_4d_channels_last(val.dim_order()) and _is_4d_contiguous(
+        kwargs.get("dim_order", [])
     )
 
 

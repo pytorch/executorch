@@ -59,6 +59,36 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "fuse_conv_with_clamp",
+        srcs = ["fuse_conv_with_clamp.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/backends/vulkan:custom_ops_lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:sym_util",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "view_copy_to_squeeze_unsqueeze",
+        srcs = ["view_copy_to_squeeze_unsqueeze.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "collapse_view_copy",
         srcs = ["collapse_view_copy.py"],
         visibility = [
@@ -698,7 +728,6 @@ def define_common_targets():
             ":channels_last_ops",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
-            "//executorch/exir/dialects/_ops:ops",
         ],
     )
 
