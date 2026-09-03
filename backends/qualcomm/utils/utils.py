@@ -34,6 +34,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
     QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPerformanceMode,
     QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
@@ -1018,6 +1019,7 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule, format=DrawForma
 
 
 def generate_gpu_compiler_spec(
+    performance_mode: QnnExecuTorchGpuPerformanceMode = QnnExecuTorchGpuPerformanceMode.kGpuPerfHintHigh,
     precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
     use_memory_optimizations: bool = True,
     use_node_optimizations: bool = True,
@@ -1028,6 +1030,8 @@ def generate_gpu_compiler_spec(
     Helper function generating backend options for QNN HTP
 
     Args:
+        performance_mode:
+            kGpuPerfHintHigh / kGpuPerfHintNormal / kGpuPerfHintLow
         precision:
             kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
             kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
@@ -1046,6 +1050,7 @@ def generate_gpu_compiler_spec(
     """
     # TODO: enable performance hint mechanism in runtime and make this as an option
     gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.performance_mode = performance_mode
     gpu_options.precision = precision
     gpu_options.use_memory_optimizations = use_memory_optimizations
     gpu_options.use_node_optimizations = use_node_optimizations

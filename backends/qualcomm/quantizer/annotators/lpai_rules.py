@@ -129,7 +129,7 @@ class AvgPool2d(GeneralOpDef):
 
 # TODO: Batch_norm op cannot directly map to QNN OpBatchnorm due to the number of input doesn't match.
 @register_annotator(
-    [torch.ops.aten.batch_norm.default, torch.ops.aten.instance_norm.default],
+    [torch.ops.aten.batch_norm.default],
     qnn_op=None,
 )
 class BatchNorm(GeneralOpDef):
@@ -420,7 +420,8 @@ class GetItem(GeneralOpDef):
             torch.ops.aten.topk.default,
             torch.ops.aten.sort.default,
         ):
-            out_act_quantization_spec = SharedQuantizationSpec(node.args[0])
+            # assign to None since they are not supported so far
+            out_act_quantization_spec = None
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=out_act_quantization_spec,
             _annotated=True,
@@ -807,21 +808,6 @@ class ReluMinMax(GeneralOpDef):
     pass
 
 
-# TODO: Expand_as op cannot directly map to QNN OpTile due to the number of input doesn't match.
-@register_annotator(
-    [
-        torch.ops.aten.expand_as.default,
-    ],
-    qnn_op=None,
-)
-class ExpandAs(GeneralOpDef):
-    @staticmethod
-    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
-        annotate_in_out_obs_sharing_op(node, quantization_config)
-        if not _is_annotated([node]):
-            annotate_single_in_share_out(node, quantization_config)
-
-
 @register_annotator(
     [
         torch.ops.aten.flatten.using_ints,
@@ -854,7 +840,6 @@ class RmsNorm(GeneralOpDef):
             return
 
         act_node = node.args[0]
-        weight_node = node.args[2]
 
         # TODO current only support 16a16w
         annotate_input_qspec_map(
@@ -863,92 +848,21 @@ class RmsNorm(GeneralOpDef):
             quantization_config.input_activation,
         )
 
-        annotate_input_qspec_map(
-            node,
-            weight_node,
-            quantization_config.input_activation,
-        )
+        if len(node.args) > 2 and node.args[2] is not None:
+            weight_node = node.args[2]
+            annotate_input_qspec_map(
+                node,
+                weight_node,
+                quantization_config.input_activation,
+            )
         nodes_to_mark_annotated = [node]
         annotate_output_qspec(node, quantization_config.output_activation)
         _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
 
-# TODO: There is a bug in the BackendOpInfo library, so it is bypassed now.
-@register_annotator([torch.ops.aten.rsqrt.default], qnn_op=None)
-class Rsqrt(GeneralOpDef):
-    pass
-
-
 @register_annotator([torch.ops.aten.scaled_dot_product_attention.default], qnn_op=None)
 class ScaledDotProductAttention(GeneralOpDef):
     pass
-
-
-@register_annotator(
-    [
-        torch.ops.aten.scatter.src,
-        torch.ops.aten.scatter.value,
-        torch.ops.aten.scatter_add.default,
-        torch.ops.aten.scatter_reduce.two,
-    ],
-    qnn_op=None,
-)
-class ScatterElements(GeneralOpDef):
-    @staticmethod
-    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
-        if _is_annotated([node]):
-            return
-
-        input_act = node.args[0]
-        if not isinstance(input_act, Node) or not _is_float_tensor(input_act):
-            return
-
-        input_qspec_map = {}
-        input_qspec_map[input_act] = quantization_config.input_activation
-
-        if (
-            len(node.args) > 3
-            and isinstance(node.args[3], Node)
-            and _is_float_tensor(node.args[3])
-        ):
-            input_qspec_map[node.args[3]] = SharedQuantizationSpec((input_act, node))
-
-        output_act_qspec = (
-            SharedQuantizationSpec((input_act, node))
-            if _is_float_tensor(node)
-            else None
-        )
-
-        if len(input_qspec_map) > 0 or output_act_qspec is not None:
-            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                input_qspec_map=input_qspec_map,
-                output_qspec=output_act_qspec,
-                _annotated=True,
-            )
-
-
-@register_annotator([torch.ops.aten.sort.default], QnnConstants.OpTopK.op_name)
-class Sort(GeneralOpDef):
-    @staticmethod
-    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
-        if _is_annotated([node]):
-            return
-
-        input_qspec_map = {}
-        input_act_qspec = quantization_config.input_activation
-        out_act_quantization_spec = None
-        if input_act_qspec is not None:
-            if _is_float_tensor(node.args[0]):
-                input_act = node.args[0]
-                assert isinstance(input_act, Node)
-                input_qspec_map[input_act] = input_act_qspec
-                out_act_quantization_spec = SharedQuantizationSpec((input_act, node))
-
-        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=out_act_quantization_spec,
-            _annotated=True,
-        )
 
 
 @register_annotator(

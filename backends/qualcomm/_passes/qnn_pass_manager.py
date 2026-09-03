@@ -323,9 +323,7 @@ class QnnPassManager(PassManager):
             RecomposePixelUnshuffle: [RemoveRedundancy],
             RecomposeRmsNorm: [RemoveRedundancy],
             TagQuantIO: [LayoutTransform],
-            ResolveDebugHandle: [
-                TagQuantIO
-            ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
+            ResolveDebugHandle: [TagQuantIO],
         }
 
     @classmethod
