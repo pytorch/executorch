@@ -7,7 +7,6 @@
  */
 
 #include <executorch/extension/llm/cache/cache.h>
-#include <executorch/extension/llm/cache/cache_et.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
@@ -38,7 +37,6 @@ using executorch::extension::llm::cache::LayerPolicy;
 using executorch::extension::llm::cache::new_cache_key;
 using executorch::extension::llm::cache::SequenceCache;
 using executorch::runtime::Error;
-namespace et = executorch::extension::llm::cache::et;
 
 namespace {
 LayerConfig flat_layer() {
@@ -235,22 +233,6 @@ TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
   EXPECT_EQ(CacheRegistry::global().get(key), nullptr);
   // The guard held only the registry entry; the cache outlives it.
   EXPECT_TRUE(cache->as<SequenceControl>()->can_extend(4));
-}
-
-// ---- ET adapter (maps core bool/optional to Error/Result) ------------------
-
-TEST_F(CacheTest, EtAdapterMapsResultsAndCodes) {
-  SequenceCache cache(CacheConfig{2, 1, {flat_layer()}});
-  auto ok = et::plan(cache, /*layer=*/0, /*position=*/0, /*T=*/2);
-  ASSERT_TRUE(ok.ok());
-  EXPECT_EQ(ok->read[0].len, 2);
-  cache.commit(ok.get()); // accept the step so rewind has history to truncate
-  EXPECT_EQ(
-      et::plan(cache, 0, 2, 1).error(), Error::OutOfResources); // over capacity
-  EXPECT_FALSE(et::plan(cache, 5, 0, 1).ok()); // bad layer
-
-  EXPECT_EQ(et::rewind(cache, 9), Error::InvalidArgument); // cannot grow
-  EXPECT_EQ(et::rewind(cache, 1), Error::Ok);
 }
 
 // ---- Cell layout -----------------------------------------------------------
