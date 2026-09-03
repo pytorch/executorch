@@ -1152,26 +1152,38 @@ def greedy(
 def _stable_spec_order(
     specs: Set[TensorSpec],
     graph_module: torch.fx.GraphModule,
-    graph_signature: ExportGraphSignature,
 ) -> Dict[TensorSpec, int]:
-    ordered_specs = collect_specs_from_nodes(
-        graph_module.graph.nodes,
-        graph_signature,
-        ignore_graph_input=False,
-        ignore_graph_output=False,
-        ignore_mutable_buffers=False,
-        ignore_const=False,
-        ignore_out_var_node=False,
-        dedup=True,
-        do_assertion=False,
-        ignore_dynamic_unbound_tensor=False,
-    )
-    order = {spec: index for index, spec in enumerate(ordered_specs) if spec in specs}
+    order: Dict[TensorSpec, int] = {}
+    for node in graph_module.graph.nodes:
+        node_specs, _ = tree_flatten(get_node_tensor_specs(node))
+        for spec in node_specs:
+            if isinstance(spec, TensorSpec) and spec in specs and spec not in order:
+                order[spec] = len(order)
     internal_assert(
         len(order) == len(specs),
         "Every planned TensorSpec must occur in graph order.",
     )
     return order
+
+
+def _stable_greedy_specs(
+    specs: Set[TensorSpec], graph_module: torch.fx.GraphModule
+) -> List[TensorSpec]:
+    keys = {
+        spec: (
+            spec.allocated_memory,
+            cast(int, spec.lifetime[0]),
+            cast(int, spec.lifetime[1]),
+            cast(int, spec.mem_id) if spec.mem_id is not None else 1,
+        )
+        for spec in specs
+    }
+    ordered_specs = sorted(specs, key=keys.__getitem__)
+    if len(set(keys.values())) == len(specs):
+        return ordered_specs
+
+    order = _stable_spec_order(specs, graph_module)
+    return sorted(specs, key=lambda spec: (keys[spec], order[spec]))
 
 
 def _arena_base_offsets(
@@ -1214,7 +1226,7 @@ def interval_first_fit(
     if not specs:
         return MemoryAlgoResult({}, [0, 0])
 
-    order = _stable_spec_order(specs, graph_module, graph_signature)
+    order = _stable_spec_order(specs, graph_module)
     sorted_specs = sorted(
         specs,
         key=lambda spec: (
@@ -1354,11 +1366,9 @@ def greedy_interval_first_fit_conditional(
             extra_padding,
         )
 
-    order = _stable_spec_order(specs, graph_module, graph_signature)
-    ordered_specs = sorted(specs, key=order.__getitem__)
     greedy_result = greedy(
         alignment,
-        ordered_specs,
+        _stable_greedy_specs(specs, graph_module),
         graph_module,
         graph_signature,
         extra_padding,
