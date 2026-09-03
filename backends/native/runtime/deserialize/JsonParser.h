@@ -63,11 +63,11 @@ class JsonValue {
 
  public:
   JsonValue() = default; // null
-  /* implicit */ JsonValue(bool value) : value_(value) {}
-  /* implicit */ JsonValue(uint64_t value) : value_(value) {}
-  /* implicit */ JsonValue(std::string value) : value_(std::move(value)) {}
-  /* implicit */ JsonValue(Array items) : value_(std::move(items)) {}
-  /* implicit */ JsonValue(Object members) : value_(std::move(members)) {}
+  explicit JsonValue(bool value) : value_(value) {}
+  explicit JsonValue(uint64_t value) : value_(value) {}
+  explicit JsonValue(std::string value) : value_(std::move(value)) {}
+  explicit JsonValue(Array items) : value_(std::move(items)) {}
+  explicit JsonValue(Object members) : value_(std::move(members)) {}
 
   Kind kind() const {
     return static_cast<Kind>(value_.index());
