@@ -27,6 +27,10 @@ permissions:
   contents: read
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   changed-files:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
@@ -44,7 +48,7 @@ jobs:
     # filter so push commits that don't touch CUDA-relevant paths skip
     # this job on non-sampled commits. See _ci-run-decision.yml for
     # the sampling policy.
-    needs: [changed-files, run-decision]
+    needs: [docker-image, changed-files, run-decision]
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (
@@ -54,7 +58,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -89,10 +93,10 @@ jobs:
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: mt-l-x86aavx2-29-113-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-cuda-windows-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       upload-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
