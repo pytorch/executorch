@@ -17,23 +17,23 @@ from examples.models import MODEL_NAME_TO_MODEL
 from examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 
 DEFAULT_RUNNERS = {
-    "linux": "linux.2xlarge",
+    "linux": "mt-l-x86iavx512-8-64",
     "macos": "macos-m1-stable",
 }
 CUSTOM_RUNNERS = {
     "linux": {
         # This one runs OOM on smaller runner, the root cause is unclear (T163016365)
-        "w2l": "linux.4xlarge.memory",
-        "ic4": "linux.4xlarge.memory",
-        "resnet50": "linux.4xlarge.memory",
-        "llava": "linux.4xlarge.memory",
-        "llama3_2_vision_encoder": "linux.4xlarge.memory",
-        "llama3_2_text_decoder": "linux.4xlarge.memory",
+        "w2l": "mt-l-x86iavx512-16-128",
+        "ic4": "mt-l-x86iavx512-16-128",
+        "resnet50": "mt-l-x86iavx512-16-128",
+        "llava": "mt-l-x86iavx512-16-128",
+        "llama3_2_vision_encoder": "mt-l-x86iavx512-16-128",
+        "llama3_2_text_decoder": "mt-l-x86iavx512-16-128",
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
-        "dl3": "linux.4xlarge.memory",
-        "emformer_join": "linux.4xlarge.memory",
-        "emformer_predict": "linux.4xlarge.memory",
-        "phi_4_mini": "linux.4xlarge.memory",
+        "dl3": "mt-l-x86iavx512-16-128",
+        "emformer_join": "mt-l-x86iavx512-16-128",
+        "emformer_predict": "mt-l-x86iavx512-16-128",
+        "phi_4_mini": "mt-l-x86iavx512-16-128",
     }
 }
 
@@ -146,7 +146,7 @@ def export_models_for_ci() -> dict[str, dict]:
                 "build-tool": "buck2",
                 "model": "mv3",
                 "backend": backend,
-                "runner": "linux.2xlarge",
+                "runner": "mt-l-x86iavx512-8-64",
                 "timeout": DEFAULT_TIMEOUT,
             }
             models["include"].append(record)
@@ -175,7 +175,7 @@ def export_models_for_ci() -> dict[str, dict]:
             "build-tool": "cmake",
             "model": name,
             "backend": backend,
-            "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
+            "runner": DEFAULT_RUNNERS.get(target_os, "mt-l-x86iavx512-8-64"),
             "timeout": DEFAULT_TIMEOUT,
         }
 
