@@ -7,6 +7,7 @@ fbcode_target(_kind = runtime.python_library,
     name = "tester",
     srcs = [
         "__init__.py",
+        "performance.py",
         "tester.py",
     ],
     base_module = "executorch.backends.xnnpack.test.tester",
