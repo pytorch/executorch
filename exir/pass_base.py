@@ -146,6 +146,37 @@ def _extract_symbolic_snapshot(value: Argument) -> Any:
     return None
 
 
+def _tensor_metadata_changed(original: Argument, new: Argument) -> bool:
+    original_leaves, original_spec = pytree.tree_flatten(original)
+    new_leaves, new_spec = pytree.tree_flatten(new)
+    if original_spec != new_spec:
+        return True
+
+    for original_leaf, new_leaf in zip(original_leaves, new_leaves):
+        original_is_tensor = isinstance(original_leaf, torch.Tensor)
+        new_is_tensor = isinstance(new_leaf, torch.Tensor)
+        if original_is_tensor != new_is_tensor:
+            return True
+        if not original_is_tensor:
+            continue
+
+        if (
+            original_leaf.shape != new_leaf.shape
+            or original_leaf.dtype != new_leaf.dtype
+            or original_leaf.layout != new_leaf.layout
+            or original_leaf.device != new_leaf.device
+            or original_leaf.requires_grad != new_leaf.requires_grad
+        ):
+            return True
+        if (
+            original_leaf.layout == torch.strided
+            and original_leaf.stride() != new_leaf.stride()
+        ):
+            return True
+
+    return False
+
+
 class NodeMetadata:
     def __init__(self, data: Dict[str, Any]) -> None:
         self.data: Dict[str, Any] = data.copy()
@@ -231,6 +262,10 @@ class ExportPassBaseError(RuntimeError):
     pass
 
 
+class _FastCopyFallback(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ExportedProgramPassResult:
     exported_program: ExportedProgram
@@ -281,6 +316,22 @@ class ExportedProgramPassBase(ABC):
         Args:
             exported_program: The exported program we will run checks on
         """
+
+
+_FAST_COPY_UNSAFE_TARGETS: frozenset[Any] = frozenset(
+    {
+        torch.ops.aten.convolution,
+        torch.ops.aten.convolution.default,
+        torch.ops.aten.linear,
+        torch.ops.aten.linear.default,
+    }
+)
+
+
+def _is_fast_copy_unsafe_target(target: Any) -> bool:
+    if isinstance(target, EdgeOpOverload):
+        target = target._op
+    return target in _FAST_COPY_UNSAFE_TARGETS
 
 
 class _ExportPassBase(PassBase):
@@ -416,11 +467,61 @@ class _ExportPassBase(PassBase):
 
             node.meta["tensor_meta"] = pytree.tree_map(make_tensor_meta, value)
 
+    # Types whose nodes are eligible for the fast-copy optimisation in
+    # ``run_node``.  Subclass interpreters (e.g. ``ExportPass``) extend
+    # this tuple to include dialect-specific overload types such as
+    # ``EdgeOpOverload``.
+    _OPERATOR_TARGET_TYPES: Tuple[type, ...] = (
+        torch._ops.OpOverload,
+        torch._ops.OpOverloadPacket,
+    )
+
     class ExportInterpreter(fx.Interpreter):
         def __init__(self, callback: "_ExportPassBase", gm: fx.GraphModule) -> None:
             super().__init__(gm)
             self.callback = callback
             self.node: torch.fx.Node = next(iter(gm.graph.nodes))
+
+            # --- fast-copy bookkeeping ---------------------------------
+            # When the owning pass declares ``targeted_ops``, cold nodes
+            # (those whose target is *not* in the set) can be copied into
+            # the new graph without an expensive FakeTensor dispatch.
+            targeted = getattr(callback, "targeted_ops", None)
+            if targeted is None:
+                targeted = getattr(callback, "target_ops", None)
+            if targeted is not None:
+                try:
+                    targeted_set = set(targeted)
+                except TypeError:
+                    targeted_set = None
+                self._targeted_ops: Optional[Set[Any]] = targeted_set
+            else:
+                self._targeted_ops: Optional[Set[Any]] = None
+
+            # Fast-copy relies on the existing ``n.meta["val"]`` being
+            # correct for cold nodes.  If the pass overrides ``call()``
+            # it may modify the graph (e.g. insert nodes with metadata
+            # copied from unrelated ops) before calling ``super().call()``,
+            # which would make cold-node metadata unreliable.  Disable the
+            # optimisation in that case.
+            call_overridden = type(callback).call is not _ExportPassBase.call
+            has_problematic_target = False
+            if self._targeted_ops:
+                for t in self._targeted_ops:
+                    if _is_fast_copy_unsafe_target(t):
+                        has_problematic_target = True
+                        break
+            self._fast_copy_enabled: bool = (
+                self._targeted_ops is not None
+                and not call_overridden
+                and not has_problematic_target
+            )
+
+            # Maps old-graph nodes to their new-graph equivalents so that
+            # ``_fast_copy_node`` can remap arguments (including get_attr
+            # nodes that are stored in ``self.env`` as raw tensors rather
+            # than ProxyValues).
+            self._node_remap: Dict[torch.fx.Node, torch.fx.Node] = {}
 
         def placeholder(  # pyre-fixme[14]
             self,
@@ -515,10 +616,148 @@ class _ExportPassBase(PassBase):
         ) -> None:
             raise ExportPassBaseError("call_method is not supported.")
 
+        # -- fast-copy helpers ------------------------------------------
+
+        def _preflight_fast_copy_inputs(
+            self,
+            n: torch.fx.Node,
+            tracer: "_ExportPassBase.ExportTracer",
+        ) -> Dict[torch.fx.Node, Tuple[Any, List[str]]]:
+            get_attr_values: Dict[torch.fx.Node, Tuple[Any, List[str]]] = {}
+            # Fallback must happen before copying nodes or creating module paths.
+            for old_node in n.all_input_nodes:
+                if old_node in self._node_remap:
+                    continue
+                pv = self.env.get(old_node)
+                if pv is not None and hasattr(pv, "proxy"):
+                    continue
+                if old_node.op != "get_attr":
+                    raise _FastCopyFallback
+
+                target_atoms = old_node.target.split(".")
+                root = tracer.root
+                for atom in target_atoms[:-1]:
+                    if not hasattr(root, atom):
+                        # The fresh tracer root receives this path after preflight.
+                        break
+                    child = getattr(root, atom)
+                    if not isinstance(child, torch.nn.Module):
+                        raise _FastCopyFallback
+                    root = child
+                get_attr_values[old_node] = (
+                    self.fetch_attr(old_node.target),
+                    target_atoms,
+                )
+            return get_attr_values
+
+        @staticmethod
+        def _ensure_get_attr_parent(
+            tracer: "_ExportPassBase.ExportTracer",
+            target_atoms: List[str],
+        ) -> torch.nn.Module:
+            root = tracer.root
+            for atom in target_atoms[:-1]:
+                if hasattr(root, atom):
+                    child = getattr(root, atom)
+                    if not isinstance(child, torch.nn.Module):
+                        raise _FastCopyFallback
+                else:
+                    child = torch.nn.Module()
+                    setattr(root, atom, child)
+                root = child
+            return root
+
+        def _fast_copy_arg(
+            self,
+            old_node: torch.fx.Node,
+            tracer: "_ExportPassBase.ExportTracer",
+            get_attr_values: Dict[torch.fx.Node, Tuple[Any, List[str]]],
+        ) -> torch.fx.Node:
+            new_node = self._node_remap.get(old_node)
+            if new_node is not None:
+                return new_node
+
+            proxy_value = self.env.get(old_node)
+            if proxy_value is not None and hasattr(proxy_value, "proxy"):
+                mapped = proxy_value.proxy.node
+                self._node_remap[old_node] = mapped
+                return mapped
+
+            if old_node.op != "get_attr":
+                raise _FastCopyFallback
+
+            value, target_atoms = get_attr_values[old_node]
+            attribute = (
+                self._ensure_get_attr_parent(tracer, target_atoms),
+                target_atoms[-1],
+                value,
+            )
+
+            copied = tracer.graph.node_copy(
+                old_node, lambda node: self._node_remap.get(node, node)
+            )
+            self._node_remap[old_node] = copied
+            root, name, value = attribute
+            setattr(root, name, value)
+            return copied
+
+        def _fast_copy_node(self, n: torch.fx.Node) -> "ProxyValue":
+            tracer = self.callback.tracer
+            get_attr_values = self._preflight_fast_copy_inputs(n, tracer)
+
+            new_node = tracer.graph.node_copy(
+                n,
+                lambda old_node: self._fast_copy_arg(old_node, tracer, get_attr_values),
+            )
+
+            val = n.meta.get("val")
+            proxy = torch.fx.Proxy(new_node, tracer)
+            result = ProxyValue(val, proxy)
+            self._node_remap[n] = new_node
+            return result
+
         def run_node(self, n: torch.fx.Node) -> Argument:
             self.node = n
             self.callback.node_debug_str = n.format_node()
-            return super().run_node(n)
+
+            # Fast-copy path: skip the full interpreter dispatch for cold
+            # call_function nodes whose operator is not targeted by this
+            # pass.  This avoids the expensive FakeTensor re-dispatch and
+            # proxy reconstruction for nodes the pass will not modify.
+            if (
+                self._fast_copy_enabled
+                and n.op == "call_function"
+                and isinstance(n.target, self.callback._OPERATOR_TARGET_TYPES)
+                and n.target not in self._targeted_ops  # type: ignore[operator]
+                and n.meta.get("val") is not None
+            ):
+                try:
+                    return self._fast_copy_node(n)
+                except _FastCopyFallback:
+                    self._fast_copy_enabled = False
+
+            result = super().run_node(n)
+
+            # Record old→new node mapping for fast-copy arg remapping.
+            if self._fast_copy_enabled and isinstance(result, ProxyValue):
+                self._node_remap[n] = result.proxy.node
+
+            # After a hot node runs through full dispatch, verify that
+            # it did not change tensor metadata. If it did, downstream
+            # cold nodes' original ``val`` metadata would be stale, so
+            # we disable the fast-copy optimisation for the remainder
+            # of this interpreter walk.
+            if (
+                self._fast_copy_enabled
+                and n.op == "call_function"
+                and self._targeted_ops is not None
+                and n.target in self._targeted_ops
+                and isinstance(result, ProxyValue)
+            ):
+                if _tensor_metadata_changed(n.meta.get("val"), result.data):
+                    self._fast_copy_enabled = False
+
+            return result
 
     def __init__(self) -> None:
         self.interpreter = torch.fx.Interpreter(
@@ -823,13 +1062,17 @@ class _ExportPassBase(PassBase):
     def call_submodule(
         self, graph_module: fx.GraphModule, inputs: Tuple[Argument, ...]
     ) -> PassResult:
-        prev_tracer, self.tracer = self.tracer, self.ExportTracer(
-            self, graph_module.graph._codegen
+        prev_tracer, self.tracer = (
+            self.tracer,
+            self.ExportTracer(self, graph_module.graph._codegen),
         )
         self.tracer.fake_tensor_mode = prev_tracer.fake_tensor_mode
         interpreter = self.ExportInterpreter(self, graph_module)
-        prev_interpreter, self.interpreter = self.interpreter, torch.fx.Interpreter(
-            torch.fx.GraphModule(torch.nn.Module(), torch.fx.Graph())
+        prev_interpreter, self.interpreter = (
+            self.interpreter,
+            torch.fx.Interpreter(
+                torch.fx.GraphModule(torch.nn.Module(), torch.fx.Graph())
+            ),
         )
         inputs_data = pytree.tree_map_only(ProxyValue, lambda x: x.data, inputs)
         with fx_traceback.preserve_node_meta():
@@ -879,6 +1122,14 @@ class _ExportPassBase(PassBase):
 
 
 class ExportPass(_ExportPassBase):
+    # Extend operator target types to include the Edge dialect overloads so
+    # that the fast-copy optimisation in ``run_node`` also covers Edge ops.
+    _OPERATOR_TARGET_TYPES: Tuple[type, ...] = (
+        torch._ops.OpOverload,
+        torch._ops.OpOverloadPacket,
+        EdgeOpOverload,
+    )
+
     class ExportTracer(_ExportPassBase.ExportTracer):
         def create_arg(self, a: Argument) -> torch.fx.Node:
             if isinstance(a, torch.nn.Module):
