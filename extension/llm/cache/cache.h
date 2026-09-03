@@ -28,14 +28,15 @@ namespace extension {
 namespace llm {
 namespace cache {
 
-// A face is named by a string it declares itself, so a backend can add one
-// without this header learning about it.
+// A face is named by a non-null string it declares itself, so a backend can
+// add one without this header learning about it. Names are stable ABI
+// identifiers: each must identify exactly one interface across all binaries.
 using FaceId = const char*;
 
 // Pointer equality covers the common case. The strcmp catches a cache built in
 // one shared object and queried from another, where the literals may differ.
 inline bool same_face(FaceId a, FaceId b) {
-  return a == b || std::strcmp(a, b) == 0;
+  return a != nullptr && b != nullptr && (a == b || std::strcmp(a, b) == 0);
 }
 
 // Hands back `self` as each face it names, or nullptr for one it does not.
@@ -58,17 +59,17 @@ class Cache {
  public:
   virtual ~Cache() = default;
 
-  // Prefer as<T>(). Overridden with expose<...>(this, id).
-  virtual void* face(FaceId) {
-    return nullptr;
-  }
-
   // Naming T::kFaceName means a type that is not a face fails to compile,
   // rather than quietly returning null at run time.
   template <class T>
   T* as() {
     return static_cast<T*>(face(T::kFaceName));
   }
+
+ protected:
+  // Implemented with expose<...>(this, id). Kept behind as<T>() so callers do
+  // not handle erased pointers or face names directly.
+  virtual void* face(FaceId id) = 0;
 };
 
 // Lifecycle and admission, tensor-free.

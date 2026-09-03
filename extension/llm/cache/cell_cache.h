@@ -63,9 +63,6 @@ class CellCache : public Cache, public BatchControl, public CellStepper {
   Cache* base() {
     return this;
   }
-  void* face(FaceId id) override {
-    return expose<BatchControl, CellStepper>(this, id);
-  }
 
   // -- CacheControl ------------------------------------------------------
 
@@ -90,6 +87,11 @@ class CellCache : public Cache, public BatchControl, public CellStepper {
 
   const CellStep* place_step(int layer, const int32_t* positions, int length)
       override;
+
+ protected:
+  void* face(FaceId id) override {
+    return expose<BatchControl, CellStepper>(this, id);
+  }
 
  private:
   struct SeqInfo {

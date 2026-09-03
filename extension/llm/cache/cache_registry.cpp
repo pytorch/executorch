@@ -11,6 +11,7 @@
 #include <atomic>
 
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
 namespace extension {
@@ -45,12 +46,17 @@ CacheFactory& CacheFactory::global() {
   return registry;
 }
 
-void CacheFactory::register_builder(
+Error CacheFactory::register_builder(
     const std::string& backend_id,
     const std::string& kind,
     CacheBuilder builder) {
+  if (!builder) {
+    return Error::InvalidArgument;
+  }
   std::lock_guard<std::mutex> lock(mu_);
-  builders_[{backend_id, kind}] = std::move(builder);
+  const auto inserted =
+      builders_.emplace(std::make_pair(backend_id, kind), std::move(builder));
+  return inserted.second ? Error::Ok : Error::InvalidArgument;
 }
 
 Result<std::shared_ptr<Cache>> CacheFactory::build(
@@ -115,6 +121,7 @@ std::string new_cache_key() {
 
 InstallGuard::InstallGuard(std::shared_ptr<Cache> cache)
     : key_(new_cache_key()), cache_(std::move(cache)) {
+  ET_CHECK_MSG(cache_ != nullptr, "Cannot install a null cache");
   CacheRegistry::global().install(key_, cache_);
 }
 

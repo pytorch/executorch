@@ -55,15 +55,6 @@ inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
 // holds and whether a step's runs wrap.
 class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
  public:
-  // The neutral faces come from cache::SequenceCache; this adds the backend
-  // one.
-  void* face(cache::FaceId id) override {
-    if (void* p = cache::SequenceCache::face(id)) {
-      return p;
-    }
-    return cache::expose<MLXCache>(this, id);
-  }
-
   explicit MLXSequenceCache(const cache::CacheConfig& cfg)
       : cache::SequenceCache(checked(cfg)) {
     const ::mlx::core::Dtype dt =
@@ -132,6 +123,14 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     // MLX "causal" is lower-right aligned, so fresh and chunked prefill are
     // both correct with the new tokens at the tail.
     return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
+  }
+
+ protected:
+  void* face(cache::FaceId id) override {
+    if (void* p = cache::SequenceCache::face(id)) {
+      return p;
+    }
+    return cache::expose<MLXCache>(this, id);
   }
 
  private:

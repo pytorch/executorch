@@ -75,7 +75,9 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
 };
 ```
 
-Then register a builder so the control plane can ask for it by name.
+Then register a builder so the control plane can ask for it by name. Registration
+is insertion-only: an empty builder or a duplicate `(backend_id, kind)` returns
+`Error::InvalidArgument`, leaving any existing builder unchanged.
 
 ## Faces
 
@@ -113,6 +115,12 @@ and `cache.h` never sees it. Names compare by pointer first and fall back to
 `strcmp`, which covers a cache built in one shared object and queried from
 another.
 
+A face name is a global ABI identifier. It must be non-null, remain stable, and
+identify exactly one C++ interface across the core, every backend, and every
+shared object. Reusing a name for an unrelated or incompatible interface makes
+the erased pointer cast invalid. The raw lookup hook is protected; consumers use
+`as<T>()`, and each concrete cache must explicitly implement the faces it offers.
+
 ## Layouts
 
 **`SequenceCache`** holds one sequence with a single logical length for the
@@ -141,16 +149,16 @@ so an entry cannot outlive its owner and a second caller cannot clobber it.
 
 Three lifetimes overlap:
 
-- The **registry entry** must exist across `load_method()`, which is when
-  backend init resolves the key. Nothing reads the registry afterwards.
-- The **guard** usually lives longer, because the control plane keeps using its
-  own pointer to the cache for the rest of the session.
-- The **cache** outlives both. The backend holds a `shared_ptr` of its own.
+- The **registry entry** must exist across every `load_method()` that resolves
+  the key.
+- The **guard** controls that discoverability and may be destroyed after the
+  final such initialization.
+- The **cache** may outlive the entry and guard. Each backend that resolved the
+  key holds its own `shared_ptr`.
 
-Destroying the guard early does not dangle anything. It unpublishes silently,
-and the next `load_method()` fails with a key that is no longer installed. That
-is a delayed and confusing failure, so keep the guard in a scope that outlives
-the module. Nothing enforces the ordering.
+Destroying the guard unpublishes the key without invalidating an already
+resolved cache. A later `load_method()` using that key fails, so the guard must
+remain alive for as long as new delegates may still need to resolve it.
 
 ## Two layers
 

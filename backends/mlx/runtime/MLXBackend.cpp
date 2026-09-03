@@ -21,6 +21,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/named_data_map.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <mlx/mlx.h>
 
@@ -571,18 +572,28 @@ static auto success_with_compiler = register_backend(backend);
 // runner asks the registry for (backend_id, kind) and gets back a neutral
 // Cache it installs under a cache_key. Adding a kind is a new builder here.
 const int cache_builders_registered = [] {
-  cache::CacheFactory::global().register_builder(
+  const Error single = cache::CacheFactory::global().register_builder(
       kMLXBackendId, cache::kind::kSingle, [](const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXSequenceCache>(cfg));
       });
-  cache::CacheFactory::global().register_builder(
+  ET_CHECK_MSG(
+      single == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kSingle);
+  const Error batched_cell = cache::CacheFactory::global().register_builder(
       kMLXBackendId,
       cache::kind::kBatchedCell,
       [](const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXCellCache>(cfg));
       });
+  ET_CHECK_MSG(
+      batched_cell == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatchedCell);
   return 0;
 }();
 } // namespace

@@ -26,6 +26,7 @@
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
@@ -81,11 +82,14 @@ class CacheFactory {
   // the process-global one, where they outlive it.
   CacheFactory() = default;
 
-  void register_builder(
+  // Registers one builder without replacing an existing entry. Returns
+  // InvalidArgument if builder is empty or the pair is already registered.
+  ET_NODISCARD Error register_builder(
       const std::string& backend_id,
       const std::string& kind,
       CacheBuilder builder);
-  // Returns Error::NotFound if no builder is registered for (backend_id, kind).
+  // Returns NotFound if no builder is registered for (backend_id, kind), and
+  // Internal if the registered builder returns null.
   Result<std::shared_ptr<Cache>> build(
       const std::string& backend_id,
       const std::string& kind,
@@ -93,8 +97,7 @@ class CacheFactory {
 
  private:
   mutable std::mutex mu_;
-  std::map<std::pair<std::string, std::string>, CacheBuilder>
-      builders_; // keyed by (backend_id, kind)
+  std::map<std::pair<std::string, std::string>, CacheBuilder> builders_;
 };
 
 // RAII over one registry entry: installs the cache under a key of its own
@@ -103,8 +106,8 @@ class CacheFactory {
 // cannot collide on it. Must outlive the load_method() whose backend init
 // resolves the key.
 //
-// The cache is held only to keep it alive while published. Callers keep their
-// own pointer, so there is nothing to read back out.
+// Destruction removes discoverability only. A shared_ptr already returned by
+// CacheRegistry::get() remains valid independently.
 class InstallGuard {
  public:
   explicit InstallGuard(std::shared_ptr<Cache> cache);

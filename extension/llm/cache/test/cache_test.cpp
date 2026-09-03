@@ -18,10 +18,12 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
 using executorch::extension::llm::cache::BatchControl;
 using executorch::extension::llm::cache::Cache;
+using executorch::extension::llm::cache::CacheBuilder;
 using executorch::extension::llm::cache::CacheConfig;
 using executorch::extension::llm::cache::CacheFactory;
 using executorch::extension::llm::cache::CacheRegistry;
@@ -44,6 +46,10 @@ LayerConfig flat_layer() {
 LayerConfig ring_layer(int window) {
   return LayerConfig{LayerPolicy{LayerPolicy::Kind::Ring, window}, 2, 8};
 }
+
+struct UnsupportedFace {
+  static constexpr const char* kFaceName = "test.UnsupportedFace";
+};
 } // namespace
 
 // Initializes the ExecuTorch PAL so the ET adapter's error paths (which ET_LOG)
@@ -174,10 +180,18 @@ TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   Cache* base = &cache;
   ASSERT_NE(base->as<SequenceControl>(), nullptr);
   ASSERT_NE(base->as<SequencePlanner>(), nullptr);
+  EXPECT_EQ(base->as<UnsupportedFace>(), nullptr);
   EXPECT_TRUE(base->as<SequenceControl>()->can_extend(4));
   auto plan = base->as<SequencePlanner>()->plan(0, 0, 1);
   ASSERT_TRUE(plan.has_value());
   EXPECT_EQ(plan->read[0].len, 1);
+}
+
+TEST_F(CacheTest, NullFaceIdsNeverMatch) {
+  using executorch::extension::llm::cache::same_face;
+  EXPECT_FALSE(same_face(nullptr, nullptr));
+  EXPECT_FALSE(same_face(nullptr, SequenceControl::kFaceName));
+  EXPECT_FALSE(same_face(SequenceControl::kFaceName, nullptr));
 }
 
 TEST_F(CacheTest, LiveGuardsDoNotCollideOnKeys) {
@@ -196,11 +210,15 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
   // Its own factory: a builder registered into the global one would
   // outlive this test and be visible to every case after it.
   CacheFactory reg;
-  reg.register_builder(
-      "TestBackend", kind::kSingle, [](const CacheConfig& cfg) {
-        return std::static_pointer_cast<Cache>(
-            std::make_shared<SequenceCache>(cfg));
-      });
+  EXPECT_EQ(
+      reg.register_builder(
+          "TestBackend",
+          kind::kSingle,
+          [](const CacheConfig& cfg) {
+            return std::static_pointer_cast<Cache>(
+                std::make_shared<SequenceCache>(cfg));
+          }),
+      Error::Ok);
 
   CacheConfig cfg{32, 1, {flat_layer()}};
   auto cache = reg.build("TestBackend", kind::kSingle, cfg);
@@ -223,6 +241,56 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
       Error::InvalidArgument);
 }
 
+TEST_F(CacheTest, BuilderRegistrationRejectsInvalidEntries) {
+  CacheFactory factory;
+  CacheConfig cfg{32, 1, {flat_layer()}};
+
+  EXPECT_EQ(
+      factory.register_builder("TestBackend", "empty", CacheBuilder{}),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      factory.build("TestBackend", "empty", cfg).error(), Error::NotFound);
+
+  EXPECT_EQ(
+      factory.register_builder(
+          "TestBackend",
+          "duplicate",
+          [](const CacheConfig& config) {
+            return std::static_pointer_cast<Cache>(
+                std::make_shared<SequenceCache>(config));
+          }),
+      Error::Ok);
+  EXPECT_EQ(
+      factory.register_builder(
+          "TestBackend",
+          "duplicate",
+          [](const CacheConfig&) { return std::shared_ptr<Cache>{}; }),
+      Error::InvalidArgument);
+  auto original = factory.build("TestBackend", "duplicate", cfg);
+  ASSERT_TRUE(original.ok());
+  EXPECT_NE(original.get()->as<SequenceControl>(), nullptr);
+}
+
+TEST_F(CacheTest, BuilderReturningNullIsAnError) {
+  CacheFactory factory;
+  EXPECT_EQ(
+      factory.register_builder(
+          "TestBackend",
+          "null",
+          [](const CacheConfig&) { return std::shared_ptr<Cache>{}; }),
+      Error::Ok);
+  EXPECT_EQ(
+      factory.build("TestBackend", "null", CacheConfig{32, 1, {flat_layer()}})
+          .error(),
+      Error::Internal);
+}
+
+TEST_F(CacheTest, NullCacheCannotBeInstalled) {
+  ET_EXPECT_DEATH(
+      { InstallGuard guard{std::shared_ptr<Cache>{}}; },
+      "Cannot install a null cache");
+}
+
 TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
   auto cache =
       std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
@@ -241,6 +309,30 @@ TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
   // The guard held only the registry entry; the cache outlives it.
   EXPECT_TRUE(cache->as<SequenceControl>()->can_extend(4));
 }
+
+TEST_F(CacheTest, AcquiredCacheOutlivesRegistryEntry) {
+  std::weak_ptr<Cache> weak;
+  std::shared_ptr<Cache> acquired;
+  std::string key;
+  {
+    auto cache =
+        std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
+    weak = cache;
+    InstallGuard guard(cache);
+    key = guard.key();
+    acquired = CacheRegistry::global().get(key);
+    ASSERT_NE(acquired, nullptr);
+    cache.reset();
+  }
+
+  EXPECT_EQ(CacheRegistry::global().get(key), nullptr);
+  ASSERT_FALSE(weak.expired());
+  EXPECT_TRUE(acquired->as<SequenceControl>()->can_extend(4));
+  acquired.reset();
+  EXPECT_TRUE(weak.expired());
+}
+
+// ---- Cell layout
 
 // ---- Cell layout -----------------------------------------------------------
 

@@ -157,11 +157,6 @@ class SequenceCache : public Cache,
     }
   }
 
-  // Cache: face recovery without RTTI.
-  void* face(FaceId id) override {
-    return expose<SequenceControl, SequencePlanner>(this, id);
-  }
-
   // SequenceControl.
   bool can_extend(int n = 1) const override {
     return length_ + n <=
@@ -217,6 +212,11 @@ class SequenceCache : public Cache,
       end += plan.read[i].len;
     }
     length_ = std::max(length_, end);
+  }
+
+ protected:
+  void* face(FaceId id) override {
+    return expose<SequenceControl, SequencePlanner>(this, id);
   }
 
  private:
