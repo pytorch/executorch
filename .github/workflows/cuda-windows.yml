@@ -17,6 +17,7 @@ on:
       - backends/cuda/**
       - backends/aoti/**
       - extension/cuda/**
+      - .ci/scripts/model_blob_cache.py
   workflow_dispatch:
 
 concurrency:
@@ -52,6 +53,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/model_blob_cache.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -126,6 +128,7 @@ jobs:
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         PYTHON_EXECUTABLE=python ./install_executorch.sh
+        pip install awscli==1.37.21 || echo "::warning::awscli install failed; model blobs stay in the artifact"
         echo "::endgroup::"
 
         # Setup Huggingface only for models that need it (not dinov2)
@@ -142,7 +145,14 @@ jobs:
         if [ "${{ matrix.model_name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
           VR_MODE="vr-offline"
         fi
-        source .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
+        # Run rather than source: the export script ends most model paths
+        # with `exit 0`, which would end this script before the stash below.
+        bash .ci/scripts/export_model_artifact.sh cuda-windows "${{ matrix.model_repo }}/${{ matrix.model_name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
+
+        # Swap the multi-GB weight blob for a pointer into the shared S3 cache
+        # so the GitHub artifact only carries the per-run files.
+        python .ci/scripts/model_blob_cache.py stash "${RUNNER_ARTIFACT_DIR}" \
+          --model "${{ matrix.model_repo }}/${{ matrix.model_name }}"
 
   test-model-cuda-windows-e2e:
     name: test-model-cuda-windows-e2e
@@ -159,6 +169,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/model_blob_cache.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
@@ -215,6 +226,8 @@ jobs:
           if ([string]::IsNullOrWhiteSpace(\$artifactDir)) {
             throw 'RUNNER_ARTIFACT_DIR is empty. Ensure download-artifact is configured for windows_job.yml.'
           }
+          python .ci/scripts/model_blob_cache.py restore \$artifactDir
+          if (\$LASTEXITCODE -ne 0) { throw 'model_blob_cache restore failed' }
 
           .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.0'
         }"

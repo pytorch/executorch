@@ -25,6 +25,7 @@ on:
       - .ci/scripts/test-cuda-build.sh
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
+      - .ci/scripts/model_blob_cache.py
       - examples/models/muse-glimmer/**
       - extension/pybindings/**
       - runtime/__init__.py
@@ -392,6 +393,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/model_blob_cache.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -535,6 +537,7 @@ jobs:
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
+        pip install awscli==1.37.21 || echo "::warning::awscli install failed; model blobs stay in the artifact"
         echo "::endgroup::"
 
         # Setup Huggingface only for models that need it (not parakeet or dinov2)
@@ -551,6 +554,11 @@ jobs:
           "${{ matrix.model.repo }}/${{ matrix.model.name }}" \
           "${{ matrix.quant }}" \
           "${RUNNER_ARTIFACT_DIR}"
+
+        # Swap the multi-GB weight blob for a pointer into the shared S3 cache
+        # so the GitHub artifact only carries the per-run files.
+        python .ci/scripts/model_blob_cache.py stash "${RUNNER_ARTIFACT_DIR}" \
+          --model "${{ matrix.model.repo }}/${{ matrix.model.name }}"
 
   test-muse-glimmer-cuda-e2e:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
@@ -637,6 +645,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/model_blob_cache.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -669,6 +678,8 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
+
+        python .ci/scripts/model_blob_cache.py restore "${RUNNER_ARTIFACT_DIR}"
 
         # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
         # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
