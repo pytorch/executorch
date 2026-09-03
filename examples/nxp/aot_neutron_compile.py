@@ -36,6 +36,16 @@ from executorch.devtools.visualization.visualization_utils import (
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
+
+from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
+    CifarNet,
+    train_cifarnet_model,
+    verify_cifarnet_model,
+)
+from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
+    MLPerfTinyImageClassification,
+)
+from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -49,18 +59,18 @@ from torchao.quantization.pt2e import (
 )
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
-from .experimental.cifar_net.cifar_net import (
-    CifarNet,
-    train_cifarnet_model,
-    verify_cifarnet_model,
-)
-from .models.mobilenet_v2 import MobilenetV2
+
+MODELS = {
+    "cifar10": CifarNet,
+    "mobilenetv2": MobilenetV2,
+    "mlperf_tiny_image_classification": MLPerfTinyImageClassification,
+}
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-def print_ops_in_edge_program(edge_program):
+def _print_ops_in_edge_program(edge_program):
     """Find all ops used in the `edge_program` and print them out along with their occurrence counts."""
 
     ops_and_counts = defaultdict(
@@ -88,27 +98,39 @@ def print_ops_in_edge_program(edge_program):
         print(f"{op: <50} {count}x")
 
 
-def get_model_and_inputs_from_name(model_name: str, use_random_dataset: bool):
-    """Given the name of an example pytorch model, return it, example inputs and calibration inputs (can be None)
+def _get_model_info_from_name(
+    model_name: str, dataset_path: str | None, use_random_dataset: bool
+):
+    """Given the name of an example pytorch model and args, return the model, its class instance (can be None), example inputs and calibration inputs (can be None).
 
     Raises RuntimeError if there is no example model corresponding to the given name.
     """
 
     calibration_inputs = None
     # Case 1: Model is defined in this file
-    if model_name in models.keys():
-        if use_random_dataset:
-            if model_name != "mobilenetv2":
+    if model_name in MODELS.keys():
+        model_cls = MODELS[model_name]
+        # TODO: establish a common interface or a factory for all models
+        if model_cls is CifarNet:
+            if use_random_dataset:
                 raise NotImplementedError(
                     f"Random dataset for model {model_name} is not implemented."
                 )
-            m = models[model_name](use_random_dataset=use_random_dataset)
-        else:
-            m = models[model_name]()
+            model_cls_inst = model_cls()
 
-        model = m.get_eager_model()
-        example_inputs = m.get_example_inputs()
-        calibration_inputs = m.get_calibration_inputs(64)
+        elif model_cls is MLPerfTinyImageClassification:
+            model_cls_inst = model_cls(
+                dataset_path=dataset_path, use_random_dataset=use_random_dataset
+            )
+
+        else:
+            model_cls_inst = model_cls(use_random_dataset=use_random_dataset)
+
+        model = model_cls_inst.get_eager_model()
+        example_inputs = model_cls_inst.get_example_inputs()
+        calibration_inputs = model_cls_inst.get_calibration_inputs(64)
+
+        return model, example_inputs, calibration_inputs, model_cls_inst
     # Case 2: Model is defined in executorch/examples/models/
     elif model_name in MODEL_NAME_TO_MODEL.keys():
         logging.warning(
@@ -117,27 +139,21 @@ def get_model_and_inputs_from_name(model_name: str, use_random_dataset: bool):
         model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
+
+        return model, example_inputs, calibration_inputs, None
     else:
         raise RuntimeError(
             f"Model '{model_name}' is not a valid name. Use --help for a list of available models."
         )
 
-    return model, example_inputs, calibration_inputs
 
-
-models = {
-    "cifar10": CifarNet,
-    "mobilenetv2": MobilenetV2,
-}
-
-
-if __name__ == "__main__":  # noqa C901
+def _get_arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {set(models.keys())}",
+        help=f"Provide model name. Valid ones: {set(MODELS.keys())}",
     )
     parser.add_argument(
         "-d",
@@ -180,7 +196,7 @@ if __name__ == "__main__":  # noqa C901
         "--so_library",
         required=False,
         default=None,
-        help="Path to custome kernel library",
+        help="Path to custom kernel library",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Set the logging level to debug."
@@ -241,6 +257,13 @@ if __name__ == "__main__":  # noqa C901
         help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
     )
     parser.add_argument(
+        "-dst",
+        "--dataset_path",
+        required=False,
+        default=None,
+        help="Path to custom dataset archive (.pt, .xz) to use for calibration.",
+    )
+    parser.add_argument(
         "--fetch_constants_to_sram",
         required=False,
         default=False,
@@ -248,7 +271,11 @@ if __name__ == "__main__":  # noqa C901
         help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":  # noqa C901
+    args = _get_arg_parser().parse_args()
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
@@ -256,8 +283,10 @@ if __name__ == "__main__":  # noqa C901
     neutron_target_spec = NeutronTargetSpec(target=args.target)
 
     # 1. pick model from one of the supported lists
-    model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
-        args.model_name, args.use_random_dataset
+    model, example_inputs, calibration_inputs, model_cls_inst = (
+        _get_model_info_from_name(
+            args.model_name, args.dataset_path, args.use_random_dataset
+        )
     )
     model = model.eval()
 
@@ -286,18 +315,35 @@ if __name__ == "__main__":  # noqa C901
     if args.quantize:
         quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
         if args.use_qat:
-            match args.model_name:
-                case "cifar10":
-                    print("Starting two epochs of QAT training with CifarNet model...")
-                    module = prepare_qat_pt2e(module, quantizer)
-                    module = move_exported_model_to_train(module)
-                    module = train_cifarnet_model(module, num_epochs=2)
-                    module = move_exported_model_to_eval(module)
-                    module = convert_pt2e(module)
-                case _:
-                    raise ValueError(
-                        f"QAT training is not supported for model '{args.model_name}'"
-                    )
+            if not isinstance(
+                model_cls_inst, (CifarNet, MLPerfTinyImageClassification)
+            ):
+                raise ValueError(
+                    f"QAT training is not supported for model '{args.model_name}'"
+                )
+
+            if isinstance(model_cls_inst, CifarNet):
+                print("Starting two epochs of QAT training with CifarNet model...")
+                module = prepare_qat_pt2e(module, quantizer)
+                module = move_exported_model_to_train(module)
+                module = train_cifarnet_model(module, num_epochs=2)
+                module = move_exported_model_to_eval(module)
+                module = convert_pt2e(module)
+
+            else:
+                print(
+                    f"Starting two epochs of QAT training with {args.model_name} model..."
+                )
+                module = prepare_qat_pt2e(module, quantizer)
+                module = move_exported_model_to_train(module)
+                module = model_cls_inst.train_model_fn(
+                    module,
+                    num_epochs=2,
+                    channels_last=args.use_channels_last_dim_order,
+                )
+                module = move_exported_model_to_eval(module)
+                module = convert_pt2e(module)
+
         else:
             if calibration_inputs is None:
                 logging.warning(
