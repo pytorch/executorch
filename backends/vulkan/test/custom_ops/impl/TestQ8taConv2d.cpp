@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taClone.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
 
 namespace vkcompute {
@@ -188,6 +189,9 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         packed_int8_output};
     if (impl_selector == "im2col") {
       VK_GET_OP_FN("et_vk.q8ta_conv2d_im2col.default")(graph, conv_args);
+    } else if (impl_selector == "im2col_fallback") {
+      q8ta_conv2d_im2col_with_kernel(
+          graph, conv_args, Q8taConv2dPwKernel::kFallback);
     } else if (impl_selector == "general") {
       VK_GET_OP_FN("et_vk.q8ta_conv2d_general.default")(graph, conv_args);
     } else {
