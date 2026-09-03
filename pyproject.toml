@@ -67,6 +67,9 @@ vgf = [
   # AoT vgf dependencies
   # Keep this in sync with AoT deps from backends/arm/requirements-arm-vgf.txt and
   # backends/arm/requirements-arm-tosa.txt.
+  # Python 3.12 is the reference/recommended minimum for the ML SDK 0.10 VGF
+  # flow. ExecuTorch supports a broader Python range, so older versions are
+  # surfaced as a VGF preflight warning instead of a package-level restriction.
   "ai_ml_emulation_layer_for_vulkan==0.10.0",
   "ai_ml_sdk_model_converter==0.10.0",
   "ml_dtypes==0.5.1",
