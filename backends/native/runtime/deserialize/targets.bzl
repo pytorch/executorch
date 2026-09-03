@@ -10,6 +10,15 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    # Owning byte buffer behind a package: heap read or read-only mmap.
+    runtime.cxx_library(
+        name = "owned_bytes",
+        srcs = ["OwnedBytes.cpp"],
+        exported_headers = ["OwnedBytes.h"],
+        exported_deps = [":byte_span"],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
     # Minimal JSON reader for the package's index metadata (safetensors header and
     # alias map). Integers only; see JsonParser.h.
     runtime.cxx_library(
@@ -49,6 +58,7 @@ def define_common_targets():
         exported_headers = ["Package.h"],
         exported_deps = [
             ":byte_span",
+            ":owned_bytes",
             ":safetensors_reader",
             ":zip_reader",
             "//executorch/backends/native/runtime/graph:scalar_type",
