@@ -1464,6 +1464,32 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_constant_pad_nd_symbolic_pad(self):
+        """A pad amount derived from a dynamic dim, as LSTM padding produces.
+
+        Without the guard this partitions and then aborts at prepack with
+        "Expected value to have type IntList, got VALUELIST instead", because
+        the pad list is serialized as a VALUELIST of Int/SymInt.
+        """
+
+        class TestModule(torch.nn.Module):
+            def forward(self, x):
+                # Pad up to a static length, the shape every unrolled LSTM
+                # wants its input in.
+                return torch.nn.functional.pad(x, (0, 0, 0, 16 - x.shape[1]))
+
+        sample_inputs = (torch.randn(size=(1, 12, 8), dtype=torch.float32),)
+        seq = Dim("seq", min=2, max=16)
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: seq}},
+            test_inputs=[
+                (torch.randn(size=(1, 4, 8), dtype=torch.float32),),
+                (torch.randn(size=(1, 16, 8), dtype=torch.float32),),
+            ],
+        )
+
     def test_vulkan_backend_repeat(self):
         class TestModule(torch.nn.Module):
             def __init__(self):

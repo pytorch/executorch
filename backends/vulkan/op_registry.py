@@ -1508,12 +1508,34 @@ def register_arange():
 # =============================================================================
 
 
+def _check_pad_is_static(node: torch.fx.Node) -> bool:
+    """Only support constant_pad_nd when the pad amounts are static.
+
+    A symbolic pad list is serialized as a VALUELIST rather than an INTLIST, and
+    Pad.cpp reads it with get_int_list(), which throws "Expected value to have
+    type IntList, got VALUELIST instead".
+
+    Supporting it properly is more than swapping in
+    extract_int_or_symint_list(), the way Split.cpp, View.cpp and Expand.cpp
+    read their symbolic lists: add_constant_pad_nd_node() folds the amounts into
+    a per-dim offset and bakes that into a params buffer at BUILD time, so the
+    dispatch would still use stale offsets even if the list were read
+    symbolically. The buffer has to be refreshed on resize first. Decline the
+    node until then.
+    """
+    pad = node.args[1]
+    if not isinstance(pad, (list, tuple)):
+        return False
+    return all(isinstance(p, int) for p in pad)
+
+
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=_check_pad_is_static,
     )
 
 
