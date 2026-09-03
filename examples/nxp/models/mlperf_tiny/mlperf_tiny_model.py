@@ -4,12 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 
 import itertools
+import logging
 from abc import abstractmethod
 from typing import Iterator
 
 import torch
 from executorch.examples.models import model_base
 from torch.utils.data import DataLoader, Dataset
+from torchao.quantization.pt2e import disable_observer
+from tqdm import tqdm
+
+log = logging.getLogger(__name__)
 
 
 class MLPerfTinyModel(model_base.EagerModelBase):
@@ -79,3 +84,34 @@ class MLPerfTinyModel(model_base.EagerModelBase):
 
     def get_example_inputs(self) -> tuple[torch.Tensor]:
         return (torch.randn(self.input_shape, dtype=torch.float32),)
+
+    def train_model_fn(self, model, num_epochs=15, batch_size=64, channels_last=False):
+        torch.manual_seed(42)
+        torch.use_deterministic_algorithms(True)
+
+        optimizer = torch.optim.Adam(
+            params=model.parameters(),
+            lr=5e-6,
+            eps=1e-7,
+            weight_decay=1e-4,
+        )
+        loss_fn = torch.nn.CrossEntropyLoss()
+
+        log.warning("Starting training...")
+
+        data = self.get_qat_train_inputs(batch_size=batch_size)
+        for nepoch in range(num_epochs):
+            for samples, labels in tqdm(data):
+                if channels_last:
+                    samples = samples.to(memory_format=torch.channels_last)
+
+                optimizer.zero_grad()
+                outputs = model(samples)
+                loss = loss_fn(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+            if nepoch >= num_epochs / 3:
+                model.apply(disable_observer)
+
+        return model

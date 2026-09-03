@@ -249,3 +249,69 @@ def test_aot_example__mlperf_tiny_ic__profiling():
     with _cleanup_generated_files(pte_file, etrecord_file):
         result = _run_compile(cmd)
         _assert_profiling(result, pte_file, etrecord_file)
+
+
+def test_aot_example__mlperf_tiny_kws():
+    """Test that the MLPerf Tiny keyword spotting model (DS-CNN) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and all ops are delegated."""
+
+    # Run the compilation script as a module (like run_aot_example.sh does).
+    # The calibration data of this model is generated randomly, so no dataset download is needed.
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_keyword_spotting",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--use_random_dataset",
+    ]
+
+    # Output file will be created in executorch_root
+    pte_file = Path(
+        os.path.join(EXECUTORCH_ROOT, "mlperf_tiny_keyword_spotting_nxp_delegate.pte")
+    )
+
+    with _cleanup_generated_files(pte_file):
+        result = _run_compile(cmd)
+        _assert_delegation(result, pte_file)
+
+
+def test_aot_example__mlperf_tiny_kws__profiling():
+    """Test that the MLPerf Tiny keyword spotting model (DS-CNN) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and all ops are delegated."""
+
+    # Run the compilation script as a module (like run_aot_example.sh does)
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_keyword_spotting",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--remove-quant-io-ops",
+        "--use_profiling",  # Generate profilable model and create ETRecord
+        "--use_random_dataset",  # Avoid downloading the dataset.
+    ]
+
+    # Output files will be created in executorch_root.
+    pte_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "mlperf_tiny_keyword_spotting_nxp_delegate_profile.pte"
+        )
+    )
+    etrecord_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "etrecord", "mlperf_tiny_keyword_spotting_etrecord.bin"
+        )
+    )
+
+    with _cleanup_generated_files(pte_file, etrecord_file):
+        result = _run_compile(cmd)
+        _assert_profiling(result, pte_file, etrecord_file)
