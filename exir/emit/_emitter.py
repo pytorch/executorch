@@ -83,7 +83,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tensor import (
     AddressSpaceOverflowException,
-    dim_order_from_stride,
+    dim_order_from_tensor,
     layout_enum,
     make_allocation_info,
     make_tensor_value,
@@ -2034,7 +2034,10 @@ class _TopLevelEmitter(_Emitter):
 
                 spec.storage = real_tensor.untyped_storage()
                 spec.stride = real_tensor.stride()
-                spec.dim_order = dim_order_from_stride(spec.stride)
+                # Not dim_order_from_stride: a size-1 dimension makes strides
+                # ambiguous, and the guard above has already established that
+                # this tensor is contiguous or channels-last.
+                spec.dim_order = dim_order_from_tensor(real_tensor)
             # User inputs and mutable buffers are not constants, other buffers or parameters are.
             if initialize_buffer and is_mutable_buffer:
                 spec.const = True

@@ -18,6 +18,7 @@ import torch
 from executorch.exir.tensor import (
     contiguous_stride_from_shape,
     dim_order_from_stride,
+    dim_order_from_tensor,
     make_allocation_info,
     make_tensor_value,
     num_bytes_from_shape_and_dtype,
@@ -204,6 +205,45 @@ class TestTensor(unittest.TestCase):
         shape = (2, 3, 4)
         stride = contiguous_stride_from_shape(torch.Size(shape))
         self.assertEqual((12, 4, 1), stride)
+
+    def test_dim_order_from_tensor_disambiguates_size_one_dims(self) -> None:
+        """A size-1 dimension makes strides ambiguous; the reported order must stay canonical.
+
+        A depthwise convolution weight is ``(C_out, 1, kH, kW)``. In channels-last
+        that is strides like ``(9, 1, 3, 1)``, where dims 1 and 3 tie at stride 1
+        only because the input-channel dim has size 1. Sorting strides alone puts
+        dim 1 first and yields ``(0, 2, 1, 3)``, which is neither contiguous nor
+        channels-last, so the portable kernels reject the tensor at runtime.
+        """
+        contiguous = (0, 1, 2, 3)
+        channels_last = (0, 2, 3, 1)
+
+        weight = torch.randn(8, 1, 3, 3).to(memory_format=torch.channels_last)
+        # Precondition: the stride-only view is the ambiguous one.
+        self.assertEqual((0, 2, 1, 3), tuple(dim_order_from_stride(weight.stride())))
+        self.assertIn(tuple(dim_order_from_tensor(weight)), (contiguous, channels_last))
+
+        # Ordinary weights are unaffected, in either layout.
+        for shape in ((8, 2, 3, 3), (16, 4, 5, 5)):
+            for tensor in (
+                torch.randn(*shape),
+                torch.randn(*shape).to(memory_format=torch.channels_last),
+            ):
+                self.assertEqual(
+                    tuple(dim_order_from_stride(tensor.stride())),
+                    tuple(dim_order_from_tensor(tensor)),
+                )
+
+    def test_dim_order_from_tensor_falls_back_for_unanswerable_tensors(self) -> None:
+        class NoDimOrder(torch.Tensor):
+            def dim_order(self, *args: object, **kwargs: object) -> object:
+                raise RuntimeError("cannot be determined")
+
+        tensor = torch.randn(2, 3, 4).as_subclass(NoDimOrder)
+        self.assertEqual(
+            tuple(dim_order_from_stride(tensor.stride())),
+            tuple(dim_order_from_tensor(tensor)),
+        )
 
     def test_dim_order_from_stride(self) -> None:
         # shape = (4)

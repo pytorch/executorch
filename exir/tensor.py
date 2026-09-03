@@ -96,6 +96,29 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
 
+def dim_order_from_tensor(tensor: torch.Tensor) -> Tuple[bytes]:
+    """Dim order of a real tensor, preferring torch's own answer.
+
+    ``dim_order_from_stride`` only sees strides, so it cannot tell that a
+    size-1 dimension's stride is arbitrary. A depthwise convolution weight is
+    the case that bites: ``(C_out, 1, kH, kW)`` in channels-last carries strides
+    like ``(9, 1, 3, 1)``, where dims 1 and 3 tie at stride 1 purely because the
+    input-channel dim has size 1. A stable descending sort then keeps dim 1
+    ahead of dim 3 and yields ``(0, 2, 1, 3)`` -- neither contiguous nor
+    channels-last, so the portable kernels reject the tensor at runtime even
+    though the layout is a perfectly ordinary channels-last weight.
+
+    ``torch.Tensor.dim_order()`` resolves the ambiguity against the tensor's
+    sizes and reports a canonical order. Fall back to the stride-only
+    computation for tensors it cannot answer for, such as those carrying
+    unbacked symbolic strides.
+    """
+    try:
+        return typing.cast(Tuple[bytes], tuple(int(d) for d in tensor.dim_order()))
+    except Exception:
+        return dim_order_from_stride(tensor.stride())
+
+
 def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     Converts dim order to stride using sizes
@@ -201,7 +224,7 @@ class TensorSpec:
             is_sparse=tensor.is_sparse,
         )
         spec.stride = tensor.stride()
-        spec.dim_order = dim_order_from_stride(spec.stride)
+        spec.dim_order = dim_order_from_tensor(tensor)
         spec.requires_grad = tensor.requires_grad
         spec.storage = tensor.untyped_storage() if const else None
 
