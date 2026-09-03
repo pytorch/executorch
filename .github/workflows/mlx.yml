@@ -68,8 +68,39 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build test runners"
-        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_mutable_state_test mlx_sequence_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_mutable_state_test mlx_sequence_cache_test mlx_cell_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
+
+        echo "::group::Check MLX artifact sizes"
+        size_check_failed=0
+        check_artifact_size() {
+          local path="$1"
+          local max_size="$2"
+          local baseline_size="$3"
+
+          if [[ ! -f "${path}" ]]; then
+            echo "::error file=${path}::Expected MLX artifact not found"
+            size_check_failed=1
+            return
+          fi
+
+          local actual_size
+          actual_size=$(wc -c < "${path}" | tr -d '[:space:]')
+          echo "${path}: ${actual_size} bytes (baseline ${baseline_size}, limit ${max_size})"
+          if (( actual_size > max_size )); then
+            echo "::error file=${path}::MLX artifact is ${actual_size} bytes, exceeding the ${max_size}-byte limit (baseline ${baseline_size})"
+            size_check_failed=1
+          fi
+        }
+
+        # Baselines recorded from the MLX v0.32.2 Release build on 2026-09-02.
+        check_artifact_size cmake-out/backends/mlx/libmlxdelegate.a 5000000 4159552
+        check_artifact_size cmake-out/backends/mlx/mlx/libmlx.a 14000000 11458544
+        check_artifact_size cmake-out/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib 2000000 1460840
+        echo "::endgroup::"
+        if (( size_check_failed )); then
+          exit 1
+        fi
 
         echo "::group::Run mutable-state (multi-session) unit test"
         ./cmake-out/backends/mlx/test/mlx_mutable_state_test
@@ -77,6 +108,7 @@ jobs:
 
         echo "::group::Run off-graph KV-cache op test"
         ./cmake-out/backends/mlx/test/mlx_sequence_cache_test
+        ./cmake-out/backends/mlx/test/mlx_cell_cache_test
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"

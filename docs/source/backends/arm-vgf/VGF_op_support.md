@@ -6,7 +6,7 @@ This page lists VGF-supported PyTorch APIs and the dtype and quantization modes 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **153**.
+Total supported PyTorch APIs: **154**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -43,7 +43,7 @@ Total supported PyTorch APIs: **153**.
 | `torch.conv1d` | FP, INT | `FP32`, `INT8`, `INT4` | 8x8, 8x4 |
 | `torch.conv2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
 | `torch.conv3d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
-| `torch.conv_transpose2d` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
+| `torch.conv_transpose2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
 | `torch.cos` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.cosh` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.cumsum` | FP, INT | `FP32`, `INT8` | 8x8 |
@@ -120,6 +120,7 @@ Total supported PyTorch APIs: **153**.
 | `torch.pixel_shuffle` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.pixel_unshuffle` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.pow` / `**` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.prod` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.reciprocal` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.relu` / `torch.nn.ReLU` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.remainder` | FP, INT | `FP32`, `INT8` | 8x8 |

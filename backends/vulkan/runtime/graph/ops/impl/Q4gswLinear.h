@@ -52,31 +52,31 @@ ValueRef prepack_q4_scales(
     vkapi::ScalarType dtype);
 
 // Global/local workgroup pickers for the fp32 GEMM path.
-utils::uvec3 pick_q4gsw_linear_gemm_global_wg(
+GlobalWorkGrid pick_q4gsw_linear_gemm_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
-utils::uvec3 pick_q4gsw_linear_gemm_local_wg(
+LocalWorkGroup pick_q4gsw_linear_gemm_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
 // Global/local workgroup pickers for the fp16 tin GEMM path —
 // {ceil(M/8), ceil(N/4), 1} global, {1, 128, 1} local.
-utils::uvec3 pick_q4gsw_linear_tin_gemm_global_wg(
+GlobalWorkGrid pick_q4gsw_linear_tin_gemm_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
-utils::uvec3 pick_q4gsw_linear_tin_gemm_local_wg(
+LocalWorkGroup pick_q4gsw_linear_tin_gemm_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 

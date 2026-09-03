@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +10,8 @@ import copy
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional
+from itertools import zip_longest
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
@@ -22,7 +24,16 @@ from torch import nn
 from torch._export.pass_base import PassType
 from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import (
+    allow_exported_model_train_eval,
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     Quantizer as TorchAOPT2EQuantizer,
@@ -173,6 +184,36 @@ class TorchExportStage(Stage):
         self._artifact = artifact.copy_with_new_data(exported_programs)
 
 
+def _collect_delegation_info(
+    edge_program_manager: EdgeProgramManager,
+) -> Dict[str, Any]:
+    """
+    Delegation info for every method, keyed by method name.
+
+    `EdgeProgramManager.exported_program()` defaults to `forward`, which raises
+    KeyError for a multi-method program that has no method by that name.
+    """
+    return {
+        name: get_delegation_info(
+            edge_program_manager.exported_program(name).graph_module
+        )
+        for name in sorted(edge_program_manager.methods)
+    }
+
+
+def _add_delegation_info_context(
+    artifact: PipelineArtifact, edge_program_manager: EdgeProgramManager
+) -> None:
+    by_method = _collect_delegation_info(edge_program_manager)
+    artifact.add_context("delegation_info_by_method", by_method)
+    # `forward` when present, else the first method by name, so that
+    # single-method callers keep seeing the value they always have.
+    artifact.add_context(
+        "delegation_info",
+        by_method.get("forward", next(iter(by_method.values()), None)),
+    )
+
+
 class EdgeTransformAndLowerStage(Stage):
     """
     Second stage: Transform and lower to EdgeProgramManager.
@@ -180,7 +221,7 @@ class EdgeTransformAndLowerStage(Stage):
 
     def __init__(
         self,
-        partitioners: Optional[List[Any]] = None,
+        partitioners: Optional[Union[List[Any], Dict[str, List[Any]]]] = None,
         transform_passes: (
             None
             | List[
@@ -262,11 +303,8 @@ class EdgeTransformAndLowerStage(Stage):
                 generate_etrecord=generate_etrecord,
             )
 
-        delegation_info = get_delegation_info(
-            edge_program_manager.exported_program().graph_module
-        )
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
-        self._artifact.add_context("delegation_info", delegation_info)
+        _add_delegation_info_context(self._artifact, edge_program_manager)
 
     @property
     def delegation_info(self) -> Any:
@@ -274,6 +312,13 @@ class EdgeTransformAndLowerStage(Stage):
         Returns the delegation info.
         """
         return self._artifact.get_context("delegation_info")
+
+    @property
+    def delegation_info_by_method(self) -> Dict[str, Any]:
+        """
+        Returns the delegation info for every method, keyed by method name.
+        """
+        return self._artifact.get_context("delegation_info_by_method")
 
 
 class ExecutorchStage(Stage):
@@ -430,16 +475,31 @@ class QuantizeStage(Stage):
         else:
             raise ValueError("No quantizers detected")
 
+    @staticmethod
+    def _apply_passes(
+        model: "torch.fx.GraphModule",
+        passes: Optional[List[Callable]],
+    ) -> "torch.fx.GraphModule":
+        for pass_fn in passes or []:
+            try:
+                model = pass_fn(model)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"QuantizeStage: Pass '{pass_fn!r}' raised an error: {exc}"
+                ) from exc
+        return model
+
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
             logging.info(
-                "Quantization recipe is invalid to run QunatizeStage, returning original model"
+                "Quantization recipe is invalid to run QuantizeStage, returning original model"
             )
             self._artifact = artifact
             return
 
         assert isinstance(artifact.data, dict)
 
+        recipe = self._quantization_recipe
         models = artifact.data
         example_inputs = artifact.get_context("example_inputs")
 
@@ -452,17 +512,78 @@ class QuantizeStage(Stage):
                 )
 
             inputs = example_inputs[method_name][0]
-            captured_graph = torch.export.export(model, inputs, strict=True).module()
 
-            quantizer = self._get_quantizer_for_prepare_pt2e(
-                self._quantization_recipe.quantizers  # pyre-ignore
+            # When dynamic_batch_size is requested, mark dimension 0 of every
+            # tensor input as dynamic so that a QAT training loop can feed
+            # mini-batches of arbitrary size through the prepared graph.
+            export_dynamic_shapes = None
+            if recipe.dynamic_batch_size:
+                from torch.export import Dim
+
+                batch = Dim("batch", min=1)
+                export_dynamic_shapes = tuple(
+                    {0: batch} if isinstance(t, torch.Tensor) else None for t in inputs
+                )
+
+            # QAT requires the model to be in training mode at capture time so
+            # that batch_norm and dropout decompose with training-mode semantics.
+            if recipe.is_qat:
+                model.train()
+
+            captured_graph = torch.export.export(
+                model, inputs, dynamic_shapes=export_dynamic_shapes, strict=True
+            ).module()
+
+            # Pass 1: pre-prepare passes.
+            captured_graph = self._apply_passes(
+                captured_graph, recipe.pre_prepare_passes
             )
-            prepared_model = prepare_pt2e(captured_graph, quantizer)
 
-            for calibration_input in example_inputs[method_name]:
-                prepared_model(*calibration_input)
+            quantizer = self._get_quantizer_for_prepare_pt2e(recipe.quantizers)
+
+            if recipe.is_qat:
+                if recipe.train_fn is None:
+                    raise ValueError("train_fn must be provided when is_qat=True")
+                prepared_model = prepare_qat_pt2e(captured_graph, quantizer)
+
+                # Pass 2: post-prepare passes.
+                prepared_model = self._apply_passes(
+                    prepared_model, recipe.post_prepare_passes
+                )
+
+                allow_exported_model_train_eval(prepared_model)
+                move_exported_model_to_train(prepared_model)
+                recipe.train_fn(prepared_model)
+                move_exported_model_to_eval(prepared_model)
+            else:
+                prepared_model = prepare_pt2e(captured_graph, quantizer)
+
+                # Pass 2: post-prepare passes.
+                prepared_model = self._apply_passes(
+                    prepared_model, recipe.post_prepare_passes
+                )
+
+                # Use custom calibration inputs when provided; fall back to example inputs.
+                if recipe.calibration_inputs_fn is not None:
+                    calibration_inputs = recipe.calibration_inputs_fn()
+                else:
+                    calibration_inputs = example_inputs[method_name]
+
+                for calibration_input in calibration_inputs:
+                    prepared_model(*calibration_input)
+
+            # Pass 3: pre-convert passes.
+            prepared_model = self._apply_passes(
+                prepared_model, recipe.pre_convert_passes
+            )
 
             quantized_model = convert_pt2e(prepared_model)
+
+            # Pass 4: post-convert passes.
+            quantized_model = self._apply_passes(
+                quantized_model, recipe.post_convert_passes
+            )
+
             quantized_models[method_name] = quantized_model
 
         self._artifact = artifact.copy_with_new_data(quantized_models)
@@ -647,7 +768,7 @@ class ToBackendStage(Stage):
 
     def __init__(
         self,
-        partitioners: Optional[List[Any]] = None,
+        partitioners: Optional[Union[List[Any], Dict[str, List[Any]]]] = None,
     ) -> None:
         super().__init__()
         self._partitioners = partitioners
@@ -693,17 +814,28 @@ class ToBackendStage(Stage):
         # Apply partitioners if available
         if self._partitioners is not None and len(self._partitioners) > 0:
             with validation_disabled():
-                # pyre-ignore
-                for partitioner in self._partitioners:
-                    edge_program_manager = edge_program_manager.to_backend(partitioner)
-
-        # Get delegation info
-        delegation_info = get_delegation_info(
-            edge_program_manager.exported_program().graph_module
-        )
+                if isinstance(self._partitioners, dict):
+                    method_names = list(self._partitioners)
+                    for partitioner_round in zip_longest(*self._partitioners.values()):
+                        partitioners_by_method = {
+                            method_name: partitioner
+                            for method_name, partitioner in zip(
+                                method_names, partitioner_round
+                            )
+                            if partitioner is not None
+                        }
+                        edge_program_manager = edge_program_manager.to_backend(
+                            partitioners_by_method
+                        )
+                else:
+                    # pyre-ignore
+                    for partitioner in self._partitioners:
+                        edge_program_manager = edge_program_manager.to_backend(
+                            partitioner
+                        )
 
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
-        self._artifact.add_context("delegation_info", delegation_info)
+        _add_delegation_info_context(self._artifact, edge_program_manager)
 
     @property
     def delegation_info(self) -> Any:
@@ -711,3 +843,10 @@ class ToBackendStage(Stage):
         Returns the delegation info.
         """
         return self._artifact.get_context("delegation_info")
+
+    @property
+    def delegation_info_by_method(self) -> Dict[str, Any]:
+        """
+        Returns the delegation info for every method, keyed by method name.
+        """
+        return self._artifact.get_context("delegation_info_by_method")

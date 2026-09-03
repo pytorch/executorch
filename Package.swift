@@ -53,11 +53,11 @@ let products = deliverables([
       "sqlite3",
     ],
   ],
-  "backend_mps": [
+  "backend_mlx": [
     "frameworks": [
       "Metal",
-      "MetalPerformanceShaders",
-      "MetalPerformanceShadersGraph",
+      "Foundation",
+      "QuartzCore",
     ],
   ],
   "backend_xnnpack": [
@@ -68,6 +68,11 @@ let products = deliverables([
   "executorch": [
     "libraries": [
       "c++",
+    ],
+  ],
+  "executorch_dump": [
+    "targets": [
+      "executorch",
     ],
   ],
   "executorch_llm": [
@@ -114,17 +119,49 @@ for (key, value) in products {
     name: key,
     path: "cmake-out/\(key).xcframework"
   ))
-  let target: Target = .target(
+  // Split into typed locals to stay under the manifest type-check budget.
+  let targetNames: [String] = [key] + (value["targets"] as? [String] ?? []).map {
+    key.hasSuffix(debug_suffix) ? $0 + debug_suffix : $0
+  }
+  let dependencies: [Target.Dependency] = targetNames.map { .target(name: $0) }
+  let frameworks: [LinkerSetting] =
+    (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) }
+  let libraries: [LinkerSetting] =
+    (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
+  packageTargets.append(.target(
     name: "\(key)\(dependencies_suffix)",
-    dependencies: ([key] + (value["targets"] as? [String] ?? []).map {
-      key.hasSuffix(debug_suffix) ? $0 + debug_suffix : $0
-    }).map { .target(name: $0) },
+    dependencies: dependencies,
     path: ".Package.swift/\(key)",
-    linkerSettings:
-      (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
-      (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
-  )
-  packageTargets.append(target)
+    linkerSettings: frameworks + libraries
+  ))
+}
+
+// One resource bundle shared by both MLX products (release and debug) so they
+// resolve the same bundle name, with a per-slice metallib since one slice's does
+// not load on another. Kept out of the loop above to avoid a per-debug copy.
+let mlxMetallibSlices = ["mlx-ios", "mlx-ios-simulator", "mlx-macos"]
+// Anchor to this file's own directory: as a dependency the manifest runs with the
+// consumer's cwd, where a relative path would miss every slice and ship an empty bundle.
+let mlxResourcesRelDir = ".Package.swift/backend_mlx_resources"
+let mlxResourcesDir =
+  URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+  .appendingPathComponent(mlxResourcesRelDir).path
+if products.keys.contains("backend_mlx") {
+  packageTargets.append(.target(
+    name: "backend_mlx_resources",
+    path: mlxResourcesRelDir,
+    resources: mlxMetallibSlices.compactMap { slice in
+      FileManager.default.fileExists(atPath: "\(mlxResourcesDir)/\(slice).metallib")
+        ? .copy("\(slice).metallib") : nil
+    }
+  ))
+  for suffix in ["", debug_suffix] {
+    if let index = packageTargets.firstIndex(where: {
+      $0.name == "backend_mlx\(suffix)\(dependencies_suffix)"
+    }) {
+      packageTargets[index].dependencies.append(.target(name: "backend_mlx_resources"))
+    }
+  }
 }
 
 // Test fixtures. add_coreml.pte and add_mul_coreml.pte are generated at CI
@@ -157,7 +194,18 @@ if FileManager.default.fileExists(atPath: "\(objcTestsDir)/add_mul_coreml.pte") 
   objcTestResources.append(.copy("add_mul_coreml.pte"))
 }
 
+// The dump test fixture is committed under the target, the way the sibling tests
+// target's fixture is, so the test bundle always ships it and SwiftPM synthesizes
+// Bundle.module.
+let dumpTestResources: [Resource] = [.copy("resources/add.pte")]
+
 let testLinkerSettings: [LinkerSetting] = [
+  // The test targets depend on the executorch binary target directly, which
+  // carries no linker settings, rather than the with-dependencies target that
+  // owns the libc++ link, so they must link libc++ themselves. Below a macOS 13
+  // deployment target a Swift back-deployment shim used to supply it implicitly;
+  // at this package's floor that shim is gone, so name it explicitly here.
+  .linkedLibrary("c++"),
   .unsafeFlags([
     "-Xlinker", "-force_load",
     "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
@@ -173,7 +221,7 @@ let package = Package(
   name: "executorch",
   platforms: [
     .iOS(.v17),
-    .macOS(.v12),
+    .macOS(.v14),
   ],
   products: packageProducts,
   targets: packageTargets + [
@@ -199,6 +247,17 @@ let package = Package(
       path: "extension/apple/ExecuTorch/__tests__/ObjC",
       exclude: [".gitignore"],
       resources: objcTestResources,
+      linkerSettings: testLinkerSettings
+    ),
+    .testTarget(
+      name: "dump_tests",
+      dependencies: [
+        .target(name: "executorch_dump\(debug_suffix)\(dependencies_suffix)"),
+        .target(name: "kernels_optimized\(dependencies_suffix)"),
+        .target(name: "backend_coreml\(dependencies_suffix)"),
+      ],
+      path: "extension/apple/dump/ExecuTorchDump/__tests__",
+      resources: dumpTestResources,
       linkerSettings: testLinkerSettings
     )
   ]

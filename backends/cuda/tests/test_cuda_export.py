@@ -4,9 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import contextlib
+import os
 import unittest
 from typing import Tuple
 from unittest import mock
+from unittest.mock import patch
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -100,6 +103,35 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
             CudaBackend.get_aoti_compile_options(
                 [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
             )
+
+    def test_target_smem_context_is_applied(self):
+        with patch(
+            "executorch.backends.cuda.cuda_backend.target_smem_context",
+            return_value=contextlib.nullcontext(),
+        ) as target_smem_context:
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                pass
+
+        target_smem_context.assert_called_once_with()
+
+    def test_target_smem_context_only_patches_exact_triton_limit(self):
+        from executorch.backends.cuda.target_smem import target_smem_context
+        from torch._inductor.template_heuristics.triton import BaseConfigHeuristic
+        from triton.compiler import compiler as triton_compiler
+
+        original_checker = BaseConfigHeuristic._get_exceeding_shared_memory_checker
+        with mock.patch.dict(os.environ, {"ET_CUDA_TARGET_SMEM_BYTES": "4096"}):
+            with mock.patch.object(
+                triton_compiler, "max_shared_mem", return_value=8192
+            ) as local_max_shared_mem:
+                with target_smem_context():
+                    self.assertIs(
+                        BaseConfigHeuristic._get_exceeding_shared_memory_checker,
+                        original_checker,
+                    )
+                    self.assertEqual(triton_compiler.max_shared_mem(0), 4096)
+
+                self.assertIs(triton_compiler.max_shared_mem, local_max_shared_mem)
 
 
 class TestCudaExport(unittest.TestCase):
