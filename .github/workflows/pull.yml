@@ -1052,10 +1052,10 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      # No runner-linux, so this takes the memory-optimized default. The suite
-      # runs one export worker per core, so what matters is memory per core, not
-      # core count: the previous instance gave each worker about 4 GiB and the
-      # job was killed. The memory-optimized default gives each worker more.
+      # No runner-linux, so this takes _test_backend.yml's default. The suite
+      # runs one export worker per core, so what matters is memory per core:
+      # the instance this used to run on gave each worker about 4 GiB and the
+      # job was killed. The default label is a little under 8 GiB per core.
 
   test-qnn-passes-linux:
     needs: docker-image
