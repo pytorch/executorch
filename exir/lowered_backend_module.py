@@ -384,7 +384,7 @@ def arrange_graph_placeholders(
 ) -> torch.fx.GraphModule:
     """
     Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
-    but with placeholders in order of (Params + Buffers) (User Inputs)
+    but with placeholders in order of (Params + Buffers + Constants) (User Inputs)
 
     This is used by the delegate api which disturbs the placeholder ordering when creating a submodule
     from partitioned nodes
@@ -403,32 +403,31 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
-    # Cache these properties — each call rebuilds the dict from input_specs.
+    # Cache these properties to avoid rebuilding the dict on each access.
     params_map = graph_sign.inputs_to_parameters
     buffers_map = graph_sign.inputs_to_buffers
+    constants_map = graph_sign.inputs_to_lifted_tensor_constants
+    custom_objs_map = graph_sign.inputs_to_lifted_custom_objs
     param_nodes = []
     buffer_nodes = []
+    constant_nodes = []
     input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
             continue
 
-        if node.name in params_map and node.meta.get("delegation_tag", None) == tag:
+        is_tagged = node.meta.get("delegation_tag", None) == tag
+        if node.name in params_map and is_tagged:
             param_nodes.append(node)
-        elif node.name in buffers_map and node.meta.get("delegation_tag", None) == tag:
+        elif node.name in buffers_map and is_tagged:
             buffer_nodes.append(node)
+        elif (node.name in constants_map or node.name in custom_objs_map) and is_tagged:
+            constant_nodes.append(node)
         else:
             input_nodes.append(node)
 
-    for param_node in param_nodes:
-        new_node = new_graph.node_copy(param_node, lambda x: node_map[x])
-        node_map[param_node] = new_node
-    for buffer_node in buffer_nodes:
-        new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
-        node_map[buffer_node] = new_node
-    for input_node in input_nodes:
-        new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
-        node_map[input_node] = new_node
+    for node in param_nodes + buffer_nodes + constant_nodes + input_nodes:
+        node_map[node] = new_graph.node_copy(node, lambda x: node_map[x])
 
     # Now add all the other nodes in order
     for node in gm.graph.nodes:
