@@ -204,8 +204,8 @@ class ComputeGraph final {
   // List of command buffers deferred for submission
   std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
 
-  // Set to track which ValueRefs were updated during inference
-  std::unordered_set<ValueRef> updated_values_;
+  std::vector<uint32_t> value_update_generations_;
+  uint32_t current_update_generation_ = 1;
 
   // Cache to prevent duplicate prepacking of the same weight tensor with the
   // same kernel. Key is (inputValueRef, kernel_name).
@@ -1221,6 +1221,10 @@ class ComputeGraph final {
   //
 
   void print_readable();
+
+ private:
+  void mark_value_updated(const ValueRef idx);
+  void advance_update_generation() noexcept;
 
   //
   // Friend classes
