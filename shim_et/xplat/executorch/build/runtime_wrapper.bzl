@@ -157,7 +157,7 @@ def _is_aten_target(kwargs):
                 return True
     return False
 
-def _patch_test_compiler_flags(kwargs):
+def _patch_test_compiler_flags(kwargs, aten_mode = False):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
 
@@ -169,11 +169,11 @@ def _patch_test_compiler_flags(kwargs):
     xplat_deps = kwargs.get("xplat_deps", [])
     fbcode_deps = kwargs.get("fbcode_deps", [])
     is_aten_test = (
+        aten_mode or
         "_aten" in name or
         "aten_" in name or
         "gtest_aten" in external_deps or
         "gmock_aten" in external_deps or
-        _is_aten_target(kwargs) or
         _has_pytorch_dep(xplat_deps) or
         _has_pytorch_dep(fbcode_deps)
     )
@@ -340,10 +340,12 @@ def _cxx_test(*args, **kwargs):
         kwargs["deps"] = []
     kwargs["deps"].append("//executorch/test/utils:utils")
 
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     env.patch_headers(kwargs)
     _patch_build_mode_flags(kwargs)
-    _patch_test_compiler_flags(kwargs)
+    _patch_test_compiler_flags(kwargs, aten_mode)
 
     env.patch_platform_build_mode_flags(kwargs)
     env.cxx_test(*args, **kwargs)
