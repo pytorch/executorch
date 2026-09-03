@@ -7,7 +7,7 @@
 # logging
 target_sources(
   enn_logging
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/logging.h
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/logging.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/logging.cpp
 )
 
@@ -17,6 +17,12 @@ if(${ANDROID})
     enn_backend
     PRIVATE ${CMAKE_CURRENT_LIST_DIR}/enn_backend.cpp
             ${CMAKE_CURRENT_LIST_DIR}/enn_executor.cpp
+            ${CMAKE_CURRENT_LIST_DIR}/enn_shared_memory_manager.cpp
             ${CMAKE_CURRENT_LIST_DIR}/enn_api_implementation.cpp
+            ${CMAKE_CURRENT_LIST_DIR}/extension/exynos_file_data_loader.cpp
   )
+
+  if(BUILD_TESTING)
+    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/extension/test)
+  endif()
 endif()
