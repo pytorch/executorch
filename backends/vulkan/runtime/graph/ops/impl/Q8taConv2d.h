@@ -161,6 +161,13 @@ void add_q8ta_im2col_node(
 
 void q8ta_conv2d_im2col(ComputeGraph& graph, const std::vector<ValueRef>& args);
 
+bool can_use_unsigned_dot(const vkapi::Adapter& adapter, int64_t k_per_group);
+
+void q8ta_conv2d_im2col_impl(
+    ComputeGraph& graph,
+    bool use_unsigned_dot,
+    const std::vector<ValueRef>& args);
+
 // Transposed convolution
 
 void q8ta_conv2d_transposed(

@@ -321,6 +321,9 @@ void add_q8ta_conv2d_pw_node(
         use_hw_dot,
         "Unsigned q8ta pointwise convolution requires integer dot product");
     kernel_name = "q8ta_conv2d_pw_unsigned";
+    if (graph.storage_type_of(packed_weight) == utils::kBuffer) {
+      kernel_name += "_buffer";
+    }
   } else {
     kernel_name = use_hw_dot ? "q8ta_conv2d_pw" : "q8ta_conv2d_pw_fallback";
   }
