@@ -36,14 +36,23 @@ Currently, this ExecuTorch Backend can delegate AI computations to Hexagon proce
 
 ### Host OS
 
-The QNN Backend is currently verified on the following Linux host operating systems:
+The QNN Backend is verified on the following host operating systems:
 
 - **Ubuntu 22.04 LTS (x64)**
 - **CentOS Stream 9**
+- **Windows 10 / 11 (x64)**
+- **Windows 10 / 11 (ARM64)** with Qualcomm NPU
 - **Windows Subsystem for Linux (WSL)** with Ubuntu 22.04
 
 In general, we verify the backend on the same OS versions that the QNN SDK is officially validated against.  
 The exact supported versions are documented in the QNN SDK.
+
+#### Windows (x64 / ARM64) Setup
+
+To build on native Windows platforms, the MSVC toolchain must be installed.
+The required MSVC Build Tools can be installed through **Visual Studio Installer**.
+
+For installation instructions, refer to the official [Microsoft Visual Studio Downloads page](https://visualstudio.microsoft.com/downloads/).
 
 #### Windows (WSL) Setup
 
@@ -55,24 +64,23 @@ wsl --install -d ubuntu 22.04
 
 This command will install WSL and set up Ubuntu 22.04 as the default Linux distribution.
 
-For more details and troubleshooting, refer to the official Microsoft WSL installation guide:
-👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
+For more details and troubleshooting, refer to the official Microsoft WSL installation guide: [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install).
 
 ### Hardware:
-You will need an Android / Linux device with adb-connected running on one of Qualcomm SoCs listed in `QcomChipset`. Please navigate to [qc_schema.py](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/serialization/qc_schema.py).
 
-This example is verified with SM8550 and SM8450.
+The QNN backend runs on Qualcomm SoCs (Systems on Chips) across two device families:
+
+- **Android / Linux devices** — connected over `adb`. This example is verified with SM8550 and SM8450.
+- **Windows on ARM64 (WoA) devices** — This example is verified with SC8380XP (Qualcomm Snapdragon X Elite).
+
+The target SoC must be one of those listed in the `QcomChipset` enum; see [qc_schema.py](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/serialization/qc_schema.py).
 
 ### Software:
 
- - Follow ExecuTorch recommended Python version.
- - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS. g++ version need to be 13 or higher.
- - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
- - (Optional) Target toolchain for linux embedded platform.
- - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
-   - Click the "Get Software" button to download the latest version of the QNN SDK.
-   - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
-   - You can download it directly from the following link: [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
+[Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
+ - Click the "Get Software" button to download the latest version of the QNN SDK.
+ - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
+ - You can download it directly from the following link: [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
@@ -94,6 +102,18 @@ The directory with installed Qualcomm AI Engine Direct SDK looks like:
 └── share
 ```
 
+On Android / Linux devices:
+
+ - Follow ExecuTorch recommended Python version.
+ - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS. g++ version need to be 13 or higher.
+ - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
+ - (Optional) Target toolchain for linux embedded platform.
+
+On Windows on ARM64 (WoA) devices:
+
+ - Install the **AMD64 version of Python** to run AOT compilation under x64 emulation. This is required because certain Python modules used in the AOT workflow do not currently provide ARM64 prebuilt wheels.
+ - MSVC Build Tools.
+
 
 ## Setting up your developer environment
 
@@ -106,9 +126,9 @@ i.e., the directory containing `QNN_README.txt`.
 
 `$EXECUTORCH_ROOT` refers to the root of executorch git repository.
 
-### Setup environment variables
+### Setup QNN SDK paths and environment variables
 
-Source the QNN SDK environment setup script to configure paths and environment variables:
+For Linux platform:
 
 ```bash
 source $QNN_SDK_ROOT/bin/envsetup.sh
@@ -116,35 +136,66 @@ source $QNN_SDK_ROOT/bin/envsetup.sh
 
 This sets up `LD_LIBRARY_PATH` and other required variables for the QNN SDK tools and libraries.
 
-Additionally, set `PYTHONPATH` for ExecuTorch Python APIs:
+For Windows platform:
+
+```powershell
+& "$env:QNN_SDK_ROOT\bin\envsetup.ps1"
+```
+
+### Setup `PYTHONPATH` for ExecuTorch Python APIs
+
+For Linux platform:
 
 ```bash
 export PYTHONPATH=$EXECUTORCH_ROOT/..:$PYTHONPATH
 ```
 
+For Windows platform:
+
+```powershell
+$env:PYTHONPATH="$env:EXECUTORCH_ROOT\..;$env:PYTHONPATH"
+```
+
 ## Build
 
-An example script for the below building instructions is [here](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh).
+**On Linux platform**, an example script for the below building instructions is [`build.sh`](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh).
 We recommend to use the script because the ExecuTorch build-command can change from time to time.
 The above script is actively used. It is updated more frequently than this tutorial.
 An example usage is
 ```bash
 cd $EXECUTORCH_ROOT
-# android target
+# Android target
 ./backends/qualcomm/scripts/build.sh
-# (optional) linux embedded target
+# (Optional) Linux embedded target
 ./backends/qualcomm/scripts/build.sh --enable_linux_embedded
-# for release build
+# Android target for release build
 ./backends/qualcomm/scripts/build.sh --release
 ```
 
+**On Windows platform**, use the PowerShell script [`build.ps1`](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.ps1) for the building instructions. Both Windows x64 and ARM64 architectures are supported.
+Here's the example usage
+```powershell
+cd $env:EXECUTORCH_ROOT
+# Generate both Windows x64 and ARM64 target libraries
+.\backends\qualcomm\scripts\build.ps1 -Release
+# Generate only Windows x64 target libraries
+.\backends\qualcomm\scripts\build.ps1 -SkipArm64Windows -Release
+# Generate only Windows ARM64 target libraries
+.\backends\qualcomm\scripts\build.ps1 -SkipX86Windows -Release
+```
+
+> **Notes**
+>
+> The script supports building both x64 and cross-compiling ARM64 target artifacts on Windows x64 host. After the build completes, the ARM64 libraries and executables can be copied to a Windows on Snapdragon (WoS) device using `scp`.
+> This allows a `.pte` generated on Windows x64 host to be executed on WoS device.
 
 ## Deploying and running on device
 
 ### AOT compile a model
 
 Refer to [this script](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/deeplab_v3.py) for the exact flow.
-We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:
+We use deeplab-v3-resnet101 as an example in this tutorial.
+Run below commands to compile on Linux platform:
 
 ```bash
 cd $EXECUTORCH_ROOT
@@ -152,14 +203,26 @@ cd $EXECUTORCH_ROOT
 python -m examples.qualcomm.scripts.deeplab_v3 --build_folder build-android --soc_model SM8550 --compile_only --download
 ```
 
+For Windows x64 and ARM64 platforms, run the following commands for the AOT compilation:
+
+```powershell
+cd $env:EXECUTORCH_ROOT
+python -m examples.qualcomm.scripts.deeplab_v3 --build_folder build-x86_64-windows --soc_model SC8380XP --compile_only --download
+```
+
+> **Notes**
+>
+> AOT compilation on Windows on ARM64 (WoA) device currently relies on an AMD64 Python environment running under x64 emulation, since some AOT dependencies are not yet distributed as ARM64 prebuilt wheels.
+
 You might see something like below:
 
 ```
-[INFO][Qnn ExecuTorch] Destroy Qnn context
-[INFO][Qnn ExecuTorch] Destroy Qnn device
-[INFO][Qnn ExecuTorch] Destroy Qnn backend
-
-Finish compile_only and save to ./deeplab_v3/dlv3_qnn.pte
+Completed stage: Finalizing Graph Sequence (8966 us)
+Starting stage: Completion
+Completed stage: Completion (1388 us)
+[INFO] [Qnn ExecuTorch]: Destroy Qnn context
+[INFO] [Qnn ExecuTorch]: Destroy Qnn device
+[INFO] [Qnn ExecuTorch]: Destroy Qnn backend
 ```
 
 The compiled model is `./deeplab_v3/dlv3_qnn.pte`.
@@ -167,26 +230,9 @@ The compiled model is `./deeplab_v3/dlv3_qnn.pte`.
 Note that the model is compiled for specific backend (e.g., HTP), so you can specify the target backend via `--backend gpu` or `--backend lpai`. If not specified, it will be default to HTP.
 
 
-### Test model inference on QNN HTP emulator / QNN LPAI emulator
+### Test model inference on Linux x64 host with QNN HTP emulator / QNN LPAI emulator
 
-We can test model inferences before deploying it to a device by HTP emulator.
-
-Let's build `qnn_executor_runner` for a x64 host:
-```bash
-# assuming the AOT component is built.
-cd $EXECUTORCH_ROOT/build-x86
-cmake ../examples/qualcomm \
-  -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
-  -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-  -DPYTHON_EXECUTABLE=python3 \
-  -Bexamples/qualcomm
-
-cmake --build examples/qualcomm -j$(nproc)
-
-# qnn_executor_runner can be found under examples/qualcomm/executor_runner
-# The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/executor_runner/qnn_executor_runner
-ls examples/qualcomm/executor_runner
-```
+Before deploying a model to a physical device, inference execution can be tested and validated on a Linux x64 host using the HTP / LPAI emulator.
 
 To run the HTP emulator / LPAI emulator, the dynamic linker needs to access QNN libraries and `libqnn_executorch_backend.so`.
 We set the below two paths to `LD_LIBRARY_PATH` environment variable:
@@ -199,27 +245,55 @@ The second path is for `libqnn_executorch_backend.so`.
 
 So, we can run `./deeplab_v3/dlv3_qnn.pte` by:
 ```bash
-cd $EXECUTORCH_ROOT/build-x86
+cd $EXECUTORCH_ROOT
 export LD_LIBRARY_PATH=$EXECUTORCH_ROOT/build-x86/lib/:$LD_LIBRARY_PATH
-examples/qualcomm/executor_runner/qnn_executor_runner --model_path ../deeplab_v3/dlv3_qnn.pte
+build-x86/examples/qualcomm/executor_runner/qnn_executor_runner --model_path ./deeplab_v3/dlv3_qnn.pte
 ```
 
 We should see some outputs like the below. Note that the emulator can take some time to finish.
 ```bash
-I 00:00:00.354662 executorch:qnn_executor_runner.cpp:213] Method loaded.
-I 00:00:00.356460 executorch:qnn_executor_runner.cpp:261] ignoring error from set_output_data_ptr(): 0x2
-I 00:00:00.357991 executorch:qnn_executor_runner.cpp:261] ignoring error from set_output_data_ptr(): 0x2
-I 00:00:00.357996 executorch:qnn_executor_runner.cpp:265] Inputs prepared.
-
-I 00:01:09.328144 executorch:qnn_executor_runner.cpp:414] Model executed successfully.
-I 00:01:09.328159 executorch:qnn_executor_runner.cpp:421] Write etdump to etdump.etdp, Size = 424
-[INFO] [Qnn ExecuTorch]: Destroy Qnn backend parameters
+I 00:00:00.174364 executorch:qnn_executor_runner.cpp:416] Method loaded.
+E 00:00:00.179250 executorch:method.cpp:1373] Output 0 is memory planned, or is a constant. Cannot override the existing data pointer.
+I 00:00:00.179264 executorch:qnn_executor_runner.cpp:473] ignoring error from set_output_data_ptr(): 0x2
+E 00:00:00.183296 executorch:method.cpp:1373] Output 1 is memory planned, or is a constant. Cannot override the existing data pointer.
+I 00:00:00.183305 executorch:qnn_executor_runner.cpp:473] ignoring error from set_output_data_ptr(): 0x2
+I 00:00:00.183310 executorch:qnn_executor_runner.cpp:479] Inputs prepared.
+I 00:00:00.184008 executorch:qnn_executor_runner.cpp:684] Input list not provided. Inputs prepared with default values set.
+I 00:01:19.663283 executorch:qnn_executor_runner.cpp:695] Model executed successfully.
+I 00:01:19.663299 executorch:qnn_executor_runner.cpp:698] Perform 0 inferences for warming up
+I 00:01:53.881349 executorch:qnn_executor_runner.cpp:715] 1 inferences took 34218.046000 ms, avg 34218.046000 ms
+I 00:01:53.881426 executorch:qnn_executor_runner.cpp:727] Write etdump to etdump.etdp, Size = 576
 [INFO] [Qnn ExecuTorch]: Destroy Qnn context
 [INFO] [Qnn ExecuTorch]: Destroy Qnn device
 [INFO] [Qnn ExecuTorch]: Destroy Qnn backend
 ```
 
-### Run model inference on an Android smartphone with Qualcomm SoCs
+### Test model inference on Windows x64 host with QNN HTP emulator / QNN LPAI emulator
+
+Unlike Linux, which set `LD_LIBRARY_PATH` to access shared libraries, Windows uses the `$env:PATH` environment variable. To enable runtime loading of `qnn_executorch_backend.dll`, ensure that it is discoverable by the Windows DLL loader.
+
+This can be achieved by either:
+- Placing `qnn_executorch_backend.dll` in the same directory as `qnn_executor_runner.exe`; or
+- Adding the directory containing `qnn_executorch_backend.dll` to `$env:PATH` environment variable.
+
+The generated artifacts can be found at:
+- `$env:EXECUTORCH_ROOT\build-x86_64-windows\examples\qualcomm\executor_runner\Release\qnn_executor_runner.exe`
+- `$env:EXECUTORCH_ROOT\build-x86_64-windows\backends\qualcomm\Release\qnn_executorch_backend.dll`
+
+To add the directory containing `qnn_executorch_backend.dll` to the `$env:PATH` environment variable:
+```powershell
+$env:PATH="$env:EXECUTORCH_ROOT\build-x86_64-windows\backends\qualcomm\Release;$env:PATH"
+```
+
+Once configured, `qnn_executorch_backend.dll` will be accessed by `qnn_executor_runner.exe` at runtime.
+
+To test the model inference on Windows x64 host with QNN HTP emulator / QNN LPAI emulator:
+```powershell
+cd $env:EXECUTORCH_ROOT\build-x86_64-windows\examples\qualcomm\executor_runner\Release
+.\qnn_executor_runner.exe --model_path $env:EXECUTORCH_ROOT\deeplab_v3\dlv3_qnn.pte
+```
+
+### Run model inference on Android smartphone with Qualcomm SoCs
 
 ***Step 1***. We need to push required QNN libraries to the device.
 
@@ -251,7 +325,7 @@ adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnGpu.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnLpai.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnLpaiStub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_DIR}
-# make sure the skel lib is signed for LPAI backend.
+# Make sure the skel lib is signed for LPAI backend.
 adb push ${QNN_SDK_ROOT}/lib/lpai-v6/signed/libQnnLpaiSkel.so ${DEVICE_DIR}
 ```
 
@@ -297,6 +371,54 @@ After the above command, pre-processed inputs and outputs are put in `$EXECUTORC
 
 The command-line arguments are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139).
 The model, inputs, and output location are passed to `qnn_executorch_runner` by `--model_path`, `--input_list_path`, and `--output_folder_path`.
+
+### Run model inference on Windows on Snapdragon (WoS) with Qualcomm SoCs
+
+Before running inference on Windows on Snapdragon (WoS) with Qualcomm SoCs, ensure that `qnn_executorch_backend.dll` and all required QNN libraries are discoverable by the Windows loader. This can be achieved by either:
+- Copying `qnn_executorch_backend.dll` and the required QNN libraries into the same directory as `qnn_executor_runner.exe`; or
+- Adding the directories containing these libraries to the `$env:PATH` environment variable.
+
+The generated artifacts can be found at:
+- `$env:EXECUTORCH_ROOT\build-arm64-windows\examples\qualcomm\executor_runner\Release\qnn_executor_runner.exe`
+- `$env:EXECUTORCH_ROOT\build-arm64-windows\backends\qualcomm\Release\qnn_executorch_backend.dll`
+
+Depending on the selected QNN backend, the corresponding QNN libraries can be found under:
+
+```powershell
+# For HTP
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnHtp.dll
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnSystem.dll
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnHtpV69Stub.dll
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnHtpV73Stub.dll
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnHtpV75Stub.dll
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnHtpV79Stub.dll
+$env:QNN_SDK_ROOT\lib\hexagon-v69\unsigned\libQnnHtpV69Skel.so
+$env:QNN_SDK_ROOT\lib\hexagon-v73\unsigned\libQnnHtpV73Skel.so
+$env:QNN_SDK_ROOT\lib\hexagon-v75\unsigned\libQnnHtpV75Skel.so
+$env:QNN_SDK_ROOT\lib\hexagon-v79\unsigned\libQnnHtpV79Skel.so
+```
+
+```powershell
+# For GPU
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnGpu.dll
+```
+
+```powershell
+# For LPAI
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnLpai.dll
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnLpaiStub.dll
+$env:QNN_SDK_ROOT\lib\aarch64-windows-msvc\QnnSystem.dll
+# Make sure the skel lib is signed for LPAI backend.
+$env:QNN_SDK_ROOT\lib\lpai-v6\signed\libQnnLpaiSkel.so
+```
+
+Once configured, `qnn_executorch_backend.dll` and the required QNN libraries can be accessed by `qnn_executor_runner.exe` at runtime.
+
+To test the model inference on Windows on Snapdragon (WoS) with Qualcomm SoCs:
+```powershell
+cd $env:EXECUTORCH_ROOT
+.\qnn_executor_runner.exe --model_path .\deeplab_v3\dlv3_qnn.pte
+```
 
 ### Run [Android LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo) with QNN backend
 
