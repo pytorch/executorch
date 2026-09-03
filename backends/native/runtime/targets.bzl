@@ -46,10 +46,15 @@ def define_common_targets():
     runtime.cxx_library(
         name = "runtime",
         srcs = [
+            "Deserialize.cpp",
             "Program.cpp",
         ],
         exported_headers = [
             "Program.h",
+        ],
+        exported_deps = [
+            # Program.h publicly exposes Method (build_method), so the IR is exported.
+            ":method",
         ],
         deps = [
             ":native_graph_schema",
