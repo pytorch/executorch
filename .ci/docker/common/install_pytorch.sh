@@ -76,16 +76,32 @@ install_pytorch_and_domains() {
   # the image compiler cannot satisfy. The venv inherits the image's
   # site-packages, so PyTorch still builds against the same numpy.
   #
-  # Keep the list in sync with pytorch/pyproject.toml [build-system].requires.
+  # Keep the list in sync with pytorch/pyproject.toml [build-system].requires,
+  # except for cmake, see below.
   local build_venv=/tmp/pytorch-build-venv
   rm -rf "${build_venv}"
   conda_run python -m venv --system-site-packages "${build_venv}"
+  # cmake is deliberately not installed here, so the conda cmake already in the
+  # image is used. scikit-build-core, which PyTorch builds with as of 2.14,
+  # prefers an importable pip cmake over anything on PATH, and cmake adds its own
+  # install root to CMAKE_SYSTEM_PREFIX_PATH. A pip cmake therefore searches
+  # site-packages, where MKL and libomp are not, and the build silently comes out
+  # with no BLAS and no LAPACK.
   conda_run "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" \
-    "setuptools>=77.0.0,<82" "cmake>=3.27,<4" ninja "packaging>=24.2" \
+    "setuptools>=77.0.0,<82" ninja "packaging>=24.2" \
     "typing-extensions>=4.10.0" pyyaml six
   conda_run "${build_venv}/bin/python" -m build --wheel --no-isolation
   rm -rf "${build_venv}"
   pip_install "$(echo dist/*.whl)"
+
+  # The build silently degrades rather than failing when it cannot find BLAS, so
+  # assert on the result. Run from / so the import resolves to the installed
+  # wheel and not to the source tree next to it.
+  (cd / && conda_run python -c "
+import torch
+assert torch._C.has_lapack, 'built without LAPACK'
+torch.linalg.qr(torch.randn(4, 4))
+")
 
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=release/2.11
