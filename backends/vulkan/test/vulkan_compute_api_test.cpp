@@ -32,6 +32,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 
 #include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 
@@ -2377,6 +2378,216 @@ TEST(VulkanComputeGraphTest, execute_advances_value_update_generation) {
 
   EXPECT_FALSE(graph.was_value_updated(symint));
   EXPECT_FALSE(graph.was_value_updated(values));
+}
+
+TEST(VulkanComputeGraphTest, choose_qparams_handles_dynamic_row_counts) {
+  constexpr int64_t kMaxM = 8;
+  constexpr int64_t kK = 128;
+
+  GraphConfig config;
+  config.enable_querypool = true;
+  config.expect_dynamic_shapes = true;
+  ComputeGraph graph(config);
+
+  const IOValueRef input =
+      graph.add_input_tensor({kMaxM, kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef quant_min = graph.add_scalar<int64_t>(-128);
+  const ValueRef quant_max = graph.add_scalar<int64_t>(127);
+  const ValueRef scales = graph.add_tensor(
+      {kMaxM}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {kMaxM}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+
+  VK_GET_OP_FN("etvk.choose_qparams_per_row.default")
+  (graph, {input.value, quant_min, quant_max, scales, zero_points});
+
+  const ValueRef scales_staging = graph.set_output_tensor(scales);
+  const ValueRef zero_points_staging = graph.set_output_tensor(zero_points);
+
+  graph.prepare();
+  graph.prepack();
+
+  for (const int64_t M : std::vector<int64_t>{kMaxM, 4, 1, kMaxM}) {
+    graph.resize_input(0, {M, kK});
+    graph.propagate_resize();
+
+    EXPECT_EQ(graph.sizes_of(scales), std::vector<int64_t>({M}));
+    EXPECT_EQ(graph.sizes_of(zero_points), std::vector<int64_t>({M}));
+
+    std::vector<float> input_data(M * kK);
+    for (int64_t m = 0; m < M; ++m) {
+      std::fill_n(input_data.begin() + m * kK, kK, float(m + 1));
+    }
+    graph.maybe_cast_and_copy_into_staging(
+        input.staging, input_data.data(), input_data.size(), vkapi::kFloat);
+
+    graph.execute();
+
+    std::vector<float> scale_data(M);
+    std::vector<int8_t> zero_point_data(M);
+    graph.maybe_cast_and_copy_from_staging(
+        scales_staging, scale_data.data(), scale_data.size(), vkapi::kFloat);
+    graph.maybe_cast_and_copy_from_staging(
+        zero_points_staging,
+        zero_point_data.data(),
+        zero_point_data.size(),
+        vkapi::kChar);
+
+    for (int64_t m = 0; m < M; ++m) {
+      EXPECT_NEAR(scale_data[m], float(m + 1) / 255.0f, 1e-6f);
+      EXPECT_EQ(zero_point_data[m], -128);
+    }
+
+    graph.context()->querypool().extract_results();
+    const auto shader_results =
+        graph.context()->querypool().get_shader_timestamp_data();
+    const auto choose_result = std::find_if(
+        shader_results.begin(), shader_results.end(), [](const auto& result) {
+          return result.kernel_name.find("choose_qparams_per_row") !=
+              std::string::npos;
+        });
+    ASSERT_NE(choose_result, shader_results.end());
+    EXPECT_EQ(choose_result->metadata.gwg[0], 1u);
+    EXPECT_EQ(
+        choose_result->metadata.gwg[1],
+        utils::div_up_4(utils::safe_downcast<uint32_t>(M)));
+    EXPECT_EQ(choose_result->metadata.gwg[2], 1u);
+    EXPECT_EQ(choose_result->metadata.lwg[0], 64u);
+    EXPECT_EQ(choose_result->metadata.lwg[1], 1u);
+    EXPECT_EQ(choose_result->metadata.lwg[2], 1u);
+  }
+}
+
+void test_quantize_and_pack_handles_dynamic_row_counts(
+    const int64_t group_size_value,
+    const utils::uvec3& expected_local_wg_size) {
+  if (!api::context()->adapter_ptr()->supports_int8_dot_product()) {
+    GTEST_SKIP() << "Quantize and pack requires integer dot product support";
+  }
+
+  constexpr int64_t kMaxM = 8;
+  constexpr int64_t kK = 128;
+  const int64_t num_groups = kK / group_size_value;
+  const int64_t max_m4 = utils::div_up(kMaxM, int64_t(4));
+
+  GraphConfig config;
+  config.enable_querypool = true;
+  config.expect_dynamic_shapes = true;
+  ComputeGraph graph(config);
+
+  const IOValueRef input =
+      graph.add_input_tensor({kMaxM, kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef quant_min = graph.add_scalar<int64_t>(-128);
+  const ValueRef quant_max = graph.add_scalar<int64_t>(127);
+  const ValueRef scales = graph.add_tensor(
+      {kMaxM}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {kMaxM}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+
+  VK_GET_OP_FN("etvk.choose_qparams_per_row.default")
+  (graph, {input.value, quant_min, quant_max, scales, zero_points});
+
+  const ValueRef packed_input = graph.add_tensor(
+      {kMaxM, kK}, vkapi::kInt8x4, utils::kBuffer, utils::kPackedInt8_4H4W);
+  const ValueRef input_sums = graph.add_tensor(
+      {num_groups * max_m4 * 4},
+      vkapi::kInt,
+      utils::kBuffer,
+      utils::kWidthPacked);
+  const ValueRef group_size = graph.add_scalar<int64_t>(group_size_value);
+  const QuantizationConfig input_quant_config(
+      8, kPerChannel, {1, kK}, false, true);
+
+  add_quantize_and_pack_4h4w_with_group_sums_node(
+      graph,
+      input_quant_config,
+      input.value,
+      input_sums,
+      scales,
+      zero_points,
+      packed_input,
+      group_size);
+
+  const ValueRef packed_input_staging = graph.set_output_tensor(packed_input);
+  const ValueRef input_sums_staging = graph.set_output_tensor(input_sums);
+
+  graph.prepare();
+  graph.prepack();
+
+  for (const int64_t M : std::vector<int64_t>{kMaxM, 4, 1, kMaxM}) {
+    graph.resize_input(0, {M, kK});
+    graph.propagate_resize();
+
+    std::vector<float> input_data(M * kK);
+    for (int64_t m = 0; m < M; ++m) {
+      std::fill_n(input_data.begin() + m * kK, kK, float(m + 1));
+    }
+    graph.maybe_cast_and_copy_into_staging(
+        input.staging, input_data.data(), input_data.size(), vkapi::kFloat);
+
+    graph.execute();
+
+    graph.context()->querypool().extract_results();
+    const auto shader_results =
+        graph.context()->querypool().get_shader_timestamp_data();
+    const auto quantize_result = std::find_if(
+        shader_results.begin(), shader_results.end(), [](const auto& result) {
+          return result.kernel_name.find(
+                     "quantize_and_pack_4h4w_with_group_sums") !=
+              std::string::npos;
+        });
+
+    if (M == 1) {
+      EXPECT_EQ(quantize_result, shader_results.end());
+      continue;
+    }
+
+    ASSERT_NE(quantize_result, shader_results.end());
+    EXPECT_EQ(
+        quantize_result->metadata.gwg[0],
+        utils::safe_downcast<uint32_t>(num_groups));
+    EXPECT_EQ(
+        quantize_result->metadata.gwg[1],
+        utils::div_up_4(utils::safe_downcast<uint32_t>(M)));
+    EXPECT_EQ(quantize_result->metadata.gwg[2], 1u);
+    EXPECT_EQ(quantize_result->metadata.lwg[0], expected_local_wg_size[0]);
+    EXPECT_EQ(quantize_result->metadata.lwg[1], expected_local_wg_size[1]);
+    EXPECT_EQ(quantize_result->metadata.lwg[2], expected_local_wg_size[2]);
+
+    const size_t packed_numel = graph.staging_buffer_numel_of(packed_input);
+    std::vector<int32_t> packed_data(packed_numel);
+    graph.maybe_cast_and_copy_from_staging(
+        packed_input_staging,
+        packed_data.data(),
+        packed_data.size(),
+        vkapi::kInt8x4);
+    for (int64_t i = 0; i < M * kK / 4; ++i) {
+      EXPECT_EQ(packed_data[i], 0x7f7f7f7f);
+    }
+
+    std::vector<int32_t> sums_data(num_groups * max_m4 * 4);
+    graph.maybe_cast_and_copy_from_staging(
+        input_sums_staging, sums_data.data(), sums_data.size(), vkapi::kInt);
+    const int64_t current_m4 = utils::div_up(M, int64_t(4));
+    for (int64_t group = 0; group < num_groups; ++group) {
+      for (int64_t m = 0; m < M; ++m) {
+        EXPECT_EQ(
+            sums_data[group * current_m4 * 4 + m], 127 * group_size_value);
+      }
+    }
+  }
+}
+
+TEST(
+    VulkanComputeGraphTest,
+    quantize_and_pack_handles_dynamic_row_counts_with_small_groups) {
+  test_quantize_and_pack_handles_dynamic_row_counts(32, {4u, 1u, 16u});
+}
+
+TEST(
+    VulkanComputeGraphTest,
+    quantize_and_pack_handles_dynamic_row_counts_with_large_groups) {
+  test_quantize_and_pack_handles_dynamic_row_counts(128, {2u, 1u, 32u});
 }
 
 #define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)              \
