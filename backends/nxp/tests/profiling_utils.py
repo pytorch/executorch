@@ -95,9 +95,7 @@ def get_neutron_compiler_version() -> str:
         if version_match:
             return version_match.group(1)
         else:
-            logging.exception(
-                "Unexpected error while getting neutron compiler version"
-            )
+            logging.exception("Unexpected error while getting neutron compiler version")
             return ""
     except Exception:
         logging.exception("Error while getting neutron compiler version")
