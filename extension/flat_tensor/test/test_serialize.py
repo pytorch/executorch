@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import dataclasses
+import io
 import math
 import os
 import tempfile
@@ -34,9 +35,12 @@ from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
     _FLAT_TENSOR_VERSION,
     _FLATBUFFER_ALIGNMENT,
+    _get_extended_header,
     FlatTensorConfig,
     FlatTensorHeader,
     FlatTensorSerializer,
+    load_ptd,
+    save_ptd,
 )
 
 # The raw data stored in the serialized file segments.
@@ -394,3 +398,141 @@ class TestSerialize(unittest.TestCase):
         self._check_named_data_entries(
             output.external_data[external_tag], output2.external_data[external_tag]
         )
+
+
+class TestSavePtd(unittest.TestCase):
+    """Tests for the save_ptd/load_ptd tensor-map APIs."""
+
+    def _round_trip(
+        self, tensor_map: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test.ptd")
+            save_ptd(path, tensor_map)
+            return load_ptd(path)
+
+    def _assert_same(
+        self, actual: Dict[str, torch.Tensor], expected: Dict[str, torch.Tensor]
+    ) -> None:
+        self.assertEqual(set(actual.keys()), set(expected.keys()))
+        for key, want in expected.items():
+            got = actual[key]
+            self.assertEqual(got.dtype, want.dtype, f"dtype mismatch for '{key}'")
+            self.assertEqual(got.shape, want.shape, f"shape mismatch for '{key}'")
+            self.assertTrue(torch.equal(got, want), f"value mismatch for '{key}'")
+
+    def test_round_trip_preserves_dtypes(self) -> None:
+        # Arrange
+        tensor_map = {
+            "float32": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+            "int64": torch.arange(6, dtype=torch.int64).reshape(2, 3),
+            "uint8": torch.tensor([1, 2, 3], dtype=torch.uint8),
+            "float16": torch.tensor([0.5, 1.5], dtype=torch.float16),
+            "bool": torch.tensor([True, False, True]),
+        }
+
+        # Act
+        loaded = self._round_trip(tensor_map)
+
+        # Assert
+        self._assert_same(loaded, tensor_map)
+
+    def test_round_trip_preserves_bfloat16(self) -> None:
+        # bfloat16 has no numpy equivalent and takes a separate path when
+        # converting to bytes, so it is worth covering on its own.
+        tensor_map = {"bf16": torch.tensor([1.5, -2.25, 3.75], dtype=torch.bfloat16)}
+
+        loaded = self._round_trip(tensor_map)
+
+        self._assert_same(loaded, tensor_map)
+
+    def test_round_trip_preserves_scalar_tensor(self) -> None:
+        tensor_map = {"scalar": torch.tensor(42.0)}
+
+        loaded = self._round_trip(tensor_map)
+
+        self._assert_same(loaded, tensor_map)
+        self.assertEqual(loaded["scalar"].shape, torch.Size([]))
+
+    def test_round_trip_preserves_empty_tensor(self) -> None:
+        tensor_map = {"empty": torch.zeros(0, 3)}
+
+        loaded = self._round_trip(tensor_map)
+
+        self._assert_same(loaded, tensor_map)
+
+    def test_round_trip_preserves_channels_last(self) -> None:
+        # Arrange: channels_last is stored with a permuted dim_order, so the
+        # bytes on disk are not in logical order.
+        tensor = (
+            torch.arange(24, dtype=torch.float32)
+            .reshape(1, 2, 3, 4)
+            .to(memory_format=torch.channels_last)
+        )
+        self.assertFalse(tensor.is_contiguous())
+
+        # Act
+        loaded = self._round_trip({"conv": tensor})["conv"]
+
+        # Assert
+        self.assertTrue(torch.equal(loaded, tensor))
+        self.assertTrue(loaded.is_contiguous(memory_format=torch.channels_last))
+
+    def test_tied_tensors_share_one_buffer(self) -> None:
+        # Arrange: the same tensor object under two keys, as with a tied
+        # embedding and output projection.
+        shared = torch.randn(64, 8)
+
+        # Act
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tied_path = os.path.join(tmpdir, "tied.ptd")
+            copied_path = os.path.join(tmpdir, "copied.ptd")
+            save_ptd(tied_path, {"embedding": shared, "output": shared})
+            save_ptd(copied_path, {"embedding": shared, "output": shared.clone()})
+
+            # Assert: the tied file stores the payload once.
+            self.assertLess(os.path.getsize(tied_path), os.path.getsize(copied_path))
+            loaded = load_ptd(tied_path)
+
+        self.assertTrue(torch.equal(loaded["embedding"], shared))
+        self.assertTrue(torch.equal(loaded["output"], shared))
+
+    def test_save_and_load_with_file_object(self) -> None:
+        # Mirrors the std::ostream overload of the C++ save_ptd.
+        tensor_map = {"weight": torch.tensor([7.0, 8.0])}
+        buffer = io.BytesIO()
+
+        save_ptd(buffer, tensor_map)
+        buffer.seek(0)
+        loaded = load_ptd(buffer)
+
+        self._assert_same(loaded, tensor_map)
+
+    def test_tensor_alignment_is_applied(self) -> None:
+        tensor_map = {"a": torch.ones(5), "b": torch.ones(7)}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "aligned.ptd")
+            save_ptd(path, tensor_map, tensor_alignment=256)
+            with open(path, "rb") as infile:
+                data = infile.read()
+
+        header = _get_extended_header(data)
+        self.assertIsNotNone(header)
+        flat_tensor = _deserialize_to_flat_tensor(
+            data[0 : header.flatbuffer_offset + header.flatbuffer_size]
+        )
+        # Effective alignment is lcm(segment_alignment, tensor_alignment).
+        alignment = math.lcm(FlatTensorConfig().segment_alignment, 256)
+        for segment in flat_tensor.segments:
+            self.assertEqual(segment.offset % alignment, 0)
+
+    def test_save_rejects_non_tensor_value(self) -> None:
+        with self.assertRaises(TypeError):
+            save_ptd(os.devnull, {"bad": "not a tensor"})
+
+    def test_save_rejects_non_contiguous_tensor(self) -> None:
+        # A transposed tensor is neither contiguous nor channels_last, so it
+        # has no representable dim_order.
+        with self.assertRaises(ValueError):
+            save_ptd(os.devnull, {"transposed": torch.randn(4, 5).t()})

@@ -39,6 +39,9 @@ fbcode_target(_kind = runtime.python_library,
     visibility = ["PUBLIC"],
     deps = [
         ":schema",
+        "//caffe2:torch",
+        "//executorch/exir:tensor",
+        "//executorch/exir:tensor_layout",
         "//executorch/exir/_serialize:lib",
     ],
 )

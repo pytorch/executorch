@@ -13,14 +13,19 @@ import math
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional
+from typing import BinaryIO, ClassVar, Dict, List, Literal, Optional, Union
 
 import executorch.extension.flat_tensor.serialize as serialize_package
+
+import torch
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
-from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir._serialize._named_data_store import (
+    _tensor_to_bytes,
+    NamedDataStoreOutput,
+)
 from executorch.exir._serialize._program import _insert_flatbuffer_header
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
@@ -28,6 +33,8 @@ from executorch.exir._serialize.data_serializer import (
     DataSerializer,
 )
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
+from executorch.exir.tensor import get_scalar_type
+from executorch.exir.tensor_layout import TensorLayout
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
     DataSegment,
     FlatTensor,
@@ -449,3 +456,129 @@ class FlatTensorSerializer(DataSerializer):
             pte_data={},
             external_data={name: data_payload.named_data},
         )
+
+
+# Matches the tensor_alignment passed by the C++ save_ptd callers in
+# extension/training/examples/{CIFAR,XOR}/train.cpp.
+_DEFAULT_TENSOR_ALIGNMENT = 16
+
+
+def _tensor_map_to_payload(
+    tensor_map: Dict[str, torch.Tensor],
+    tensor_alignment: int,
+) -> DataPayload:
+    """Builds a DataPayload from a map of tensor names to tensors."""
+    buffers: List[bytes] = []
+    named_data: Dict[str, DataEntry] = {}
+
+    # Tied weights (eg. an embedding matrix reused as the output projection)
+    # show up under more than one key in a state dict. Point the keys at a
+    # single buffer instead of writing identical bytes twice. Every tensor is
+    # kept alive by tensor_map for the duration of the loop, so id() is stable.
+    buffer_index_by_tensor: Dict[int, int] = {}
+
+    for key, tensor in tensor_map.items():
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError(
+                f"Expected a torch.Tensor for key '{key}', got {type(tensor).__name__}."
+            )
+        buffer_index = buffer_index_by_tensor.get(id(tensor))
+        if buffer_index is None:
+            buffer_index = len(buffers)
+            buffer_index_by_tensor[id(tensor)] = buffer_index
+            buffers.append(_tensor_to_bytes(tensor))
+        named_data[key] = DataEntry(
+            buffer_index=buffer_index,
+            alignment=tensor_alignment,
+            tensor_layout=TensorLayout.from_tensor(tensor),
+        )
+
+    return DataPayload(buffers=buffers, named_data=named_data)
+
+
+def _tensor_from_layout(buffer: bytes, tensor_layout: TensorLayout) -> torch.Tensor:
+    """Rebuilds a tensor from its serialized bytes and layout metadata."""
+    dtype = get_scalar_type(tensor_layout.scalar_type)
+    sizes = list(tensor_layout.sizes)
+
+    # An empty tensor has no bytes to read; torch.frombuffer rejects a
+    # zero-length buffer, so construct it directly.
+    if any(size == 0 for size in sizes):
+        return torch.empty(sizes, dtype=dtype)
+
+    # bytearray gives torch a writable copy, so the tensor owns its memory and
+    # torch does not warn about a read-only buffer.
+    flat = torch.frombuffer(bytearray(buffer), dtype=dtype)
+
+    # dim_order lists dimensions outermost-first as laid out in memory, so the
+    # bytes on disk are the sizes permuted into that order. Reshape to the
+    # physical shape, then invert the permutation to recover the logical one.
+    dim_order = list(tensor_layout.dim_order)
+    physical_sizes = [sizes[dim] for dim in dim_order]
+    tensor = flat.reshape(physical_sizes)
+
+    inverse_dim_order = [0] * len(dim_order)
+    for position, dim in enumerate(dim_order):
+        inverse_dim_order[dim] = position
+    return tensor.permute(inverse_dim_order)
+
+
+def save_ptd(
+    path: Union[str, os.PathLike, BinaryIO],
+    tensor_map: Dict[str, torch.Tensor],
+    tensor_alignment: int = _DEFAULT_TENSOR_ALIGNMENT,
+) -> None:
+    """Creates a .ptd from the given tensor map.
+
+    Mirrors the C++ save_ptd in extension/flat_tensor/serialize/serialize.h,
+    which has both a path and a stream overload.
+
+    Args:
+        path: The file path to save the .ptd to, or a binary file-like object
+            to write the .ptd data to.
+        tensor_map: The map of tensor names to tensors to save.
+        tensor_alignment: The bytes tensor data should be aligned to.
+
+    Raises:
+        TypeError: If a value in tensor_map is not a torch.Tensor.
+        ValueError: If a tensor is neither contiguous nor channels-last.
+    """
+    payload = _tensor_map_to_payload(tensor_map, tensor_alignment)
+    blob = FlatTensorSerializer(FlatTensorConfig()).serialize(payload)
+
+    if hasattr(path, "write"):
+        blob.write_to_file(path)
+    else:
+        with open(path, "wb") as outfile:
+            blob.write_to_file(outfile)
+
+
+def load_ptd(path: Union[str, os.PathLike, BinaryIO]) -> Dict[str, torch.Tensor]:
+    """Loads a .ptd into a map of tensor names to tensors.
+
+    Reverses save_ptd. Named data entries that carry no tensor layout are not
+    tensors and are skipped.
+
+    Args:
+        path: The file path to load the .ptd from, or a binary file-like
+            object to read the .ptd data from.
+
+    Returns:
+        A map of tensor names to tensors.
+    """
+    if hasattr(path, "read"):
+        data = path.read()
+    else:
+        with open(path, "rb") as infile:
+            data = infile.read()
+
+    payload = FlatTensorSerializer().deserialize(Cord(data))
+
+    tensor_map: Dict[str, torch.Tensor] = {}
+    for key, entry in payload.named_data.items():
+        if entry.tensor_layout is None:
+            continue
+        tensor_map[key] = _tensor_from_layout(
+            bytes(payload.buffers[entry.buffer_index]), entry.tensor_layout
+        )
+    return tensor_map
