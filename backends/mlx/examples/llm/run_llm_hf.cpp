@@ -709,7 +709,7 @@ int main(int argc, char** argv) {
     print_cache_summary(cfg);
     if (mlx_opts.set_option(
             ::executorch::backends::mlx::kCacheKeyKey,
-            guard.key().c_str()) != Error::Ok ||
+            guard.key()) != Error::Ok ||
         options_map.set_options(
             ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
             Error::Ok) {

@@ -331,7 +331,7 @@ int main(int argc, char* argv[]) {
       ::executorch::runtime::LoadBackendOptionsMap options_map;
       if (mlx_opts.set_option(
               ::executorch::backends::mlx::kCacheKeyKey,
-              cache_lease->key().c_str()) != Error::Ok ||
+              cache_lease->key()) != Error::Ok ||
           options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
               Error::Ok) {

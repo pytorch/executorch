@@ -115,8 +115,10 @@ class InstallGuard {
   InstallGuard(const InstallGuard&) = delete;
   InstallGuard& operator=(const InstallGuard&) = delete;
 
-  const std::string& key() const {
-    return key_;
+  // Valid for this guard's lifetime. A raw pointer because every consumer
+  // hands it straight to a C API -- BackendOptions::set_option copies from it.
+  const char* key() const {
+    return key_.c_str();
   }
 
  private:
