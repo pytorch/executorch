@@ -58,9 +58,9 @@ jobs:
         # moving branch: reproducible, and one less thing to fail transiently.
         ARDUINO_CLI_VERSION=1.5.1
         ARDUINO_LINT_VERSION=1.3.0
-        # RUNNER_TEMP and GITHUB_WORKSPACE both point at host paths this
-        # container cannot write to, and HOME may too, so keep the toolchain
-        # and every arduino-cli directory somewhere local to the container.
+        # HOME is /github/home, which arduino-cli's directories should not share
+        # with the runner's own state, so keep the toolchain and every
+        # arduino-cli directory somewhere local to the container.
         ARDUINO_CI_DIR=/tmp/.arduino-ci
         export ARDUINO_DIRECTORIES_USER="${ARDUINO_CI_DIR}/user"
         export ARDUINO_DIRECTORIES_DATA="${ARDUINO_CI_DIR}/data"

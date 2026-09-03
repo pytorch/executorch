@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       docker-image:
-        description: Docker image to use for Linux tests.
+        description: Name of the docker image to use, without registry or tag suffix.
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12

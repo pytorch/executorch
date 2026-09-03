@@ -42,7 +42,7 @@ on:
         type: string
         default: mt-l-x86iavx512-16-128
       docker-image:
-        description: 'Docker image for Linux jobs'
+        description: 'Name of the docker image to use, without registry or tag suffix'
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12
@@ -50,6 +50,7 @@ on:
 jobs:
   docker-image:
     name: Resolve CI docker image
+    if: ${{ inputs.run-linux }}
     uses: ./.github/workflows/_docker-image.yml
 
   test-backend-linux:
