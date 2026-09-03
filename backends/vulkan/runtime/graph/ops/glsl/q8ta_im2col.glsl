@@ -9,6 +9,7 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+#define STREAMING_IM2COL ${STREAMING_IM2COL}
 
 #define PACKED_INT8_OUTPUT_BUFFER
 
@@ -33,6 +34,8 @@ ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 
 layout(push_constant) uniform restrict Block {
   int zp;
+$if STREAMING_IM2COL == 1:
+  int stream_row_offset;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -50,24 +53,45 @@ void main() {
   const int im2col_W4 = div_up_4(im2col_sizes.x);
   const int im2col_H = im2col_sizes.y;
   const int im2col_Z4 = div_up_4(im2col_sizes.z);
-  const int im2col_N = im2col_sizes.w;
+  $if STREAMING_IM2COL == 0:
+    const int im2col_N = im2col_sizes.w;
 
   // im2col block index from linear output buffer index
   const int c4_idx = out_buf_idx % im2col_Z4;
   const int row = out_buf_idx / im2col_Z4;
   const int w4_idx = row % im2col_W4;
   const int hn_idx = row / im2col_W4;
-  const int h_idx = hn_idx % im2col_H;
-  const int n_idx = hn_idx / im2col_H;
+  $if STREAMING_IM2COL == 1:
+    const int local_row_idx = hn_idx;
+    const int h_idx = hn_idx % im2col_H;
+    const int output_H =
+        (input_sizes.y + 2 * conv2d_params.padding.y -
+         conv2d_params.dilation.y * (conv2d_params.kernel_size.y - 1) - 1) /
+            conv2d_params.stride.y +
+        1;
+    const int global_row_idx = stream_row_offset + local_row_idx;
+    const int n_idx = global_row_idx / output_H;
+  $else:
+    const int h_idx = hn_idx % im2col_H;
+    const int n_idx = hn_idx / im2col_H;
 
   // out of bounds check
-  if (w4_idx >= im2col_W4 || h_idx >= im2col_H ||
-      c4_idx >= im2col_Z4 || n_idx >= im2col_N) {
-    return;
-  }
+  $if STREAMING_IM2COL == 1:
+    if (w4_idx >= im2col_W4 || local_row_idx >= im2col_H ||
+        c4_idx >= im2col_Z4 || n_idx >= input_sizes.w) {
+      return;
+    }
+  $else:
+    if (w4_idx >= im2col_W4 || h_idx >= im2col_H ||
+        c4_idx >= im2col_Z4 || n_idx >= im2col_N) {
+      return;
+    }
 
   const int im2col_w = mul_4(w4_idx);
-  const int im2col_h = h_idx;
+  $if STREAMING_IM2COL == 1:
+    const int im2col_h = global_row_idx % output_H;
+  $else:
+    const int im2col_h = h_idx;
   const int im2col_k = mul_4(c4_idx);
 
   const int group_idx = im2col_k / conv2d_params.K_per_group;
@@ -128,10 +152,15 @@ void main() {
   }
 
   // store_packed_int8_output_tile (with TILE_M4=1, TILE_N4=1)
-  const int buffer_idx = n_idx * int(im2col_outp.strides[0][3])
-                         + h_idx * int(im2col_outp.strides[0][1])
-                         + w4_idx * int(im2col_outp.strides[0][0])
-                         + c4_idx;
+  $if STREAMING_IM2COL == 1:
+    const int buffer_idx = h_idx * int(im2col_outp.strides[0][1])
+                           + w4_idx * int(im2col_outp.strides[0][0])
+                           + c4_idx;
+  $else:
+    const int buffer_idx = n_idx * int(im2col_outp.strides[0][3])
+                           + h_idx * int(im2col_outp.strides[0][1])
+                           + w4_idx * int(im2col_outp.strides[0][0])
+                           + c4_idx;
 
   if (w4_idx < im2col_W4 && c4_idx < im2col_Z4) {
     t_packed_int8_output[buffer_idx] = im2col_block;

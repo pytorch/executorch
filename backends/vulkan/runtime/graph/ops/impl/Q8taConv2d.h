@@ -14,9 +14,43 @@
 
 namespace vkcompute {
 
+inline constexpr int64_t kQ8taConv2dIm2ColScratchBudgetBytes =
+    16 * 1024 * 1024;
+
+struct Q8taConv2dStreamPlan final {
+  int64_t aligned_out_width;
+  int64_t rows_per_tile;
+  int64_t num_tiles;
+  int64_t scratch_bytes;
+  bool feasible;
+};
+
+Q8taConv2dStreamPlan make_q8ta_conv2d_stream_plan(
+    int64_t batch,
+    int64_t flattened_kernel_size,
+    int64_t out_height,
+    int64_t out_width,
+    int64_t scratch_budget_bytes);
+
 enum class ActivationType : uint32_t {
   kNone = 0,
   kRelu = 1,
+};
+
+enum class Q8taConv2dPwMode : uint8_t {
+  kStandalone,
+  kIm2Col,
+  kStreamingIm2Col,
+};
+
+enum class Q8taIm2ColMode : uint8_t {
+  kFull,
+  kStreaming,
+};
+
+enum class Q8taConv2dPwKernel : uint8_t {
+  kAuto,
+  kFallback,
 };
 
 ActivationType activation_type_from_string(const std::string& activation);
@@ -124,11 +158,14 @@ void add_q8ta_conv2d_pw_node(
     const uint32_t activation_type,
     const ValueRef packed_int8_output,
     const int32_t groups = 1,
+    const Q8taConv2dPwMode mode = Q8taConv2dPwMode::kStandalone,
+    const Q8taConv2dPwKernel kernel = Q8taConv2dPwKernel::kAuto,
     const ValueRef conv_input = kDummyValueRef,
     const ValueRef kernel_size = kDummyValueRef,
     const ValueRef stride = kDummyValueRef,
     const ValueRef padding = kDummyValueRef,
-    const ValueRef dilation = kDummyValueRef);
+    const ValueRef dilation = kDummyValueRef,
+    const int32_t stream_row_offset = 0);
 
 std::vector<int64_t> calculate_q8ta_im2col_sizes(
     ComputeGraph* graph,
@@ -147,9 +184,18 @@ void add_q8ta_im2col_node(
     const ValueRef groups,
     const ValueRef packed_int8_output,
     const ValueRef packed_int8_im2col,
-    const int32_t zp);
+    const int32_t zp,
+    Q8taIm2ColMode mode,
+    const int32_t stream_row_offset);
 
 void q8ta_conv2d_im2col(ComputeGraph& graph, const std::vector<ValueRef>& args);
+
+void q8ta_conv2d_im2col_with_kernel(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    Q8taConv2dPwKernel kernel);
+
+void q8ta_conv2d_general(ComputeGraph& graph, const std::vector<ValueRef>& args);
 
 // Transposed convolution
 
