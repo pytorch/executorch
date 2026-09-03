@@ -77,7 +77,8 @@ install_pytorch_and_domains() {
   # site-packages, so PyTorch still builds against the same numpy.
   #
   # Keep the list in sync with pytorch/pyproject.toml [build-system].requires,
-  # except for cmake, see below.
+  # except that cmake is deliberately left out, see below, and ninja is kept
+  # because the build needs a generator.
   local build_venv=/tmp/pytorch-build-venv
   rm -rf "${build_venv}"
   conda_run python -m venv --system-site-packages "${build_venv}"
@@ -88,9 +89,14 @@ install_pytorch_and_domains() {
   # site-packages, where MKL and libomp are not, and the build silently comes out
   # with no BLAS and no LAPACK.
   conda_run "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" \
-    "setuptools>=77.0.0,<82" ninja "packaging>=24.2" \
-    "typing-extensions>=4.10.0" pyyaml six
-  conda_run "${build_venv}/bin/python" -m build --wheel --no-isolation
+    ninja "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
+  # Do not scan for C++20 modules. PyTorch compiles at C++20 as of 2.14, which
+  # makes CMake scan every source for module imports, and the scanners are not
+  # in these images: the clang images have no clang-scan-deps, and GCC rejects
+  # the scan invocation outright. Nothing here uses modules, so the scan only
+  # has to be turned off.
+  conda_run env CMAKE_CXX_SCAN_FOR_MODULES=OFF \
+    "${build_venv}/bin/python" -m build --wheel --no-isolation
   rm -rf "${build_venv}"
   pip_install "$(echo dist/*.whl)"
 
