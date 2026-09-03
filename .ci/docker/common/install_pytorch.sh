@@ -90,7 +90,7 @@ install_pytorch_and_domains() {
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.28
+  TORCHVISION_VERSION=release/0.29
   export TORCHVISION_VERSION
 
   install_domains
