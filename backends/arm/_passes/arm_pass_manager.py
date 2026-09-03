@@ -17,6 +17,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     CanonicalizeGatherPass,
     CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
+    CastIntComparisonInputsPass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
     ConstantFoldingPass,
@@ -137,6 +138,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     NormalizeDelegateIOLayoutPass,
     NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
+    NormalizeMaxPool2dInputRankPass,
     NormalizeTransformInputPlaceholdersPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
@@ -584,7 +586,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
-                DecomposeUnfoldToGatherPass(),
+                DecomposeUnfoldToGatherPass(use_slice=self.tosa_spec.is_U55_subset),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
                 CastInt64BuffersToInt32Pass(exported_program),
@@ -603,6 +605,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
+                CastIntComparisonInputsPass(),
                 RewriteLeLtToGeGtPass(),
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
@@ -635,6 +638,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
+                NormalizeMaxPool2dInputRankPass(),
                 DecomposeMaxPool2dPass(),
                 DecomposeLargeStrideMaxPool2dForU55Pass(),
                 SizeAdjustInputPass(),
@@ -698,8 +702,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 FuseEqualPlaceholdersPass(exported_program),
                 NormalizeTransformInputPlaceholdersPass(exported_program),
                 ExirToTosaPass(exported_program),
-                SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
+                ResolveViewCopyInferredDimPass(),
+                SymbolicToTosaShapesPass(),
                 FuseConsecutiveConcatShapesPass(),
                 RemoveNoopPass(),
                 # Fuse duplicates exposed by late rewrites before inserting rescales;

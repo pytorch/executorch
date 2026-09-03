@@ -9,12 +9,6 @@ from collections import defaultdict, OrderedDict
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-# The SDK has to be usable before a model is compiled. See node_visitor.py for why this is
-# here rather than in the package's __init__.
-from executorch.backends.qualcomm import setup_qnn_sdk
-
-setup_qnn_sdk()
-
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 import executorch.exir as exir
 import torch
@@ -58,8 +52,8 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     option_to_flatbuffer,
 )
 from executorch.backends.qualcomm.utils.check_qnn_version import (
+    describe_sdk_build_id,
     get_qnn_lib_name,
-    get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -67,6 +61,10 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANTIZED_IO,
 )
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import (
+    disable_mkldnn_on_amd,
+    setup_qnn_sdk,
+)
 from executorch.exir import ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -245,6 +243,10 @@ def dump_context_from_pte(pte_path) -> List[str]:
 def update_spill_fill_size(
     exported_program: ExportedProgram | List[LoweredBackendModule],
 ):
+    # Reads a context binary through a QnnManager, so the SDK has to be usable first.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     # check if user specifies to use multi_contexts
     # this is a generic approach in case there exists multiple backends
     def get_program_info(program):
@@ -390,6 +392,17 @@ def to_edge_transform_and_lower_to_qnn(
         EdgeProgramManager:
             The manager for the edge program after transformation and lowering.
     """
+    # Both applied at the entry point rather than deeper in the lowering.
+    #
+    # The SDK setup can download one, and on an old glibc the installer re-executes the
+    # interpreter to pick up a staged loader. Doing that partway through would throw away a model
+    # that has already been traced, so it happens before any of that work.
+    #
+    # The AMD guard needs to precede any eager run of the model. The crash it prevents needs a
+    # real convolution to execute, which a trace does not do (it works on fake tensors) but
+    # calibration and a plain forward pass do.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
 
     def ensure_graph_specific_dict(value, graph_names):
         """
@@ -523,6 +536,10 @@ def capture_program(
         DeprecationWarning,
         stacklevel=1,
     )
+    # See to_edge_transform_and_lower_to_qnn for why both happen at the entry point.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
     pass_manager = get_qnn_pass_manager_cls(QnnExecuTorchBackendType.kHtpBackend)()
     ep = pass_manager.transform_for_export_pipeline(ep)
@@ -732,6 +749,12 @@ def skip_annotation(
     from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
     from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
+    # Both before the tracing and calibration below. Calibration runs the model eagerly, which is
+    # what the AMD guard is for, and the installer can re-execute the interpreter, which must not
+    # happen after a model has been traced.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     def prepare_subgm(subgm, subgm_name):
         # prepare current submodule for quantization annotation
         subgm_prepared = prepare_pt2e(subgm, quantizer)
@@ -816,6 +839,10 @@ def from_context_binary(  # noqa: C901
     soc_model: QcomChipset = QcomChipset.SM8650,
     custom_info: Dict = None,
 ):
+    # Reads a context binary through a QnnManager, so the SDK has to be usable first.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     from pathlib import Path
 
     def implement_op(custom_op, op_name, outputs):
@@ -1263,12 +1290,17 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
                 "Please choose the following SOC: "
                 f"{list(get_soc_to_lpai_hw_ver_map().keys())}"
             )
-        elif get_soc_to_lpai_hw_ver_map()[
+        # Before the version check below, so a host with no SDK yet gets one installed and the
+        # check has something real to read. It cannot lift an older SDK past this gate: the
+        # installer fetches a fixed version, so a caller who needs a newer one has to supply it
+        # through QNN_SDK_ROOT.
+        setup_qnn_sdk()
+        if get_soc_to_lpai_hw_ver_map()[
             soc_model.name
         ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
             raise ValueError(
                 f"Target soc_model({soc_model.name}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
-                f"Current QNN SDK version: {get_sdk_build_id()}"
+                f"Current QNN SDK version: {describe_sdk_build_id()}"
             )
 
     qnn_executorch_options.shared_buffer = shared_buffer
@@ -1290,6 +1322,7 @@ def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
         "SA8797": HtpArch.V81,
+        "SC8380XP": HtpArch.V73,
         "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
@@ -1323,6 +1356,7 @@ def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
         "SA8797": QcomChipset.SA8797,
+        "SC8380XP": QcomChipset.SC8380XP,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,

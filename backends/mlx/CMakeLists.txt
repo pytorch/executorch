@@ -167,8 +167,9 @@ endif()
 # with add_subdirectory would drop its whole project into ExecuTorch's
 # target/option namespace, which collides with shared deps MLX fetches (e.g.
 # nlohmann_json) and leaks MLX's MLX_BUILD_* options into our cache. The
-# isolated scope runs MLX's FetchContent in its own namespace, so no collision
-# and no submodule patching are needed.
+# isolated scope runs MLX's FetchContent in its own namespace, so dependency
+# collisions do not require patching. The platform packaging patches below are
+# still applied before the external configure step.
 include(ExternalProject)
 
 set(_mlx_binary_dir ${CMAKE_CURRENT_BINARY_DIR}/mlx)
@@ -185,11 +186,9 @@ message(
 # mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_remove_addrspace_compat.patch
 )
 # In a framework build the delegate is static, so MLX cannot find a colocated
 # metallib and instead loads one from a SwiftPM resource bundle. SWIFTPM_BUNDLE
@@ -266,12 +265,11 @@ ExternalProject_Add(
   CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${_mlx_build_type}"
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
              ${_mlx_cxx_flags_arg}
-             # The preset's DEPLOYMENT_TARGET carries the correct per-slice
-             # minimum (iOS 17, macOS 14); the ios.toolchain leaves
-             # CMAKE_OSX_DEPLOYMENT_TARGET at 12.0 on the iOS slices and only
-             # syncs it for MAC. The shader-flag patch reads
-             # CMAKE_OSX_DEPLOYMENT_TARGET, so feed the preset value in as that,
-             # or the iOS metallib is stamped -mios-version-min=12.0.
+             # Feed the preset's per-slice DEPLOYMENT_TARGET in as
+             # CMAKE_OSX_DEPLOYMENT_TARGET: the ios.toolchain does not reliably
+             # carry it to this sub-build, and the shader-flag patch reads
+             # CMAKE_OSX_DEPLOYMENT_TARGET to stamp the metallib's minimum OS
+             # version, so without this the iOS metallib gets the wrong floor.
              -DCMAKE_OSX_DEPLOYMENT_TARGET=${_mlx_osx_deployment_target}
              -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
              -DPLATFORM=${PLATFORM}
@@ -453,6 +451,14 @@ target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
 # Core tensor headers carry pre-existing narrowing conversions that trip Xcode's
 # -Wshorten-64-to-32 -Werror; suppress it here as XNNPACK and abseil already do.
 target_compile_options(mlxdelegate PRIVATE -Wno-shorten-64-to-32)
+# MLX headers use C++20 defaulted comparison operators while we build C++17.
+# They normally arrive via -isystem from the imported mlx target, which
+# suppresses the warning. But this backend also installs them for downstream
+# consumers, and every -I is searched before any -isystem, so once an install
+# has run they resolve out of ${CMAKE_INSTALL_PREFIX}/include instead and
+# -Werror turns fatal. That is why an incremental rebuild used to need a
+# cmake-out wipe: a clean tree has nothing installed yet.
+target_compile_options(mlxdelegate PRIVATE -Wno-c++20-extensions)
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(mlxdelegate PRIVATE ${_mlx_sanitizer_link_options})
 endif()
