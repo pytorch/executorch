@@ -39,9 +39,16 @@ class MetalBackend(AotiBackend, BackendDetails):
             "at::_ops::_scaled_dot_product_attention_math_for_mps::call": None,
             "at::_ops::_scaled_dot_product_attention_math_for_mps_v2::call": None,
             "torchao::_linear_fp_act_4bit_weight": None,
+            # Each custom op appears twice: once as registered, once under the shim
+            # name Inductor derives for it. Which spelling reaches this list
+            # depends on the path Inductor takes, and that is not ours to control,
+            # so accept both.
+            "aoti_torch_mps__linear_fp_act_4bit_weight": None,
             "at::_ops::topk::call": None,
             "metal::gather_qmv": None,
+            "aoti_torch_mps_gather_qmv": None,
             "metal::gated_delta_rule": None,
+            "aoti_torch_mps_gated_delta_rule": None,
         }
 
     @classmethod
