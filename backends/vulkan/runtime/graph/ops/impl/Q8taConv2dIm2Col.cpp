@@ -318,6 +318,7 @@ void q8ta_conv2d_im2col(
 
   add_q8ta_conv2d_pw_node(
       graph,
+      /*use_unsigned_dot=*/false,
       packed_int8_im2col,
       input_scale,
       input_zp,
