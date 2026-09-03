@@ -712,6 +712,7 @@ class ComputeGraph final {
 
  private:
   void check_no_active_value_ptrs();
+  bool was_value_list_updated(const ValueRef idx) const noexcept;
 
  public:
   /*
@@ -1174,7 +1175,22 @@ class ComputeGraph final {
 
   // Check if a specific ValueRef (or ValueList) was updated, with recursive
   // handling
-  bool was_value_updated(const ValueRef idx) const noexcept;
+  inline bool was_value_updated(const ValueRef idx) const noexcept {
+    if (idx < 0) {
+      return false;
+    }
+
+    const size_t value_idx = static_cast<size_t>(idx);
+    if (value_idx >= values_.size()) {
+      return false;
+    }
+    if (value_idx < value_update_generations_.size() &&
+        value_update_generations_[value_idx] == current_update_generation_) {
+      return true;
+    }
+
+    return values_[value_idx].isValueList() && was_value_list_updated(idx);
+  }
 
   // Set the flag to indicate that re-encoding is required
   inline void set_requires_reencode() noexcept {

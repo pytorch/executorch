@@ -242,26 +242,13 @@ utils::StorageType ComputeGraph::suggested_storage_type() {
   return utils::kTexture3D;
 }
 
-bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
-  if (!is_valid_value_idx(idx)) {
-    return false;
-  }
-
-  const size_t value_idx = static_cast<size_t>(idx);
-  if (value_idx < value_update_generations_.size() &&
-      value_update_generations_[value_idx] == current_update_generation_) {
-    return true;
-  }
-
-  if (val_is_value_list(idx)) {
-    const auto& value_list = values_.at(idx).toConstValueList();
-    for (const auto& nested_idx : value_list) {
-      if (was_value_updated(nested_idx)) {
-        return true;
-      }
+bool ComputeGraph::was_value_list_updated(const ValueRef idx) const noexcept {
+  const auto& value_list = values_[static_cast<size_t>(idx)].toConstValueList();
+  for (const auto nested_idx : value_list) {
+    if (was_value_updated(nested_idx)) {
+      return true;
     }
   }
-
   return false;
 }
 
