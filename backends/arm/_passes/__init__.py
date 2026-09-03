@@ -170,6 +170,9 @@ from .normalize_index_put_bool_index_tensor_pass import (  # noqa
 from .normalize_index_put_none_indices_pass import (  # noqa
     NormalizeIndexPutNoneIndicesPass,
 )
+from .normalize_max_pool2d_input_rank_pass import (  # noqa
+    NormalizeMaxPool2dInputRankPass,
+)
 from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
 from .propagate_view_copy_permute_pass import (  # noqa
