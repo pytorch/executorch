@@ -39,6 +39,35 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #include "dispatch.glslh"
 
+int load_packed_input(
+    const int x,
+    const int y,
+    const int z4,
+    const int n,
+    const int input_W,
+    const int input_H,
+    const int input_Z4,
+    const int zp_packed) {
+  if (x < 0 || x >= input_W || y < 0 || y >= input_H || z4 < 0 ||
+      z4 >= input_Z4) {
+    return zp_packed;
+  }
+
+  const int x4 = div_4(x);
+  const int x_mod = mod_4(x);
+  if (get_outer_packed_dim_block_size(inp_layout) == 1) {
+    const int scalar_idx = n * int(inp.strides[0][3])
+        + y * int(inp.strides[0][1])
+        + x * int(inp.strides[0][0]) + z4 * int(inp.strides[0][2]);
+    return t_packed_int8_input[scalar_idx];
+  }
+
+  const int scalar_idx = mul_4(
+      n * int(inp.strides[0][3]) + y * int(inp.strides[0][1]) +
+      x4 * int(inp.strides[0][0]) + z4) + x_mod;
+  return t_packed_int8_input[scalar_idx];
+}
+
 void main() {
   const int out_buf_idx = int(linear_idx_from_gid());
 
@@ -96,36 +125,19 @@ void main() {
   const int zp_packed = pack_into_int32(ivec4(zp));
   const int z4 = div_4(input_z);
 
-  // Check if y and z are in bounds (constant for all 4 width elements)
-  const bool y_z_in_bounds =
-      (input_y >= 0 && input_y < input_H && z4 >= 0 && z4 < input_Z4);
+  const int stride_x = conv2d_params.stride.x;
+#define LOAD_IM2COL_INPUT(X)                                                  \
+  load_packed_input(                                                         \
+      (X), input_y, z4, n_idx, input_W, input_H, input_Z4, zp_packed)
 
-  // Load 4 elements from input, one for each output width position.
-  // Each loaded int contains 4 packed int8 channel values.
-  ivec4 im2col_block;
-  for (int i = 0; i < 4; i++) {
-    const int x = input_x_base + i * conv2d_params.stride.x;
-    if (!y_z_in_bounds || x < 0 || x >= input_W) {
-      im2col_block[i] = zp_packed;
-    } else {
-      const int x4 = div_4(x);
-      const int x_mod = mod_4(x);
-      int scalar_idx;
-      if (get_outer_packed_dim_block_size(inp_layout) == 1) {
-        scalar_idx = n_idx * int(inp.strides[0][3])
-                     + input_y * int(inp.strides[0][1])
-                     + x * int(inp.strides[0][0])
-                     + z4 * int(inp.strides[0][2]);
-      } else {
-        scalar_idx = mul_4(
-            n_idx * int(inp.strides[0][3])
-            + input_y * int(inp.strides[0][1])
-            + x4 * int(inp.strides[0][0])
-            + z4) + x_mod;
-      }
-      im2col_block[i] = t_packed_int8_input[scalar_idx];
-    }
-  }
+  // Keep writes static; some mobile drivers lose lanes on dynamic vector stores.
+  const ivec4 im2col_block = ivec4(
+      LOAD_IM2COL_INPUT(input_x_base),
+      LOAD_IM2COL_INPUT(input_x_base + stride_x),
+      LOAD_IM2COL_INPUT(input_x_base + 2 * stride_x),
+      LOAD_IM2COL_INPUT(input_x_base + 3 * stride_x));
+
+#undef LOAD_IM2COL_INPUT
 
   // store_packed_int8_output_tile (with TILE_M4=1, TILE_N4=1)
   const int buffer_idx = n_idx * int(im2col_outp.strides[0][3])
