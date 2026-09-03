@@ -716,3 +716,32 @@ def define_common_targets():
             ":enforce_contiguous_dim_order",
         ],
     )
+
+    runtime.python_library(
+        name = "replace_channels_last_input_clones",
+        srcs = ["replace_channels_last_input_clones.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_replace_channels_last_input_clones",
+        srcs = [
+            "test/test_replace_channels_last_input_clones.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":channels_last_ops",
+            ":enforce_contiguous_dim_order",
+            ":replace_channels_last_input_clones",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
