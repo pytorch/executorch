@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <executorch/backends/native/runtime/deserialize/ByteSpan.h>
+#include <executorch/backends/native/runtime/deserialize/OwnedBytes.h>
 #include <executorch/backends/native/runtime/deserialize/SafeTensorsReader.h>
 #include <executorch/backends/native/runtime/deserialize/ZipReader.h>
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
@@ -39,12 +40,12 @@ struct Constant {
 // references.
 //
 // Owns the package bytes; the zip and safetensors readers, and every span
-// handed out, alias into that one buffer. std::vector's move preserves the
-// buffer address, so those views stay valid across a move of the Package. Copy
+// handed out, alias into that one buffer. OwnedBytes keeps its payload address
+// across a move, so those views stay valid across a move of the Package. Copy
 // is deleted: a package is model-sized.
 class Package {
  private:
-  std::vector<uint8_t> bytes_;
+  OwnedBytes bytes_;
   ZipReader zip_;
   ByteSpan program_;
   // Absent when the program references no constants, in which case the package
@@ -61,15 +62,20 @@ class Package {
   Package(const Package&) = delete;
   Package& operator=(const Package&) = delete;
 
-  // Parse a .ptn image. Takes ownership rather than copying, so a
-  // hundred-megabyte package is resident once. Throws std::runtime_error if the
-  // zip, the safetensors index, or the alias map is malformed, or if the
-  // required program member is missing.
-  static Package load(std::vector<uint8_t> bytes);
+  // Open and parse the .ptn at `path`. Maps it by default, so the program and
+  // every constant span points into the mapping and the weights are
+  // demand-paged rather than heap-resident; pass use_mmap=false to read it into
+  // the heap. Throws std::runtime_error if the file cannot be acquired or is
+  // not a well-formed package.
+  static Package load(const std::string& path, bool use_mmap = true);
 
-  // Read and parse a .ptn from disk. Throws std::runtime_error if the file
-  // cannot be read.
-  static Package load_file(const std::string& path);
+  // Parse a .ptn image already in hand. Takes ownership rather than copying, so
+  // a hundred-megabyte package is resident once. For callers that must inspect
+  // the bytes before deciding this is a package at all; everyone else should
+  // use the path overload. Throws std::runtime_error if the zip, the
+  // safetensors index, or the alias map is malformed, or if the required
+  // program member is missing.
+  static Package load(OwnedBytes bytes);
 
   // The serialized native Program flatbuffer (the program.ptg member).
   ByteSpan program_bytes() const {
@@ -87,6 +93,11 @@ class Package {
   // Duplicate key -> owner key.
   const std::unordered_map<std::string, std::string>& aliases() const {
     return aliases_;
+  }
+
+  // True when the package is backed by a file mapping rather than the heap.
+  bool is_mapped() const {
+    return bytes_.is_mapped();
   }
 
   // Constant for `key`, resolving an alias to its owner. nullopt when the

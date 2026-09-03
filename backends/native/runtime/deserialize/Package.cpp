@@ -7,7 +7,6 @@
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 
 #include <algorithm>
-#include <fstream>
 #include <stdexcept>
 #include <string_view>
 
@@ -66,10 +65,10 @@ bool Package::looks_like_package(ByteSpan bytes) {
   return bytes.size() >= 2 && bytes[0] == 'P' && bytes[1] == 'K';
 }
 
-Package Package::load(std::vector<uint8_t> bytes) {
+Package Package::load(OwnedBytes bytes) {
   Package out;
   out.bytes_ = std::move(bytes);
-  const ByteSpan image{out.bytes_.data(), out.bytes_.size()};
+  const ByteSpan image = out.bytes_.span();
 
   out.zip_ = ZipReader::open(image);
 
@@ -100,21 +99,8 @@ Package Package::load(std::vector<uint8_t> bytes) {
   return out;
 }
 
-Package Package::load_file(const std::string& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    throw std::runtime_error("package: cannot open " + path);
-  }
-  const std::streamsize size = file.tellg();
-  if (size < 0) {
-    throw std::runtime_error("package: cannot size " + path);
-  }
-  file.seekg(0, std::ios::beg);
-  std::vector<uint8_t> bytes(static_cast<size_t>(size));
-  if (size > 0 && !file.read(reinterpret_cast<char*>(bytes.data()), size)) {
-    throw std::runtime_error("package: cannot read " + path);
-  }
-  return load(std::move(bytes));
+Package Package::load(const std::string& path, bool use_mmap) {
+  return load(OwnedBytes::from_file(path, use_mmap));
 }
 
 std::optional<Constant> Package::constant(const std::string& key) const {
