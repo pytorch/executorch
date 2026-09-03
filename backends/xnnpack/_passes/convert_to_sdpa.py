@@ -1,19 +1,22 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from copy import deepcopy
 from typing import Optional
 
 import torch
 from executorch.backends.transforms import get_shape
-
+from executorch.backends.xnnpack._passes.remove_noop_expand_copy_pass import (
+    RemoveNoopExpandCopyPass,
+)
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.partition.graphs import sdpa
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
 
@@ -24,31 +27,31 @@ logger.setLevel(logging.WARNING)
 class ConvertToSDPAPass(XNNPACKPass):
     def get_scale(self, match: InternalMatch) -> Optional[float]:
         """
-        Returns the scale of the SDPA op.
+        Return the SDPA scale recovered from the matched pre-QK^T multiplications.
 
-        Scale: Optional[float] doesn't change the graph pattern.
-        The default value can be calulated however we need to extract
-        it for lowering when it is the user supplied value anyway.
+        The decomposition applies the square root of the attention scale before
+        QK^T, so the extracted multiplier is squared to recover the original value.
         """
         for node in match.nodes_map.values():
             if (
-                node.op == "call_function"
-                and node.target == exir_ops.edge.aten.mul.Scalar
+                node.op != "call_function"
+                or node.target != exir_ops.edge.aten.mul.Scalar
             ):
-                scale = node.args[1]
+                continue
 
-                dtype = torch.float
-                mul_val = node.meta.get("val", None)
-                if mul_val is not None:
-                    dtype = mul_val.dtype
+            scale = node.args[1]
 
-                if isinstance(scale, float):
-                    # Convert scale value to fp16 (reducing precision)
-                    scale = torch.tensor(scale, dtype=dtype).item()
+            dtype = torch.float
+            mul_val = node.meta.get("val", None)
+            if mul_val is not None:
+                dtype = mul_val.dtype
 
-                    # since scale we extracted this before the QK^T.
-                    return scale**2
-                break
+            if isinstance(scale, float):
+                # Convert scale value to fp16 (reducing precision)
+                scale = torch.tensor(scale, dtype=dtype).item()
+
+                # since scale we extracted this before the QK^T.
+                return scale**2
         return None
 
     def assert_2d_mask(self, match: InternalMatch) -> None:
@@ -99,11 +102,16 @@ class ConvertToSDPAPass(XNNPACKPass):
         logger.debug("ConvertToSDPA Begin: ")
         logger.debug(graph_module.print_readable(print_output=False))
 
-        for pattern in sdpa.get_graphs():
-            sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
-            matches = list(sm.match(graph_module.graph))
-            for partition_to_replace in matches:
-                self.create_sdpa(graph_module, partition_to_replace)
+        for scalar_pattern in sdpa.get_graphs():
+            normalized_pattern = RemoveNoopExpandCopyPass()(
+                deepcopy(scalar_pattern)
+            ).graph_module
+
+            for pattern in (scalar_pattern, normalized_pattern):
+                sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
+                matches = list(sm.match(graph_module.graph))
+                for partition_to_replace in matches:
+                    self.create_sdpa(graph_module, partition_to_replace)
 
         graph_module.recompile()
         graph_module = super().call(graph_module).graph_module
