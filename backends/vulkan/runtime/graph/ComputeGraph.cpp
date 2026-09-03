@@ -11,6 +11,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <algorithm>
+
 #include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -245,12 +247,12 @@ bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
     return false;
   }
 
-  // Check if this ValueRef itself was updated
-  if (updated_values_.find(idx) != updated_values_.end()) {
+  const size_t value_idx = static_cast<size_t>(idx);
+  if (value_idx < value_update_generations_.size() &&
+      value_update_generations_[value_idx] == current_update_generation_) {
     return true;
   }
 
-  // If this is a ValueList, check each ValueRef in the list
   if (val_is_value_list(idx)) {
     const auto& value_list = values_.at(idx).toConstValueList();
     for (const auto& nested_idx : value_list) {
@@ -261,6 +263,26 @@ bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
   }
 
   return false;
+}
+
+void ComputeGraph::mark_value_updated(const ValueRef idx) {
+  if (!is_valid_value_idx(idx)) {
+    return;
+  }
+  if (value_update_generations_.size() < values_.size()) {
+    value_update_generations_.resize(values_.size());
+  }
+  value_update_generations_[static_cast<size_t>(idx)] =
+      current_update_generation_;
+}
+
+void ComputeGraph::advance_update_generation() noexcept {
+  current_update_generation_++;
+  if (current_update_generation_ == 0) {
+    std::fill(
+        value_update_generations_.begin(), value_update_generations_.end(), 0);
+    current_update_generation_ = 1;
+  }
 }
 
 utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
@@ -775,8 +797,7 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
   int32_t cur_val = read_symint(idx);
   if (cur_val != val) {
     get_symint(idx)->set(val);
-    // Track that this ValueRef was updated
-    updated_values_.insert(idx);
+    mark_value_updated(idx);
   }
 }
 
@@ -1047,6 +1068,8 @@ void ComputeGraph::maybe_cast_and_copy_from_staging(
 }
 
 void ComputeGraph::prepare() {
+  value_update_generations_.resize(values_.size());
+
 #define MERGE_FIELD(field)                    \
   static_cast<uint32_t>(std::ceil(            \
       std::max(                               \
@@ -1258,8 +1281,7 @@ void ComputeGraph::execute() {
 
   execute_count_++;
 
-  // Clear the set of updated values at the end of inference
-  updated_values_.clear();
+  advance_update_generation();
 
   // Reset the re-encoding flag at the end of inference
   requires_reencode_ = false;
@@ -1281,7 +1303,7 @@ void ComputeGraph::resize_input(
     const std::vector<int64_t>& new_sizes) {
   IOValueRef io_val = inputs_.at(idx);
   virtual_resize(io_val.value, new_sizes);
-  updated_values_.insert(io_val.staging);
+  mark_value_updated(io_val.staging);
 }
 
 void ComputeGraph::virtual_resize(
@@ -1290,8 +1312,7 @@ void ComputeGraph::virtual_resize(
   std::vector<int64_t> cur_sizes = sizes_of(idx);
   if (cur_sizes != new_sizes) {
     get_tensor(idx)->virtual_resize(new_sizes);
-    // Track that this ValueRef was updated
-    updated_values_.insert(idx);
+    mark_value_updated(idx);
   }
 }
 
