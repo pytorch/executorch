@@ -2475,6 +2475,31 @@ class TestPasses(unittest.TestCase):
         # 1 constant: a (= self.w @ self.cst)
         self.assertEqual(1, len(pass_result.constants))
 
+    def test_constant_prop_pass_skips_nondeterministic_ops(self) -> None:
+        """
+        Ops that draw from the RNG take no tensor inputs, so they look constant
+        to the pass. They have to stay in the graph: folding one would freeze a
+        single random draw into the program.
+        """
+
+        class RandomAdd(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + torch.rand(4)
+
+        x = torch.zeros(4)
+        edge = to_edge(export(RandomAdd(), (x,), strict=True))
+        new_ep = constant_prop_pass(edge.exported_program())
+
+        rand_nodes = [
+            node
+            for node in new_ep.graph.nodes
+            if node.target == exir_ops.edge.aten.rand.default
+        ]
+        self.assertEqual(len(rand_nodes), 1)
+        self.assertEqual(len(new_ep.constants), 0)
+        module = new_ep.module()
+        self.assertFalse(torch.equal(module(x), module(x)))
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides

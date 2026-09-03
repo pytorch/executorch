@@ -20,6 +20,10 @@ All requirements can be downloaded using `examples/arm/setup.sh --enable-mlsdk-d
 `source examples/arm/arm-scratch/setup_path.sh`
 ```
 
+```{note}
+Python 3.12 is the reference and recommended minimum for the ML SDK VGF flow. ExecuTorch itself supports a broader Python range, so VGF users on older interpreters receive a preflight warning rather than a package-level installation failure.
+```
+
 For the AOT flow, compilation of a model to `.pte` format using the VGF backend, the requirements are:
 - [TOSA Serialization Library](https://gitlab.arm.com/tosa/tosa-tools) for serializing the Exir IR graph into TOSA IR.
 - [ML SDK Model Converter](https://github.com/arm/ai-ml-sdk-model-converter) for converting TOSA flatbuffers to VGF files.
