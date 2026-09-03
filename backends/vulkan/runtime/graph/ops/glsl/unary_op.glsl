@@ -23,22 +23,34 @@ ${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
+
+$if DYNAMIC_PARAMS:
+  ${layout_declare_ubo(B, "uint", "minimum")}
+  ${layout_declare_ubo(B, "uint", "maximum")}
 
 layout(push_constant) uniform restrict Block {
 $if STORAGE == "buffer":
   int numel;
 $else:
   ivec4 out_limits;
-float minimum;
-float maximum;
+$if DYNAMIC_PARAMS:
+  ivec2 bounds_are_int;
+$else:
+  float minimum;
+  float maximum;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 #include "dispatch.glslh"
 #include "activations.h"
+
+$if DYNAMIC_PARAMS:
+  float decode_bound(const uint value, const int is_int) {
+    return is_int != 0 ? float(int(value)) : uintBitsToFloat(value);
+  }
 
 #ifdef USING_BUFFER
 
@@ -48,7 +60,13 @@ void main() {
     return;
   }
 
-  float in_val = float(t_in[i]);
+$if DYNAMIC_PARAMS:
+  const T in_val = T(t_in[i]);
+  const T minimum_val = T(decode_bound(minimum, bounds_are_int.x));
+  const T maximum_val = T(decode_bound(maximum, bounds_are_int.y));
+  t_out[i] = T(op(in_val, minimum_val, maximum_val));
+$else:
+  const float in_val = float(t_in[i]);
   t_out[i] = T(op(in_val, minimum, maximum));
 }
 
@@ -62,6 +80,11 @@ void main() {
   }
 
   VEC4_T in_texel = texelFetch(t_in, pos, 0);
+$if DYNAMIC_PARAMS:
+  const VEC4_T minimum_val = VEC4_T(decode_bound(minimum, bounds_are_int.x));
+  const VEC4_T maximum_val = VEC4_T(decode_bound(maximum, bounds_are_int.y));
+  imageStore(t_out, pos, op(in_texel, minimum_val, maximum_val));
+$else:
   imageStore(t_out, pos, VEC4_T(op(in_texel, minimum, maximum)));
 }
 

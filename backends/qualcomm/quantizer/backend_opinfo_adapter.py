@@ -96,7 +96,7 @@ def _warn_once_about_the_fallback() -> None:
         return
     _WARNED_ABOUT_FALLBACK = True
     logging.warning(
-        "The backend_opinfo module couldn't be imported, so the abstract implementation will be used instead. This might be because $QNN_SDK_ROOT/lib/python isn't included in your PYTHONPATH, or the `BackendOpInfo` API isn't available in your QNN SDK version. Note that the `BackendOpInfo` API is supported starting from QNN SDK 2.41 and above."
+        "The backend_opinfo module couldn't be imported, so the abstract implementation will be used instead. This might be because the QNN SDK could not be set up, because $QNN_SDK_ROOT/lib/python isn't included in your PYTHONPATH, or because the `BackendOpInfo` API isn't available in your QNN SDK version. Note that the `BackendOpInfo` API is supported starting from QNN SDK 2.41 and above."
     )
 
 

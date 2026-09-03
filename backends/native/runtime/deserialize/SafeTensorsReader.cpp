@@ -10,6 +10,7 @@
 #include <array>
 #include <bit>
 #include <cstring>
+#include <numeric>
 #include <stdexcept>
 #include <string_view>
 
@@ -201,11 +202,13 @@ ByteSpan SafeTensorsReader::bytes(const TensorEntry& entry) const {
 }
 
 size_t SafeTensorsReader::total_bytes() const {
-  size_t total = 0;
-  for (const auto& entry : entries_) {
-    total += entry.second.nbytes;
-  }
-  return total;
+  return std::accumulate(
+      entries_.begin(),
+      entries_.end(),
+      size_t{0},
+      [](size_t total, const auto& entry) {
+        return total + entry.second.nbytes;
+      });
 }
 
 } // namespace ptn

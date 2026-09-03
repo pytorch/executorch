@@ -304,6 +304,7 @@ class Parser {
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 JsonValue json_parse(std::string_view text) {
   Parser parser(text);
   return parser.parse_document();

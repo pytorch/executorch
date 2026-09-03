@@ -17,8 +17,8 @@
  */
 
 #include <executorch/backends/samsung/runtime/enn_executor.h>
+#include <executorch/backends/samsung/runtime/extension/exynos_file_data_loader.h>
 #include <executorch/backends/samsung/runtime/profile.hpp>
-#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/executor/method.h>
@@ -45,8 +45,8 @@ DEFINE_bool(dump_statistics, false, "Dump inference statistics.");
 DEFINE_string(output_path, "", "Output Execution results to target directory.");
 
 using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
 using namespace torch::executor::enn;
+using executorch::backends::enn::ExynosFileDataLoader;
 
 std::vector<std::string> split(std::string str, char delimiter = ' ') {
   std::vector<std::string> result;
@@ -118,27 +118,11 @@ void saveOutput(const exec_aten::Tensor& tensor, int32_t output_index) {
   fout.close();
 }
 
-struct EnnApiDeinit {
-  void operator()(EnnApi* ptr) const {
-    if (ptr == nullptr) {
-      return;
-    }
-
-    auto ret = ptr->EnnDeinitialize();
-    ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn Deinitialize failed.");
-  }
-};
-
-std::unique_ptr<EnnApi, EnnApiDeinit> exynos_npu_init() {
-  EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
-  auto ret = enn_api_inst->EnnInitialize();
-  ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn initialize failed.");
-  return std::unique_ptr<EnnApi, EnnApiDeinit>(enn_api_inst);
-}
-
 int main(int argc, char** argv) {
   auto before_init = std::chrono::high_resolution_clock::now();
-  std::unique_ptr<EnnApi, EnnApiDeinit> instance = exynos_npu_init();
+  // The EnnApi singleton initializes the NPU on construction and deinitializes
+  // it on process teardown.
+  EnnApi::getEnnApiInstance();
   auto after_init = std::chrono::high_resolution_clock::now();
   double interval_init = std::chrono::duration_cast<std::chrono::microseconds>(
                              after_init - before_init)
@@ -159,10 +143,10 @@ int main(int argc, char** argv) {
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::from(model_path);
+  Result<ExynosFileDataLoader> loader = ExynosFileDataLoader::from(model_path);
   ET_CHECK_MSG(
       loader.ok(),
-      "FileDataLoader::from() failed: 0x%" PRIx32,
+      "ExynosFileDataLoader::from() failed: 0x%" PRIx32,
       (uint32_t)loader.error());
 
   // Parse the program file. This is immutable, and can also be reused between
