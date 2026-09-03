@@ -452,6 +452,14 @@ target_compile_options(mlxdelegate PRIVATE ${_common_compile_options})
 # Core tensor headers carry pre-existing narrowing conversions that trip Xcode's
 # -Wshorten-64-to-32 -Werror; suppress it here as XNNPACK and abseil already do.
 target_compile_options(mlxdelegate PRIVATE -Wno-shorten-64-to-32)
+# MLX headers use C++20 defaulted comparison operators while we build C++17.
+# They normally arrive via -isystem from the imported mlx target, which
+# suppresses the warning. But this backend also installs them for downstream
+# consumers, and every -I is searched before any -isystem, so once an install
+# has run they resolve out of ${CMAKE_INSTALL_PREFIX}/include instead and
+# -Werror turns fatal. That is why an incremental rebuild used to need a
+# cmake-out wipe: a clean tree has nothing installed yet.
+target_compile_options(mlxdelegate PRIVATE -Wno-c++20-extensions)
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_link_options(mlxdelegate PRIVATE ${_mlx_sanitizer_link_options})
 endif()
