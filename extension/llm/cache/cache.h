@@ -24,11 +24,6 @@ namespace extension {
 namespace llm {
 namespace cache {
 
-class SequenceControl;
-class SequencePlanner;
-class BatchControl;
-class CellStepper;
-
 // A face is named by a string it declares itself, so a backend can add one
 // without this header learning about it. Compared by pointer first, which hits
 // whenever both sides share a translation unit or the linker merged the
