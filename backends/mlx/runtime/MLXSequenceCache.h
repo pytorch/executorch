@@ -55,7 +55,8 @@ inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
 // holds and whether a step's runs wrap.
 class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
  public:
-  // The neutral faces come from cache::SequenceCache; this adds the backend one.
+  // The neutral faces come from cache::SequenceCache; this adds the backend
+  // one.
   void* face(cache::FaceId id) override {
     if (void* p = cache::SequenceCache::face(id)) {
       return p;

@@ -311,7 +311,9 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       auto built = cache::CacheFactory::global().build(
-          ::executorch::backends::mlx::kMLXBackendId, cache::kind::kSingle, cfg);
+          ::executorch::backends::mlx::kMLXBackendId,
+          cache::kind::kSingle,
+          cfg);
       if (!built.ok()) {
         std::cerr << "Failed to build KV cache: "
                   << static_cast<int>(built.error()) << std::endl;
@@ -330,8 +332,8 @@ int main(int argc, char* argv[]) {
       ::executorch::runtime::BackendOptions<1> mlx_opts;
       ::executorch::runtime::LoadBackendOptionsMap options_map;
       if (mlx_opts.set_option(
-              ::executorch::backends::mlx::kCacheKeyKey,
-              cache_lease->key()) != Error::Ok ||
+              ::executorch::backends::mlx::kCacheKeyKey, cache_lease->key()) !=
+              Error::Ok ||
           options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
               Error::Ok) {

@@ -23,13 +23,13 @@
 
 using executorch::extension::llm::cache::BatchControl;
 using executorch::extension::llm::cache::Cache;
-using executorch::extension::llm::cache::CacheFactory;
 using executorch::extension::llm::cache::CacheConfig;
+using executorch::extension::llm::cache::CacheFactory;
 using executorch::extension::llm::cache::CacheRegistry;
-using executorch::extension::llm::cache::InstallGuard;
 using executorch::extension::llm::cache::CellCache;
 using executorch::extension::llm::cache::CellStep;
 using executorch::extension::llm::cache::CellStepper;
+using executorch::extension::llm::cache::InstallGuard;
 using executorch::extension::llm::cache::SequenceControl;
 using executorch::extension::llm::cache::SequencePlanner;
 namespace kind = executorch::extension::llm::cache::kind;
@@ -183,32 +183,19 @@ TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   EXPECT_EQ(plan->read[0].len, 1);
 }
 
-TEST_F(CacheTest, RegistryInstallGetErase) {
-  auto& reg = CacheRegistry::global();
-  const std::string key = new_cache_key();
-  EXPECT_EQ(reg.get(key), nullptr);
-
-  std::shared_ptr<Cache> cache =
-      std::make_shared<SequenceCache>(CacheConfig{16, 1, {flat_layer()}});
-  reg.install(key, cache);
-  EXPECT_EQ(reg.get(key), cache);
-  EXPECT_TRUE(reg.get(key)->as<SequenceControl>()->can_extend(16));
-
-  reg.erase(key);
-  EXPECT_EQ(reg.get(key), nullptr);
-}
-
 TEST_F(CacheTest, UniqueKeysDoNotCollide) {
   EXPECT_NE(new_cache_key(), new_cache_key());
 }
 
 TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
-  auto& reg = CacheFactory::global();
+  // Its own factory: a builder registered into the global one would
+  // outlive this test and be visible to every case after it.
+  CacheFactory reg;
   reg.register_builder(
       "TestBackend", kind::kSingle, [](const CacheConfig& cfg) {
-    return std::static_pointer_cast<Cache>(
-        std::make_shared<SequenceCache>(cfg));
-  });
+        return std::static_pointer_cast<Cache>(
+            std::make_shared<SequenceCache>(cfg));
+      });
 
   CacheConfig cfg{32, 1, {flat_layer()}};
   auto cache = reg.build("TestBackend", kind::kSingle, cfg);
@@ -232,11 +219,15 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
 }
 
 TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
-  auto cache = std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
+  auto cache =
+      std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
   std::string key;
   {
     InstallGuard guard(cache);
     key = guard.key();
+    // Publishing is the guard's alone -- CacheRegistry::install is private --
+    // so an entry cannot outlive its owner or be clobbered by another caller.
+    EXPECT_NE(CacheRegistry::global().get(key), nullptr);
     // The published entry is the same object the caller still holds.
     EXPECT_EQ(CacheRegistry::global().get(key).get(), cache.get());
     EXPECT_TRUE(cache->as<SequenceControl>()->can_extend(4));

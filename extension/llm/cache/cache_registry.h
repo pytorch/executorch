@@ -42,12 +42,18 @@ class CacheRegistry {
  public:
   static CacheRegistry& global();
 
-  void install(const std::string& key, std::shared_ptr<Cache> cache);
+  // The delegate's half of the rendezvous: resolve a key it was handed as a
+  // backend option. Null if no cache is published under it.
   std::shared_ptr<Cache> get(const std::string& key) const;
-  void erase(const std::string& key);
 
  private:
   CacheRegistry() = default;
+
+  // Only InstallGuard may publish, so an entry cannot outlive its owner, two
+  // callers cannot collide on a key, and no erase can go unpaired.
+  friend class InstallGuard;
+  void install(const std::string& key, std::shared_ptr<Cache> cache);
+  void erase(const std::string& key);
 
   mutable std::mutex mu_;
   std::unordered_map<std::string, std::shared_ptr<Cache>> caches_;
@@ -65,12 +71,15 @@ inline constexpr const char* kBatchedCell = "batched-cell";
 // Cache kind is expressed by which factory you call: backends register a
 // builder per (backend_id, kind) and the kind survives only as an internal
 // lookup tag.
-using CacheBuilder =
-    std::function<std::shared_ptr<Cache>(const CacheConfig&)>;
+using CacheBuilder = std::function<std::shared_ptr<Cache>(const CacheConfig&)>;
 
 class CacheFactory {
  public:
   static CacheFactory& global();
+
+  // Public so a test can hold its own rather than registering builders into
+  // the process-global one, where they outlive it.
+  CacheFactory() = default;
 
   void register_builder(
       const std::string& backend_id,
@@ -83,8 +92,6 @@ class CacheFactory {
       const CacheConfig& cfg) const;
 
  private:
-  CacheFactory() = default;
-
   mutable std::mutex mu_;
   std::map<std::pair<std::string, std::string>, CacheBuilder>
       builders_; // keyed by (backend_id, kind)

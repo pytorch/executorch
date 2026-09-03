@@ -372,9 +372,10 @@ int main(int argc, char** argv) {
     // Everything past load_method is identical for both model kinds; only
     // setup differs. ctl is null for an in-graph model, which owns its cache
     // inside the graph and exposes no control face.
-    auto run = [&](cache::SequenceControl* ctl,
-                   const ::executorch::runtime::LoadBackendOptionsMap*
-                       load_opts) -> int {
+    auto run =
+        [&](cache::SequenceControl* ctl,
+            const ::executorch::runtime::LoadBackendOptionsMap* load_opts)
+        -> int {
       if (module.load_method(
               "forward",
               /*planned_memory=*/nullptr,
@@ -390,7 +391,8 @@ int main(int argc, char** argv) {
 
       // Weights-only baseline, so the deltas below isolate the cache.
       const double mem_at_load = ::mlx::core::get_active_memory() / 1048576.0;
-      std::cout << "[mem]   after load  : " << mem_at_load << " MiB" << std::endl;
+      std::cout << "[mem]   after load  : " << mem_at_load << " MiB"
+                << std::endl;
 
       // Encode. HFTokenizer maps special-token markers in the string to their
       // ids, so the template's <|...|> tokens encode correctly; it already
@@ -412,8 +414,8 @@ int main(int argc, char** argv) {
       const int prompt_len = static_cast<int>(tokens.size());
 
       // End-of-text from the model's metadata when it publishes any, else the
-      // tokenizer's. The turn-end token is ours: it depends on --chat, which the
-      // .pte knows nothing about.
+      // tokenizer's. The turn-end token is ours: it depends on --chat, which
+      // the .pte knows nothing about.
       std::unordered_set<uint64_t> stop_ids =
           ::executorch::extension::llm::get_eos_ids(tokenizer.get(), &module);
       std::optional<int64_t> turn_end_id;
@@ -436,9 +438,9 @@ int main(int argc, char** argv) {
       };
 
       // One Sampler for the whole run, as the shared runner does: constructing
-      // one per token would reseed its RNG from the wall clock every time. Built
-      // on first use because the vocab size comes from the logits -- this export
-      // publishes no get_vocab_size.
+      // one per token would reseed its RNG from the wall clock every time.
+      // Built on first use because the vocab size comes from the logits -- this
+      // export publishes no get_vocab_size.
       std::optional<::executorch::extension::llm::Sampler> sampler;
 
       auto step = [&](const std::vector<int64_t>& ids,
@@ -462,9 +464,9 @@ int main(int argc, char** argv) {
         return static_cast<int64_t>(tok);
       };
 
-      // Prefill in chunks, so a ring layer holds window + chunk - 1 slots rather
-      // than growing with the prompt. Only the last chunk's token is kept; the
-      // earlier ones exist to place their K/V in the cache.
+      // Prefill in chunks, so a ring layer holds window + chunk - 1 slots
+      // rather than growing with the prompt. Only the last chunk's token is
+      // kept; the earlier ones exist to place their K/V in the cache.
       auto prefill = [&](const std::vector<int64_t>& ids,
                          const std::vector<int64_t>& pos) {
         const size_t step_size =
@@ -489,8 +491,9 @@ int main(int argc, char** argv) {
           return 1;
         }
         auto* control = ctl;
-        std::cout << "Multi-turn chat. /reset clears, /undo drops the last turn, "
-                     "/undo N drops N tokens, /quit exits.\n";
+        std::cout
+            << "Multi-turn chat. /reset clears, /undo drops the last turn, "
+               "/undo N drops N tokens, /quit exits.\n";
         int64_t position = 0;
         int64_t turn_start = 0; // position this turn began at, for /undo
         std::string line;
@@ -538,12 +541,13 @@ int main(int argc, char** argv) {
             continue;
           }
           const int n = static_cast<int>(te->size());
-          // Admit the turn if its prompt plus one token fits; reserving the whole
-          // max_new budget up front would report "full" with most of the cache
-          // still free. Generation is then clamped to the room that remains.
+          // Admit the turn if its prompt plus one token fits; reserving the
+          // whole max_new budget up front would report "full" with most of the
+          // cache still free. Generation is then clamped to the room that
+          // remains.
           if (!control->can_extend(n + 1)) {
-            std::cout << "[cache full: " << position << "/" << control->capacity()
-                      << ", turn " << n << " tokens"
+            std::cout << "[cache full: " << position << "/"
+                      << control->capacity() << ", turn " << n << " tokens"
                       << (control->can_extend(1) ? "" : ", length at capacity")
                       << ", use /reset]\n";
             continue;
@@ -561,7 +565,8 @@ int main(int argc, char** argv) {
 
           uint64_t prev = te->back();
           for (int i = 0; i < budget && !is_stop(next); ++i) {
-            if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
+            if (auto piece =
+                    tokenizer->decode(prev, static_cast<uint64_t>(next));
                 piece.ok()) {
               std::cout << *piece << std::flush;
             }
@@ -570,16 +575,17 @@ int main(int argc, char** argv) {
             ++position;
           }
           // The turn-end token stops generation, so it is neither printed nor
-          // fed back -- but the next turn opens without closing this one, and an
-          // unterminated assistant turn compounds over a session. Commit it, at
-          // the cost of one extra step per turn.
+          // fed back -- but the next turn opens without closing this one, and
+          // an unterminated assistant turn compounds over a session. Commit it,
+          // at the cost of one extra step per turn.
           if (turn_end_id && next == *turn_end_id && control->can_extend(1)) {
             step({next}, {position});
             ++position;
           }
           std::cout << "\n[" << position << "/" << control->capacity()
                     << " tokens"
-                    << (budget < max_new ? ", generation capped by capacity" : "")
+                    << (budget < max_new ? ", generation capped by capacity"
+                                         : "")
                     << "]\n";
         }
         return 0;
@@ -594,8 +600,8 @@ int main(int argc, char** argv) {
       };
       // Sequence length against the configured ceiling, with what MLX actually
       // holds for it. Pools start at initial_capacity and grow by doubling, so
-      // the bytes lag the token count in steps; bf16 storage (kv_dtype 15) halves
-      // them vs fp32 (6).
+      // the bytes lag the token count in steps; bf16 storage (kv_dtype 15)
+      // halves them vs fp32 (6).
       auto print_footprint = [&](const char* when, int len) {
         if (ctl == nullptr) {
           return;
@@ -609,10 +615,11 @@ int main(int argc, char** argv) {
                   << (mem - mem_at_load) << " MiB since load)" << std::endl;
       };
 
-      // One optional warmup run to absorb JIT and pool growth, then one measured
-      // run, as the shared LLM runners do. Repeats belong in a harness that
-      // restarts the process: clear() rewinds the sequence but leaves the pools
-      // at their grown size, so an in-process repeat cannot see reallocation.
+      // One optional warmup run to absorb JIT and pool growth, then one
+      // measured run, as the shared LLM runners do. Repeats belong in a harness
+      // that restarts the process: clear() rewinds the sequence but leaves the
+      // pools at their grown size, so an in-process repeat cannot see
+      // reallocation.
       for (int iter = 0; iter < (warmup ? 2 : 1); ++iter) {
         const bool measured = !warmup || iter == 1;
         if (iter > 0 && ctl != nullptr) {
@@ -636,7 +643,8 @@ int main(int argc, char** argv) {
             break;
           }
           if (measured) {
-            if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
+            if (auto piece =
+                    tokenizer->decode(prev, static_cast<uint64_t>(next));
                 piece.ok()) {
               ::executorch::extension::llm::safe_printf(piece->c_str());
               fflush(stdout);
@@ -708,8 +716,8 @@ int main(int argc, char** argv) {
 
     print_cache_summary(cfg);
     if (mlx_opts.set_option(
-            ::executorch::backends::mlx::kCacheKeyKey,
-            guard.key()) != Error::Ok ||
+            ::executorch::backends::mlx::kCacheKeyKey, guard.key()) !=
+            Error::Ok ||
         options_map.set_options(
             ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
             Error::Ok) {
