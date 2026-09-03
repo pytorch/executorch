@@ -160,14 +160,21 @@ def _patch_headers(kwargs):
 def _patch_pp_flags(kwargs):
     return kwargs
 
-def _patch_cxx_compiler_flags(kwargs):
-    """CXX Compiler flags to enable C++17 features."""
+def _patch_cxx_compiler_flags(kwargs, aten_mode = False):
+    """Pins the C++ standard a target compiles with.
+
+    C++17 by default, which is what the runtime this project ships requires.
+    ATen-mode targets are raised to C++20, because PyTorch's headers require it as
+    of 2.14: c10/util/intrusive_ptr.h defines operator<=> and returns
+    std::strong_ordering with no feature guard.
+    """
+    std = "-std=c++20" if aten_mode else "-std=c++17"
     if "lang_compiler_flags" not in kwargs:
-        kwargs["lang_compiler_flags"] = {"cxx_cpp_output": ["-std=c++17"]}
+        kwargs["lang_compiler_flags"] = {"cxx_cpp_output": [std]}
     elif "cxx_cpp_output" not in kwargs["lang_compiler_flags"]:
-        kwargs["lang_compiler_flags"]["cxx_cpp_output"] = ["-std=c++17"]
+        kwargs["lang_compiler_flags"]["cxx_cpp_output"] = [std]
     else:
-        kwargs["lang_compiler_flags"]["cxx_cpp_output"].append("-std=c++17")
+        kwargs["lang_compiler_flags"]["cxx_cpp_output"].append(std)
     return kwargs
 
 # buildifier: disable=unused-variable

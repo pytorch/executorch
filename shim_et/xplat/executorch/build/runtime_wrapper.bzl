@@ -267,6 +267,19 @@ def _patch_kwargs_cxx(kwargs):
     env.remove_platform_specific_args(kwargs)
     return _patch_kwargs_common(kwargs)
 
+def _is_aten_target(kwargs):
+    """Whether a target compiles against ATen, and so needs C++20.
+
+    Keyed on the external dep names the build maps onto libtorch, rather than on
+    a substring of the label: every ExecuTorch label contains "torch".
+    """
+    aten_external_deps = ["c10", "libtorch", "libtorch_python", "torch-core-cpp"]
+    for key in ["external_deps", "exported_external_deps"]:
+        for dep in kwargs.get(key) or []:
+            if dep in aten_external_deps:
+                return True
+    return False
+
 def _cxx_library_common(*args, **kwargs):
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
@@ -274,7 +287,7 @@ def _cxx_library_common(*args, **kwargs):
     env.patch_platform_build_mode_flags(kwargs)
     env.patch_headers(kwargs)
     env.patch_pp_flags(kwargs)
-    env.patch_cxx_compiler_flags(kwargs)
+    env.patch_cxx_compiler_flags(kwargs, aten_mode = _is_aten_target(kwargs))
     env.patch_force_static(kwargs)
 
     env.cxx_library(*args, **kwargs)
@@ -297,7 +310,7 @@ def _cxx_binary_helper(*args, **kwargs):
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
     env.patch_platform_build_mode_flags(kwargs)
-    env.patch_cxx_compiler_flags(kwargs)
+    env.patch_cxx_compiler_flags(kwargs, aten_mode = _is_aten_target(kwargs))
 
     env.cxx_binary(*args, **kwargs)
 
