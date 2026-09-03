@@ -13,6 +13,7 @@ from typing import Tuple
 
 import executorch.backends.vulkan.test.utils as test_utils
 import torch
+import torch.nn.functional as F
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
@@ -537,6 +538,20 @@ class TestVulkanBackend(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(ClampModule(), sample_inputs)
+
+    def test_vulkan_backend_dynamic_float_clamp(self):
+        class ClampModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.clamp(x, max=x.shape[0])
+
+        sample_inputs = (torch.arange(32).reshape(8, 4).float(),)
+        length = Dim("length", min=2, max=16)
+        self.lower_module_and_test_output(
+            ClampModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {0: length}},
+            test_inputs=[(torch.arange(12).reshape(3, 4).float(),)],
+        )
 
     def test_vulkan_backend_cos(self):
         class CosModule(torch.nn.Module):
@@ -1623,6 +1638,84 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             IndexSelectModule(dim=0, indices=[1, 3, 5, 7, 8, 9, 10, 11, 2, 3]),
             sample_inputs,
+        )
+
+    def test_vulkan_backend_index_tensor_nonzero_axis(self):
+        class IndexTensorModule(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor([0, 2])
+
+            def forward(self, x):
+                indices = [slice(None)] * x.dim()
+                indices[self.dim] = self.index
+                return x[tuple(indices)]
+
+        sample_inputs = (torch.arange(24).reshape(1, 3, 8).float(),)
+        for dim in (1, 2):
+            self.lower_module_and_test_output(
+                IndexTensorModule(dim),
+                sample_inputs,
+            )
+
+    def test_vulkan_backend_dynamic_replicate_pad_time_reduction(self):
+        class TimeReductionModule(torch.nn.Module):
+            def forward(self, x):
+                padded_frames = 8 * ((x.shape[1] + 7) // 8)
+                x = F.pad(
+                    x,
+                    (0, 0, 0, padded_frames - x.shape[1]),
+                    mode="replicate",
+                )
+                return x.view(x.shape[0], -1, 640)
+
+        sample_inputs = (torch.randn(1, 24, 80),)
+        frames = Dim("frames", min=1, max=24)
+        self.lower_module_and_test_output(
+            TimeReductionModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: frames}},
+            test_inputs=[
+                (torch.randn(1, 8, 80),),
+                (torch.randn(1, 9, 80),),
+                (torch.randn(1, 17, 80),),
+            ],
+        )
+
+    def test_vulkan_backend_dynamic_arange_float_step(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, end_scale, step):
+                super().__init__()
+                self.end_scale = end_scale
+                self.step = step
+
+            def forward(self, x):
+                return torch.arange(0, self.end_scale * x.shape[0], self.step)
+
+        sample_inputs = (torch.randn(8),)
+        length = Dim("length", min=2, max=16)
+        for end_scale, step in ((1, 0.5), (-1, -0.5)):
+            with self.subTest(end_scale=end_scale, step=step):
+                self.lower_module_and_test_output(
+                    ArangeModule(end_scale, step),
+                    sample_inputs,
+                    dynamic_shapes={"x": {0: length}},
+                    test_inputs=[(torch.randn(3),), (torch.randn(7),)],
+                )
+
+    def test_vulkan_backend_dynamic_arange_start(self):
+        class ArangeModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.arange(x.shape[0], 32, 2)
+
+        sample_inputs = (torch.randn(8),)
+        length = Dim("length", min=2, max=16)
+        self.lower_module_and_test_output(
+            ArangeModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {0: length}},
+            test_inputs=[(torch.randn(3),), (torch.randn(15),)],
         )
 
     def test_vulkan_backend_arange_int(self):
