@@ -20,7 +20,6 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 35,
     "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 104,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 79,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 67,
@@ -35,7 +34,6 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 35,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 17,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
-    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
 }
 
 # Use larger sample set for calibration to get better quantization

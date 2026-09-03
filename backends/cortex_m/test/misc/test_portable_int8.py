@@ -387,7 +387,9 @@ OP_CASES = {
         torch.ops.aten.dropout.default,
         _build_module(lambda x, y: torch.ops.aten.dropout.default(x, 0.1, False)),
         (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
-        None,
+        # Not training, so this is an identity and nothing survives lowering to
+        # carry int8. Only the dequantize is left, which is float by definition.
+        torch.float32,
     ),
     "dropout_": OpCase(
         torch.ops.aten.dropout_.default,
