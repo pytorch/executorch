@@ -154,7 +154,7 @@ def _is_noop_as_strided_copy(node: torch.fx.Node) -> bool:
     else:
         input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
         output_tensor = get_first_fake_tensor(node)
-        return (
+        return bool(
             len(input_tensor.shape) == len(output_tensor.shape)
             and all(
                 statically_known_true(input_dim == output_dim)
@@ -196,7 +196,7 @@ def _is_noop_squeeze(node: torch.fx.Node) -> bool:
     else:
         input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
         output_tensor = get_first_fake_tensor(node)
-        return input_tensor.shape == output_tensor.shape
+        return bool(input_tensor.shape == output_tensor.shape)
 
 
 def _is_noop_flip(node: torch.fx.node.Node) -> bool:
