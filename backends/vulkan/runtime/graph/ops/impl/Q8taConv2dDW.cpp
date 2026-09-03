@@ -57,6 +57,14 @@ LocalWorkGroup pick_q8ta_conv2d_dw_lwg(
   (void)args;
   (void)resize_args;
 
+  if (gwg[0u] == 2u && gwg[2u] >= 32u) {
+    return LocalWorkGroup(2u, 1u, 32u);
+  }
+
+  if (gwg[0u] >= 3u && gwg[0u] <= 4u && gwg[2u] >= 16u) {
+    return LocalWorkGroup(4u, 1u, 16u);
+  }
+
   // Some inactive invocations are okay; set 6 as the threshold to use the
   // a square wg size.
   if (gwg[0u] >= 6 && gwg[2u] >= 6) {

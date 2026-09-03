@@ -111,6 +111,7 @@ GlobalWorkGrid pick_q8ta_conv2d_gwg(
   (void)shader;
   (void)resize_args;
 
+  VK_CHECK_COND(graph != nullptr);
   const ValueRef output = args.at(0).refs.at(0);
 
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
@@ -133,6 +134,7 @@ GlobalWorkGrid pick_q8ta_conv2d_gwg(
  * tensor dimensions. Uses experimentation results:
  *   - {4, 2, 8} for medium tensors: +57% improvement on 81x81
  *   - {8, 1, 8} for very large tensors: best baseline performance
+ *   - {2, 1, 32} or {4, 1, 16} for narrow output widths
  *   - {64, 1, 1} for narrow channel dimensions: minimize inactive invocations
  */
 LocalWorkGroup pick_q8ta_conv2d_lwg(
@@ -144,14 +146,13 @@ LocalWorkGroup pick_q8ta_conv2d_lwg(
   (void)shader;
   (void)resize_args;
 
+  VK_CHECK_COND(graph != nullptr);
   const ValueRef output = args.at(0).refs.at(0);
-
-  // Get actual tensor dimensions for adaptive sizing
-  const uint32_t H = graph->size_at<uint32_t>(-2, output);
+  const uint32_t output_height = graph->size_at<uint32_t>(-2, output);
 
   // For very large tensors (H >= 100 and large x/z), use {8, 1, 8}
   // This configuration performed best for 128x128 tensors in experiments
-  if (H >= 100 && gwg[0u] >= 24 && gwg[2u] >= 24) {
+  if (output_height >= 100 && gwg[0u] >= 24 && gwg[2u] >= 24) {
     return LocalWorkGroup(8u, 1u, 8u);
   }
 
@@ -159,6 +160,14 @@ LocalWorkGroup pick_q8ta_conv2d_lwg(
   // This configuration showed +57% improvement on 81x81 tensors
   if (gwg[0u] >= 4 && gwg[1u] >= 2 && gwg[2u] >= 8) {
     return LocalWorkGroup(4u, 2u, 8u);
+  }
+
+  if (gwg[0u] == 2u && gwg[2u] >= 32u) {
+    return LocalWorkGroup(2u, 1u, 32u);
+  }
+
+  if (gwg[0u] == 3u && gwg[2u] >= 16u) {
+    return LocalWorkGroup(4u, 1u, 16u);
   }
 
   // For tensors with sufficient x and z dimensions, use square configuration

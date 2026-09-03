@@ -271,6 +271,43 @@ std::vector<TestCase> generate_quantized_conv2d_dw_easy_cases() {
   return test_cases;
 }
 
+std::vector<TestCase> generate_quantized_conv2d_dw_narrow_workgroup_cases() {
+  std::vector<TestCase> test_cases;
+  std::vector<Conv2dConfig> configs = {
+      {OutInChannels(128, 128),
+       InputSize2D(7, 7),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       128},
+      {OutInChannels(64, 64),
+       InputSize2D(9, 9),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       64},
+      {OutInChannels(64, 64),
+       InputSize2D(13, 13),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       64},
+  };
+
+  for (auto& config : configs) {
+    const bool is_performance = config.channels.out > kRefDimSizeLimit;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name = make_test_case_name(
+        config, is_performance, utils::kTexture3D, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4C));
+  }
+  return test_cases;
+}
+
 // Generate test cases for quantized depthwise conv2d operation
 std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
   std::vector<TestCase> test_cases;
@@ -438,6 +475,13 @@ std::vector<TestCase> generate_quantized_conv2d_dw_test_cases() {
           config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4W4C));
     }
   }
+
+  auto narrow_workgroup_cases =
+      generate_quantized_conv2d_dw_narrow_workgroup_cases();
+  test_cases.insert(
+      test_cases.end(),
+      narrow_workgroup_cases.begin(),
+      narrow_workgroup_cases.end());
 
   return test_cases;
 }
@@ -680,13 +724,19 @@ int main(int argc, char* argv[]) {
 
   ReferenceComputeFunc ref_fn = reference_impl;
 
-  // Execute test cases using the new framework with custom FLOP calculator
-  auto results = execute_test_cases(
+  const bool narrow_workgroups_only =
+      argc == 2 && std::string(argv[1]) == "--narrow-workgroups-only";
 #ifdef DEBUG_MODE
-      generate_quantized_conv2d_dw_easy_cases,
+  auto test_case_generator = generate_quantized_conv2d_dw_easy_cases;
 #else
-      generate_quantized_conv2d_dw_test_cases,
+  auto test_case_generator = generate_quantized_conv2d_dw_test_cases;
 #endif
+  if (narrow_workgroups_only) {
+    test_case_generator = generate_quantized_conv2d_dw_narrow_workgroup_cases;
+  }
+
+  auto results = execute_test_cases(
+      test_case_generator,
       quantized_conv2d_dw_flop_calculator,
       "QuantizedDepthwiseInt8Conv2d",
       /*warmup_runs = */ 1,
