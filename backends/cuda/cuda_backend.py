@@ -669,6 +669,10 @@ class CudaBackend(AotiBackend, BackendDetails):
             return {}
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
+            # The same op under the shim name Inductor derives for it. Which
+            # spelling reaches this list depends on the path Inductor takes, and
+            # that is not ours to control, so accept both.
+            "aoti_torch_cuda__weight_int4pack_mm": None,
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_randint_low_out": None,
             "executorch_cuda::int4_plain_mm": None,
