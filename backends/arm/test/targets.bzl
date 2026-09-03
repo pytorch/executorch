@@ -65,7 +65,7 @@ def define_arm_tests():
         "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
         "misc/tosa_dialect/test_tosa_resize.py",
-        "misc/test_tosa_spec.py",
+        "misc/tosa_dialect/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
