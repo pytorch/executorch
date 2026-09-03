@@ -4,10 +4,12 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -109,6 +111,15 @@ static TestCase create_test_case_from_config(
       utils::kWidthPacked,
       DataGenType::RANDINT8);
   quantized_weight.set_constant(true);
+  std::vector<int8_t>& weight_data = quantized_weight.get_int8_data();
+  for (int64_t out_channel = 0; out_channel < config.channels.out;
+       ++out_channel) {
+    const auto padding_begin =
+        weight_data.begin() + out_channel * in_features + in_channels_per_group;
+    const auto padding_end =
+        weight_data.begin() + (out_channel + 1) * in_features;
+    std::fill(padding_begin, padding_end, 0);
+  }
 
   if (debugging()) {
     print_valuespec_data(quantized_weight, "weight_tensor");
@@ -215,8 +226,12 @@ static TestCase create_test_case_from_config(
   return test_case;
 }
 
-// Generate test cases for quantized pointwise conv2d operation
-static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
+// Generate test cases for quantized pointwise conv2d operation. When
+// pw_selector is non-empty ("pw_signed", "pw_unsigned", "pw_auto"), every
+// non-legacy case carries that selector so the test graph builder can force or
+// verify the unsigned-dot routing instead of using the default automatic path.
+static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases(
+    const std::string& pw_selector = "") {
   std::vector<TestCase> test_cases;
   if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
     return test_cases;
@@ -342,7 +357,11 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
         config.test_case_name = make_test_case_name(
             config, is_performance, fp_storage_type, utils::kBuffer);
         test_cases.push_back(create_test_case_from_config(
-            config, vkapi::kFloat, fp_storage_type, int8_memory_layout));
+            config,
+            vkapi::kFloat,
+            fp_storage_type,
+            int8_memory_layout,
+            pw_selector));
 
         // For 4W4C layout, also test the legacy implementation
         if (int8_memory_layout == utils::kPackedInt8_4W4C) {
@@ -390,10 +409,18 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases() {
     config.test_case_name = make_test_case_name(
         config, is_performance, utils::kTexture3D, utils::kBuffer);
     test_cases.push_back(create_test_case_from_config(
-        config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4C1W));
+        config,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kPackedInt8_4C1W,
+        pw_selector));
     if (config.batch == 2) {
       test_cases.push_back(create_test_case_from_config(
-          config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4W4C));
+          config,
+          vkapi::kFloat,
+          utils::kTexture3D,
+          utils::kPackedInt8_4W4C,
+          pw_selector));
     }
   }
 
@@ -498,7 +525,7 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   auto& ref_data = output_spec.get_ref_float_data();
   ref_data.resize(num_output_elements);
 
-  const int in_features = utils::align_up_4(C_in_per_group * K_h * K_w);
+  const int64_t in_features = utils::align_up_4(C_in_per_group * K_h * K_w);
 
   // Perform activation, weight, and output quantized conv2d operation
   for (int64_t n = 0; n < N; ++n) {
@@ -635,6 +662,26 @@ static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
 }
 
 int main(int argc, char* argv[]) {
+  const vkapi::Adapter& adapter = *vkcompute::api::context()->adapter_ptr();
+  const bool prefers_unsigned_dot =
+      adapter.accelerates_unsigned_packed4x8_dot() &&
+      !adapter.accelerates_signed_packed4x8_dot();
+  VK_CHECK_COND(can_use_unsigned_pw_dot(adapter) == prefers_unsigned_dot);
+
+  std::string pw_impl_selector;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg(argv[i]);
+    if (arg == "--pw-path=signed") {
+      pw_impl_selector = "pw_signed";
+    } else if (arg == "--pw-path=unsigned") {
+      pw_impl_selector = "pw_unsigned";
+    } else if (arg == "--pw-path=auto") {
+      pw_impl_selector = "pw_auto";
+    } else {
+      std::cerr << "Unknown argument: " << arg << std::endl;
+      return 2;
+    }
+  }
   set_debugging(false);
   set_print_output(false);
 #ifdef DEBUG_MODE
@@ -653,12 +700,11 @@ int main(int argc, char* argv[]) {
   ReferenceComputeFunc ref_fn = reference_impl;
 
   // Execute test cases using the new framework with custom FLOP calculator
+  const auto test_case_generator = [pw_impl_selector]() {
+    return generate_quantized_conv2d_pw_test_cases(pw_impl_selector);
+  };
   auto results = execute_test_cases(
-#ifdef DEBUG_MODE
-      generate_quantized_conv2d_pw_test_cases,
-#else
-      generate_quantized_conv2d_pw_test_cases,
-#endif
+      test_case_generator,
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dPW",
       /*warmup_runs = */ 1,

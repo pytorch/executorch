@@ -111,6 +111,7 @@ void add_q8ta_conv2d_node(
 
 void add_q8ta_conv2d_pw_node(
     ComputeGraph& graph,
+    const bool use_unsigned_dot,
     const ValueRef packed_int8_input,
     const ValueRef input_scale,
     const ValueRef input_zp,
@@ -129,6 +130,15 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef stride = kDummyValueRef,
     const ValueRef padding = kDummyValueRef,
     const ValueRef dilation = kDummyValueRef);
+
+bool can_use_unsigned_pw_dot(const vkapi::Adapter& adapter);
+
+void q8ta_conv2d_pw_impl(
+    ComputeGraph& graph,
+    bool use_unsigned_dot,
+    const std::vector<ValueRef>& args);
+
+void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args);
 
 std::vector<int64_t> calculate_q8ta_im2col_sizes(
     ComputeGraph* graph,
