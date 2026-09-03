@@ -251,14 +251,112 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 )
                 return torch.nn.functional.linear(x, weight)
 
-        for model, example_inputs in (
+        for quantized, inputs in (
             (converted, example_inputs),
             (GroupwiseLinear(), (torch.randn(2, 16),)),
         ):
-            exported = export(model, example_inputs)
+            exported = export(quantized, inputs)
             before = quant_targets(exported)
             self.assertGreater(len(before), 0)
             after = quant_targets(
                 XnnpackPartitioner().transform_for_pre_decomposition(exported)
             )
             self.assertEqual(before, after)
+
+    def test_pre_decomposition_folding_skips_factory_ops(self):
+        """
+        A scalar fill of a static shape stays an op, so that the fold does not
+        turn it into a stored tensor. Every target in the skip set is covered,
+        and each is checked to be what the edge-level pass skips for the same
+        reason: a fill that decomposes to aten.full or aten.full_like.
+        """
+        fills = {
+            torch.ops.aten.full.default: lambda p: torch.full((4, 8), 1.5),
+            torch.ops.aten.new_full.default: lambda p: p.new_full((4, 8), 1.5),
+            torch.ops.aten.ones.default: lambda p: torch.ones(4, 8),
+            torch.ops.aten.new_ones.default: lambda p: p.new_ones((4, 8)),
+            torch.ops.aten.zeros.default: lambda p: torch.zeros(4, 8),
+            torch.ops.aten.new_zeros.default: lambda p: p.new_zeros((4, 8)),
+            torch.ops.aten.full_like.default: lambda p: torch.full_like(p, 1.5),
+            torch.ops.aten.ones_like.default: lambda p: torch.ones_like(p),
+            torch.ops.aten.zeros_like.default: lambda p: torch.zeros_like(p),
+        }
+        self.assertEqual(
+            set(fills), set(XnnpackPartitioner._CONSTANT_PROP_SKIP_TARGETS)
+        )
+
+        class Fill(torch.nn.Module):
+            def __init__(self, fill):
+                super().__init__()
+                self.fill = fill
+                self.p = torch.nn.Parameter(torch.randn(4, 8))
+
+            def forward(self, x):
+                return x + self.fill(self.p)
+
+        def call_targets(ep):
+            return [
+                node.target for node in ep.graph.nodes if node.op == "call_function"
+            ]
+
+        for target, fill in fills.items():
+            exported = export(Fill(fill).eval(), (torch.randn(4, 8),))
+            self.assertIn(target, call_targets(exported))
+            decomposed = set(call_targets(exported.run_decompositions()))
+            self.assertTrue(
+                decomposed
+                & {torch.ops.aten.full.default, torch.ops.aten.full_like.default},
+                f"{target} does not decompose to a fill: {decomposed}",
+            )
+
+            folded = XnnpackPartitioner().transform_for_pre_decomposition(exported)
+            self.assertIn(target, call_targets(folded), f"{target} was folded")
+            self.assertEqual(len(folded.constants), 0)
+
+    def test_pre_decomposition_folding_keeps_mutated_buffer(self):
+        """
+        A buffer the model writes in place, such as a KV cache, is not a
+        constant. The ATen program handed to the hook lists no mutated buffers
+        yet; the write is still an in-place copy_ on a view of the buffer.
+        Folding that view would leave the write on a constant, and
+        run_decompositions would then fail on the aliasing.
+        """
+
+        class Cache(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(8, 8)
+                self.register_buffer("cache", torch.zeros(4, 8))
+
+            def forward(self, x):
+                previous = self.cache[:2]
+                self.cache[:2] = x
+                return self.linear(previous + x)
+
+        model = Cache().eval()
+        example_inputs = (torch.randn(2, 8),)
+
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        self.assertEqual(
+            list(folded.graph_signature.buffers_to_mutate.values()), ["cache"]
+        )
+        self.assertEqual(len(folded.constants), 0)
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        self.assertEqual(
+            list(edge.exported_program().graph_signature.buffers_to_mutate.values()),
+            ["cache"],
+        )
+        executorch_module = _load_for_executorch_from_buffer(
+            edge.to_executorch().buffer
+        )
+        # The cache carries state from one call to the next.
+        for _ in range(3):
+            x = torch.randn(2, 8)
+            self.assertTrue(
+                torch.allclose(executorch_module.forward((x,))[0], model(x), 1e-5)
+            )

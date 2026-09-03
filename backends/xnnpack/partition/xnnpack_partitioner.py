@@ -33,14 +33,18 @@ logger = logging.getLogger(__name__)
 class XnnpackPartitioner(ConfigerationBasedPartitioner):
     # constant_prop_pass skips aten.full at the edge level so that a scalar
     # fill does not become a stored tensor. Before decomposition the same
-    # tensors come from these factory ops.
+    # fills come from these factory ops: the first group decomposes to
+    # aten.full, the *_like group to aten.full_like.
     _CONSTANT_PROP_SKIP_TARGETS = frozenset(
         {
             torch.ops.aten.full.default,
-            torch.ops.aten.full_like.default,
+            torch.ops.aten.new_full.default,
             torch.ops.aten.ones.default,
-            torch.ops.aten.ones_like.default,
+            torch.ops.aten.new_ones.default,
             torch.ops.aten.zeros.default,
+            torch.ops.aten.new_zeros.default,
+            torch.ops.aten.full_like.default,
+            torch.ops.aten.ones_like.default,
             torch.ops.aten.zeros_like.default,
         }
     )
@@ -112,6 +116,15 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         torch.nn.utils.parametrizations.weight_norm, would otherwise be left
         to the portable kernels together with the weight computation.
         """
+        # The program is not functionalized yet at this point: a KV-cache
+        # update is still an in-place index_put_ or copy_ on a view of the
+        # buffer, and the graph signature lists no mutated buffers. The pass
+        # reads mutation from the signature, so it would take such a buffer
+        # for a constant and fold the view that is written to. Functionalize
+        # first; to_edge_transform_and_lower makes the same call right after
+        # this hook, and the second call is a no-op on a functional graph.
+        exported_program = exported_program.run_decompositions({})
+
         # Quantization primitives are kept as well, so that the Q/DQ chain
         # convert_pt2e or torchao's quantize_ leaves on a weight stays in the
         # graph. A folded dequantize would hand the delegate a float weight.
