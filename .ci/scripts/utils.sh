@@ -135,11 +135,7 @@ install_pytorch_and_domains() {
     if [[ "$(uname -m)" == "aarch64" ]]; then
       export BUILD_IGNORE_SVE_UNAVAILABLE=1
     fi
-    # PyTorch no longer supports "python setup.py bdist_wheel"; it builds
-    # through scikit-build-core (PEP 517). Build with the standard frontend and
-    # keep isolation off, so the build uses the requirements-build.txt deps
-    # installed just above rather than fetching its own copies. This matches
-    # how the Docker images build PyTorch.
+    # PyTorch dropped setup.py; isolation off reuses the deps installed above.
     pip install build
     USE_DISTRIBUTED=1 python -m build --wheel --no-isolation
     pip install "$(echo dist/*.whl)"

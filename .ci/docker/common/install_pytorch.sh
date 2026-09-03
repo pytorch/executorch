@@ -76,33 +76,21 @@ install_pytorch_and_domains() {
   # the image compiler cannot satisfy. The venv inherits the image's
   # site-packages, so PyTorch still builds against the same numpy.
   #
-  # Keep the list in sync with pytorch/pyproject.toml [build-system].requires,
-  # except that cmake is deliberately left out, see below, and ninja is kept
-  # because the build needs a generator.
+  # Keep in sync with pytorch/pyproject.toml [build-system].requires.
   local build_venv=/tmp/pytorch-build-venv
   rm -rf "${build_venv}"
   conda_run python -m venv --system-site-packages "${build_venv}"
-  # cmake is deliberately not installed here, so the conda cmake already in the
-  # image is used. scikit-build-core, which PyTorch builds with as of 2.14,
-  # prefers an importable pip cmake over anything on PATH, and cmake adds its own
-  # install root to CMAKE_SYSTEM_PREFIX_PATH. A pip cmake therefore searches
-  # site-packages, where MKL and libomp are not, and the build silently comes out
-  # with no BLAS and no LAPACK.
+  # No pip cmake: scikit-build-core would prefer it over the image's, and it
+  # searches site-packages, where MKL and libomp are not.
   conda_run "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" \
     ninja "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
-  # Do not scan for C++20 modules. PyTorch compiles at C++20 as of 2.14, which
-  # makes CMake scan every source for module imports, and the scanners are not
-  # in these images: the clang images have no clang-scan-deps, and GCC rejects
-  # the scan invocation outright. Nothing here uses modules, so the scan only
-  # has to be turned off.
+  # These images have no module scanner, and nothing here uses modules.
   conda_run env CMAKE_CXX_SCAN_FOR_MODULES=OFF \
     "${build_venv}/bin/python" -m build --wheel --no-isolation
   rm -rf "${build_venv}"
   pip_install "$(echo dist/*.whl)"
 
-  # The build silently degrades rather than failing when it cannot find BLAS, so
-  # assert on the result. Run from / so the import resolves to the installed
-  # wheel and not to the source tree next to it.
+  # A build with no BLAS succeeds silently. Run from / to import the wheel.
   (cd / && conda_run python -c "
 import torch
 assert torch._C.has_lapack, 'built without LAPACK'

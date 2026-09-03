@@ -98,11 +98,8 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
 /**
  * Reports that pinned host memory is unavailable.
  *
- * Generated wrappers call this to stage constants through page-locked host
- * memory, which lets the copy to the device run asynchronously. There is no
- * pinned allocator here, so this always fails and the caller uses the
- * synchronous copy it already falls back to. Correct, and slower only while
- * loading.
+ * There is no pinned allocator here, so the caller falls back to the
+ * synchronous copy it already handles: correct, slower only while loading.
  *
  * @return Error::NotSupported
  */
