@@ -35,6 +35,16 @@ class TestXnnpackPartitioner(unittest.TestCase):
         def forward(self, x):
             return torch.ops.aten.mul.Scalar(x, 0.5)
 
+    class MulScalarCond(torch.nn.Module):
+        def forward(self, pred, x):
+            def true_fn(value):
+                return torch.ops.aten.mul.Scalar(value, 0.5)
+
+            def false_fn(value):
+                return torch.ops.aten.mul.Scalar(value, 2.0)
+
+            return torch.cond(pred, true_fn, false_fn, (x,))
+
     def test_mul_scalar_ops_to_not_decompose(self):
         partitioner = XnnpackPartitioner()
         exported_program = export(self.MulScalar(), (torch.randn(2, 3),))
@@ -63,6 +73,28 @@ class TestXnnpackPartitioner(unittest.TestCase):
             if node.target == torch.ops.aten.mul.Scalar
         )
         self.assertFalse(filter_fn(mul_node))
+
+    def test_mul_scalar_ops_to_not_decompose_rejects_cond_branches(self):
+        partitioner = XnnpackPartitioner()
+        exported_program = export(
+            self.MulScalarCond(), (torch.tensor(True), torch.randn(2, 3))
+        )
+        _, filter_fn = partitioner.ops_to_not_decompose(exported_program)
+
+        self.assertIsNotNone(filter_fn)
+        cond_node = next(
+            node
+            for node in exported_program.graph.nodes
+            if node.target == torch.ops.higher_order.cond
+        )
+        for branch_node in cond_node.args[1:3]:
+            branch = exported_program.graph_module.get_submodule(branch_node.target)
+            mul_node = next(
+                node
+                for node in branch.graph.nodes
+                if node.target == torch.ops.aten.mul.Scalar
+            )
+            self.assertFalse(filter_fn(mul_node))
 
     def test_deprecation_warning_for_to_backend_workflow(self):
         """

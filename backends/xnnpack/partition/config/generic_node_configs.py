@@ -421,6 +421,9 @@ class MulScalarConfig(GenericNodePartitionerConfig):
     target_name = "mul.Scalar"
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if node.graph is not ep.graph:
+            return False
+
         if not self.check_common_constraints(node, ep):
             return False
 
