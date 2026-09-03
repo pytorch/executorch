@@ -52,8 +52,8 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     option_to_flatbuffer,
 )
 from executorch.backends.qualcomm.utils.check_qnn_version import (
+    describe_sdk_build_id,
     get_qnn_lib_name,
-    get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -1290,22 +1290,17 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
                 "Please choose the following SOC: "
                 f"{list(get_soc_to_lpai_hw_ver_map().keys())}"
             )
-        # Before the version check below, because setup may install a newer SDK than the one this
-        # process can currently see. Asking first would read the version of whatever happened to be
-        # there and could reject a target the installed SDK actually supports.
+        # Before the version check below, so a host with no SDK yet gets one installed and the
+        # check has something real to read. It cannot lift an older SDK past this gate: the
+        # installer fetches a fixed version, so a caller who needs a newer one has to supply it
+        # through QNN_SDK_ROOT.
         setup_qnn_sdk()
         if get_soc_to_lpai_hw_ver_map()[
             soc_model.name
         ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
-            # Read once, because building this message by querying again raises when there is no
-            # SDK, which replaces the useful error below with a confusing one.
-            try:
-                current = get_sdk_build_id()
-            except Exception:
-                current = "unknown, no usable SDK found"
             raise ValueError(
                 f"Target soc_model({soc_model.name}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
-                f"Current QNN SDK version: {current}"
+                f"Current QNN SDK version: {describe_sdk_build_id()}"
             )
 
     qnn_executorch_options.shared_buffer = shared_buffer
@@ -1327,6 +1322,7 @@ def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
         "SA8797": HtpArch.V81,
+        "SC8380XP": HtpArch.V73,
         "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
@@ -1360,6 +1356,7 @@ def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
         "SA8797": QcomChipset.SA8797,
+        "SC8380XP": QcomChipset.SC8380XP,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,

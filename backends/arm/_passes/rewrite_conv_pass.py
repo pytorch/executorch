@@ -528,7 +528,7 @@ class RewriteConvPass(ArmPass):
             node.op == "call_function"
             and node.target == exir_ops.backend.tosa.RESCALE.default
             and len(node.args) > 1
-            and node.args[1] == torch.int32
+            and node.args[1] is torch.int32
         )
 
     def _get_direct_int32_rescale_users(

@@ -38,7 +38,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.check_qnn_version import (
-    get_sdk_build_id,
+    describe_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -155,15 +155,9 @@ class QnnConfig:
             elif get_soc_to_lpai_hw_ver_map()[
                 self.soc_model
             ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
-                # Read once, because building this message by querying again raises when there is
-                # no SDK, which replaces the useful error below with a confusing one.
-                try:
-                    current = get_sdk_build_id()
-                except Exception:
-                    current = "unknown, no usable SDK found"
                 raise RuntimeError(
                     f"Target soc_model({self.soc_model}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
-                    f"Current QNN SDK version: {current}"
+                    f"Current QNN SDK version: {describe_sdk_build_id()}"
                 )
         if self.seed:
             torch.manual_seed(self.seed)
