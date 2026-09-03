@@ -293,7 +293,15 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 
   array out = fast::scaled_dot_product_attention(
-      Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+      Q,
+      K,
+      V,
+      static_cast<float>(n.scale),
+      mask_mode,
+      mask_arr,
+      sinks,
+      false,
+      s);
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -382,6 +390,7 @@ inline void exec_update_and_attend(
       mask_mode,
       spec.mask,
       std::nullopt,
+      false,
       s);
   // Honor the op's output-dtype contract (unset -> SDPA's native output).
   if (n.out_dtype) {
