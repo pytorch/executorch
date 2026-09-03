@@ -6,8 +6,7 @@
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops._common import (
-    broadcast_shape,
-    require_same_dtype,
+    binary_meta,
     validate_nan_mode,
 )
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
@@ -35,18 +34,6 @@ def _raise_unsupported_profile(dtype: torch.dtype, op: str) -> None:
         f"TOSA spec {get_context_spec()} doesn't support {_dtype_name(dtype)} for {op}",
         op=op,
     )
-
-
-def _binary_meta(
-    input1: torch.Tensor,
-    input2: torch.Tensor,
-    op: str,
-    *,
-    output_dtype: torch.dtype | None = None,
-) -> torch.Tensor:
-    require_same_dtype(input1, input2, op)
-    output_shape = broadcast_shape(input1, input2, op)
-    return torch.empty(output_shape, dtype=output_dtype or input1.dtype)
 
 
 def _require_int_profile_support(dtype: torch.dtype, op: str) -> None:
@@ -140,7 +127,7 @@ def _validate_and_infer_mul_output_dtype(dtype: torch.dtype) -> torch.dtype:  # 
 )
 def ADD(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_add_sub_dtype(input1.dtype, "ADD")
-    return _binary_meta(input1, input2, "ADD")
+    return binary_meta(input1, input2, "ADD")
 
 
 @register_fake_tosa_op(
@@ -154,7 +141,7 @@ def ARITHMETIC_RIGHT_SHIFT(
     round: bool = False,
 ) -> torch.Tensor:
     _validate_any_profile_int_dtype(input1.dtype, "ARITHMETIC_RIGHT_SHIFT")
-    return _binary_meta(input1, input2, "ARITHMETIC_RIGHT_SHIFT")
+    return binary_meta(input1, input2, "ARITHMETIC_RIGHT_SHIFT")
 
 
 @register_fake_tosa_op(
@@ -163,7 +150,7 @@ def ARITHMETIC_RIGHT_SHIFT(
 )
 def BITWISE_AND(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_bitwise_and_dtype(input1.dtype)
-    return _binary_meta(input1, input2, "BITWISE_AND")
+    return binary_meta(input1, input2, "BITWISE_AND")
 
 
 @register_fake_tosa_op(
@@ -172,7 +159,7 @@ def BITWISE_AND(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 )
 def BITWISE_OR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_int_dtype(input1.dtype, "BITWISE_OR")
-    return _binary_meta(input1, input2, "BITWISE_OR")
+    return binary_meta(input1, input2, "BITWISE_OR")
 
 
 @register_fake_tosa_op(
@@ -181,34 +168,7 @@ def BITWISE_OR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 )
 def BITWISE_XOR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_int_dtype(input1.dtype, "BITWISE_XOR")
-    return _binary_meta(input1, input2, "BITWISE_XOR")
-
-
-@register_fake_tosa_op(
-    "EQUAL(Tensor input1, Tensor input2) -> Tensor",
-    TosaSpecification.all_versions_and_profiles(),
-)
-def EQUAL(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
-    _validate_profile_int32_or_fp_dtype(input1.dtype, "EQUAL")
-    return _binary_meta(input1, input2, "EQUAL", output_dtype=torch.bool)
-
-
-@register_fake_tosa_op(
-    "GREATER(Tensor input1, Tensor input2) -> Tensor",
-    TosaSpecification.all_versions_and_profiles(),
-)
-def GREATER(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
-    _validate_profile_int32_or_fp_dtype(input1.dtype, "GREATER")
-    return _binary_meta(input1, input2, "GREATER", output_dtype=torch.bool)
-
-
-@register_fake_tosa_op(
-    "GREATER_EQUAL(Tensor input1, Tensor input2) -> Tensor",
-    TosaSpecification.all_versions_and_profiles(),
-)
-def GREATER_EQUAL(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
-    _validate_profile_int32_or_fp_dtype(input1.dtype, "GREATER_EQUAL")
-    return _binary_meta(input1, input2, "GREATER_EQUAL", output_dtype=torch.bool)
+    return binary_meta(input1, input2, "BITWISE_XOR")
 
 
 @register_fake_tosa_op(
@@ -217,7 +177,7 @@ def GREATER_EQUAL(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 )
 def INTDIV(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_int32_dtype(input1.dtype, "INTDIV")
-    return _binary_meta(input1, input2, "INTDIV")
+    return binary_meta(input1, input2, "INTDIV")
 
 
 @register_fake_tosa_op(
@@ -226,7 +186,7 @@ def INTDIV(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 )
 def LOGICAL_AND(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_bool_dtype(input1.dtype, "LOGICAL_AND")
-    return _binary_meta(input1, input2, "LOGICAL_AND")
+    return binary_meta(input1, input2, "LOGICAL_AND")
 
 
 @register_fake_tosa_op(
@@ -235,7 +195,7 @@ def LOGICAL_AND(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 )
 def LOGICAL_LEFT_SHIFT(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_any_profile_int_dtype(input1.dtype, "LOGICAL_LEFT_SHIFT")
-    return _binary_meta(input1, input2, "LOGICAL_LEFT_SHIFT")
+    return binary_meta(input1, input2, "LOGICAL_LEFT_SHIFT")
 
 
 @register_fake_tosa_op(
@@ -244,7 +204,7 @@ def LOGICAL_LEFT_SHIFT(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tens
 )
 def LOGICAL_RIGHT_SHIFT(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_any_profile_int_dtype(input1.dtype, "LOGICAL_RIGHT_SHIFT")
-    return _binary_meta(input1, input2, "LOGICAL_RIGHT_SHIFT")
+    return binary_meta(input1, input2, "LOGICAL_RIGHT_SHIFT")
 
 
 @register_fake_tosa_op(
@@ -253,7 +213,7 @@ def LOGICAL_RIGHT_SHIFT(input1: torch.Tensor, input2: torch.Tensor) -> torch.Ten
 )
 def LOGICAL_OR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_bool_dtype(input1.dtype, "LOGICAL_OR")
-    return _binary_meta(input1, input2, "LOGICAL_OR")
+    return binary_meta(input1, input2, "LOGICAL_OR")
 
 
 @register_fake_tosa_op(
@@ -262,7 +222,7 @@ def LOGICAL_OR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 )
 def LOGICAL_XOR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_bool_dtype(input1.dtype, "LOGICAL_XOR")
-    return _binary_meta(input1, input2, "LOGICAL_XOR")
+    return binary_meta(input1, input2, "LOGICAL_XOR")
 
 
 @register_fake_tosa_op(
@@ -277,7 +237,7 @@ def MAXIMUM(
 ) -> torch.Tensor:
     validate_nan_mode(nan_mode, "MAXIMUM")
     _validate_profile_int32_or_fp_dtype(input1.dtype, "MAXIMUM")
-    return _binary_meta(input1, input2, "MAXIMUM")
+    return binary_meta(input1, input2, "MAXIMUM")
 
 
 @register_fake_tosa_op(
@@ -292,7 +252,7 @@ def MINIMUM(
 ) -> torch.Tensor:
     validate_nan_mode(nan_mode, "MINIMUM")
     _validate_profile_int32_or_fp_dtype(input1.dtype, "MINIMUM")
-    return _binary_meta(input1, input2, "MINIMUM")
+    return binary_meta(input1, input2, "MINIMUM")
 
 
 @register_fake_tosa_op(
@@ -315,7 +275,7 @@ def MUL(
             op="MUL",
         )
 
-    return _binary_meta(input1, input2, "MUL", output_dtype=output_dtype)
+    return binary_meta(input1, input2, "MUL", output_dtype=output_dtype)
 
 
 @register_fake_tosa_op(
@@ -324,7 +284,7 @@ def MUL(
 )
 def POW(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_fp_dtype(input1.dtype, "POW")
-    return _binary_meta(input1, input2, "POW")
+    return binary_meta(input1, input2, "POW")
 
 
 @register_fake_tosa_op(
@@ -333,4 +293,4 @@ def POW(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 )
 def SUB(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     _validate_add_sub_dtype(input1.dtype, "SUB")
-    return _binary_meta(input1, input2, "SUB")
+    return binary_meta(input1, input2, "SUB")

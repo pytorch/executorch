@@ -88,10 +88,11 @@ def calls_made_while_importing(module):
     guarded by an `if` still runs during the import. That guarded shape is what the original
     defect looked like, so a check that skipped it would not have caught it.
 
-    A function or class body is skipped, since an import does not enter it, but the parts of the
-    definition around it are not: a decorator, a base class and a default argument are all
-    evaluated at import time. A version check inside a `skipIf` decorator is exactly how setup
-    crept back onto the import path once already.
+    A function body is skipped, since an import does not enter it, but the parts of the definition
+    around it are not: a decorator, a base class and a default argument are all evaluated at import
+    time. A version check inside a `skipIf` decorator is exactly how setup crept back onto the
+    import path once already. A class body is not skipped, because unlike a function body it does
+    run while the module is imported.
     """
     tree = ast.parse(module_source(module))
     called = set()
@@ -108,12 +109,18 @@ def calls_made_while_importing(module):
 
     for statement in tree.body:
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            # The body is not entered during an import, but the parts of the definition that
-            # surround it are evaluated: decorators, base classes, and default arguments.
             record(statement.decorator_list)
             if isinstance(statement, ast.ClassDef):
                 record(statement.bases)
                 record(kw.value for kw in statement.keywords)
+                # A class body IS executed while the module is imported, unlike a function body,
+                # so anything called directly in one has to be seen here. Its methods are skipped
+                # for the same reason a top-level function is, except for their decorators.
+                for member in statement.body:
+                    if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        record(member.decorator_list)
+                    else:
+                        record([member])
             else:
                 args = statement.args
                 record(d for d in args.defaults if d is not None)
@@ -188,15 +195,26 @@ def test_the_package_root_stays_inert():
         "@skip_if(setup_qnn_sdk())\ndef f():\n    pass\n",
         "class C(base(setup_qnn_sdk())):\n    pass\n",
         "def f(x=setup_qnn_sdk()):\n    pass\n",
+        "class C:\n    setup_qnn_sdk()\n",
+        "class C:\n    @skip_if(setup_qnn_sdk())\n    def m(self):\n        pass\n",
     ],
-    ids=["plain", "guarded", "decorator", "class-base", "default-arg"],
+    ids=[
+        "plain",
+        "guarded",
+        "decorator",
+        "class-base",
+        "default-arg",
+        "class-body",
+        "method-decorator",
+    ],
 )
 def test_the_check_sees_every_shape_that_runs_at_import(source):
     """Guards the two checks above, which pass trivially if the walk finds nothing.
 
-    All five shapes run while a module is imported. The last three are easy to miss because they
-    sit on a function or class definition, whose body an import does not enter, and a version
-    check inside a decorator is how setup crept back onto the import path once already.
+    All seven shapes run while a module is imported. Four of them are easy to miss: three sit on a
+    function or class definition, whose body an import does not enter, and the class body itself
+    does run even though a function body does not. A version check inside a decorator is how setup
+    crept back onto the import path once already.
     """
     module = types.ModuleType("shaped_setup_call")
     module.__loader__ = types.SimpleNamespace(get_source=lambda name: source)
@@ -400,7 +418,6 @@ def test_reusing_a_cached_manager_still_applies_the_guard(
             "get_android_recipe",
             lambda f: f("android-arm64-snapdragon-fp16"),
         ),
-        ("quantizer", "QnnQuantizer", lambda f: f()),
         ("qnn_utils", "from_context_binary", lambda f: f("nope.bin", "g")),
         ("qnn_utils", "skip_annotation", lambda f: f(None, None, [], (), None)),
         (
@@ -432,11 +449,11 @@ def test_every_entry_point_reaches_the_setup(monkeypatch, module_name, attribute
         "qaihub_export": "executorch.examples.qualcomm.qaihub_scripts.utils.export",
     }
     module = pytest.importorskip(paths[module_name])
-    reached = []
+    reached = set()
     # Patched at the source module too, because some call sites import the helpers inside the
     # function, where rebinding the caller's attribute would miss them.
     for name in ("setup_qnn_sdk", "disable_mkldnn_on_amd"):
-        recorder = (lambda n: lambda *a, **k: reached.append(n))(name)
+        recorder = (lambda n: lambda *a, **k: reached.add(n))(name)
         monkeypatch.setattr(qnn_sdk_setup, name, recorder)
         if hasattr(module, name):
             monkeypatch.setattr(module, name, recorder)
@@ -457,12 +474,19 @@ def test_every_entry_point_reaches_the_setup(monkeypatch, module_name, attribute
     try:
         call(getattr(module, attribute))
     except Exception as error:  # noqa: BLE001
-        # A path that never got past its own availability guard proves nothing either way, and
-        # that depends on what is installed rather than on this change.
-        if not reached and "not available" in str(error):
+        # Matched on the registry's own wording rather than on "not available" alone, and only
+        # when the backend is genuinely absent. A deleted setup call also leaves `reached` empty
+        # and can reach a wrapped message containing those same words, so the looser condition
+        # turned the regression this test exists to catch into a green skip.
+        unavailable = "Backend 'qnn' not available" in str(error)
+        if not reached and unavailable:
             pytest.skip(f"{module_name} is not usable in this environment: {error}")
 
-    assert reached, f"{module_name}.{attribute} reaches neither helper"
+    # Named rather than "either helper ran", because most of these call sites apply the AMD guard
+    # as well, and one shared flag lets that one hide a deleted setup call.
+    assert (
+        "setup_qnn_sdk" in reached
+    ), f"{module_name}.{attribute} never reaches the setup"
 
 
 def test_a_failed_install_does_not_leave_a_broken_sdk_path(
@@ -470,15 +494,51 @@ def test_a_failed_install_does_not_leave_a_broken_sdk_path(
 ):
     """A failed install must not look like a usable SDK to the next caller.
 
-    The installer writes QNN_SDK_ROOT before it tries to load the library, so a failure after
-    that point leaves the variable pointing at a tree that does not work. Left in place, the next
-    call takes the preinstalled branch and reports success on a broken SDK.
+    The installer prepends the staged library directory to LD_LIBRARY_PATH before it decides
+    whether the SDK is usable, and it reads that variable back on its next call: the QNN libraries
+    being findable through it count as proof that a usable SDK is already present. So a failure
+    that leaves the library path behind is the worse half. The next call takes that shortcut and
+    reports success with no SDK path set at all.
     """
+    staged_libs = "/staged/but/broken/lib/x86_64-linux-clang"
     attempts = []
 
     def poisoning_install():
         os.environ["QNN_SDK_ROOT"] = "/staged/but/broken"
+        ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+        os.environ["LD_LIBRARY_PATH"] = (
+            f"{staged_libs}:{ld_path}" if ld_path else staged_libs
+        )
         attempts.append(1)
+        return False
+
+    monkeypatch.setattr(qnn_sdk_setup, "_install_qnn_sdk", poisoning_install)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/unrelated/lib")
+
+    with pytest.raises(RuntimeError):
+        qnn_sdk_setup.setup_qnn_sdk()
+
+    assert os.environ.get("QNN_SDK_ROOT") is None
+    assert os.environ.get("LD_LIBRARY_PATH") == "/unrelated/lib"
+
+    # The docstring promises the next caller tries again, which only holds if both were restored.
+    with pytest.raises(RuntimeError):
+        qnn_sdk_setup.setup_qnn_sdk()
+
+    assert len(attempts) == 2
+
+
+def test_a_failed_install_restores_an_absent_library_path(monkeypatch, ready_to_set_up):
+    """Restoring must remove the variable the installer created, not set it to an empty string.
+
+    The installer creates the variable from nothing when the process started without it, and an
+    empty string is inherited by every child process the example scripts launch.
+    """
+    monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+
+    def poisoning_install():
+        os.environ["QNN_SDK_ROOT"] = "/staged/but/broken"
+        os.environ["LD_LIBRARY_PATH"] = "/staged/but/broken/lib/x86_64-linux-clang"
         return False
 
     monkeypatch.setattr(qnn_sdk_setup, "_install_qnn_sdk", poisoning_install)
@@ -486,13 +546,31 @@ def test_a_failed_install_does_not_leave_a_broken_sdk_path(
     with pytest.raises(RuntimeError):
         qnn_sdk_setup.setup_qnn_sdk()
 
-    assert os.environ.get("QNN_SDK_ROOT") is None
+    assert "LD_LIBRARY_PATH" not in os.environ
 
-    # The docstring promises the next caller tries again, which only holds if the path was cleared.
-    with pytest.raises(RuntimeError):
+
+def test_an_installer_that_raises_also_leaves_nothing_behind(
+    monkeypatch, ready_to_set_up
+):
+    """The installer raises as well as returning False, and both need the same cleanup.
+
+    A missing unpacking tool and an unrecognised archive both escape it, after the point where it
+    has already written the two variables.
+    """
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/unrelated/lib")
+
+    def raising_install():
+        os.environ["QNN_SDK_ROOT"] = "/staged/but/broken"
+        os.environ["LD_LIBRARY_PATH"] = "/staged/but/broken/lib:/unrelated/lib"
+        raise ValueError("Unsupported archive format")
+
+    monkeypatch.setattr(qnn_sdk_setup, "_install_qnn_sdk", raising_install)
+
+    with pytest.raises(ValueError):
         qnn_sdk_setup.setup_qnn_sdk()
 
-    assert len(attempts) == 2
+    assert os.environ.get("QNN_SDK_ROOT") is None
+    assert os.environ.get("LD_LIBRARY_PATH") == "/unrelated/lib"
 
 
 def test_building_a_quantizer_applies_the_amd_guard(monkeypatch, fake_cpuinfo):
@@ -611,11 +689,13 @@ def test_the_platform_check_reads_the_real_platform(
     assert qnn_sdk_setup._is_linux_x86() is expected
 
 
-def test_a_missing_downloader_names_the_way_out(monkeypatch, ready_to_set_up):
-    """An absent downloader has to say what to do, on a platform that would have downloaded.
+def test_a_missing_downloader_does_not_stop_a_lowering(monkeypatch, ready_to_set_up):
+    """A build that leaves the downloader out still has to be able to lower.
 
-    A bare ModuleNotFoundError names an internal packaging detail and leaves the reader nothing
-    to act on.
+    Such a build supplies the QNN libraries through its own build rules rather than by fetching
+    them, so there is nothing for setup to do and nothing to report. Raising here fails a lowering
+    that would otherwise work, and a library that really is missing still says so when the backend
+    starts.
     """
 
     def no_downloader(name, *args, **kwargs):
@@ -626,13 +706,12 @@ def test_a_missing_downloader_names_the_way_out(monkeypatch, ready_to_set_up):
     original_import = builtins.__import__
     monkeypatch.setattr(builtins, "__import__", no_downloader)
 
-    # Matched on what the message promises, not just the variable name. Both error paths
-    # mention QNN_SDK_ROOT, so that alone cannot tell them apart or spot an empty message.
-    with pytest.raises(RuntimeError, match="cannot download"):
-        qnn_sdk_setup.setup_qnn_sdk()
+    qnn_sdk_setup.setup_qnn_sdk()
 
-    with pytest.raises(RuntimeError, match=r"export QNN_SDK_ROOT="):
-        qnn_sdk_setup.setup_qnn_sdk()
+    assert qnn_sdk_setup._sdk_ready
+    # Nothing may be invented for a caller who never set it, since everything downstream builds
+    # real paths from this value.
+    assert os.environ.get("QNN_SDK_ROOT") is None
 
 
 def test_a_dependency_missing_inside_the_downloader_speaks_for_itself(
