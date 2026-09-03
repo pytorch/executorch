@@ -9,7 +9,7 @@
 
 import itertools
 import unittest
-from typing import Any, Callable, cast, List, Optional, Set, Tuple, Type
+from typing import Any, Callable, cast, Iterator, List, Optional, Set, Tuple, Type
 from unittest.mock import patch
 
 import executorch.exir as exir
@@ -241,7 +241,15 @@ class TestIntervalFirstFitMemoryPlanning(unittest.TestCase):
         candidate.assert_not_called()
         self.assertEqual(conditional_result.bufsizes, lower_bound)
 
-    def test_conditional_is_deterministic_for_ties(self) -> None:
+    def test_conditional_lower_bound_tie_is_stable_across_set_orders(self) -> None:
+        class IterationOrderedSet(set[TensorSpec]):
+            def __init__(self, ordered_specs: List[TensorSpec]) -> None:
+                self._ordered_specs = ordered_specs
+                super().__init__(ordered_specs)
+
+            def __iter__(self) -> Iterator[TensorSpec]:
+                return iter(self._ordered_specs)
+
         specs = [
             self._spec(32, [0, 1]),
             self._spec(32, [0, 1]),
@@ -249,20 +257,21 @@ class TestIntervalFirstFitMemoryPlanning(unittest.TestCase):
         ]
         graph_module = self._graph_module(specs)
 
-        spec_set = set(specs)
-        first = greedy_interval_first_fit_conditional(
-            16,
-            spec_set,
-            graph_module,
-            cast(ExportGraphSignature, None),
-        )
-        second = greedy_interval_first_fit_conditional(
-            16,
-            spec_set,
-            graph_module,
-            cast(ExportGraphSignature, None),
-        )
+        with patch("executorch.exir.memory_planning.interval_first_fit") as candidate:
+            first = greedy_interval_first_fit_conditional(
+                16,
+                IterationOrderedSet(specs),
+                graph_module,
+                cast(ExportGraphSignature, None),
+            )
+            second = greedy_interval_first_fit_conditional(
+                16,
+                IterationOrderedSet(list(reversed(specs))),
+                graph_module,
+                cast(ExportGraphSignature, None),
+            )
 
+        candidate.assert_not_called()
         self.assertEqual(first.bufsizes, second.bufsizes)
         self.assertEqual(
             [first.spec_dict[spec].mem_offset for spec in specs],

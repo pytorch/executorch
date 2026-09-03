@@ -1082,7 +1082,7 @@ def _compute_total_sizes(
 
 def greedy(
     alignment: int,
-    specs: Set[TensorSpec],
+    specs: Iterable[TensorSpec],
     graph_module: torch.fx.GraphModule,
     graph_signature: ExportGraphSignature,
     extra_padding: int = 0,
@@ -1093,7 +1093,7 @@ def greedy(
 
     Args:
         alignment: Memory alignment requirement
-        specs: Set of TensorSpec objects with updated lifetimes
+        specs: Iterable of TensorSpec objects with updated lifetimes
         graph_module: Graph module
         graph_signature: Graph signature
         extra_padding: Additional padding to add to each memory buffer (in bytes)
@@ -1354,9 +1354,11 @@ def greedy_interval_first_fit_conditional(
             extra_padding,
         )
 
+    order = _stable_spec_order(specs, graph_module, graph_signature)
+    ordered_specs = sorted(specs, key=order.__getitem__)
     greedy_result = greedy(
         alignment,
-        specs,
+        ordered_specs,
         graph_module,
         graph_signature,
         extra_padding,
