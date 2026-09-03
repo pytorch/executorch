@@ -268,7 +268,7 @@ TEST_F(MLXCellCacheTest, InvalidConfigThrows) {
 // A runner reaches a layout by (backend_id, kind), so the builder registration
 // is as much a part of the layout as the class.
 TEST_F(MLXCellCacheTest, RegistryBuildsCellLayout) {
-  auto built = cache::CacheBuilderRegistry::global().build(
+  auto built = cache::CacheFactory::global().build(
       kMLXBackendId, "cell", flat_config(32, 1, H, D, kHalf));
   ASSERT_TRUE(built.ok());
   const std::shared_ptr<cache::Cache>& c = *built;

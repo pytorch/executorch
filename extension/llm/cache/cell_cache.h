@@ -56,7 +56,7 @@ class CellCache : public Cache, public BatchControl, public CellStepper {
   // One bit per sequence in the owner bitset.
   static constexpr int kMaxSeqs = 64;
 
-  // Precondition: valid(cfg). CacheBuilderRegistry::build enforces it for
+  // Precondition: valid(cfg). CacheFactory::build enforces it for
   // registry-created caches; direct construction must check first.
   explicit CellCache(const CacheConfig& cfg);
 

@@ -356,7 +356,7 @@ int main(int argc, char** argv) {
     // for those. session/options are outer-scoped: session must outlive the
     // Module (it keeps the cache in the registry) and mlx_opts must outlive
     // load_method() (the map holds a view into it).
-    std::optional<cache::CacheSession> session;
+    std::optional<cache::CacheLease> session;
     ::executorch::runtime::BackendOptions<1> mlx_opts;
     ::executorch::runtime::LoadBackendOptionsMap options_map;
     const bool off_graph = kv_capacity > 0;
@@ -399,7 +399,7 @@ int main(int argc, char** argv) {
       if (initial_capacity >= 0) {
         cfg.initial_capacity = initial_capacity;
       }
-      auto built = cache::CacheBuilderRegistry::global().build(
+      auto built = cache::CacheFactory::global().build(
           ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
       if (!built.ok()) {
         std::cerr << "Failed to build cache: "
@@ -407,7 +407,7 @@ int main(int argc, char** argv) {
         return 1;
       }
       prefill_chunk = cfg.max_write ? *cfg.max_write : 0;
-      session.emplace(cache::make_unique_key(), built.get());
+      session.emplace(built.get());
 
       print_cache_summary(cfg);
       if (mlx_opts.set_option(
@@ -534,7 +534,7 @@ int main(int argc, char** argv) {
         std::cerr << "--interactive requires --kv-max-capacity\n";
         return 1;
       }
-      auto* control = session->control();
+      auto* control = session->cache()->as<cache::SequenceControl>();
       std::cout << "Multi-turn chat. /reset clears, /undo drops the last turn, "
                    "/undo N drops N tokens, /quit exits.\n";
       int64_t position = 0;
@@ -646,7 +646,8 @@ int main(int argc, char** argv) {
       if (!session) {
         return;
       }
-      const int cap = session->control()->capacity();
+      const int cap =
+          session->cache()->as<cache::SequenceControl>()->capacity();
       const double pct = cap > 0 ? 100.0 * len / cap : 0.0;
       std::cout << "[cache] " << when << ": " << len << " / " << cap
                 << " tokens (" << pct << "%)" << std::endl;
@@ -662,7 +663,7 @@ int main(int argc, char** argv) {
     for (int iter = 0; iter < (warmup ? 2 : 1); ++iter) {
       const bool measured = !warmup || iter == 1;
       if (iter > 0 && off_graph) {
-        session->control()->clear();
+        session->cache()->as<cache::SequenceControl>()->clear();
       }
       stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
       int64_t next = prefill(ids, prefill_pos);

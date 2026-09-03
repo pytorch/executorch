@@ -59,9 +59,9 @@ class CacheRegistry {
 using CacheBuilder =
     std::function<std::shared_ptr<Cache>(const CacheConfig&)>;
 
-class CacheBuilderRegistry {
+class CacheFactory {
  public:
-  static CacheBuilderRegistry& global();
+  static CacheFactory& global();
 
   void register_builder(
       const std::string& backend_id,
@@ -74,7 +74,7 @@ class CacheBuilderRegistry {
       const CacheConfig& cfg) const;
 
  private:
-  CacheBuilderRegistry() = default;
+  CacheFactory() = default;
 
   mutable std::mutex mu_;
   std::map<std::pair<std::string, std::string>, CacheBuilder>
@@ -83,26 +83,29 @@ class CacheBuilderRegistry {
 
 // Process-global atomic counter -> "cache-N"; centralizes key generation so
 // keys never collide.
-std::string make_unique_key();
+std::string new_cache_key();
 
-// RAII: installs the cache into the global registry under a unique key on
-// construction and erases it on destruction (no leak on any exit path). Holds
-// the runner's shared_ptr and exposes the control face for the generation loop.
-class CacheSession {
+// RAII: installs the cache into the global registry under a key of its own
+// making on construction and erases it on destruction (no leak on any exit
+// path). Generating the key here rather than taking one means two live leases
+// cannot collide on it.
+class CacheLease {
  public:
-  CacheSession(std::string key, std::shared_ptr<Cache> cache)
-      : key_(std::move(key)), cache_(std::move(cache)) {
+  explicit CacheLease(std::shared_ptr<Cache> cache)
+      : key_(new_cache_key()), cache_(std::move(cache)) {
     CacheRegistry::global().install(key_, cache_);
   }
-  ~CacheSession() {
+  ~CacheLease() {
     CacheRegistry::global().erase(key_);
   }
 
-  CacheSession(const CacheSession&) = delete;
-  CacheSession& operator=(const CacheSession&) = delete;
+  CacheLease(const CacheLease&) = delete;
+  CacheLease& operator=(const CacheLease&) = delete;
 
-  SequenceControl* control() const {
-    return cache_->as<SequenceControl>();
+  // Which face to ask for is the caller's to decide: a lease holds a
+  // single-sequence cache for one runner and a multi-sequence one for another.
+  Cache* cache() const {
+    return cache_.get();
   }
   const std::string& key() const {
     return key_;

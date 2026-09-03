@@ -303,21 +303,21 @@ int main(int argc, char* argv[]) {
     // Build and install the off-graph KV cache before the Module, so the
     // registry entry exists by the time the delegate's init() looks it up.
     // Declared here so the session outlives the module.
-    std::optional<cache::CacheSession> cache_session;
+    std::optional<cache::CacheLease> cache_session;
     if (!kv_cache_spec.empty()) {
       cache::CacheConfig cfg{};
       if (!parse_kv_cache_spec(kv_cache_spec, cfg)) {
         std::cerr << "Invalid --kv-cache spec: " << kv_cache_spec << std::endl;
         return 1;
       }
-      auto built = cache::CacheBuilderRegistry::global().build(
+      auto built = cache::CacheFactory::global().build(
           ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
       if (!built.ok()) {
         std::cerr << "Failed to build KV cache: "
                   << static_cast<int>(built.error()) << std::endl;
         return 1;
       }
-      cache_session.emplace(cache::make_unique_key(), built.get());
+      cache_session.emplace(built.get());
       if (verbose) {
         std::cout << "Installed KV cache under key " << cache_session->key()
                   << std::endl;

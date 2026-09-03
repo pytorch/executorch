@@ -23,10 +23,10 @@
 
 using executorch::extension::llm::cache::BatchControl;
 using executorch::extension::llm::cache::Cache;
-using executorch::extension::llm::cache::CacheBuilderRegistry;
+using executorch::extension::llm::cache::CacheFactory;
 using executorch::extension::llm::cache::CacheConfig;
 using executorch::extension::llm::cache::CacheRegistry;
-using executorch::extension::llm::cache::CacheSession;
+using executorch::extension::llm::cache::CacheLease;
 using executorch::extension::llm::cache::CellCache;
 using executorch::extension::llm::cache::CellStep;
 using executorch::extension::llm::cache::CellStepper;
@@ -34,7 +34,7 @@ using executorch::extension::llm::cache::SequenceControl;
 using executorch::extension::llm::cache::SequencePlanner;
 using executorch::extension::llm::cache::LayerConfig;
 using executorch::extension::llm::cache::LayerPolicy;
-using executorch::extension::llm::cache::make_unique_key;
+using executorch::extension::llm::cache::new_cache_key;
 using executorch::extension::llm::cache::SequenceCache;
 using executorch::runtime::Error;
 namespace et = executorch::extension::llm::cache::et;
@@ -184,7 +184,7 @@ TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
 
 TEST_F(CacheTest, RegistryInstallGetErase) {
   auto& reg = CacheRegistry::global();
-  const std::string key = make_unique_key();
+  const std::string key = new_cache_key();
   EXPECT_EQ(reg.get(key), nullptr);
 
   std::shared_ptr<Cache> cache =
@@ -198,11 +198,11 @@ TEST_F(CacheTest, RegistryInstallGetErase) {
 }
 
 TEST_F(CacheTest, UniqueKeysDoNotCollide) {
-  EXPECT_NE(make_unique_key(), make_unique_key());
+  EXPECT_NE(new_cache_key(), new_cache_key());
 }
 
 TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
-  auto& reg = CacheBuilderRegistry::global();
+  auto& reg = CacheFactory::global();
   reg.register_builder("TestBackend", "seq", [](const CacheConfig& cfg) {
     return std::static_pointer_cast<Cache>(
         std::make_shared<SequenceCache>(cfg));
@@ -230,13 +230,13 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
 }
 
 TEST_F(CacheTest, SessionInstallsOnCtorErasesOnDtor) {
-  const std::string key = make_unique_key();
+  std::string key;
   {
-    CacheSession session(
-        key,
+    CacheLease lease(
         std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}}));
+    key = lease.key();
     EXPECT_NE(CacheRegistry::global().get(key), nullptr);
-    EXPECT_TRUE(session.control()->can_extend(4));
+    EXPECT_TRUE(lease.cache()->as<SequenceControl>()->can_extend(4));
   }
   EXPECT_EQ(CacheRegistry::global().get(key), nullptr);
 }

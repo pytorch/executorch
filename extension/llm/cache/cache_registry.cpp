@@ -40,12 +40,12 @@ void CacheRegistry::erase(const std::string& key) {
   caches_.erase(key);
 }
 
-CacheBuilderRegistry& CacheBuilderRegistry::global() {
-  static CacheBuilderRegistry registry;
+CacheFactory& CacheFactory::global() {
+  static CacheFactory registry;
   return registry;
 }
 
-void CacheBuilderRegistry::register_builder(
+void CacheFactory::register_builder(
     const std::string& backend_id,
     const std::string& kind,
     CacheBuilder builder) {
@@ -53,7 +53,7 @@ void CacheBuilderRegistry::register_builder(
   builders_[{backend_id, kind}] = std::move(builder);
 }
 
-Result<std::shared_ptr<Cache>> CacheBuilderRegistry::build(
+Result<std::shared_ptr<Cache>> CacheFactory::build(
     const std::string& backend_id,
     const std::string& kind,
     const CacheConfig& cfg) const {
@@ -77,10 +77,19 @@ Result<std::shared_ptr<Cache>> CacheBuilderRegistry::build(
       "cache: invalid CacheConfig for %s:%s",
       backend_id.c_str(),
       kind.c_str());
-  return builder(cfg);
+  // A builder that hands back null would otherwise travel as an ok() Result
+  // and be dereferenced by the caller.
+  auto cache = builder(cfg);
+  ET_CHECK_OR_RETURN_ERROR(
+      cache != nullptr,
+      Internal,
+      "cache: builder for %s:%s returned null",
+      backend_id.c_str(),
+      kind.c_str());
+  return cache;
 }
 
-std::string make_unique_key() {
+std::string new_cache_key() {
   static std::atomic<uint64_t> counter{0};
   return "cache-" + std::to_string(counter.fetch_add(1));
 }
