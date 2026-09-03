@@ -1,90 +1,70 @@
 # Off-graph KV cache
 
 A KV cache that lives outside the exported graph. The runner creates it, the
-delegate writes into it during a forward, and neither holds a pointer to the
-other — they meet through a string key.
+backend writes into it during a forward, and neither holds a pointer to the
+other. They meet through a string key.
 
-Exporting the cache out of the graph lets the runner do things the graph can't
-express: rewind a turn, clear between prompts, or hand one pool to several
-concurrent sequences.
+Keeping the cache out of the graph lets the runner do things the graph cannot
+express: rewind a turn, clear between prompts, or hand one pool of memory to
+several concurrent sequences.
 
-## Two layers
+## Who uses what
 
-**The core is framework-neutral.** `cache.h`, `sequence_cache.h`, and
-`cell_cache.{h,cpp}` include nothing but the C++ standard library. No tensors,
-no ExecuTorch. They describe *where bytes go* in integers — which physical rows
-a step writes, which it reads, what the mask should be — and hand that to
-whoever owns the actual memory. Failures come back as `bool` and
-`std::optional`.
+Three audiences touch this directory, and they need almost disjoint parts of
+it.
 
-**The registry is ExecuTorch-specific.** `cache_registry.{h,cpp}` uses
-`Result`, `Error`, and `ET_LOG`, but the deeper tie is its reason for existing:
-`DelegateHandle` is opaque and backend options carry only strings, so a runner
-cannot pass the delegate a pointer. Publishing under a generated key and
-meeting on that string is a workaround for that constraint. In a framework
-where you can hand the cache to the op directly, this layer disappears.
+### The control plane
 
-> The build does not yet honour this split: one `extension_llm_cache` target
-> compiles both halves and links `executorch_core`, so the neutral core cannot
-> currently be built neutrally.
+The runner, or a batch executor. It decides *what* to cache and *when* to
+discard it, and it runs between forwards, never during one.
 
-## Faces
-
-A cache is owned as a `Cache*` and asked for the interface you want:
+It uses `CacheFactory` to build a cache, `InstallGuard` to publish it, and one
+runner-facing face for the rest of the session:
 
 ```cpp
-auto* ctl = cache->as<SequenceControl>();   // null if not offered
+auto built = CacheFactory::global().build(kMLXBackendId, kind::kSingle, cfg);
+if (!built.ok()) { return built.error(); }
+
+const std::shared_ptr<Cache> kv = built.get();
+const InstallGuard guard{kv};                    // published while in scope
+mlx_opts.set_option(kCacheKeyKey, guard.key());  // hand the key to the backend
+
+auto* ctl = kv->as<SequenceControl>();
+ctl->can_extend(n);   ctl->rewind(len);   ctl->clear();
 ```
 
-`Cache` has one virtual. A face declares its own name, and an implementation
-lists the ones it offers:
+It includes `cache.h` and `cache_registry.h`. It never includes
+`sequence_cache.h` or `cell_cache.h`, and never calls a planner face. It does
+not know how bytes are arranged, only how much room is left and how to give
+some back.
+
+### The backend
+
+The byte layer inside the delegate. It owns the actual tensors and runs during
+a forward.
+
+At init it resolves the key and asks for its own face:
 
 ```cpp
-class MLXCache {
-  static constexpr const char* kFaceName = "mlx.MLXCache";
-};
-
-void* face(FaceId id) override {
-  return expose<BatchControl, CellStepper>(this, id);
-}
+handle->cache_shared = CacheRegistry::global().get(cache_key);
+handle->state.cache  = handle->cache_shared->as<MLXCache>();
 ```
 
-**Why not `dynamic_cast`.** The neutral core avoids RTTI so it can be built
-with `-fno-rtti` under `EXECUTORCH_OPTIMIZE_SIZE`. `static_cast` inside
-`expose` also applies the pointer adjustment a face at a non-zero offset needs,
-refuses to compile if the type is not really a base, and is bound to its own
-name so the two cannot be mismatched. Naming `T::kFaceName` makes
-`as<NotAFace>()` a compile error rather than a silent null.
+During a forward it asks a planner face where the bytes go:
 
-**Why names rather than an enum.** The set is open. A backend adds a face
-without this directory learning about it — `MLXCache` is declared in
-`MLXCache.h` and `cache.h` never sees it. Names are compared by pointer first,
-falling back to `strcmp` only when a cache crosses a shared-object boundary.
+```cpp
+auto plan = planner->plan(layer, position, T);   // integers, no tensors
+// ... write K/V into those rows, attend over those runs ...
+planner->commit(*plan);
+```
 
-### The faces
+It includes the layout headers, because it subclasses them to attach its own
+tensor storage. It is the only caller of `plan()`, `commit()`, and `place_step()`.
 
-|                  | single sequence   | pooled cells   |
-| ---------------- | ----------------- | -------------- |
-| runner-facing    | `SequenceControl` | `BatchControl` |
-| backend-facing   | `SequencePlanner` | `CellStepper`  |
-| backend-specific | each backend names its own (`MLXCache`)  ||
+### The cache implementer
 
-Runner-facing faces live in `cache.h`: a caller does `as<SequenceControl>()` on
-something it got from the registry and must see the face without choosing a
-layout. Backend-facing faces live with their layout, because only a byte layer
-calls `plan()` and it already includes that header to construct the cache.
-
-## Layouts
-
-**`SequenceCache`** — one sequence, one logical length for the whole model,
-per-layer runs. Each layer is flat (keeps everything) or ring (slides a
-window), so a mixed model stays coherent. Offers `SequenceControl` and
-`SequencePlanner`.
-
-**`CellCache`** — many sequences sharing a pool of per-token cells. A cell is
-freed when no sequence owns it. Offers `BatchControl` and `CellStepper`.
-
-A backend subclasses one and adds its own face:
+Someone adding a layout or a backend face. Subclass a neutral layout, add
+whatever face your backend needs, and list them:
 
 ```cpp
 class MLXCellCache : public cache::CellCache, public MLXCache {
@@ -95,90 +75,119 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
 };
 ```
 
-## The rendezvous
+Then register a builder so the control plane can ask for it by name.
 
-**1. Register**, once, in a static initializer in the backend:
+## Faces
 
-```cpp
-CacheFactory::global().register_builder(
-    kMLXBackendId, cache::kind::kSingle,
-    [](const cache::CacheConfig& cfg) {
-      return std::shared_ptr<cache::Cache>(std::make_shared<MLXSequenceCache>(cfg));
-    });
-```
-
-**2. Build.** The factory validates the config, rejects a null builder result,
-and on an unknown kind names the kinds that do exist.
+A cache is owned as a `Cache*` and asked for the interface you want:
 
 ```cpp
-auto built = CacheFactory::global().build(kMLXBackendId, cache::kind::kSingle, cfg);
-if (!built.ok()) { return built.error(); }
+auto* ctl = cache->as<SequenceControl>();   // null if this cache does not offer it
 ```
 
-**3. Publish.** `InstallGuard` mints a key, installs the cache, and erases the
-entry when it goes out of scope. It is the only way to publish —
-`CacheRegistry::install` is private — so an entry cannot outlive its owner or
-be clobbered by a second caller.
+`Cache` has one virtual method. Each face declares its own name, and an
+implementation lists the faces it offers through `expose`.
 
-```cpp
-const cache::InstallGuard guard{built.get()};
-mlx_opts.set_option(kCacheKeyKey, guard.key());
-```
+|                  | single sequence   | pooled cells   |
+| ---------------- | ----------------- | -------------- |
+| control plane    | `SequenceControl` | `BatchControl` |
+| backend          | `SequencePlanner` | `CellStepper`  |
+| backend-specific | each backend names its own, such as `MLXCache` ||
 
-**4. Resolve.** Backend init runs inside `load_method()` and is the only place
-the registry is read:
+Control-plane faces live in `cache.h`. A runner calls `as<SequenceControl>()`
+on something it got from the registry, so it must see the face without choosing
+a layout. Backend faces live with their layout in `sequence_cache.h` or
+`cell_cache.h`, because only a byte layer calls them and it already includes
+that header to construct the cache.
 
-```cpp
-handle->cache_shared = CacheRegistry::global().get(cache_key);
-handle->state.cache  = handle->cache_shared->as<MLXCache>();
-```
+**No RTTI.** The core avoids `dynamic_cast` so it can build with `-fno-rtti`
+under `EXECUTORCH_OPTIMIZE_SIZE`. The `static_cast` inside `expose` also
+applies the pointer adjustment a face at a non-zero offset needs, refuses to
+compile if the type is not really a base, and is bound to its own name, so the
+two cannot be mismatched. Because `as<T>()` names `T::kFaceName`, asking for a
+type that is not a face fails to compile instead of returning null.
 
-**5. Teardown.** `~InstallGuard` erases the entry. The delegate still holds its
-own `shared_ptr`, so the cache survives — only findability by key ends.
+**Names, not an enum.** The set of faces is open. A backend adds one without
+this directory learning about it: `MLXCache` declares its name in `MLXCache.h`
+and `cache.h` never sees it. Names compare by pointer first and fall back to
+`strcmp`, which covers a cache built in one shared object and queried from
+another.
 
-### Three lifetimes
+## Layouts
 
-- The **entry** must exist across `load_method()`, which is when init resolves
-  the key. Nothing reads the registry after that.
-- The **guard** usually lives longer, because the runner reaches the cache
-  through its own pointer for `can_extend` and `clear`.
-- The **cache** outlives both under shared ownership.
+**`SequenceCache`** holds one sequence with a single logical length for the
+whole model. Each layer is flat, keeping all history, or ring, sliding a
+window, so a model that mixes both stays coherent. Offers `SequenceControl` and
+`SequencePlanner`.
 
-Destroying the guard early does not dangle anything. It silently unpublishes,
-and the next `load_method()` fails with a key that is no longer installed —
-a delayed, confusing failure rather than a crash. Nothing enforces the
-ordering; keep the guard in a scope that outlives the module.
+**`CellCache`** holds many sequences over a shared pool of per-token cells. A
+cell is freed once no sequence owns it. Offers `BatchControl` and `CellStepper`.
 
 ## Cache kinds
 
-| constant             | value           | layout                             |
-| -------------------- | --------------- | ---------------------------------- |
-| `kind::kSingle`      | `single`        | one sequence, per-layer runs       |
-| `kind::kBatchedCell` | `batched-cell`  | many sequences over a shared pool  |
+| constant             | value           | layout                            |
+| -------------------- | --------------- | --------------------------------- |
+| `kind::kSingle`      | `single`        | one sequence, per-layer runs      |
+| `kind::kBatchedCell` | `batched-cell`  | many sequences over a shared pool |
 
 Kinds are strings so a backend can register a layout this directory has never
-heard of. The constants are the vocabulary for the ones it knows about, not an
-enumeration of what is valid — go through them, because a literal typo is a
-runtime `NotFound` rather than a compile error.
+heard of. The constants name the kinds it does know about. Use them: a typo in
+a literal is a runtime `NotFound`, while a typo in a constant does not compile.
+
+## Lifetimes
+
+`InstallGuard` is the only way to publish. `CacheRegistry::install` is private,
+so an entry cannot outlive its owner and a second caller cannot clobber it.
+
+Three lifetimes overlap:
+
+- The **registry entry** must exist across `load_method()`, which is when
+  backend init resolves the key. Nothing reads the registry afterwards.
+- The **guard** usually lives longer, because the control plane keeps using its
+  own pointer to the cache for the rest of the session.
+- The **cache** outlives both. The backend holds a `shared_ptr` of its own.
+
+Destroying the guard early does not dangle anything. It unpublishes silently,
+and the next `load_method()` fails with a key that is no longer installed. That
+is a delayed and confusing failure, so keep the guard in a scope that outlives
+the module. Nothing enforces the ordering.
+
+## Two layers
+
+`cache.h`, `sequence_cache.h`, and `cell_cache.{h,cpp}` include nothing but the
+C++ standard library. No tensors and no ExecuTorch. They describe where bytes
+go using integers: which physical rows a step writes, which it reads, what the
+mask should be. Failures come back as `bool` and `std::optional`.
+
+`cache_registry.{h,cpp}` is ExecuTorch-specific. It uses `Result`, `Error`, and
+`ET_LOG`, but the stronger tie is its reason for existing. `DelegateHandle` is
+opaque and backend options carry only strings, so a runner cannot pass the
+backend a pointer. Publishing under a generated key works around that. Give a
+framework where the cache can be handed to the op directly, and this layer
+disappears.
+
+> The build does not yet honour this split. One `extension_llm_cache` target
+> compiles both halves and links `executorch_core`, so the neutral core cannot
+> currently be built without ExecuTorch.
 
 ## Files
 
 ```
-cache.h              faces, the face mechanism, config              neutral
-sequence_cache.h     SequenceCache + SequencePlanner, flat/ring      neutral
-cell_cache.{h,cpp}   CellCache + CellStepper, the cell pool          neutral
-cache_registry.{h,cpp}  CacheRegistry, CacheFactory, InstallGuard    ET
+cache.h                 faces, the face mechanism, config           neutral
+sequence_cache.h        SequenceCache, SequencePlanner, flat/ring    neutral
+cell_cache.{h,cpp}      CellCache, CellStepper, the cell pool        neutral
+cache_registry.{h,cpp}  CacheRegistry, CacheFactory, InstallGuard    ExecuTorch
 ```
 
 ## Known gaps
 
-**`CacheConfig` fields are not read the same way by every layout.** `capacity`
-is a position ceiling for `kSingle` but a count of pool slots for
-`kBatchedCell`; `max_write` is read only by ring layers, which in turn ignore
+**`CacheConfig` fields do not mean the same thing to every layout.** `capacity`
+is a position ceiling for `kSingle` and a count of pool slots for
+`kBatchedCell`. `max_write` is read only by ring layers, which in turn ignore
 `initial_capacity`. Splitting it into model-dictated shape and per-kind options
 is the intended fix.
 
-**Registration relies on static-initializer side effects**, so a builder is
-registered only if the linker pulls its object file in. That works today
-through whole-archive linking of backends; if it ever stops, the symptom is a
-runtime "no cache builder registered".
+**Registration relies on static-initializer side effects.** A builder is
+registered only if the linker pulls its object file in. Whole-archive linking
+of backends covers this today. If that changes, the symptom is a runtime
+"no cache builder registered".
