@@ -55,6 +55,18 @@ def get_sdk_build_id():
     return _get_sdk_build_id(qnn_sdk_root)
 
 
+def describe_sdk_build_id() -> str:
+    """The SDK build id, or a readable stand-in when there is no SDK to ask.
+
+    For error messages only. Querying inside one raises when no SDK is configured, which replaces
+    the caller's own error with a confusing one.
+    """
+    try:
+        return get_sdk_build_id()
+    except QnnSdkRootNotSet:
+        return "unknown, no usable SDK found"
+
+
 def is_qnn_sdk_version_less_than(target_version):
     try:
         current_version = get_sdk_build_id()

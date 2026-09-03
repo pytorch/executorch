@@ -40,6 +40,7 @@
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
+#include <executorch/extension/llm/batching/metrics.h>
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/batching/types.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
@@ -147,6 +148,10 @@ class ET_EXPERIMENTAL GenerationHandle {
   // when valid() && done(); empty when no diagnostic is available.
   std::string error_message() const;
 
+  // This generation's timeline and counts, complete once done(). Empty on a
+  // default-constructed handle.
+  GenerationMetrics metrics() const;
+
  private:
   friend class RunnerImpl;
   friend class Session;
@@ -245,6 +250,11 @@ class ET_EXPERIMENTAL Runner {
   // a later external call or destructor must join. Do not destroy the Runner
   // from its callback.
   void shutdown();
+
+  // What the engine measured. Read it after shutdown(): the counters are the
+  // engine thread's, so joining it is what makes them stable and visible. A
+  // call before then returns a torn snapshot.
+  EngineMetrics metrics() const;
 
  private:
   std::shared_ptr<RunnerImpl> impl_;
