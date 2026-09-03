@@ -27,8 +27,8 @@ ops_before_transforms: dict[str, int] = {
 
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 10,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 35,
