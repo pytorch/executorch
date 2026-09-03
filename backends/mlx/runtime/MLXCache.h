@@ -30,12 +30,16 @@ struct AttendSpec {
 };
 
 // Tensor-typed op face of the off-graph KV cache, kept separate from the
-// neutral CacheBase (which is tensor-free) so a cache can expose both without a
+// neutral Cache (which is tensor-free) so a cache can expose both without a
 // diamond. ExecutionState holds one; nothing assigns it yet -- the registry
 // that owns the cache and hands this pointer to the executor lands in a
 // follow-up, until which exec_update_and_attend is unreachable.
 class MLXCache {
  public:
+  // Named here, not in cache.h: a backend face is tensor-typed and the
+  // neutral header cannot know about it.
+  static constexpr const char* kFaceName = "mlx.MLXCache";
+
   virtual ~MLXCache() = default;
 
   // Write this step's K/V for `layer` at `positions`, one host int per query

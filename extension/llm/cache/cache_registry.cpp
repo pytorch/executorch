@@ -24,12 +24,12 @@ CacheRegistry& CacheRegistry::global() {
 
 void CacheRegistry::install(
     const std::string& key,
-    std::shared_ptr<CacheBase> cache) {
+    std::shared_ptr<Cache> cache) {
   std::lock_guard<std::mutex> lock(mu_);
   caches_[key] = std::move(cache);
 }
 
-std::shared_ptr<CacheBase> CacheRegistry::get(const std::string& key) const {
+std::shared_ptr<Cache> CacheRegistry::get(const std::string& key) const {
   std::lock_guard<std::mutex> lock(mu_);
   const auto it = caches_.find(key);
   return it == caches_.end() ? nullptr : it->second;
@@ -53,7 +53,7 @@ void CacheBuilderRegistry::register_builder(
   builders_[{backend_id, kind}] = std::move(builder);
 }
 
-Result<std::shared_ptr<CacheBase>> CacheBuilderRegistry::build(
+Result<std::shared_ptr<Cache>> CacheBuilderRegistry::build(
     const std::string& backend_id,
     const std::string& kind,
     const CacheConfig& cfg) const {

@@ -12,7 +12,7 @@
 // is opaque to the host, so the runner (which knows the cache kind) creates the
 // cache and binds it to the delegate through a process-global registry; the two
 // sides rendezvous on a cache_key passed as a runtime backend-load option.
-// Caches are owned as CacheBase* and the faces are recovered through its as_*
+// Caches are owned as Cache* and the faces are recovered through its as_*
 // accessors (no RTTI), each null for a face the cache does not implement.
 
 #include <functional>
@@ -35,29 +35,29 @@ namespace cache {
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
-// Process-global map<cache_key, shared_ptr<CacheBase>>. Ownership is shared:
+// Process-global map<cache_key, shared_ptr<Cache>>. Ownership is shared:
 // the registry entry, the runner's session guard, and the delegate handle all
 // hold the cache, so erasing the entry mid-method is safe.
 class CacheRegistry {
  public:
   static CacheRegistry& global();
 
-  void install(const std::string& key, std::shared_ptr<CacheBase> cache);
-  std::shared_ptr<CacheBase> get(const std::string& key) const;
+  void install(const std::string& key, std::shared_ptr<Cache> cache);
+  std::shared_ptr<Cache> get(const std::string& key) const;
   void erase(const std::string& key);
 
  private:
   CacheRegistry() = default;
 
   mutable std::mutex mu_;
-  std::unordered_map<std::string, std::shared_ptr<CacheBase>> caches_;
+  std::unordered_map<std::string, std::shared_ptr<Cache>> caches_;
 };
 
 // Cache kind is expressed by which factory you call: backends register a
 // builder per (backend_id, kind) and the kind survives only as an internal
 // lookup tag.
 using CacheBuilder =
-    std::function<std::shared_ptr<CacheBase>(const CacheConfig&)>;
+    std::function<std::shared_ptr<Cache>(const CacheConfig&)>;
 
 class CacheBuilderRegistry {
  public:
@@ -68,7 +68,7 @@ class CacheBuilderRegistry {
       const std::string& kind,
       CacheBuilder builder);
   // Returns Error::NotFound if no builder is registered for (backend_id, kind).
-  Result<std::shared_ptr<CacheBase>> build(
+  Result<std::shared_ptr<Cache>> build(
       const std::string& backend_id,
       const std::string& kind,
       const CacheConfig& cfg) const;
@@ -90,7 +90,7 @@ std::string make_unique_key();
 // the runner's shared_ptr and exposes the control face for the generation loop.
 class CacheSession {
  public:
-  CacheSession(std::string key, std::shared_ptr<CacheBase> cache)
+  CacheSession(std::string key, std::shared_ptr<Cache> cache)
       : key_(std::move(key)), cache_(std::move(cache)) {
     CacheRegistry::global().install(key_, cache_);
   }
@@ -102,7 +102,7 @@ class CacheSession {
   CacheSession& operator=(const CacheSession&) = delete;
 
   SequenceControl* control() const {
-    return cache_->as_control();
+    return cache_->as<SequenceControl>();
   }
   const std::string& key() const {
     return key_;
@@ -110,7 +110,7 @@ class CacheSession {
 
  private:
   std::string key_;
-  std::shared_ptr<CacheBase> cache_;
+  std::shared_ptr<Cache> cache_;
 };
 
 } // namespace cache

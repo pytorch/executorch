@@ -34,6 +34,14 @@ namespace cache = ::executorch::extension::llm::cache;
 // prefill does, and neither is what MLX's fused "causal" describes.
 class MLXCellCache : public cache::CellCache, public MLXCache {
  public:
+  // The neutral faces come from cache::CellCache; this adds the backend one.
+  void* face(cache::FaceId id) override {
+    if (void* p = cache::CellCache::face(id)) {
+      return p;
+    }
+    return cache::expose<MLXCache>(this, id);
+  }
+
   explicit MLXCellCache(const cache::CacheConfig& cfg)
       : cache::CellCache(checked(cfg)) {
     const ::mlx::core::Dtype dt =

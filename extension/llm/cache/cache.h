@@ -10,11 +10,12 @@
 
 // Neutral, tensor-free, ET-independent KV-cache core shared across backends. A
 // cache exposes a runner-facing control face and a backend-facing planner face,
-// recovered from the owning CacheBase*. Which pair it implements depends on the
-// layout: one sequence over per-layer runs, or many sequences over a pool of
-// per-token cells.
+// recovered from the owning Cache* with as<T>(). Which pair it implements
+// depends on the layout: one sequence over per-layer runs, or many sequences
+// over a pool of per-token cells.
 
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <vector>
 
@@ -28,22 +29,47 @@ class SequencePlanner;
 class BatchControl;
 class CellStepper;
 
-// Registry ownership anchor. A cache returns `this` from the faces it
-// implements and leaves the rest null.
-class CacheBase {
+// A face is named by a string it declares itself, so a backend can add one
+// without this header learning about it. Compared by pointer first, which hits
+// whenever both sides share a translation unit or the linker merged the
+// literals; the strcmp is the fallback for a cache built in one shared object
+// and queried from another.
+using FaceId = const char*;
+
+inline bool same_face(FaceId a, FaceId b) {
+  return a == b || std::strcmp(a, b) == 0;
+}
+
+// Hands back `self` as each face it names, or nullptr for one it does not.
+// static_cast does the pointer adjustment a face at a non-zero offset needs,
+// refuses to compile if Self does not actually derive from it, and being bound
+// to its own name in the pack cannot be paired with the wrong one.
+template <class... Fs, class Self>
+void* expose(Self* self, FaceId id) {
+  void* out = nullptr;
+  const bool matched[] = {
+      (same_face(id, Fs::kFaceName) ? (out = static_cast<Fs*>(self), true)
+                                    : false)...};
+  (void)matched;
+  return out;
+}
+
+// Registry ownership anchor. A cache names the faces it implements from
+// face(); everything else it is asked for comes back null.
+class Cache {
  public:
-  virtual ~CacheBase() = default;
-  virtual SequenceControl* as_control() {
+  virtual ~Cache() = default;
+
+  // Prefer as<T>(). Overridden with expose<...>(this, id).
+  virtual void* face(FaceId) {
     return nullptr;
   }
-  virtual SequencePlanner* as_planner() {
-    return nullptr;
-  }
-  virtual BatchControl* as_batch_control() {
-    return nullptr;
-  }
-  virtual CellStepper* as_cell_stepper() {
-    return nullptr;
+
+  // Naming T::kFaceName means a type that is not a face fails to compile,
+  // rather than quietly returning null at run time.
+  template <class T>
+  T* as() {
+    return static_cast<T*>(face(T::kFaceName));
   }
 };
 
@@ -59,6 +85,8 @@ class CacheControl {
 // Application face of a single-sequence cache: one length to rewind.
 class SequenceControl : public CacheControl {
  public:
+  static constexpr const char* kFaceName = "et.cache.SequenceControl";
+
   // Truncate to new_len; false = cannot grow, or the target is older than an
   // evicting layer still retains.
   virtual bool rewind(int new_len) = 0;
@@ -86,6 +114,8 @@ struct SeqStepPlan {
 // exceeds capacity, or `layer` is out of range.
 class SequencePlanner {
  public:
+  static constexpr const char* kFaceName = "et.cache.SequencePlanner";
+
   virtual ~SequencePlanner() = default;
   virtual std::optional<SeqStepPlan> plan(int layer, int position, int T)
       const = 0;
@@ -110,6 +140,8 @@ class LayoutPolicy {
 // between forwards, never during one.
 class BatchControl : public CacheControl {
  public:
+  static constexpr const char* kFaceName = "et.cache.BatchControl";
+
   // Which sequence each of the next forward's tokens belongs to, one entry per
   // token; every id must be one seq_new handed out. Also the admission gate:
   // false = rejected and nothing changed, and a step that passes has room for

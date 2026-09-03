@@ -44,12 +44,14 @@ struct CellStep {
 // a sequence already holds, a layer out of range, or a layer served twice.
 class CellStepper {
  public:
+  static constexpr const char* kFaceName = "et.cache.CellStepper";
+
   virtual ~CellStepper() = default;
   virtual const CellStep*
   place_step(int layer, const int32_t* positions, int length) = 0;
 };
 
-class CellCache : public CacheBase, public BatchControl, public CellStepper {
+class CellCache : public Cache, public BatchControl, public CellStepper {
  public:
   // One bit per sequence in the owner bitset.
   static constexpr int kMaxSeqs = 64;
@@ -58,14 +60,11 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
   // registry-created caches; direct construction must check first.
   explicit CellCache(const CacheConfig& cfg);
 
-  CacheBase* base() {
+  Cache* base() {
     return this;
   }
-  BatchControl* as_batch_control() override {
-    return this;
-  }
-  CellStepper* as_cell_stepper() override {
-    return this;
+  void* face(FaceId id) override {
+    return expose<BatchControl, CellStepper>(this, id);
   }
 
   // -- CacheControl ------------------------------------------------------

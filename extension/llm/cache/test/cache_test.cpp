@@ -22,7 +22,7 @@
 #include <gtest/gtest.h>
 
 using executorch::extension::llm::cache::BatchControl;
-using executorch::extension::llm::cache::CacheBase;
+using executorch::extension::llm::cache::Cache;
 using executorch::extension::llm::cache::CacheBuilderRegistry;
 using executorch::extension::llm::cache::CacheConfig;
 using executorch::extension::llm::cache::CacheRegistry;
@@ -30,6 +30,8 @@ using executorch::extension::llm::cache::CacheSession;
 using executorch::extension::llm::cache::CellCache;
 using executorch::extension::llm::cache::CellStep;
 using executorch::extension::llm::cache::CellStepper;
+using executorch::extension::llm::cache::SequenceControl;
+using executorch::extension::llm::cache::SequencePlanner;
 using executorch::extension::llm::cache::LayerConfig;
 using executorch::extension::llm::cache::LayerPolicy;
 using executorch::extension::llm::cache::make_unique_key;
@@ -171,11 +173,11 @@ TEST_F(CacheTest, RewindBoundedByRingWindow) {
 
 TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   SequenceCache cache(CacheConfig{4, 1, {flat_layer()}});
-  CacheBase* base = &cache;
-  ASSERT_NE(base->as_control(), nullptr);
-  ASSERT_NE(base->as_planner(), nullptr);
-  EXPECT_TRUE(base->as_control()->can_extend(4));
-  auto plan = base->as_planner()->plan(0, 0, 1);
+  Cache* base = &cache;
+  ASSERT_NE(base->as<SequenceControl>(), nullptr);
+  ASSERT_NE(base->as<SequencePlanner>(), nullptr);
+  EXPECT_TRUE(base->as<SequenceControl>()->can_extend(4));
+  auto plan = base->as<SequencePlanner>()->plan(0, 0, 1);
   ASSERT_TRUE(plan.has_value());
   EXPECT_EQ(plan->read[0].len, 1);
 }
@@ -185,11 +187,11 @@ TEST_F(CacheTest, RegistryInstallGetErase) {
   const std::string key = make_unique_key();
   EXPECT_EQ(reg.get(key), nullptr);
 
-  std::shared_ptr<CacheBase> cache =
+  std::shared_ptr<Cache> cache =
       std::make_shared<SequenceCache>(CacheConfig{16, 1, {flat_layer()}});
   reg.install(key, cache);
   EXPECT_EQ(reg.get(key), cache);
-  EXPECT_TRUE(reg.get(key)->as_control()->can_extend(16));
+  EXPECT_TRUE(reg.get(key)->as<SequenceControl>()->can_extend(16));
 
   reg.erase(key);
   EXPECT_EQ(reg.get(key), nullptr);
@@ -202,14 +204,14 @@ TEST_F(CacheTest, UniqueKeysDoNotCollide) {
 TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
   auto& reg = CacheBuilderRegistry::global();
   reg.register_builder("TestBackend", "seq", [](const CacheConfig& cfg) {
-    return std::static_pointer_cast<CacheBase>(
+    return std::static_pointer_cast<Cache>(
         std::make_shared<SequenceCache>(cfg));
   });
 
   CacheConfig cfg{32, 1, {flat_layer()}};
   auto cache = reg.build("TestBackend", "seq", cfg);
   ASSERT_TRUE(cache.ok());
-  EXPECT_EQ(cache.get()->as_control()->capacity(), 32);
+  EXPECT_EQ(cache.get()->as<SequenceControl>()->capacity(), 32);
 
   EXPECT_EQ(reg.build("TestBackend", "missing", cfg).error(), Error::NotFound);
 
@@ -291,8 +293,8 @@ struct Cells {
       int capacity,
       std::vector<LayerConfig> layers = {flat_layer(), flat_layer()})
       : cache(CacheConfig{capacity, static_cast<int>(layers.size()), layers}),
-        ctl(cache.as_batch_control()),
-        stepper(cache.as_cell_stepper()) {}
+        ctl(cache.as<BatchControl>()),
+        stepper(cache.as<CellStepper>()) {}
 
   // Ids come from the cache, so a test names sequences by allocating them.
   // Unlike the face's, this one unwraps and fails the test if none is free.

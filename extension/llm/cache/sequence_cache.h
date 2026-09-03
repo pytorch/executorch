@@ -92,7 +92,7 @@ class RingPolicy final : public LayoutPolicy {
 // rewind; dispatches per-layer layout to a shared LayoutPolicy. Policies are
 // deduped by (kind, window), so a uniform or two-kind (gemma4) model holds one
 // or two policy objects.
-class SequenceCache : public CacheBase,
+class SequenceCache : public Cache,
                       public SequenceControl,
                       public SequencePlanner {
  public:
@@ -108,12 +108,9 @@ class SequenceCache : public CacheBase,
     }
   }
 
-  // CacheBase: face recovery without RTTI.
-  SequenceControl* as_control() override {
-    return this;
-  }
-  SequencePlanner* as_planner() override {
-    return this;
+  // Cache: face recovery without RTTI.
+  void* face(FaceId id) override {
+    return expose<SequenceControl, SequencePlanner>(this, id);
   }
 
   // SequenceControl.
