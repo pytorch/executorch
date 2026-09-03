@@ -353,10 +353,10 @@ int main(int argc, char** argv) {
 
     // Off-graph models (update_and_attend) need a cache bound via cache_key;
     // in-graph models (mlx::kv_cache_update) don't -- omit --kv-max-capacity
-    // for those. session/options are outer-scoped: session must outlive the
+    // for those. lease/options are outer-scoped: lease must outlive the
     // Module (it keeps the cache in the registry) and mlx_opts must outlive
     // load_method() (the map holds a view into it).
-    std::optional<cache::CacheLease> session;
+    std::optional<cache::CacheLease> lease;
     ::executorch::runtime::BackendOptions<1> mlx_opts;
     ::executorch::runtime::LoadBackendOptionsMap options_map;
     const bool off_graph = kv_capacity > 0;
@@ -407,12 +407,12 @@ int main(int argc, char** argv) {
         return 1;
       }
       prefill_chunk = cfg.max_write ? *cfg.max_write : 0;
-      session.emplace(built.get());
+      lease.emplace(built.get());
 
       print_cache_summary(cfg);
       if (mlx_opts.set_option(
               ::executorch::backends::mlx::kCacheKeyKey,
-              session->key().c_str()) != Error::Ok ||
+              lease->key().c_str()) != Error::Ok ||
           options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
               Error::Ok) {
@@ -534,7 +534,7 @@ int main(int argc, char** argv) {
         std::cerr << "--interactive requires --kv-max-capacity\n";
         return 1;
       }
-      auto* control = session->cache()->as<cache::SequenceControl>();
+      auto* control = lease->cache()->as<cache::SequenceControl>();
       std::cout << "Multi-turn chat. /reset clears, /undo drops the last turn, "
                    "/undo N drops N tokens, /quit exits.\n";
       int64_t position = 0;
@@ -643,11 +643,11 @@ int main(int argc, char** argv) {
     // the bytes lag the token count in steps; bf16 storage (kv_dtype 15) halves
     // them vs fp32 (6).
     auto print_footprint = [&](const char* when, int len) {
-      if (!session) {
+      if (!lease) {
         return;
       }
       const int cap =
-          session->cache()->as<cache::SequenceControl>()->capacity();
+          lease->cache()->as<cache::SequenceControl>()->capacity();
       const double pct = cap > 0 ? 100.0 * len / cap : 0.0;
       std::cout << "[cache] " << when << ": " << len << " / " << cap
                 << " tokens (" << pct << "%)" << std::endl;
@@ -663,7 +663,7 @@ int main(int argc, char** argv) {
     for (int iter = 0; iter < (warmup ? 2 : 1); ++iter) {
       const bool measured = !warmup || iter == 1;
       if (iter > 0 && off_graph) {
-        session->cache()->as<cache::SequenceControl>()->clear();
+        lease->cache()->as<cache::SequenceControl>()->clear();
       }
       stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
       int64_t next = prefill(ids, prefill_pos);

@@ -302,8 +302,8 @@ int main(int argc, char* argv[]) {
 
     // Build and install the off-graph KV cache before the Module, so the
     // registry entry exists by the time the delegate's init() looks it up.
-    // Declared here so the session outlives the module.
-    std::optional<cache::CacheLease> cache_session;
+    // Declared here so the lease outlives the module.
+    std::optional<cache::CacheLease> cache_lease;
     if (!kv_cache_spec.empty()) {
       cache::CacheConfig cfg{};
       if (!parse_kv_cache_spec(kv_cache_spec, cfg)) {
@@ -317,21 +317,21 @@ int main(int argc, char* argv[]) {
                   << static_cast<int>(built.error()) << std::endl;
         return 1;
       }
-      cache_session.emplace(built.get());
+      cache_lease.emplace(built.get());
       if (verbose) {
-        std::cout << "Installed KV cache under key " << cache_session->key()
+        std::cout << "Installed KV cache under key " << cache_lease->key()
                   << std::endl;
       }
     }
 
     Module module(pte_path);
     Error load_error = Error::Ok;
-    if (cache_session) {
+    if (cache_lease) {
       ::executorch::runtime::BackendOptions<1> mlx_opts;
       ::executorch::runtime::LoadBackendOptionsMap options_map;
       if (mlx_opts.set_option(
               ::executorch::backends::mlx::kCacheKeyKey,
-              cache_session->key().c_str()) != Error::Ok ||
+              cache_lease->key().c_str()) != Error::Ok ||
           options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
               Error::Ok) {

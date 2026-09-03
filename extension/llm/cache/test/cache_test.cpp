@@ -170,7 +170,7 @@ TEST_F(CacheTest, RewindBoundedByRingWindow) {
   EXPECT_FALSE(cache.rewind(11)); // cannot grow
 }
 
-// ---- Faces / registry / session --------------------------------------------
+// ---- Faces / registry / lease ----------------------------------------------
 
 TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   SequenceCache cache(CacheConfig{4, 1, {flat_layer()}});
@@ -231,7 +231,7 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
       Error::InvalidArgument);
 }
 
-TEST_F(CacheTest, SessionInstallsOnCtorErasesOnDtor) {
+TEST_F(CacheTest, LeaseInstallsOnCtorErasesOnDtor) {
   std::string key;
   {
     CacheLease lease(

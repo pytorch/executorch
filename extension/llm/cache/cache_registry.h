@@ -36,7 +36,7 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 // Process-global map<cache_key, shared_ptr<Cache>>. Ownership is shared:
-// the registry entry, the runner's session guard, and the delegate handle all
+// the registry entry, the runner's lease, and the delegate handle all
 // hold the cache, so erasing the entry mid-method is safe.
 class CacheRegistry {
  public:
