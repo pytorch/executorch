@@ -699,8 +699,9 @@ int main(int argc, char** argv) {
       cfg.initial_capacity = initial_capacity;
     }
 
+    const char* const cache_kind = cache::kind::kSingle;
     auto built = cache::CacheFactory::global().build(
-        ::executorch::backends::mlx::kMLXBackendId, cache::kind::kSingle, cfg);
+        ::executorch::backends::mlx::kMLXBackendId, cache_kind, cfg);
     if (!built.ok()) {
       std::cerr << "Failed to build cache: " << static_cast<int>(built.error())
                 << std::endl;
@@ -725,7 +726,17 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    return run(kv->as<cache::SequenceControl>(), &options_map);
+    // Checked here so a null ctl inside run() can only mean "in-graph model".
+    // A cache kind that offers BatchControl instead would otherwise be run as
+    // if it had no cache at all, with a key published and options set.
+    auto* ctl = kv->as<cache::SequenceControl>();
+    if (ctl == nullptr) {
+      std::cerr << "Cache kind '" << cache_kind
+                << "' offers no single-sequence control face" << std::endl;
+      return 1;
+    }
+
+    return run(ctl, &options_map);
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;
