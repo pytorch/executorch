@@ -572,12 +572,14 @@ static auto success_with_compiler = register_backend(backend);
 // Cache it installs under a cache_key. Adding a kind is a new builder here.
 const int cache_builders_registered = [] {
   cache::CacheFactory::global().register_builder(
-      kMLXBackendId, "seq", [](const cache::CacheConfig& cfg) {
+      kMLXBackendId, cache::kind::kSingle, [](const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXSequenceCache>(cfg));
       });
   cache::CacheFactory::global().register_builder(
-      kMLXBackendId, "cell", [](const cache::CacheConfig& cfg) {
+      kMLXBackendId,
+      cache::kind::kBatchedCell,
+      [](const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXCellCache>(cfg));
       });

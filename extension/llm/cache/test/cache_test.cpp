@@ -32,6 +32,7 @@ using executorch::extension::llm::cache::CellStep;
 using executorch::extension::llm::cache::CellStepper;
 using executorch::extension::llm::cache::SequenceControl;
 using executorch::extension::llm::cache::SequencePlanner;
+namespace kind = executorch::extension::llm::cache::kind;
 using executorch::extension::llm::cache::LayerConfig;
 using executorch::extension::llm::cache::LayerPolicy;
 using executorch::extension::llm::cache::new_cache_key;
@@ -203,13 +204,14 @@ TEST_F(CacheTest, UniqueKeysDoNotCollide) {
 
 TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
   auto& reg = CacheFactory::global();
-  reg.register_builder("TestBackend", "seq", [](const CacheConfig& cfg) {
+  reg.register_builder(
+      "TestBackend", kind::kSingle, [](const CacheConfig& cfg) {
     return std::static_pointer_cast<Cache>(
         std::make_shared<SequenceCache>(cfg));
   });
 
   CacheConfig cfg{32, 1, {flat_layer()}};
-  auto cache = reg.build("TestBackend", "seq", cfg);
+  auto cache = reg.build("TestBackend", kind::kSingle, cfg);
   ASSERT_TRUE(cache.ok());
   EXPECT_EQ(cache.get()->as<SequenceControl>()->capacity(), 32);
 
@@ -218,12 +220,12 @@ TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
   // A layers list that is neither size 1 nor n_layers would be indexed past
   // the end, so build refuses it before the cache is constructed.
   EXPECT_EQ(
-      reg.build("TestBackend", "seq", CacheConfig{32, 3, {}}).error(),
+      reg.build("TestBackend", kind::kSingle, CacheConfig{32, 3, {}}).error(),
       Error::InvalidArgument);
   EXPECT_EQ(
       reg.build(
              "TestBackend",
-             "seq",
+             kind::kSingle,
              CacheConfig{32, 3, {flat_layer(), flat_layer()}})
           .error(),
       Error::InvalidArgument);

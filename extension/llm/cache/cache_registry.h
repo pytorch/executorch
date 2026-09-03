@@ -53,6 +53,15 @@ class CacheRegistry {
   std::unordered_map<std::string, std::shared_ptr<Cache>> caches_;
 };
 
+// The registered cache kinds. Spelling one inline is a runtime NotFound rather
+// than a compile error, so go through these.
+namespace kind {
+// One sequence over per-layer runs.
+inline constexpr const char* kSingle = "single";
+// Many sequences sharing one pool of per-token cells.
+inline constexpr const char* kBatchedCell = "batched-cell";
+} // namespace kind
+
 // Cache kind is expressed by which factory you call: backends register a
 // builder per (backend_id, kind) and the kind survives only as an internal
 // lookup tag.

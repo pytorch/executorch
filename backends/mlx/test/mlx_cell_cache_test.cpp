@@ -269,7 +269,9 @@ TEST_F(MLXCellCacheTest, InvalidConfigThrows) {
 // is as much a part of the layout as the class.
 TEST_F(MLXCellCacheTest, RegistryBuildsCellLayout) {
   auto built = cache::CacheFactory::global().build(
-      kMLXBackendId, "cell", flat_config(32, 1, H, D, kHalf));
+      kMLXBackendId,
+      cache::kind::kBatchedCell,
+      flat_config(32, 1, H, D, kHalf));
   ASSERT_TRUE(built.ok());
   const std::shared_ptr<cache::Cache>& c = *built;
   EXPECT_NE(c->as<cache::BatchControl>(), nullptr);

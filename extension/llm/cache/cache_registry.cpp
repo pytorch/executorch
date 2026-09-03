@@ -61,12 +61,27 @@ Result<std::shared_ptr<Cache>> CacheFactory::build(
   {
     std::lock_guard<std::mutex> lock(mu_);
     const auto it = builders_.find({backend_id, kind});
-    ET_CHECK_OR_RETURN_ERROR(
-        it != builders_.end(),
-        NotFound,
-        "no cache builder registered for %s:%s",
-        backend_id.c_str(),
-        kind.c_str());
+    if (it == builders_.end()) {
+      // Name what is registered. A kind is a string, so a typo is otherwise a
+      // dead end. builders_ is ordered, so these come out sorted.
+      std::string known;
+      for (const auto& entry : builders_) {
+        if (entry.first.first != backend_id) {
+          continue;
+        }
+        if (!known.empty()) {
+          known += ", ";
+        }
+        known += entry.first.second;
+      }
+      ET_LOG(
+          Error,
+          "no '%s' cache registered for '%s'; registered: %s",
+          kind.c_str(),
+          backend_id.c_str(),
+          known.empty() ? "(none)" : known.c_str());
+      return Error::NotFound;
+    }
     builder = it->second;
   }
   // Checked here rather than in each cache: `layers` is indexed directly, so a

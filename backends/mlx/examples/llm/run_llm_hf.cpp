@@ -400,7 +400,7 @@ int main(int argc, char** argv) {
         cfg.initial_capacity = initial_capacity;
       }
       auto built = cache::CacheFactory::global().build(
-          ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
+          ::executorch::backends::mlx::kMLXBackendId, cache::kind::kSingle, cfg);
       if (!built.ok()) {
         std::cerr << "Failed to build cache: "
                   << static_cast<int>(built.error()) << std::endl;

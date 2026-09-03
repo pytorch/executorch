@@ -311,7 +311,7 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       auto built = cache::CacheFactory::global().build(
-          ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
+          ::executorch::backends::mlx::kMLXBackendId, cache::kind::kSingle, cfg);
       if (!built.ok()) {
         std::cerr << "Failed to build KV cache: "
                   << static_cast<int>(built.error()) << std::endl;
