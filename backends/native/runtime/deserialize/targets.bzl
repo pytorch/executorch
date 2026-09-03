@@ -41,3 +41,18 @@ def define_common_targets():
         deps = [":json_parser"],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    # The .ptn package: program flatbuffer plus its constants.
+    runtime.cxx_library(
+        name = "package",
+        srcs = ["Package.cpp"],
+        exported_headers = ["Package.h"],
+        exported_deps = [
+            ":byte_span",
+            ":safetensors_reader",
+            ":zip_reader",
+            "//executorch/backends/native/runtime/graph:scalar_type",
+        ],
+        deps = [":json_parser"],
+        visibility = ["PUBLIC"],
+    )
