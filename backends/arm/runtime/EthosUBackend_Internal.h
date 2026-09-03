@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -13,13 +15,12 @@
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
 #endif
 
-#include <cstddef>
-#include <cstdint>
-
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <cstddef>
+#include <cstdint>
 
 #if defined(__GNUC__) && defined(__ZEPHYR__)
 #pragma GCC diagnostic pop
@@ -66,8 +67,8 @@ namespace arm {
 struct PlatformState;
 
 struct ExecutionHandle {
-  executorch::runtime::FreeableBuffer* processed;
   PlatformState* platform_state;
+  VelaHandles handles{};
 };
 
 extern "C" {
@@ -80,7 +81,11 @@ extern size_t ethosu_fast_scratch_size;
 PlatformState* platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> specs,
     executorch::runtime::MemoryAllocator* allocator);
+
 void platform_destroy(PlatformState* state);
+
+bool needs_scratch_allocation();
+
 executorch::runtime::Error platform_execute(
     executorch::runtime::BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,

@@ -9,18 +9,19 @@ import copy
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional
+from itertools import zip_longest
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
 from executorch.exir.backend.backend_api import validation_disabled
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
 from torch import nn
 from torch._export.pass_base import PassType
+from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import (
@@ -28,6 +29,12 @@ from torchao.quantization.pt2e.quantizer import (
     Quantizer as TorchAOPT2EQuantizer,
 )
 from torchao.utils import unwrap_tensor_subclass
+
+
+def _drop_empty(
+    passes_by_method: Dict[str, List[PassType]]
+) -> Dict[str, List[PassType]]:
+    return {method: p for method, p in passes_by_method.items() if p}
 
 
 class PipelineArtifact:
@@ -167,6 +174,36 @@ class TorchExportStage(Stage):
         self._artifact = artifact.copy_with_new_data(exported_programs)
 
 
+def _collect_delegation_info(
+    edge_program_manager: EdgeProgramManager,
+) -> Dict[str, Any]:
+    """
+    Delegation info for every method, keyed by method name.
+
+    `EdgeProgramManager.exported_program()` defaults to `forward`, which raises
+    KeyError for a multi-method program that has no method by that name.
+    """
+    return {
+        name: get_delegation_info(
+            edge_program_manager.exported_program(name).graph_module
+        )
+        for name in sorted(edge_program_manager.methods)
+    }
+
+
+def _add_delegation_info_context(
+    artifact: PipelineArtifact, edge_program_manager: EdgeProgramManager
+) -> None:
+    by_method = _collect_delegation_info(edge_program_manager)
+    artifact.add_context("delegation_info_by_method", by_method)
+    # `forward` when present, else the first method by name, so that
+    # single-method callers keep seeing the value they always have.
+    artifact.add_context(
+        "delegation_info",
+        by_method.get("forward", next(iter(by_method.values()), None)),
+    )
+
+
 class EdgeTransformAndLowerStage(Stage):
     """
     Second stage: Transform and lower to EdgeProgramManager.
@@ -174,9 +211,14 @@ class EdgeTransformAndLowerStage(Stage):
 
     def __init__(
         self,
-        partitioners: Optional[List[Any]] = None,
+        partitioners: Optional[Union[List[Any], Dict[str, List[Any]]]] = None,
         transform_passes: (
-            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[
+                    [str, ExportedProgram], List[PassType] | GraphModulePassManager
+                ]
+            ]
         ) = None,
         compile_config: Optional[Any] = None,
     ) -> None:
@@ -229,7 +271,7 @@ class EdgeTransformAndLowerStage(Stage):
                         "Transform passes must be a callable that resolves to passes"
                     )
                 passes = pass_callable(method_name, ep)
-                if isinstance(passes, PassManager):
+                if isinstance(passes, GraphModulePassManager):
                     pass_manager = passes
                     break
                 else:
@@ -237,8 +279,9 @@ class EdgeTransformAndLowerStage(Stage):
             if pass_manager:
                 break
 
-        # Use PassManager directly if found, otherwise use dict
-        final_passes = pass_manager if pass_manager else transform_passes
+        # An empty dict is not no passes: EdgeProgramManager deep-copies every
+        # method the dict does not name, so it would copy to apply nothing.
+        final_passes = pass_manager or _drop_empty(transform_passes) or None
 
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
@@ -250,11 +293,8 @@ class EdgeTransformAndLowerStage(Stage):
                 generate_etrecord=generate_etrecord,
             )
 
-        delegation_info = get_delegation_info(
-            edge_program_manager.exported_program().graph_module
-        )
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
-        self._artifact.add_context("delegation_info", delegation_info)
+        _add_delegation_info_context(self._artifact, edge_program_manager)
 
     @property
     def delegation_info(self) -> Any:
@@ -262,6 +302,13 @@ class EdgeTransformAndLowerStage(Stage):
         Returns the delegation info.
         """
         return self._artifact.get_context("delegation_info")
+
+    @property
+    def delegation_info_by_method(self) -> Dict[str, Any]:
+        """
+        Returns the delegation info for every method, keyed by method name.
+        """
+        return self._artifact.get_context("delegation_info_by_method")
 
 
 class ExecutorchStage(Stage):
@@ -310,8 +357,13 @@ class SourceTransformStage(Stage):
     Optional stage: Source transform stage: Apply source transformations to the model.
     """
 
-    def __init__(self, quantization_recipe: Optional[QuantizationRecipe]) -> None:
+    def __init__(
+        self,
+        quantization_recipe: Optional[QuantizationRecipe],
+        in_place: bool = False,
+    ) -> None:
         self._quantization_recipe = quantization_recipe
+        self._in_place = in_place
         self._transformed_models: Dict[str, nn.Module] = {}
 
     @property
@@ -342,8 +394,11 @@ class SourceTransformStage(Stage):
 
         assert isinstance(artifact.data, dict)
 
-        # Store the original models
-        self._transformed_models = copy.deepcopy(artifact.data)
+        # A second copy of the model is not affordable for every caller, so
+        # large models can opt out and have their own model mutated instead.
+        self._transformed_models = (
+            artifact.data if self._in_place else copy.deepcopy(artifact.data)
+        )
 
         # Apply torchao quantize_ to each model
         for _, model in self._transformed_models.items():
@@ -514,10 +569,18 @@ class EdgeProgramManagerTransformStage(Stage):
     def __init__(
         self,
         edge_transform_passes: (
-            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[
+                    [str, ExportedProgram], List[PassType] | GraphModulePassManager
+                ]
+            ]
         ) = None,
         edge_manager_transform_passes: (
-            None | List[Callable[[EdgeProgramManager], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[[EdgeProgramManager], List[PassType] | GraphModulePassManager]
+            ]
         ) = None,
     ) -> None:
         """
@@ -590,7 +653,7 @@ class EdgeProgramManagerTransformStage(Stage):
                         "Transform passes must be a callable that resolves to passes"
                     )
                 passes = pass_callable(method_name, ep)
-                if isinstance(passes, PassManager):
+                if isinstance(passes, GraphModulePassManager):
                     pass_manager = passes
                     break
                 else:
@@ -598,11 +661,10 @@ class EdgeProgramManagerTransformStage(Stage):
             if pass_manager:
                 break
 
-        # Use PassManager directly if found, otherwise use dict
-        final_passes = pass_manager if pass_manager else transform_passes
-
-        # Apply edge transform passes
-        edge_program_manager = edge_program_manager.transform(final_passes)
+        # See EdgeTransformAndLowerStage.run.
+        final_passes = pass_manager or _drop_empty(transform_passes) or None
+        if final_passes is not None:
+            edge_program_manager = edge_program_manager.transform(final_passes)
 
         # Run edge manager transform passes
         for pass_callable in self._edge_manager_transform_passes:
@@ -620,7 +682,7 @@ class ToBackendStage(Stage):
 
     def __init__(
         self,
-        partitioners: Optional[List[Any]] = None,
+        partitioners: Optional[Union[List[Any], Dict[str, List[Any]]]] = None,
     ) -> None:
         super().__init__()
         self._partitioners = partitioners
@@ -666,17 +728,28 @@ class ToBackendStage(Stage):
         # Apply partitioners if available
         if self._partitioners is not None and len(self._partitioners) > 0:
             with validation_disabled():
-                # pyre-ignore
-                for partitioner in self._partitioners:
-                    edge_program_manager = edge_program_manager.to_backend(partitioner)
-
-        # Get delegation info
-        delegation_info = get_delegation_info(
-            edge_program_manager.exported_program().graph_module
-        )
+                if isinstance(self._partitioners, dict):
+                    method_names = list(self._partitioners)
+                    for partitioner_round in zip_longest(*self._partitioners.values()):
+                        partitioners_by_method = {
+                            method_name: partitioner
+                            for method_name, partitioner in zip(
+                                method_names, partitioner_round
+                            )
+                            if partitioner is not None
+                        }
+                        edge_program_manager = edge_program_manager.to_backend(
+                            partitioners_by_method
+                        )
+                else:
+                    # pyre-ignore
+                    for partitioner in self._partitioners:
+                        edge_program_manager = edge_program_manager.to_backend(
+                            partitioner
+                        )
 
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
-        self._artifact.add_context("delegation_info", delegation_info)
+        _add_delegation_info_context(self._artifact, edge_program_manager)
 
     @property
     def delegation_info(self) -> Any:
@@ -684,3 +757,10 @@ class ToBackendStage(Stage):
         Returns the delegation info.
         """
         return self._artifact.get_context("delegation_info")
+
+    @property
+    def delegation_info_by_method(self) -> Dict[str, Any]:
+        """
+        Returns the delegation info for every method, keyed by method name.
+        """
+        return self._artifact.get_context("delegation_info_by_method")

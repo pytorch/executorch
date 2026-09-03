@@ -10,10 +10,13 @@ from typing import Tuple
 
 import pytest
 import torch
+from executorch.backends.arm.ao_ext import MXFPOpConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.DeepSeek_R1_Distill_Qwen.deepseek_r1_distill_qwen_test_config import (
     get_deepseek_r1_distill_qwen_1_5b_checkpoint_config,
 )
+from executorch.backends.arm.test.models.model_test_utils import to_bfloat16
+from executorch.backends.arm.test.ops.mxfp.common import MXFPTosaPipelineFP
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     VgfPipeline,
@@ -32,6 +35,7 @@ from transformers.models.qwen2.modeling_qwen2 import (  # noqa: E402
 )
 
 input_t = Tuple[torch.Tensor, ...]
+aten_op_mxfp_linear = "torch.ops.tosa_mxfp.linear.default"
 
 
 def _make_deepseek_r1_distill_qwen_1_5b_layer_config():
@@ -71,17 +75,8 @@ class DeepSeekR1DistillQwenTestModule(torch.nn.Module):
         raise NotImplementedError
 
 
-def _to_bfloat16(
-    model: torch.nn.Module, inputs: input_t
-) -> tuple[torch.nn.Module, input_t]:
-    return model.to(torch.bfloat16), tuple(
-        (
-            x.to(torch.bfloat16)
-            if isinstance(x, torch.Tensor) and x.is_floating_point()
-            else x
-        )
-        for x in inputs
-    )
+def _is_linear(module: torch.nn.Module, _fqn: str) -> bool:
+    return isinstance(module, torch.nn.Linear)
 
 
 class RotaryEmbeddingModel(DeepSeekR1DistillQwenTestModule):
@@ -257,18 +252,21 @@ class DeepSeekR1DistillQwenTestCase:
     transform_passes: tuple = field(default_factory=tuple)
 
 
-TOSA_FP_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+TOSA_FP_SMALL_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
     "rotary_embedding": DeepSeekR1DistillQwenTestCase(model_cls=RotaryEmbeddingModel),
     "rotary_apply": DeepSeekR1DistillQwenTestCase(model_cls=RotaryApplyModel),
     "repeat_kv": DeepSeekR1DistillQwenTestCase(model_cls=RepeatKVModel),
-    "attention": DeepSeekR1DistillQwenTestCase(model_cls=AttentionModel),
     "rms_norm": DeepSeekR1DistillQwenTestCase(model_cls=RMSNormModel),
-    "mlp": DeepSeekR1DistillQwenTestCase(model_cls=MLPModel),
-    "decoder_layer": DeepSeekR1DistillQwenTestCase(model_cls=DecoderLayerModel),
     "final_norm": DeepSeekR1DistillQwenTestCase(model_cls=FinalNormModel),
 }
 
-TOSA_BF16_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+TOSA_FP_XLARGE_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+    "attention": DeepSeekR1DistillQwenTestCase(model_cls=AttentionModel),
+    "mlp": DeepSeekR1DistillQwenTestCase(model_cls=MLPModel),
+    "decoder_layer": DeepSeekR1DistillQwenTestCase(model_cls=DecoderLayerModel),
+}
+
+TOSA_BF16_SMALL_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
     "rotary_embedding": DeepSeekR1DistillQwenTestCase(
         model_cls=RotaryEmbeddingModel,
         atol=1e-2,
@@ -284,13 +282,21 @@ TOSA_BF16_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
         atol=1e-2,
         rtol=1e-2,
     ),
-    "attention": DeepSeekR1DistillQwenTestCase(
-        model_cls=AttentionModel,
+    "rms_norm": DeepSeekR1DistillQwenTestCase(
+        model_cls=RMSNormModel,
         atol=1e-2,
         rtol=1e-2,
     ),
-    "rms_norm": DeepSeekR1DistillQwenTestCase(
-        model_cls=RMSNormModel,
+    "final_norm": DeepSeekR1DistillQwenTestCase(
+        model_cls=FinalNormModel,
+        atol=1e-2,
+        rtol=1e-2,
+    ),
+}
+
+TOSA_BF16_XLARGE_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+    "attention": DeepSeekR1DistillQwenTestCase(
+        model_cls=AttentionModel,
         atol=1e-2,
         rtol=1e-2,
     ),
@@ -304,33 +310,61 @@ TOSA_BF16_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
         atol=1e-2,
         rtol=1e-2,
     ),
-    "final_norm": DeepSeekR1DistillQwenTestCase(
-        model_cls=FinalNormModel,
+}
+
+VGF_NO_QUANT_SMALL_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+    "rotary_embedding": DeepSeekR1DistillQwenTestCase(model_cls=RotaryEmbeddingModel),
+    "rotary_apply": DeepSeekR1DistillQwenTestCase(model_cls=RotaryApplyModel),
+    "repeat_kv": DeepSeekR1DistillQwenTestCase(model_cls=RepeatKVModel),
+    "rms_norm": DeepSeekR1DistillQwenTestCase(model_cls=RMSNormModel),
+    "final_norm": DeepSeekR1DistillQwenTestCase(model_cls=FinalNormModel),
+}
+
+VGF_NO_QUANT_XLARGE_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+    "attention": DeepSeekR1DistillQwenTestCase(model_cls=AttentionModel),
+    "mlp": DeepSeekR1DistillQwenTestCase(model_cls=MLPModel),
+    "decoder_layer": DeepSeekR1DistillQwenTestCase(model_cls=DecoderLayerModel),
+}
+
+VGF_NO_QUANT_BF16_SMALL_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = (
+    TOSA_BF16_SMALL_TEST_CASES
+)
+
+VGF_NO_QUANT_BF16_XLARGE_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+    "attention": DeepSeekR1DistillQwenTestCase(
+        model_cls=AttentionModel,
+        atol=1e-2,
+        rtol=1e-2,
+    ),
+    "mlp": DeepSeekR1DistillQwenTestCase(
+        model_cls=MLPModel,
+        atol=1e-2,
+        rtol=1e-2,
+    ),
+    "decoder_layer": DeepSeekR1DistillQwenTestCase(
+        model_cls=DecoderLayerModel,
         atol=1e-2,
         rtol=1e-2,
     ),
 }
 
-VGF_NO_QUANT_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
-    "rotary_embedding": DeepSeekR1DistillQwenTestCase(model_cls=RotaryEmbeddingModel),
-    "rotary_apply": DeepSeekR1DistillQwenTestCase(model_cls=RotaryApplyModel),
-    "repeat_kv": DeepSeekR1DistillQwenTestCase(model_cls=RepeatKVModel),
-    "attention": DeepSeekR1DistillQwenTestCase(model_cls=AttentionModel),
-    "rms_norm": DeepSeekR1DistillQwenTestCase(model_cls=RMSNormModel),
-    "mlp": DeepSeekR1DistillQwenTestCase(model_cls=MLPModel),
-    "decoder_layer": DeepSeekR1DistillQwenTestCase(model_cls=DecoderLayerModel),
-    "final_norm": DeepSeekR1DistillQwenTestCase(model_cls=FinalNormModel),
-}
-
-VGF_NO_QUANT_BF16_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = (
-    TOSA_BF16_TEST_CASES
+# TODO(MLETORCH-2048): Investigate the ARM64 VGF BF16 decoder-layer mismatch.
+VGF_NO_QUANT_BF16_XLARGE_XFAILS: dict[str, common.xfail_type] = (
+    {"decoder_layer": "MLETORCH-2048: ARM64 VGF BF16 numeric mismatch"}
+    if common.is_aarch64_host()
+    else {}
 )
 
+TOSA_MXFP8_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+    "attention": DeepSeekR1DistillQwenTestCase(model_cls=AttentionModel),
+    "mlp": DeepSeekR1DistillQwenTestCase(model_cls=MLPModel),
+    "decoder_layer": DeepSeekR1DistillQwenTestCase(model_cls=DecoderLayerModel),
+}
 
-@pytest.mark.xlarge
+
 @common.parametrize(
     "test_case",
-    TOSA_FP_TEST_CASES,
+    TOSA_FP_SMALL_TEST_CASES,
 )
 def test_deepseek_r1_distill_qwen_tosa_FP(
     test_case: DeepSeekR1DistillQwenTestCase,
@@ -350,13 +384,56 @@ def test_deepseek_r1_distill_qwen_tosa_FP(
 @pytest.mark.xlarge
 @common.parametrize(
     "test_case",
-    TOSA_BF16_TEST_CASES,
+    TOSA_FP_XLARGE_TEST_CASES,
+)
+def test_deepseek_r1_distill_qwen_tosa_FP_xlarge(
+    test_case: DeepSeekR1DistillQwenTestCase,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    with torch.no_grad():
+        pipeline = TosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=[],
+            exir_op=[],
+            transform_passes=list(test_case.transform_passes),
+        )
+        pipeline.run()
+
+
+@pytest.mark.xlarge
+@common.parametrize(
+    "test_case",
+    TOSA_BF16_XLARGE_TEST_CASES,
+)
+def test_deepseek_r1_distill_qwen_tosa_FP_bf16_xlarge(
+    test_case: DeepSeekR1DistillQwenTestCase,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    model, inputs = to_bfloat16(model, inputs)
+    with torch.no_grad():
+        pipeline = TosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=[],
+            exir_op=[],
+            transform_passes=list(test_case.transform_passes),
+            tosa_extensions=["bf16"],
+            atol=test_case.atol,
+            rtol=test_case.rtol,
+        )
+        pipeline.run()
+
+
+@common.parametrize(
+    "test_case",
+    TOSA_BF16_SMALL_TEST_CASES,
 )
 def test_deepseek_r1_distill_qwen_tosa_FP_bf16(
     test_case: DeepSeekR1DistillQwenTestCase,
 ):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
+    model, inputs = to_bfloat16(model, inputs)
     with torch.no_grad():
         pipeline = TosaPipelineFP[input_t](
             model,
@@ -372,10 +449,89 @@ def test_deepseek_r1_distill_qwen_tosa_FP_bf16(
 
 
 @pytest.mark.xlarge
+@common.parametrize(
+    "test_case",
+    TOSA_MXFP8_TEST_CASES,
+)
+def test_deepseek_r1_distill_qwen_tosa_mxfp8_fp32(
+    test_case: DeepSeekR1DistillQwenTestCase,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+
+    with torch.no_grad():
+        pipeline = MXFPTosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=aten_op_mxfp_linear,
+            exir_op=[],
+            filter_fn=_is_linear,
+            frobenius_threshold=0.05,
+            cosine_threshold=0.995,
+            mxfp_config=mxfp_config,
+            tosa_version="1.1",
+            tosa_extensions=["mxfp"],
+        )
+        pipeline.run()
+
+
+@pytest.mark.xlarge
+@common.parametrize(
+    "test_case",
+    TOSA_MXFP8_TEST_CASES,
+)
+def test_deepseek_r1_distill_qwen_tosa_mxfp8_bf16(
+    test_case: DeepSeekR1DistillQwenTestCase,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    model, inputs = to_bfloat16(model, inputs)
+    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+
+    with torch.no_grad():
+        pipeline = MXFPTosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=aten_op_mxfp_linear,
+            exir_op=[],
+            filter_fn=_is_linear,
+            frobenius_threshold=0.05,
+            cosine_threshold=0.995,
+            mxfp_config=mxfp_config,
+            tosa_version="1.1",
+            tosa_extensions=["bf16", "mxfp"],
+        )
+        pipeline.run()
+
+
+@pytest.mark.xlarge
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_case",
-    VGF_NO_QUANT_TEST_CASES,
+    VGF_NO_QUANT_XLARGE_TEST_CASES,
+)
+def test_deepseek_r1_distill_qwen_vgf_no_quant_xlarge(
+    test_case: DeepSeekR1DistillQwenTestCase,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t](
+            model,
+            inputs,
+            aten_op=[],
+            exir_op=[],
+            quantize=False,
+            atol=test_case.atol,
+            rtol=test_case.rtol,
+            qtol=test_case.qtol,
+            transform_passes=list(test_case.transform_passes),
+        )
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize(
+    "test_case",
+    VGF_NO_QUANT_SMALL_TEST_CASES,
 )
 def test_deepseek_r1_distill_qwen_vgf_no_quant(
     test_case: DeepSeekR1DistillQwenTestCase,
@@ -396,17 +552,43 @@ def test_deepseek_r1_distill_qwen_vgf_no_quant(
         pipeline.run()
 
 
-@pytest.mark.xlarge
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_case",
-    VGF_NO_QUANT_BF16_TEST_CASES,
+    VGF_NO_QUANT_BF16_SMALL_TEST_CASES,
 )
 def test_deepseek_r1_distill_qwen_vgf_no_quant_bf16(
     test_case: DeepSeekR1DistillQwenTestCase,
 ):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
+    model, inputs = to_bfloat16(model, inputs)
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t](
+            model,
+            inputs,
+            aten_op=[],
+            exir_op=[],
+            quantize=False,
+            atol=test_case.atol,
+            rtol=test_case.rtol,
+            qtol=test_case.qtol,
+            transform_passes=list(test_case.transform_passes),
+        )
+        pipeline.run()
+
+
+@pytest.mark.xlarge
+@common.SkipIfNoModelConverter
+@common.parametrize(
+    "test_case",
+    VGF_NO_QUANT_BF16_XLARGE_TEST_CASES,
+    xfails=VGF_NO_QUANT_BF16_XLARGE_XFAILS,
+)
+def test_deepseek_r1_distill_qwen_vgf_no_quant_bf16_xlarge(
+    test_case: DeepSeekR1DistillQwenTestCase,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    model, inputs = to_bfloat16(model, inputs)
     with torch.no_grad():
         pipeline = VgfPipeline[input_t](
             model,

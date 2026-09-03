@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -60,6 +60,23 @@ jobs:
         conda activate test_env_${{ matrix.python-version }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh "${{ matrix.python-version }}"
+
+  test-arduino-library:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_arduino_library.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/cortex_m/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arduino/') ||
+      contains(needs.changed-files.outputs.changed-files, 'kernels/portable/') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
+      contains(needs.changed-files.outputs.changed-files, 'schema/')
+    name: test-arduino-library
+    uses: ./.github/workflows/_test_arduino_library.yml
+    permissions:
+      id-token: write
+      contents: read
 
   test-minimal-wheel-linux:
     needs: changed-files
@@ -824,7 +841,7 @@ jobs:
       contents: read
     with:
       runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -1006,7 +1023,10 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      runner-linux: linux.2xlarge
+      # No runner-linux, so this takes the memory-optimized default. The suite
+      # runs one export worker per core, so what matters is memory per core, not
+      # core count: the previous instance gave each worker about 4 GiB and the
+      # job was killed. The memory-optimized default gives each worker more.
 
   test-qnn-passes-linux:
     name: test-qnn-passes-linux
@@ -1041,6 +1061,10 @@ jobs:
 
         # Run QNN pass unit tests
         pytest -xvs backends/qualcomm/tests/test_passes.py
+
+        # And the checks that importing the backend has no side effects. These need no SDK and
+        # no device, but they do need the package importable, which this job already arranges.
+        pytest -xvs backends/qualcomm/tests/test_import_side_effects.py
 
   test-qnn-delegate-linux:
     name: test-qnn-delegate-linux
@@ -1537,6 +1561,8 @@ jobs:
         fi
 
         # Test models
+        # TODO: Switch to run_tests.py once CI device provisioning is stable
+        # python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
 
   test-vulkan-models-linux:

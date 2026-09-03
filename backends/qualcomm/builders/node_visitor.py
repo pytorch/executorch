@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import (
@@ -33,7 +32,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .utils import (
@@ -45,7 +43,6 @@ from .utils import (
     is_mutable_buffer_output,
     is_parameter,
 )
-
 
 QNN_QUANT_TYPE_MAP = {
     torch.int8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8,
@@ -98,6 +95,7 @@ q_ops = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.torchao.quantize_affine.default,
 }
 
 dq_ops = {
@@ -105,18 +103,28 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+    exir_ops.edge.torchao.dequantize_affine.default,
 }
 
 q_dq_map = {
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
 }
+
+
+def to_q_op(target):
+    return target if target in q_ops else q_dq_map[target]
+
+
+def to_dq_op(target):
+    return target if target in dq_ops else q_dq_map[target]
 
 
 class NodeVisitor:
@@ -395,11 +403,12 @@ class NodeVisitor:
         self,
         node: torch.fx.Node,
         tensor_type: PyQnnManager.Qnn_TensorType_t,
+        wrapper_idx: Optional[int] = None,
     ) -> PyQnnManager.Qnn_TensorType_t:
         is_input = is_graph_input(node, self.edge_program) or is_mutable_buffer_input(
             node, self.edge_program
         )
-        is_output = is_graph_output(node)
+        is_output = is_graph_output(node, wrapper_idx)
         # handle logic for input/output tensors
         if is_input or is_output:
             # For more info about existence of self.is_qnn_partitioner, check constructor for explanation.
@@ -471,7 +480,7 @@ class NodeVisitor:
                     self.edge_program.graph_signature.buffers_to_mutate.keys()
                 ).index(node.name)
                 tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
-            elif is_graph_output(node):
+            elif is_graph_output(node, wrapper_idx):
                 tensor_name = f"output_{tensor_name}"
 
         # Only add qcom_tensor_name when enable tensor dump.
@@ -546,7 +555,14 @@ class NodeVisitor:
         tensor_name = self.get_tensor_name(tensor_source_node, wrapper_idx)
         dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
         dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
-        tensor_type = self.get_tensor_type(tensor_source_node, tensor_type)
+        # wrapper_idx indexes a node's own outputs only when the tensor being
+        # defined belongs to that node. Builders also use it to key scratch
+        # tensors built from some other node (op_scatter_elements), where it
+        # carries no output meaning.
+        output_index = wrapper_idx if tensor_source_node is target_build_node else None
+        tensor_type = self.get_tensor_type(
+            tensor_source_node, tensor_type, output_index
+        )
         quant_encoding, quant_configs = self.get_quant_encoding_conf(
             tensor_source_node, target_build_node
         )

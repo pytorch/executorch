@@ -8,7 +8,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "MLXExecutor.h" // Tensor, StreamOrDevice
 
@@ -36,14 +38,11 @@ class MLXCache {
  public:
   virtual ~MLXCache() = default;
 
-  // Write this step's K/V for `layer` at `position` (the run's logical start);
-  // return the window + mask kind. k/v are BHSD. `position` is a host int --
-  // the caller reads it off the graph so the cache stays pure graph + integer
-  // bookkeeping. The cache owns the mask: a multi-token chain is Causal, a
-  // single decode token is None.
+  // Write this step's K/V for `layer` at `positions`, one host int per query
+  // token, and return the window plus the mask kind. k/v are BHSD.
   virtual AttendSpec update_and_fetch(
       int layer,
-      int position,
+      const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
       StreamOrDevice s) = 0;

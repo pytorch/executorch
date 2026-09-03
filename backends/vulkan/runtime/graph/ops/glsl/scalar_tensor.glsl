@@ -27,10 +27,12 @@ ${layout_declare_ubo(B, buffer_scalar_type(SCALAR_VALUE_TYPE), "scalar_value")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 #ifdef USING_BUFFER
 
 void main() {
-  const int i = int(gl_GlobalInvocationID.x);
+  const int i = int(linear_idx_from_gid());
 
   if (i > 0) {
     return;

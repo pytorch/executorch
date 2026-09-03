@@ -49,10 +49,26 @@ def get_time_formatted_path(path: str, log_prefix: str) -> str:
     )
 
 
+def maybe_get_tosa_artifact_path() -> str | None:
+    """Return the configured artifact directory for the current test."""
+    artifact_base_path = getattr(pytest, "_test_options", {}).get("dump_artifacts")
+    if artifact_base_path:
+        current_test = os.environ.get("PYTEST_CURRENT_TEST")
+        if current_test is None:
+            raise RuntimeError("Could not determine the current pytest test name")
+        test_name = (
+            current_test.split(" (")[0]
+            .rsplit("::", 1)[-1]
+            .replace(",", "_")
+            .replace(" ", "")
+        )
+        return os.path.join(artifact_base_path, test_name)
+
+    return maybe_get_tosa_collate_path()
+
+
 def maybe_get_tosa_collate_path() -> str | None:
-    """Checks the environment variable TOSA_TESTCASES_BASE_PATH and returns the
-    path to the where to store the current tests if it is set.
-    """
+    """Return the current test's TOSA collation directory, when configured."""
     tosa_test_base = os.environ.get("TOSA_TESTCASES_BASE_PATH")
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
@@ -76,7 +92,7 @@ def get_tosa_compile_spec(
 ) -> TosaCompileSpec:
     """Get the compile spec for default TOSA tests."""
     if not custom_path:
-        custom_path = maybe_get_tosa_collate_path()
+        custom_path = maybe_get_tosa_artifact_path()
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -99,7 +115,7 @@ def get_u55_compile_spec(
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U55 tests."""
     if not custom_path:
-        custom_path = maybe_get_tosa_collate_path()
+        custom_path = maybe_get_tosa_artifact_path()
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -134,9 +150,8 @@ def get_u85_compile_spec(
     tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U85 tests."""
-
     if not custom_path:
-        custom_path = maybe_get_tosa_collate_path()
+        custom_path = maybe_get_tosa_artifact_path()
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -172,7 +187,7 @@ def get_u65_compile_spec(
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U65 tests."""
     if not custom_path:
-        custom_path = maybe_get_tosa_collate_path()
+        custom_path = maybe_get_tosa_artifact_path()
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -207,9 +222,11 @@ def get_vgf_compile_spec(
     """Get the ArmCompileSpec for the default VGF tests, to modify the compile
     spec before calling .build() to finalize it.
     """
-
     if not custom_path:
-        custom_path = maybe_get_tosa_collate_path()
+        custom_path = maybe_get_tosa_artifact_path()
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
+
     profiles = []
     if "FP" in repr(tosa_spec):
         profiles.append("fp")
@@ -217,9 +234,6 @@ def get_vgf_compile_spec(
         profiles.append("int")
     if len(profiles) == 0:
         raise ValueError(f"Unsupported vgf compile_spec: {repr(tosa_spec)}")
-
-    if custom_path is not None:
-        os.makedirs(custom_path, exist_ok=True)
     if compiler_flags is not None:
         compiler_flags_list = compiler_flags.split(" ")
     else:

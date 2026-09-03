@@ -44,6 +44,7 @@ MeanDim = exir_ops.edge.aten.mean.dim
 Minimum = exir_ops.edge.aten.minimum.default
 MulTensor = exir_ops.edge.aten.mul.Tensor
 Neg = exir_ops.edge.aten.neg.default
+Pad = exir_ops.edge.aten.pad.default
 PermuteCopy = exir_ops.edge.aten.permute_copy.default
 Prelu = exir_ops.edge.aten.prelu.default
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default

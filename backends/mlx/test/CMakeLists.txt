@@ -29,7 +29,7 @@ endif()
 
 target_link_libraries(
   op_test_runner PRIVATE extension_module extension_tensor executorch
-                         mlxdelegate
+                         mlxdelegate extension_llm_cache
 )
 
 # --------------------------------------------------------------------------
@@ -110,5 +110,28 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   )
   target_link_options(
     mlx_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+et_cxx_test(
+  mlx_cell_cache_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_cell_cache_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+  extension_llm_cache
+)
+target_include_directories(
+  mlx_cell_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_cell_cache_test PRIVATE -fsanitize=address,undefined
+                                -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_cell_cache_test PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()

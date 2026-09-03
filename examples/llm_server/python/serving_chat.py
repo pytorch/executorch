@@ -101,6 +101,11 @@ class ServingChat:
         # clearing both on reset/close.
         self._transcript = OpenAITranscriptState(template)
 
+    @property
+    def healthy(self) -> bool:
+        """Whether the underlying model worker can accept new requests."""
+        return self._runtime.healthy
+
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
         """Map each defined tool name to its JSON-schema ``parameters`` object.
@@ -210,11 +215,13 @@ class ServingChat:
     def _log_generation_stats(
         session_id: Optional[str], stats: GenStats, finish: str
     ) -> None:
-        logger.info(
+        message = (
             "llm_turn_stats session_id=%s reason=%s prompt_tokens=%d "
             "reused_prompt_tokens=%d prefilled_prompt_tokens=%d "
             "completion_tokens=%d prefill_ms=%.1f prefill_tok_s=%.1f "
-            "decode_ms=%.1f decode_tok_s=%.1f total_ms=%.1f finish=%s",
+            "decode_ms=%.1f decode_tok_s=%.1f total_ms=%.1f finish=%s"
+        )
+        args = (
             session_id or "<scratch>",
             stats.session_reset_reason,
             stats.prompt_tokens,
@@ -228,6 +235,10 @@ class ServingChat:
             stats.total_ms,
             finish,
         )
+        if stats.vision_encoder_ms is not None:
+            message += " vision_encoder_ms=%.1f"
+            args += (stats.vision_encoder_ms,)
+        logger.info(message, *args)
 
     async def _clean(
         self, stream: AsyncIterator[str], stops: list[str], on_stop=None

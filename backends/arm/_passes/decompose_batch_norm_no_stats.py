@@ -61,6 +61,14 @@ class DecomposeBatchNormNoStatsPass(ArmOpTargetedPass):
             ):
                 continue
 
+            if self.is_tfa_pass and getattr(node.args[0], "target", None) in (
+                torch.ops.aten.conv1d.default,
+                torch.ops.aten.conv2d.default,
+                torch.ops.aten.conv3d.default,
+                torch.ops.aten.convolution.default,
+            ):
+                continue
+
             if node.target in (
                 torch.ops.aten.batch_norm.default,
                 torch.ops.aten.native_batch_norm.default,
@@ -87,8 +95,17 @@ class DecomposeBatchNormNoStatsPass(ArmOpTargetedPass):
             bias = args[2] if len(args) > 2 else None
             running_mean = args[3]
             running_var = args[4]
-            if len(args) > 6:
-                eps = args[6]
+            eps_index = (
+                7
+                if node.target
+                in (
+                    torch.ops.aten.batch_norm.default,
+                    torch.ops.aten.native_batch_norm.default,
+                )
+                else 6
+            )
+            if len(args) > eps_index:
+                eps = args[eps_index]
 
             # Determine shapes
             val = meta.get("val")
@@ -103,13 +120,20 @@ class DecomposeBatchNormNoStatsPass(ArmOpTargetedPass):
             weights_shape[channel_axis] = shape[channel_axis]
             num_features = shape[channel_axis]
 
-            # Ops to use
-            sub_op = exir_ops.edge.aten.sub.Tensor
-            view_op = exir_ops.edge.aten.view_copy.default
-            full_op = exir_ops.edge.aten.full.default
-            add_op = exir_ops.edge.aten.add.Tensor
-            rsqrt_op = exir_ops.edge.aten.rsqrt.default
-            mul_op = exir_ops.edge.aten.mul.Tensor
+            if self.is_tfa_pass:
+                sub_op = torch.ops.aten.sub.Tensor
+                view_op = torch.ops.aten.view_copy.default
+                full_op = torch.ops.aten.full.default
+                add_op = torch.ops.aten.add.Tensor
+                rsqrt_op = torch.ops.aten.rsqrt.default
+                mul_op = torch.ops.aten.mul.Tensor
+            else:
+                sub_op = exir_ops.edge.aten.sub.Tensor
+                view_op = exir_ops.edge.aten.view_copy.default
+                full_op = exir_ops.edge.aten.full.default
+                add_op = exir_ops.edge.aten.add.Tensor
+                rsqrt_op = exir_ops.edge.aten.rsqrt.default
+                mul_op = exir_ops.edge.aten.mul.Tensor
 
             # Begin decomposition
             with graph_module.graph.inserting_before(node):

@@ -9,6 +9,7 @@ from typing import Callable, Dict, List
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     PER_CHANNEL_GROUP_ENCODING,
+    dq_ops,
     q_ops,
 )
 from executorch.backends.qualcomm.builders.utils import get_parameter
@@ -86,6 +87,9 @@ def insert_quant_node(
     quant_attrs: Dict = None,
     pop_quant_attrs: bool = True,
 ) -> torch.fx.Node:
+    assert (
+        target in q_ops
+    ), f"insert_quant_node expects a quantize target, got: {target}"
     with graph_module.graph.inserting_after(input_node):
         inserted_node = _create_q_or_dq_node(
             graph_module=graph_module,
@@ -106,6 +110,9 @@ def insert_dequant_node(
     output_node: torch.fx.node,
     target: torch.fx.node.Target,
 ) -> None:
+    assert (
+        target in dq_ops
+    ), f"insert_dequant_node expects a dequantize target, got: {target}"
     with graph_module.graph.inserting_after(input_node):
         inserted_node = _create_q_or_dq_node(
             graph_module=graph_module, node=input_node, target=target

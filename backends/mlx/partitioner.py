@@ -16,10 +16,12 @@ graph and marks supported operations for delegation to MLX.
 from __future__ import annotations
 
 import inspect
+import weakref
 from typing import Any, Callable, Dict, List, Tuple, Union
 
 import torch
 from executorch.backends.mlx._logging import logger
+from executorch.backends.mlx._memprofile import mem_phase
 from executorch.backends.mlx.preprocess import MLXBackend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -43,6 +45,11 @@ class MLXOperatorSupport(OperatorSupportBase):
     Uses MLXProgramBuilder to determine support - this ensures the partitioner
     uses the exact same logic as the actual compilation. A node is supported
     if the builder can handle it (either via direct handler or pattern match).
+
+    The builder's verdicts are copied out and the builder itself dropped:
+    running the handlers repacks every quantized weight into builder-owned
+    constants, so holding onto it would keep a second copy of the model's
+    weights alive for the whole partitioning pass.
     """
 
     def __init__(
@@ -57,16 +64,23 @@ class MLXOperatorSupport(OperatorSupportBase):
         # The builder populates node_info with supported/unsupported status
         from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 
-        self._builder = MLXProgramBuilder(edge_program)
-        self._builder.check_support_only()
+        builder = MLXProgramBuilder(edge_program)
+        with mem_phase("partition: check_support"):
+            builder.check_support_only()
+
+        self._supported: Dict[torch.fx.Node, bool] = {}
+        self._unsupported_reason: Dict[torch.fx.Node, str] = {}
+        for node, info in builder.node_info.items():
+            self._supported[node] = info.supported
+            if info.unsupported_reason is not None:
+                self._unsupported_reason[node] = info.unsupported_reason
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         if node.op != "call_function":
             return False
 
         # Check if builder determined this node is supported
-        info = self._builder.node_info.get(node)
-        if info is not None and info.supported:
+        if self._supported.get(node, False):
             logger.debug(f"[SUPPORTED] Node {node.target}")
             return True
 
@@ -86,6 +100,15 @@ class MLXPartitioner(Partitioner):
         self.compile_specs = compile_specs or []
         self.delegation_spec = DelegationSpec(MLXBackend.__name__, self.compile_specs)
         self.partition_tags: Dict[str, DelegationSpec] = {}
+        # Last (program, result) pair returned by ops_to_not_decompose(). exir
+        # asks the same partitioner the same question about the same program
+        # object twice in a row (_program.py calls it once directly and once
+        # through _can_skip_using_EDGE_DO_NOT_DECOMP), and answering costs a
+        # full builder run that repacks every quantized weight.
+        self._not_decompose_cache: (
+            Tuple["weakref.ReferenceType[ExportedProgram]", List[torch._ops.OpOverload]]
+            | None
+        ) = None
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram
@@ -104,6 +127,24 @@ class MLXPartitioner(Partitioner):
         the shape_env. build() calls _build_mlx_graph() which evaluates SymInts
         to concrete values when converting tensor shapes, which corrupts the
         shape_env and causes dynamic shapes to be lost during decomposition.
+
+        Support has to be decided by actually running the handlers: a registered
+        handler is not proof that a node lowers (aten.layer_norm.default has a
+        handler that rejects the 6-arg edge form, for instance). Preserving an op
+        the handler then rejects is worse than not preserving it, because the op
+        neither decomposes into something delegatable nor lowers itself.
+
+        A target is only preserved when every node carrying it is supported. One
+        unsupported node is enough to give the whole operator back to decomposition,
+        because keeping it would leave that node neither lowered nor decomposed and
+        export would stop.
+
+        The second return value is a per-node filter, which would keep the supported
+        calls fused and decompose only the rest. It is deliberately not used: it puts
+        the program on exir's EDGE_DO_NOT_DECOMP path, which fails on an ordinary
+        attention block that reshapes its output, a shape this backend has to lower.
+        The cost of the coarser choice is that one declined call also unfuses the
+        operator's other calls in that graph.
         """
         from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 
@@ -116,12 +157,19 @@ class MLXPartitioner(Partitioner):
                 )
                 return ([], None)
 
+        cached = self._not_decompose_cache
+        if cached is not None and cached[0]() is ep:
+            logger.debug("MLX ops_to_not_decompose: reusing result for same program")
+            return (cached[1], None)
+
         # Run the builder to determine which nodes are supported
         builder = MLXProgramBuilder(ep)
-        builder.check_support_only()
+        with mem_phase("ops_to_not_decompose: check_support"):
+            builder.check_support_only()
 
         # Collect ops for nodes that are actually supported
         do_not_decompose: list[torch._ops.OpOverload] = []
+        declined: set[torch._ops.OpOverload] = set()
 
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
@@ -131,6 +179,12 @@ class MLXPartitioner(Partitioner):
                 if info is not None and info.supported:
                     if node.target not in do_not_decompose:
                         do_not_decompose.append(node.target)
+                else:
+                    declined.add(node.target)
+
+        do_not_decompose = [op for op in do_not_decompose if op not in declined]
+
+        self._not_decompose_cache = (weakref.ref(ep), do_not_decompose)
 
         logger.debug(
             f"MLX ops_to_not_decompose: {[str(op) for op in do_not_decompose]}"
@@ -152,8 +206,9 @@ class MLXPartitioner(Partitioner):
             is_supported = self.supported_ops.is_node_supported({}, node)
             if not is_supported and node.op == "call_function":
                 target_str = str(node.target)
-                info = self.supported_ops._builder.node_info.get(node)
-                reason = info.unsupported_reason if info else "No handler registered"
+                reason = self.supported_ops._unsupported_reason.get(
+                    node, "No handler registered"
+                )
                 if target_str in unsupported_by_target:
                     count, _ = unsupported_by_target[target_str]
                     unsupported_by_target[target_str] = (count + 1, reason)

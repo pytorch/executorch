@@ -8,6 +8,7 @@
 import copy
 import inspect
 import logging
+import operator
 from typing import Callable, List, Optional, Type, TypeAlias, Union
 
 import torch
@@ -21,6 +22,7 @@ from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
 from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
+from torch.export.exported_program import _common_getitem_elimination_pass
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.infra.pass_manager import pass_result_wrapper
 
@@ -35,6 +37,29 @@ PassType: TypeAlias = Union[
 def _get_pass_name(fn: PassType) -> str:
     """Returns a human-readable name for a pass."""
     return fn.__name__ if inspect.isfunction(fn) else type(fn).__name__
+
+
+def _can_eliminate_common_getitems(gm: torch.fx.GraphModule) -> bool:
+    """Whether ``_common_getitem_elimination_pass`` can run on this graph.
+
+    That pass identifies a getitem by ``node_id[source]``, so it assumes every
+    getitem indexes a Node. Mid-pipeline graphs can hold getitems that index a
+    list instead -- an ``immutable_list`` is hashable, so the lookup raises
+    KeyError rather than being caught by a type check. Skip deduplication for
+    those graphs instead of crashing; they simply keep their duplicate getitems,
+    which is the behaviour that predates deduplication here.
+    """
+    for module in gm.modules():
+        if not isinstance(module, torch.fx.GraphModule):
+            continue
+        for node in module.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target is operator.getitem
+                and not isinstance(node.args[0], torch.fx.Node)
+            ):
+                return False
+    return True
 
 
 class PassManager(fx.PassManager):
@@ -195,14 +220,23 @@ class ExportedProgramPassManager(fx.PassManager):
                             # possible that the verifier will fail upon new ExportedProgram construction,
                             # and we should only run verification after each pass if
                             # run_checks_after_each_pass is True.
+                            new_graph_signature = _get_updated_graph_signature(
+                                exported_program.graph_signature,
+                                res.graph_module,
+                            )
+                            # ExportedProgram.__init__ runs this, but this path mutates
+                            # the program in place and never reconstructs it. Duplicate
+                            # getitem nodes survive otherwise, and serialization only
+                            # names one node per output index.
+                            if _can_eliminate_common_getitems(res.graph_module):
+                                _common_getitem_elimination_pass(
+                                    res.graph_module,
+                                    new_graph_signature,
+                                    exported_program.module_call_graph,
+                                )
                             res.graph_module.recompile()
                             exported_program._graph_module = res.graph_module
-                            exported_program._graph_signature = (
-                                _get_updated_graph_signature(
-                                    exported_program.graph_signature,
-                                    res.graph_module,
-                                )
-                            )
+                            exported_program._graph_signature = new_graph_signature
                             exported_program._range_constraints = (
                                 _get_updated_range_constraints(res.graph_module)
                             )

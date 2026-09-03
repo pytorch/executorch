@@ -105,13 +105,19 @@ class VgfRepr {
       VkDevice dev,
       VkQueue queue,
       VkCommandPool pool,
-      uint32_t queue_family_index = UINT32_MAX)
+      uint32_t queue_family_index = UINT32_MAX,
+      bool neural_statistics_requested = false,
+      bool neural_statistics_device_enabled = false,
+      int neural_statistics_mode_index = 1)
       : vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
         vk_queue(queue),
         vk_command_pool(pool),
-        vk_queue_family_index(queue_family_index) {}
+        vk_queue_family_index(queue_family_index),
+        neural_statistics_requested_(neural_statistics_requested),
+        neural_statistics_device_enabled_(neural_statistics_device_enabled),
+        neural_statistics_mode_index_(neural_statistics_mode_index) {}
 
   /*
    * Process a VGF ready for execution, allocate necessary Vulkan objects.
@@ -165,6 +171,10 @@ class VgfRepr {
 
   std::string collect_neural_statistics_metadata() const;
 
+  bool neural_statistics_requested() const {
+    return neural_statistics_requested_;
+  }
+
   ~VgfRepr() {
     free_vgf();
   }
@@ -177,6 +187,10 @@ class VgfRepr {
   VkQueue vk_queue;
   VkCommandPool vk_command_pool;
   uint32_t vk_queue_family_index = UINT32_MAX;
+
+  bool neural_statistics_requested_ = false;
+  bool neural_statistics_device_enabled_ = false;
+  int neural_statistics_mode_index_ = 1;
 
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;

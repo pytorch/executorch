@@ -13,8 +13,12 @@ runtime.export_file(
 fbcode_target(
     _kind = runtime.python_library,
     name = "lib",
-    typing = True,
     srcs = [
+        "__init__.py",
+        "partitioner.py",
+        "passes/__init__.py",
+        "passes/reinplace.py",
+        "preprocess.py",
         "serialization/__init__.py",
         "serialization/graph_serialize.py",
         "serialization/schema.py",
@@ -24,8 +28,15 @@ fbcode_target(
     },
     visibility = ["PUBLIC"],
     deps = [
+        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "//caffe2:torch",
+        "//executorch/backends/transforms:collapse_view_copy",
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/passes:cse_pass",
+        "//executorch/exir/passes:lib",
     ],
 )

@@ -297,10 +297,13 @@ class ExportSession:
         """Build the stage registry from the given stages."""
         stage_registry: Dict[StageType, Stage] = {}
 
-        stage = None
         for stage_type in stages or self._get_default_pipeline():
+            stage = None
             if stage_type == StageType.SOURCE_TRANSFORM:
-                stage = SourceTransformStage(self._quant_recipe)
+                stage = SourceTransformStage(
+                    self._quant_recipe,
+                    in_place=self._export_recipe.source_transform_in_place,
+                )
             elif stage_type == StageType.QUANTIZE:
                 stage = QuantizeStage(self._quant_recipe)
             elif stage_type == StageType.TORCH_EXPORT:
@@ -326,10 +329,10 @@ class ExportSession:
                 stage = ExecutorchStage(self._export_recipe.executorch_backend_config)
             else:
                 logging.info(
-                    f"{stage_type} is unknown, you have to register it before executing export()"
+                    f"{stage_type} is unknown, register it with session.register_stage()"
                 )
 
-            if stage:
+            if stage is not None:
                 stage_registry[stage_type] = stage
         return stage_registry
 
@@ -419,7 +422,7 @@ class ExportSession:
             stage_instance = self._stage_registry.get(current_stage)
             if stage_instance is None:
                 raise ValueError(
-                    f"Stage {current_stage} not found in registry, , register it using session.register_stage()"
+                    f"Stage {current_stage} not found in registry, register it using session.register_stage()"
                 )
 
             valid_predecessors = stage_instance.valid_predecessor_stages
@@ -436,6 +439,10 @@ class ExportSession:
         self._validate_pipeline_sequence(
             stages=self._pipeline_stages,
         )
+
+        # After validation: a rejected pipeline must not destroy the previous
+        # run. In place, since get_stage_artifacts() hands out this dict.
+        self._stage_to_artifacts.clear()
 
         current_artifact = PipelineArtifact(data=self._model, context=self._run_context)
 
@@ -673,14 +680,26 @@ class ExportSession:
         if stage_artifact is None:
             RuntimeError("No delegation info available, run the lowering stage first")
 
-        # pyre-ignore
-        delegation_info = stage_artifact.get_context("delegation_info", None)
-        if delegation_info:
+        delegation_info_by_method = stage_artifact.get_context(
+            "delegation_info_by_method", None
+        )
+        if delegation_info_by_method:
+            delegation_infos = sorted(delegation_info_by_method.items())
+        else:
+            # pyre-ignore
+            delegation_info = stage_artifact.get_context("delegation_info", None)
+            delegation_infos = [(None, delegation_info)] if delegation_info else []
+
+        if not delegation_infos:
+            print("No delegation info available")
+            return
+
+        for method_name, delegation_info in delegation_infos:
+            if method_name is not None:
+                print(f"Delegation info for method '{method_name}':")
             print(delegation_info.get_summary())
             df = delegation_info.get_operator_delegation_dataframe()
             print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
-        else:
-            print("No delegation info available")
 
     # Use Any instead of ETRecord as return type to avoid static dependency on etrecord
     def get_etrecord(self) -> Any:

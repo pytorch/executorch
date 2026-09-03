@@ -143,7 +143,6 @@ test_run_tosa() {
 test_pytest_ops_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
@@ -153,7 +152,6 @@ test_pytest_ops_ethos_u55() {
 test_pytest_models_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -187,9 +185,48 @@ test_run_ethos_u55() {
     # Cortex-M op tests
     echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U55)"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/prim_ops.py --bundleio --no_delegate --no_quantize --select_ops_list="aten::add.out,aten::select_copy.int_out"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --select_ops_list="aten::sub.out,aten::add.out,aten::mul.out"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_minimal_classic_ml_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Test minimal classic ML runner on Ethos-U55"
+
+    local build_dir="${et_root_dir}/arm_test/minimal_classic_ml"
+    local pte_path="${build_dir}/mv2.pte"
+    local fvp_log="${build_dir}/run_fvp.log"
+    mkdir -p "${build_dir}"
+
+    python3 -m backends.arm.scripts.aot_arm_compiler \
+        --model_name=mv2 \
+        --target=ethos-u55-128 \
+        --delegate \
+        --quantize \
+        --intermediates="${build_dir}" \
+        --output="${pte_path}" \
+        --system_config=Ethos_U55_High_End_Embedded \
+        --memory_mode=Shared_Sram
+
+    cmake \
+        -S examples/arm/minimal_classic_ml \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DET_PTE_FILE_PATH="${pte_path}" \
+        -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded \
+        -DMEMORY_MODE=Shared_Sram
+    cmake --build "${build_dir}" --target arm_classic_ml_runner -j"$(nproc)"
+
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${build_dir}/arm_classic_ml_runner" \
+        --target=ethos-u55-128 | tee "${fvp_log}"
+    local fvp_status="${PIPESTATUS[0]}"
+    [[ "${fvp_status}" -eq 0 ]]
+    grep -Fq "Inference complete: 1 output(s)" "${fvp_log}"
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -200,7 +237,6 @@ test_run_ethos_u55() {
 test_pytest_ops_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
@@ -211,7 +247,6 @@ test_pytest_ops_ethos_u85() {
 test_pytest_models_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -342,8 +377,6 @@ test_deit_e2e_ethos_u() {
 test_model_smollm2_135M_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
-
     # Build pte for smollm2
     python3 -m extension.llm.export.export_llm \
         base.model_class=smollm2 \
@@ -417,19 +450,19 @@ test_smaller_stories_llama_vkml() {
     _test_smaller_stories_llama vgf
 }
 
-test_memory_allocation() {
-    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
+test_runtime_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation"
 
-    mkdir -p arm_test/test_run
-    # Ethos-U85
-    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
-    python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
-            --require "model_pte_program_size" "<= 3200 B" \
-            --require "method_allocator_planned" "<= 64 B" \
-            --require "method_allocator_loaded" "<= 1024 B" \
-            --require "method_allocator_input" "<= 16 B" \
-            --require "Total DRAM used" "<= 0.06 KiB"
+    local ctest_build_dir="${et_root_dir}/arm_test/ethosu_runtime_tests"
+    cmake \
+        -S "${et_root_dir}/backends/arm/runtime/tests/ethos-u" \
+        -B "${ctest_build_dir}" \
+        -DEXECUTORCH_ROOT="${et_root_dir}"
+
+    ctest --test-dir "${ctest_build_dir}" \
+        --output-on-failure \
+        --no-tests=error \
+        -L memory_allocation
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

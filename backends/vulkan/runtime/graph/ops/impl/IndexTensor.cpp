@@ -20,9 +20,18 @@ void resize_index_tensor_node(
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
   const ValueRef index = args.at(1).refs.at(1);
 
+  // aten.index.Tensor with a single index tensor gathers along dim 0, so
+  //   out.sizes = index.sizes ++ self.sizes[1:]
+  // Using the index's sizes alone is only correct when self is 1-D; for any
+  // higher-rank self it also changes the tensor's RANK, which virtual_resize
+  // rejects outright ("new sizes cannot modify the dimensionality").
+  const std::vector<int64_t> self_sizes = graph->sizes_of(self);
   std::vector<int64_t> out_sizes = graph->sizes_of(index);
+  out_sizes.insert(out_sizes.end(), self_sizes.begin() + 1, self_sizes.end());
+
   graph->virtual_resize(out, out_sizes);
 }
 
@@ -42,8 +51,8 @@ void add_index_tensor_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{self, index}, vkapi::kRead}},
       // Shader params buffers

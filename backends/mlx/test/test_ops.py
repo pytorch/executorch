@@ -35,6 +35,7 @@ from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa:
     custom_ops,
     ops,
 )
+from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
 from executorch.backends.mlx.llm.sampling import SamplingHead
 from torch.export import Dim
 
@@ -3331,6 +3332,136 @@ class LayerNormTest(OpTestCase):
         return (x,)
 
 
+class GroupNormModel(nn.Module):
+    """Simple model using GroupNorm."""
+
+    def __init__(
+        self,
+        num_groups: int = 8,
+        num_channels: int = 32,
+        eps: float = 1e-5,
+        affine: bool = True,
+    ):
+        super().__init__()
+        self.group_norm = nn.GroupNorm(num_groups, num_channels, eps=eps, affine=affine)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.group_norm(x)
+
+
+@register_test
+class GroupNormTest(OpTestCase):
+    """Test case for nn.GroupNorm (aten.native_group_norm)."""
+
+    name = "group_norm"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        num_groups: int = 8,
+        num_channels: int = 32,
+        shape: Tuple[int, ...] = (2, 32, 8, 8),
+        eps: float = 1e-5,
+        affine: bool = True,
+        suffix: str = "",
+    ):
+        self.num_groups = num_groups
+        self.num_channels = num_channels
+        self.shape = shape
+        self.eps = eps
+        self.affine = affine
+        self.name = f"group_norm{suffix}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["GroupNormTest"]:
+        return [
+            cls(),
+            # affine=False exercises the no-weight/no-bias path
+            cls(affine=False, suffix="_no_affine"),
+            # one channel per group (instance norm) and one group (all channels)
+            cls(num_groups=32, suffix="_per_channel_groups"),
+            cls(num_groups=1, suffix="_single_group"),
+            # non-square spatial extent, and a 3D (N, C, L) input
+            cls(num_groups=4, num_channels=16, shape=(1, 16, 5, 7), suffix="_odd"),
+            cls(num_groups=4, num_channels=12, shape=(2, 12, 7), suffix="_3d"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return GroupNormModel(self.num_groups, self.num_channels, self.eps, self.affine)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(*self.shape),)
+
+
+class UpsampleNearest2dModel(nn.Module):
+    """Nearest-neighbour resize, by scale factor or by explicit output size."""
+
+    def __init__(
+        self,
+        scale_factor: Optional[Tuple[float, float]] = None,
+        size: Optional[Tuple[int, int]] = None,
+    ):
+        super().__init__()
+        self.scale_factor = scale_factor
+        self.size = size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.interpolate(
+            x, size=self.size, scale_factor=self.scale_factor, mode="nearest"
+        )
+
+
+@register_test
+class UpsampleNearest2dTest(OpTestCase):
+    """Test case for aten.upsample_nearest2d."""
+
+    name = "upsample_nearest2d"
+    rtol = 0
+    atol = 0
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (1, 3, 4, 4),
+        scale_factor: Optional[Tuple[float, float]] = (2.0, 2.0),
+        size: Optional[Tuple[int, int]] = None,
+        suffix: str = "",
+    ):
+        self.shape = shape
+        self.scale_factor = scale_factor
+        self.size = size
+        self.name = f"upsample_nearest2d{suffix}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["UpsampleNearest2dTest"]:
+        return [
+            cls(),
+            # different scale per axis
+            cls(shape=(2, 5, 3, 7), scale_factor=(3.0, 2.0), suffix="_anisotropic"),
+            # non-integer ratios, which a repeat-based lowering could not express
+            cls(shape=(1, 3, 6, 6), scale_factor=(1.5, 2.5), suffix="_fractional"),
+            cls(
+                shape=(1, 2, 5, 5),
+                scale_factor=None,
+                size=(12, 12),
+                suffix="_explicit_size",
+            ),
+            # output smaller than input
+            cls(
+                shape=(1, 4, 8, 8),
+                scale_factor=None,
+                size=(4, 4),
+                suffix="_downsample",
+            ),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return UpsampleNearest2dModel(self.scale_factor, self.size)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(*self.shape),)
+
+
 class Conv1dModel(nn.Module):
     """Simple model using Conv1d."""
 
@@ -4818,6 +4949,7 @@ def _make_unary_op_test(
 _UNARY_OP_TESTS = [
     {"op_name": "floor",      "op_fn": torch.floor,      "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
     {"op_name": "ceil",       "op_fn": torch.ceil,       "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
+    {"op_name": "trunc",      "op_fn": torch.trunc,      "shapes": _SHAPES_3, "input_fn": _input_fn(scale=10)},
     {"op_name": "square",     "op_fn": torch.square,     "shapes": _SHAPES_3},
     {"op_name": "exp",        "op_fn": torch.exp,        "shapes": _SHAPES_3},
     {"op_name": "sin",        "op_fn": torch.sin,        "shapes": _SHAPES_3, "input_fn": _input_fn(scale=3.14159)},
@@ -6080,6 +6212,7 @@ class SDPATest(OpTestCase):
         is_causal: bool = False,
         use_mask: bool = False,
         use_bool_mask: bool = False,
+        kv_seq_len: Optional[int] = None,
     ):
         self.batch_size = batch_size
         self.num_heads = num_heads
@@ -6089,12 +6222,15 @@ class SDPATest(OpTestCase):
         self.is_causal = is_causal
         self.use_mask = use_mask
         self.use_bool_mask = use_bool_mask
+        self.kv_seq_len = kv_seq_len if kv_seq_len is not None else seq_len
 
         parts = ["sdpa"]
         if num_kv_heads is not None:
             parts.append(f"gqa{num_kv_heads}")
         if is_causal:
             parts.append("causal")
+        if self.kv_seq_len != seq_len:
+            parts.append(f"q{seq_len}kv{self.kv_seq_len}")
         if use_mask:
             parts.append("mask")
         if use_bool_mask:
@@ -6109,6 +6245,11 @@ class SDPATest(OpTestCase):
             cls(num_kv_heads=4),
             cls(use_mask=True),
             cls(use_bool_mask=True),  # Test boolean mask conversion
+            # A decode step against a longer key cache. MLX anchors its causal mask at
+            # the bottom right and torch at the top left, so they only agree when the
+            # lengths match.
+            cls(is_causal=True, seq_len=1, kv_seq_len=32),
+            cls(is_causal=True, seq_len=6, kv_seq_len=32),
         ]
 
     def create_model(self) -> nn.Module:
@@ -6124,23 +6265,47 @@ class SDPATest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         q = torch.randn(self.batch_size, self.num_heads, self.seq_len, self.head_dim)
         kv_heads = self.num_kv_heads if self.num_kv_heads else self.num_heads
-        k = torch.randn(self.batch_size, kv_heads, self.seq_len, self.head_dim)
-        v = torch.randn(self.batch_size, kv_heads, self.seq_len, self.head_dim)
+        k = torch.randn(self.batch_size, kv_heads, self.kv_seq_len, self.head_dim)
+        v = torch.randn(self.batch_size, kv_heads, self.kv_seq_len, self.head_dim)
 
         if self.use_mask:
             # Additive float mask: 0 = attend, -inf = masked
-            mask = torch.zeros(self.batch_size, 1, self.seq_len, self.seq_len)
-            mask[:, :, :, : self.seq_len // 4] = float("-inf")
+            mask = torch.zeros(self.batch_size, 1, self.seq_len, self.kv_seq_len)
+            mask[:, :, :, : self.kv_seq_len // 4] = float("-inf")
             return (q, k, v, mask)
         elif self.use_bool_mask:
             # Boolean mask: True = attend, False = masked
             # This tests that the backend correctly converts bool -> additive format
             mask = torch.ones(
-                self.batch_size, 1, self.seq_len, self.seq_len, dtype=torch.bool
+                self.batch_size, 1, self.seq_len, self.kv_seq_len, dtype=torch.bool
             )
-            mask[:, :, :, : self.seq_len // 4] = False  # Mask out first quarter
+            mask[:, :, :, : self.kv_seq_len // 4] = False  # Mask out first quarter
             return (q, k, v, mask)
         return (q, k, v)
+
+
+@register_test
+class SDPARank3Test(OpTestCase):
+    """Attention on rank-3 tensors, which PyTorch accepts and the fused kernel does not.
+
+    The node counts are the point of the test: they assert the fused kernel is still
+    used, rather than the operator having been decomposed into primitives.
+    """
+
+    name = "sdpa_rank3"
+    rtol = 1e-3
+    atol = 1e-3
+    expected_node_counts = {
+        "SdpaNode": 1,
+        "ExpandDimsNode": 3,
+        "SqueezeNode": 1,
+    }
+
+    def create_model(self) -> nn.Module:
+        return SDPAModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return tuple(torch.randn(2, 16, 64) for _ in range(3))
 
 
 class CustomSDPAModel(nn.Module):
@@ -8313,3 +8478,183 @@ class MoeScatterOutputsTest(OpTestCase):
             "x": {0: batch_dim},
             "expert_indices": {0: batch_dim},
         }
+
+
+# Off-graph KV cache (kvcache::update_and_attend)
+class UpdateAndAttendModel(nn.Module):
+    """Multi-layer attention over the off-graph cache, one op call per layer."""
+
+    def __init__(self, n_layers: int, head_dim: int, out_dtype: torch.dtype):
+        super().__init__()
+        self.n_layers = n_layers
+        self.out_dtype = out_dtype
+        self.scale = head_dim**-0.5
+
+    def forward(self, q, k, v, position):
+        # Layers are summed, not chained: a chained query would arrive in
+        # out_dtype, and the two implementations disagree on compute precision
+        # for a half-precision query -- the MLX handler attends in the query's
+        # dtype, the eager reference always promotes to fp32. Keeping q as the
+        # graph input holds both at fp32. Distinct K/V per layer keeps each
+        # layer's cells apart.
+        total = None
+        for layer in range(self.n_layers):
+            kv_scale = layer + 1
+            out = torch.ops.kvcache.update_and_attend(
+                q,
+                k * kv_scale,
+                v * kv_scale,
+                position,
+                layer,
+                self.scale,
+                self.out_dtype,
+            )
+            total = out if total is None else total + out
+        return total
+
+
+@register_test
+class UpdateAndAttendTest(OpTestCase):
+    """Eager reference cache vs MLX runtime, through the delegate."""
+
+    name = "update_and_attend"
+    rtol = 1e-3
+    atol = 1e-3
+    expected_node_counts = {"UpdateAndAttendNode": 2}
+
+    n_layers = 2
+    n_heads = 4
+    n_kv_heads = 2
+    head_dim = 8
+    export_seq_len = 3
+    capacity = 16
+
+    def __init__(
+        self,
+        test_seq_len: int = 3,
+        out_dtype: torch.dtype = torch.float32,
+        kv_dtype: torch.dtype = torch.float32,
+    ):
+        self.test_seq_len = test_seq_len
+        self.out_dtype = out_dtype
+        self.kv_dtype = kv_dtype  # KV *storage* precision, not the op's output
+
+        parts = [] if test_seq_len == self.export_seq_len else ["decode"]
+        if out_dtype != torch.float32:
+            parts.append(f"{str(out_dtype).split('.')[-1]}_out")
+        if kv_dtype != torch.float32:
+            parts.append(f"{str(kv_dtype).split('.')[-1]}_kv")
+        self.name = "_".join(["update_and_attend", *parts])
+
+        self.kv_cache = ",".join(
+            str(x)
+            for x in [
+                self.capacity,
+                self.n_layers,
+                self.n_kv_heads,
+                self.head_dim,
+                torch_dtype_to_scalar_type(kv_dtype),
+            ]
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["UpdateAndAttendTest"]:
+        return [
+            cls(),  # prefill: T=3, Causal
+            cls(test_seq_len=1),  # decode-shaped: T=1, Mask::None
+            cls(out_dtype=torch.float16),  # output contract != operand dtype
+            cls(kv_dtype=torch.float16),  # KV stored as Half, computed in fp32
+        ]
+
+    def create_model(self) -> nn.Module:
+        return UpdateAndAttendModel(self.n_layers, self.head_dim, self.out_dtype)
+
+    def _inputs(self, seq_len: int) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, self.n_heads, seq_len, self.head_dim),
+            torch.randn(1, self.n_kv_heads, seq_len, self.head_dim),
+            torch.randn(1, self.n_kv_heads, seq_len, self.head_dim),
+            torch.arange(seq_len, dtype=torch.int32).reshape(seq_len, 1),
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.export_seq_len)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.test_seq_len)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        # Prefill and decode run the same graph, so no length may be baked in.
+        seq = Dim("kv_seq", min=1, max=self.capacity)
+        return {
+            "q": {2: seq},
+            "k": {2: seq},
+            "v": {2: seq},
+            "position": {0: seq},
+        }
+
+    def compute_expected_outputs(self, model, test_inputs):
+        # The op dispatches to whichever cache is active, so the eager run needs
+        # an oracle cache installed for its duration.
+        from executorch.extension.llm.cache.reference_cache import (
+            CacheConfig,
+            ContiguousReferenceCache,
+        )
+        from executorch.extension.llm.cache.update_and_attend import REGISTRY
+
+        key = f"{self.name}-oracle"
+        REGISTRY.install(
+            key,
+            ContiguousReferenceCache(
+                CacheConfig(
+                    n_layers=self.n_layers,
+                    n_kv_heads=self.n_kv_heads,
+                    head_dim=self.head_dim,
+                    capacity=self.capacity,
+                    dtype=self.kv_dtype,  # must match the runtime pool's storage
+                )
+            ),
+        )
+        try:
+            with REGISTRY.active(key):
+                return model(*test_inputs)
+        finally:
+            REGISTRY.uninstall(key)
+
+
+class FlipModel(nn.Module):
+    def __init__(self, dims: List[int]):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.flip(x, self.dims)
+
+
+@register_test
+class FlipTest(OpTestCase):
+    name = "flip"
+
+    def __init__(self, shape: Tuple[int, ...], dims: List[int]):
+        self.shape = shape
+        self.dims = dims
+        dims_str = "_".join(str(d) for d in dims)
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"flip_{shape_str}_dims{dims_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["FlipTest"]:
+        return [
+            cls(shape=(4, 5), dims=[0]),
+            cls(shape=(4, 5), dims=[1]),
+            cls(shape=(4, 5), dims=[0, 1]),
+            cls(shape=(3, 4, 5), dims=[-1]),
+            cls(shape=(3, 4, 5), dims=[0, 2]),
+            cls(shape=(3, 4, 5), dims=[0, 1, 2]),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return FlipModel(self.dims)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)

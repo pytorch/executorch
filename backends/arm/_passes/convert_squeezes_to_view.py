@@ -24,6 +24,7 @@ class ConvertSqueezesToViewPass(ArmOpTargetedPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransformPass}
     target_ops = (
+        exir_ops.edge.aten.squeeze_copy.dim,
         exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.unsqueeze_copy.default,
     )

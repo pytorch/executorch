@@ -7,6 +7,7 @@ omit =
     */tests/*
     */__pycache__/*
     pipeline_types.py
+    */strategies/*/default_*_adapter.py
 
 [report]
 show_missing = True
@@ -16,3 +17,4 @@ omit =
     */tests/*
     */__pycache__/*
     pipeline_types.py
+    */strategies/*/default_*_adapter.py

@@ -216,7 +216,11 @@ def to_quantized_edge_program(
     )
 
     # List of operators to not decompose during the lowering.
-    preserve_ops = [torch.ops.aten.prelu.default, torch.ops.aten.hardswish.default]
+    preserve_ops = [
+        torch.ops.aten.prelu.default,
+        torch.ops.aten.pad.default,
+        torch.ops.aten.hardswish.default,
+    ]
     compile_spec = generate_neutron_compile_spec(
         target,
         intermediates_dir=intermediates_dir,
