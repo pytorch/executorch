@@ -15,8 +15,8 @@
 // over a pool of per-token cells.
 //
 // Here: the face machinery, the runner-facing faces, and the config a caller
-// fills in -- everything usable without picking a layout. Each backend-facing
-// planner face lives with its layout, in sequence_cache.h or cell_cache.h.
+// fills in, all usable without picking a layout. Each backend-facing planner
+// face lives with its layout, in sequence_cache.h or cell_cache.h.
 
 #include <cstdint>
 #include <cstring>
@@ -29,20 +29,19 @@ namespace llm {
 namespace cache {
 
 // A face is named by a string it declares itself, so a backend can add one
-// without this header learning about it. Compared by pointer first, which hits
-// whenever both sides share a translation unit or the linker merged the
-// literals; the strcmp is the fallback for a cache built in one shared object
-// and queried from another.
+// without this header learning about it.
 using FaceId = const char*;
 
+// Pointer equality covers the common case. The strcmp catches a cache built in
+// one shared object and queried from another, where the literals may differ.
 inline bool same_face(FaceId a, FaceId b) {
   return a == b || std::strcmp(a, b) == 0;
 }
 
 // Hands back `self` as each face it names, or nullptr for one it does not.
-// static_cast does the pointer adjustment a face at a non-zero offset needs,
-// refuses to compile if Self does not actually derive from it, and being bound
-// to its own name in the pack cannot be paired with the wrong one.
+// static_cast applies the pointer adjustment a face at a non-zero offset needs
+// and refuses to compile if Self does not derive from it. Each cast is bound to
+// its own name in the pack, so a name cannot be paired with the wrong face.
 template <class... Fs, class Self>
 void* expose(Self* self, FaceId id) {
   void* out = nullptr;

@@ -186,7 +186,7 @@ struct MLXHandle {
 
   // Keep-alive for the off-graph KV cache bound in init(). state.cache is a
   // non-owning view of the same object, so the cache must outlive the handle
-  // even if the runner's session is torn down first.
+  // even if the runner drops its InstallGuard first.
   std::shared_ptr<::executorch::extension::llm::cache::Cache> cache_shared;
 
   // Keep the constant buffers alive for zero-copy constants

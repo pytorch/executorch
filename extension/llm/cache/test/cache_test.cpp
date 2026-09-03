@@ -230,8 +230,8 @@ TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
   {
     InstallGuard guard(cache);
     key = guard.key();
-    // Publishing is the guard's alone -- CacheRegistry::install is private --
-    // so an entry cannot outlive its owner or be clobbered by another caller.
+    // Publishing is the guard's alone, since CacheRegistry::install is
+    // private: an entry cannot outlive its owner or be clobbered.
     EXPECT_NE(CacheRegistry::global().get(key), nullptr);
     // The published entry is the same object the caller still holds.
     EXPECT_EQ(CacheRegistry::global().get(key).get(), cache.get());

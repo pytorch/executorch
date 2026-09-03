@@ -711,8 +711,8 @@ int main(int argc, char** argv) {
     prefill_chunk = cfg.max_write ? *cfg.max_write : 0;
 
     // Published for the delegate to find by key, and erased when this scope
-    // exits -- which is after run() returns, so the entry is still there for
-    // the load_method() inside it.
+    // exits. That is after run() returns, so the entry is still there for the
+    // load_method() inside it.
     const cache::InstallGuard guard{kv};
 
     print_cache_summary(cfg);

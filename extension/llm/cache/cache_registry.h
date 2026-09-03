@@ -12,8 +12,8 @@
 // is opaque to the host, so the runner (which knows the cache kind) creates the
 // cache and binds it to the delegate through a process-global registry; the two
 // sides rendezvous on a cache_key passed as a runtime backend-load option.
-// Caches are owned as Cache* and the faces are recovered through its as_*
-// accessors (no RTTI), each null for a face the cache does not implement.
+// Caches are owned as Cache*; a face comes from as<T>(), null when the cache
+// does not implement it.
 
 #include <functional>
 #include <map>
@@ -36,8 +36,8 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 // Process-global map<cache_key, shared_ptr<Cache>>. Ownership is shared:
-// the registry entry, the runner's lease, and the delegate handle all
-// hold the cache, so erasing the entry mid-method is safe.
+// the registry entry, the runner's guard, and the delegate handle all hold
+// the cache, so erasing the entry mid-method is safe.
 class CacheRegistry {
  public:
   static CacheRegistry& global();
@@ -103,8 +103,8 @@ class CacheFactory {
 // cannot collide on it. Must outlive the load_method() whose backend init
 // resolves the key.
 //
-// The cache is held only to keep it alive while published -- callers keep
-// their own pointer, so there is nothing to read back out.
+// The cache is held only to keep it alive while published. Callers keep their
+// own pointer, so there is nothing to read back out.
 class InstallGuard {
  public:
   explicit InstallGuard(std::shared_ptr<Cache> cache);
@@ -114,7 +114,7 @@ class InstallGuard {
   InstallGuard& operator=(const InstallGuard&) = delete;
 
   // Valid for this guard's lifetime. A raw pointer because every consumer
-  // hands it straight to a C API -- BackendOptions::set_option copies from it.
+  // hands it to a C API; BackendOptions::set_option copies from it.
   const char* key() const {
     return key_.c_str();
   }
