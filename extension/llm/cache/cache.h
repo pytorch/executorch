@@ -13,6 +13,10 @@
 // recovered from the owning Cache* with as<T>(). Which pair it implements
 // depends on the layout: one sequence over per-layer runs, or many sequences
 // over a pool of per-token cells.
+//
+// Here: the face machinery, the runner-facing faces, and the config a caller
+// fills in -- everything usable without picking a layout. Each backend-facing
+// planner face lives with its layout, in sequence_cache.h or cell_cache.h.
 
 #include <cstdint>
 #include <cstring>
@@ -85,50 +89,6 @@ class SequenceControl : public CacheControl {
   // Truncate to new_len; false = cannot grow, or the target is older than an
   // evicting layer still retains.
   virtual bool rewind(int new_len) = 0;
-};
-
-// A contiguous span of physical rows in a layer's pool.
-struct Run {
-  int start;
-  int len;
-};
-
-// Integer-only handoff to the backend byte layer. Runs are in logical order
-// (oldest -> newest); a flat layer uses one, a ring layer two when it wraps.
-// read_base_pos is the logical position of read[0].start.
-struct SeqStepPlan {
-  Run write[2];
-  int n_write;
-  Run read[2];
-  int n_read;
-  int read_base_pos;
-};
-
-// Backend face. plan() is const: it computes a layer's layout without changing
-// state, and commit() advances the shared logical length. nullopt = the step
-// exceeds capacity, or `layer` is out of range.
-class SequencePlanner {
- public:
-  static constexpr const char* kFaceName = "et.cache.SequencePlanner";
-
-  virtual ~SequencePlanner() = default;
-  virtual std::optional<SeqStepPlan> plan(int layer, int position, int T)
-      const = 0;
-  // Advance the logical length past this step. Idempotent, so once per step
-  // suffices.
-  virtual void commit(const SeqStepPlan& plan) = 0;
-};
-
-// Per-layer layout: flat keeps all history, ring slides a window. Stateless.
-class LayoutPolicy {
- public:
-  virtual ~LayoutPolicy() = default;
-  // Write/read runs for T cells at logical `position`. Precondition: T fits the
-  // policy's window.
-  virtual SeqStepPlan plan(int position, int T) const = 0;
-  // Oldest logical position still retained at this length: 0 for flat,
-  // length - window for ring.
-  virtual int retained_from(int length) const = 0;
 };
 
 // Application face of any multi-sequence cache: the sequence verbs. They run

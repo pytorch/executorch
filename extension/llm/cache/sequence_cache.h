@@ -12,6 +12,11 @@
 // policies (FlatPolicy / RingPolicy). SequenceCache owns the one logical length
 // for the whole model and dispatches per-layer layout to a policy, so a mixed
 // flat/ring model (gemma4) stays coherent. Tensor-free / ET-independent.
+//
+// The backend-facing planner face (SequencePlanner) and the types it hands over
+// live here rather than in cache.h: only this layout implements them, and only
+// a byte layer that already includes this header calls them. cell_cache.h holds
+// CellStepper for the same reason.
 
 #include <algorithm>
 #include <cassert>
@@ -25,6 +30,50 @@ namespace executorch {
 namespace extension {
 namespace llm {
 namespace cache {
+
+// A contiguous span of physical rows in a layer's pool.
+struct Run {
+  int start;
+  int len;
+};
+
+// Integer-only handoff to the backend byte layer. Runs are in logical order
+// (oldest -> newest); a flat layer uses one, a ring layer two when it wraps.
+// read_base_pos is the logical position of read[0].start.
+struct SeqStepPlan {
+  Run write[2];
+  int n_write;
+  Run read[2];
+  int n_read;
+  int read_base_pos;
+};
+
+// Backend face. plan() is const: it computes a layer's layout without changing
+// state, and commit() advances the shared logical length. nullopt = the step
+// exceeds capacity, or `layer` is out of range.
+class SequencePlanner {
+ public:
+  static constexpr const char* kFaceName = "et.cache.SequencePlanner";
+
+  virtual ~SequencePlanner() = default;
+  virtual std::optional<SeqStepPlan> plan(int layer, int position, int T)
+      const = 0;
+  // Advance the logical length past this step. Idempotent, so once per step
+  // suffices.
+  virtual void commit(const SeqStepPlan& plan) = 0;
+};
+
+// Per-layer layout: flat keeps all history, ring slides a window. Stateless.
+class LayoutPolicy {
+ public:
+  virtual ~LayoutPolicy() = default;
+  // Write/read runs for T cells at logical `position`. Precondition: T fits the
+  // policy's window.
+  virtual SeqStepPlan plan(int position, int T) const = 0;
+  // Oldest logical position still retained at this length: 0 for flat,
+  // length - window for ring.
+  virtual int retained_from(int length) const = 0;
+};
 
 // Full history [0, length): one contiguous write run, read over all history.
 class FlatPolicy final : public LayoutPolicy {
