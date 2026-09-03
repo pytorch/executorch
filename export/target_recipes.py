@@ -180,8 +180,7 @@ def get_android_recipe(
     qnn_sdk_setup.setup_qnn_sdk()
 
     # Checked for a usable path, not merely for the variable being present. Setup treats an empty
-    # value as the caller taking charge of the SDK, but a recipe needs a real path, and every other
-    # reader of this variable rejects an empty one.
+    # value as the caller taking charge of the SDK, but a recipe needs a real path.
     qnn_sdk_root = os.getenv("QNN_SDK_ROOT")
     if qnn_sdk_root is not None and not qnn_sdk_root:
         raise ValueError(
