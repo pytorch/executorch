@@ -27,7 +27,7 @@ if (!built.ok()) { return built.error(); }
 
 const std::shared_ptr<Cache> kv = built.get();
 const InstallGuard guard{kv};                    // published while in scope
-mlx_opts.set_option(kCacheKeyKey, guard.key());  // hand the key to the backend
+guard.set_option(mlx_opts);                      // hand key to backend
 
 auto* ctl = kv->as<SequenceControl>();
 ctl->can_extend(n);   ctl->rewind(len);   ctl->clear();

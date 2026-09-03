@@ -716,9 +716,7 @@ int main(int argc, char** argv) {
     const cache::InstallGuard guard{kv};
 
     print_cache_summary(cfg);
-    if (mlx_opts.set_option(
-            ::executorch::backends::mlx::kCacheKeyKey, guard.key()) !=
-            Error::Ok ||
+    if (guard.set_option(mlx_opts) != Error::Ok ||
         options_map.set_options(
             ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
             Error::Ok) {

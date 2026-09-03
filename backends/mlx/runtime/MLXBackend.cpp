@@ -340,7 +340,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       // Bind the off-graph KV cache, if the runner installed one under a key it
       // passed as a runtime spec. Bound before the init chain runs so an
       // update_and_attend node there sees the same cache execute() will.
-      if (auto spec = context.get_runtime_spec<const char*>(kCacheKeyKey);
+      if (auto spec =
+              context.get_runtime_spec<const char*>(cache::kCacheKeyOption);
           spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
         const char* cache_key = spec.get();
         handle->cache_shared =

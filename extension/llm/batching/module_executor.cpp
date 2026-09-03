@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <cinttypes>
-#include <cstring>
 #include <random>
 #include <utility>
 
@@ -85,9 +84,6 @@ Result<cache::CacheConfig> config_from_program(Module& module) {
   }
   return cfg;
 }
-
-// The backend-load option the delegate resolves the cache through.
-constexpr char kCacheKeyOption[] = "cache_key";
 
 std::uint64_t nondeterministic_seed() {
   std::random_device device;
@@ -198,18 +194,16 @@ std::optional<Step> build_step(
 
 ModuleExecutor::ModuleExecutor(
     std::unique_ptr<Module> module,
-    std::shared_ptr<cache::CacheBase> cache,
-    std::unique_ptr<cache::CacheSession> session,
+    std::shared_ptr<cache::Cache> cache,
     int max_sessions,
     int max_session_tokens,
     std::string backend_id,
     std::string method,
     std::int32_t vocab_size,
     int max_step_tokens)
-    : session_(std::move(session)),
-      cache_(std::move(cache)),
+    : install_guard_(cache),
       module_(std::move(module)),
-      ctl_(cache_->as_batch_control()),
+      ctl_(cache->as<cache::BatchControl>()),
       max_sessions_(max_sessions),
       max_session_tokens_(max_session_tokens),
       backend_id_(std::move(backend_id)),
@@ -285,7 +279,7 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
   }
 
   auto built =
-      cache::CacheBuilderRegistry::global().build(backend_id, cache_kind, *cfg);
+      cache::CacheFactory::global().build(backend_id, cache_kind, *cfg);
   if (!built.ok()) {
     ET_LOG(
         Error,
@@ -294,8 +288,8 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
         cache_kind.c_str());
     return nullptr;
   }
-  std::shared_ptr<cache::CacheBase> cache = built.get();
-  if (cache->as_batch_control() == nullptr) {
+  std::shared_ptr<cache::Cache> cache = built.get();
+  if (cache->as<cache::BatchControl>() == nullptr) {
     ET_LOG(Error, "ModuleExecutor: the cache carries no sequence identity");
     return nullptr;
   }
@@ -319,13 +313,9 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
   }
   const auto tokens_sizes = tokens_info->sizes();
 
-  auto session =
-      std::make_unique<cache::CacheSession>(cache::make_unique_key(), cache);
-
   return std::unique_ptr<ModuleExecutor>(new ModuleExecutor(
       std::move(module),
       std::move(cache),
-      std::move(session),
       max_sessions,
       max_session_tokens,
       std::move(backend_id),
@@ -336,11 +326,9 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
 
 bool ModuleExecutor::initialize() {
   // The delegate resolves the cache from this key while the method loads.
-  char key[::executorch::runtime::kMaxOptionKeyLength] = {};
-  std::memcpy(key, kCacheKeyOption, sizeof(kCacheKeyOption) - 1);
   ::executorch::runtime::BackendOptions<1> options;
   ::executorch::runtime::LoadBackendOptionsMap options_map;
-  if (options.set_option(key, session_->key().c_str()) != Error::Ok ||
+  if (install_guard_.set_option(options) != Error::Ok ||
       options_map.set_options(backend_id_.c_str(), options.view()) !=
           Error::Ok) {
     ET_LOG(Error, "ModuleExecutor: could not name the cache to the backend");

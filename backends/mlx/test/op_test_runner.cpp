@@ -319,10 +319,6 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       cache_install_guard.emplace(built.get());
-      if (verbose) {
-        std::cout << "Installed KV cache under key "
-                  << cache_install_guard->key() << std::endl;
-      }
     }
 
     Module module(pte_path);
@@ -330,9 +326,7 @@ int main(int argc, char* argv[]) {
     if (cache_install_guard) {
       ::executorch::runtime::BackendOptions<1> mlx_opts;
       ::executorch::runtime::LoadBackendOptionsMap options_map;
-      if (mlx_opts.set_option(
-              ::executorch::backends::mlx::kCacheKeyKey,
-              cache_install_guard->key()) != Error::Ok ||
+      if (cache_install_guard->set_option(mlx_opts) != Error::Ok ||
           options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
               Error::Ok) {

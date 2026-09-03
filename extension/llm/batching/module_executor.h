@@ -95,7 +95,7 @@ class ModuleExecutor : public Executor {
       int max_session_tokens,
       int kv_dtype,
       int initial_capacity = -1,
-      std::string cache_kind = "cell",
+      std::string cache_kind = cache::kind::kBatchedCell,
       std::string method = "forward");
 
   // The widest step this method takes, from the shape its token input was
@@ -120,8 +120,7 @@ class ModuleExecutor : public Executor {
  private:
   ModuleExecutor(
       std::unique_ptr<Module> module,
-      std::shared_ptr<cache::CacheBase> cache,
-      std::unique_ptr<cache::CacheSession> session,
+      std::shared_ptr<cache::Cache> cache,
       int max_sessions,
       int max_session_tokens,
       std::string backend_id,
@@ -136,10 +135,9 @@ class ModuleExecutor : public Executor {
 
   // Ordered so the module dies first, releasing the delegate that resolved the
   // cache before the registry entry naming it goes.
-  std::unique_ptr<cache::CacheSession> session_;
-  std::shared_ptr<cache::CacheBase> cache_;
+  cache::InstallGuard install_guard_;
   std::unique_ptr<Module> module_;
-  cache::BatchControl* ctl_;
+  cache::BatchControl* const ctl_;
   int max_sessions_;
   int max_session_tokens_;
   std::string backend_id_;

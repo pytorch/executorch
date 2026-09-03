@@ -37,9 +37,24 @@ namespace kind = executorch::extension::llm::cache::kind;
 using executorch::extension::llm::cache::LayerConfig;
 using executorch::extension::llm::cache::LayerPolicy;
 using executorch::extension::llm::cache::SequenceCache;
+using executorch::runtime::BackendOptions;
 using executorch::runtime::Error;
 
 namespace {
+std::string installed_key(const InstallGuard& guard) {
+  BackendOptions<1> options;
+  if (guard.set_option(options) != Error::Ok) {
+    return {};
+  }
+  const char* key = nullptr;
+  if (options.get_option(
+          executorch::extension::llm::cache::kCacheKeyOption, key) !=
+      Error::Ok) {
+    return {};
+  }
+  return key;
+}
+
 LayerConfig flat_layer() {
   return LayerConfig{LayerPolicy{LayerPolicy::Kind::Flat, 0}, 2, 8};
 }
@@ -200,10 +215,14 @@ TEST_F(CacheTest, LiveGuardsDoNotCollideOnKeys) {
   InstallGuard ga(a);
   InstallGuard gb(b);
 
-  EXPECT_STRNE(ga.key(), gb.key());
+  const std::string a_key = installed_key(ga);
+  const std::string b_key = installed_key(gb);
+  ASSERT_FALSE(a_key.empty());
+  ASSERT_FALSE(b_key.empty());
+  EXPECT_NE(a_key, b_key);
   // Both entries are live: neither guard displaced the other.
-  EXPECT_EQ(CacheRegistry::global().get(ga.key()).get(), a.get());
-  EXPECT_EQ(CacheRegistry::global().get(gb.key()).get(), b.get());
+  EXPECT_EQ(CacheRegistry::global().get(a_key).get(), a.get());
+  EXPECT_EQ(CacheRegistry::global().get(b_key).get(), b.get());
 }
 
 TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {
@@ -297,7 +316,8 @@ TEST_F(CacheTest, GuardInstallsOnCtorErasesOnDtor) {
   std::string key;
   {
     InstallGuard guard(cache);
-    key = guard.key();
+    key = installed_key(guard);
+    ASSERT_FALSE(key.empty());
     // Publishing is the guard's alone, since CacheRegistry::install is
     // private: an entry cannot outlive its owner or be clobbered.
     EXPECT_NE(CacheRegistry::global().get(key), nullptr);
@@ -319,7 +339,8 @@ TEST_F(CacheTest, AcquiredCacheOutlivesRegistryEntry) {
         std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
     weak = cache;
     InstallGuard guard(cache);
-    key = guard.key();
+    key = installed_key(guard);
+    ASSERT_FALSE(key.empty());
     acquired = CacheRegistry::global().get(key);
     ASSERT_NE(acquired, nullptr);
     cache.reset();

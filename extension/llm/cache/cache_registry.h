@@ -24,6 +24,7 @@
 #include <utility>
 
 #include <executorch/extension/llm/cache/cache.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -35,6 +36,10 @@ namespace cache {
 
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
+
+// Backend-load option carrying the key of an installed cache. This name is the
+// rendezvous contract shared by cache-owning runners and cache-aware backends.
+inline constexpr char kCacheKeyOption[] = "llm_cache_registry_key";
 
 // Process-global map<cache_key, shared_ptr<Cache>>. Ownership is shared:
 // the registry entry, the runner's guard, and the delegate handle all hold
@@ -116,10 +121,11 @@ class ET_EXPERIMENTAL InstallGuard {
   InstallGuard(const InstallGuard&) = delete;
   InstallGuard& operator=(const InstallGuard&) = delete;
 
-  // Valid for this guard's lifetime. A raw pointer because every consumer
-  // hands it to a C API; BackendOptions::set_option copies from it.
-  const char* key() const {
-    return key_.c_str();
+  // Adds the complete cache rendezvous option. BackendOptions copies the key
+  // and value, so the resulting option remains valid independently.
+  template <size_t N>
+  Error set_option(::executorch::runtime::BackendOptions<N>& options) const {
+    return options.set_option(kCacheKeyOption, key_.c_str());
   }
 
  private:
