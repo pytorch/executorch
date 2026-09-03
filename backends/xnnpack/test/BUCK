@@ -186,7 +186,9 @@ fbcode_target(_kind = runtime.python_test,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/exir:lib",
         "//executorch/extension/pybindings:portable_lib",
+        "//pytorch/ao:torchao",  # @manual
     ],
 )
