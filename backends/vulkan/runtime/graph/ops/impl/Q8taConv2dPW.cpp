@@ -14,6 +14,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <algorithm>
+
 namespace vkcompute {
 
 //
@@ -52,6 +54,34 @@ GlobalWorkGrid pick_q8ta_conv2d_pw_gwg(
        utils::div_up(W4, TILE_M4),
        utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N)},
       kTiledWorkGrid);
+}
+
+GlobalWorkGrid pick_q8ta_conv2d_pw_streaming_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  VK_CHECK_COND(graph != nullptr);
+
+  const ValueRef output = args.at(0).refs.at(0);
+  const ValueRef input = args.at(1).refs.at(0);
+  const uint32_t W = graph->size_at<uint32_t>(-1, output);
+  const uint32_t H = graph->size_at<uint32_t>(-2, output);
+  const uint32_t C = graph->size_at<uint32_t>(-3, output);
+  const uint32_t N = graph->size_at<uint32_t>(-4, output);
+  const uint32_t rows_per_tile = graph->size_at<uint32_t>(-2, input);
+  const int64_t row_offset =
+      graph->extract_scalar<int64_t>(resize_args.at(5));
+  const int64_t total_rows = static_cast<int64_t>(N) * H;
+  if (row_offset >= total_rows) {
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
+  }
+
+  const uint32_t live_rows = utils::safe_downcast<uint32_t>(
+      std::min<int64_t>(rows_per_tile, total_rows - row_offset));
+  return GlobalWorkGrid(
+      {utils::div_up_4(C), utils::div_up_4(W), live_rows}, kTiledWorkGrid);
 }
 
 LocalWorkGroup pick_q8ta_conv2d_pw_lwg(
@@ -220,9 +250,8 @@ void resize_q8ta_conv2d_pw_node(
 // im2col-path PW conv. Here the PW node's bound input is the im2col scratch
 // tensor sized {K, H_out, align_up_4(W_out)} — its width is rounded up to a
 // multiple of 4 for texel alignment, so it must NOT be used to size the output.
-// Recompute the TRUE conv H_out/W_out from the ORIGINAL activation + conv
-// geometry, exactly as resize_q8ta_conv2d_node does. N/C are shape-independent
-// and stay as currently allocated.
+// Recompute the true conv N/H_out/W_out from the original activation + conv
+// geometry, exactly as resize_q8ta_conv2d_node does. C is shape-independent.
 void resize_q8ta_conv2d_pw_im2col_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -246,6 +275,7 @@ void resize_q8ta_conv2d_pw_im2col_node(
 
   std::vector<int64_t> new_sizes = graph->sizes_of(out);
   const size_t ndim = new_sizes.size();
+  new_sizes.at(ndim - 4) = utils::val_at(-4, in_sizes);
   new_sizes.at(ndim - 2) = out_hw.at(0);
   new_sizes.at(ndim - 1) = out_hw.at(1);
   graph->virtual_resize(out, new_sizes);
@@ -270,11 +300,14 @@ void add_q8ta_conv2d_pw_node(
     const uint32_t activation_type,
     const ValueRef packed_int8_output,
     const int32_t groups,
+    const Q8taConv2dPwMode mode,
+    const Q8taConv2dPwKernel kernel,
     const ValueRef conv_input,
     const ValueRef kernel_size,
     const ValueRef stride,
     const ValueRef padding,
-    const ValueRef dilation) {
+    const ValueRef dilation,
+    const int32_t stream_row_offset) {
   VK_CHECK_COND(q8ta_conv2d_check_4w4c_packed_dim_info(
       graph.packed_dim_info_of(packed_int8_input)));
   VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
@@ -309,10 +342,22 @@ void add_q8ta_conv2d_pw_node(
       PushConstantDataInfo(&OC4_per_group, sizeof(OC4_per_group)),
   };
 
-  const bool use_hw_dot =
+  const bool is_im2col = mode != Q8taConv2dPwMode::kStandalone;
+  const bool is_streaming = mode == Q8taConv2dPwMode::kStreamingIm2Col;
+  if (is_streaming) {
+    push_constants.emplace_back(&stream_row_offset, sizeof(stream_row_offset));
+  }
+
+  const bool use_hw_dot = kernel == Q8taConv2dPwKernel::kAuto &&
       graph.context()->adapter_ptr()->supports_int8_dot_product();
-  std::string kernel_name =
-      use_hw_dot ? "q8ta_conv2d_pw" : "q8ta_conv2d_pw_fallback";
+  std::string kernel_name;
+  if (is_streaming) {
+    kernel_name = use_hw_dot ? "q8ta_conv2d_pw_streaming"
+                             : "q8ta_conv2d_pw_streaming_fallback";
+  } else {
+    kernel_name =
+        use_hw_dot ? "q8ta_conv2d_pw" : "q8ta_conv2d_pw_fallback";
+  }
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   vkapi::ParamsBindList param_buffers = {
@@ -333,18 +378,25 @@ void add_q8ta_conv2d_pw_node(
   // output matches directly.
   std::vector<ValueRef> resize_args;
   ExecuteNode::ResizeFunction resize_fn;
-  if (conv_input == kDummyValueRef) {
+  if (!is_im2col) {
     resize_args = {packed_int8_input};
     resize_fn = resize_q8ta_conv2d_pw_node;
   } else {
-    resize_args = {conv_input, kernel_size, stride, padding, dilation};
+    resize_args = {
+        conv_input, kernel_size, stride, padding, dilation};
+    if (is_streaming) {
+      resize_args.push_back(graph.add_scalar<int64_t>(stream_row_offset));
+    }
     resize_fn = resize_q8ta_conv2d_pw_im2col_node;
   }
+
+  const auto pick_gwg = is_streaming ? pick_q8ta_conv2d_pw_streaming_gwg
+                                     : pick_q8ta_conv2d_pw_gwg;
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_pw_gwg,
+      pick_gwg,
       pick_q8ta_conv2d_pw_lwg,
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,

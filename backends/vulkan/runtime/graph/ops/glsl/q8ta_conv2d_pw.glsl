@@ -11,6 +11,7 @@
 ${define_required_extensions("buffer", DTYPE)}
 
 #define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
+#define STREAMING_IM2COL ${STREAMING_IM2COL}
 
 #extension GL_EXT_control_flow_attributes : require
 $if USE_INT8_DOT_PRODUCT_EXT == 1:
@@ -59,6 +60,8 @@ layout(push_constant) uniform restrict Block {
   int output_zp;
   int K4_per_group;
   int OC4_per_group;
+$if STREAMING_IM2COL == 1:
+  int stream_row_offset;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -103,9 +106,25 @@ void main() {
   const int W4 = div_up_4(int(outp.sizes[0][0]));
   const int H = int(outp.sizes[0][1]);
   const int OC4 = div_up_4(int(outp.sizes[0][2]));
-  const int hn = int(gl_GlobalInvocationID.z);
-  const int n = hn / H;
-  const int oh = hn % H;
+  const int local_row_idx = int(gl_GlobalInvocationID.z);
+#if STREAMING_IM2COL == 1
+  if (local_row_idx >= int(inp.sizes[0][1])) {
+    return;
+  }
+  const int global_row_idx = stream_row_offset + local_row_idx;
+  if (global_row_idx >= int(outp.sizes[0][3]) * H) {
+    return;
+  }
+  const int n = global_row_idx / H;
+  const int oh = global_row_idx % H;
+  const int input_n = 0;
+  const int input_h = local_row_idx;
+#else
+  const int n = local_row_idx / H;
+  const int oh = local_row_idx % H;
+  const int input_n = n;
+  const int input_h = oh;
+#endif
 
   // Bounds check in block space
   if (ow_block_idx >= W4 ||
@@ -139,8 +158,8 @@ void main() {
   // Compute initial input tile index with group offset
   // For grouped im2col, each group's K range starts at group_idx * K4_per_group
   // For non-grouped (groups=1), group_idx is always 0 so offset is 0
-  int input_idx = n * inp_n_stride
-                + oh * inp_h_stride
+  int input_idx = input_n * inp_n_stride
+                + input_h * inp_h_stride
                 + ow_block_idx * inp_w_stride
                 + group_idx * K4_per_group;
 
