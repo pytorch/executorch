@@ -337,7 +337,12 @@ set(_mlx_backend__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/mlx_mutable_state.cpp
 )
-if(APPLE)
+if(EXECUTORCH_MLX_SWIFTPM_RESOURCES)
+  if(NOT APPLE)
+    message(
+      FATAL_ERROR "EXECUTORCH_MLX_SWIFTPM_RESOURCES requires an Apple target"
+    )
+  endif()
   enable_language(OBJCXX)
   list(APPEND _mlx_backend__srcs
        ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SwiftPMMetallibPath.mm
@@ -405,7 +410,10 @@ target_include_directories(
 target_link_libraries(
   mlxdelegate PRIVATE mlx_schema extension_llm_cache $<BUILD_INTERFACE:mlx>
 )
-if(APPLE)
+if(EXECUTORCH_MLX_SWIFTPM_RESOURCES)
+  target_compile_definitions(
+    mlxdelegate PRIVATE EXECUTORCH_MLX_SWIFTPM_RESOURCES
+  )
   target_link_libraries(mlxdelegate PRIVATE ${FOUNDATION_FRAMEWORK})
 endif()
 if(EXECUTORCH_BUILD_SHARED)

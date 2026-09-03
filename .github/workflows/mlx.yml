@@ -58,7 +58,7 @@ jobs:
         ${CONDA_RUN} python install_executorch.py > /dev/null
         # The sanitizers fail on github VM runner, but pass on real device
         # TODO: figure out why
-        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF
+        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF -DEXECUTORCH_MLX_SWIFTPM_RESOURCES=ON
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list

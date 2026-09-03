@@ -53,7 +53,7 @@ add_dependencies(op_test_runner strict_compile_test)
 # Multi-threaded inference test
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-if(APPLE)
+if(EXECUTORCH_MLX_SWIFTPM_RESOURCES)
   et_cxx_test(
     mlx_metallib_path_test SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
