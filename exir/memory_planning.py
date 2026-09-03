@@ -1149,6 +1149,253 @@ def greedy(
     return greedy_result
 
 
+def _stable_spec_order(
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
+) -> Dict[TensorSpec, int]:
+    ordered_specs = collect_specs_from_nodes(
+        graph_module.graph.nodes,
+        graph_signature,
+        ignore_graph_input=False,
+        ignore_graph_output=False,
+        ignore_mutable_buffers=False,
+        ignore_const=False,
+        ignore_out_var_node=False,
+        dedup=True,
+        do_assertion=False,
+        ignore_dynamic_unbound_tensor=False,
+    )
+    order = {spec: index for index, spec in enumerate(ordered_specs) if spec in specs}
+    internal_assert(
+        len(order) == len(specs),
+        "Every planned TensorSpec must occur in graph order.",
+    )
+    return order
+
+
+def _arena_base_offsets(
+    graph_module: torch.fx.GraphModule,
+    mem_ids: Set[int],
+    alignment: int,
+) -> Dict[int, int]:
+    input_sizes = getattr(graph_module, "input_mem_buffer_sizes", None)
+    if input_sizes is None:
+        input_sizes = []
+    return {
+        mem_id: (
+            (input_sizes[mem_id] + alignment - 1) // alignment * alignment
+            if mem_id < len(input_sizes)
+            else 0
+        )
+        for mem_id in mem_ids
+    }
+
+
+def interval_first_fit(
+    alignment: int,
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
+    extra_padding: int = 0,
+) -> MemoryAlgoResult:
+    """Place size-sorted tensors at the first aligned legal arena offset."""
+    for spec in specs:
+        spec.realign(alignment)
+
+    if any(spec.storage_base is not None for spec in specs):
+        return greedy(
+            alignment,
+            specs,
+            graph_module,
+            graph_signature,
+            extra_padding,
+        )
+    if not specs:
+        return MemoryAlgoResult({}, [0, 0])
+
+    order = _stable_spec_order(specs, graph_module, graph_signature)
+    sorted_specs = sorted(
+        specs,
+        key=lambda spec: (
+            -spec.allocated_memory,
+            cast(int, spec.lifetime[0]),
+            cast(int, spec.lifetime[1]),
+            order[spec],
+        ),
+    )
+    mem_ids = {
+        cast(int, spec.mem_id) if spec.mem_id is not None else 1 for spec in specs
+    }
+    arena_bases = _arena_base_offsets(graph_module, mem_ids, alignment)
+    result = MemoryAlgoResult({}, [0] * (max(mem_ids) + 1))
+
+    for spec in sorted_specs:
+        mem_id = cast(int, spec.mem_id) if spec.mem_id is not None else 1
+        occupied_ranges = sorted(
+            (
+                allocation.mem_offset,
+                allocation.mem_offset + other_spec.allocated_memory,
+            )
+            for other_spec, allocation in result.spec_dict.items()
+            if allocation.mem_id == mem_id
+            and not (
+                cast(int, other_spec.lifetime[1]) < cast(int, spec.lifetime[0])
+                or cast(int, spec.lifetime[1]) < cast(int, other_spec.lifetime[0])
+            )
+        )
+        offset = arena_bases[mem_id]
+        for occupied_start, occupied_end in occupied_ranges:
+            if occupied_end <= offset:
+                continue
+            if offset + spec.allocated_memory <= occupied_start:
+                break
+            offset = max(offset, occupied_end)
+
+        result.spec_dict[spec] = SpecAllocResult(
+            mem_id=mem_id,
+            mem_obj_id=0,
+            mem_offset=offset,
+        )
+        result.bufsizes[mem_id] = max(
+            result.bufsizes[mem_id],
+            offset + spec.allocated_memory,
+        )
+
+    # Spatially overlapping ranges must share a memory object ID.
+    for mem_id in mem_ids:
+        component_id = -1
+        component_end = -1
+        for spec, allocation in sorted(
+            (
+                (spec, allocation)
+                for spec, allocation in result.spec_dict.items()
+                if allocation.mem_id == mem_id
+            ),
+            key=lambda item: item[1].mem_offset,
+        ):
+            start = allocation.mem_offset
+            end = start + spec.allocated_memory
+            if start >= component_end:
+                component_id += 1
+                component_end = end
+            else:
+                component_end = max(component_end, end)
+            allocation.mem_obj_id = component_id
+
+    for mem_id in mem_ids:
+        result.bufsizes[mem_id] += extra_padding
+    return result
+
+
+def _peak_live_lower_bound_bufsizes(
+    alignment: int,
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
+    extra_padding: int = 0,
+) -> Optional[List[int]]:
+    """Return a sound per-arena lower bound, or None for unsupported aliases."""
+    if any(spec.storage_base is not None for spec in specs):
+        return None
+    if not specs:
+        return [0, 0]
+
+    for spec in specs:
+        spec.realign(alignment)
+
+    mem_ids = {
+        cast(int, spec.mem_id) if spec.mem_id is not None else 1 for spec in specs
+    }
+    arena_bases = _arena_base_offsets(graph_module, mem_ids, alignment)
+    events_by_mem_id: Dict[int, Dict[int, int]] = {mem_id: {} for mem_id in mem_ids}
+    for spec in specs:
+        start = spec.lifetime[0]
+        end = spec.lifetime[1]
+        if not isinstance(start, int) or not isinstance(end, int):
+            return None
+        mem_id = cast(int, spec.mem_id) if spec.mem_id is not None else 1
+        events = events_by_mem_id[mem_id]
+        events[start] = events.get(start, 0) + spec.allocated_memory
+        events[end + 1] = events.get(end + 1, 0) - spec.allocated_memory
+
+    lower_bound = [0] * (max(mem_ids) + 1)
+    for mem_id, events in events_by_mem_id.items():
+        live_bytes = 0
+        peak_live_bytes = 0
+        for _, delta in sorted(events.items()):
+            live_bytes += delta
+            peak_live_bytes = max(peak_live_bytes, live_bytes)
+        lower_bound[mem_id] = arena_bases[mem_id] + peak_live_bytes + extra_padding
+    return lower_bound
+
+
+_INTERVAL_FIRST_FIT_SOFT_MAX_PAIR_SCANS = 2_000_000
+_INTERVAL_FIRST_FIT_HARD_MAX_PAIR_SCANS = 5_000_000
+_INTERVAL_FIRST_FIT_MIN_POTENTIAL_SAVINGS_PERCENT = 2
+
+
+def greedy_interval_first_fit_conditional(
+    alignment: int,
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
+    extra_padding: int = 0,
+) -> MemoryAlgoResult:
+    """Run interval first-fit when bounded work has enough potential savings."""
+    for spec in specs:
+        spec.realign(alignment)
+
+    if any(spec.storage_base is not None for spec in specs):
+        return greedy(
+            alignment,
+            specs,
+            graph_module,
+            graph_signature,
+            extra_padding,
+        )
+
+    greedy_result = greedy(
+        alignment,
+        specs,
+        graph_module,
+        graph_signature,
+        extra_padding,
+    )
+    pair_scans = len(specs) * (len(specs) - 1) // 2
+    if pair_scans > _INTERVAL_FIRST_FIT_HARD_MAX_PAIR_SCANS:
+        return greedy_result
+
+    lower_bound = _peak_live_lower_bound_bufsizes(
+        alignment,
+        specs,
+        graph_module,
+        extra_padding,
+    )
+    if lower_bound is None or greedy_result.bufsizes == lower_bound:
+        return greedy_result
+
+    if pair_scans > _INTERVAL_FIRST_FIT_SOFT_MAX_PAIR_SCANS:
+        greedy_bytes = sum(greedy_result.bufsizes)
+        potential_savings = greedy_bytes - sum(lower_bound)
+        if (
+            potential_savings * 100
+            < greedy_bytes * _INTERVAL_FIRST_FIT_MIN_POTENTIAL_SAVINGS_PERCENT
+        ):
+            return greedy_result
+
+    candidate_result = interval_first_fit(
+        alignment,
+        specs,
+        graph_module,
+        graph_signature,
+        extra_padding,
+    )
+    return min(
+        (greedy_result, candidate_result),
+        key=lambda result: sum(result.bufsizes),
+    )
+
+
 class MemoryPlanningAlgorithmSuite:
     def __init__(
         self,
