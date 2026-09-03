@@ -520,6 +520,14 @@ class CudaBackend(AotiBackend, BackendDetails):
             return False
 
     @classmethod
+    def _should_include_ptx(cls, compile_specs: List[CompileSpec]) -> bool:
+        include_ptx = True
+        for spec in compile_specs:
+            if spec.key == "cuda_include_ptx":
+                include_ptx = _on_off_compile_spec_value(spec)
+        return include_ptx and cls._setup_cuda_environment_for_fatbin()
+
+    @classmethod
     def save_data_externally(cls) -> bool:
         """
         CUDA backend saves weight storages (and, when configured, SO blobs) in
@@ -539,7 +547,29 @@ class CudaBackend(AotiBackend, BackendDetails):
             result = super().preprocess(edge_program, compile_specs)
         if capture.artifact is None:
             raise RuntimeError("CUDA AOTI did not return a structured Weights output")
-        collector.add_preprocess_result(result, capture.artifact, cls.get_device_name())
+        target_sm = None
+        ptx_compute = 0
+        if torch.version.hip is None:
+            from torch._inductor.codegen.cuda.compile_utils import (
+                _nvcc_arch_as_compile_option,
+            )
+
+            compiled_arch = _nvcc_arch_as_compile_option()
+            target_arch = compiled_arch.removesuffix("a")
+            if not target_arch.isdigit():
+                raise RuntimeError(f"Unsupported CUDA architecture: {compiled_arch}")
+            target_sm = int(target_arch)
+            # Architecture-accelerated PTX targets such as compute_90a and
+            # compute_120a are not forward-compatible fallback images.
+            if cls._should_include_ptx(compile_specs) and compiled_arch.isdigit():
+                ptx_compute = int(compiled_arch)
+        collector.add_preprocess_result(
+            result,
+            capture.artifact,
+            cls.get_device_name(),
+            target_sm=target_sm,
+            ptx_compute=ptx_compute,
+        )
         return result
 
     @classmethod
@@ -759,7 +789,7 @@ class CudaBackend(AotiBackend, BackendDetails):
 
         # Configure CUDA environment variables based on detected version
 
-        emit_multi_arch_kernel = CudaBackend._setup_cuda_environment_for_fatbin()
+        emit_multi_arch_kernel = cls._should_include_ptx(compile_specs)
         # Base options for all platforms
 
         options: Dict[str, typing.Any] = {

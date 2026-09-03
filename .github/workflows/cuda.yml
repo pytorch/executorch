@@ -160,7 +160,7 @@ jobs:
         done
 
   export-cuda-target-smem-cross-arch:
-    name: export-cuda-target-smem-cross-arch-a100
+    name: export-cuda-multi-arch-a100
     needs: [changed-files, run-decision]
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
@@ -178,15 +178,13 @@ jobs:
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: cuda-target-smem-cross-arch
+      upload-artifact: cuda-multi-arch-a100
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-        # A10G (sm_86) supports 99 KiB of opt-in shared memory per block.
-        export ET_CUDA_TARGET_SMEM_BYTES=101376
         # The A100 exporter has an AVX-512 host CPU while the A10G runner has
         # AVX2. Keep the generated AOTI host wrapper compatible with both.
         export ATEN_CPU_CAPABILITY=avx2
@@ -199,16 +197,33 @@ jobs:
         assert capability == (8, 0), f"Expected A100 sm_80 exporter, got {capability}"
         PY
 
-        for model in linear sdpa; do
-          model_dir="${RUNNER_ARTIFACT_DIR}/${model}"
-          mkdir -p "${model_dir}"
+        # Export an sm80 native PTE with no PTX. This artifact must fail on the
+        # A10G because its metadata has neither an sm86 native variant nor PTX.
+        model_dir="${RUNNER_ARTIFACT_DIR}/native-sm80/linear"
+        mkdir -p "${model_dir}"
+        TORCHINDUCTOR_CACHE_DIR="${RUNNER_TEMP}/inductor-native-sm80" \
           python -m examples.cuda.scripts.export \
+            --model_name=linear \
+            --output_dir="${model_dir}" \
+            --cuda_include_ptx=OFF \
+            --seed=0
+
+        # Export the explicit PTX fallback separately. A10G supports 99 KiB of
+        # opt-in shared memory per block, so constrain the A100 export to it.
+        for model in linear sdpa; do
+          model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
+          mkdir -p "${model_dir}"
+          ET_CUDA_TARGET_SMEM_BYTES=101376 \
+          TORCHINDUCTOR_CACHE_DIR="${RUNNER_TEMP}/inductor-fallback-sm80-${model}" \
+            python -m examples.cuda.scripts.export \
             --model_name="${model}" \
-            --output_dir "${model_dir}"
+            --output_dir="${model_dir}" \
+            --cuda_include_ptx=ON \
+            --seed=0
         done
 
   test-cuda-target-smem-cross-arch:
-    name: test-cuda-target-smem-cross-arch-a10g
+    name: merge-and-test-cuda-multi-arch-a10g
     needs: [export-cuda-target-smem-cross-arch]
     if: needs.export-cuda-target-smem-cross-arch.result == 'success'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -222,7 +237,8 @@ jobs:
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: cuda-target-smem-cross-arch
+      download-artifact: cuda-multi-arch-a100
+      upload-artifact: cuda-multi-arch-merged
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -243,19 +259,140 @@ jobs:
         )
         PY
 
+        # Independently export an sm86 native PTE with no PTX. A fixed seed
+        # makes its external weights byte-identical to both A100 exports.
+        model_dir="${RUNNER_ARTIFACT_DIR}/native-sm86/linear"
+        mkdir -p "${model_dir}"
+        TORCHINDUCTOR_CACHE_DIR="${RUNNER_TEMP}/inductor-native-sm86" \
+          python -m examples.cuda.scripts.export \
+            --model_name=linear \
+            --output_dir="${model_dir}" \
+            --cuda_include_ptx=OFF \
+            --seed=0
+
+        sm80_ptd="${RUNNER_ARTIFACT_DIR}/native-sm80/linear/aoti_cuda_blob.ptd"
+        sm86_ptd="${RUNNER_ARTIFACT_DIR}/native-sm86/linear/aoti_cuda_blob.ptd"
+        fallback_ptd="${RUNNER_ARTIFACT_DIR}/fallback-sm80/linear/aoti_cuda_blob.ptd"
+        cmp "${sm80_ptd}" "${sm86_ptd}"
+        cmp "${sm80_ptd}" "${fallback_ptd}"
+        sha256sum "${sm80_ptd}" "${sm86_ptd}" "${fallback_ptd}"
+
+        merged_dir="${RUNNER_ARTIFACT_DIR}/merged"
+        mkdir -p "${merged_dir}"
+        python -m executorch.backends.cuda.merge_ptes \
+          --input-pte "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
+          --input-pte "${RUNNER_ARTIFACT_DIR}/native-sm86/linear/linear.pte" \
+          --input-ptd "${sm80_ptd}" \
+          --input-ptd "${sm86_ptd}" \
+          --fallback-pte "${RUNNER_ARTIFACT_DIR}/fallback-sm80/linear/linear.pte" \
+          --fallback-ptd "${fallback_ptd}" \
+          --output-pte "${merged_dir}/linear.pte" \
+          --output-ptd "${merged_dir}/aoti_cuda_blob.ptd" \
+          | tee "${merged_dir}/provenance.txt"
+        cmp "${sm80_ptd}" "${merged_dir}/aoti_cuda_blob.ptd"
+
         cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_CUDA=ON \
             -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_ENABLE_LOGGING=ON \
             -DPYTHON_EXECUTABLE=python \
             -Bcmake-out .
         cmake --build cmake-out --target executor_runner -j4
 
         for model in linear sdpa; do
-          model_dir="${RUNNER_ARTIFACT_DIR}/${model}"
+          model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
           ./cmake-out/executor_runner \
             --model_path "${model_dir}/${model}.pte" \
             --data_path "${model_dir}/aoti_cuda_blob.ptd"
         done
+
+        # The local native PTE and merged PTE must run on sm86.
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm86/linear/linear.pte" \
+          --data_path "${sm86_ptd}"
+        ./cmake-out/executor_runner \
+          --model_path "${merged_dir}/linear.pte" \
+          --data_path "${merged_dir}/aoti_cuda_blob.ptd"
+
+        # The sm80 native-only PTE must be rejected on sm86.
+        set +e
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
+          --data_path "${sm80_ptd}" \
+          >"${RUNNER_ARTIFACT_DIR}/native-sm80-on-sm86.log" 2>&1
+        native_status=$?
+        set -e
+        cat "${RUNNER_ARTIFACT_DIR}/native-sm80-on-sm86.log"
+        test "${native_status}" -ne 0
+        grep -q "no native or PTX variant compatible with sm86" \
+          "${RUNNER_ARTIFACT_DIR}/native-sm80-on-sm86.log"
+
+  test-cuda-merged-pte-a100:
+    name: test-cuda-merged-pte-a100
+    needs: [test-cuda-target-smem-cross-arch]
+    if: needs.test-cuda-target-smem-cross-arch.result == 'success'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: mt-l-x86iavx512-11-125-a100
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: cuda-multi-arch-merged
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+        python - <<'PY'
+        import torch
+
+        capability = torch.cuda.get_device_capability()
+        assert capability == (8, 0), f"Expected A100 sm_80 runner, got {capability}"
+        PY
+
+        cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_CUDA=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_ENABLE_LOGGING=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out --target executor_runner -j4
+
+        sm80_ptd="${RUNNER_ARTIFACT_DIR}/native-sm80/linear/aoti_cuda_blob.ptd"
+        sm86_ptd="${RUNNER_ARTIFACT_DIR}/native-sm86/linear/aoti_cuda_blob.ptd"
+        fallback_ptd="${RUNNER_ARTIFACT_DIR}/fallback-sm80/linear/aoti_cuda_blob.ptd"
+        merged_ptd="${RUNNER_ARTIFACT_DIR}/merged/aoti_cuda_blob.ptd"
+        cmp "${sm80_ptd}" "${sm86_ptd}"
+        cmp "${sm80_ptd}" "${fallback_ptd}"
+        cmp "${sm80_ptd}" "${merged_ptd}"
+
+        # The local native PTE and merged PTE must run on sm80.
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
+          --data_path "${sm80_ptd}"
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/merged/linear.pte" \
+          --data_path "${merged_ptd}"
+
+        # The sm86 native-only PTE must be rejected on sm80.
+        set +e
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm86/linear/linear.pte" \
+          --data_path "${sm86_ptd}" \
+          >"${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log" 2>&1
+        native_status=$?
+        set -e
+        cat "${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log"
+        test "${native_status}" -ne 0
+        grep -q "no native or PTX variant compatible with sm80" \
+          "${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log"
 
   unittest-cuda:
     name: unittest-cuda
@@ -369,6 +506,11 @@ jobs:
         bash ./install_executorch.sh
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        python -m pytest \
+          backends/cuda/tests/test_cuda_weight_metadata.py \
+          backends/cuda/tests/test_merge_ptes.py \
+          -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
         cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache -j$(nproc)
