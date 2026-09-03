@@ -161,8 +161,8 @@ Error QnnExecuTorchBackend::execute(
   ET_CHECK_OR_RETURN_ERROR(
       bindable_inputs + bindable_outputs == args.size(),
       Internal,
-      "Method %s: the QNN context binary binds %zu tensors (%zu graph inputs, "
-      "%zu graph outputs) but ExecuTorch passed %zu arguments. The binary and "
+      "Method %s: the QNN context binary binds %zu tensors (%zu bindable inputs, "
+      "%zu bindable outputs) but ExecuTorch passed %zu arguments. The binary and "
       "the program disagree on the delegate signature; the model has to be "
       "re-exported.",
       method_name.c_str(),
