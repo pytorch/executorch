@@ -53,6 +53,7 @@ from executorch.exir.passes import (
     OpReplacePass,
     remove_unused_parameters_pass,
 )
+from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
@@ -753,11 +754,13 @@ def pre_memory_planning_passes(
             ReplaceViewCopyWithViewPass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
     else:
         return [
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            DelegateScratchSpecPass(),
         ]
 
 

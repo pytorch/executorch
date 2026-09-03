@@ -14,6 +14,8 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
+#include <cinttypes> // @donotremove
+
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
@@ -110,6 +112,12 @@ ET_NODISCARD Result<BoxedEvalueList<std::optional<T>>> parseListOptionalType(
   return BoxedEvalueList<std::optional<T>>(
       evalp_list, optional_tensor_list, value_indices->size());
 }
+
+// Retrieve the buffer specified by the allocation_info
+ET_NODISCARD Result<void*> getMemPlannedPtr(
+    const executorch_flatbuffer::AllocationDetails* allocation_info,
+    size_t nbytes,
+    HierarchicalAllocator* allocator);
 
 /**
  * Returns the appropriate data pointer for `s_tensor`.

@@ -122,6 +122,7 @@ def _(
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_specs,
                 named_data_store_output=preprocess_result.data_store_output,
+                scratch_specs=preprocess_result.scratch_specs,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
@@ -616,6 +617,7 @@ def lower_all_submodules_to_backend(
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_spec,
                 named_data_store_output=preprocess_result.data_store_output,
+                scratch_specs=preprocess_result.scratch_specs,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map,
