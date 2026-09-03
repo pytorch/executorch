@@ -1,19 +1,19 @@
-Keep the common Metal JIT preamble compatible with Metal 3.1.
+Keep runtime JIT sources compatible with older Metal frontends.
 
-MLX supports macOS 14 and selects Metal language 3.1 there. The generic complex
-implementation added compile-time half and bfloat16 arithmetic probes and inline
-static data members which are accepted by newer Metal frontends but rejected by
-the Xcode 15.4 runtime compiler. Since complex.h and utils.h are embedded in
-metal::utils(), that prevents every runtime-JIT kernel from compiling, including
-kernels unrelated to complex operations.
+MLX supports macOS 14 and selects Metal language 3.1 there. Changes in v0.32.1
+introduced several constructs which are accepted by newer Metal frontends but
+rejected by the Xcode 15.4 runtime compiler. Because these headers are embedded
+in runtime-JIT sources, the incompatibilities prevent unrelated kernels from
+compiling as well.
 
-Keep the generic complex implementation intact. Give the layout checks
-C++11-style diagnostic messages, retain the arithmetic probes on Metal 3.2+
-where the frontend supports them, and use the existing static constexpr form for
-the complex Limits members. The probes are compile-time validation only; these
-changes do not alter generated kernels or runtime behavior on Metal 3.1.
+Keep the modern generic complex implementation intact. Give its layout checks
+diagnostic messages, retain the half and bfloat16 arithmetic probes on Metal
+3.2+, and use the existing static constexpr form for its Limits members. Also
+use remove_addrspace_t only on Metal 4.1+, where explicit thread qualifiers made
+it necessary and the trait is available; older language versions retain the
+previous decltype behavior.
 
-Upstream candidate; carried locally until MLX includes the compatibility fix.
+Upstream candidate; carried locally until MLX includes the compatibility fixes.
 
 diff --git a/mlx/backend/metal/kernels/complex.h b/mlx/backend/metal/kernels/complex.h
 index fe78e005..f558b10a 100644
@@ -55,6 +55,38 @@ index fe78e005..f558b10a 100644
 +        .real == bfloat16_t(-5.0f),
 +    "bfloat16 complex multiplication must preserve lane precision");
 +#endif
+diff --git a/mlx/backend/metal/kernels/steel/utils/integral_constant.h b/mlx/backend/metal/kernels/steel/utils/integral_constant.h
+index 2f153f48..65e555b9 100644
+--- a/mlx/backend/metal/kernels/steel/utils/integral_constant.h
++++ b/mlx/backend/metal/kernels/steel/utils/integral_constant.h
+@@ -47,12 +47,18 @@ using Int = integral_constant<int, val>;
+ // Binary Operators on Integral constants
+ ///////////////////////////////////////////////////////////////////////////////
+ 
++#if __METAL_VERSION__ >= 410
++#define MLX_REMOVE_ADDRSPACE(T) metal::remove_addrspace_t<T>
++#else
++#define MLX_REMOVE_ADDRSPACE(T) T
++#endif
++
+ #define integral_const_binop(__op__, __operator__)          \
+   template <typename T, T tv, typename U, U uv>             \
+   METAL_FUNC constexpr auto __operator__(                   \
+       integral_constant<T, tv>, integral_constant<U, uv>) { \
+     constexpr auto res = tv __op__ uv;                      \
+-    using res_t = metal::remove_addrspace_t<decltype(res)>; \
++    using res_t = MLX_REMOVE_ADDRSPACE(decltype(res));       \
+     return integral_constant<res_t, res>{};                 \
+   }
+ 
+@@ -110,6 +116,7 @@ constexpr void const_for_loop(F f) {
+ }
+ 
+ #undef integral_const_binop
++#undef MLX_REMOVE_ADDRSPACE
+ 
+ ///////////////////////////////////////////////////////////////////////////////
+ // Reduction operators
 diff --git a/mlx/backend/metal/kernels/utils.h b/mlx/backend/metal/kernels/utils.h
 index f1592828..46462399 100644
 --- a/mlx/backend/metal/kernels/utils.h
