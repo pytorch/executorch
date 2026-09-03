@@ -97,13 +97,9 @@ class CacheFactory {
       builders_; // keyed by (backend_id, kind)
 };
 
-// Process-global atomic counter -> "cache-N"; centralizes key generation so
-// keys never collide.
-std::string new_cache_key();
-
 // RAII over one registry entry: installs the cache under a key of its own
 // making on construction and erases it on destruction (no leak on any exit
-// path). Generating the key here rather than taking one means two live guards
+// path). Minting the key here rather than taking one means two live guards
 // cannot collide on it. Must outlive the load_method() whose backend init
 // resolves the key.
 //
@@ -111,13 +107,8 @@ std::string new_cache_key();
 // their own pointer, so there is nothing to read back out.
 class InstallGuard {
  public:
-  explicit InstallGuard(std::shared_ptr<Cache> cache)
-      : key_(new_cache_key()), cache_(std::move(cache)) {
-    CacheRegistry::global().install(key_, cache_);
-  }
-  ~InstallGuard() {
-    CacheRegistry::global().erase(key_);
-  }
+  explicit InstallGuard(std::shared_ptr<Cache> cache);
+  ~InstallGuard();
 
   InstallGuard(const InstallGuard&) = delete;
   InstallGuard& operator=(const InstallGuard&) = delete;

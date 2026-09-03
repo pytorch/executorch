@@ -34,7 +34,6 @@ using executorch::extension::llm::cache::SequencePlanner;
 namespace kind = executorch::extension::llm::cache::kind;
 using executorch::extension::llm::cache::LayerConfig;
 using executorch::extension::llm::cache::LayerPolicy;
-using executorch::extension::llm::cache::new_cache_key;
 using executorch::extension::llm::cache::SequenceCache;
 using executorch::runtime::Error;
 
@@ -181,8 +180,16 @@ TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   EXPECT_EQ(plan->read[0].len, 1);
 }
 
-TEST_F(CacheTest, UniqueKeysDoNotCollide) {
-  EXPECT_NE(new_cache_key(), new_cache_key());
+TEST_F(CacheTest, LiveGuardsDoNotCollideOnKeys) {
+  auto a = std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
+  auto b = std::make_shared<SequenceCache>(CacheConfig{4, 1, {flat_layer()}});
+  InstallGuard ga(a);
+  InstallGuard gb(b);
+
+  EXPECT_STRNE(ga.key(), gb.key());
+  // Both entries are live: neither guard displaced the other.
+  EXPECT_EQ(CacheRegistry::global().get(ga.key()).get(), a.get());
+  EXPECT_EQ(CacheRegistry::global().get(gb.key()).get(), b.get());
 }
 
 TEST_F(CacheTest, BuilderBuildsRegisteredKindElseError) {

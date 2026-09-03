@@ -104,9 +104,22 @@ Result<std::shared_ptr<Cache>> CacheFactory::build(
   return cache;
 }
 
+namespace {
+// Process-global atomic counter -> "cache-N". Internal: InstallGuard is the
+// only thing that publishes, so nothing outside needs to mint a key.
 std::string new_cache_key() {
   static std::atomic<uint64_t> counter{0};
   return "cache-" + std::to_string(counter.fetch_add(1));
+}
+} // namespace
+
+InstallGuard::InstallGuard(std::shared_ptr<Cache> cache)
+    : key_(new_cache_key()), cache_(std::move(cache)) {
+  CacheRegistry::global().install(key_, cache_);
+}
+
+InstallGuard::~InstallGuard() {
+  CacheRegistry::global().erase(key_);
 }
 
 } // namespace cache
