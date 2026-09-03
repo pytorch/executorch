@@ -106,8 +106,8 @@ install_pytorch_and_domains() {
   local python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   local torch_release=$(cat version.txt)
   # Download key must match the upload key below (basename of dist/*.whl,
-  # which always carries setup.py's resolved +gitHASH). Branch-ref pins
-  # like `release/2.13` would otherwise produce `+gitrelease` here and
+  # which always carries the build's resolved +gitHASH). Branch-ref pins
+  # like `release/2.14` would otherwise produce `+gitrelease` here and
   # never hit the cache.
   local torch_short_hash=$(git rev-parse --short=7 HEAD)
   local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
@@ -135,10 +135,16 @@ install_pytorch_and_domains() {
     if [[ "$(uname -m)" == "aarch64" ]]; then
       export BUILD_IGNORE_SVE_UNAVAILABLE=1
     fi
-    USE_DISTRIBUTED=1 python setup.py bdist_wheel
+    # PyTorch no longer supports "python setup.py bdist_wheel"; it builds
+    # through scikit-build-core (PEP 517). Build with the standard frontend and
+    # keep isolation off, so the build uses the requirements-build.txt deps
+    # installed just above rather than fetching its own copies. This matches
+    # how the Docker images build PyTorch.
+    pip install build
+    USE_DISTRIBUTED=1 python -m build --wheel --no-isolation
     pip install "$(echo dist/*.whl)"
 
-    # Invariant: the basename setup.py just produced must match the cache
+    # Invariant: the basename the build just produced must match the cache
     # URL we'd reconstruct on the next run. If they diverge (someone edits
     # torch_wheel_name above, or PyTorch renames its wheels), the cache
     # will silently miss and every macOS run will fall back to a ~30-min
