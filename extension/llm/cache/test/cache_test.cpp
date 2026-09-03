@@ -332,8 +332,6 @@ TEST_F(CacheTest, AcquiredCacheOutlivesRegistryEntry) {
   EXPECT_TRUE(weak.expired());
 }
 
-// ---- Cell layout
-
 // ---- Cell layout -----------------------------------------------------------
 
 namespace {

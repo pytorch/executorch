@@ -300,10 +300,9 @@ int main(int argc, char* argv[]) {
 
     namespace cache = ::executorch::extension::llm::cache;
 
-    // Build and install the off-graph KV cache before the Module, so the
-    // registry entry exists by the time the delegate's init() looks it up.
-    // Declared here so the lease outlives the module.
-    std::optional<cache::InstallGuard> cache_lease;
+    // Publish the off-graph KV cache until the delegate resolves its key while
+    // loading the method.
+    std::optional<cache::InstallGuard> cache_install_guard;
     if (!kv_cache_spec.empty()) {
       cache::CacheConfig cfg{};
       if (!parse_kv_cache_spec(kv_cache_spec, cfg)) {
@@ -319,21 +318,21 @@ int main(int argc, char* argv[]) {
                   << static_cast<int>(built.error()) << std::endl;
         return 1;
       }
-      cache_lease.emplace(built.get());
+      cache_install_guard.emplace(built.get());
       if (verbose) {
-        std::cout << "Installed KV cache under key " << cache_lease->key()
-                  << std::endl;
+        std::cout << "Installed KV cache under key "
+                  << cache_install_guard->key() << std::endl;
       }
     }
 
     Module module(pte_path);
     Error load_error = Error::Ok;
-    if (cache_lease) {
+    if (cache_install_guard) {
       ::executorch::runtime::BackendOptions<1> mlx_opts;
       ::executorch::runtime::LoadBackendOptionsMap options_map;
       if (mlx_opts.set_option(
-              ::executorch::backends::mlx::kCacheKeyKey, cache_lease->key()) !=
-              Error::Ok ||
+              ::executorch::backends::mlx::kCacheKeyKey,
+              cache_install_guard->key()) != Error::Ok ||
           options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
               Error::Ok) {
@@ -360,6 +359,7 @@ int main(int argc, char* argv[]) {
                 << static_cast<int>(load_method_error) << std::endl;
       return 1;
     }
+    cache_install_guard.reset();
 
     if (verbose) {
       std::cout << "Reading inputs from: " << input_path << std::endl;
