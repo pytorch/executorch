@@ -43,10 +43,8 @@ TEST(OpQuantizedMoeFfnTest, RegistrationSmokeTest) {
   Tensor gate = tff.zeros({E, D});
   Tensor expert_bias = tff.zeros({0});
 
-  // Use empty packed buffers; the kernel will fail loudly if it tries to
-  // dereference them. With EXECUTORCH_QUANTIZED_MOE_USE_TORCHAO unset (CI x86
-  // build without torchao linkage) the kernel ET_CHECK_MSGs out before doing
-  // any real work, which is what we want this test to verify.
+  // Empty packed buffers document the expected schema; this test does not pass
+  // them to the kernel.
   Tensor packed_w1 = tfb.zeros({E, 1});
   Tensor packed_w3 = tfb.zeros({E, 1});
   Tensor packed_w2 = tfb.zeros({E, 1});
@@ -54,9 +52,7 @@ TEST(OpQuantizedMoeFfnTest, RegistrationSmokeTest) {
   Tensor out = tff.zeros({T, D});
 
   executorch::runtime::KernelRuntimeContext ctx{};
-  // We don't actually call the kernel here in the registration smoke test
-  // because the empty packed buffers would not be valid torchao blobs.
-  // Just verify the op symbol resolves at link time.
+  // Verify the op symbol resolves at link time.
   auto fn = &torch::executor::native::quantized_moe_ffn_out;
   EXPECT_NE(fn, nullptr);
   // Silence unused-variable warnings on the input tensors above; they
