@@ -203,14 +203,14 @@ AOTITorchError aoti_torch_empty_strided_pinned(
     int32_t device_type,
     int32_t device_index,
     SlimTensor** ret_new_tensor) {
-  (void)ndim;
-  (void)sizes_ptr;
-  (void)strides_ptr;
-  (void)dtype;
-  (void)device_type;
-  (void)device_index;
-  (void)ret_new_tensor;
-  return Error::NotSupported;
+  return aoti_torch_empty_strided(
+      ndim,
+      sizes_ptr,
+      strides_ptr,
+      dtype,
+      device_type,
+      device_index,
+      ret_new_tensor);
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(SlimTensor* tensor) {

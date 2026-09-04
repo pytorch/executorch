@@ -72,7 +72,7 @@ AOTITorchError aoti_torch_is_defined(Tensor* tensor, bool* ret_is_defined) {
   if (ret_is_defined == nullptr) {
     return Error::InvalidArgument;
   }
-  *ret_is_defined = tensor != nullptr;
+  *ret_is_defined = tensor != nullptr && tensor->defined();
   return Error::Ok;
 }
 

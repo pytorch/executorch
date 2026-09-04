@@ -150,7 +150,14 @@ def _is_aten_target(kwargs):
 
     Keyed on exact dep names, not a substring: every label contains "torch".
     """
-    aten_external_deps = ["c10", "libtorch", "libtorch_python", "torch-core-cpp"]
+    aten_external_deps = [
+        "c10",
+        "gmock_aten",
+        "gtest_aten",
+        "libtorch",
+        "libtorch_python",
+        "torch-core-cpp",
+    ]
     for key in ["external_deps", "exported_external_deps"]:
         for dep in kwargs.get(key) or []:
             if dep in aten_external_deps:
@@ -172,13 +179,15 @@ def _patch_test_compiler_flags(kwargs, aten_mode = False):
         aten_mode or
         "_aten" in name or
         "aten_" in name or
-        "gtest_aten" in external_deps or
-        "gmock_aten" in external_deps or
         _has_pytorch_dep(xplat_deps) or
         _has_pytorch_dep(fbcode_deps)
     )
 
-    if not is_aten_test:
+    if is_aten_test:
+        kwargs["compiler_flags"] += [
+            "-std=c++20",
+        ]
+    else:
         kwargs["compiler_flags"] += [
             "-std=c++17",
         ]

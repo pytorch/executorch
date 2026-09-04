@@ -96,12 +96,12 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     SlimTensor** ret_new_tensor);
 
 /**
- * Reports that pinned host memory is unavailable.
+ * Allocates ordinary memory where pinned host memory was asked for.
  *
- * There is no pinned allocator here, so the caller falls back to the
- * synchronous copy it already handles: correct, slower only while loading.
+ * There is no pinned allocator here. Pinned memory only lets the copy to the
+ * device overlap other work, so ordinary memory is correct and slower.
  *
- * @return Error::NotSupported
+ * @return Error::Ok on success
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided_pinned(
     int64_t ndim,
