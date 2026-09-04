@@ -10,6 +10,12 @@ oncall("executorch")
 # exact same classes as before the move. Log.kt is the Android-backed
 # implementation of the org.pytorch.executorch.Log facade that the shared
 # sources reference.
+#
+# MAINTENANCE: Gradle globs the shared directory (java.srcDirs) while the
+# srcs lists below are explicit per-file. When adding a shared source under
+# extension/java/src/main/java, add it to the matching target here in the
+# same change — otherwise the OSS AAR picks it up while this build silently
+# omits it.
 
 non_fbcode_target(_kind = fb_android_library,
     name = "executorch",

@@ -32,3 +32,11 @@ referencing this directory as an additional source root:
    native library through soloader's `NativeLoader`, whose delegate is
    configured by the platform runtime, not by a cross-platform mutable
    global.
+
+## Adding a source here
+
+Gradle (`extension/android/executorch_android/build.gradle`) globs this whole
+directory, but `extension/android/BUCK` lists each shared file explicitly.
+**Update the matching BUCK target's `srcs` in the same change** whenever you
+add or remove a file here — otherwise the OSS AAR picks it up while the Buck
+build silently omits it.
