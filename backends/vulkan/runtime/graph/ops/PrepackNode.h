@@ -50,6 +50,10 @@ class PrepackNode final {
     node_id_ = node_id;
   }
 
+  inline const std::string& name() const {
+    return shader_.kernel_name;
+  }
+
  protected:
   uint32_t node_id_;
   const vkapi::ShaderInfo shader_;
