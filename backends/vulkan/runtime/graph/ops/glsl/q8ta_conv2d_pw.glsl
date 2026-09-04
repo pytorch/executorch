@@ -11,6 +11,7 @@
 ${define_required_extensions("buffer", DTYPE)}
 
 #define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
+#define USE_UNSIGNED_DOT_PRODUCT ${USE_UNSIGNED_DOT_PRODUCT}
 
 #extension GL_EXT_control_flow_attributes : require
 $if USE_INT8_DOT_PRODUCT_EXT == 1:
@@ -126,10 +127,19 @@ void main() {
   const int inp_n_stride = int(inp.strides[0][3]);
 
   // Initialize int32 accumulator
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+  uvec4 out_accum[TILE_M][TILE_N4];
+  uvec4 input_sums = uvec4(0u);
+#else
   ivec4 out_accum[TILE_M][TILE_N4];
+#endif
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+      out_accum[m][n4] = uvec4(0u);
+#else
       out_accum[m][n4] = ivec4(0);
+#endif
     }
   }
 
@@ -149,6 +159,10 @@ void main() {
     // Load the packed int8 input tile for the current width and K sub-block.
     // Each int contains 4 packed int8s (one per width position in the tile)
     ivec4 int8_input_tile = t_packed_int8_input[input_idx];
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+    const uvec4 uint8_input_tile =
+        uvec4(int8_input_tile) ^ uvec4(0x80808080u);
+#endif
 
     // Load the int8 weight tile for the current K and output-channel sub-block.
     ivec4 int8_weight_tile[TILE_N4];
@@ -158,17 +172,34 @@ void main() {
           ivec2(oc_block_idx + n4, k4),
           0);
     }
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+    uvec4 uint8_weight_tile[TILE_N4];
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      uint8_weight_tile[n4] = uvec4(int8_weight_tile[n4]);
+    }
+#endif
 
     // Accumulate using int8 dot product
     // Input tile indexed as input[m] where m is the width index within tile
     // Weight tile indexed as weight[n4][n4i] where n4i is the channel index within block
     [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+      input_sums[m] = dotPacked4x8AccSatEXT(
+          uint8_input_tile[m], 0x01010101u, input_sums[m]);
+#endif
       [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
         [[unroll]] for (int n4i = 0; n4i < 4; ++n4i) {
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+          out_accum[m][n4][n4i] = dotPacked4x8AccSatEXT(
+              uint8_input_tile[m],
+              uint8_weight_tile[n4][n4i],
+              out_accum[m][n4][n4i]);
+#else
           out_accum[m][n4][n4i] = dotPacked4x8AccSat(
               int8_input_tile[m],
               int8_weight_tile[n4][n4i],
               out_accum[m][n4][n4i]);
+#endif
         }
       }
     }
@@ -188,6 +219,14 @@ void main() {
     weight_sums[n4] = ivec4(t_weight_sums[oc_block_idx + n4]);
   }
 
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+  ivec4 unsigned_weight_correction[TILE_N4];
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    unsigned_weight_correction[n4] =
+        (128 + input_zp) * weight_sums[n4];
+  }
+#endif
+
   // Initialize int8 output tile
   ivec4 int8_out_tile[TILE_M4][TILE_N4];
   [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
@@ -197,7 +236,9 @@ void main() {
   }
 
   // Compute int8 output tile from int32 accumulator
+#if USE_UNSIGNED_DOT_PRODUCT == 0
   ivec4 input_zp_vec = ivec4(-input_zp);
+#endif
 
   if (apply_bias > 0) {
     // Load bias tile
@@ -211,8 +252,14 @@ void main() {
         [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
           const int m = mul_4(m4) + m4i;
           // Compute floating point output values
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+          ivec4 accum_adjusted = ivec4(out_accum[m][n4])
+              - ivec4(int(input_sums[m]) * 128)
+              - unsigned_weight_correction[n4];
+#else
           ivec4 accum_adjusted =
               input_zp_vec * weight_sums[n4] + out_accum[m][n4];
+#endif
           vec4 float_out_texel =
               fma(vec4(accum_adjusted),
                   vec4(weight_scales[n4]) * input_scale,
@@ -236,8 +283,14 @@ void main() {
         [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
           const int m = mul_4(m4) + m4i;
           // Compute floating point output values
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+          ivec4 accum_adjusted = ivec4(out_accum[m][n4])
+              - ivec4(int(input_sums[m]) * 128)
+              - unsigned_weight_correction[n4];
+#else
           ivec4 accum_adjusted =
               input_zp_vec * weight_sums[n4] + out_accum[m][n4];
+#endif
           vec4 float_out_texel =
               vec4(accum_adjusted) * vec4(weight_scales[n4] * input_scale);
           // Apply ReLU if enabled

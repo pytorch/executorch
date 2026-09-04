@@ -10,9 +10,73 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taClone.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
 
 namespace vkcompute {
+
+namespace {
+
+void assert_pw_kernel_selection(
+    ComputeGraph& graph,
+    const bool expect_unsigned,
+    const bool expect_buffer_weights) {
+  const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
+  std::string expected_execute;
+  std::string expected_prepack;
+  if (expect_unsigned) {
+    expected_execute = "q8ta_conv2d_pw_unsigned_float";
+    expected_prepack = expect_buffer_weights
+        ? "pack_q8_conv2d_weights_unsigned_buffer"
+        : "pack_q8_conv2d_weights_unsigned_texture2d";
+  } else {
+    VK_CHECK_COND(!expect_buffer_weights);
+    expected_execute = adapter->supports_int8_dot_product()
+        ? "q8ta_conv2d_pw_float"
+        : "q8ta_conv2d_pw_fallback_float";
+    expected_prepack = "pack_q8_conv2d_weights_texture2d";
+  }
+
+  int32_t execute_matches = 0;
+  std::string execute_names;
+  for (const auto& node : graph.execute_nodes()) {
+    const ExecuteNode* const node_ptr = node.get();
+    VK_CHECK_COND(node_ptr != nullptr);
+    const std::string& node_name = node_ptr->name();
+    execute_names += node_name + " ";
+    if (node_name.find("q8ta_conv2d_pw") == 0) {
+      VK_CHECK_COND(
+          node_name == expected_execute,
+          "Expected ",
+          expected_execute,
+          " but selected execute kernel ",
+          node_name);
+      ++execute_matches;
+    }
+  }
+  VK_CHECK_COND(execute_matches > 0, "Execute kernels: ", execute_names);
+
+  int32_t prepack_matches = 0;
+  std::string prepack_names;
+  for (const auto& node : graph.prepack_nodes()) {
+    const PrepackNode* const node_ptr = node.get();
+    VK_CHECK_COND(node_ptr != nullptr);
+    const std::string& node_name = node_ptr->name();
+    prepack_names += node_name + " ";
+    if (node_name.find("pack_q8_conv2d_weights") == 0) {
+      VK_CHECK_COND(
+          node_name == expected_prepack,
+          "Expected ",
+          expected_prepack,
+          " but selected prepack kernel ",
+          node_name);
+      ++prepack_matches;
+    }
+  }
+  VK_CHECK_COND(prepack_matches > 0, "Prepack kernels: ", prepack_names);
+}
+
+} // namespace
 
 void test_q8ta_conv2d_dw(
     ComputeGraph& graph,
@@ -287,7 +351,29 @@ void test_q8ta_conv2d_pw(
         groups,
         activation,
         packed_int8_output};
-    VK_GET_OP_FN("et_vk.q8ta_conv2d_pw.default")(graph, conv_args);
+    if (impl_selector == "pw_signed" || impl_selector == "pw_unsigned" ||
+        impl_selector == "pw_auto") {
+      const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
+      bool expect_unsigned = impl_selector == "pw_unsigned";
+      if (impl_selector == "pw_auto") {
+        VK_GET_OP_FN("et_vk.q8ta_conv2d_pw.default")(graph, conv_args);
+        expect_unsigned = can_use_unsigned_pw_dot(
+            *adapter, graph.size_at<int64_t>(-1, weight_data));
+      } else {
+        q8ta_conv2d_pw_impl(graph, expect_unsigned, conv_args);
+      }
+      const int64_t packed_height =
+          utils::div_up_4(graph.size_at<int64_t>(-1, weight_data));
+      const int64_t packed_width =
+          utils::div_up_4(graph.size_at<int64_t>(-2, weight_data)) * 4;
+      const int64_t max_texture_extent = adapter->max_texture2d_dim();
+      const bool expect_buffer_weights =
+          packed_width > max_texture_extent * 4 ||
+          packed_height > max_texture_extent;
+      assert_pw_kernel_selection(graph, expect_unsigned, expect_buffer_weights);
+    } else {
+      VK_GET_OP_FN("et_vk.q8ta_conv2d_pw.default")(graph, conv_args);
+    }
   }
 
   // Dequantize packed int8 output to floating point
