@@ -3,6 +3,7 @@
 #define PRECISION ${PRECISION}
 
 #define IN_VEC4_T ${texel_load_type(DTYPE, INPUT_STORAGE)}
+#define OUT_VEC4_T ${texel_load_type(DTYPE, OUTPUT_STORAGE)}
 #define T ${buffer_scalar_type(DTYPE)}
 
 $if OUTPUT_STORAGE == "buffer":
@@ -11,6 +12,7 @@ $if INPUT_STORAGE == "buffer":
   #define INPUT_BUFFER
 
 ${define_required_extensions(INPUT_STORAGE, DTYPE)}
+${define_required_extensions(OUTPUT_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
@@ -65,7 +67,7 @@ void write_cache_d4(
     const int C,
     const int H) {
 #ifdef OUTPUT_BUFFER
-  t_cache[(c * H * D4) + (h * D4) + d4] = texel;
+  t_cache[(c * H * D4) + (h * D4) + d4] = OUT_VEC4_T(texel);
 #else
   imageStore(t_cache, ivec3(d4, h, c), texel);
 #endif

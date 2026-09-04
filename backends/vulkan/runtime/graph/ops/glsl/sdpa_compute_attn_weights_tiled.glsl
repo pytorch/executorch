@@ -46,6 +46,7 @@ $if HAS_BIAS:
 #define TILE_N ${TILE_N4 * 4}
 
 ${define_required_extensions(IO_STORAGE, [IN_DTYPE, OUT_DTYPE])}
+${define_required_extensions(K_CACHE_STORAGE, [IN_DTYPE, OUT_DTYPE])}
 
 layout(std430) buffer;
 
