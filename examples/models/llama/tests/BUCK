@@ -4,6 +4,17 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 oncall("executorch")
 
 fbcode_target(_kind = python_unittest,
+    name = "test_generation",
+    srcs = [
+        "test_generation.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama/runner:eager_runner_library",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
     name = "test_simple_sdpa",
     srcs = [
         "test_simple_sdpa.py",
