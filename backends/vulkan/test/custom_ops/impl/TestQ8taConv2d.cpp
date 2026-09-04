@@ -86,9 +86,7 @@ void assert_pw_kernel_selection(
   std::string expected_execute;
   std::string expected_prepack;
   if (expect_unsigned) {
-    expected_execute = expect_buffer_weights
-        ? "q8ta_conv2d_pw_unsigned_buffer_float"
-        : "q8ta_conv2d_pw_unsigned_float";
+    expected_execute = "q8ta_conv2d_pw_unsigned_float";
     expected_prepack = expect_buffer_weights
         ? "pack_q8_conv2d_weights_unsigned_buffer"
         : "pack_q8_conv2d_weights_unsigned_texture2d";
@@ -319,7 +317,7 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       bool expect_unsigned = impl_selector == "im2col_unsigned";
       if (impl_selector == "im2col_auto") {
         VK_GET_OP_FN("et_vk.q8ta_conv2d_im2col.default")(graph, conv_args);
-        expect_unsigned = can_use_unsigned_dot(
+        expect_unsigned = can_use_unsigned_pw_dot(
             *adapter, graph.size_at<int64_t>(-1, weight_data));
       } else {
         q8ta_conv2d_im2col_impl(graph, expect_unsigned, conv_args);
@@ -439,7 +437,8 @@ void test_q8ta_conv2d_pw(
       bool expect_unsigned = impl_selector == "pw_unsigned";
       if (impl_selector == "pw_auto") {
         VK_GET_OP_FN("et_vk.q8ta_conv2d_pw.default")(graph, conv_args);
-        expect_unsigned = can_use_unsigned_pw_dot(*adapter);
+        expect_unsigned = can_use_unsigned_pw_dot(
+            *adapter, graph.size_at<int64_t>(-1, weight_data));
       } else {
         q8ta_conv2d_pw_impl(graph, expect_unsigned, conv_args);
       }

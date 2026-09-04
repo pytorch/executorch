@@ -236,24 +236,6 @@ void add_q8ta_im2col_node(
 // High level operator impl
 //
 
-namespace {
-
-constexpr int64_t kMaxUnsignedAccumulatorBytes = 33025;
-
-bool unsigned_q8ta_im2col_accumulator_is_safe(const int64_t k_per_group) {
-  return k_per_group <= kMaxUnsignedAccumulatorBytes;
-}
-
-} // namespace
-
-bool can_use_unsigned_dot(
-    const vkapi::Adapter& adapter,
-    const int64_t k_per_group) {
-  return adapter.accelerates_unsigned_packed4x8_dot() &&
-      !adapter.accelerates_signed_packed4x8_dot() &&
-      unsigned_q8ta_im2col_accumulator_is_safe(k_per_group);
-}
-
 void q8ta_conv2d_im2col_impl(
     ComputeGraph& graph,
     const bool use_unsigned_dot,
@@ -336,8 +318,8 @@ void q8ta_conv2d_im2col_impl(
   const int32_t groups_val = graph.extract_scalar<int32_t>(groups);
   VK_CHECK_COND(
       !use_unsigned_dot ||
-          unsigned_q8ta_im2col_accumulator_is_safe(
-              graph.size_at<int64_t>(-1, weight_data)),
+          graph.size_at<int64_t>(-1, weight_data) <=
+              kMaxUnsignedDotAccumulatorBytes,
       "Unsigned q8ta im2col convolution exceeds the accumulator bound");
 
   add_q8ta_conv2d_pw_node(
@@ -371,7 +353,7 @@ void q8ta_conv2d_im2col(
   const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
   const ValueRef weight_data = args.at(3);
   const int64_t k_per_group = graph.size_at<int64_t>(-1, weight_data);
-  const bool use_unsigned_dot = can_use_unsigned_dot(*adapter, k_per_group);
+  const bool use_unsigned_dot = can_use_unsigned_pw_dot(*adapter, k_per_group);
   q8ta_conv2d_im2col_impl(graph, use_unsigned_dot, args);
 }
 

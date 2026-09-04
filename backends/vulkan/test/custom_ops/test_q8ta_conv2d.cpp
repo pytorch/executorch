@@ -646,7 +646,12 @@ static std::vector<TestCase> generate_im2col_unsigned_test_cases(
         Padding(0, 0),
         Dilation(1, 1),
         1},
-       {2, -1, true, false, true, "none"}},
+       {.input_zero_point = 2,
+        .output_zero_point = -1,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = true,
+        .activation = "none"}},
       {{OutInChannels(8, 8),
         InputSize2D(5, 5),
         KernelSize(3, 3),
@@ -654,7 +659,12 @@ static std::vector<TestCase> generate_im2col_unsigned_test_cases(
         Padding(1, 1),
         Dilation(1, 1),
         1},
-       {-7, 3, true, false, false, "none"}},
+       {.input_zero_point = -7,
+        .output_zero_point = 3,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = false,
+        .activation = "none"}},
       {{OutInChannels(12, 8),
         InputSize2D(7, 7),
         KernelSize(3, 3),
@@ -662,7 +672,12 @@ static std::vector<TestCase> generate_im2col_unsigned_test_cases(
         Padding(1, 1),
         Dilation(1, 1),
         1},
-       {127, -5, true, false, true, "relu"}},
+       {.input_zero_point = 127,
+        .output_zero_point = -5,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = true,
+        .activation = "relu"}},
       {{OutInChannels(12, 8),
         InputSize2D(9, 9),
         KernelSize(3, 3),
@@ -670,7 +685,12 @@ static std::vector<TestCase> generate_im2col_unsigned_test_cases(
         Padding(2, 2),
         Dilation(2, 2),
         1},
-       {-128, 5, true, false, false, "none"}},
+       {.input_zero_point = -128,
+        .output_zero_point = 5,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = false,
+        .activation = "none"}},
       {{OutInChannels(8, 8),
         InputSize2D(6, 7),
         KernelSize(3, 3),
@@ -678,7 +698,12 @@ static std::vector<TestCase> generate_im2col_unsigned_test_cases(
         Padding(1, 1),
         Dilation(1, 1),
         2},
-       {11, -3, true, false, true, "relu"}},
+       {.input_zero_point = 11,
+        .output_zero_point = -3,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = true,
+        .activation = "relu"}},
       {{OutInChannels(1, 4),
         InputSize2D(90, 91),
         KernelSize(90, 91),
@@ -686,7 +711,13 @@ static std::vector<TestCase> generate_im2col_unsigned_test_cases(
         Padding(0, 0),
         Dilation(1, 1),
         1},
-       {0, -1, false, true, true, "none", 1.0f / 1000000.0f}},
+       {.input_zero_point = 0,
+        .output_zero_point = -1,
+        .use_extreme_values = false,
+        .use_accumulator_limit_values = true,
+        .has_bias = true,
+        .activation = "none",
+        .weight_scale = 1.0f / 1000000.0f}},
   };
 
   std::vector<TestCase> test_cases;
@@ -704,9 +735,31 @@ static std::vector<TestCase> generate_im2col_unsigned_test_cases(
         &options));
   }
 
+  if (impl_selector == "im2col_auto") {
+    Conv2dConfig config{
+        OutInChannels(1, 4),
+        InputSize2D(91, 91),
+        KernelSize(91, 91),
+        Stride(1, 1),
+        Padding(0, 0),
+        Dilation(1, 1),
+        1};
+    Im2colUnsignedTestOptions options;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name =
+        make_test_case_name(config, false, utils::kTexture3D, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kPackedInt8_4W4C,
+        impl_selector,
+        &options));
+  }
+
   const vkapi::Adapter& adapter = *context->adapter_ptr();
   if (impl_selector == "im2col_unsigned" ||
-      (impl_selector == "im2col_auto" && can_use_unsigned_dot(adapter, 4))) {
+      (impl_selector == "im2col_auto" && can_use_unsigned_pw_dot(adapter, 4))) {
     const int32_t buffer_output_channels = utils::safe_downcast<int32_t>(
         static_cast<int64_t>(adapter.max_texture2d_dim()) * 4 + 1);
     Conv2dConfig config{
@@ -977,8 +1030,11 @@ int main(int argc, char* argv[]) {
   const bool prefers_unsigned_dot =
       adapter.accelerates_unsigned_packed4x8_dot() &&
       !adapter.accelerates_signed_packed4x8_dot();
-  VK_CHECK_COND(can_use_unsigned_dot(adapter, 33025) == prefers_unsigned_dot);
-  VK_CHECK_COND(!can_use_unsigned_dot(adapter, 33026));
+  VK_CHECK_COND(
+      can_use_unsigned_pw_dot(adapter, kMaxUnsignedDotAccumulatorBytes) ==
+      prefers_unsigned_dot);
+  VK_CHECK_COND(
+      !can_use_unsigned_pw_dot(adapter, kMaxUnsignedDotAccumulatorBytes + 1));
 
   std::string im2col_impl_selector;
   for (int i = 1; i < argc; ++i) {
