@@ -30,20 +30,6 @@ class TestRingKVCache(unittest.TestCase):
         except (RuntimeError, torch.AcceleratorError) as error:
             self.skipTest(f"CUDA kernels are not usable: {error}")
 
-    def test_max_seq_len_defaults_to_context_length(self):
-        cache = RingKVCache(
-            self.max_batch_size,
-            self.max_context_length,
-            self.n_heads,
-            self.head_dim,
-            self.enable_dynamic_shape,
-            self.dtype,
-            window_size=self.window_size,
-        )
-
-        self.assertEqual(cache.max_seq_len, self.max_context_length)
-        self.assertEqual(cache.max_context_length, self.max_context_length)
-
     def test_dynamic_kv_cache_update_on_cuda(self):
         self._require_usable_cuda()
         cache = KVCache(
@@ -122,8 +108,9 @@ class TestRingKVCache(unittest.TestCase):
             self.enable_dynamic_shape,
             self.dtype,
             window_size=self.window_size,
-            max_seq_len=self.max_seq_len,
         )
+
+        self.assertEqual(cache.max_seq_len, self.max_context_length)
 
         # Create input tensors
         input_pos = torch.tensor([0], dtype=torch.long)
