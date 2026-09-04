@@ -2017,6 +2017,79 @@ def _names_a_build_directory(entry: str) -> bool:
     )
 
 
+# Absolute directories a shipped library may name. PyTorch's own is allowed because the wheel
+# neither declares nor bundles PyTorch, so an absolute path is the only way to reach it. The maths
+# library arch directories are allowed because a real installation spells them below a prefix, as
+# /opt/intel/mkl/lib/intel64, which the environment genuinely provides.
+#
+# Matched as a suffix. A substring test exempted any path merely CONTAINING one of these, so a
+# directory such as /home/user/torch/lib.backup/stage passed without reaching the build-directory
+# classifier. Both "_win" spellings are listed explicitly now that the match is anchored.
+_ALLOWED_ABSOLUTE_SUFFIXES = (
+    "/torch/lib",
+    "/lib/intel64",
+    "/lib/intel64_win",
+    "/lib/win-x64",
+)
+
+# The same arch directories with an EMPTY prefix, which is what PyTorch's exported link interface
+# records when its MKL_ROOT resolves to nothing. They point nowhere, and they sit ahead of the
+# relative hops packaging appends, which is the shadowing a CUDA toolkit prefix is rejected for.
+# Matched exactly rather than folded into the allowlist above, because the two differ only in the
+# prefix and a suffix match cannot tell them apart.
+_UNRESOLVED_MATH_DIRECTORIES = (
+    "/lib/intel64",
+    "/lib/intel64_win",
+    "/lib/win-x64",
+)
+
+# Held for a wheel that bundles PyTorch's libraries rather than declaring them: such a copy records
+# the CUDA toolkit directory of the machine that built IT, which is not this project's to fix.
+#
+# No wheel ships one today, so this clause never fires. It stays as a guard for a future
+# bundling change; if that never comes, delete it rather than leaving an unexercised exemption.
+_VENDORED_PREFIXES = (
+    "libtorch",
+    "libc10",
+    "libshm",
+    "libcaffe2",
+    "libgomp",
+    "libiomp",
+)
+
+
+def _unusable_runtime_path_kind(entry: str, library_name: str) -> str | None:
+    """Why a recorded runtime search path is one a user cannot use, or None if it is fine.
+
+    A library must not name an absolute directory the wheel has a relative route to. The one that
+    shipped was a CUDA toolkit prefix recorded on the build machine: it sat ahead of the relative
+    hop, so a user with a toolkit at the same prefix resolved the runtime from there instead of from
+    the declared dependency, and the builder always has one, so nothing exercised the hop. Stated as
+    a property rather than a list of known-bad directories, because a list only catches what someone
+    already thought of and that prefix was not on one.
+
+    Order matters. The build-directory branch runs before the suffix allowlist so that a torch
+    directory inside a CI worker tree is rejected rather than accepted for its /torch/lib ending.
+
+    Module scope so a unit test can call this directly and compare the reason it returns. Inline in
+    the caller's loop it could only be reached by building a wheel.
+    """
+    if not entry:
+        # The loader reads an empty entry as the process working directory.
+        return "the process working directory"
+    if not entry.startswith("/") or library_name.startswith(_VENDORED_PREFIXES):
+        return None
+    if _names_a_build_directory(entry):
+        return "inside a build of this project"
+    if entry.rstrip("/") in _UNRESOLVED_MATH_DIRECTORIES:
+        return "a maths library directory whose prefix resolved empty"
+    if any(
+        entry.rstrip("/").endswith(allowed) for allowed in _ALLOWED_ABSOLUTE_SUFFIXES
+    ):
+        return None
+    return "an absolute directory the wheel has a relative route to"
+
+
 def test_no_absolute_runtime_paths() -> None:
     """No shipped library may search a directory a user does not have.
 
@@ -2059,53 +2132,6 @@ def test_no_absolute_runtime_paths() -> None:
 
     package_dir = _installed_package_dir()
 
-    # This project's libraries must not name an absolute directory the wheel has a relative route to. The
-    # one that shipped was a CUDA toolkit prefix recorded on the build machine: it sat ahead of the relative
-    # hop, so a user with a toolkit at the same prefix resolved the CUDA runtime from there instead of from
-    # the declared dependency, and the builder always has one, so nothing exercised the hop.
-    #
-    # Stated as a property rather than a list of known-bad directories, because a list only catches what
-    # someone already thought of and that prefix was not on one.
-    #
-    # PyTorch's own directory is allowed: the wheel neither declares nor bundles PyTorch, so an absolute
-    # path is the only way to reach it. The maths library directories are allowed too. They arrive as
-    # -L flags in PyTorch's exported link interface, which CMake mirrors into the runtime path, so every
-    # library here that links PyTorch carries them. They point nowhere on any machine: measured on the
-    # link line as -L/lib/intel64 -L/lib/intel64_win -L/lib/win-x64, which is a prefix variable that
-    # resolved empty leaving the concatenation at the filesystem root.
-    #
-    # Matched as a suffix, the same way packaging decides what to strip at setup.py:1300. A substring
-    # test exempted any path merely CONTAINING one of these, so a directory such as
-    # /home/user/torch/lib.backup/stage passed without ever reaching the build-directory classifier.
-    # Both "_win" spellings are listed explicitly now that the match is anchored.
-    #
-    # A torch directory inside a CI worker tree, such as
-    # /home/ec2-user/actions-runner/_work/.../pytorch/torch/lib, is rejected rather than allowed: the
-    # build-directory classifier sees the worker components and the allowlist never gets to accept the
-    # /torch/lib suffix. Packaging strips the same entry, because every extension that names Torch now
-    # records a relative route to it.
-    allowed_absolute = (
-        "/torch/lib",
-        "/lib/intel64",
-        "/lib/intel64_win",
-        "/lib/win-x64",
-    )
-    # Held for a wheel that bundles PyTorch's libraries rather than declaring them: such a copy records
-    # the CUDA toolkit directory of the machine that built IT, which is not this project's to fix.
-    #
-    # No wheel ships one today. Six wheels across manylinux and macOS contain zero files with these
-    # prefixes, because the wheel declares torch as a dependency and there is no auditwheel step, so
-    # this clause is currently never false. It stays as a guard for a future bundling change; if that
-    # never comes, delete it rather than leaving an unexercised exemption in the check.
-    vendored_prefixes = (
-        "libtorch",
-        "libc10",
-        "libshm",
-        "libcaffe2",
-        "libgomp",
-        "libiomp",
-    )
-
     offenders = {}
     inspected = 0
     with_a_runtime_path = 0
@@ -2122,27 +2148,9 @@ def test_no_absolute_runtime_paths() -> None:
         with_a_runtime_path += 1
         bad = []
         for entry in entries:
-            if not entry:
-                bad.append("<empty>")
-            elif (
-                entry.startswith("/")
-                and not library.name.startswith(vendored_prefixes)
-                and (
-                    _names_a_build_directory(entry)
-                    or not any(
-                        entry.rstrip("/").endswith(allowed)
-                        for allowed in allowed_absolute
-                    )
-                )
-            ):
-                # Named separately so the message says which kind it is: a build directory and a
-                # toolkit prefix are the same defect with different causes.
-                kind = (
-                    "inside a build of this project"
-                    if _names_a_build_directory(entry)
-                    else "an absolute directory the wheel has a relative route to"
-                )
-                bad.append(f"{entry} ({kind})")
+            kind = _unusable_runtime_path_kind(entry, library.name)
+            if kind is not None:
+                bad.append(f"{entry or '<empty>'} ({kind})")
         if bad:
             offenders[str(library.relative_to(package_dir))] = bad
 
