@@ -7,12 +7,18 @@
 from typing import Callable, Dict, List
 
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
+from executorch.backends.qualcomm.builders.node_visitor import (
+    PER_CHANNEL_GROUP_ENCODING,
+    dq_ops,
+    q_ops,
+)
 from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
+    QCOM_SCALE,
+    QCOM_SCALES,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
@@ -145,6 +151,24 @@ def get_quant_attrs(
     # remap key for compatibility - block quantization only
     if dtype := quant_attrs.get("input_dtype", None):
         quant_attrs[QCOM_DTYPE] = dtype
+
+    # per-channel-group ops name their block scale tensor "scales"; QNN's
+    # per-block config reads it as QCOM_SCALE. Gate on the encoding rather than
+    # on the presence of the key: quantize_per_channel.default also has a
+    # "scales" argument but is consumed as a per-channel (not per-block) config.
+    if quant_node.target in PER_CHANNEL_GROUP_ENCODING:
+        scales = quant_attrs[QCOM_SCALES]
+        group_size = quant_attrs["group_size"]
+        num_input_features = quant_node.args[0].meta["val"].shape[-1]
+        # make_qnn_per_block_config infers blocks-per-axis from the scale
+        # shape; a mismatched checkpoint would otherwise lower silently wrong
+        if scales.shape[-1] * group_size != num_input_features:
+            raise ValueError(
+                f"group-wise scale shape {tuple(scales.shape)} is inconsistent "
+                f"with group_size {group_size} for weight with "
+                f"{num_input_features} input features"
+            )
+        quant_attrs[QCOM_SCALE] = scales
 
     quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs

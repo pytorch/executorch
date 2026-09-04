@@ -10,8 +10,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
+from executorch.backends.qualcomm.builders.node_visitor import (
+    PER_CHANNEL_GROUP_ENCODING,
+)
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.serialization.qc_schema import HtpArch
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
@@ -73,6 +77,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         # Label prefixed to op-support log lines so callers that reuse this
         # checker (e.g. the LPAI fallback pass) are distinguishable in the logs.
         self.phase = phase
+        self.soc_info = python_options.soc_info
         self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = get_current_qnn_manager(
             python_options.backend_options.backend_type, compiler_specs
@@ -80,6 +85,20 @@ class QnnOperatorSupport(OperatorSupportBase):
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         if node.op != "call_function" or node.target in not_supported_operator:
+            return False
+
+        # Per-channel-group lowers to blockwise expansion (the encoding LPBQ
+        # uses), which requires HTP >= V69. Pre-quantized weights bypass the
+        # quantizer's validate_lpbq_support check, so gate the delegation here.
+        if (
+            node.target in PER_CHANNEL_GROUP_ENCODING
+            and self.soc_info.htp_info.htp_arch < HtpArch.V69
+        ):
+            logger.warning(
+                f"[{self.phase}] {node.target.__name__} | Skipped: blockwise "
+                f"(per-channel-group) encoding requires HTP arch >= V69, got "
+                f"{self.soc_info.htp_info.htp_arch!r}"
+            )
             return False
 
         if node.target in to_be_implemented_operator:

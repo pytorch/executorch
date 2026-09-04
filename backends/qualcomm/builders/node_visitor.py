@@ -83,8 +83,16 @@ PER_TENSOR_ENCODING = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
 }
 
+# Group-wise (a.k.a. per-channel-group / blockwise) weight quantization, as used
+# by int4 LLM weights. QNN represents it with a per-block encoding.
+PER_CHANNEL_GROUP_ENCODING = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+}
+
 q_ops = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.torchao.quantize_affine.default,
@@ -94,6 +102,7 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
     exir_ops.edge.torchao.dequantize_affine.default,
 }
 
@@ -101,6 +110,9 @@ q_dq_map = {
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
@@ -175,6 +187,17 @@ class NodeVisitor:
 
     def make_qnn_per_block_config(self, node: torch.fx.Node, quant_attrs: Dict):
         import math
+
+        # blockwise expansion hardcodes a per-channel offset of 0, so an
+        # asymmetric weight would silently lower to a symmetric encoding
+        zero_points = quant_attrs.get(QCOM_ZERO_POINTS)
+        if zero_points is None:
+            zero_points = quant_attrs.get(QCOM_ZERO_POINT)
+        if zero_points is not None and torch.any(torch.as_tensor(zero_points) != 0):
+            raise ValueError(
+                "per-block quantization with non-zero zero_points is not supported; "
+                "QNN blockwise expansion requires symmetric quantization"
+            )
 
         quant_config = {
             QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
@@ -339,6 +362,7 @@ class NodeVisitor:
         per_block_encoding = {
             exir_ops.edge.torchao.quantize_affine.default,
             exir_ops.edge.torchao.dequantize_affine.default,
+            *PER_CHANNEL_GROUP_ENCODING,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)
