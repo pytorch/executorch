@@ -2,14 +2,14 @@
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="./" >
+<html lang="en" data-content_root="../../" >
 
   <head>
   <meta name="robots" content="noindex">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>NXP eIQ Neutron Backend &#8212; ExecuTorch main documentation</title>
+    <title>Using the MCUXpresso Example &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -19,50 +19,48 @@
   </script>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link href="../../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
 
   
-  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+  <link href="../../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
-    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=72e443bf" />
-    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
-    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
-    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="_static/navbar.css?v=67b2d36d" />
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=72e443bf" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/navbar.css?v=67b2d36d" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
-<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
-  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-    <script src="_static/documentation_options.js?v=a8da1a53"></script>
-    <script src="_static/doctools.js?v=888ff710"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="_static/copybutton.js?v=f281be69"></script>
-    <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'embedded-nxp';</script>
+    <script src="../../_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/nxp/nxp-mcuxpresso-example';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/embedded-nxp.html" />
-    <link rel="icon" href="_static/executorch-chip-logo.svg"/>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Getting Started Tutorial" href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html" />
-    <link rel="prev" title="Arm Ethos-U Backend" href="embedded-arm-ethos-u.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/nxp/nxp-mcuxpresso-example.html" />
+    <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -122,13 +120,13 @@
 </style>
 
 
-<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
-<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="../../_static/js/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
 <meta property="og:image" content="https://docs.pytorch.org/docs/stable/_static/img/pytorch_seo.png" />
-<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="../../_static/webfonts/all.min.css" crossorigin="anonymous">
 <meta http-equiv="Content-Security-Policy"
   content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
 <meta name="pytorch_project" content="">
@@ -308,7 +306,7 @@
     keyboard_shortcut: ""
   };
 </script>
-<script type="text/javascript" src="_static/js/runllm-widget.js"></script>
+<script type="text/javascript" src="../../_static/js/runllm-widget.js"></script>
 
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -348,7 +346,7 @@
     <div class="search-button__overlay"></div>
     <div class="search-button__search-container">
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -392,13 +390,13 @@
   
 
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../../index.html">
   
     
-    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    <img src="../../_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
     
     
-    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    <script>document.write(`<img src="../../_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
     
   
 </a>
@@ -424,13 +422,13 @@
   
 
 
-<a class="navbar-brand logo" href="index.html">
+<a class="navbar-brand logo" href="../../index.html">
   
     
-    <img src="_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
+    <img src="../../_static/img/et-logo.png" class="logo__image only-light" alt="ExecuTorch - Home"/>
     
     
-    <script>document.write(`<img src="_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
+    <script>document.write(`<img src="../../_static/img/et-logo.png" class="logo__image only-dark" alt="ExecuTorch - Home"/>`);</script>
     
   
 </a>
@@ -496,32 +494,32 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="intro-section.html">
+            <a class="nav-link nav-internal" href="../../intro-section.html">
               Intro
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-1">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../intro-overview.html">
                   ExecuTorch Overview
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../intro-how-it-works.html">
                   How ExecuTorch Works
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../getting-started-architecture.html">
                   Architecture and Components
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../concepts.html">
                   Concepts
                 </a>
               </li>
@@ -534,26 +532,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="quick-start-section.html">
+            <a class="nav-link nav-internal" href="../../quick-start-section.html">
               Quick Start
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-2">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../getting-started.html">
                   Getting Started with ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-building-from-source.html">
                   Building from Source
                 </a>
               </li>
@@ -566,26 +564,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="user-pathways.html">
+            <a class="nav-link nav-internal" href="../../user-pathways.html">
               Find Your Path
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-3">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../pathway-beginner.html">
                   Beginner Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../pathway-quickstart.html">
                   Quick Start Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../pathway-advanced.html">
                   Advanced Pathway
                 </a>
               </li>
@@ -598,38 +596,38 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+            <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
               Edge
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-4">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../android-section.html">
                   Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../ios-section.html">
                   iOS
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../desktop-section.html">
                   Desktop & Laptop Platforms
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../embedded-section.html">
                   Embedded Systems
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-troubleshooting.html">
                   Profiling and Debugging
                 </a>
               </li>
@@ -642,98 +640,98 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="backends-section.html">
+            <a class="nav-link nav-internal" href="../../backends-section.html">
               Backends
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-5">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../xnnpack/xnnpack-overview.html">
                   XNNPACK Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../cuda/cuda-overview.html">
                   CUDA Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../coreml/coreml-overview.html">
                   Core ML Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/mlx/mlx-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../mlx/mlx-overview.html">
                   MLX Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../vulkan/vulkan-overview.html">
                   Vulkan Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/webgpu/webgpu-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../webgpu/webgpu-overview.html">
                   WebGPU Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backends-qualcomm.html">
                   Qualcomm AI Engine Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backends-mediatek.html">
                   MediaTek Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-ethos-u/arm-ethos-u-overview.html">
                   Arm Ethos-U Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-cortex-m/arm-cortex-m-overview.html">
                   Arm Cortex-M Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-vgf/arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../build-run-openvino.html">
                   Building and Running ExecuTorch with OpenVINO Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backends-cadence.html">
                   Cadence Xtensa Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../samsung/samsung-overview.html">
                   Samsung Exynos Backend
                 </a>
               </li>
@@ -746,56 +744,56 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+            <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
               LLMs
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-6">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/getting-started.html">
                   Deploying LLMs to ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/export-llm.html">
                   Exporting LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/export-llm-optimum.html">
                   Exporting LLMs with HuggingFace’s Optimum ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/export-custom-llm.html">
                   Exporting custom LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/run-with-c-plus-plus.html">
                   Running LLMs with C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
                   Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-android.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/run-on-android.html">
                   Running LLMs on Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/run-on-ios.html">
                   Running LLMs on iOS
                 </a>
               </li>
@@ -808,56 +806,56 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+            <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
               Advanced
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-7">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../quantization-optimization.html">
                   Quantization & Optimization
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="working-with-cv-models.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../working-with-cv-models.html">
                   Working with Computer Vision Models
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../kernel-library-advanced.html">
                   Kernel Library Deep Dive
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backend-delegate-advanced.html">
                   Backend & Delegates
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../runtime-integration-advanced.html">
                   Runtime & Integration
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../compiler-ir-advanced.html">
                   Compiler & IR
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../file-formats-advanced.html">
                   File Formats
                 </a>
               </li>
@@ -870,68 +868,68 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="tools-section.html">
+            <a class="nav-link nav-internal" href="../../tools-section.html">
               Tools
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-8">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../devtools-overview.html">
                   Introduction to the ExecuTorch Developer Tools
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../bundled-io.html">
                   Bundled Program – a Tool for ExecuTorch Model Validation
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../etrecord.html">
                   Prerequisite | ETRecord - ExecuTorch Record
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../etdump.html">
                   Prerequisite | ETDump - ExecuTorch Dump
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../runtime-profiling.html">
                   Profiling Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../model-debugging.html">
                   Debugging Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../model-inspector.html">
                   Inspector APIs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../memory-planning-inspection.html">
                   Memory Planning Inspection in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../devtools-tutorial.html">
                   Developer Tools Usage Tutorials
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="visualize.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../visualize.html">
                   Visualize a Model using ModelExplorer
                 </a>
               </li>
@@ -952,13 +950,13 @@ document.write(`
         <ul id="pst-nav-more-links" class="dropdown-menu">
           
             <li class="">
-              <a class="nav-link dropdown-item nav-internal" href="api-section.html">
+              <a class="nav-link dropdown-item nav-internal" href="../../api-section.html">
                 API
               </a>
             </li>
           
             <li class="">
-              <a class="nav-link dropdown-item nav-internal" href="support-section.html">
+              <a class="nav-link dropdown-item nav-internal" href="../../support-section.html">
                 Support
               </a>
             </li>
@@ -990,7 +988,7 @@ document.write(`
         <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1092,7 +1090,9 @@ document.write(`
       
       
       
-      <div class="bd-sidebar-primary bd-sidebar">
+        
+      
+      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
         
 
 
@@ -1160,32 +1160,32 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="intro-section.html">
+            <a class="nav-link nav-internal" href="../../intro-section.html">
               Intro
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-1">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../intro-overview.html">
                   ExecuTorch Overview
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="intro-how-it-works.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../intro-how-it-works.html">
                   How ExecuTorch Works
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started-architecture.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../getting-started-architecture.html">
                   Architecture and Components
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="concepts.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../concepts.html">
                   Concepts
                 </a>
               </li>
@@ -1198,26 +1198,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="quick-start-section.html">
+            <a class="nav-link nav-internal" href="../../quick-start-section.html">
               Quick Start
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-2">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../getting-started.html">
                   Getting Started with ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-building-from-source.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-building-from-source.html">
                   Building from Source
                 </a>
               </li>
@@ -1230,26 +1230,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="user-pathways.html">
+            <a class="nav-link nav-internal" href="../../user-pathways.html">
               Find Your Path
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-3">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-beginner.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../pathway-beginner.html">
                   Beginner Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-quickstart.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../pathway-quickstart.html">
                   Quick Start Pathway
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="pathway-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../pathway-advanced.html">
                   Advanced Pathway
                 </a>
               </li>
@@ -1262,38 +1262,38 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="edge-platforms-section.html">
+            <a class="nav-link nav-internal" href="../../edge-platforms-section.html">
               Edge
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-4">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="android-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../android-section.html">
                   Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="ios-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../ios-section.html">
                   iOS
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="desktop-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../desktop-section.html">
                   Desktop & Laptop Platforms
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="embedded-section.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../embedded-section.html">
                   Embedded Systems
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-troubleshooting.html">
                   Profiling and Debugging
                 </a>
               </li>
@@ -1306,98 +1306,98 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="backends-section.html">
+            <a class="nav-link nav-internal" href="../../backends-section.html">
               Backends
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-5">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/xnnpack/xnnpack-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../xnnpack/xnnpack-overview.html">
                   XNNPACK Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/cuda/cuda-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../cuda/cuda-overview.html">
                   CUDA Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/coreml/coreml-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../coreml/coreml-overview.html">
                   Core ML Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/mlx/mlx-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../mlx/mlx-overview.html">
                   MLX Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/vulkan/vulkan-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../vulkan/vulkan-overview.html">
                   Vulkan Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/webgpu/webgpu-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../webgpu/webgpu-overview.html">
                   WebGPU Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-qualcomm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backends-qualcomm.html">
                   Qualcomm AI Engine Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-mediatek.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backends-mediatek.html">
                   MediaTek Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-ethos-u/arm-ethos-u-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-ethos-u/arm-ethos-u-overview.html">
                   Arm Ethos-U Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-cortex-m/arm-cortex-m-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-cortex-m/arm-cortex-m-overview.html">
                   Arm Cortex-M Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-vgf/arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="build-run-openvino.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../build-run-openvino.html">
                   Building and Running ExecuTorch with OpenVINO Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/nxp/nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends-cadence.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backends-cadence.html">
                   Cadence Xtensa Backend
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backends/samsung/samsung-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../samsung/samsung-overview.html">
                   Samsung Exynos Backend
                 </a>
               </li>
@@ -1410,56 +1410,56 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+            <a class="nav-link nav-internal" href="../../llm/working-with-llms.html">
               LLMs
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-6">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/getting-started.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/getting-started.html">
                   Deploying LLMs to ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/export-llm.html">
                   Exporting LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-llm-optimum.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/export-llm-optimum.html">
                   Exporting LLMs with HuggingFace’s Optimum ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/export-custom-llm.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/export-custom-llm.html">
                   Exporting custom LLMs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-with-c-plus-plus.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/run-with-c-plus-plus.html">
                   Running LLMs with C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">
                   Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-android.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/run-on-android.html">
                   Running LLMs on Android
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="llm/run-on-ios.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../llm/run-on-ios.html">
                   Running LLMs on iOS
                 </a>
               </li>
@@ -1472,56 +1472,56 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="advanced-topics-section.html">
+            <a class="nav-link nav-internal" href="../../advanced-topics-section.html">
               Advanced
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-7">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="quantization-optimization.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../quantization-optimization.html">
                   Quantization & Optimization
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-export.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-export.html">
                   Model Export and Lowering
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="working-with-cv-models.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../working-with-cv-models.html">
                   Working with Computer Vision Models
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="kernel-library-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../kernel-library-advanced.html">
                   Kernel Library Deep Dive
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="backend-delegate-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../backend-delegate-advanced.html">
                   Backend & Delegates
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-integration-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../runtime-integration-advanced.html">
                   Runtime & Integration
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="compiler-ir-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../compiler-ir-advanced.html">
                   Compiler & IR
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="file-formats-advanced.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../file-formats-advanced.html">
                   File Formats
                 </a>
               </li>
@@ -1534,68 +1534,68 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="tools-section.html">
+            <a class="nav-link nav-internal" href="../../tools-section.html">
               Tools
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-8">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../devtools-overview.html">
                   Introduction to the ExecuTorch Developer Tools
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="bundled-io.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../bundled-io.html">
                   Bundled Program – a Tool for ExecuTorch Model Validation
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etrecord.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../etrecord.html">
                   Prerequisite | ETRecord - ExecuTorch Record
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="etdump.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../etdump.html">
                   Prerequisite | ETDump - ExecuTorch Dump
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-profiling.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../runtime-profiling.html">
                   Profiling Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-debugging.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../model-debugging.html">
                   Debugging Models in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="model-inspector.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../model-inspector.html">
                   Inspector APIs
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="memory-planning-inspection.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../memory-planning-inspection.html">
                   Memory Planning Inspection in ExecuTorch
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="devtools-tutorial.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../devtools-tutorial.html">
                   Developer Tools Usage Tutorials
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="visualize.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../visualize.html">
                   Visualize a Model using ModelExplorer
                 </a>
               </li>
@@ -1608,50 +1608,50 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="api-section.html">
+            <a class="nav-link nav-internal" href="../../api-section.html">
               API
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-9">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="export-to-executorch-api-reference.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../export-to-executorch-api-reference.html">
                   Export API Reference
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="executorch-runtime-api-reference.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../executorch-runtime-api-reference.html">
                   Runtime API Reference
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="runtime-python-api-reference.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../runtime-python-api-reference.html">
                   Runtime Python API Reference
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="api-life-cycle.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../api-life-cycle.html">
                   API Life Cycle and Deprecation Policy
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="extension-module.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../extension-module.html">
                   Running an ExecuTorch Model Using the Module Extension in C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="extension-tensor.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../extension-tensor.html">
                   Managing Tensor Memory in C++
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="running-a-model-cpp-tutorial.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../running-a-model-cpp-tutorial.html">
                   Detailed C++ Runtime APIs Tutorial
                 </a>
               </li>
@@ -1664,26 +1664,26 @@ document.write(`
         
           
           <div class="nav-item-with-toggle">
-            <a class="nav-link nav-internal" href="support-section.html">
+            <a class="nav-link nav-internal" href="../../support-section.html">
               Support
             </a>
           </div>
           <ul class="dropdown-menu" id="dropdown-10">
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-faqs.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-faqs.html">
                   Frequently Asked Questions
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="using-executorch-troubleshooting.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../using-executorch-troubleshooting.html">
                   Profiling and Debugging
                 </a>
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="contributing.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../contributing.html">
                   Contributing to ExecuTorch
                 </a>
               </li>
@@ -1720,7 +1720,7 @@ document.write(`
           <div class="navbar-item">
   
 <form class="bd-search d-flex align-items-center"
-      action="search.html"
+      action="../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -1805,114 +1805,6 @@ document.write(`
     
   </div>
   
-    <div class="sidebar-primary-items__start sidebar-primary__section">
-        <div class="sidebar-primary-item">
-<nav class="bd-docs-nav bd-links"
-     aria-label="Section Navigation">
-  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
-  <div class="bd-toc-item navbar-nav"><p aria-level="2" class="caption" role="heading"><span class="caption-text">Edge Platforms</span></p>
-<ul class="current nav bd-sidenav">
-<li class="toctree-l1 has-children"><a class="reference internal" href="android-section.html">Android</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="android-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3 has-children"><a class="reference internal" href="android-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="android-vulkan.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-<li class="toctree-l3"><a class="reference internal" href="android-qualcomm.html">Qualcomm AI Engine Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="android-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="android-arm-vgf.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="android-samsung-exynos.html">Samsung Exynos Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="android-examples.html">Examples &amp; Demos</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="backends/arm-vgf/tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/index.html">Java API Reference (Javadoc)</a></li>
-</ul>
-</details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="ios-section.html">iOS</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="ios-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3 has-children"><a class="reference internal" href="ios-coreml.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="ios-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-</ul>
-</details></li>
-<li class="toctree-l2"><a class="reference internal" href="ios-examples.html">Examples &amp; Demos</a></li>
-</ul>
-</details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="desktop-section.html">Desktop &amp; Laptop Platforms</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3 has-children"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-<li class="toctree-l3"><a class="reference internal" href="desktop-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="backends/coreml/coreml-overview.html">Core ML Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l4"><a class="reference internal" href="backends/coreml/coreml-troubleshooting.html">Troubleshooting</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/coreml/coreml-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/coreml/coreml-quantization.html">Quantization</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/coreml/coreml-op-support.html">Op support</a></li>
-</ul>
-</details></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="backends/mlx/mlx-overview.html">MLX Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-troubleshooting.html">Troubleshooting</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-quantization.html">Quantization</a></li>
-<li class="toctree-l4"><a class="reference internal" href="backends/mlx/mlx-op-support.html">Op Support</a></li>
-</ul>
-</details></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="backends/webgpu/webgpu-overview.html">WebGPU Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l4"><a class="reference internal" href="backends/webgpu/webgpu-op-support.html">Operator Support</a></li>
-</ul>
-</details></li>
-</ul>
-</details></li>
-<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
-</ul>
-</details></li>
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
-<li class="toctree-l2"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
-<li class="toctree-l2"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="embedded-backends.html">Backends</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="embedded-arm-cortex-m.html">Arm Cortex-M Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="embedded-cadence.html">Cadence Xtensa Backend</a></li>
-<li class="toctree-l3 has-children"><a class="reference internal" href="embedded-arm-ethos-u.html">Arm Ethos-U Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-<li class="toctree-l3 current active has-children"><a class="current reference internal" href="#">NXP eIQ Neutron Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="simple">
-</ul>
-</details></li>
-</ul>
-</details></li>
-<li class="toctree-l2"><a class="reference internal" href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="zephyr_alif_tutorial.html">Zephyr: MobileNetV2 with Ethos-U NPU (Corstone FVP &amp; Alif E8)</a></li>
-</ul>
-</details></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
-</ul>
-</div>
-</nav></div>
-    </div>
-  
   
   <div class="sidebar-primary-items__end sidebar-primary__section">
   </div>
@@ -1937,26 +1829,15 @@ document.write(`
 
 
 
-
-
 <nav aria-label="Breadcrumb" class="d-print-none">
   <ul class="bd-breadcrumbs">
     
     <li class="breadcrumb-item breadcrumb-home">
-      <a href="index.html" class="nav-link" aria-label="Home">
+      <a href="../../index.html" class="nav-link" aria-label="Home">
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    
-    <li class="breadcrumb-item"><a href="edge-platforms-section.html" class="nav-link">Edge</a></li>
-    
-    
-    <li class="breadcrumb-item"><i class="fa-solid fa-ellipsis"></i></li>
-    
-    
-    <li class="breadcrumb-item"><a href="embedded-backends.html" class="nav-link">Backends</a></li>
-    
-    <li class="breadcrumb-item active" aria-current="page">NXP eIQ...</li>
+    <li class="breadcrumb-item active" aria-current="page">Using the...</li>
   </ul>
 </nav>
 </div>
@@ -1998,26 +1879,8 @@ document.write(`
   <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="edge-platforms-section.html">
-      <meta itemprop="name" content="Edge">
+      <meta itemprop="name" content="Using the MCUXpresso Example">
       <meta itemprop="position" content="1">
-    </div>
-    
-    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="embedded-section.html">
-      <meta itemprop="name" content="Embedded Systems">
-      <meta itemprop="position" content="2">
-    </div>
-    
-    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="embedded-backends.html">
-      <meta itemprop="name" content="Backends">
-      <meta itemprop="position" content="3">
-    </div>
-    
-    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="NXP eIQ Neutron Backend">
-      <meta itemprop="position" content="4">
     </div>
   </div>
 
@@ -2030,71 +1893,119 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="nxp-eiq-neutron-backend">
-<h1>NXP eIQ Neutron Backend<a class="headerlink" href="#nxp-eiq-neutron-backend" title="Link to this heading">#</a></h1>
-<p>This manual page is dedicated to introduction NXP eIQ Neutron backend.
-NXP offers accelerated machine learning models inference on edge devices.
-To learn more about NXP’s machine learning acceleration platform, please refer to <a class="reference external" href="https://www.nxp.com/applications/technologies/ai-and-machine-learning:MACHINE-LEARNING">the official NXP website</a>.</p>
-<div class="admonition tip">
-For up-to-date status about running ExecuTorch on Neutron backend please visit the <a href="https://github.com/pytorch/executorch/blob/main/backends/nxp/README.md">manual page</a>.
-</div>
-<section id="features">
-<h2>Features<a class="headerlink" href="#features" title="Link to this heading">#</a></h2>
-<p>ExecuTorch v1.4 supports running machine learning models on selected NXP chips (for now only <code class="docutils literal notranslate"><span class="pre">i.MXRT700</span></code>).
-Among currently supported machine learning models are:</p>
-<ul class="simple">
-<li><p>Convolution-based neutral networks</p></li>
-<li><p>Full support for MobileNetV2 and CifarNet</p></li>
-</ul>
-</section>
-<section id="target-requirements">
-<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p>Hardware with NXP’s <a class="reference external" href="https://www.nxp.com/products/i.MX-RT700">i.MXRT700</a> chip or a evaluation board like MIMXRT700-EVK.</p></li>
-</ul>
-</section>
-<section id="development-requirements">
-<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p><a class="reference external" href="https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE">MCUXpresso IDE</a> or <a class="reference external" href="https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC">MCUXpresso Visual Studio Code extension</a></p></li>
-<li><p><a class="reference external" href="https://mcuxpresso.nxp.com/mcuxsdk/26.06.00/html/index.html">MCUXpresso SDK 26.06</a></p></li>
-<li><p>eIQ Neutron SDK version 3.2.1, what you can download from eIQ PyPI:</p></li>
-</ul>
-<div class="highlight-commandline notranslate"><div class="highlight"><pre><span></span>$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.2.1
+  <section id="using-the-mcuxpresso-example">
+<h1>Using the MCUXpresso Example<a class="headerlink" href="#using-the-mcuxpresso-example" title="Link to this heading">#</a></h1>
+<p>This example demonstrates how to build and run the ExecuTorch CifarNet application for the NXP RT700 platform using the MCUXpresso SDK and the GNU Arm Embedded Toolchain. Before building the project, make sure that all required dependencies are installed and that the necessary environment variables are configured correctly.</p>
+<blockquote>
+<div><p><strong>Tip:</strong> The <code class="docutils literal notranslate"><span class="pre">test_build_from_scratch.sh</span></code> script automates all the steps described in this guide, including downloading the ARM GNU toolchain, preparing the model, and downloading the MCUXpresso SDK using the <code class="docutils literal notranslate"><span class="pre">west</span></code> tool. If you prefer a fully automated setup, you can run it directly instead of following the manual steps below.</p>
+</div></blockquote>
+<p>All scripts described in this guide are located in the following directory of the ExecuTorch repository:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>examples/nxp/mcuxpresso/imxrt700/executorch_cifarnet/
 </pre></div>
 </div>
-<p>Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script:</p>
-<div class="highlight-commandline notranslate"><div class="highlight"><pre><span></span>$ ./examples/nxp/setup.sh
+<section id="install-the-arm-gnu-toolchain">
+<h2>1. Install the Arm GNU Toolchain<a class="headerlink" href="#install-the-arm-gnu-toolchain" title="Link to this heading">#</a></h2>
+<p>First, download the Arm GCC cross-compilation toolchain that is supported by the RT700 platform:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz
 </pre></div>
 </div>
-</section>
-<section id="using-nxp-eiq-backend">
-<h2>Using NXP eIQ Backend<a class="headerlink" href="#using-nxp-eiq-backend" title="Link to this heading">#</a></h2>
-<p>To test the eIQ Neutron Backend, both AoT flow for model preparation and Runtime for execution, refer to the <a class="reference internal" href="#tutorials/nxp-basic-tutorial.md"><span class="xref myst">Getting started with eIQ Neutron NPU ExecuTorch backend</span></a></p>
-<p>For a quick overview how to convert a custom PyTorch model, take a look at our <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/nxp/aot_neutron_compile.py">example python script</a>.</p>
-</section>
-<section id="runtime-integration">
-<h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Link to this heading">#</a></h2>
-<p>An example runtime application using the eIQ NSYS (eIQ Neutron Simulator) is available <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/executor_runner/">examples/nxp/executor_runner</a>, described in the tutorial <a class="reference internal" href="#tutorials/nxp-basic-tutorial.md"><span class="xref myst">Getting started with eIQ Neutron NPU ExecuTorch backend</span></a></p>
-<p>To learn how to run the converted model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list.
-For more finegrained tutorial, visit <a class="reference external" href="https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/example_applications.html">this manual page</a>.</p>
-<p>For guideline how to update the eIQ Neutron Runtime on MCUXpresso SDK, follow the instructions from the eIQ Neutron SDK package <code class="docutils literal notranslate"><span class="pre">docs/NeutronSDKUserGuide.md</span></code> available
-here https://www.nxp.com/design/design-center/software/eiq-ai-development-environment/eiq-toolkit-for-end-to-end-model-development-and-deployment:EIQ-TOOLKIT.</p>
-</section>
-<section id="using-the-mcuxpresso-example">
-<h2>Using the MCUXpresso Example<a class="headerlink" href="#using-the-mcuxpresso-example" title="Link to this heading">#</a></h2>
-<p><a class="reference internal" href="#nxp-mcuxpresso-example.md"><span class="xref myst">This page</span></a> demonstrates how to build and run the ExecuTorch CIFARNet example from MCUXpresso SDK.</p>
-</section>
-<section id="reference">
-<h2>Reference<a class="headerlink" href="#reference" title="Link to this heading">#</a></h2>
-<p><strong>→<span class="xref std std-doc">nxp-partitioner</span> — Partitioner options.</strong></p>
-<p><strong>→<span class="xref std std-doc">nxp-quantization</span> — Supported quantization schemes.</strong></p>
-<p><strong>→<span class="xref std std-doc">tutorials/nxp-tutorials</span> — Tutorials.</strong></p>
-<p><strong>→<span class="xref std std-doc">nxp-dim-order</span> — Dim order support (channels last inputs).</strong></p>
-<p><strong>→<span class="xref std std-doc">nxp-kernel-selection</span> — Neutron Firmware Kernel Selection support.</strong></p>
-<p><strong>→<span class="xref std std-doc">nxp-profiling</span> — Neutron models profiling.</strong></p>
-<div class="toctree-wrapper compound">
+<p>After extracting the archive, create an environment variable called <code class="docutils literal notranslate"><span class="pre">ARMGCC_DIR</span></code> that points to the root directory of the toolchain installation. The build scripts use this variable to locate the compiler, linker, and other required tools.</p>
+<p>Example on Linux:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ARMGCC_DIR</span><span class="o">=</span>/path/to/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi
+</pre></div>
 </div>
+<p>To verify the installation, you can run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">$ARMGCC_DIR</span>/bin/arm-none-eabi-gcc<span class="w"> </span>--version
+</pre></div>
+</div>
+<p>The command should print the installed compiler version.</p>
+</section>
+<section id="download-the-mcuxpresso-sdk">
+<h2>2. Download the MCUXpresso SDK<a class="headerlink" href="#download-the-mcuxpresso-sdk" title="Link to this heading">#</a></h2>
+<p>Next, download MCUXpresso SDK for the RT700 device family using the west tool:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>west
+west<span class="w"> </span>init<span class="w"> </span>-m<span class="w"> </span>https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git<span class="w"> </span>mcuxpresso-sdk
+<span class="nb">pushd</span><span class="w"> </span>mcuxpresso-sdk
+west<span class="w"> </span>update_board<span class="w"> </span>--set<span class="w"> </span>board<span class="w"> </span>mimxrt700evk
+<span class="nb">popd</span>
+</pre></div>
+</div>
+<p>Afterwards, configure the <code class="docutils literal notranslate"><span class="pre">SdkRootDirPath</span></code> environment variable to point to the mcuxsdk directory in the downloaded dir.</p>
+<p>Example on Linux:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">SdkRootDirPath</span><span class="o">=</span>/path/to/mcuxpresso-sdk/mcuxsdk
+</pre></div>
+</div>
+<p>The build system relies on this variable to locate board support packages, middleware components, startup code, linker scripts, and device-specific libraries.</p>
+</section>
+<section id="prepare-the-model-header-file">
+<h2>3. Prepare the Model Header File<a class="headerlink" href="#prepare-the-model-header-file" title="Link to this heading">#</a></h2>
+<p>Before building the application, a compiled model must be provided as a C header file named <code class="docutils literal notranslate"><span class="pre">model_pte.h</span></code> and placed in the current directory. Run the provided helper script to generate it:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./prepare_model.sh
+</pre></div>
+</div>
+<p>The script performs the following steps:</p>
+<ol class="arabic simple">
+<li><p>Installs ExecuTorch and its Python dependencies.</p></li>
+<li><p>Installs the <code class="docutils literal notranslate"><span class="pre">eiq-neutron-sdk</span></code> Python package in the version that has been tested with the current ExecuTorch release.</p></li>
+<li><p>Compiles the CifarNet model using the NXP ExecuTorch ahead-of-time (AoT) pipeline and produces a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> model file.</p></li>
+<li><p>Converts the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file into the <code class="docutils literal notranslate"><span class="pre">model_pte.h</span></code> C header, with the correct memory-section attributes for the RT700 target.</p></li>
+</ol>
+<blockquote>
+<div><p><strong>Important:</strong> The MCUXpresso SDK package includes a pre-built CifarNet model and a set of Neutron libraries, but this build flow deliberately does <strong>not</strong> use either of them. Instead, <code class="docutils literal notranslate"><span class="pre">prepare_model.sh</span></code> installs the <code class="docutils literal notranslate"><span class="pre">eiq-neutron-sdk</span></code> version that was tested with the current ExecuTorch release, compiles the model from scratch, and the linker later picks up the matching Neutron libraries from that same installation. This keeps the ExecuTorch AoT compiler, the model bytecode, the Neutron driver, the Neutron firmware, and the ExecuTorch runtime all in sync.</p>
+</div></blockquote>
+<p>Once the script finishes, verify that <code class="docutils literal notranslate"><span class="pre">model_pte.h</span></code> was created in the project directory before proceeding to the build step.</p>
+</section>
+<section id="build-the-application">
+<h2>4. Build the Application<a class="headerlink" href="#build-the-application" title="Link to this heading">#</a></h2>
+<p>Once the environment variables have been configured and <code class="docutils literal notranslate"><span class="pre">model_pte.h</span></code> is present in the project directory, set the <code class="docutils literal notranslate"><span class="pre">NEUTRON_LIB_DIR</span></code> variable to the directory that contains the Neutron static libraries shipped with the eiq-neutron-sdk:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">NEUTRON_LIB_DIR</span><span class="o">=</span>/path/to/eiq_neutron_sdk/libs
+</pre></div>
+</div>
+<p>The build script expects the following libraries to exist in that directory:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">libNeutronDriver.a</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">libNeutronFirmware.a</span></code></p></li>
+</ul>
+<p>Then build the project by executing the provided script:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./build_example.sh
+</pre></div>
+</div>
+<p>The script validates all required inputs, configures CMake, compiles the source code, links the application, and generates the executable image:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>flash_release/executorch_cifarnet.elf
+</pre></div>
+</div>
+<p>If the build completes successfully, the ELF file will be available and ready for programming onto the target board.</p>
+</section>
+<section id="flash-the-application">
+<h2>5. Flash the Application<a class="headerlink" href="#flash-the-application" title="Link to this heading">#</a></h2>
+<p>The generated application can be programmed onto the RT700 device using SEGGER J-Link tools.</p>
+<section id="linux">
+<h3>Linux<a class="headerlink" href="#linux" title="Link to this heading">#</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span><span class="s2">"loadfile flash_release/executorch_cifarnet.elf"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="se">\</span>
+/opt/SEGGER/JLink_V796k/JLinkExe<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-IF<span class="w"> </span>SWD<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-speed<span class="w"> </span>auto<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Device<span class="w"> </span>MIMXRT798S_M33_0
+</pre></div>
+</div>
+<p>Before flashing, ensure that:</p>
+<ul class="simple">
+<li><p>The board is powered on.</p></li>
+<li><p>The JLink debugger probe is flashed on device, if not see <a class="reference external" href="https://mcuxpresso.nxp.com/mcuxsdk/latest/html/boards/RT/mimxrt700evk/gettingStartedXplorer/topics/program_lpc-link2_with_segger_j-link.html">documentation</a> how to flash it.</p></li>
+<li><p>The J-Link debugger is connected to the target.</p></li>
+<li><p>The SWD interface is available and correctly wired.</p></li>
+<li><p>No other debugging application is currently using the J-Link connection.</p></li>
+</ul>
+<p>The programming process typically takes only a few seconds. Once the image has been loaded successfully, the application can be started directly from flash memory.</p>
+</section>
+</section>
+<section id="running-the-example">
+<h2>6. Running the Example<a class="headerlink" href="#running-the-example" title="Link to this heading">#</a></h2>
+<p>After the firmware is programmed, reset the board and open a serial terminal connected to the device’s debug UART interface. The application will initialize the hardware, load the embedded CifarNet model, and begin performing image inference.</p>
+<p>During execution, inference results and diagnostic messages are printed to the terminal. The included demonstration image contains a cat, and the model is expected to classify the image accordingly.</p>
+<p>A successful run produces output similar to the following:</p>
+<p><img alt="example" src="../../_images/terminal.png" /></p>
+<p>This example serves as a basic validation that the ExecuTorch runtime, model integration, SDK configuration, and hardware platform are all functioning correctly. It can also be used as a starting point for evaluating custom neural network models and experimenting with on-device machine learning workloads on the RT700 platform.</p>
 </section>
 </section>
 
@@ -2140,24 +2051,6 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
 </div>
 
 <div class="prev-next-area">
-    <a class="left-prev"
-       href="embedded-arm-ethos-u.html"
-       title="previous page">
-      <i class="fa-solid fa-angle-left"></i>
-      <div class="prev-next-info">
-        <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Arm Ethos-U Backend</p>
-      </div>
-    </a>
-    <a class="right-next"
-       href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html"
-       title="next page">
-      <div class="prev-next-info">
-        <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Getting Started Tutorial</p>
-      </div>
-      <i class="fa-solid fa-angle-right"></i>
-    </a>
 </div>
 
 <div class="footer-info">
@@ -2179,24 +2072,6 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
                 <footer class="prev-next-footer d-print-none">
                   
 <div class="prev-next-area">
-    <a class="left-prev"
-       href="embedded-arm-ethos-u.html"
-       title="previous page">
-      <i class="fa-solid fa-angle-left"></i>
-      <div class="prev-next-info">
-        <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Arm Ethos-U Backend</p>
-      </div>
-    </a>
-    <a class="right-next"
-       href="backends/arm-ethos-u/tutorials/ethos-u-getting-started.html"
-       title="next page">
-      <div class="prev-next-info">
-        <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Getting Started Tutorial</p>
-      </div>
-      <i class="fa-solid fa-angle-right"></i>
-    </a>
 </div>
                 </footer>
               
@@ -2215,13 +2090,15 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#features">Features</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#target-requirements">Target Requirements</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-requirements">Development Requirements</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-nxp-eiq-backend">Using NXP eIQ Backend</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime-integration">Runtime Integration</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-mcuxpresso-example">Using the MCUXpresso Example</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reference">Reference</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#install-the-arm-gnu-toolchain">1. Install the Arm GNU Toolchain</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#download-the-mcuxpresso-sdk">2. Download the MCUXpresso SDK</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prepare-the-model-header-file">3. Prepare the Model Header File</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-the-application">4. Build the Application</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#flash-the-application">5. Flash the Application</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#linux">Linux</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#running-the-example">6. Running the Example</a></li>
 </ul>
   </nav></div>
     
@@ -2229,7 +2106,7 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/embedded-nxp.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/nxp/nxp-mcuxpresso-example.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -2243,7 +2120,7 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/embedded-nxp.md.txt">
+      <a href="../../_sources/backends/nxp/nxp-mcuxpresso-example.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2267,8 +2144,8 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
-<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+  <script src="../../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
 
   
 
@@ -2396,7 +2273,7 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
 <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/img/pytorch-x.svg">
+    <img class="close-button" src="../../_static/img/pytorch-x.svg">
   </div>
 </div>
   
@@ -2443,11 +2320,11 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "NXP eIQ Neutron Backend",
-       "headline": "NXP eIQ Neutron Backend",
+       "name": "Using the MCUXpresso Example",
+       "headline": "Using the MCUXpresso Example",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/embedded-nxp.html",
-       "articleBody": "NXP eIQ Neutron Backend# This manual page is dedicated to introduction NXP eIQ Neutron backend. NXP offers accelerated machine learning models inference on edge devices. To learn more about NXP\u2019s machine learning acceleration platform, please refer to the official NXP website. For up-to-date status about running ExecuTorch on Neutron backend please visit the manual page. Features# ExecuTorch v1.4 supports running machine learning models on selected NXP chips (for now only i.MXRT700). Among currently supported machine learning models are: Convolution-based neutral networks Full support for MobileNetV2 and CifarNet Target Requirements# Hardware with NXP\u2019s i.MXRT700 chip or a evaluation board like MIMXRT700-EVK. Development Requirements# MCUXpresso IDE or MCUXpresso Visual Studio Code extension MCUXpresso SDK 26.06 eIQ Neutron SDK version 3.2.1, what you can download from eIQ PyPI: $ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.2.1 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: $ ./examples/nxp/setup.sh Using NXP eIQ Backend# To test the eIQ Neutron Backend, both AoT flow for model preparation and Runtime for execution, refer to the Getting started with eIQ Neutron NPU ExecuTorch backend For a quick overview how to convert a custom PyTorch model, take a look at our example python script. Runtime Integration# An example runtime application using the eIQ NSYS (eIQ Neutron Simulator) is available examples/nxp/executor_runner, described in the tutorial Getting started with eIQ Neutron NPU ExecuTorch backend To learn how to run the converted model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list. For more finegrained tutorial, visit this manual page. For guideline how to update the eIQ Neutron Runtime on MCUXpresso SDK, follow the instructions from the eIQ Neutron SDK package docs/NeutronSDKUserGuide.md available here https://www.nxp.com/design/design-center/software/eiq-ai-development-environment/eiq-toolkit-for-end-to-end-model-development-and-deployment:EIQ-TOOLKIT. Using the MCUXpresso Example# This page demonstrates how to build and run the ExecuTorch CIFARNet example from MCUXpresso SDK. Reference# \u2192nxp-partitioner \u2014 Partitioner options. \u2192nxp-quantization \u2014 Supported quantization schemes. \u2192tutorials/nxp-tutorials \u2014 Tutorials. \u2192nxp-dim-order \u2014 Dim order support (channels last inputs). \u2192nxp-kernel-selection \u2014 Neutron Firmware Kernel Selection support. \u2192nxp-profiling \u2014 Neutron models profiling.",
+       "url": "/backends/nxp/nxp-mcuxpresso-example.html",
+       "articleBody": "Using the MCUXpresso Example# This example demonstrates how to build and run the ExecuTorch CifarNet application for the NXP RT700 platform using the MCUXpresso SDK and the GNU Arm Embedded Toolchain. Before building the project, make sure that all required dependencies are installed and that the necessary environment variables are configured correctly. Tip: The test_build_from_scratch.sh script automates all the steps described in this guide, including downloading the ARM GNU toolchain, preparing the model, and downloading the MCUXpresso SDK using the west tool. If you prefer a fully automated setup, you can run it directly instead of following the manual steps below. All scripts described in this guide are located in the following directory of the ExecuTorch repository: examples/nxp/mcuxpresso/imxrt700/executorch_cifarnet/ 1. Install the Arm GNU Toolchain# First, download the Arm GCC cross-compilation toolchain that is supported by the RT700 platform: https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz After extracting the archive, create an environment variable called ARMGCC_DIR that points to the root directory of the toolchain installation. The build scripts use this variable to locate the compiler, linker, and other required tools. Example on Linux: export ARMGCC_DIR=/path/to/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi To verify the installation, you can run: $ARMGCC_DIR/bin/arm-none-eabi-gcc --version The command should print the installed compiler version. 2. Download the MCUXpresso SDK# Next, download MCUXpresso SDK for the RT700 device family using the west tool: pip install west west init -m https://github.com/nxp-mcuxpresso/mcuxsdk-manifests.git mcuxpresso-sdk pushd mcuxpresso-sdk west update_board --set board mimxrt700evk popd Afterwards, configure the SdkRootDirPath environment variable to point to the mcuxsdk directory in the downloaded dir. Example on Linux: export SdkRootDirPath=/path/to/mcuxpresso-sdk/mcuxsdk The build system relies on this variable to locate board support packages, middleware components, startup code, linker scripts, and device-specific libraries. 3. Prepare the Model Header File# Before building the application, a compiled model must be provided as a C header file named model_pte.h and placed in the current directory. Run the provided helper script to generate it: ./prepare_model.sh The script performs the following steps: Installs ExecuTorch and its Python dependencies. Installs the eiq-neutron-sdk Python package in the version that has been tested with the current ExecuTorch release. Compiles the CifarNet model using the NXP ExecuTorch ahead-of-time (AoT) pipeline and produces a .pte model file. Converts the .pte file into the model_pte.h C header, with the correct memory-section attributes for the RT700 target. Important: The MCUXpresso SDK package includes a pre-built CifarNet model and a set of Neutron libraries, but this build flow deliberately does not use either of them. Instead, prepare_model.sh installs the eiq-neutron-sdk version that was tested with the current ExecuTorch release, compiles the model from scratch, and the linker later picks up the matching Neutron libraries from that same installation. This keeps the ExecuTorch AoT compiler, the model bytecode, the Neutron driver, the Neutron firmware, and the ExecuTorch runtime all in sync. Once the script finishes, verify that model_pte.h was created in the project directory before proceeding to the build step. 4. Build the Application# Once the environment variables have been configured and model_pte.h is present in the project directory, set the NEUTRON_LIB_DIR variable to the directory that contains the Neutron static libraries shipped with the eiq-neutron-sdk: export NEUTRON_LIB_DIR=/path/to/eiq_neutron_sdk/libs The build script expects the following libraries to exist in that directory: libNeutronDriver.a libNeutronFirmware.a Then build the project by executing the provided script: ./build_example.sh The script validates all required inputs, configures CMake, compiles the source code, links the application, and generates the executable image: flash_release/executorch_cifarnet.elf If the build completes successfully, the ELF file will be available and ready for programming onto the target board. 5. Flash the Application# The generated application can be programmed onto the RT700 device using SEGGER J-Link tools. Linux# echo \"loadfile flash_release/executorch_cifarnet.elf\" | \\ /opt/SEGGER/JLink_V796k/JLinkExe \\ -IF SWD \\ -speed auto \\ -Device MIMXRT798S_M33_0 Before flashing, ensure that: The board is powered on. The JLink debugger probe is flashed on device, if not see documentation how to flash it. The J-Link debugger is connected to the target. The SWD interface is available and correctly wired. No other debugging application is currently using the J-Link connection. The programming process typically takes only a few seconds. Once the image has been loaded successfully, the application can be started directly from flash memory. 6. Running the Example# After the firmware is programmed, reset the board and open a serial terminal connected to the device\u2019s debug UART interface. The application will initialize the hardware, load the embedded CifarNet model, and begin performing image inference. During execution, inference results and diagnostic messages are printed to the terminal. The included demonstration image contains a cat, and the model is expected to classify the image accordingly. A successful run produces output similar to the following: This example serves as a basic validation that the ExecuTorch runtime, model integration, SDK configuration, and hardware platform are all functioning correctly. It can also be used as a starting point for evaluating custom neural network models and experimenting with on-device machine learning workloads on the RT700 platform.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2456,7 +2333,7 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/embedded-nxp.html"
+         "@id": "/backends/nxp/nxp-mcuxpresso-example.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
