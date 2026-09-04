@@ -12,8 +12,8 @@
 // is opaque to the host, so the runner (which knows the cache kind) creates the
 // cache and binds it to the delegate through a process-global registry; the two
 // sides rendezvous on a cache_key passed as a runtime backend-load option.
-// Caches are owned as CacheBase* and the faces are recovered through its as_*
-// accessors (no RTTI), each null for a face the cache does not implement.
+// Caches are owned as Cache*; a face comes from as<T>(), null when the cache
+// does not implement it.
 
 #include <functional>
 #include <map>
@@ -24,8 +24,10 @@
 #include <utility>
 
 #include <executorch/extension/llm/cache/cache.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
@@ -35,82 +37,100 @@ namespace cache {
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
-// Process-global map<cache_key, shared_ptr<CacheBase>>. Ownership is shared:
-// the registry entry, the runner's session guard, and the delegate handle all
-// hold the cache, so erasing the entry mid-method is safe.
-class CacheRegistry {
+// Backend-load option carrying the key of an installed cache. This name is the
+// rendezvous contract shared by cache-owning runners and cache-aware backends.
+inline constexpr char kCacheKeyOption[] = "llm_cache_registry_key";
+
+// Process-global map<cache_key, shared_ptr<Cache>>. Ownership is shared:
+// the registry entry, the runner's guard, and the delegate handle all hold
+// the cache, so erasing the entry mid-method is safe.
+class ET_EXPERIMENTAL CacheRegistry {
  public:
   static CacheRegistry& global();
 
-  void install(const std::string& key, std::shared_ptr<CacheBase> cache);
-  std::shared_ptr<CacheBase> get(const std::string& key) const;
-  void erase(const std::string& key);
+  // The delegate's half of the rendezvous: resolve a key it was handed as a
+  // backend option. Null if no cache is published under it.
+  std::shared_ptr<Cache> get(const std::string& key) const;
 
  private:
   CacheRegistry() = default;
 
+  // Only InstallGuard may publish, so an entry cannot outlive its owner, two
+  // callers cannot collide on a key, and no erase can go unpaired.
+  friend class InstallGuard;
+  void install(const std::string& key, std::shared_ptr<Cache> cache);
+  void erase(const std::string& key);
+
   mutable std::mutex mu_;
-  std::unordered_map<std::string, std::shared_ptr<CacheBase>> caches_;
+  std::unordered_map<std::string, std::shared_ptr<Cache>> caches_;
 };
+
+// The registered cache kinds. Spelling one inline is a runtime NotFound rather
+// than a compile error, so go through these.
+namespace kind {
+// One sequence over per-layer runs.
+inline constexpr const char* kSingle = "single";
+// Many sequences sharing one pool of per-token cells.
+inline constexpr const char* kBatchedCell = "batched-cell";
+} // namespace kind
 
 // Cache kind is expressed by which factory you call: backends register a
 // builder per (backend_id, kind) and the kind survives only as an internal
 // lookup tag.
-using CacheBuilder =
-    std::function<std::shared_ptr<CacheBase>(const CacheConfig&)>;
+using CacheBuilder = std::function<std::shared_ptr<Cache>(const CacheConfig&)>;
 
-class CacheBuilderRegistry {
+class ET_EXPERIMENTAL CacheFactory {
  public:
-  static CacheBuilderRegistry& global();
+  static CacheFactory& global();
 
-  void register_builder(
+  // Public so a test can hold its own rather than registering builders into
+  // the process-global one, where they outlive it.
+  CacheFactory() = default;
+
+  // Registers one builder without replacing an existing entry. Returns
+  // InvalidArgument if builder is empty or the pair is already registered.
+  ET_NODISCARD Error register_builder(
       const std::string& backend_id,
       const std::string& kind,
       CacheBuilder builder);
-  // Returns Error::NotFound if no builder is registered for (backend_id, kind).
-  Result<std::shared_ptr<CacheBase>> build(
+  // Returns NotFound if no builder is registered for (backend_id, kind), and
+  // Internal if the registered builder returns null.
+  Result<std::shared_ptr<Cache>> build(
       const std::string& backend_id,
       const std::string& kind,
       const CacheConfig& cfg) const;
 
  private:
-  CacheBuilderRegistry() = default;
-
   mutable std::mutex mu_;
-  std::map<std::pair<std::string, std::string>, CacheBuilder>
-      builders_; // keyed by (backend_id, kind)
+  std::map<std::pair<std::string, std::string>, CacheBuilder> builders_;
 };
 
-// Process-global atomic counter -> "cache-N"; centralizes key generation so
-// keys never collide.
-std::string make_unique_key();
-
-// RAII: installs the cache into the global registry under a unique key on
-// construction and erases it on destruction (no leak on any exit path). Holds
-// the runner's shared_ptr and exposes the control face for the generation loop.
-class CacheSession {
+// RAII over one registry entry: installs the cache under a key of its own
+// making on construction and erases it on destruction (no leak on any exit
+// path). Minting the key here rather than taking one means two live guards
+// cannot collide on it. Must outlive the load_method() whose backend init
+// resolves the key.
+//
+// Destruction removes discoverability only. A shared_ptr already returned by
+// CacheRegistry::get() remains valid independently.
+class ET_EXPERIMENTAL InstallGuard {
  public:
-  CacheSession(std::string key, std::shared_ptr<CacheBase> cache)
-      : key_(std::move(key)), cache_(std::move(cache)) {
-    CacheRegistry::global().install(key_, cache_);
-  }
-  ~CacheSession() {
-    CacheRegistry::global().erase(key_);
-  }
+  explicit InstallGuard(std::shared_ptr<Cache> cache);
+  ~InstallGuard();
 
-  CacheSession(const CacheSession&) = delete;
-  CacheSession& operator=(const CacheSession&) = delete;
+  InstallGuard(const InstallGuard&) = delete;
+  InstallGuard& operator=(const InstallGuard&) = delete;
 
-  SequenceControl* control() const {
-    return cache_->as_control();
-  }
-  const std::string& key() const {
-    return key_;
+  // Adds the complete cache rendezvous option. BackendOptions copies the key
+  // and value, so the resulting option remains valid independently.
+  template <size_t N>
+  Error set_option(::executorch::runtime::BackendOptions<N>& options) const {
+    return options.set_option(kCacheKeyOption, key_.c_str());
   }
 
  private:
   std::string key_;
-  std::shared_ptr<CacheBase> cache_;
+  std::shared_ptr<Cache> cache_;
 };
 
 } // namespace cache

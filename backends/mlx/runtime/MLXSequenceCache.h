@@ -125,6 +125,14 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
   }
 
+ protected:
+  void* face(cache::FaceId id) override {
+    if (void* p = cache::SequenceCache::face(id)) {
+      return p;
+    }
+    return cache::expose<MLXCache>(this, id);
+  }
+
  private:
   // A sequence cache holds one run of one sequence, so the step is described by
   // where it starts; the remaining positions carry no information beyond

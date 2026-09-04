@@ -84,6 +84,14 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
         mask(*step)};
   }
 
+ protected:
+  void* face(cache::FaceId id) override {
+    if (void* p = cache::CellCache::face(id)) {
+      return p;
+    }
+    return cache::expose<MLXCache>(this, id);
+  }
+
  private:
   // The step's bits as SDPA wants them: [1, 1, length, read_len], one row per
   // query token.

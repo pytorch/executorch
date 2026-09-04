@@ -12,6 +12,11 @@
 // policies (FlatPolicy / RingPolicy). SequenceCache owns the one logical length
 // for the whole model and dispatches per-layer layout to a policy, so a mixed
 // flat/ring model (gemma4) stays coherent. Tensor-free / ET-independent.
+//
+// The backend-facing planner face (SequencePlanner) and the types it hands over
+// live here rather than in cache.h: only this layout implements them, and only
+// a byte layer that already includes this header calls them. cell_cache.h holds
+// CellStepper for the same reason.
 
 #include <algorithm>
 #include <cassert>
@@ -26,8 +31,52 @@ namespace extension {
 namespace llm {
 namespace cache {
 
+// A contiguous span of physical rows in a layer's pool.
+struct ET_EXPERIMENTAL Run {
+  int start;
+  int len;
+};
+
+// Integer-only handoff to the backend byte layer. Runs are in logical order
+// (oldest -> newest); a flat layer uses one, a ring layer two when it wraps.
+// read_base_pos is the logical position of read[0].start.
+struct ET_EXPERIMENTAL SeqStepPlan {
+  Run write[2];
+  int n_write;
+  Run read[2];
+  int n_read;
+  int read_base_pos;
+};
+
+// Backend face. plan() is const: it computes a layer's layout without changing
+// state, and commit() advances the shared logical length. nullopt = the step
+// exceeds capacity, or `layer` is out of range.
+class ET_EXPERIMENTAL SequencePlanner {
+ public:
+  static constexpr const char* kFaceName = "et.cache.SequencePlanner";
+
+  virtual ~SequencePlanner() = default;
+  virtual std::optional<SeqStepPlan> plan(int layer, int position, int T)
+      const = 0;
+  // Advance the logical length past this step. Idempotent, so once per step
+  // suffices.
+  virtual void commit(const SeqStepPlan& plan) = 0;
+};
+
+// Per-layer layout: flat keeps all history, ring slides a window. Stateless.
+class ET_EXPERIMENTAL LayoutPolicy {
+ public:
+  virtual ~LayoutPolicy() = default;
+  // Write/read runs for T cells at logical `position`. Precondition: T fits the
+  // policy's window.
+  virtual SeqStepPlan plan(int position, int T) const = 0;
+  // Oldest logical position still retained at this length: 0 for flat,
+  // length - window for ring.
+  virtual int retained_from(int length) const = 0;
+};
+
 // Full history [0, length): one contiguous write run, read over all history.
-class FlatPolicy final : public LayoutPolicy {
+class ET_EXPERIMENTAL FlatPolicy final : public LayoutPolicy {
  public:
   int retained_from(int /*length*/) const override {
     return 0; // keeps all history
@@ -48,7 +97,7 @@ class FlatPolicy final : public LayoutPolicy {
 // slots. The ring is oversized so a step of up to max_write tokens fits without
 // overwriting cells earlier queries in the same step still attend to; the
 // backend masks each query to its own window within the read span.
-class RingPolicy final : public LayoutPolicy {
+class ET_EXPERIMENTAL RingPolicy final : public LayoutPolicy {
  public:
   RingPolicy(int window, int max_write)
       : window_(window), ring_size_(window + max_write - 1) {}
@@ -92,9 +141,9 @@ class RingPolicy final : public LayoutPolicy {
 // rewind; dispatches per-layer layout to a shared LayoutPolicy. Policies are
 // deduped by (kind, window), so a uniform or two-kind (gemma4) model holds one
 // or two policy objects.
-class SequenceCache : public CacheBase,
-                      public SequenceControl,
-                      public SequencePlanner {
+class ET_EXPERIMENTAL SequenceCache : public Cache,
+                                      public SequenceControl,
+                                      public SequencePlanner {
  public:
   explicit SequenceCache(const CacheConfig& cfg)
       : capacity_(cfg.capacity), max_write_(cfg.max_write) {
@@ -106,14 +155,6 @@ class SequenceCache : public CacheBase,
           cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
       layer_to_policy_.push_back(policy_index(lc.policy));
     }
-  }
-
-  // CacheBase: face recovery without RTTI.
-  SequenceControl* as_control() override {
-    return this;
-  }
-  SequencePlanner* as_planner() override {
-    return this;
   }
 
   // SequenceControl.
@@ -171,6 +212,11 @@ class SequenceCache : public CacheBase,
       end += plan.read[i].len;
     }
     length_ = std::max(length_, end);
+  }
+
+ protected:
+  void* face(FaceId id) override {
+    return expose<SequenceControl, SequencePlanner>(this, id);
   }
 
  private:

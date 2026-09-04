@@ -29,7 +29,7 @@ namespace cache {
 
 // Integer-only handoff to the byte layer, covering the whole forward: a cell
 // means the same token in every layer's pool.
-struct CellStep {
+struct ET_EXPERIMENTAL CellStep {
   int length;
   int read_len; // the window is cells [0, read_len)
   std::vector<int32_t> cells; // cell per query token
@@ -42,29 +42,27 @@ struct CellStep {
 // forward. The returned step is owned by the cache and valid until the next
 // verb. nullptr = no declaration, a token count disagreeing with it, a position
 // a sequence already holds, a layer out of range, or a layer served twice.
-class CellStepper {
+class ET_EXPERIMENTAL CellStepper {
  public:
+  static constexpr const char* kFaceName = "et.cache.CellStepper";
+
   virtual ~CellStepper() = default;
   virtual const CellStep*
   place_step(int layer, const int32_t* positions, int length) = 0;
 };
 
-class CellCache : public CacheBase, public BatchControl, public CellStepper {
+class ET_EXPERIMENTAL CellCache : public Cache,
+                                  public BatchControl,
+                                  public CellStepper {
  public:
   // One bit per sequence in the owner bitset.
   static constexpr int kMaxSeqs = 64;
 
-  // Precondition: valid(cfg). CacheBuilderRegistry::build enforces it for
+  // Precondition: valid(cfg). CacheFactory::build enforces it for
   // registry-created caches; direct construction must check first.
   explicit CellCache(const CacheConfig& cfg);
 
-  CacheBase* base() {
-    return this;
-  }
-  BatchControl* as_batch_control() override {
-    return this;
-  }
-  CellStepper* as_cell_stepper() override {
+  Cache* base() {
     return this;
   }
 
@@ -91,6 +89,11 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
 
   const CellStep* place_step(int layer, const int32_t* positions, int length)
       override;
+
+ protected:
+  void* face(FaceId id) override {
+    return expose<BatchControl, CellStepper>(this, id);
+  }
 
  private:
   struct SeqInfo {

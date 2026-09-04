@@ -21,6 +21,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/named_data_map.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <mlx/mlx.h>
 
@@ -186,8 +187,8 @@ struct MLXHandle {
 
   // Keep-alive for the off-graph KV cache bound in init(). state.cache is a
   // non-owning view of the same object, so the cache must outlive the handle
-  // even if the runner's session is torn down first.
-  std::shared_ptr<::executorch::extension::llm::cache::CacheBase> cache_shared;
+  // even if the runner drops its InstallGuard first.
+  std::shared_ptr<::executorch::extension::llm::cache::Cache> cache_shared;
 
   // Keep the constant buffers alive for zero-copy constants
   // Each FreeableBuffer must outlive the MLX arrays that reference it
@@ -339,7 +340,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       // Bind the off-graph KV cache, if the runner installed one under a key it
       // passed as a runtime spec. Bound before the init chain runs so an
       // update_and_attend node there sees the same cache execute() will.
-      if (auto spec = context.get_runtime_spec<const char*>(kCacheKeyKey);
+      if (auto spec =
+              context.get_runtime_spec<const char*>(cache::kCacheKeyOption);
           spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
         const char* cache_key = spec.get();
         handle->cache_shared =
@@ -349,12 +351,10 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
               std::string("init: cache_key '") + cache_key +
               "' is not installed in the CacheRegistry");
         }
-        // Cross-cast from the neutral ownership anchor to this backend's
-        // tensor-typed op face; the two are deliberately unrelated bases (see
-        // MLXCache.h), so nullptr here means the key names another backend's
-        // cache.
-        handle->state.cache =
-            dynamic_cast<MLXCache*>(handle->cache_shared.get());
+        // Ask the neutral ownership anchor for this backend's tensor-typed op
+        // face. It is named by MLXCache itself rather than by cache.h, so
+        // nullptr here means the key names another backend's cache.
+        handle->state.cache = handle->cache_shared->as<MLXCache>();
         if (handle->state.cache == nullptr) {
           throw std::runtime_error(
               std::string("init: cache under key '") + cache_key +
@@ -571,18 +571,30 @@ static auto success_with_compiler = register_backend(backend);
 
 // Cache kind is named by the builder tag rather than an enum on the config: a
 // runner asks the registry for (backend_id, kind) and gets back a neutral
-// CacheBase it installs under a cache_key. Adding a kind is a new builder here.
+// Cache it installs under a cache_key. Adding a kind is a new builder here.
 const int cache_builders_registered = [] {
-  cache::CacheBuilderRegistry::global().register_builder(
-      kMLXBackendId, "seq", [](const cache::CacheConfig& cfg) {
-        return std::shared_ptr<cache::CacheBase>(
+  const Error single = cache::CacheFactory::global().register_builder(
+      kMLXBackendId, cache::kind::kSingle, [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXSequenceCache>(cfg));
       });
-  cache::CacheBuilderRegistry::global().register_builder(
-      kMLXBackendId, "cell", [](const cache::CacheConfig& cfg) {
-        return std::shared_ptr<cache::CacheBase>(
+  ET_CHECK_MSG(
+      single == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kSingle);
+  const Error batched_cell = cache::CacheFactory::global().register_builder(
+      kMLXBackendId,
+      cache::kind::kBatchedCell,
+      [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXCellCache>(cfg));
       });
+  ET_CHECK_MSG(
+      batched_cell == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatchedCell);
   return 0;
 }();
 } // namespace
