@@ -991,7 +991,7 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         # These say in their own text that they must not be included directly, and name the header to
         # include instead. Including one anyway is a use error rather than a packaging defect.
         "c10/util/complex_math.h",
-        "c10/util/complex_utils.h",
+        "torch/headeronly/util/complex_utils.h",
     )
 
     source = work_dir / "header_probe.cpp"

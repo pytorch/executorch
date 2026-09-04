@@ -102,8 +102,10 @@ find_package(
   executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
 )
 
-add_corstone_subdirectory(${SYSTEM_CONFIG} ${ETHOS_SDK_PATH})
-configure_timing_adapters(${SYSTEM_CONFIG} ${MEMORY_MODE})
+add_corstone_subdirectory(
+  "${SYSTEM_CONFIG}" "${ETHOS_SDK_PATH}" "${MEMORY_MODE}"
+)
+configure_timing_adapters("${SYSTEM_CONFIG}" "${MEMORY_MODE}")
 
 add_executable(mobilesam_prompt_segmentation_example main.cpp)
 target_sources(

@@ -67,8 +67,11 @@ ops_list=(
     cortex_m::transpose.out
     cortex_m::pad.out
     cortex_m::quantized_conv2d.out
+    cortex_m::quantized_conv2d_nhwc.out
     cortex_m::quantized_depthwise_conv2d.out
+    cortex_m::quantized_depthwise_conv2d_nhwc.out
     cortex_m::quantized_transpose_conv2d.out
+    cortex_m::quantized_transpose_conv2d_nhwc.out
     cortex_m::quantized_avg_pool2d.out
     cortex_m::quantized_max_pool2d.out
     cortex_m::quantized_batch_matmul.out
