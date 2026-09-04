@@ -259,13 +259,16 @@ def cmsis_nn_transpose_conv_buffer_size(
 def cmsis_nn_avgpool_buffer_size(
     backend: cmsis_nn.Backend,
     pool_node: torch.fx.Node,
+    nhwc_logical: bool = False,
 ) -> list[int]:
     x = cast(torch.fx.Node, pool_node.args[0])
 
-    # Input is NCHW (PyTorch); CMSIS-NN's avgpool buffer sizer only needs the
-    # input channel count and output width.
-    _, c_in, _, _ = _shape_from_node(x)
-    _, _, _, out_w = _shape_from_node(pool_node)
+    if nhwc_logical:
+        _, _, _, c_in = _shape_from_node(x)
+        _, _, out_w, _ = _shape_from_node(pool_node)
+    else:
+        _, c_in, _, _ = _shape_from_node(x)
+        _, _, _, out_w = _shape_from_node(pool_node)
 
     return [
         int(
@@ -294,6 +297,9 @@ _target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
         cmsis_nn_transpose_conv_buffer_size, nhwc_logical=True
     ),
     exir_ops.edge.cortex_m.quantized_avg_pool2d.default: cmsis_nn_avgpool_buffer_size,
+    exir_ops.edge.cortex_m.quantized_avg_pool2d_nhwc.default: partial(
+        cmsis_nn_avgpool_buffer_size, nhwc_logical=True
+    ),
 }
 
 
