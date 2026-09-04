@@ -352,7 +352,7 @@ def _positive_checks(
 
 
 def _disallowed_dtypes(tosa_spec: TosaSpecification) -> list[torch.dtype]:
-    dtypes = [torch.float64]
+    dtypes = [torch.float64, torch.complex32, torch.complex64, torch.complex128]
     if not tosa_spec.support_extension("bf16"):
         dtypes.append(torch.bfloat16)
     if not (
