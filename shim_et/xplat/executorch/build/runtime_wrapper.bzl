@@ -162,27 +162,23 @@ def _is_aten_target(kwargs):
         for dep in kwargs.get(key) or []:
             if dep in aten_external_deps:
                 return True
+    for key in ["xplat_deps", "fbcode_deps"]:
+        if _has_pytorch_dep(kwargs.get(key)):
+            return True
     return False
 
 def _patch_test_compiler_flags(kwargs, aten_mode = False):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
 
-    # Determine C++ standard based on whether this is an aten test.
-    # Aten tests require at least C++20 to compile against PyTorch, while
-    # non-aten tests are pinned to C++17 for embedded.
+    # A test that compiles against ATen needs C++20, which PyTorch's headers
+    # require. Every other test stays at C++17, which the embedded builds use.
     name = kwargs.get("name", "")
-    external_deps = kwargs.get("external_deps", [])
-    xplat_deps = kwargs.get("xplat_deps", [])
-    fbcode_deps = kwargs.get("fbcode_deps", [])
     is_aten_test = (
         aten_mode or
         "_aten" in name or
-        "aten_" in name or
-        _has_pytorch_dep(xplat_deps) or
-        _has_pytorch_dep(fbcode_deps)
+        "aten_" in name
     )
-
     if is_aten_test:
         kwargs["compiler_flags"] += [
             "-std=c++20",
@@ -360,11 +356,14 @@ def _cxx_test(*args, **kwargs):
     env.cxx_test(*args, **kwargs)
 
 def _cxx_python_extension(*args, **kwargs):
+    # Before _patch_kwargs_common, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_common(kwargs)
     _remove_caffe2_deps(kwargs)
     kwargs["srcs"] = _patch_executorch_references(kwargs["srcs"])
     if "types" in kwargs:
         kwargs["types"] = _patch_executorch_references(kwargs["types"])
+    _patch_aten_mode_std(kwargs, aten_mode)
     env.cxx_python_extension(*args, **kwargs)
 
 def _export_file(*args, **kwargs):

@@ -203,6 +203,13 @@ AOTITorchError aoti_torch_empty_strided_pinned(
     int32_t device_type,
     int32_t device_index,
     SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<DeviceType>(device_type) == DeviceType::CPU,
+      InvalidArgument,
+      "aoti_torch_empty_strided_pinned: pinned memory is host memory, so the "
+      "device type must be CPU, got %d",
+      device_type);
+
   return aoti_torch_empty_strided(
       ndim,
       sizes_ptr,

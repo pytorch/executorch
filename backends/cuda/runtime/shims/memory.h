@@ -96,12 +96,20 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     SlimTensor** ret_new_tensor);
 
 /**
- * Allocates ordinary memory where pinned host memory was asked for.
+ * Allocates ordinary host memory where pinned host memory was asked for.
  *
- * There is no pinned allocator here. Pinned memory only lets the copy to the
- * device overlap other work, so ordinary memory is correct and slower.
+ * There is no pinned allocator here. Pinning only lets a copy to the device
+ * overlap other work, so ordinary memory is correct and slower.
  *
- * @return Error::Ok on success
+ * @param ndim Number of dimensions
+ * @param sizes_ptr Pointer to the sizes, ndim of them
+ * @param strides_ptr Pointer to the strides, ndim of them, or null for
+ *   contiguous
+ * @param dtype Element type, as a scalar type value
+ * @param device_type Must be CPU, since pinned memory is host memory
+ * @param device_index Device index, unused for CPU
+ * @param ret_new_tensor Receives the new tensor
+ * @return Error::Ok on success, Error::InvalidArgument if the device is not CPU
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided_pinned(
     int64_t ndim,

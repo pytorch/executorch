@@ -11,7 +11,7 @@ pin moves and the generated wrapper starts calling something new:
 ```
 nm --defined-only aoti_cuda_shims.lib \
   | sed -n 's/.* T _\?\(aoti_torch_[a-z_0-9]*\)$/\1/p' \
-  | grep -v '^_imp_' | sort -u > exports.txt
+  | sort -u > exports.txt
 # add the new names to exports.txt, then
 { echo 'LIBRARY aoti_cuda_shims.dll'; echo 'EXPORTS'; sed 's/^/    /' exports.txt; } \
   > aoti_cuda_shims.def
@@ -19,8 +19,13 @@ x86_64-w64-mingw32-dlltool -d aoti_cuda_shims.def -l aoti_cuda_shims.lib \
   --dllname aoti_cuda_shims.dll
 # zero the archive metadata so the file is reproducible
 mkdir extract && cd extract && x86_64-w64-mingw32-ar x ../aoti_cuda_shims.lib \
-  && x86_64-w64-mingw32-ar rcsD ../aoti_cuda_shims.lib *
+  && rm -f ../aoti_cuda_shims.lib \
+  && x86_64-w64-mingw32-ar rcsD ../aoti_cuda_shims.lib $(ls | sort)
 ```
+
+The archive has to be built at a fresh path. Updating it in place keeps the reverse
+member order the generator produced, so the same export list would not give the same
+bytes twice.
 
 Then check the result is a superset of what it replaced and that no member carries a
 timestamp, since this file ships in the wheel and a stamped one makes two builds of

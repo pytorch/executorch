@@ -127,20 +127,22 @@ install_pytorch_and_domains() {
   if [[ "${torch_wheel_not_found}" == "1" ]]; then
     echo "No cached wheel found, continue with building PyTorch at ${TORCH_VERSION}"
 
-    # Install PyTorch's own build-time deps so the source build does not
-    # silently inherit them from whatever else happens to be in the env
-    # (e.g. executorch's requirements-ci.txt).
-    pip install -r requirements-build.txt
     git submodule update --init --recursive
     if [[ "$(uname -m)" == "aarch64" ]]; then
       export BUILD_IGNORE_SVE_UNAVAILABLE=1
     fi
-    # PyTorch dropped setup.py; isolation off reuses the deps installed above.
-    # Drop the pip cmake first: scikit-build-core prefers it over the one on
-    # PATH, and it searches site-packages, where the maths libraries are not.
-    pip uninstall -y cmake || true
-    pip install build
-    USE_DISTRIBUTED=1 python -m build --wheel --no-isolation
+    # PyTorch dropped setup.py. Build in a throwaway environment that can see the
+    # active one, so its build requirements, which pin a cmake that would be
+    # preferred over the one on PATH, cannot disturb what is installed here.
+    #
+    # Keep in sync with pytorch/pyproject.toml [build-system].requires.
+    local build_venv=/tmp/pytorch-build-venv
+    rm -rf "${build_venv}"
+    python -m venv --system-site-packages "${build_venv}"
+    "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" ninja \
+      "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
+    USE_DISTRIBUTED=1 "${build_venv}/bin/python" -m build --wheel --no-isolation
+    rm -rf "${build_venv}"
     pip install "$(echo dist/*.whl)"
     # A build with no BLAS succeeds silently, so check rather than assume.
     (cd / && python -c "
