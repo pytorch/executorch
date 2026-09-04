@@ -121,10 +121,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
-    ExecutionHandle* handle = new (std::nothrow) ExecutionHandle();
+    ExecutionHandle* handle = allocator->allocateInstance<ExecutionHandle>();
     if (handle == nullptr) {
       return Error::MemoryAllocationFailed;
     }
+    new (handle) ExecutionHandle();
 
     EXECUTORCH_PROF_START(
         event_tracer,
@@ -134,7 +135,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         data, size, context.get_named_data_map(), &handle->handles);
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
     if (read_status != Error::Ok) {
-      delete handle;
+      handle->~ExecutionHandle();
       return read_status;
     }
 
@@ -317,7 +318,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       platform_destroy(exec_handle->platform_state);
     }
 
-    delete exec_handle;
+    exec_handle->~ExecutionHandle();
   }
 
  private:
