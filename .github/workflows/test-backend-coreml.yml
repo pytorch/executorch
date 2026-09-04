@@ -36,6 +36,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-coreml.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
     uses: ./.github/workflows/_test_backend.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       backend: coreml
       # The heavier coreml_static_int8 macOS matrix saturates the shared

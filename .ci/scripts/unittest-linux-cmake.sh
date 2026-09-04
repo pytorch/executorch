@@ -7,6 +7,9 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
+
 # Some ARM/TOSA-adjacent tests import modules that require tosa_serializer.
 # Install from a local tosa-tools checkout when available. If absent in this
 # checkout layout, clone the pinned upstream tag and install from there.

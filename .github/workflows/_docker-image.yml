@@ -37,10 +37,22 @@ jobs:
       - name: Checkout ExecuTorch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # build-cadence-runner.yml reaches this workflow on pull_request_target,
+          # where github.sha is the base branch tip. Resolving the tag from there
+          # while the test jobs check out the fork head would test a docker change
+          # against the old image.
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+          # Nothing here runs the checked-out code, only `git rev-parse` over it,
+          # but on pull_request_target that code is the fork's and the token is
+          # the base repository's, so do not leave one next to the other.
+          persist-credentials: false
 
       - name: Compute the docker tag
         id: hash
         run: |
           set -eu
-          echo "ci-docker-hash=$(git rev-parse HEAD:.ci/docker)" >> "$GITHUB_OUTPUT"
+          # Assigned on its own line: set -e does not catch a failure inside a
+          # command substitution, so `echo "x=$(git rev-parse ...)"` would write
+          # git's error text as the tag and exit 0.
+          CI_DOCKER_HASH="$(git rev-parse HEAD:.ci/docker)"
+          echo "ci-docker-hash=${CI_DOCKER_HASH}" >> "$GITHUB_OUTPUT"

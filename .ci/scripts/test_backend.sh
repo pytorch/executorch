@@ -7,6 +7,9 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
+
 SUITE=$1
 FLOW=$2
 ARTIFACT_DIR=$3
