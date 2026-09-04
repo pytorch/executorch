@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,7 +20,17 @@ class RemoveRedundantCopyPass(XNNPACKPass):
         if len(node.users) == 0:
             graph.erase_node(node)
 
-    def _try_remove_regular_redundant_to_copy(self, node, graph):
+    @staticmethod
+    def _same_tensor_type_and_shape(lhs: torch.Tensor, rhs: torch.Tensor) -> bool:
+        return lhs.dtype == rhs.dtype and tuple(lhs.shape) == tuple(rhs.shape)
+
+    def _preserves_tensor_type_and_shape(self, node) -> bool:
+        input_node = node.args[0]
+        return self._same_tensor_type_and_shape(
+            input_node.meta["val"], node.meta["val"]
+        )
+
+    def _try_remove_regular_redundant_to_copy(self, node, graph):  # noqa: C901
         """
         Try to remove redundant regular to_copy operations with pattern to_copy1 -> to_copy2 with opposite memory formats
         """
@@ -35,6 +46,11 @@ class RemoveRedundantCopyPass(XNNPACKPass):
 
             # Get the original input (before the first to_copy)
             original_input = input_node.args[0]
+            if not (
+                self._preserves_tensor_type_and_shape(input_node)
+                and self._preserves_tensor_type_and_shape(node)
+            ):
+                return False
 
             # Replace all users of the second to_copy with the original input
             for user in node.users.copy():
@@ -52,6 +68,10 @@ class RemoveRedundantCopyPass(XNNPACKPass):
             ChannelsLastTaggedReshapePass.is_nchw_node(input_node)
             and ChannelsLastTaggedReshapePass.is_nchw_node(node)
         ):
+            if not self._same_tensor_type_and_shape(
+                input_node.meta["val"], node.meta["val"]
+            ):
+                return False
             # Replace all users of the second to_copy with the original input
             for user in node.users.copy():
                 user.replace_input_with(node, input_node)
@@ -60,7 +80,7 @@ class RemoveRedundantCopyPass(XNNPACKPass):
 
         return False
 
-    def _try_remove_quantized_redundant_to_copy(self, node, graph):
+    def _try_remove_quantized_redundant_to_copy(self, node, graph):  # noqa: C901
         """
         Try to remove redundant to_copy operations in quantized graphs with pattern dq1 -> to_copy1 -> q1 -> dq2 -> to_copy2 -> q2
         """
@@ -69,6 +89,9 @@ class RemoveRedundantCopyPass(XNNPACKPass):
             return False
         q_node = next(iter(node.users))
         if not is_quant(q_node):
+            return False
+
+        if not self._preserves_tensor_type_and_shape(node):
             return False
 
         # Check if this to_copy is preceded by a dequantize node
@@ -97,6 +120,8 @@ class RemoveRedundantCopyPass(XNNPACKPass):
             prev_dq_node = prev_to_copy.args[0]
             if not is_dequant(prev_dq_node) or len(prev_dq_node.all_input_nodes) != 1:
                 return False
+            if not self._preserves_tensor_type_and_shape(prev_to_copy):
+                return False
 
             # Get the original input (before the first to_copy)
             original_input = prev_dq_node.args[0]
@@ -112,6 +137,7 @@ class RemoveRedundantCopyPass(XNNPACKPass):
             self._safe_remove_node(prev_q_node, graph)
             self._safe_remove_node(prev_to_copy, graph)
             self._safe_remove_node(prev_dq_node, graph)
+            return True
         elif (
             ChannelsLastTaggedReshapePass.is_nhwc_node(prev_to_copy)
             and ChannelsLastTaggedReshapePass.is_nhwc_node(node)
@@ -119,6 +145,10 @@ class RemoveRedundantCopyPass(XNNPACKPass):
             ChannelsLastTaggedReshapePass.is_nchw_node(prev_to_copy)
             and ChannelsLastTaggedReshapePass.is_nchw_node(node)
         ):
+            if not self._same_tensor_type_and_shape(
+                prev_to_copy.meta["val"], node.meta["val"]
+            ):
+                return False
             # Remove node and the q/dq around it only
             # Get the original quantized tensor (input to dq_node)
             original_q_tensor = dq_node.args[0]
