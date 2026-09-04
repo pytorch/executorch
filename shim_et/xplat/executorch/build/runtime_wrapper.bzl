@@ -145,30 +145,45 @@ def _has_pytorch_dep(dep_list):
                 return True
     return False
 
-def _patch_test_compiler_flags(kwargs):
+def _is_aten_target(kwargs):
+    """Whether a target compiles against ATen.
+
+    Keyed on exact dep names, not a substring: every label contains "torch".
+    """
+    aten_external_deps = [
+        "c10",
+        "gmock_aten",
+        "gtest_aten",
+        "libtorch",
+        "libtorch_python",
+        "torch-core-cpp",
+    ]
+    for key in ["external_deps", "exported_external_deps"]:
+        for dep in kwargs.get(key) or []:
+            if dep in aten_external_deps:
+                return True
+    for key in ["xplat_deps", "fbcode_deps"]:
+        if _has_pytorch_dep(kwargs.get(key)):
+            return True
+    return False
+
+def _patch_test_compiler_flags(kwargs, aten_mode = False):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
 
-    # Determine C++ standard based on whether this is an aten test.
-    # Aten tests require at least C++20 to compile against PyTorch, while
-    # non-aten tests are pinned to C++17 for embedded.
+    # A test that compiles against ATen needs C++20, which PyTorch's headers
+    # require. Every other test stays at C++17, which the embedded builds use.
     name = kwargs.get("name", "")
-    external_deps = kwargs.get("external_deps", [])
-    deps = kwargs.get("deps", [])
-    xplat_deps = kwargs.get("xplat_deps", [])
-    fbcode_deps = kwargs.get("fbcode_deps", [])
     is_aten_test = (
+        aten_mode or
         "_aten" in name or
-        "aten_" in name or
-        "libtorch" in external_deps or
-        "gtest_aten" in external_deps or
-        "gmock_aten" in external_deps or
-        _has_pytorch_dep(deps) or
-        _has_pytorch_dep(xplat_deps) or
-        _has_pytorch_dep(fbcode_deps)
+        "aten_" in name
     )
-
-    if not is_aten_test:
+    if is_aten_test:
+        kwargs["compiler_flags"] += [
+            "-std=c++20",
+        ]
+    else:
         kwargs["compiler_flags"] += [
             "-std=c++17",
         ]
@@ -267,9 +282,21 @@ def _patch_kwargs_cxx(kwargs):
     env.remove_platform_specific_args(kwargs)
     return _patch_kwargs_common(kwargs)
 
+def _patch_aten_mode_std(kwargs, aten_mode):
+    """Raises an ATen-mode target to C++20, which PyTorch's headers require.
+
+    A plain compiler flag, which the prelude places after the toolchain's.
+    """
+    if aten_mode:
+        kwargs["compiler_flags"] = kwargs.get("compiler_flags", []) + ["-std=c++20"]
+    return kwargs
+
 def _cxx_library_common(*args, **kwargs):
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
+    _patch_aten_mode_std(kwargs, aten_mode)
 
     env.patch_platform_build_mode_flags(kwargs)
     env.patch_headers(kwargs)
@@ -294,8 +321,11 @@ def _cxx_library(*args, **kwargs):
         _cxx_library_common(*args, **kwargs)
 
 def _cxx_binary_helper(*args, **kwargs):
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
+    _patch_aten_mode_std(kwargs, aten_mode)
     env.patch_platform_build_mode_flags(kwargs)
     env.patch_cxx_compiler_flags(kwargs)
 
@@ -315,20 +345,25 @@ def _cxx_test(*args, **kwargs):
         kwargs["deps"] = []
     kwargs["deps"].append("//executorch/test/utils:utils")
 
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     env.patch_headers(kwargs)
     _patch_build_mode_flags(kwargs)
-    _patch_test_compiler_flags(kwargs)
+    _patch_test_compiler_flags(kwargs, aten_mode)
 
     env.patch_platform_build_mode_flags(kwargs)
     env.cxx_test(*args, **kwargs)
 
 def _cxx_python_extension(*args, **kwargs):
+    # Before _patch_kwargs_common, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_common(kwargs)
     _remove_caffe2_deps(kwargs)
     kwargs["srcs"] = _patch_executorch_references(kwargs["srcs"])
     if "types" in kwargs:
         kwargs["types"] = _patch_executorch_references(kwargs["types"])
+    _patch_aten_mode_std(kwargs, aten_mode)
     env.cxx_python_extension(*args, **kwargs)
 
 def _export_file(*args, **kwargs):

@@ -26,17 +26,19 @@ PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
 RESCALE_TARGET = exir_ops.backend.tosa.RESCALE.default
 MUL_TARGET = exir_ops.edge.aten.mul.Tensor
 ADD_TARGET = exir_ops.edge.aten.add.Tensor
+SUB_TARGET = exir_ops.edge.aten.sub.Tensor
+VIEW_TARGET = exir_ops.edge.aten.view_copy.default
 ERF_TARGET = exir_ops.edge.aten.erf.default
 
 
-def _fake_exported_program() -> ExportedProgram:
+def _fake_exported_program(*constant_input_names: str) -> ExportedProgram:
     return cast(
         ExportedProgram,
         SimpleNamespace(
             graph_signature=SimpleNamespace(
                 inputs_to_buffers={},
                 inputs_to_lifted_tensor_constants={},
-                inputs_to_parameters={},
+                inputs_to_parameters={name: name for name in constant_input_names},
             )
         ),
     )
@@ -48,6 +50,29 @@ def _count_nodes(graph_module: torch.fx.GraphModule, target) -> int:
         for node in graph_module.graph.nodes
         if node.op == "call_function" and node.target == target
     )
+
+
+def test_constant_input_cache_refreshes_for_reused_pass() -> None:
+    first_graph = torch.fx.Graph()
+    first_constant = first_graph.placeholder("first_constant")
+    first_constant.meta["val"] = torch.randn(1)
+    first_graph.output(first_constant)
+
+    second_graph = torch.fx.Graph()
+    second_constant = second_graph.placeholder("second_constant")
+    second_constant.meta["val"] = torch.randn(1)
+    second_graph.output(second_constant)
+
+    remove_permutes = RemovePermutesAroundElementwiseTosaOps(
+        _fake_exported_program("first_constant")
+    )
+    remove_permutes.call(torch.fx.GraphModule({}, first_graph))
+    assert remove_permutes._is_constant(first_constant)
+
+    remove_permutes.exported_program = _fake_exported_program("second_constant")
+    remove_permutes.call(torch.fx.GraphModule({}, second_graph))
+    assert remove_permutes._is_constant(second_constant)
+    assert not remove_permutes._is_constant(first_constant)
 
 
 def test_extra_permutable_ops_makes_op_permutable() -> None:
@@ -125,6 +150,40 @@ def test_remove_permutes_around_rescale_tosa_INT() -> None:
     assert result.modified
     assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
     assert _count_nodes(result.graph_module, RESCALE_TARGET) == 1
+
+
+def test_sink_view_preserves_layout_through_rescale_to_broadcast_tosa_INT() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.randn(1, 4, 1, 1)
+    direct = graph.placeholder("direct")
+    direct.meta["val"] = torch.randn(1, 8, 4)
+
+    permute = graph.create_node("call_function", PERMUTE_TARGET, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.randn(1, 1, 1, 4)
+    mul = graph.create_node("call_function", MUL_TARGET, args=(permute, permute))
+    mul.meta["val"] = torch.randn(1, 1, 1, 4)
+    sink = graph.create_node("call_function", VIEW_TARGET, args=(mul, [1, 1, 4]))
+    sink.meta["val"] = torch.randn(1, 1, 4)
+    rescale = graph.create_node(
+        "call_function",
+        RESCALE_TARGET,
+        args=(sink, torch.int8, [1.0], 0, 0),
+    )
+    rescale.meta["val"] = torch.randn(1, 1, 4)
+    sub = graph.create_node("call_function", SUB_TARGET, args=(direct, rescale))
+    sub.meta["val"] = torch.randn(1, 8, 4)
+    graph.output(sub)
+
+    graph_module = torch.fx.GraphModule({}, graph)
+    with TosaLoweringContext(TOSA_INT_SPEC):
+        result = RemovePermutesAroundElementwiseTosaOps(_fake_exported_program()).call(
+            graph_module
+        )
+
+    assert not result.modified
+    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 1
+    assert sub.args == (direct, rescale)
 
 
 def test_remove_permutes_around_gelu_with_folded_scalar_constants_tosa_FP() -> None:

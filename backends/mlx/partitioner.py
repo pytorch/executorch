@@ -133,6 +133,18 @@ class MLXPartitioner(Partitioner):
         handler that rejects the 6-arg edge form, for instance). Preserving an op
         the handler then rejects is worse than not preserving it, because the op
         neither decomposes into something delegatable nor lowers itself.
+
+        A target is only preserved when every node carrying it is supported. One
+        unsupported node is enough to give the whole operator back to decomposition,
+        because keeping it would leave that node neither lowered nor decomposed and
+        export would stop.
+
+        The second return value is a per-node filter, which would keep the supported
+        calls fused and decompose only the rest. It is deliberately not used: it puts
+        the program on exir's EDGE_DO_NOT_DECOMP path, which fails on an ordinary
+        attention block that reshapes its output, a shape this backend has to lower.
+        The cost of the coarser choice is that one declined call also unfuses the
+        operator's other calls in that graph.
         """
         from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 
@@ -157,6 +169,7 @@ class MLXPartitioner(Partitioner):
 
         # Collect ops for nodes that are actually supported
         do_not_decompose: list[torch._ops.OpOverload] = []
+        declined: set[torch._ops.OpOverload] = set()
 
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
@@ -166,6 +179,10 @@ class MLXPartitioner(Partitioner):
                 if info is not None and info.supported:
                     if node.target not in do_not_decompose:
                         do_not_decompose.append(node.target)
+                else:
+                    declined.add(node.target)
+
+        do_not_decompose = [op for op in do_not_decompose if op not in declined]
 
         self._not_decompose_cache = (weakref.ref(ep), do_not_decompose)
 

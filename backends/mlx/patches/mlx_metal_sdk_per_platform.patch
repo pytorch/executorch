@@ -1,0 +1,70 @@
+Select the Metal SDK per target platform.
+
+MLX compiles and links its Metal shader library with a hardcoded
+`xcrun -sdk macosx metal` and a hardcoded `-mmacosx-version-min` flag. ExecuTorch
+builds MLX for iOS device, iOS simulator, and macOS from one source tree, so the
+hardcoded macOS SDK produces a metallib built for the wrong platform on the iOS
+and simulator slices.
+
+Derive the Metal SDK and the deployment-version flag from PLATFORM (which
+ExecuTorch already passes to this build): iphoneos for OS64, iphonesimulator for
+SIMULATORARM64, macosx otherwise. This mirrors how the rest of the Apple build
+selects its SDK.
+
+Upstream candidate; carried locally until MLX selects the Metal SDK by platform.
+
+diff --git a/mlx/backend/metal/kernels/CMakeLists.txt b/mlx/backend/metal/kernels/CMakeLists.txt
+index edc169ee..94154f80 100644
+--- a/mlx/backend/metal/kernels/CMakeLists.txt
++++ b/mlx/backend/metal/kernels/CMakeLists.txt
+@@ -9,6 +9,21 @@ set(BASE_HEADERS
+     logging.h
+     utils.h)
+ 
++# The Metal SDK and deployment flag must follow the target platform. ExecuTorch
++# builds this for iOS device, iOS simulator, and macOS from one source tree and
++# passes PLATFORM in for each. Without this the shaders are always built against
++# the macOS SDK, so the iOS and simulator metallibs are wrong for their slice.
++if(PLATFORM STREQUAL "OS64")
++  set(MLX_METAL_SDK iphoneos)
++  set(MLX_METAL_VERSION_MIN_FLAG "-mios-version-min")
++elseif(PLATFORM STREQUAL "SIMULATORARM64")
++  set(MLX_METAL_SDK iphonesimulator)
++  set(MLX_METAL_VERSION_MIN_FLAG "-mios-simulator-version-min")
++else()
++  set(MLX_METAL_SDK macosx)
++  set(MLX_METAL_VERSION_MIN_FLAG "-mmacosx-version-min")
++endif()
++
+ function(build_kernel_base TARGET SRCFILE DEPS)
+   set(METAL_FLAGS
+       -x
+@@ -26,10 +41,10 @@ function(build_kernel_base TARGET SRCFILE DEPS)
+   endif()
+   if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
+     set(METAL_FLAGS ${METAL_FLAGS}
+-                    "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
++                    "${MLX_METAL_VERSION_MIN_FLAG}=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+   endif()
+   add_custom_command(
+-    COMMAND xcrun -sdk macosx metal ${METAL_FLAGS} -c ${SRCFILE}
++    COMMAND xcrun -sdk ${MLX_METAL_SDK} metal ${METAL_FLAGS} -c ${SRCFILE}
+             -I${PROJECT_SOURCE_DIR} -o ${TARGET}.air
+     DEPENDS ${SRCFILE} ${DEPS} ${BASE_HEADERS}
+     OUTPUT ${TARGET}.air
+@@ -180,12 +195,12 @@ endif()
+ 
+ set(METAL_LINK_FLAGS)
+ if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
+-  set(METAL_LINK_FLAGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
++  set(METAL_LINK_FLAGS
++      "${MLX_METAL_VERSION_MIN_FLAG}=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+ endif()
+-
+ add_custom_command(
+   OUTPUT ${MLX_METAL_PATH}/mlx.metallib
+-  COMMAND xcrun -sdk macosx metal ${METAL_LINK_FLAGS} ${KERNEL_AIR} -o
++  COMMAND xcrun -sdk ${MLX_METAL_SDK} metal ${METAL_LINK_FLAGS} ${KERNEL_AIR} -o
+           ${MLX_METAL_PATH}/mlx.metallib
+   DEPENDS ${KERNEL_AIR}
+   COMMENT "Building mlx.metallib"

@@ -31,6 +31,8 @@
 #include <memory>
 #include <mutex>
 
+#include <TargetConditionals.h>
+
 namespace executorch {
 namespace backends {
 namespace mlx {
@@ -191,7 +193,12 @@ struct MLXHandle {
   // Each FreeableBuffer must outlive the MLX arrays that reference it
   std::vector<FreeableBuffer> constant_buffers;
 
-  MLXHandle() : stream(::mlx::core::new_stream(::mlx::core::Device::gpu)) {}
+  // Delegate handles may be loaded on one host thread and executed on another.
+  // Module forbids concurrent use of a handle, and mlx_global_mutex()
+  // serializes graph construction and command submission across handles.
+  MLXHandle()
+      : stream(
+            ::mlx::core::new_thread_unsafe_stream(::mlx::core::Device::gpu)) {}
   ~MLXHandle() = default;
 
   MLXHandle(const MLXHandle&) = delete;
@@ -212,7 +219,16 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
   ~MLXBackend() override = default;
 
   bool is_available() const override {
+#if TARGET_OS_SIMULATOR
+    // The simulator's Metal device reports no architecture, which MLX reads
+    // without a null check while constructing its device. Past that, requesting
+    // a shared storage heap traps inside Metal itself, so MLX never gets a
+    // value it could fall back from. This is a build switch rather than a
+    // probe: it can go once the simulator has a usable Metal device.
+    return false;
+#else
     return ::mlx::core::metal::is_available();
+#endif
   }
 
   Result<DelegateHandle*> init(

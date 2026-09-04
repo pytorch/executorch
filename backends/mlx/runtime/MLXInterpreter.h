@@ -293,7 +293,15 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 
   array out = fast::scaled_dot_product_attention(
-      Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+      Q,
+      K,
+      V,
+      static_cast<float>(n.scale),
+      mask_mode,
+      mask_arr,
+      sinks,
+      false,
+      s);
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -382,6 +390,7 @@ inline void exec_update_and_attend(
       mask_mode,
       spec.mask,
       std::nullopt,
+      false,
       s);
   // Honor the op's output-dtype contract (unset -> SDPA's native output).
   if (n.out_dtype) {
@@ -835,6 +844,11 @@ exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
+}
+
+inline void exec_flip(const FlipNode& n, ExecutionState& st, StreamOrDevice s) {
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, flip(st.const_tensor_ref(n.x), axes, s));
 }
 
 inline void
@@ -2161,6 +2175,9 @@ class Interpreter {
         break;
       case OpCode::TRANSPOSE:
         ops::exec_transpose(std::get<TransposeNode>(instr.node), st, s);
+        break;
+      case OpCode::FLIP:
+        ops::exec_flip(std::get<FlipNode>(instr.node), st, s);
         break;
       case OpCode::AS_STRIDED:
         ops::exec_as_strided(std::get<AsStridedNode>(instr.node), st, s);

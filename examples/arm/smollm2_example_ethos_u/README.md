@@ -234,6 +234,45 @@ How to interpret the main options:
 - `--repetition-penalty 1.1` still matters in greedy mode because it modifies
   the logits before `argmax`.
 
+### 5.1 Profile prompt processing and decoding
+
+The runner exposes Ethos-U85 PMU counters for every server-mode inference.
+Capture those counters with FVP fast mode disabled:
+
+```bash
+python examples/arm/smollm2_example_ethos_u/generate_sampled.py \
+  --fvp examples/arm/arm-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320 \
+  --runner smollm2_ethosu_static_kvq_seq64_w8a16_wikitext/cmake-out/arm_executor_runner \
+  --embedded-pte \
+  --tokenizer data/tokenizers/smollm2/tokenizer.json \
+  --prompt "Once upon a time in a small village," \
+  --window 64 \
+  --max-context-length 64 \
+  --use-kv-cache \
+  --max-new-tokens 2 \
+  --temperature 0 \
+  --no-topk-print \
+  --profile-output outputs/ethosu_u85_profile.json \
+  --timeout 24000
+```
+
+`--profile-output` accepts `.json` or `.csv` and automatically removes the
+Ethos-U `--fast` FVP option. The report contains one NPU PMU sample per model
+execution, split into `prefill` and `decode` phases. Passing
+`--npu-frequency-mhz` also reports an estimated NPU-only token rate.
+
+This KV-cache demo processes the prompt one token at a time; its prefill result
+is therefore the aggregate and average of those token executions, not a
+batched-prefill measurement. The final prompt execution supplies the logits for
+the first generated token, so steady-state decode executions start with the
+second generated token.
+
+CS-320 provides useful Ethos-U85 NPU cycle and event estimates when its timing
+adapters match the target configuration. Cortex-M85 CPU timing and simulator
+wall time are not cycle accurate, so the report must not be interpreted as
+end-to-end latency or measured device tokens/s. Use FPGA or hardware for those
+measurements.
+
 ## 6. Optional: evaluate Wikitext perplexity
 
 The KV-cache generation artifact can also be used for step-wise perplexity scoring over the same 64-token context.

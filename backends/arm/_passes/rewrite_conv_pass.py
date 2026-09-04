@@ -33,7 +33,10 @@ from executorch.backends.arm.constants import (
     ODHWI_ORDER,
     OHWI_ORDER,
 )
-from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.mapping import (
+    TOSA_CONTROL_FLOW_SOURCE_NODE_META,
+    TosaSpecialDtype,
+)
 from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -91,7 +94,7 @@ class RewriteConvPass(ArmPass):
                 pass instead.
 
         """
-        mod_remainder = (
+        mod_remainder: int | torch.SymInt = (
             input_len + 2 * pad - dilation * (input_weight - 1) - 1
         ) % stride
 
@@ -118,14 +121,14 @@ class RewriteConvPass(ArmPass):
 
         return pad - mod_remainder
 
-    def _is_depthwise_conv2d(self, node: torch.fx.Node) -> bool:
+    def _is_depthwise_conv(self, node: torch.fx.Node) -> bool:
         if (
             node.op != "call_function"
             or node.target != exir_ops.edge.aten.convolution.default
         ):
             return False
         input_tensor = get_first_fake_tensor(node.all_input_nodes[0])
-        if len(input_tensor.shape) != 4:
+        if len(input_tensor.shape) not in (3, 4):
             return False
         groups = node.args[-1]
         in_channels = input_tensor.shape[1]
@@ -208,6 +211,111 @@ class RewriteConvPass(ArmPass):
                 persistent_buffer=persistent_buffer,
             )
 
+    def _resolve_control_flow_constant(
+        self, node: torch.fx.Node
+    ) -> tuple[torch.fx.Node, torch.Tensor, list[torch.fx.Node]]:
+        """Resolve a child input back to a constant in an enclosing graph."""
+        source = node
+        visited = set()
+        rescales = []
+        while source not in visited:
+            visited.add(source)
+            # A captured constant can be requantized at every control-flow
+            # boundary. Save those operations so the rewritten constant can
+            # later be put through the same chain in its new layout.
+            if source.target == exir_ops.backend.tosa.RESCALE.default:
+                if not isinstance(source.args[0], torch.fx.Node):
+                    raise RuntimeError(
+                        f"Rescale node {source.name} has no tensor input"
+                    )
+                rescales.append(source)
+                source = source.args[0]
+                continue
+            try:
+                tensor = get_param_tensor(self.exported_program, source)
+            except RuntimeError:
+                # Branch placeholders are not constants themselves. The TOSA
+                # backend records the corresponding operand in the parent
+                # graph, which may itself be a placeholder in another branch.
+                parent_source = source.meta.get(TOSA_CONTROL_FLOW_SOURCE_NODE_META)
+                if not isinstance(parent_source, torch.fx.Node):
+                    raise
+                source = parent_source
+                continue
+            # get_param_tensor returns None only for a None input. Keep this
+            # guard for its Optional return type; source is always an FX node.
+            if tensor is None:
+                raise RuntimeError(
+                    f"Node {source.name} is not a parameter, buffer, or constant"
+                )
+            return source, tensor, rescales
+        raise RuntimeError(f"Cycle while resolving control-flow input {node.name}")
+
+    def _rewrite_control_flow_bias(
+        self,
+        graph_module: torch.fx.GraphModule,
+        conv_node: torch.fx.Node,
+        bias_node: torch.fx.Node,
+        input_node: torch.fx.Node,
+        weight_node: torch.fx.Node,
+    ) -> torch.fx.Node:
+        """Create an INT32 bias from a rescaled constant control-flow input."""
+        if bias_node.target != exir_ops.backend.tosa.RESCALE.default or not isinstance(
+            bias_node.args[0], torch.fx.Node
+        ):
+            return bias_node
+
+        constant_source, quantized_bias, parent_rescales = (
+            self._resolve_control_flow_constant(bias_node.args[0])
+        )
+        conv_qparams = get_input_qparams(conv_node)
+        input_qparams = conv_qparams[0]
+        weight_qparams = conv_qparams[1]
+        bias_qparams = conv_qparams[2]
+
+        # Recover the scale at which the captured bias was originally stored.
+        # The rescales are discovered from the innermost graph outwards, hence
+        # the reversal before composing their scale ratios.
+        rescale_chain = [*reversed(parent_rescales), bias_node]
+        boundary_scale = 1.0
+        for rescale in rescale_chain:
+            boundary_scales = cast(list[float], rescale.args[2])
+            boundary_scale *= boundary_scales[0]
+        boundary_zp = cast(int, rescale_chain[0].args[3])
+        source_scale = boundary_scale * bias_qparams.get_scale_per_tensor()
+        float_bias = (quantized_bias.to(torch.float32) - boundary_zp) * source_scale
+
+        # TOSA convolution accumulates into INT32. Its bias therefore uses the
+        # product of the activation and weight scales, rather than the scale
+        # assigned to a captured control-flow operand by the quantizer.
+        activation_scale = input_qparams.get_scale_per_tensor()
+        weight_scales = (
+            torch.tensor(weight_qparams.get_scale_per_channel())
+            if weight_qparams.per_channel
+            else torch.tensor(weight_qparams.get_scale_per_tensor())
+        )
+        bias_scales = activation_scale * weight_scales
+        rewritten_bias = torch.round(float_bias / bias_scales).to(torch.int64)
+        rewritten_bias = rewritten_bias.clamp(
+            torch.iinfo(torch.int32).min, torch.iinfo(torch.int32).max
+        ).to(torch.int32)
+
+        kind = get_constant_placeholder_kind(self.exported_program, constant_source)
+        persistent_buffer = is_persistent_buffer(self.exported_program, constant_source)
+        with graph_module.graph.inserting_after(bias_node):
+            rewritten_bias_node = create_constant_placeholder(
+                self.exported_program,
+                graph=graph_module.graph,
+                name=f"{conv_node.name}_bias_int32",
+                kind=kind,
+                data=rewritten_bias,
+                persistent_buffer=persistent_buffer,
+            )
+        # A16W8 stores the bias in an INT32 tensor but TOSA interprets it as
+        # the INT48 accumulator type.
+        self._mark_bias_as_int48_if_needed(conv_node, rewritten_bias_node)
+        return rewritten_bias_node
+
     def _rewrite_weight(
         self,
         graph_module: torch.fx.GraphModule,
@@ -217,19 +325,36 @@ class RewriteConvPass(ArmPass):
         name_suffix: str,
         reshape_dims: tuple[int, ...] | None = None,
     ) -> torch.fx.Node:
-        """Create a convolution-local rewritten weight placeholder."""
-        weight_tensor = get_param_tensor(self.exported_program, weight_node)  # type: ignore[arg-type]
-        if weight_tensor is None:
-            raise RuntimeError(
-                f"Weight node {weight_node.name} is not a parameter or buffer"
-            )
+        """Create a convolution-local weight in the layout required by TOSA."""
+        source_node = weight_node
+        rescale_node = None
+        if (
+            weight_node.target == exir_ops.edge.aten.view_copy.default
+            and isinstance(weight_node.args[0], torch.fx.Node)
+            and weight_node.args[0].target == exir_ops.backend.tosa.RESCALE.default
+        ):
+            rescale_node = weight_node.args[0]
+            if not isinstance(rescale_node.args[0], torch.fx.Node):
+                raise RuntimeError(
+                    f"Rescaled weight node {rescale_node.name} has no tensor input"
+                )
+            source_node = rescale_node.args[0]
 
-        rewritten_weight = weight_tensor.permute(permute_dims)
+        constant_source, weight_tensor, parent_rescales = (
+            self._resolve_control_flow_constant(source_node)
+        )
+
+        if rescale_node is not None:
+            # RESCALE is elementwise, so reshape the constant before it instead
+            # of trying to evaluate the quantized rescale during compilation.
+            weight_shape = cast(list[int], weight_node.args[1])
+            weight_tensor = weight_tensor.reshape(weight_shape)
+        rewritten_weight_value = weight_tensor.permute(permute_dims)
         if reshape_dims is not None:
-            rewritten_weight = rewritten_weight.reshape(*reshape_dims)
-        rewritten_weight = rewritten_weight.contiguous()
-        kind = get_constant_placeholder_kind(self.exported_program, weight_node)
-        persistent_buffer = is_persistent_buffer(self.exported_program, weight_node)
+            rewritten_weight_value = rewritten_weight_value.reshape(*reshape_dims)
+        rewritten_weight_value = rewritten_weight_value.contiguous()
+        kind = get_constant_placeholder_kind(self.exported_program, constant_source)
+        persistent_buffer = is_persistent_buffer(self.exported_program, constant_source)
 
         with graph_module.graph.inserting_after(weight_node):
             rewritten_weight_node = create_constant_placeholder(
@@ -237,12 +362,36 @@ class RewriteConvPass(ArmPass):
                 graph=graph_module.graph,
                 name=f"{conv_node.name}_weight_{name_suffix}",
                 kind=kind,
-                data=rewritten_weight,
+                data=rewritten_weight_value,
                 persistent_buffer=persistent_buffer,
             )
-        if special_dtype := weight_node.meta.get(TosaSpecialDtype.meta_key()):
+        if special_dtype := source_node.meta.get(TosaSpecialDtype.meta_key()):
             rewritten_weight_node.meta[TosaSpecialDtype.meta_key()] = special_dtype
-        return rewritten_weight_node
+
+        # Layout changes commute with elementwise RESCALE operations. Rebuild
+        # the saved outer-to-inner chain after the permuted constant so nested
+        # branches retain exactly the quantization boundaries they started with.
+        rescale_chain = [*reversed(parent_rescales)]
+        if rescale_node is not None:
+            rescale_chain.append(rescale_node)
+        rewritten_weight: torch.fx.Node = rewritten_weight_node
+        for original_rescale in rescale_chain:
+            with graph_module.graph.inserting_after(rewritten_weight):
+                rewritten_rescale = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.backend.tosa.RESCALE.default,
+                    args=(rewritten_weight, *original_rescale.args[1:]),
+                    kwargs=original_rescale.kwargs,
+                    from_node=original_rescale,
+                )
+            rewritten_rescale.meta["val"] = exir_ops.backend.tosa.RESCALE.default(
+                get_first_fake_tensor(rewritten_weight),
+                *original_rescale.args[1:],
+                **original_rescale.kwargs,
+            )
+            rewritten_weight = rewritten_rescale
+
+        return rewritten_weight
 
     def _is_quantized_conv(self, node: torch.fx.Node) -> bool:
         return bool(node.meta.get("input_qparams", {}))
@@ -280,12 +429,28 @@ class RewriteConvPass(ArmPass):
             )
 
         activation = users[0]
+        if activation.target == exir_ops.edge.aten.view_copy.default:
+            view_output_qparams = activation.meta.get("output_qparams", {})
+            if view_output_qparams:
+                return view_output_qparams
         if activation.target == exir_ops.edge.aten.clamp.default:
             activation_output_qparams = activation.meta.get("output_qparams", {})
             if activation_output_qparams:
                 return activation_output_qparams
 
         return get_output_qparams(node)
+
+    def _get_effective_conv_input_qparams(self, node: torch.fx.Node):
+        """Return conv qparams, including those attached to input views."""
+        input_qparams = dict(node.meta.get("input_qparams", {}))
+        for index in (0, 1):
+            arg = node.args[index]
+            if index in input_qparams or not isinstance(arg, torch.fx.Node):
+                continue
+            arg_qparams = arg.meta.get("input_qparams", {})
+            if 0 in arg_qparams:
+                input_qparams[index] = arg_qparams[0]
+        return input_qparams
 
     def insert_output_rescale(
         self,
@@ -294,7 +459,7 @@ class RewriteConvPass(ArmPass):
         conv_node,
         conv_fake_tensor: torch.Tensor,
     ):
-        input_qparams = get_input_qparams(source_node)
+        input_qparams = self._get_effective_conv_input_qparams(source_node)
         output_qparams = self._get_effective_output_qparams(source_node)[0]
         weight_qparams = input_qparams[1]
         input_qparams = input_qparams[0]
@@ -359,11 +524,11 @@ class RewriteConvPass(ArmPass):
     @staticmethod
     def _is_direct_int32_rescale(node: torch.fx.Node) -> bool:
         """Return whether a node directly rescales its input to INT32."""
-        return (
+        return bool(
             node.op == "call_function"
             and node.target == exir_ops.backend.tosa.RESCALE.default
             and len(node.args) > 1
-            and node.args[1] == torch.int32
+            and node.args[1] is torch.int32
         )
 
     def _get_direct_int32_rescale_users(
@@ -643,6 +808,11 @@ class RewriteConvPass(ArmPass):
                 group,
             ) = node.args
 
+            if self._is_quantized_conv(node):
+                node.meta["input_qparams"] = self._get_effective_conv_input_qparams(
+                    node
+                )
+
             input_fake_tensor = get_first_fake_tensor(x)
             weight_fake_tensor = get_first_fake_tensor(weight)
             input_shape = input_fake_tensor.shape
@@ -660,6 +830,13 @@ class RewriteConvPass(ArmPass):
             elif isinstance(bias, torch.fx.Node):
                 if input_fake_tensor.dtype in self._FP8_DTYPES:
                     bias = self._rewrite_fp8_bias(graph_module, node, bias)
+                elif (
+                    self._is_quantized_conv(node)
+                    and get_first_fake_tensor(bias).dtype != torch.int32
+                ):
+                    bias = self._rewrite_control_flow_bias(
+                        graph_module, node, bias, x, weight
+                    )
                 else:
                     self._mark_bias_as_int48_if_needed(node, bias)
 
@@ -734,7 +911,70 @@ class RewriteConvPass(ArmPass):
                 dilation = tuple(dilation_list)
                 pad = pad_attr
 
-                if self._is_conv3d(len(input_shape), group):
+                if spatial_rank == 1:
+                    target_op = (
+                        exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
+                        if self._is_depthwise_conv(node)
+                        else exir_ops.backend.tosa.CONV2D.default
+                    )
+                    pre_permute_dims = (0, 2, 1)
+                    post_permute_dims = (0, 2, 1)
+                    with graph_module.graph.inserting_before(node):
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.permute_copy.default,
+                            args=(x, list(pre_permute_dims)),
+                            from_node=node,
+                        )
+                        permuted_input_fake = permute_fake_tensor_metadata(
+                            input_fake_tensor, pre_permute_dims
+                        )
+                        x.meta["val"] = permuted_input_fake
+                        input_tensor_for_tosa_fake = permuted_input_fake.unsqueeze(1)
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.view_copy.default,
+                            args=(x, list(input_tensor_for_tosa_fake.shape)),
+                            from_node=node,
+                        )
+                        x.meta["val"] = input_tensor_for_tosa_fake
+
+                    kernel_width = weight_shape[2]
+                    if target_op == exir_ops.backend.tosa.DEPTHWISE_CONV2D.default:
+                        in_channels = input_fake_tensor.shape[1]
+                        channel_multiplier = weight_shape[0] // in_channels
+                        weight = self._rewrite_weight(
+                            graph_module,
+                            weight,
+                            node,
+                            permute_dims=(1, 2, 0),
+                            name_suffix="hwicm",
+                            reshape_dims=(
+                                1,
+                                kernel_width,
+                                in_channels,
+                                channel_multiplier,
+                            ),
+                        )
+                    else:
+                        weight = self._rewrite_weight(
+                            graph_module,
+                            weight,
+                            node,
+                            permute_dims=(0, 2, 1),
+                            name_suffix="ohwi",
+                            reshape_dims=(
+                                weight_shape[0],
+                                1,
+                                kernel_width,
+                                weight_shape[1],
+                            ),
+                        )
+                    weight_fake_tensor = get_first_fake_tensor(weight)
+                    stride = (1, stride[0])
+                    dilation = (1, dilation[0])
+                    pad = [0, 0, pad[0], pad[1]]
+                elif self._is_conv3d(len(input_shape), group):
                     target_op = exir_ops.backend.tosa.CONV3D.default
                     pre_permute_dims = ODHWI_ORDER
                     post_permute_dims = ODHWI_INVERSE_ORDER
@@ -757,7 +997,7 @@ class RewriteConvPass(ArmPass):
                         name_suffix="odhwi",
                     )
                     weight_fake_tensor = get_first_fake_tensor(weight)
-                elif self._is_depthwise_conv2d(node):
+                elif self._is_depthwise_conv(node):
                     target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
                     pre_permute_dims = NHWC_ORDER
                     post_permute_dims = NHWC_INVERSE_ORDER
@@ -862,7 +1102,28 @@ class RewriteConvPass(ArmPass):
 
             if post_permute_dims is None:
                 raise RuntimeError("Expected post permute dims for explicit layout")
+            output_conversion_node = node_replacement
             post_permute_input = node_replacement
+            squeeze_view: torch.fx.Node | None = None
+            if spatial_rank == 1:
+                squeezed_output_fake = cast(
+                    FakeTensor, node_replacement_fake_tensor.squeeze(1)
+                )
+                special_dtype = node_replacement.meta.get(TosaSpecialDtype.meta_key())
+                with graph_module.graph.inserting_after(node_replacement):
+                    node_replacement = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.view_copy.default,
+                        args=(node_replacement, list(squeezed_output_fake.shape)),
+                        from_node=node,
+                    )
+                node_replacement.meta["val"] = squeezed_output_fake
+                if special_dtype:
+                    node_replacement.meta[TosaSpecialDtype.meta_key()] = special_dtype
+                squeeze_view = node_replacement
+                post_permute_input = node_replacement
+                node_replacement_fake_tensor = squeezed_output_fake
+
             with graph_module.graph.inserting_after(node_replacement):
                 node_replacement = create_node(
                     graph=graph_module.graph,
@@ -882,16 +1143,23 @@ class RewriteConvPass(ArmPass):
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int16
             )
-            if is_a16w8_conv:
+            if is_a16w8_conv and spatial_rank != 1:
                 # Keep values in INT32 whenever a consumer supports it, even
                 # though the declared output is INT16, by branching from the
                 # accumulator before narrowing.
+                #
+                # Rank-three convolutions are excluded. The legacy Conv1d
+                # expansion placed a rank-changing view between the convolution
+                # and its INT32 consumers, so the convolution narrowed to its
+                # exported output domain instead of forking. Forking here would
+                # give each branch its own boundary rescale and permute, which
+                # Vela materialises as a second full transpose of the output.
                 self._insert_a16w8_output_branches(
                     graph_module,
                     node,
                     tosa_op,
                     tosa_node_fake_tensor,
-                    post_permute_input,
+                    output_conversion_node,
                     post_permute_dims,
                 )
                 # Only users not moved to widened branches remain on the
@@ -901,7 +1169,9 @@ class RewriteConvPass(ArmPass):
                     node.replace_all_uses_with(node_replacement)
                 else:
                     graph_module.graph.erase_node(node_replacement)
-                    graph_module.graph.erase_node(post_permute_input)
+                    if squeeze_view is not None:
+                        graph_module.graph.erase_node(squeeze_view)
+                    graph_module.graph.erase_node(output_conversion_node)
             else:
                 node.replace_all_uses_with(node_replacement)
 

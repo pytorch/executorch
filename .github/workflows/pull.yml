@@ -1023,7 +1023,10 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      runner-linux: linux.2xlarge
+      # No runner-linux, so this takes the memory-optimized default. The suite
+      # runs one export worker per core, so what matters is memory per core, not
+      # core count: the previous instance gave each worker about 4 GiB and the
+      # job was killed. The memory-optimized default gives each worker more.
 
   test-qnn-passes-linux:
     name: test-qnn-passes-linux
@@ -1058,6 +1061,10 @@ jobs:
 
         # Run QNN pass unit tests
         pytest -xvs backends/qualcomm/tests/test_passes.py
+
+        # And the checks that importing the backend has no side effects. These need no SDK and
+        # no device, but they do need the package importable, which this job already arranges.
+        pytest -xvs backends/qualcomm/tests/test_import_side_effects.py
 
   test-qnn-delegate-linux:
     name: test-qnn-delegate-linux
@@ -1554,6 +1561,8 @@ jobs:
         fi
 
         # Test models
+        # TODO: Switch to run_tests.py once CI device provisioning is stable
+        # python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
 
   test-vulkan-models-linux:
@@ -1718,3 +1727,22 @@ jobs:
             echo "Neutron backend library not found!"
             exit 1
         fi
+
+  nxp-mcuxpresso-test:
+    name: nxp-mcuxpresso-test
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        ./examples/nxp/mcuxpresso/imxrt700/executorch_cifarnet/test_build_from_scratch.sh

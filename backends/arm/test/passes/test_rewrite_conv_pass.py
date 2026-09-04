@@ -90,6 +90,37 @@ class A16W8Int32Consumer(nn.Module):
         return self.conv(x) + x
 
 
+class A16W8Conv1dInt32Consumer(nn.Module):
+    """Exercise a rank-three A16W8 convolution consumed only by an INT32 add."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = nn.Conv1d(4, 4, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Feed the convolution output directly to a residual addition."""
+        return self.conv(x) + x
+
+
+class A16W8Conv1dSharedConsumers(nn.Module):
+    """Exercise a rank-three A16W8 convolution read by two INT32 consumers.
+
+    Mirrors the attention tail of an ECAPA-style model, where ``Softmax(dim=2)``
+    decomposes into an ``amax`` reduction and a subtraction that both read the
+    convolution output.
+
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = nn.Conv1d(4, 4, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Share the convolution output between reduction and subtraction."""
+        y = self.conv(x)
+        return y - y.amax(dim=2, keepdim=True)
+
+
 class A16W8MixedConsumer(nn.Module):
     """Exercise a shared A16W8 convolution output with mixed consumers."""
 
@@ -296,6 +327,27 @@ class DepthwiseConv2dBiasModule(torch.nn.Module):
         return self.conv(x)
 
 
+class Conv1dBiasModule(torch.nn.Module):
+    def __init__(self, depthwise: bool = False) -> None:
+        super().__init__()
+        groups = 4 if depthwise else 1
+        out_channels = 8 if depthwise else 6
+        self.conv = torch.nn.Conv1d(
+            4,
+            out_channels,
+            kernel_size=3,
+            padding=1,
+            groups=groups,
+            bias=True,
+        )
+
+    def get_inputs(self) -> tuple[torch.Tensor]:
+        return (torch.randn(1, 4, 8),)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
 class Conv3dBiasModule(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -491,6 +543,69 @@ def test_rewrite_conv_a16w8_preserves_int32_for_int32_consumers() -> None:
     assert direct_int32_rescales[0].args[2] == pytest.approx(expected_int32_scales[0])
 
 
+def test_rewrite_conv1d_a16w8_narrows_instead_of_forking_int32() -> None:
+    """Test that a rank-three A16W8 convolution narrows instead of forking.
+
+    Each widened INT32 branch carries its own boundary rescale and layout
+    permutation. Vela materialises the rank-three permutation as a full
+    transpose of the convolution output, so a second branch doubles that cost. A
+    rank-three convolution therefore narrows to its exported INT16 domain and
+    keeps a single layout boundary.
+
+    """
+    inputs = (torch.randn(1, 4, 8),)
+    gm, _ = _rewrite_a16w8_convs(A16W8Conv1dInt32Consumer(), inputs)
+
+    conv = _get_call_function_node(gm, exir_ops.backend.tosa.CONV2D.default)
+    forked_int32_rescales = [
+        node
+        for node in gm.graph.nodes
+        if node.op == "call_function"
+        and node.target == exir_ops.backend.tosa.RESCALE.default
+        and node.args[1] == torch.int32
+        and node.all_input_nodes[0] is conv
+    ]
+    assert forked_int32_rescales == []
+
+    (boundary_rescale,) = tuple(conv.users)
+    assert boundary_rescale.target == exir_ops.backend.tosa.RESCALE.default
+    (squeeze_view,) = tuple(boundary_rescale.users)
+    assert squeeze_view.target == exir_ops.edge.aten.view_copy.default
+    assert squeeze_view.meta["val"].shape == torch.Size((1, 8, 4))
+    (boundary_permute,) = tuple(squeeze_view.users)
+    assert boundary_permute.target == exir_ops.edge.aten.permute_copy.default
+    assert boundary_permute.meta["val"].shape == torch.Size((1, 4, 8))
+
+
+def test_rewrite_conv1d_a16w8_shares_one_layout_boundary() -> None:
+    """Test that consumers of a rank-three A16W8 convolution share one boundary.
+
+    Forking a widened INT32 branch gives every consumer its own boundary rescale
+    and layout permutation. Vela materialises the rank-three permutation as a
+    full transpose of the convolution output, so a second branch doubles it.
+
+    """
+    inputs = (torch.randn(1, 4, 8),)
+    gm, _ = _rewrite_a16w8_convs(A16W8Conv1dSharedConsumers(), inputs)
+
+    conv = _get_call_function_node(gm, exir_ops.backend.tosa.CONV2D.default)
+    boundary_rescales = [
+        node
+        for node in conv.users
+        if node.target == exir_ops.backend.tosa.RESCALE.default
+    ]
+    assert len(boundary_rescales) == 1
+
+    output_permutes = [
+        node
+        for node in gm.graph.nodes
+        if node.op == "call_function"
+        and node.target == exir_ops.edge.aten.permute_copy.default
+        and node.meta["val"].shape == torch.Size((1, 4, 8))
+    ]
+    assert len(output_permutes) == 1
+
+
 def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
     r"""Test that an indirect INT32 consumer keeps a widened branch.
 
@@ -533,23 +648,79 @@ def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
     assert len(widened_paths) == 1
 
 
+@pytest.mark.parametrize(
+    "depthwise,target_op,expected_weight_shape,expected_output_shape",
+    [
+        (
+            False,
+            exir_ops.backend.tosa.CONV2D.default,
+            (6, 1, 3, 4),
+            (1, 6, 8),
+        ),
+        (
+            True,
+            exir_ops.backend.tosa.DEPTHWISE_CONV2D.default,
+            (1, 3, 4, 2),
+            (1, 8, 8),
+        ),
+    ],
+)
+def test_rewrite_conv1d_emits_atomic_rank3_layout_boundaries(
+    depthwise: bool,
+    target_op,
+    expected_weight_shape: tuple[int, ...],
+    expected_output_shape: tuple[int, ...],
+) -> None:
+    module = Conv1dBiasModule(depthwise).eval()
+    edge_program = to_edge(export(module, module.get_inputs())).exported_program()
+
+    with TosaLoweringContext(_compile_spec().tosa_spec):
+        result = RewriteConvPass(edge_program)(edge_program.graph_module)
+        assert result is not None
+        graph_module = result.graph_module
+
+    conv = _get_call_function_node(graph_module, target_op)
+    input_view = conv.args[0]
+    assert isinstance(input_view, torch.fx.Node)
+    assert input_view.target == exir_ops.edge.aten.view_copy.default
+    input_permute = input_view.args[0]
+    assert isinstance(input_permute, torch.fx.Node)
+    assert input_permute.target == exir_ops.edge.aten.permute_copy.default
+    assert input_permute.args[1] == [0, 2, 1]
+    assert input_view.meta["val"].shape == torch.Size((1, 1, 8, 4))
+
+    weight = conv.args[1]
+    assert isinstance(weight, torch.fx.Node)
+    assert weight.meta["val"].shape == torch.Size(expected_weight_shape)
+
+    output_view = next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.view_copy.default and node.args[0] is conv
+    )
+    output_permute = next(iter(output_view.users))
+    assert output_permute.target == exir_ops.edge.aten.permute_copy.default
+    assert output_permute.args[1] == [0, 2, 1]
+    assert output_permute.meta["val"].shape == torch.Size(expected_output_shape)
+
+
 @pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
-def test_fold_and_annotate_q_params_vgf_quant_preserves_output_qparams_on_non_fuseable_clamp() -> (
-    None
-):
+def test_fold_and_annotate_q_params_vgf_quant_tracks_fused_relu_qparams() -> None:
     exported_program = _export_quantized(TinyConvReluCat())
     gm = _run_pre_rewrite_passes(to_edge(exported_program).exported_program())
 
     conv = _get_call_function_node(gm, exir_ops.edge.aten.convolution.default)
-    clamp = _get_call_function_node(gm, exir_ops.edge.aten.clamp.default)
+    output_qparams = conv.meta["output_qparams"][0]
 
     assert conv.meta["input_qparams"]
-    assert not conv.meta["output_qparams"]
-    assert clamp.meta["output_qparams"]
+    assert output_qparams.qmin == output_qparams.zp
+    assert not any(
+        node.target == exir_ops.edge.aten.clamp.default for node in gm.graph.nodes
+    )
 
 
 @pytest.mark.skipif(not _VGF_ENABLED, reason="VGF not enabled")
-def test_rewrite_conv_vgf_quant_handles_non_fuseable_conv_clamp_cat_branch() -> None:
+def test_rewrite_conv_vgf_quant_handles_fused_conv_relu_cat_branch() -> None:
     exported_program = _export_quantized(TinyConvReluCat())
     compile_spec = _compile_spec()
 

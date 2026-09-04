@@ -199,6 +199,21 @@ foreach(_component
 endforeach()
 ```
 
+On macOS the Core ML and MLX delegates link the same way, by naming their
+component. Registration is handled for you: each backend registers itself through
+a static initializer, and the imported target carries the link options that keep
+that initializer from being dropped, so you do not need `-force_load` or any
+whole-archive flag of your own.
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_coreml backend_mlx)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_coreml
+                                  executorch::backend_mlx)
+```
+
 Profiling a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in
 total. It does not record the individual operators inside the delegate, because that detail comes
 from the Core ML developer tools sources, and the wheel does not build them. An XNNPACK model

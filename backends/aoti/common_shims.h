@@ -62,6 +62,10 @@ aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel);
 
+// PyTorch has an undefined-tensor state with no equivalent here: null check.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_is_defined(Tensor* tensor, bool* ret_is_defined);
+
 // Utility functions for device and layout information
 AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cpu();
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();

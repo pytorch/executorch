@@ -3,6 +3,7 @@ unary_op:
     OPERATOR: clamp(X, A, B)
     DTYPE: float
     STORAGE: texture3d
+    DYNAMIC_PARAMS: false
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -18,6 +19,13 @@ unary_op:
     - NAME: clamp_int32
       OPERATOR: clamp(X, A, B)
       DTYPE: int32
+    - NAME: clamp_dynamic_int32
+      OPERATOR: clamp(X, A, B)
+      DTYPE: int32
+      DYNAMIC_PARAMS: true
+    - NAME: clamp_dynamic
+      OPERATOR: clamp(X, A, B)
+      DYNAMIC_PARAMS: true
     - NAME: cos
       OPERATOR: cos(X)
     - NAME: exp

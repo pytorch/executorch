@@ -195,6 +195,31 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<DeviceType>(device_type) == DeviceType::CPU,
+      InvalidArgument,
+      "aoti_torch_empty_strided_pinned: pinned memory is host memory, so the "
+      "device type must be CPU, got %d",
+      device_type);
+
+  return aoti_torch_empty_strided(
+      ndim,
+      sizes_ptr,
+      strides_ptr,
+      dtype,
+      device_type,
+      device_index,
+      ret_new_tensor);
+}
+
 AOTITorchError aoti_torch_delete_tensor_object(SlimTensor* tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       tensor != nullptr,

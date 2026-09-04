@@ -26,6 +26,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
+
 #ifdef ET_EVENT_TRACER_ENABLED
 std::string& set_and_get_current_operator_json(const std::string& json);
 size_t get_current_operator_count(const bool increment = false);
@@ -202,8 +204,8 @@ class ComputeGraph final {
   // List of command buffers deferred for submission
   std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
 
-  // Set to track which ValueRefs were updated during inference
-  std::unordered_set<ValueRef> updated_values_;
+  std::vector<uint32_t> value_update_generations_;
+  uint32_t current_update_generation_ = 1;
 
   // Cache to prevent duplicate prepacking of the same weight tensor with the
   // same kernel. Key is (inputValueRef, kernel_name).
@@ -710,6 +712,7 @@ class ComputeGraph final {
 
  private:
   void check_no_active_value_ptrs();
+  bool was_value_list_updated(const ValueRef idx) const noexcept;
 
  public:
   /*
@@ -1010,7 +1013,7 @@ class ComputeGraph final {
 
   void register_pipeline_to_create(
       const vkapi::ShaderInfo& shader_info,
-      const utils::WorkgroupSize& local_workgroup_size,
+      const LocalWorkGroup& lwg,
       const vkapi::SpecVarList& spec_vars,
       const std::vector<PushConstantDataInfo>& push_constants);
 
@@ -1023,37 +1026,36 @@ class ComputeGraph final {
   //
 
   /*
-   * Create a global workgroup size for a given `api::vTensor` value assuming
-   * that every shader invocation calculates one texel element of the output
-   * tensor.
+   * Create a global invocation size for a given `api::vTensor` value assuming
+   * that every shader invocation calculates one element of the output tensor.
    *
    * For tensors that use texture storage, the image extents of the
    * `api::vTensor` will be used to set the global workgroup size.
    *
-   * For tensor that use buffer storage, the number of texels in the texel
-   * buffer will be used to set the x component of the global workgroup size.
-   * All other components will be set to 1 (i.e. {ntexels, 1, 1} will be
-   * returned).
+   * Buffer tensors use linear dispatch intent. Oversized X dimensions are
+   * wrapped across X and Y according to device workgroup-count limits.
    */
-  utils::uvec3 create_global_wg_size(const ValueRef idx);
+  GlobalWorkGrid create_gwg(const ValueRef idx);
+
+  GlobalWorkGrid create_linear_gwg(const uint64_t numel);
 
   /*
-   * Suggest a local workgroup size for a given global workgroup size.
+   * Suggest a local workgroup size for a given global invocation size.
    *
    * The local workgroup size will be formed to try and minimize the number of
    * inactive invocations.
    *
-   * Currently, the local workgroup size is hard-coded to contain a total of 64
-   * shader invocations. In the future, this value can be configured.
+   * Linear dispatches return their binding hint. Other dispatches use a shape
+   * heuristic targeting the adapter's recommended thread count.
    */
-  utils::uvec3 create_local_wg_size(const utils::uvec3 global_wg_size);
+  LocalWorkGroup create_lwg(const GlobalWorkGrid& gwg);
 
   /*
    * Convenience function to suggest a local workgroup size for a given
    * `api::vTensor` value, assuming that every shader invocation calculates one
    * texel element of the output tensor.
    */
-  utils::uvec3 create_local_wg_size(const ValueRef idx);
+  LocalWorkGroup create_lwg(const ValueRef idx);
 
   void bind_tensor_to_descriptor_set(
       const ValueRef ref,
@@ -1173,7 +1175,22 @@ class ComputeGraph final {
 
   // Check if a specific ValueRef (or ValueList) was updated, with recursive
   // handling
-  bool was_value_updated(const ValueRef idx) const noexcept;
+  inline bool was_value_updated(const ValueRef idx) const noexcept {
+    if (idx < 0) {
+      return false;
+    }
+
+    const size_t value_idx = static_cast<size_t>(idx);
+    if (value_idx >= values_.size()) {
+      return false;
+    }
+    if (value_idx < value_update_generations_.size() &&
+        value_update_generations_[value_idx] == current_update_generation_) {
+      return true;
+    }
+
+    return values_[value_idx].isValueList() && was_value_list_updated(idx);
+  }
 
   // Set the flag to indicate that re-encoding is required
   inline void set_requires_reencode() noexcept {
@@ -1220,6 +1237,10 @@ class ComputeGraph final {
   //
 
   void print_readable();
+
+ private:
+  void mark_value_updated(const ValueRef idx);
+  void advance_update_generation() noexcept;
 
   //
   // Friend classes

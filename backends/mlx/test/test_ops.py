@@ -6212,6 +6212,7 @@ class SDPATest(OpTestCase):
         is_causal: bool = False,
         use_mask: bool = False,
         use_bool_mask: bool = False,
+        kv_seq_len: Optional[int] = None,
     ):
         self.batch_size = batch_size
         self.num_heads = num_heads
@@ -6221,12 +6222,15 @@ class SDPATest(OpTestCase):
         self.is_causal = is_causal
         self.use_mask = use_mask
         self.use_bool_mask = use_bool_mask
+        self.kv_seq_len = kv_seq_len if kv_seq_len is not None else seq_len
 
         parts = ["sdpa"]
         if num_kv_heads is not None:
             parts.append(f"gqa{num_kv_heads}")
         if is_causal:
             parts.append("causal")
+        if self.kv_seq_len != seq_len:
+            parts.append(f"q{seq_len}kv{self.kv_seq_len}")
         if use_mask:
             parts.append("mask")
         if use_bool_mask:
@@ -6241,6 +6245,11 @@ class SDPATest(OpTestCase):
             cls(num_kv_heads=4),
             cls(use_mask=True),
             cls(use_bool_mask=True),  # Test boolean mask conversion
+            # A decode step against a longer key cache. MLX anchors its causal mask at
+            # the bottom right and torch at the top left, so they only agree when the
+            # lengths match.
+            cls(is_causal=True, seq_len=1, kv_seq_len=32),
+            cls(is_causal=True, seq_len=6, kv_seq_len=32),
         ]
 
     def create_model(self) -> nn.Module:
@@ -6256,23 +6265,47 @@ class SDPATest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         q = torch.randn(self.batch_size, self.num_heads, self.seq_len, self.head_dim)
         kv_heads = self.num_kv_heads if self.num_kv_heads else self.num_heads
-        k = torch.randn(self.batch_size, kv_heads, self.seq_len, self.head_dim)
-        v = torch.randn(self.batch_size, kv_heads, self.seq_len, self.head_dim)
+        k = torch.randn(self.batch_size, kv_heads, self.kv_seq_len, self.head_dim)
+        v = torch.randn(self.batch_size, kv_heads, self.kv_seq_len, self.head_dim)
 
         if self.use_mask:
             # Additive float mask: 0 = attend, -inf = masked
-            mask = torch.zeros(self.batch_size, 1, self.seq_len, self.seq_len)
-            mask[:, :, :, : self.seq_len // 4] = float("-inf")
+            mask = torch.zeros(self.batch_size, 1, self.seq_len, self.kv_seq_len)
+            mask[:, :, :, : self.kv_seq_len // 4] = float("-inf")
             return (q, k, v, mask)
         elif self.use_bool_mask:
             # Boolean mask: True = attend, False = masked
             # This tests that the backend correctly converts bool -> additive format
             mask = torch.ones(
-                self.batch_size, 1, self.seq_len, self.seq_len, dtype=torch.bool
+                self.batch_size, 1, self.seq_len, self.kv_seq_len, dtype=torch.bool
             )
-            mask[:, :, :, : self.seq_len // 4] = False  # Mask out first quarter
+            mask[:, :, :, : self.kv_seq_len // 4] = False  # Mask out first quarter
             return (q, k, v, mask)
         return (q, k, v)
+
+
+@register_test
+class SDPARank3Test(OpTestCase):
+    """Attention on rank-3 tensors, which PyTorch accepts and the fused kernel does not.
+
+    The node counts are the point of the test: they assert the fused kernel is still
+    used, rather than the operator having been decomposed into primitives.
+    """
+
+    name = "sdpa_rank3"
+    rtol = 1e-3
+    atol = 1e-3
+    expected_node_counts = {
+        "SdpaNode": 1,
+        "ExpandDimsNode": 3,
+        "SqueezeNode": 1,
+    }
+
+    def create_model(self) -> nn.Module:
+        return SDPAModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return tuple(torch.randn(2, 16, 64) for _ in range(3))
 
 
 class CustomSDPAModel(nn.Module):
@@ -8587,3 +8620,41 @@ class UpdateAndAttendTest(OpTestCase):
                 return model(*test_inputs)
         finally:
             REGISTRY.uninstall(key)
+
+
+class FlipModel(nn.Module):
+    def __init__(self, dims: List[int]):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.flip(x, self.dims)
+
+
+@register_test
+class FlipTest(OpTestCase):
+    name = "flip"
+
+    def __init__(self, shape: Tuple[int, ...], dims: List[int]):
+        self.shape = shape
+        self.dims = dims
+        dims_str = "_".join(str(d) for d in dims)
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"flip_{shape_str}_dims{dims_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["FlipTest"]:
+        return [
+            cls(shape=(4, 5), dims=[0]),
+            cls(shape=(4, 5), dims=[1]),
+            cls(shape=(4, 5), dims=[0, 1]),
+            cls(shape=(3, 4, 5), dims=[-1]),
+            cls(shape=(3, 4, 5), dims=[0, 2]),
+            cls(shape=(3, 4, 5), dims=[0, 1, 2]),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return FlipModel(self.dims)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)

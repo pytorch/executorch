@@ -96,6 +96,31 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     SlimTensor** ret_new_tensor);
 
 /**
+ * Allocates ordinary host memory where pinned host memory was asked for.
+ *
+ * There is no pinned allocator here. Pinning only lets a copy to the device
+ * overlap other work, so ordinary memory is correct and slower.
+ *
+ * @param ndim Number of dimensions
+ * @param sizes_ptr Pointer to the sizes, ndim of them
+ * @param strides_ptr Pointer to the strides, ndim of them, or null for
+ *   contiguous
+ * @param dtype Element type, as a scalar type value
+ * @param device_type Must be CPU, since pinned memory is host memory
+ * @param device_index Device index, unused for CPU
+ * @param ret_new_tensor Receives the new tensor
+ * @return Error::Ok on success, Error::InvalidArgument if the device is not CPU
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor);
+
+/**
  * Deletes a tensor object and frees associated resources.
  *
  * For SlimTensor, the underlying storage uses SharedPtr-based reference

@@ -19,6 +19,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -30,6 +32,11 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
+
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 
 using namespace vkcompute;
 using namespace vkcompute::api;
@@ -113,7 +120,7 @@ TEST_F(VulkanComputeAPITest, device_to_host_staging_prefers_cached_memory) {
       context()->adapter_ptr()->vma().create_staging_buffer(
           4096, vkapi::CopyDirection::DEVICE_TO_HOST);
   const VmaAllocator allocator = staging_buffer.vma_allocator();
-  ASSERT_NE(allocator, VK_NULL_HANDLE);
+  ASSERT_NE(allocator, nullptr);
 
   const VkPhysicalDeviceMemoryProperties* memory_properties = nullptr;
   vmaGetMemoryProperties(allocator, &memory_properties);
@@ -132,7 +139,7 @@ TEST_F(VulkanComputeAPITest, device_to_host_staging_prefers_cached_memory) {
   }
 
   const VmaAllocation allocation = staging_buffer.allocation();
-  ASSERT_NE(allocation, VK_NULL_HANDLE);
+  ASSERT_NE(allocation, nullptr);
 
   VkMemoryPropertyFlags selected_flags = 0;
   vmaGetAllocationMemoryProperties(allocator, allocation, &selected_flags);
@@ -1169,8 +1176,8 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
     context()->submit_compute_job(
         VK_KERNEL(fill_buffer),
         pipeline_barrier,
-        {64, 1, 1},
-        {len_div4, 1, 1},
+        GlobalWorkGrid({64u, 1u, 1u}, kExplicitWorkGrid),
+        LocalWorkGroup(len_div4, 1u, 1u),
         {SV(scale), SV(offset)},
         VK_NULL_HANDLE,
         0,
@@ -1216,8 +1223,8 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        {4, 4, 4},
-        {4, 4, 4},
+        GlobalWorkGrid({4u, 4u, 4u}, kExplicitWorkGrid),
+        LocalWorkGroup(4u, 4u, 4u),
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -1283,8 +1290,8 @@ void test_storage_buffer_type(const size_t len) {
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        {64, 1, 1},
-        {len_div4, 1, 1},
+        GlobalWorkGrid({64u, 1u, 1u}, kExplicitWorkGrid),
+        LocalWorkGroup(len_div4, 1u, 1u),
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -1686,8 +1693,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
   // Current known size on 64 bit system: 608 B
   EXPECT_TRUE(sizeof(ComputeGraph) < 700);
-  // Current known size on 64 bit system: 248 B
-  EXPECT_TRUE(sizeof(DispatchNode) < 500);
+  // Current known size on 64 bit system: 528 B
+  EXPECT_TRUE(sizeof(DispatchNode) < 600);
 }
 
 TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
@@ -2101,8 +2108,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR("scalar_add_texture"),
-      graph.create_global_wg_size(a.value),
-      graph.create_local_wg_size(a.value),
+      graph.create_gwg(a.value),
+      graph.create_lwg(a.value),
       // Inputs and Outputs
       {{out.value, vkapi::MemoryAccessType::WRITE}},
       // Shader params buffers
@@ -2144,6 +2151,443 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
+}
+
+TEST(VulkanComputeGraphTest, was_value_updated_tracks_tensor_changes) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef tensor = graph.add_tensor({2, 4}, vkapi::kFloat);
+
+  EXPECT_FALSE(graph.was_value_updated(kDummyValueRef));
+  EXPECT_FALSE(graph.was_value_updated(tensor));
+
+  graph.virtual_resize(tensor, {2, 4});
+  EXPECT_FALSE(graph.was_value_updated(tensor));
+
+  graph.virtual_resize(tensor, {1, 4});
+  EXPECT_TRUE(graph.was_value_updated(tensor));
+}
+
+TEST(VulkanComputeGraphTest, was_value_updated_tracks_symint_changes) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef symint = graph.add_symint(3);
+
+  EXPECT_FALSE(graph.was_value_updated(symint));
+
+  graph.set_symint(symint, 3);
+  EXPECT_FALSE(graph.was_value_updated(symint));
+
+  graph.set_symint(symint, 5);
+  EXPECT_TRUE(graph.was_value_updated(symint));
+}
+
+TEST(VulkanComputeGraphTest, was_value_updated_checks_nested_value_lists) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef unchanged = graph.add_symint(1);
+  const ValueRef changed = graph.add_symint(2);
+  const ValueRef inner_list = graph.add_value_list({unchanged, changed});
+  const ValueRef outer_list =
+      graph.add_value_list({kDummyValueRef, inner_list});
+
+  EXPECT_FALSE(graph.was_value_updated(inner_list));
+  EXPECT_FALSE(graph.was_value_updated(outer_list));
+
+  graph.set_symint(changed, 3);
+
+  EXPECT_FALSE(graph.was_value_updated(unchanged));
+  EXPECT_TRUE(graph.was_value_updated(changed));
+  EXPECT_TRUE(graph.was_value_updated(inner_list));
+  EXPECT_TRUE(graph.was_value_updated(outer_list));
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_read_arg_updates) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef output = graph.add_symint(1);
+  const ValueRef input = graph.add_symint(2);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}});
+
+  graph.set_symint(input, 3);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_write_arg_updates) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef output = graph.add_symint(1);
+  const ValueRef input = graph.add_symint(2);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}});
+
+  graph.set_symint(output, 3);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_read_write_updates) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef value = graph.add_symint(1);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{value, vkapi::kReadWrite}});
+
+  graph.set_symint(value, 2);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_tracks_nested_resize_args) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef value = graph.add_symint(1);
+  const ValueRef inner_list = graph.add_value_list({value});
+  const ValueRef outer_list = graph.add_value_list({inner_list});
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {outer_list});
+
+  graph.set_symint(value, 2);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_resize_skips_unchanged_args) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef output = graph.add_symint(1);
+  const ValueRef input = graph.add_symint(2);
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}});
+
+  EXPECT_FALSE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 0);
+}
+
+TEST(VulkanComputeGraphTest, execute_node_force_resize_ignores_arg_updates) {
+  GraphConfig config;
+  config.force_resize = true;
+  ComputeGraph graph(config);
+
+  size_t resize_count = 0;
+  ExecuteNode node([&resize_count](ComputeGraph*, const auto&, const auto&) {
+    ++resize_count;
+  });
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(
+    VulkanComputeGraphTest,
+    execute_node_data_dependent_resize_is_unconditional) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  size_t resize_count = 0;
+  ExecuteNode node(
+      [&resize_count](ComputeGraph*, const auto&, const auto&) {
+        ++resize_count;
+      },
+      {},
+      {},
+      "data_dependent_node",
+      true);
+
+  EXPECT_TRUE(node.trigger_resize(&graph));
+  EXPECT_EQ(resize_count, 1);
+}
+
+TEST(VulkanComputeGraphTest, resize_input_marks_staging_value_updated) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const IOValueRef input = graph.add_input_tensor({2, 4}, vkapi::kFloat);
+
+  EXPECT_FALSE(graph.was_value_updated(input.value));
+  EXPECT_FALSE(graph.was_value_updated(input.staging));
+
+  graph.resize_input(0, {2, 4});
+
+  EXPECT_FALSE(graph.was_value_updated(input.value));
+  EXPECT_TRUE(graph.was_value_updated(input.staging));
+}
+
+TEST(VulkanComputeGraphTest, execute_advances_value_update_generation) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef symint = graph.add_symint(1);
+  const ValueRef values = graph.add_value_list({symint});
+
+  graph.prepare();
+  graph.set_symint(symint, 2);
+
+  EXPECT_TRUE(graph.was_value_updated(symint));
+  EXPECT_TRUE(graph.was_value_updated(values));
+
+  graph.execute();
+
+  EXPECT_FALSE(graph.was_value_updated(symint));
+  EXPECT_FALSE(graph.was_value_updated(values));
+
+  graph.set_symint(symint, 3);
+
+  EXPECT_TRUE(graph.was_value_updated(symint));
+  EXPECT_TRUE(graph.was_value_updated(values));
+
+  graph.execute();
+
+  EXPECT_FALSE(graph.was_value_updated(symint));
+  EXPECT_FALSE(graph.was_value_updated(values));
+}
+
+TEST(VulkanComputeGraphTest, choose_qparams_handles_dynamic_row_counts) {
+  constexpr int64_t kMaxM = 8;
+  constexpr int64_t kK = 128;
+
+  GraphConfig config;
+  config.enable_querypool = true;
+  config.expect_dynamic_shapes = true;
+  ComputeGraph graph(config);
+
+  const IOValueRef input =
+      graph.add_input_tensor({kMaxM, kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef quant_min = graph.add_scalar<int64_t>(-128);
+  const ValueRef quant_max = graph.add_scalar<int64_t>(127);
+  const ValueRef scales = graph.add_tensor(
+      {kMaxM}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {kMaxM}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+
+  VK_GET_OP_FN("etvk.choose_qparams_per_row.default")
+  (graph, {input.value, quant_min, quant_max, scales, zero_points});
+
+  const ValueRef scales_staging = graph.set_output_tensor(scales);
+  const ValueRef zero_points_staging = graph.set_output_tensor(zero_points);
+
+  graph.prepare();
+  graph.prepack();
+
+  for (const int64_t M : std::vector<int64_t>{kMaxM, 4, 1, kMaxM}) {
+    graph.resize_input(0, {M, kK});
+    graph.propagate_resize();
+
+    EXPECT_EQ(graph.sizes_of(scales), std::vector<int64_t>({M}));
+    EXPECT_EQ(graph.sizes_of(zero_points), std::vector<int64_t>({M}));
+
+    std::vector<float> input_data(M * kK);
+    for (int64_t m = 0; m < M; ++m) {
+      std::fill_n(input_data.begin() + m * kK, kK, float(m + 1));
+    }
+    graph.maybe_cast_and_copy_into_staging(
+        input.staging, input_data.data(), input_data.size(), vkapi::kFloat);
+
+    graph.execute();
+
+    std::vector<float> scale_data(M);
+    std::vector<int8_t> zero_point_data(M);
+    graph.maybe_cast_and_copy_from_staging(
+        scales_staging, scale_data.data(), scale_data.size(), vkapi::kFloat);
+    graph.maybe_cast_and_copy_from_staging(
+        zero_points_staging,
+        zero_point_data.data(),
+        zero_point_data.size(),
+        vkapi::kChar);
+
+    for (int64_t m = 0; m < M; ++m) {
+      EXPECT_NEAR(scale_data[m], float(m + 1) / 255.0f, 1e-6f);
+      EXPECT_EQ(zero_point_data[m], -128);
+    }
+
+    graph.context()->querypool().extract_results();
+    const auto shader_results =
+        graph.context()->querypool().get_shader_timestamp_data();
+    const auto choose_result = std::find_if(
+        shader_results.begin(), shader_results.end(), [](const auto& result) {
+          return result.kernel_name.find("choose_qparams_per_row") !=
+              std::string::npos;
+        });
+    ASSERT_NE(choose_result, shader_results.end());
+    EXPECT_EQ(choose_result->metadata.gwg[0], 1u);
+    EXPECT_EQ(
+        choose_result->metadata.gwg[1],
+        utils::div_up_4(utils::safe_downcast<uint32_t>(M)));
+    EXPECT_EQ(choose_result->metadata.gwg[2], 1u);
+    EXPECT_EQ(choose_result->metadata.lwg[0], 64u);
+    EXPECT_EQ(choose_result->metadata.lwg[1], 1u);
+    EXPECT_EQ(choose_result->metadata.lwg[2], 1u);
+  }
+}
+
+void test_quantize_and_pack_handles_dynamic_row_counts(
+    const int64_t group_size_value,
+    const utils::uvec3& expected_local_wg_size) {
+  if (!api::context()->adapter_ptr()->supports_int8_dot_product()) {
+    GTEST_SKIP() << "Quantize and pack requires integer dot product support";
+  }
+
+  constexpr int64_t kMaxM = 8;
+  constexpr int64_t kK = 128;
+  const int64_t num_groups = kK / group_size_value;
+  const int64_t max_m4 = utils::div_up(kMaxM, int64_t(4));
+
+  GraphConfig config;
+  config.enable_querypool = true;
+  config.expect_dynamic_shapes = true;
+  ComputeGraph graph(config);
+
+  const IOValueRef input =
+      graph.add_input_tensor({kMaxM, kK}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef quant_min = graph.add_scalar<int64_t>(-128);
+  const ValueRef quant_max = graph.add_scalar<int64_t>(127);
+  const ValueRef scales = graph.add_tensor(
+      {kMaxM}, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
+  const ValueRef zero_points = graph.add_tensor(
+      {kMaxM}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
+
+  VK_GET_OP_FN("etvk.choose_qparams_per_row.default")
+  (graph, {input.value, quant_min, quant_max, scales, zero_points});
+
+  const ValueRef packed_input = graph.add_tensor(
+      {kMaxM, kK}, vkapi::kInt8x4, utils::kBuffer, utils::kPackedInt8_4H4W);
+  const ValueRef input_sums = graph.add_tensor(
+      {num_groups * max_m4 * 4},
+      vkapi::kInt,
+      utils::kBuffer,
+      utils::kWidthPacked);
+  const ValueRef group_size = graph.add_scalar<int64_t>(group_size_value);
+  const QuantizationConfig input_quant_config(
+      8, kPerChannel, {1, kK}, false, true);
+
+  add_quantize_and_pack_4h4w_with_group_sums_node(
+      graph,
+      input_quant_config,
+      input.value,
+      input_sums,
+      scales,
+      zero_points,
+      packed_input,
+      group_size);
+
+  const ValueRef packed_input_staging = graph.set_output_tensor(packed_input);
+  const ValueRef input_sums_staging = graph.set_output_tensor(input_sums);
+
+  graph.prepare();
+  graph.prepack();
+
+  for (const int64_t M : std::vector<int64_t>{kMaxM, 4, 1, kMaxM}) {
+    graph.resize_input(0, {M, kK});
+    graph.propagate_resize();
+
+    std::vector<float> input_data(M * kK);
+    for (int64_t m = 0; m < M; ++m) {
+      std::fill_n(input_data.begin() + m * kK, kK, float(m + 1));
+    }
+    graph.maybe_cast_and_copy_into_staging(
+        input.staging, input_data.data(), input_data.size(), vkapi::kFloat);
+
+    graph.execute();
+
+    graph.context()->querypool().extract_results();
+    const auto shader_results =
+        graph.context()->querypool().get_shader_timestamp_data();
+    const auto quantize_result = std::find_if(
+        shader_results.begin(), shader_results.end(), [](const auto& result) {
+          return result.kernel_name.find(
+                     "quantize_and_pack_4h4w_with_group_sums") !=
+              std::string::npos;
+        });
+
+    if (M == 1) {
+      EXPECT_EQ(quantize_result, shader_results.end());
+      continue;
+    }
+
+    ASSERT_NE(quantize_result, shader_results.end());
+    EXPECT_EQ(
+        quantize_result->metadata.gwg[0],
+        utils::safe_downcast<uint32_t>(num_groups));
+    EXPECT_EQ(
+        quantize_result->metadata.gwg[1],
+        utils::div_up_4(utils::safe_downcast<uint32_t>(M)));
+    EXPECT_EQ(quantize_result->metadata.gwg[2], 1u);
+    EXPECT_EQ(quantize_result->metadata.lwg[0], expected_local_wg_size[0]);
+    EXPECT_EQ(quantize_result->metadata.lwg[1], expected_local_wg_size[1]);
+    EXPECT_EQ(quantize_result->metadata.lwg[2], expected_local_wg_size[2]);
+
+    const size_t packed_numel = graph.staging_buffer_numel_of(packed_input);
+    std::vector<int32_t> packed_data(packed_numel);
+    graph.maybe_cast_and_copy_from_staging(
+        packed_input_staging,
+        packed_data.data(),
+        packed_data.size(),
+        vkapi::kInt8x4);
+    for (int64_t i = 0; i < M * kK / 4; ++i) {
+      EXPECT_EQ(packed_data[i], 0x7f7f7f7f);
+    }
+
+    std::vector<int32_t> sums_data(num_groups * max_m4 * 4);
+    graph.maybe_cast_and_copy_from_staging(
+        input_sums_staging, sums_data.data(), sums_data.size(), vkapi::kInt);
+    const int64_t current_m4 = utils::div_up(M, int64_t(4));
+    for (int64_t group = 0; group < num_groups; ++group) {
+      for (int64_t m = 0; m < M; ++m) {
+        EXPECT_EQ(
+            sums_data[group * current_m4 * 4 + m], 127 * group_size_value);
+      }
+    }
+  }
+}
+
+TEST(
+    VulkanComputeGraphTest,
+    quantize_and_pack_handles_dynamic_row_counts_with_small_groups) {
+  test_quantize_and_pack_handles_dynamic_row_counts(32, {4u, 1u, 16u});
+}
+
+TEST(
+    VulkanComputeGraphTest,
+    quantize_and_pack_handles_dynamic_row_counts_with_large_groups) {
+  test_quantize_and_pack_handles_dynamic_row_counts(128, {2u, 1u, 32u});
 }
 
 #define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)              \
@@ -2685,8 +3129,9 @@ void run_from_gpu_test(
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.logical_limits(),
-        {4, 4, 4},
+        GlobalWorkGrid(
+            utils::make_uvec3(vten.logical_limits()), kTextureExtentsWorkGrid),
+        LocalWorkGroup(4u, 4u, 4u),
         {vten.packed_dim(), offset},
         VK_NULL_HANDLE,
         0,
@@ -3318,26 +3763,28 @@ vkapi::ShaderInfo pick_dynamic_dispatch_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-utils::uvec3 pick_dynamic_dispatch_global_wg_size(
+GlobalWorkGrid pick_dynamic_dispatch_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
   const ValueRef out = args[0].refs[0];
-  return graph->logical_limits_of(out);
+  return GlobalWorkGrid(
+      utils::make_uvec3(graph->logical_limits_of(out)),
+      kTextureExtentsWorkGrid);
 }
 
-utils::uvec3 pick_dynamic_dispatch_local_wg_size(
+LocalWorkGroup pick_dynamic_dispatch_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
-  return {64, 1, 1};
+  (void)gwg;
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 void resize_dynamic_dispatch_node(
@@ -3361,8 +3808,8 @@ void add_dynamic_dispatch_test_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_dynamic_dispatch_shader,
-      pick_dynamic_dispatch_global_wg_size,
-      pick_dynamic_dispatch_local_wg_size,
+      pick_dynamic_dispatch_gwg,
+      pick_dynamic_dispatch_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
@@ -3523,4 +3970,272 @@ TEST(VulkanComputeGraphTest, test_int8x4_staging_round_trip) {
       test_int8x4_staging_round_trip(sizes, layout);
     }
   }
+}
+
+TEST(VulkanWorkGroupSizeTest, lwg) {
+  const LocalWorkGroup lwg(64u, 2u, 1u);
+
+  EXPECT_EQ(lwg.x(), 64u);
+  EXPECT_EQ(lwg.y(), 2u);
+  EXPECT_EQ(lwg.z(), 1u);
+  EXPECT_TRUE(lwg.is_valid());
+  EXPECT_EQ(lwg.nthreads(), 128u);
+  EXPECT_EQ(lwg.target_total_nthreads(), 64u);
+  EXPECT_EQ(static_cast<utils::uvec3>(lwg), utils::uvec3({64u, 2u, 1u}));
+
+  const LocalWorkGroup targeted_lwg(8u, 4u, 1u, 128u);
+  EXPECT_EQ(targeted_lwg.target_total_nthreads(), 128u);
+  EXPECT_EQ(targeted_lwg, LocalWorkGroup(8u, 4u, 1u, 64u));
+  EXPECT_EQ(LocalWorkGroup(kLinearLwg, 1u), LocalWorkGroup(kCubeLwg, 1u));
+
+  const LocalWorkGroup large_z_lwg(1u, 1u, 1024u);
+  EXPECT_EQ(large_z_lwg.z(), 1024u);
+
+  EXPECT_FALSE(LocalWorkGroup().is_valid());
+  EXPECT_THROW(LocalWorkGroup(3u, 2u, 1u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, lwg_validation) {
+  const utils::uvec3 max_lwg{1024u, 1024u, 64u};
+  const LocalWorkGroup lwg(8u, 8u, 1u);
+
+  EXPECT_NO_THROW(lwg.validate(max_lwg, 64u));
+  EXPECT_THROW(LocalWorkGroup().validate(max_lwg, 64u), vkapi::Error);
+  EXPECT_THROW(
+      LocalWorkGroup(128u, 1u, 1u).validate({64u, 1024u, 64u}, 128u),
+      vkapi::Error);
+  EXPECT_THROW(lwg.validate(max_lwg, 32u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, lwg_shape) {
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kLinearLwg, 64u)),
+      utils::uvec3({64u, 1u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kSquareLwg, 64u)),
+      utils::uvec3({8u, 8u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kCubeLwg, 64u)),
+      utils::uvec3({4u, 4u, 4u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kSquareLwg, 128u)),
+      utils::uvec3({16u, 8u, 1u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(kCubeLwg, 128u)),
+      utils::uvec3({8u, 4u, 4u}));
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(LocalWorkGroup(LwgShape{4u, 2u, 1u}, 64u)),
+      utils::uvec3({16u, 4u, 1u}));
+
+  EXPECT_THROW(LocalWorkGroup(kSquareLwg, 48u), vkapi::Error);
+  EXPECT_THROW(LocalWorkGroup(8u, 4u, 1u, 48u), vkapi::Error);
+  EXPECT_THROW(LocalWorkGroup(LwgShape{}, 64u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, fit_to_global) {
+  const LocalWorkGroup cube(kCubeLwg, 64u);
+  const GlobalWorkGrid gwg({1024u, 4u, 2u}, kExplicitWorkGrid);
+
+  auto fitted = cube;
+  fitted.fit_to_global(gwg);
+
+  EXPECT_EQ(static_cast<utils::uvec3>(fitted), utils::uvec3({4u, 4u, 4u}));
+  EXPECT_EQ(fitted.target_total_nthreads(), 64u);
+
+  const LocalWorkGroup square(kSquareLwg, 64u);
+  const GlobalWorkGrid shallow_gwg({1024u, 4u, 1u}, kExplicitWorkGrid);
+  auto shallow_fitted = square;
+  shallow_fitted.fit_to_global(shallow_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(shallow_fitted), utils::uvec3({16u, 4u, 1u}));
+
+  const GlobalWorkGrid permuted_gwg({4u, 1024u, 2u}, kExplicitWorkGrid);
+  auto permuted_fitted = cube;
+  permuted_fitted.fit_to_global(permuted_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(permuted_fitted), utils::uvec3({4u, 4u, 4u}));
+
+  const LocalWorkGroup linear(kLinearLwg, 64u);
+  const GlobalWorkGrid square_gwg({8u, 8u, 1u}, kExplicitWorkGrid);
+  auto square_fitted = linear;
+  square_fitted.fit_to_global(square_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(square_fitted), utils::uvec3({8u, 8u, 1u}));
+
+  const GlobalWorkGrid large_gwg({1024u, 1024u, 1u}, kExplicitWorkGrid);
+  square_fitted.fit_to_global(large_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(square_fitted), utils::uvec3({8u, 8u, 1u}));
+
+  const GlobalWorkGrid wide_gwg({4u, 1024u, 2u}, kExplicitWorkGrid);
+  auto wide_fitted = linear;
+  wide_fitted.fit_to_global(wide_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(wide_fitted), utils::uvec3({4u, 16u, 1u}));
+
+  const GlobalWorkGrid small_gwg({3u, 3u, 1u}, kExplicitWorkGrid);
+  auto small_fitted = square;
+  small_fitted.fit_to_global(small_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(small_fitted), utils::uvec3({4u, 4u, 1u}));
+
+  auto explicit_linear = LocalWorkGroup(64u, 1u, 1u);
+  explicit_linear.fit_to_global(square_gwg);
+  EXPECT_EQ(
+      static_cast<utils::uvec3>(explicit_linear), utils::uvec3({64u, 1u, 1u}));
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_at_x_limit) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65536u * 64u, 1u, 1u}, kLinearWorkGrid);
+  EXPECT_FALSE(gwg.required_lwg_size().is_valid());
+  gwg.wrap_linear_dispatch(max_wg_count);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({65536u * 64u, 1u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+  EXPECT_TRUE(gwg.is_linear());
+  EXPECT_EQ(gwg.intent(), kLinearWorkGrid);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_wraps_across_xy) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65537u * 64u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, 64u);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({257u * 64u, 256u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+  EXPECT_TRUE(gwg.is_linear());
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_allows_cooperative_z_lanes) {
+  const LocalWorkGroup lwg(1u, 1u, 64u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65537u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, lwg);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({257u, 256u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_allows_xy_cooperation) {
+  const LocalWorkGroup lwg(1u, 8u, 8u);
+  const utils::uvec3 max_wg_count{65536u, 65536u, 65536u};
+  GlobalWorkGrid gwg({65537u * 8u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, lwg);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({257u, 2048u, 1u}));
+  EXPECT_EQ(gwg.required_lwg_size(), lwg);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_rejects_insufficient_y) {
+  const utils::uvec3 max_wg_count{2u, 1u, 1u};
+  GlobalWorkGrid gwg({3u * 64u, 1u, 1u}, kLinearWorkGrid);
+
+  EXPECT_THROW(gwg.wrap_linear_dispatch(max_wg_count, 64u), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_uses_available_x_capacity) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const utils::uvec3 max_wg_count{4u, 2u, 1u};
+  GlobalWorkGrid gwg({7u * 64u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(max_wg_count, lwg);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({4u * 64u, 2u, 1u}));
+}
+
+TEST(VulkanWorkGroupSizeTest, explicit_gwg_preserves_extents) {
+  const GlobalWorkGrid gwg({31u, 17u, 5u}, kExplicitWorkGrid);
+
+  EXPECT_EQ(gwg.extents(), utils::uvec3({31u, 17u, 5u}));
+  EXPECT_FALSE(gwg.required_lwg_size().is_valid());
+  EXPECT_FALSE(gwg.is_linear());
+  EXPECT_EQ(gwg.intent(), kExplicitWorkGrid);
+}
+
+TEST(VulkanWorkGroupSizeTest, gwg_intents) {
+  const utils::uvec3 extents{32u, 24u, 8u};
+
+  EXPECT_EQ(
+      GlobalWorkGrid(extents, kTextureExtentsWorkGrid).intent(),
+      kTextureExtentsWorkGrid);
+  EXPECT_EQ(GlobalWorkGrid(extents, kTiledWorkGrid).intent(), kTiledWorkGrid);
+
+  GlobalWorkGrid texture_grid(extents, kTextureExtentsWorkGrid);
+  texture_grid.wrap_linear_dispatch({1u, 1u, 1u}, 64u);
+  EXPECT_EQ(texture_grid.extents(), extents);
+  EXPECT_FALSE(texture_grid.required_lwg_size().is_valid());
+}
+
+TEST(VulkanWorkGroupSizeTest, required_lwg_picker) {
+  const LocalWorkGroup required_lwg(1u, 64u, 1u);
+  const GlobalWorkGrid gwg({32u, 16u, 1u}, kTiledWorkGrid, required_lwg);
+
+  EXPECT_EQ(gwg.required_lwg_size(), required_lwg);
+  EXPECT_EQ(
+      pick_required_lwg(nullptr, vkapi::ShaderInfo{}, gwg, {}, {}),
+      required_lwg);
+}
+
+TEST(VulkanWorkGroupSizeTest, required_lwg_picker_rejects_missing_lwg) {
+  const GlobalWorkGrid gwg({32u, 16u, 1u}, kTiledWorkGrid);
+
+  EXPECT_THROW(
+      pick_required_lwg(nullptr, vkapi::ShaderInfo{}, gwg, {}, {}),
+      vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, explicit_gwg_rejects_excess_workgroups) {
+  const LocalWorkGroup lwg(2u, 1u, 1u);
+  const GlobalWorkGrid gwg({5u, 1u, 1u}, kExplicitWorkGrid);
+
+  EXPECT_THROW(gwg.validate(lwg, {2u, 1u, 1u}), vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, linear_gwg_requires_its_local_hint) {
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  GlobalWorkGrid gwg({100u, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch({65536u, 65536u, 65536u}, lwg);
+
+  EXPECT_THROW(
+      gwg.validate(LocalWorkGroup(32u, 1u, 1u), {65536u, 65536u, 65536u}),
+      vkapi::Error);
+}
+
+TEST(VulkanWorkGroupSizeTest, adapter_dispatch_recommendations) {
+  if (!api::available()) {
+    GTEST_SKIP();
+  }
+  api::Context* const context = api::context();
+  const auto* const adapter = context->adapter_ptr();
+  const utils::uvec3 max_wg_count = adapter->max_compute_workgroup_count();
+  const utils::uvec3 max_lwg = adapter->max_compute_workgroup_size();
+
+  EXPECT_GT(max_wg_count[0], 0u);
+  EXPECT_GT(max_wg_count[1], 0u);
+  EXPECT_GT(max_wg_count[2], 0u);
+  EXPECT_GT(max_lwg[0], 0u);
+  EXPECT_GT(adapter->max_compute_workgroup_invocations(), 0u);
+  EXPECT_EQ(adapter->recommended_lwg_nthreads(), 64u);
+}
+
+TEST(VulkanWorkGroupSizeTest, compute_graph_preserves_dispatch_intent) {
+  if (!api::available()) {
+    GTEST_SKIP();
+  }
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const ValueRef buffer = graph.add_tensor(
+      {257}, vkapi::kFloat, utils::kBuffer, utils::kWidthPacked);
+  const ValueRef texture = graph.add_tensor(
+      {1, 2, 3, 4}, vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked);
+
+  const GlobalWorkGrid buffer_gwg = graph.create_gwg(buffer);
+  const GlobalWorkGrid texture_gwg = graph.create_gwg(texture);
+
+  EXPECT_TRUE(buffer_gwg.is_linear());
+  EXPECT_EQ(graph.create_lwg(buffer_gwg), buffer_gwg.required_lwg_size());
+  EXPECT_FALSE(texture_gwg.is_linear());
 }

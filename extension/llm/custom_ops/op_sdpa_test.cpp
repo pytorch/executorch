@@ -958,6 +958,32 @@ TEST(OpScaledDotProductAttentionTest, HalfMatchesFloat) {
       1e-2, 1e-2);
 }
 
+class CustomSdpaTest : public OperatorTest {};
+
+TEST_F(CustomSdpaTest, RejectsOutputValueDtypeMismatch) {
+  TensorFactory<executorch::aten::ScalarType::Half> tf_half;
+  TensorFactory<executorch::aten::ScalarType::BFloat16> tf_bfloat16;
+
+  auto query = tf_half.ones({1, 1, 1, 4});
+  auto key = tf_half.ones({1, 1, 1, 4});
+  auto value = tf_half.ones({1, 1, 1, 4});
+  auto output = tf_bfloat16.zeros({1, 1, 1, 4});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      torch::executor::native::custom_sdpa_out(
+          context_,
+          query,
+          key,
+          value,
+          /*start_pos=*/0,
+          std::nullopt,
+          /*dropout_p=*/0.0,
+          /*is_causal=*/false,
+          std::nullopt,
+          output));
+}
+
 TEST(OpScaledDotProductAttentionTest, CorrectnessTest_51) {
   TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 

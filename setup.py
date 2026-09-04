@@ -76,7 +76,7 @@ if _spec.loader is None:
     raise ImportError(f"Module spec has no loader for {_install_utils_path}")
 _spec.loader.exec_module(install_utils)
 
-from setuptools import Extension, find_namespace_packages, setup
+from setuptools import Distribution, Extension, find_namespace_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
@@ -237,6 +237,9 @@ _CUDA_LIBRARY_DIRECTORIES = {
     "12": ("nvidia/cuda_runtime/lib",),
     "13": ("nvidia/cu13/lib",),
 }
+
+# Arch subdirectory names MKL's exported link interface appends to its prefix.
+_MKL_ARCH_DIRECTORIES = ("intel64", "intel64_win", "win-x64")
 
 
 def _cmake_args() -> List[str]:
@@ -600,6 +603,36 @@ def _is_cuda_toolkit_directory(entry: str) -> bool:
     return len(parts) >= 4 and parts[-3] == "targets" and cuda_named(parts[-4])
 
 
+def _is_unresolved_math_library_directory(entry: str) -> bool:
+    """Whether a runtime search path entry is a maths library directory whose prefix resolved empty.
+
+    Torch's exported CMake package creates a caffe2::mkl imported target, and linking torch brings it
+    in even though this project never asks for MKL. Its link directories are a hardcoded list of four,
+    spelled below MKL_ROOT, which resolves to nothing here, so what the linker records is left
+    anchored at the filesystem root: /lib, /lib/intel64, /lib/intel64_win, /lib/win-x64. The bare
+    /lib does not survive, because CMake filters its own implicit link directories out of the link
+    line.
+
+    An empty prefix is the whole signature, so the entry must be exactly /lib/<arch>. A real
+    installation spells the same arch directory below a prefix, as /opt/intel/mkl/lib/intel64, and
+    that one is a directory the environment genuinely provides.
+
+    Only the three arch directories are handled. The bare prefix/lib is deliberately left, because
+    with a resolving prefix it is an ordinary library directory this project has no business
+    dropping, and with an empty one CMake filters it out as an implicit link directory before the
+    link line is built, so it never reaches a shipped library.
+
+    Dropping these loses nothing: no shipped library names an MKL or OpenMP runtime in DT_NEEDED, so
+    nothing resolves through them, and they sit ahead of the relative hops appended below.
+    """
+    parts = PurePosixPath(entry).parts
+    return (
+        len(parts) == 3
+        and parts[:2] == ("/", "lib")
+        and parts[2] in _MKL_ARCH_DIRECTORIES
+    )
+
+
 def _package_relative_depth(library: Path) -> int:
     """How many directories separate a shipped library from the installed package root.
 
@@ -657,11 +690,10 @@ def _base_dependencies() -> List[str]:
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
         "parameterized",
-        # backends/qualcomm/__init__.py cannot be imported from a clean install
-        # without both of these. It reads the CPU vendor to disable an mkldnn path on
-        # AMD, and the module it imports first does a module-scope `import requests`,
-        # so declaring only the cpuinfo half leaves the import failing on the line
-        # before.
+        # The Qualcomm backend needs both, on different paths. Any lowering reads the CPU vendor
+        # to disable an mkldnn path that crashes on AMD, whether or not an SDK is already set up.
+        # Fetching an SDK additionally needs requests, which its downloader imports at module
+        # scope. Neither is needed merely to import the backend.
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
@@ -696,11 +728,21 @@ def _base_dependencies() -> List[str]:
         # with coremltools 9.0 on a Linux aarch64 machine. Keep this in sync with the condition
         # in conftest.py; .ci/scripts/tests/test_coreml_markers.py checks that the two agree.
         "coremltools==9.0; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
-        # coremltools uses scikit-learn for palettization, so it follows coremltools. Without a
-        # marker it also installed where coremltools does not, most visibly on Windows, and
-        # brought scipy with it. Nothing in this repository imports scikit-learn from the Core
-        # ML backend; the example scripts that do import it, and the scripts that import scipy,
-        # now name both in requirements-examples.txt rather than relying on this entry.
+        # coremltools needs scikit-learn to palettize weights, so it follows coremltools.
+        # Without a marker it also installed where coremltools does not, most visibly on
+        # Windows, and brought scipy with it.
+        #
+        # Nothing here imports scikit-learn directly. coremltools does, and not through the
+        # _HAS_SKLEARN flag it sets: quantization_utils.py imports sklearn.cluster.KMeans at the
+        # point of use, and that is the default clustering path, taken unless the weight is a
+        # single column of at least ten thousand float16 values. So the CODEBOOK_WEIGHT_ONLY
+        # recipe raises ModuleNotFoundError without this, whatever _HAS_SKLEARN says.
+        #
+        # The floor is above the version coremltools accepts for its own scikit-learn model
+        # converter, which is why that converter reports itself disabled. That is a separate
+        # feature nothing here uses, and palettization does not check the version, so the two
+        # are unrelated. Measured with coremltools 9.0 and scikit-learn 1.9.0: the converter is
+        # off and palettization works.
         "scikit-learn>=1.7.1; (platform_system == 'Darwin' or (platform_system == 'Linux' and platform_machine == 'x86_64')) and python_version < '3.14'",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
@@ -852,6 +894,12 @@ def get_executable_name(name: str) -> str:
 
 class _BaseExtension(Extension):
     """A base class that maps an abstract source to an abstract destination."""
+
+    # Prefix of the synthetic name a BuiltFile carries. A built file is not a Python
+    # module, so its name is deliberately not a module path, and setuptools has to be
+    # able to tell it apart from a real extension. See _ExecuTorchDistribution, which
+    # keeps these names out of the metadata setuptools derives from ext_modules.
+    SYNTHETIC_NAME_PREFIX = "@EXECUTORCH_BuiltFile_"
 
     def __init__(
         self,
@@ -1008,7 +1056,7 @@ class BuiltFile(_BaseExtension):
         super().__init__(
             src=src,
             dst=dst,
-            name=f"@EXECUTORCH_BuiltFile_{src}:{dst}",
+            name=f"{_BaseExtension.SYNTHETIC_NAME_PREFIX}{src}:{dst}",
             dependent_cmake_flags=dependent_cmake_flags,
         )
 
@@ -1256,6 +1304,14 @@ class InstallerBuildExt(build_ext):
             self.get_finalized_command("build"), "cmake_cache_dir", None
         )
         _strip_absolute_runtime_paths(dst_file, _cuda_libraries_built(cmake_cache_dir))
+        # After the rewrite rather than before it, because each tool re-signs the file ad hoc when
+        # it finishes, so whichever runs last owns the signature. Running strip last keeps the
+        # signature over the bytes that ship. Functionally either order works: measured, the two
+        # produce the same size, the same exported symbols, the same rpaths, and both verify.
+        #
+        # Only the wheel copy is stripped; the editable copy above is a developer's own build
+        # output, where the local symbols are what a debugger and a profiler read.
+        _strip_local_symbols(dst_file)
 
 
 def _append_relative_search_paths(entries: List[str], depth: int = 1) -> None:
@@ -1338,6 +1394,39 @@ def _run_install_name_tool(command: List[str], library: Path) -> None:
         )
 
 
+def _strip_local_symbols(library: Path) -> None:
+    """Discard the local symbol table from a Mach-O file the wheel ships.
+
+    Only on macOS, and only because its linker keeps these where the GNU one does not. The Linux
+    shared libraries ship with no .symtab section, while the macOS ones carried a local symbol for
+    every internal function: 448 in the runtime, 4190 in the merged kernels, and 35496 in flatc,
+    which alone was 6 MB of the 7 MB this removes.
+
+    `-x` removes local symbols and keeps every external one, so what a consumer can link against
+    does not change. Anything beyond that would strip exported symbols and break linking, so the
+    flag matters.
+
+    A failure here is not fatal. The file is correct either way, and a wheel that is larger than
+    intended is better than a build that stops. That also covers the files this runs on that are
+    not Mach-O at all, such as the Metal library and a template: strip declines them, and on BSD
+    it declines them with a zero exit, leaving the file byte for byte as it was.
+    """
+    if not _is_macos():
+        return
+    strip = shutil.which("strip")
+    if strip is None:
+        return
+    result = subprocess.run(
+        [strip, "-x", os.fspath(library)], capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        print(
+            f"warning: could not strip local symbols from {library.name}, shipping it as "
+            f"built: {(result.stderr or result.stdout).decode(errors='replace').strip()}",
+            flush=True,
+        )
+
+
 def _parse_runtime_paths(original: str, is_mach_o: bool) -> List[str]:
     """The runtime search path entries a tool reported, as a list.
 
@@ -1390,6 +1479,9 @@ def _is_usable_runtime_path(
     # directory from the machine that built it. It is kept when no relative route exists, because
     # then it is the only way this library finds torch.
     #
+    # A maths library directory whose prefix resolved empty is dropped for the same reason: nothing in
+    # the wheel resolves through it, and it sits ahead of the relative hops appended below.
+    #
     # Anything else absolute stays, because it is a dependency the environment provides and the wheel
     # has no relative answer for.
     #
@@ -1408,6 +1500,8 @@ def _is_usable_runtime_path(
     # path. A substring test dropped a torch directory that merely sat under a directory named after a
     # CUDA version, which is the one absolute path that has to survive.
     if safe_to_drop_toolkit_paths and _is_cuda_toolkit_directory(entry):
+        return False
+    if _is_unresolved_math_library_directory(entry):
         return False
     if entry.rstrip("/").endswith("/torch/lib") and has_relative_torch_route:
         return False
@@ -2208,6 +2302,24 @@ class CustomBuild(build):
         build.run(self)
 
 
+class _ExecuTorchDistribution(Distribution):
+    """A Distribution that hides the synthetic BuiltFile names from metadata.
+
+    A prebuilt file that the wheel merely copies is declared as an Extension, because
+    a non-empty ext_modules is how setuptools decides a wheel is platform specific.
+    Those entries are not Python modules, so they carry a synthetic name rather than a
+    module path. setuptools does not know that: it derives top_level.txt from every
+    ext_modules entry's name, so each recipe string was landing in the published
+    metadata as a top level import name.
+    """
+
+    def iter_distribution_names(self):
+        for name in super().iter_distribution_names():
+            if name.startswith(_BaseExtension.SYNTHETIC_NAME_PREFIX):
+                continue
+            yield name
+
+
 setup_kwargs = {}
 if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
@@ -2220,6 +2332,7 @@ else:
 
 setup(
     version=Version.string(),
+    distclass=_ExecuTorchDistribution,
     cmdclass={
         "build": CustomBuild,
         "build_ext": InstallerBuildExt,

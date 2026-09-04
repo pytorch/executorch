@@ -17,11 +17,11 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     CanonicalizeGatherPass,
     CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
+    CastIntComparisonInputsPass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
     ConstantFoldingPass,
     ControlFlowConstInlinePass,
-    Conv1dUnsqueezePass,
     ConvertEluFamilyToEluPass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
@@ -84,6 +84,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
     DecomposePReLUPass,
+    DecomposeProdPass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -136,6 +137,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     NormalizeDelegateIOLayoutPass,
     NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
+    NormalizeMaxPool2dInputRankPass,
     NormalizeTransformInputPlaceholdersPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
@@ -148,6 +150,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     RemoveSafeSoftmaxGuardPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    ResolveViewCopyInferredDimPass,
     RewriteAdaptiveAvgPool2dPass,
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
@@ -454,6 +457,12 @@ class ArmPassManager(ExportedProgramPassManager):
         shape_env = _get_shape_env_from_gm(graph_module)
         return TosaLoweringContext(self.tosa_spec, shape_env)
 
+    def transform_for_pre_decomposition_pipeline(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply Arm passes before default ATen decompositions."""
+        return exported_program
+
     def _transform_graph_module(self, graph_module: GraphModule):
         # TFA and control-flow submodule paths operate on bare GraphModules
         # without a standalone ExportedProgram to keep in sync.
@@ -582,7 +591,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
-                DecomposeUnfoldToGatherPass(),
+                DecomposeUnfoldToGatherPass(use_slice=self.tosa_spec.is_U55_subset),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
                 CastInt64BuffersToInt32Pass(exported_program),
@@ -593,7 +602,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
-                Conv1dUnsqueezePass(exported_program),
             ]
         )
 
@@ -601,6 +609,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
+                CastIntComparisonInputsPass(),
                 RewriteLeLtToGeGtPass(),
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
@@ -633,6 +642,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
+                NormalizeMaxPool2dInputRankPass(),
                 DecomposeMaxPool2dPass(),
                 DecomposeLargeStrideMaxPool2dForU55Pass(),
                 SizeAdjustInputPass(),
@@ -646,6 +656,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
                 BroadcastArgsPass(),
+                DecomposeProdPass(),
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
                 RemoveNoopPass(),
@@ -682,6 +693,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 CanonicalizeViewCopyPermutePass(),
                 # Fuse views again after permutes may have been replaced by views.
                 FuseViewCopyTransformPass(),
+                ResolveViewCopyInferredDimPass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]
@@ -694,8 +706,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 FuseEqualPlaceholdersPass(exported_program),
                 NormalizeTransformInputPlaceholdersPass(exported_program),
                 ExirToTosaPass(exported_program),
-                SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
+                ResolveViewCopyInferredDimPass(),
+                SymbolicToTosaShapesPass(),
                 FuseConsecutiveConcatShapesPass(),
                 RemoveNoopPass(),
                 # Fuse duplicates exposed by late rewrites before inserting rescales;

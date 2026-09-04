@@ -56,16 +56,30 @@ namespace arm {
 extern "C" {
 void __attribute__((weak)) EthosUBackend_execute_begin() {}
 void __attribute__((weak)) EthosUBackend_execute_end() {}
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+void __attribute__((weak)) EthosUBackend_delegate_begin(const void*) {}
+void __attribute__((weak)) EthosUBackend_delegate_end() {}
+#endif
 __attribute__((weak)) unsigned char* ethosu_fast_scratch = nullptr;
 __attribute__((weak)) size_t ethosu_fast_scratch_size = 0;
 }
 
 class EthosUBackendExecuteCallbacks {
  public:
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  explicit EthosUBackendExecuteCallbacks(const void* handle) {
+    EthosUBackend_execute_begin();
+    EthosUBackend_delegate_begin(handle);
+  }
+#else
   EthosUBackendExecuteCallbacks() {
     EthosUBackend_execute_begin();
   }
+#endif
   ~EthosUBackendExecuteCallbacks() {
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+    EthosUBackend_delegate_end();
+#endif
     EthosUBackend_execute_end();
   }
 };
@@ -152,7 +166,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // and EthosUBackend_execute_end() is called while CollectArm_CPU_Cycles is
     // in scope. e.g. We meassure from now until we exit this metod (in any way
     // we might do it).
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+    EthosUBackendExecuteCallbacks CollectArm_CPU_Cycles(input_handle);
+#else
     EthosUBackendExecuteCallbacks CollectArm_CPU_Cycles;
+#endif
 
     ExecutionHandle* execution_handle =
         static_cast<ExecutionHandle*>(input_handle);

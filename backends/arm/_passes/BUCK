@@ -1,6 +1,8 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 fbcode_target(
     _kind = runtime.python_library,
     name = "core",
@@ -63,8 +65,8 @@ fbcode_target(
         "//executorch/backends/transforms:canonicalize_view_copy_permute_pass",
         "//executorch/backends/transforms:permute_view_meta",
         "//executorch/backends/transforms:fuse_duplicate_users_pass",
+        "//executorch/backends/transforms:propagate_view_copy_permute_pass",
         "//executorch/backends/transforms:fuse_identical_input_transforms_pass",
-        "//executorch/backends/transforms:convert_conv1d_to_conv2d_pass",
         "//executorch/backends/transforms:fuse_view_copy",
         "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/transforms:replace_scalar_with_tensor",

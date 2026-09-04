@@ -231,13 +231,41 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
-  inline bool supports_int8_dot_product() {
+  inline bool supports_int8_dot_product() const {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
 #endif
 #ifdef VK_KHR_shader_integer_dot_product
     return physical_device_.shader_int_dot_product_features
                .shaderIntegerDotProduct == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_signed_packed4x8_dot() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_unsigned_packed4x8_dot() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated ==
+        VK_TRUE;
 #else
     return false;
 #endif /* VK_KHR_shader_integer_dot_product */
@@ -425,6 +453,30 @@ class Adapter final {
 
   inline uint32_t max_buffer_numel() const {
     return physical_device_.properties.limits.maxStorageBufferRange;
+  }
+
+  inline utils::uvec3 max_compute_workgroup_count() const {
+    const auto& limits = physical_device_.properties.limits;
+    return {
+        limits.maxComputeWorkGroupCount[0],
+        limits.maxComputeWorkGroupCount[1],
+        limits.maxComputeWorkGroupCount[2]};
+  }
+
+  inline utils::uvec3 max_compute_workgroup_size() const {
+    const auto& limits = physical_device_.properties.limits;
+    return {
+        limits.maxComputeWorkGroupSize[0],
+        limits.maxComputeWorkGroupSize[1],
+        limits.maxComputeWorkGroupSize[2]};
+  }
+
+  inline uint32_t max_compute_workgroup_invocations() const {
+    return physical_device_.properties.limits.maxComputeWorkGroupInvocations;
+  }
+
+  inline uint32_t recommended_lwg_nthreads() const {
+    return 64u;
   }
 
   // Command Buffer Submission

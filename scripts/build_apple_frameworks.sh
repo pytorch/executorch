@@ -89,6 +89,16 @@ libsentencepiece.a,\
 libtokenizers.a,\
 :${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
 
+FRAMEWORK_EXECUTORCH_DUMP_NAME="executorch_dump"
+FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME="ExecuTorchDump"
+FRAMEWORK_EXECUTORCH_DUMP_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_DUMP_NAME}_include"
+FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_DUMP_HEADERS_DIR}"
+FRAMEWORK_EXECUTORCH_DUMP="${FRAMEWORK_EXECUTORCH_DUMP_NAME}:\
+libetdump.a,\
+libextension_etdump_apple.a,\
+libflatccrt.a,\
+:${FRAMEWORK_EXECUTORCH_DUMP_HEADERS_DIR}"
+
 FRAMEWORK_THREADPOOL="threadpool:\
 libcpuinfo.a,\
 libextension_threadpool.a,\
@@ -99,6 +109,12 @@ FRAMEWORK_BACKEND_COREML="backend_coreml:\
 libcoreml_util.a,\
 libcoreml_inmemoryfs.a,\
 libcoremldelegate.a,\
+:"
+
+FRAMEWORK_BACKEND_MLX="backend_mlx:\
+libmlxdelegate.a,\
+libmlx.a,\
+libextension_llm_cache.a,\
 :"
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
@@ -138,6 +154,7 @@ usage() {
   echo "  --Release            Build Release version."
   echo "  --coreml             Only build the Core ML backend."
   echo "  --llm                Only build the LLM custom kernels."
+  echo "  --mlx                Only build the MLX backend."
   echo "  --optimized          Only build the Optimized kernels."
   echo "  --quantized          Only build the Quantized kernels."
   echo "  --torchao            Only build the TorchAO kernels."
@@ -158,6 +175,7 @@ set_cmake_options_override() {
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF"
+      "-DEXECUTORCH_BUILD_MLX=OFF"
       "-DEXECUTORCH_BUILD_XNNPACK=OFF"
     )
   fi
@@ -185,6 +203,7 @@ for arg in "$@"; do
         ;;
       --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
       --llm) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_LLM" ;;
+      --mlx) set_cmake_options_override "EXECUTORCH_BUILD_MLX" ;;
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
       --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
@@ -201,7 +220,62 @@ if [[ ${#MODES[@]} -eq 0 ]]; then
   MODES=("Release" "Debug")
 fi
 
+# The MLX Metal kernels ship as a per-slice metallib in a shared SwiftPM resource
+# bundle, not merged into the xcframework, since MLX loads them at runtime by name.
+# Capture it during the build loop, from one pass per slice: both modes build into
+# the same directory and the metallib does not depend on the build type, so one
+# copy is enough and re-copying per mode would only rewrite an identical file.
+capture_mlx_metallib() {
+  local preset_out_dir="$1"
+  # Ask the configure that just ran, not the command-line flags: the Apple presets
+  # probe for the Metal compiler and leave MLX off when it is missing, while
+  # CMAKE_OPTIONS_OVERRIDE is empty unless the caller passed a --<backend> flag.
+  local cache="${OUTPUT_DIR}/${preset_out_dir}/CMakeCache.txt"
+  if [[ -f "${cache}" ]] &&
+    ! grep -qE "^EXECUTORCH_BUILD_MLX:[A-Z]+=(ON|1|TRUE|YES)$" "${cache}"; then
+    return
+  fi
+  if [[ " ${CMAKE_OPTIONS_OVERRIDE[*]:-} " =~ "-DEXECUTORCH_BUILD_MLX=OFF" ]]; then
+    return
+  fi
+  local mlx_metallib="${OUTPUT_DIR}/${preset_out_dir}/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib"
+  # The simulator preset dir is "simulator" but the compiled-in slice name is "ios-simulator".
+  local slice
+  case "${preset_out_dir}" in
+    simulator) slice="ios-simulator" ;;
+    *) slice="${preset_out_dir}" ;;
+  esac
+  # Fail loudly rather than ship a bundle missing a slice, which would only fault at device init.
+  if [[ ! -f "${mlx_metallib}" ]]; then
+    echo "error: MLX is enabled but ${mlx_metallib} was not produced for the ${slice} slice" >&2
+    exit 1
+  fi
+  # Create the directory only once there is something to put in it. Creating it
+  # earlier would leave an empty directory behind on the paths that return above,
+  # and the workflow tests for the directory to decide whether to publish
+  # metallibs, so an empty one makes that test pass and the copy silently no-op.
+  local mlx_resources_dir="$SOURCE_ROOT_DIR/.Package.swift/backend_mlx_resources"
+  mkdir -p "${mlx_resources_dir}"
+  # The destination lives outside OUTPUT_DIR, so the top-level rm -rf does not
+  # reach it; drop any previous copy so a stale metallib cannot survive into this
+  # build and ship.
+  rm -f "${mlx_resources_dir}/mlx-${slice}.metallib"
+  cp "${mlx_metallib}" "${mlx_resources_dir}/mlx-${slice}.metallib"
+}
+
 echo "Building libraries"
+
+# Capture the metallib from a single deterministic pass. The metallib does not
+# depend on the build type, so any one mode's is fine; prefer Release when it is
+# being built, otherwise fall back to the last mode in the list.
+MLX_CAPTURE_MODE="${MODES[0]}"
+for mode in "${MODES[@]}"; do
+  if [[ "${mode}" == "Release" ]]; then
+    MLX_CAPTURE_MODE="Release"
+    break
+  fi
+  MLX_CAPTURE_MODE="${mode}"
+done
 
 rm -rf "${OUTPUT_DIR}"
 for preset_index in "${!PRESETS[@]}"; do
@@ -222,6 +296,12 @@ for preset_index in "${!PRESETS[@]}"; do
 
     cmake --build "${preset_output_dir}" \
           --config "${mode}"
+
+    # Capture the metallib on the chosen pass only, so it is copied once rather
+    # than rewritten by every mode.
+    if [[ "${mode}" == "${MLX_CAPTURE_MODE}" ]]; then
+      capture_mlx_metallib "${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
+    fi
   done
 done
 
@@ -272,13 +352,38 @@ module ${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME} {
 }
 EOF
 
+# FRAMEWORK_EXECUTORCH_DUMP
+
+mkdir -p "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME"
+
+cp "$SOURCE_ROOT_DIR/extension/apple/dump/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME"
+
+cat > "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME/module.modulemap" << EOF
+module ${FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME} {
+  umbrella header "${FRAMEWORK_EXECUTORCH_DUMP_MODULE_NAME}.h"
+  export *
+}
+EOF
+
 echo "Creating frameworks"
+
+# Whether a build option ended up ON according to the configure that just ran,
+# rather than according to the command-line flags. A preset can switch an option
+# off on its own (the Apple presets probe for the Metal compiler), so the flags
+# the caller passed are not the whole story. Do not name a cache type:
+# set_overridable_option writes STRING, define_overridable_option writes BOOL,
+# and the preset path produces the former.
+option_is_on_in_cache() {
+  local option_name="$1"
+  local cache="${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[0]}/CMakeCache.txt"
+  [[ -f "${cache}" ]] || return 0
+  grep -qE "^${option_name}:[A-Z]+=(ON|1|TRUE|YES)$" "${cache}"
+}
 
 append_framework_flag() {
   local option_name="$1"
   local framework="$2"
   local mode="$3"
-
   if [[ ${#CMAKE_OPTIONS_OVERRIDE[@]} -gt 0 && -n "$option_name" ]]; then
     for cmake_option in "${CMAKE_OPTIONS_OVERRIDE[@]}"; do
       if [[ "$cmake_option" =~ "-D${option_name}=OFF" ]]; then
@@ -286,6 +391,13 @@ append_framework_flag() {
         return
       fi
     done
+  fi
+  # A preset can disable an option with no flag passed, in which case those
+  # libraries were never built and asking for them here makes
+  # create_frameworks.sh exit 1 on a missing input.
+  if [[ -n "$option_name" ]] && ! option_is_on_in_cache "$option_name"; then
+    echo "Skipping framework: ${framework} (disabled by the preset)"
+    return
   fi
 
   if [[ -n "$mode" && "$mode" != "Release" ]]; then
@@ -307,8 +419,10 @@ for mode in "${MODES[@]}"; do
 
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH" "$mode"
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE" "$FRAMEWORK_EXECUTORCH_DUMP" "$mode"
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_MLX" "$FRAMEWORK_BACKEND_MLX" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_LLM" "$FRAMEWORK_KERNELS_LLM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
@@ -327,6 +441,7 @@ done
 
 rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
 rm -rf "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
+rm -rf "$FRAMEWORK_EXECUTORCH_DUMP_HEADERS_PATH"
 
 echo "Generating Swift test fixtures (requires CoreML python deps)"
 
