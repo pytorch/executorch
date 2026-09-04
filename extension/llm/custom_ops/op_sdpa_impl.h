@@ -1320,11 +1320,12 @@ void cpu_flash_attention(
             (widen_qk && qBlockSize >= kMinQBlockForWidenedQK) ? widen_ptr
                                                                : nullptr);
 
-        // Apply causal masking relative to the retained range. These are the
-        // two boundary cases; a range wholly before the query block needs no
-        // causal masking:
+        // Apply causal masking relative to the retained KV block. These are
+        // the two overlap configurations; a KV block wholly before the new
+        // query needs no causal masking. Rows are new-query tokens, columns
+        // are KV-block tokens, '+' is attendable, and '-' is causally masked:
         //
-        // Query starts inside the range:       Range starts inside the query:
+        // New query begins midway through KV block:  Tail of new query lies in KV block:
         //   + + + - - -                         - - - - - -
         //   + + + + - -                         - - - - - -
         //   + + + + + -                         + - - - - -
