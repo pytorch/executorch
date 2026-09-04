@@ -1194,9 +1194,11 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     Args:
         soc_model: The SoC you plan to run the compiled model. Please check
             QcomChipset for supported SoC.
+            SM7675(Snapdragon 7+ Gen 3)
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SM8635(Snapdragon 8s Gen 3)
             SM8650(Snapdragon 8 Gen 3)
             SM8750(Snapdragon 8 Elite)
             SM8850(Snapdragon 8 Elite Gen 5)
@@ -1327,7 +1329,9 @@ def get_soc_to_htp_arch_map():
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
+        "SM7675": HtpArch.V73,
         "SA8255": HtpArch.V73,
+        "SM8635": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
         "SM8850": HtpArch.V81,
@@ -1357,11 +1361,13 @@ def get_soc_to_chipset_map():
         "SA8295": QcomChipset.SA8295,
         "SA8797": QcomChipset.SA8797,
         "SC8380XP": QcomChipset.SC8380XP,
+        "SM7675": QcomChipset.SM7675,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
         "SA8255": QcomChipset.SA8255,
+        "SM8635": QcomChipset.SM8635,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
         "SM8850": QcomChipset.SM8850,
