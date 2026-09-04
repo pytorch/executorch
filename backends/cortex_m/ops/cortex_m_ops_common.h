@@ -14,6 +14,7 @@
 
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 #include <cinttypes>
@@ -35,6 +36,11 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
 // 16-byte alignment for MVE vector operations.
 constexpr size_t kCortexMMveAlignment = 16;
+
+enum class ActivationLayout {
+  NCHWLogical,
+  NHWCLogical,
+};
 
 // Basic tensor type / layout validation and dimension order checking
 inline void validate_cmsis_nn_tensor_requirements(
