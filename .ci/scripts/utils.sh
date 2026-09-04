@@ -136,9 +136,18 @@ install_pytorch_and_domains() {
       export BUILD_IGNORE_SVE_UNAVAILABLE=1
     fi
     # PyTorch dropped setup.py; isolation off reuses the deps installed above.
+    # Drop the pip cmake first: scikit-build-core prefers it over the one on
+    # PATH, and it searches site-packages, where the maths libraries are not.
+    pip uninstall -y cmake || true
     pip install build
     USE_DISTRIBUTED=1 python -m build --wheel --no-isolation
     pip install "$(echo dist/*.whl)"
+    # A build with no BLAS succeeds silently, so check rather than assume.
+    (cd / && python -c "
+import torch
+assert torch._C.has_lapack, 'built without LAPACK'
+torch.linalg.qr(torch.randn(4, 4))
+")
 
     # Invariant: the basename the build just produced must match the cache
     # URL we'd reconstruct on the next run. If they diverge (someone edits

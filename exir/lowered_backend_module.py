@@ -407,7 +407,6 @@ def arrange_graph_placeholders(
     params_map = graph_sign.inputs_to_parameters
     buffers_map = graph_sign.inputs_to_buffers
     constants_map = graph_sign.inputs_to_lifted_tensor_constants
-    custom_objs_map = graph_sign.inputs_to_lifted_custom_objs
     param_nodes = []
     buffer_nodes = []
     constant_nodes = []
@@ -421,7 +420,7 @@ def arrange_graph_placeholders(
             param_nodes.append(node)
         elif node.name in buffers_map and is_tagged:
             buffer_nodes.append(node)
-        elif (node.name in constants_map or node.name in custom_objs_map) and is_tagged:
+        elif node.name in constants_map and is_tagged:
             constant_nodes.append(node)
         else:
             input_nodes.append(node)
