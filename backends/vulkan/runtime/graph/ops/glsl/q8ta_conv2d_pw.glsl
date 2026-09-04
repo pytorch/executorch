@@ -13,6 +13,9 @@ ${define_required_extensions("buffer", DTYPE)}
 #define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
 #define USE_UNSIGNED_DOT_PRODUCT ${USE_UNSIGNED_DOT_PRODUCT}
 
+$if WEIGHT_STORAGE == "buffer":
+  #define WEIGHT_BUFFER
+
 #extension GL_EXT_control_flow_attributes : require
 $if USE_INT8_DOT_PRODUCT_EXT == 1:
   #extension GL_EXT_integer_dot_product : require
@@ -44,7 +47,7 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_packed_int8_output", "int", "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", "buffer", is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_packed_int8_weight", "int", "texture2d", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_packed_int8_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
@@ -167,10 +170,15 @@ void main() {
     // Load the int8 weight tile for the current K and output-channel sub-block.
     ivec4 int8_weight_tile[TILE_N4];
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+#ifdef WEIGHT_BUFFER
+      int8_weight_tile[n4] = t_packed_int8_weight[
+          k4 * OC4 + oc_block_idx + n4];
+#else
       int8_weight_tile[n4] = texelFetch(
           t_packed_int8_weight,
           ivec2(oc_block_idx + n4, k4),
           0);
+#endif
     }
 #if USE_UNSIGNED_DOT_PRODUCT == 1
     uvec4 uint8_weight_tile[TILE_N4];
