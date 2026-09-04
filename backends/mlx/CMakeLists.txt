@@ -187,34 +187,8 @@ message(
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_remove_addrspace_compat.patch
 )
-# In a framework build the delegate is static, so MLX cannot find a colocated
-# metallib and instead loads one from a SwiftPM resource bundle. SWIFTPM_BUNDLE
-# is the bundle name and MLX_SWIFTPM_METALLIB_NAME the per-slice file inside it
-# (one per slice, since a slice's metallib does not load on another). PLATFORM
-# is set only for the Apple presets; a plain wheel build leaves it empty and
-# keeps the colocated path.
-set(_mlx_extra_cxx_flags "")
-set(_mlx_cxx_flags_arg "")
-if(PLATFORM)
-  if(PLATFORM STREQUAL "OS64")
-    set(_mlx_metallib_slice "ios")
-  elseif(PLATFORM STREQUAL "SIMULATORARM64")
-    set(_mlx_metallib_slice "ios-simulator")
-  else()
-    set(_mlx_metallib_slice "macos")
-  endif()
-  set(_mlx_extra_cxx_flags
-      "-DSWIFTPM_BUNDLE=\\\"executorch_backend_mlx_resources\\\" -DMLX_SWIFTPM_METALLIB_NAME=\\\"mlx-${_mlx_metallib_slice}\\\""
-  )
-  # Only override the sub-build's CXX flags when there is something to add. An
-  # empty -DCMAKE_CXX_FLAGS= on the command line beats the environment, so
-  # passing it unconditionally would silently drop a wheel build's CXXFLAGS for
-  # MLX only.
-  set(_mlx_cxx_flags_arg "-DCMAKE_CXX_FLAGS=${_mlx_extra_cxx_flags}")
-endif()
 
 # Prefer the preset's per-slice DEPLOYMENT_TARGET; fall back to the toolchain
 # value.
@@ -264,7 +238,6 @@ ExternalProject_Add(
   CMAKE_GENERATOR "Unix Makefiles"
   CMAKE_ARGS "-DCMAKE_BUILD_TYPE=${_mlx_build_type}"
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
-             ${_mlx_cxx_flags_arg}
              # Feed the preset's per-slice DEPLOYMENT_TARGET in as
              # CMAKE_OSX_DEPLOYMENT_TARGET: the ios.toolchain does not reliably
              # carry it to this sub-build, and the shader-flag patch reads
@@ -309,14 +282,12 @@ ExternalProject_Add(
 
 # ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so
 # a reused build directory whose MLX source was reset (patches reverted) would
-# recompile an unpatched MLX and silently drop the iOS Metal SDK selection and
-# the SwiftPM metallib name. Re-apply the patches on every build; apply.sh is
-# idempotent (it reverse-checks each patch, skipping those already applied).
-# DEPENDERS configure, not build: mlx_metal_sdk_per_platform.patch edits the
-# sub-project's own CMake to pick the Metal SDK from PLATFORM, so it must land
-# before the sub-configure runs, or the shaders are built against the macOS SDK
-# for every slice. That does mean the sub-configure re-runs on each build, which
-# is the price of the ordering.
+# recompile an unpatched MLX and silently drop the iOS Metal SDK selection.
+# Re-apply the patches on every build; apply.sh is idempotent (it reverse-checks
+# each patch, skipping those already applied). DEPENDERS configure, not build:
+# mlx_metal_sdk_per_platform.patch edits the sub-project's own CMake to select
+# the Metal SDK, so it must land before the sub-configure runs. That means the
+# sub-configure re-runs on each build, which is the price of the ordering.
 ExternalProject_Add_Step(
   mlx_external reapply_patches
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
@@ -366,6 +337,21 @@ set(_mlx_backend__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/mlx_mutable_state.cpp
 )
+if(EXECUTORCH_MLX_SWIFTPM_RESOURCES)
+  if(NOT APPLE)
+    message(
+      FATAL_ERROR "EXECUTORCH_MLX_SWIFTPM_RESOURCES requires an Apple target"
+    )
+  endif()
+  enable_language(OBJCXX)
+  list(APPEND _mlx_backend__srcs
+       ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SwiftPMMetallibPath.mm
+  )
+  set_source_files_properties(
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SwiftPMMetallibPath.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+  )
+endif()
 
 # Build the delegate as a shared library for the wheel so a C++ consumer can
 # link it, and keep it static everywhere else so no other build changes.
@@ -424,6 +410,12 @@ target_include_directories(
 target_link_libraries(
   mlxdelegate PRIVATE mlx_schema extension_llm_cache $<BUILD_INTERFACE:mlx>
 )
+if(EXECUTORCH_MLX_SWIFTPM_RESOURCES)
+  target_compile_definitions(
+    mlxdelegate PRIVATE EXECUTORCH_MLX_SWIFTPM_RESOURCES
+  )
+  target_link_libraries(mlxdelegate PRIVATE ${FOUNDATION_FRAMEWORK})
+endif()
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
     mlxdelegate PROPERTIES OUTPUT_NAME executorch_backend_mlx

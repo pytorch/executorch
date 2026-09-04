@@ -53,6 +53,19 @@ add_dependencies(op_test_runner strict_compile_test)
 # Multi-threaded inference test
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
+if(EXECUTORCH_MLX_SWIFTPM_RESOURCES)
+  et_cxx_test(
+    mlx_metallib_path_test SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+  )
+  target_include_directories(
+    mlx_metallib_path_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../runtime
+  )
+  target_compile_options(mlx_metallib_path_test PRIVATE -fobjc-arc)
+  target_link_libraries(mlx_metallib_path_test ${FOUNDATION_FRAMEWORK})
+endif()
+
 et_cxx_test(
   multi_thread_test_runner
   SOURCES

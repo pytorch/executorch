@@ -14,6 +14,10 @@
 #include "MLXSequenceCache.h"
 #include "mlx_mutable_state.h"
 
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+#include "SwiftPMMetallibPath.h"
+#endif
+
 #include <executorch/extension/llm/cache/cache_registry.h>
 
 #include <executorch/runtime/backend/interface.h>
@@ -214,11 +218,28 @@ static std::mutex& mlx_global_mutex() {
   return m;
 }
 
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+// Must be called while holding mlx_global_mutex() and before any MLX operation.
+// If the bundle is not loaded yet, leave MLX unchanged and retry from init().
+void configure_metallib_path_locked() {
+  if (!::mlx::core::metal::get_metallib_path().empty()) {
+    return;
+  }
+  if (auto path = resolve_swiftpm_metallib_path()) {
+    ::mlx::core::metal::set_metallib_path(*path);
+  }
+}
+#endif
+
 class MLXBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~MLXBackend() override = default;
 
   bool is_available() const override {
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+    std::lock_guard<std::mutex> lock(mlx_global_mutex());
+    configure_metallib_path_locked();
+#endif
 #if TARGET_OS_SIMULATOR
     // The simulator's Metal device reports no architecture, which MLX reads
     // without a null check while constructing its device. Past that, requesting
@@ -236,6 +257,9 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     std::lock_guard<std::mutex> lock(mlx_global_mutex());
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+    configure_metallib_path_locked();
+#endif
     auto* handle =
         context.get_runtime_allocator()->allocateInstance<MLXHandle>();
     if (handle == nullptr) {
