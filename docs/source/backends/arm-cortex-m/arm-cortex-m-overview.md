@@ -6,6 +6,8 @@ This backend is in **beta**. It has been validated with a set of small models (e
 
 The Arm&reg; Cortex&reg;-M backend accelerates quantized model execution on Arm Cortex-M CPUs using [CMSIS-NN](https://arm-software.github.io/CMSIS-NN/latest/) optimized kernels. Unlike delegate-based backends, it operates as an operator library: quantized subgraphs are replaced with CMSIS-NN accelerated kernels during the pass-lowering stage, while unsupported operators fall back to portable fp32 kernels.
 
+The default AOT flow uses channels-last inputs and the existing dim-order representation. The experimental explicit-layout flow uses ordinary contiguous inputs, represents NCHW/NHWC conversions as graph operators, and selects the experimental `cortex_m::*_nhwc` kernels. Enable it with `--cortex-m-explicit-layout`. Layout modes are selected independently of the Cortex-M CPU target and never mix operator families.
+
 ## Target Support
 
 The backend targets Arm Cortex-M CPUs via CMSIS-NN, which provides optimized kernel implementations for three instruction set variants:
