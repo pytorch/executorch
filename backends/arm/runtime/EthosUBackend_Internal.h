@@ -74,6 +74,10 @@ struct ExecutionHandle {
 extern "C" {
 void EthosUBackend_execute_begin();
 void EthosUBackend_execute_end();
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+void EthosUBackend_delegate_begin(const void* handle);
+void EthosUBackend_delegate_end();
+#endif
 extern unsigned char* ethosu_fast_scratch;
 extern size_t ethosu_fast_scratch_size;
 }
