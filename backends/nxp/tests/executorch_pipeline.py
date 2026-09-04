@@ -154,7 +154,7 @@ def get_calibration_inputs_fn_from_dataset_dir(dataset_dir) -> GetCalibrationInp
     return _nested
 
 
-def _get_example_input(
+def get_example_input(
     input_spec: tuple[ModelInputSpec, ...],
 ) -> tuple[torch.Tensor, ...]:
     example_input = []
@@ -200,7 +200,7 @@ def to_quantized_edge_program(
         )
     input_spec = to_model_input_spec(input_spec)
     calibration_inputs = get_calibration_inputs_fn(input_spec)
-    example_input = _get_example_input(input_spec)
+    example_input = get_example_input(input_spec)
 
     # Make sure the model is in the evaluation mode.
     model.eval()
@@ -318,7 +318,7 @@ def to_edge_program(
     model: nn.Module,
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
 ) -> EdgeProgramManager:
-    example_input = _get_example_input(to_model_input_spec(input_spec))
+    example_input = get_example_input(to_model_input_spec(input_spec))
 
     # Make sure the model is in the evaluation mode.
     model.eval()
