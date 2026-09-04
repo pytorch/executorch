@@ -35,6 +35,12 @@ jobs:
       timeout: 120
       run-linux: true
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      # The Ethos-U flows run a Corstone FVP per worker and the failures each
+      # emit a Vela dump of a few hundred thousand lines, which killed the pod
+      # once `auto` stopped discounting hyperthreads: linux.4xlarge.memory gave
+      # 8 workers 16GiB each, the OSDC label gives 15 workers 7.7GiB each. 8
+      # keeps what the suite had.
+      pytest-workers: 8
 
   test-arm-vgf:
     uses: ./.github/workflows/_test_backend.yml

@@ -46,6 +46,14 @@ on:
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12
+      pytest-workers:
+        description: |
+          pytest-xdist worker count. Defaults to the pod's CPU allowance, which
+          is right unless a suite needs more memory per worker than the label's
+          8GiB per core.
+        required: false
+        type: string
+        default: ''
 
 jobs:
   docker-image:
@@ -76,6 +84,10 @@ jobs:
       upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
+
+        if [[ -n "${{ inputs.pytest-workers }}" ]]; then
+          export PYTEST_XDIST_AUTO_NUM_WORKERS="${{ inputs.pytest-workers }}"
+        fi
 
         source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
 
