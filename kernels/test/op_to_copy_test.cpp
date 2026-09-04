@@ -7,7 +7,9 @@
  */
 
 #include <cstdint>
+#include <cstring>
 #include <map>
+#include <type_traits>
 #include <typeindex>
 #include <variant>
 
@@ -22,6 +24,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using executorch::aten::BFloat16;
 using executorch::aten::MemoryFormat;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -81,6 +84,22 @@ class OpToTest : public OperatorTest {
     const std::vector<OUTPUT_CTYPE> data_out;
   };
 
+  static float float_from_bits(uint32_t bits) {
+    float value;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+  }
+
+  static uint32_t float_bits(float value) {
+    uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+  }
+
+  static bool is_bfloat16_nan(BFloat16 value) {
+    return (value.x & 0x7FFF) > 0x7F80;
+  }
+
   // Each test has different combination of input and output types. Therefore it
   // is a little bit mess if create template test case and custom data types for
   // both input data and output data.
@@ -118,6 +137,77 @@ class OpToTest : public OperatorTest {
       // return variable of to function
       EXPECT_TENSOR_EQ(ret, output);
       EXPECT_TENSOR_EQ(ret, expected);
+    }
+  }
+
+  template <
+      typename INPUT_CTYPE,
+      ScalarType INPUT_DTYPE,
+      typename OUTPUT_CTYPE,
+      ScalarType OUTPUT_DTYPE>
+  void test_conversion_at_sizes(
+      const std::vector<int32_t>& sizes,
+      const std::vector<INPUT_CTYPE>& input_pattern,
+      const std::vector<OUTPUT_CTYPE>& expected_pattern) {
+    ASSERT_EQ(input_pattern.size(), expected_pattern.size());
+
+    TensorFactory<INPUT_DTYPE> tf_in;
+    TensorFactory<OUTPUT_DTYPE> tf_out;
+    for (const int32_t numel : sizes) {
+      SCOPED_TRACE(::testing::Message() << "numel=" << numel);
+      std::vector<INPUT_CTYPE> input_data;
+      std::vector<OUTPUT_CTYPE> expected_data;
+      input_data.reserve(numel);
+      expected_data.reserve(numel);
+      for (int32_t i = 0; i < numel; ++i) {
+        input_data.push_back(input_pattern[i % input_pattern.size()]);
+        expected_data.push_back(expected_pattern[i % expected_pattern.size()]);
+      }
+
+      Tensor input = tf_in.make({numel}, input_data);
+      Tensor output = tf_out.zeros({numel});
+
+      Tensor& ret = op_to_copy_out(
+          input,
+          /*non_blocking=*/false,
+          executorch::aten::MemoryFormat::Contiguous,
+          output);
+
+      EXPECT_EQ(&ret, &output);
+      const auto* const actual_data = ret.const_data_ptr<OUTPUT_CTYPE>();
+      if (actual_data == nullptr) {
+        ADD_FAILURE() << "conversion returned a null data pointer";
+        continue;
+      }
+      if constexpr (std::is_same_v<OUTPUT_CTYPE, BFloat16>) {
+        const bool is_aten =
+            torch::executor::testing::SupportedFeatures::get()->is_aten;
+        std::vector<uint16_t> actual_bits;
+        std::vector<uint16_t> expected_bits;
+        actual_bits.reserve(numel);
+        expected_bits.reserve(numel);
+        for (int32_t i = 0; i < numel; ++i) {
+          if (is_aten && is_bfloat16_nan(expected_data[i])) {
+            EXPECT_TRUE(is_bfloat16_nan(actual_data[i])) << "index=" << i;
+            continue;
+          }
+          actual_bits.push_back(actual_data[i].x);
+          expected_bits.push_back(expected_data[i].x);
+        }
+        EXPECT_EQ(actual_bits, expected_bits);
+      } else if constexpr (
+          std::is_same_v<INPUT_CTYPE, BFloat16> &&
+          std::is_same_v<OUTPUT_CTYPE, float>) {
+        std::vector<uint32_t> actual_bits;
+        std::vector<uint32_t> expected_bits;
+        actual_bits.reserve(numel);
+        expected_bits.reserve(numel);
+        for (int32_t i = 0; i < numel; ++i) {
+          actual_bits.push_back(float_bits(actual_data[i]));
+          expected_bits.push_back(float_bits(expected_data[i]));
+        }
+        EXPECT_EQ(actual_bits, expected_bits);
+      }
     }
   }
 
@@ -358,6 +448,105 @@ TEST_F(OpToTest, NanInfSupported) {
 
 #undef TEST_ENTRY
 #undef TEST_KERNEL
+}
+
+TEST_F(OpToTest, FloatToBFloat16RawBitsAtVectorAndGrainBoundaries) {
+  std::vector<int32_t> sizes;
+  for (int32_t size = 1; size <= 17; ++size) {
+    sizes.push_back(size);
+  }
+  sizes.insert(sizes.end(), {32767, 32768, 32769});
+
+  const std::vector<float> input_pattern = {
+      float_from_bits(0x00000000), float_from_bits(0x80000000),
+      float_from_bits(0x00007FFF), float_from_bits(0x00008000),
+      float_from_bits(0x00008001), float_from_bits(0x00017FFF),
+      float_from_bits(0x00018000), float_from_bits(0x00018001),
+      float_from_bits(0x3F807FFF), float_from_bits(0x3F808000),
+      float_from_bits(0x3F808001), float_from_bits(0x3F817FFF),
+      float_from_bits(0x3F818000), float_from_bits(0x3F818001),
+      float_from_bits(0xBF807FFF), float_from_bits(0xBF808000),
+      float_from_bits(0xBF808001), float_from_bits(0xBF817FFF),
+      float_from_bits(0xBF818000), float_from_bits(0xBF818001),
+      float_from_bits(0x7F800000), float_from_bits(0xFF800000),
+      float_from_bits(0x7FC12345), float_from_bits(0xFFC12345),
+      float_from_bits(0x7FA12345), float_from_bits(0xFFA12345),
+  };
+  const std::vector<BFloat16> expected_pattern = {
+      BFloat16(0x0000, BFloat16::from_bits()),
+      BFloat16(0x8000, BFloat16::from_bits()),
+      BFloat16(0x0000, BFloat16::from_bits()),
+      BFloat16(0x0000, BFloat16::from_bits()),
+      BFloat16(0x0001, BFloat16::from_bits()),
+      BFloat16(0x0001, BFloat16::from_bits()),
+      BFloat16(0x0002, BFloat16::from_bits()),
+      BFloat16(0x0002, BFloat16::from_bits()),
+      BFloat16(0x3F80, BFloat16::from_bits()),
+      BFloat16(0x3F80, BFloat16::from_bits()),
+      BFloat16(0x3F81, BFloat16::from_bits()),
+      BFloat16(0x3F81, BFloat16::from_bits()),
+      BFloat16(0x3F82, BFloat16::from_bits()),
+      BFloat16(0x3F82, BFloat16::from_bits()),
+      BFloat16(0xBF80, BFloat16::from_bits()),
+      BFloat16(0xBF80, BFloat16::from_bits()),
+      BFloat16(0xBF81, BFloat16::from_bits()),
+      BFloat16(0xBF81, BFloat16::from_bits()),
+      BFloat16(0xBF82, BFloat16::from_bits()),
+      BFloat16(0xBF82, BFloat16::from_bits()),
+      BFloat16(0x7F80, BFloat16::from_bits()),
+      BFloat16(0xFF80, BFloat16::from_bits()),
+      BFloat16(0x7FC0, BFloat16::from_bits()),
+      BFloat16(0x7FC0, BFloat16::from_bits()),
+      BFloat16(0x7FC0, BFloat16::from_bits()),
+      BFloat16(0x7FC0, BFloat16::from_bits()),
+  };
+
+  test_conversion_at_sizes<
+      float,
+      ScalarType::Float,
+      BFloat16,
+      ScalarType::BFloat16>(sizes, input_pattern, expected_pattern);
+}
+
+TEST_F(OpToTest, BFloat16ToFloatRawBitsAtVectorAndGrainBoundaries) {
+  std::vector<int32_t> sizes;
+  for (int32_t size = 1; size <= 17; ++size) {
+    sizes.push_back(size);
+  }
+  sizes.insert(sizes.end(), {32767, 32768, 32769});
+
+  const std::vector<BFloat16> input_pattern = {
+      BFloat16(0x0000, BFloat16::from_bits()),
+      BFloat16(0x8000, BFloat16::from_bits()),
+      BFloat16(0x3F80, BFloat16::from_bits()),
+      BFloat16(0x3F81, BFloat16::from_bits()),
+      BFloat16(0x3F82, BFloat16::from_bits()),
+      BFloat16(0x7F80, BFloat16::from_bits()),
+      BFloat16(0xFF80, BFloat16::from_bits()),
+      BFloat16(0x7FC1, BFloat16::from_bits()),
+      BFloat16(0xFFC1, BFloat16::from_bits()),
+      BFloat16(0x7FA1, BFloat16::from_bits()),
+      BFloat16(0xFFA1, BFloat16::from_bits()),
+  };
+  const std::vector<float> expected_pattern = {
+      float_from_bits(0x00000000),
+      float_from_bits(0x80000000),
+      float_from_bits(0x3F800000),
+      float_from_bits(0x3F810000),
+      float_from_bits(0x3F820000),
+      float_from_bits(0x7F800000),
+      float_from_bits(0xFF800000),
+      float_from_bits(0x7FC10000),
+      float_from_bits(0xFFC10000),
+      float_from_bits(0x7FA10000),
+      float_from_bits(0xFFA10000),
+  };
+
+  test_conversion_at_sizes<
+      BFloat16,
+      ScalarType::BFloat16,
+      float,
+      ScalarType::Float>(sizes, input_pattern, expected_pattern);
 }
 
 TEST_F(OpToTest, HardcodeFloatConvertInt) {
