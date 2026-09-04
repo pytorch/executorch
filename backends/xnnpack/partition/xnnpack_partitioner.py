@@ -9,6 +9,8 @@ import itertools
 import logging
 from typing import List, Optional, Type, Union
 
+import torch
+
 from executorch.backends.xnnpack.partition.config import ALL_PARTITIONER_CONFIGS
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
@@ -21,6 +23,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     ConfigerationBasedPartitioner,
 )
 from executorch.exir.backend.partitioner import DelegationSpec
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from torch.fx.passes.infra.partitioner import Partition
 
 logging.basicConfig(level=logging.WARNING)
@@ -28,6 +31,25 @@ logger = logging.getLogger(__name__)
 
 
 class XnnpackPartitioner(ConfigerationBasedPartitioner):
+    # constant_prop_pass skips aten.full at the edge level so that a scalar
+    # fill does not become a stored tensor. Before decomposition the same
+    # fills come from these factory ops: the first group decomposes to
+    # aten.full, the *_like group to aten.full_like.
+    _CONSTANT_PROP_SKIP_TARGETS = frozenset(
+        {
+            torch.ops.aten.full.default,
+            torch.ops.aten.new_full.default,
+            torch.ops.aten.ones.default,
+            torch.ops.aten.new_ones.default,
+            torch.ops.aten.zeros.default,
+            torch.ops.aten.new_zeros.default,
+            torch.ops.aten.full_like.default,
+            torch.ops.aten.ones_like.default,
+            torch.ops.aten.zeros_like.default,
+        }
+    )
+    _CONSTANT_PROP_SKIP_NAMESPACES = ("quantized_decomposed", "torchao")
+
     def __init__(
         self,
         configs: Optional[List[Type[XNNPartitionerConfig]]] = None,
@@ -82,6 +104,39 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                 if "program/_program.py" in filename:
                     return True
         return False
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """
+        Fold subgraphs whose inputs are all parameters into constants.
+
+        The partitioner configs require a static weight, so a convolution or a
+        linear whose weight is computed from parameters, for example under
+        torch.nn.utils.parametrizations.weight_norm, would otherwise be left
+        to the portable kernels together with the weight computation.
+        """
+        # The program is not functionalized yet at this point: a KV-cache
+        # update is still an in-place index_put_ or copy_ on a view of the
+        # buffer, and the graph signature lists no mutated buffers. The pass
+        # reads mutation from the signature, so it would take such a buffer
+        # for a constant and fold the view that is written to. Functionalize
+        # first; to_edge_transform_and_lower makes the same call right after
+        # this hook, and the second call is a no-op on a functional graph.
+        exported_program = exported_program.run_decompositions({})
+
+        # Quantization primitives are kept as well, so that the Q/DQ chain
+        # convert_pt2e or torchao's quantize_ leaves on a weight stays in the
+        # graph. A folded dequantize would hand the delegate a float weight.
+        skip_targets = set(self._CONSTANT_PROP_SKIP_TARGETS)
+        for node in exported_program.graph.nodes:
+            if (
+                node.op == "call_function"
+                and getattr(node.target, "namespace", None)
+                in self._CONSTANT_PROP_SKIP_NAMESPACES
+            ):
+                skip_targets.add(node.target)
+        return constant_prop_pass(exported_program, custom_skip_targets=skip_targets)
 
     def partition(self, exported_program):
         """
