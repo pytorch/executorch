@@ -40,6 +40,36 @@ uint64_t ethosu_ArmBackendExecuteCycleCount = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCountStart = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCount = 0;
 uint64_t ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+struct DelegateStats {
+  const void* handle = nullptr;
+  uint64_t backend_invocations = 0;
+  uint64_t npu_invocations = 0;
+  uint64_t pmu_cycles = 0;
+  std::array<uint64_t, ethosu_pmuCountersUsed> pmu_events{};
+};
+
+std::array<DelegateStats, ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES>
+    ethosu_delegateStats;
+size_t ethosu_delegateCount = 0;
+DelegateStats* ethosu_activeDelegate = nullptr;
+bool ethosu_delegateCapacityExceeded = false;
+
+DelegateStats* get_delegate_stats(const void* handle) {
+  for (size_t i = 0; i < ethosu_delegateCount; ++i) {
+    if (ethosu_delegateStats[i].handle == handle) {
+      return &ethosu_delegateStats[i];
+    }
+  }
+  if (ethosu_delegateCount == ethosu_delegateStats.size()) {
+    ethosu_delegateCapacityExceeded = true;
+    return nullptr;
+  }
+  DelegateStats& stats = ethosu_delegateStats[ethosu_delegateCount++];
+  stats.handle = handle;
+  return &stats;
+}
+#endif
 std::array<uint64_t, ethosu_pmuCountersUsed> ethosu_pmuEventCounts = {0};
 
 // ethosu_pmuCountersUsed should match numbers of counters setup in
@@ -49,6 +79,19 @@ static_assert(ETHOSU_PMU_NCOUNTERS >= ethosu_pmuCountersUsed);
 } // namespace
 
 extern "C" {
+
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+void EthosUBackend_delegate_begin(const void* handle) {
+  ethosu_activeDelegate = get_delegate_stats(handle);
+  if (ethosu_activeDelegate != nullptr) {
+    ethosu_activeDelegate->backend_invocations++;
+  }
+}
+
+void EthosUBackend_delegate_end() {
+  ethosu_activeDelegate = nullptr;
+}
+#endif
 
 // Callback invoked at start of NPU execution
 void ethosu_inference_begin(struct ethosu_driver* drv, void*) {
@@ -100,10 +143,27 @@ void ethosu_inference_begin(struct ethosu_driver* drv, void*) {
 // Callback invoked at end of NPU execution
 void ethosu_inference_end(struct ethosu_driver* drv, void*) {
   ethosu_delegation_count++;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  const uint64_t pmu_cycles = ETHOSU_PMU_Get_CCNTR(drv);
+  ethosu_pmuCycleCount += pmu_cycles;
+  if (ethosu_activeDelegate != nullptr) {
+    ethosu_activeDelegate->npu_invocations++;
+    ethosu_activeDelegate->pmu_cycles += pmu_cycles;
+  }
+#else
   ethosu_pmuCycleCount += ETHOSU_PMU_Get_CCNTR(drv);
+#endif
 
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+    const uint64_t event_count = ETHOSU_PMU_Get_EVCNTR(drv, i);
+    ethosu_pmuEventCounts[i] += event_count;
+    if (ethosu_activeDelegate != nullptr) {
+      ethosu_activeDelegate->pmu_events[i] += event_count;
+    }
+#else
     ethosu_pmuEventCounts[i] += ETHOSU_PMU_Get_EVCNTR(drv, i);
+#endif
   }
   ETHOSU_PMU_Disable(drv);
   // Add Cortex-M cycle clock used during this NPU execution
@@ -131,6 +191,12 @@ void StartMeasurements() {
   ethosu_ArmBackendExecuteCycleCount = 0;
   ethosu_ArmWhenNPURunCycleCount = 0;
   ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  ethosu_delegateStats = {};
+  ethosu_delegateCount = 0;
+  ethosu_activeDelegate = nullptr;
+  ethosu_delegateCapacityExceeded = false;
+#endif
 
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ethosu_pmuEventCounts[i] = 0;
@@ -221,6 +287,39 @@ void StopMeasurements(int num_inferences) {
         ethosu_pmuEventCounts[i],
         (double)ethosu_pmuEventCounts[i] / num_inferences);
   }
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  ET_LOG(Info, "Ethos-U per-delegate PMU report:");
+  for (size_t delegate_id = 0; delegate_id < ethosu_delegateCount;
+       ++delegate_id) {
+    const DelegateStats& stats = ethosu_delegateStats[delegate_id];
+    ET_LOG(
+        Info,
+        "Ethos-U delegate %zu: %" PRIu64 " backend invocations, %" PRIu64
+        " NPU invocations",
+        delegate_id,
+        stats.backend_invocations,
+        stats.npu_invocations);
+    ET_LOG(
+        Info,
+        "Ethos-U delegate %zu PMU cycles: %" PRIu64,
+        delegate_id,
+        stats.pmu_cycles);
+    for (size_t event = 0; event < ethosu_pmuCountersUsed; ++event) {
+      ET_LOG(
+          Info,
+          "Ethos-U delegate %zu PMU counter %zu: %" PRIu64,
+          delegate_id,
+          event,
+          stats.pmu_events[event]);
+    }
+  }
+  if (ethosu_delegateCapacityExceeded) {
+    ET_LOG(
+        Error,
+        "Ethos-U per-delegate profiling exceeded its capacity of %zu delegates",
+        ethosu_delegateStats.size());
+  }
+#endif
 #if defined(ETHOSU55) || defined(ETHOSU65)
   ET_LOG(
       Info,
