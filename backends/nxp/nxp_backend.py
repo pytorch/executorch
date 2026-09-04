@@ -86,10 +86,10 @@ class NeutronCompileSpecBuilder:
         :param use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
                                                 ensure that the IO matches the executorch partition, which will be
                                                 delegated to Neutron.
-        :param fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
+        :param fetch_constants_to_sram: If True, the Neutron Compiler will insert microinstructions to prefetch weights
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
-        :param dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
-        :param use_profiling: If true Neutron Converter will enable profiling for neutron delegated model
+        :param dump_kernel_selection_code: Whether Neutron Compiler dumps kernel selection code.
+        :param use_profiling: If true Neutron Compiler will enable profiling for neutron delegated model
         :return: self for method chaining
         """
 

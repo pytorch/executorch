@@ -229,7 +229,7 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default=False,
         action="store_true",
-        help="During conversion to Neutron microcode by Neutron Converter, a kernel selection file will be dumped in "
+        help="During compilation to Neutron microcode by Neutron Compiler, a kernel selection file will be dumped in "
         "the working directory. This file can be used for reduction of Neutron Firmware size in the built app."
         "See `docs/source/backends/nxp/nxp-kernel-selection.md` for details.",
     )
