@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
@@ -32,6 +33,7 @@ from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass 
     is_exact_tosa_boundary_bilinear_downscale,
 )
 
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -50,6 +52,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -151,10 +154,23 @@ def _is_noop_as_strided_copy(node: torch.fx.Node) -> bool:
     else:
         input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
         output_tensor = get_first_fake_tensor(node)
-        return (
-            input_tensor.shape == output_tensor.shape
-            and input_tensor.stride() == output_tensor.stride()
-            and input_tensor.storage_offset() == output_tensor.storage_offset()
+        return bool(
+            len(input_tensor.shape) == len(output_tensor.shape)
+            and all(
+                statically_known_true(input_dim == output_dim)
+                for input_dim, output_dim in zip(
+                    input_tensor.shape, output_tensor.shape
+                )
+            )
+            and all(
+                statically_known_true(input_stride == output_stride)
+                for input_stride, output_stride in zip(
+                    input_tensor.stride(), output_tensor.stride()
+                )
+            )
+            and statically_known_true(
+                input_tensor.storage_offset() == output_tensor.storage_offset()
+            )
         )
 
 
@@ -180,7 +196,7 @@ def _is_noop_squeeze(node: torch.fx.Node) -> bool:
     else:
         input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
         output_tensor = get_first_fake_tensor(node)
-        return input_tensor.shape == output_tensor.shape
+        return bool(input_tensor.shape == output_tensor.shape)
 
 
 def _is_noop_flip(node: torch.fx.node.Node) -> bool:
@@ -189,6 +205,41 @@ def _is_noop_flip(node: torch.fx.node.Node) -> bool:
         return False
     dims = node.args[1]
     return isinstance(dims, (list, tuple)) and len(dims) == 0
+
+
+def _is_noop_permute(node: torch.fx.Node) -> bool:
+    """Return whether a permute preserves the order of every dimension.
+
+    Quantized identity-permute models can produce a partition containing only
+    boundary Q/DQ nodes and the identity permute::
+
+        DQ -> PERMUTE([0, 1, ..., rank - 1]) -> Q
+
+    TOSA lowering removes the boundary Q/DQ nodes and canonicalization removes
+    the identity permute. Delegating that partition would therefore create an
+    empty TOSA graph whose declared output has no writer.
+
+    Args:
+        node (torch.fx.Node): FX node to classify.
+
+    Returns:
+        bool: True when the node is an identity ``permute_copy``.
+
+    """
+    if node.target != exir_ops.edge.aten.permute_copy.default:
+        return False
+
+    dims = node.args[1]
+    if not isinstance(dims, (list, tuple)) or not all(
+        isinstance(dim, int) for dim in dims
+    ):
+        return False
+
+    rank = len(dims)
+    normalized_dims = tuple(
+        dim if dim >= 0 else dim + rank for dim in cast(Sequence[int], dims)
+    )
+    return normalized_dims == tuple(range(rank))
 
 
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
@@ -312,6 +363,8 @@ class TOSAPartitioner(Partitioner):
 
     """
 
+    compile_spec: ArmCompileSpec
+
     def __init__(
         self,
         compile_spec: TosaCompileSpec,
@@ -332,11 +385,33 @@ class TOSAPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(
             TOSABackend.__name__, compile_spec._to_list()
         )
+        self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply required Arm passes before default ATen decompositions.
+
+        EXIR invokes this backend extension hook automatically through
+        ``to_edge_transform_and_lower``. Model export users should not call it
+        directly.
+
+        Args:
+            exported_program (ExportedProgram): The ATen-dialect program to
+                transform.
+
+        Returns:
+            ExportedProgram: The transformed ATen-dialect program.
+
+        """
+        return ArmPassManager(
+            self.compile_spec
+        ).transform_for_pre_decomposition_pipeline(exported_program)
 
     def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
         """Register a custom op to be considered supported."""
@@ -588,6 +663,7 @@ class TOSAPartitioner(Partitioner):
                     or _is_noop_to_dim_order_copy(node)
                     or _is_noop_squeeze(node)
                     or _is_noop_flip(node)
+                    or _is_noop_permute(node)
                     or _is_view_copy(node)
                     or _is_noop_as_strided_copy(node)
                     or node.target in Q_OPS

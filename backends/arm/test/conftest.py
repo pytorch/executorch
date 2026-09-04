@@ -10,11 +10,13 @@ import logging
 import os
 import random
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 logger: logging.Logger = logging.getLogger(__name__)
+_expected_xfail_nodeids: set[str] = set()
 
 
 # ==== Pytest hooks ====
@@ -42,6 +44,34 @@ def pytest_configure(config):
 
 def pytest_report_header(config):
     return config._test_seed_label
+
+
+def pytest_runtest_logreport(report) -> None:
+    if report.when in ("setup", "call"):
+        wasxfail = getattr(report, "wasxfail", "")
+        if (
+            report.outcome == "skipped"
+            and wasxfail
+            and not wasxfail.startswith("[NOTRUN]")
+        ):
+            _expected_xfail_nodeids.add(report.nodeid)
+        return
+
+    if report.when != "teardown" or report.nodeid not in _expected_xfail_nodeids:
+        return
+
+    _expected_xfail_nodeids.remove(report.nodeid)
+    if report.outcome != "passed":
+        return
+
+    dump_artifacts = getattr(pytest, "_test_options", {}).get("dump_artifacts")
+    if not dump_artifacts:
+        return
+
+    test_name = report.nodeid.rsplit("::", 1)[-1].replace(",", "_").replace(" ", "")
+    artifact_dir = Path(dump_artifacts) / test_name
+    if artifact_dir.is_dir():
+        (artifact_dir / "_xfailed_test").touch()
 
 
 def _mark_rife_vgf_xfails_for_model_converter_below_minimum_version(
