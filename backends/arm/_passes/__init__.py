@@ -20,7 +20,6 @@ from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
-from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
