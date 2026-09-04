@@ -16,8 +16,6 @@
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
-#include <vector>
-
 #ifdef ET_USE_THREADPOOL
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
@@ -990,6 +988,193 @@ void cpu_flash_attention(
   scalar_t* buf_reduced_data =
       is_reduced_type ? reinterpret_cast<scalar_t*>(buf_reduced) : nullptr;
 
+  // An explicit mask is shared across batches and heads. Precompute up to two
+  // useful K/V intervals for every (query tile, K/V tile) pair. Ring attention
+  // can mask large portions of its backing cache with -inf; discovering those
+  // ranges once lets every head skip fully masked tiles and trim the boundary
+  // tiles before either GEMM. Arbitrary additive masks retain their existing
+  // behavior because only values that are exactly -inf are excluded.
+  struct MaskBlockRanges {
+    int64_t first_begin;
+    int64_t first_end;
+    int64_t second_begin;
+    int64_t second_end;
+    bool first_mask_is_zero;
+    bool second_mask_is_zero;
+  };
+  const int64_t num_kv_blocks = (kvSize - 1) / kvSplitSize + 1;
+  MaskBlockRanges* mask_block_ranges = nullptr;
+  std::unique_ptr<char[]> allocated_mask_block_ranges;
+  uint8_t* column_states_by_thread = nullptr;
+  std::unique_ptr<char[]> allocated_column_states;
+  bool use_mask_ranges = false;
+  if (has_attn_mask) {
+    const int64_t num_mask_block_ranges = qSlice * num_kv_blocks;
+    const int64_t mask_block_ranges_bytes =
+        num_mask_block_ranges * sizeof(MaskBlockRanges);
+    Result<void*> mask_block_ranges_scratch =
+        ctx.allocate_temp(mask_block_ranges_bytes, 64);
+    if (!mask_block_ranges_scratch.ok()) {
+      allocated_mask_block_ranges =
+          std::make_unique<char[]>(mask_block_ranges_bytes);
+      mask_block_ranges =
+          reinterpret_cast<MaskBlockRanges*>(allocated_mask_block_ranges.get());
+    } else {
+      mask_block_ranges =
+          reinterpret_cast<MaskBlockRanges*>(mask_block_ranges_scratch.get());
+    }
+
+    // Bit 0 means at least one query row can attend to the column. Bit 1
+    // means every query row has a zero additive mask for the column.
+    const int64_t column_states_bytes = kvSplitSize * num_thread + qSlice;
+    Result<void*> column_states_scratch =
+        ctx.allocate_temp(column_states_bytes, 64);
+    if (!column_states_scratch.ok()) {
+      allocated_column_states = std::make_unique<char[]>(column_states_bytes);
+      column_states_by_thread =
+          reinterpret_cast<uint8_t*>(allocated_column_states.get());
+    } else {
+      column_states_by_thread =
+          reinterpret_cast<uint8_t*>(column_states_scratch.get());
+    }
+
+    const accum_t neg_inf = -std::numeric_limits<accum_t>::infinity();
+    uint8_t* useful_mask_ranges =
+        column_states_by_thread + kvSplitSize * num_thread;
+    auto find_mask_ranges = [&](int64_t begin, int64_t end) {
+      const int64_t thread_index = torch::executor::get_thread_num();
+      uint8_t* column_states =
+          column_states_by_thread + thread_index * kvSplitSize;
+      for (int64_t q_block = begin; q_block < end; ++q_block) {
+        bool found_useful_range = false;
+        const int64_t query_begin = q_block * qSplitSize;
+        const int64_t query_end = std::min(query_begin + qSplitSize, qSize);
+        const int64_t causal_end =
+            is_causal ? std::min(start_pos + query_end, kvSize) : kvSize;
+        for (int64_t kv_block = 0; kv_block < num_kv_blocks; ++kv_block) {
+          const int64_t block_begin = kv_block * kvSplitSize;
+          const int64_t block_end =
+              std::min(std::min(block_begin + kvSplitSize, kvSize), causal_end);
+          const int64_t range_index = q_block * num_kv_blocks + kv_block;
+          auto& ranges = mask_block_ranges[range_index];
+          ranges.first_begin = block_begin;
+          ranges.first_end = block_begin;
+          ranges.second_begin = block_begin;
+          ranges.second_end = block_begin;
+          ranges.first_mask_is_zero = false;
+          ranges.second_mask_is_zero = false;
+          if (block_begin >= block_end) {
+            continue;
+          }
+
+          const int64_t block_size = block_end - block_begin;
+          std::fill(column_states, column_states + block_size, uint8_t{2});
+
+          for (int64_t row = query_begin; row < query_end; ++row) {
+            const accum_t* mask_row = mask_data + row * mStrideM;
+            for (int64_t col = block_begin; col < block_end; ++col) {
+              const accum_t mask_value = mask_row[col];
+              auto& state = column_states[col - block_begin];
+              state |= mask_value != neg_inf;
+              if (mask_value != static_cast<accum_t>(0)) {
+                state &= uint8_t{1};
+              }
+            }
+          }
+
+          int64_t active_begin = block_begin;
+          while (active_begin < block_end &&
+                 (column_states[active_begin - block_begin] & uint8_t{1}) ==
+                     0) {
+            ++active_begin;
+          }
+          int64_t active_end = block_end;
+          while (active_end > active_begin &&
+                 (column_states[active_end - 1 - block_begin] & uint8_t{1}) ==
+                     0) {
+            --active_end;
+          }
+          ranges.first_begin = active_begin;
+          ranges.first_end = active_end;
+          ranges.second_begin = block_end;
+          ranges.second_end = block_end;
+          if (active_begin >= active_end) {
+            found_useful_range = true;
+            continue;
+          }
+
+          // A wrapped ring window has at most one interior gap. custom_sdpa
+          // also accepts arbitrary additive masks, which may contain several
+          // gaps, so find the largest one and split around it when it is large
+          // enough to repay the extra pair of GEMM calls. Smaller gaps stay
+          // represented by their existing -inf values inside one bounding
+          // interval.
+          int64_t largest_gap_begin = active_begin;
+          int64_t largest_gap_end = active_begin;
+          int64_t gap_begin = active_begin;
+          while (gap_begin < active_end) {
+            while (gap_begin < active_end &&
+                   (column_states[gap_begin - block_begin] & uint8_t{1}) != 0) {
+              ++gap_begin;
+            }
+            int64_t gap_end = gap_begin;
+            while (gap_end < active_end &&
+                   (column_states[gap_end - block_begin] & uint8_t{1}) == 0) {
+              ++gap_end;
+            }
+            if (gap_end - gap_begin > largest_gap_end - largest_gap_begin) {
+              largest_gap_begin = gap_begin;
+              largest_gap_end = gap_end;
+            }
+            gap_begin = gap_end;
+          }
+
+          constexpr int64_t min_gap_to_split = 64;
+          if (largest_gap_end - largest_gap_begin >= min_gap_to_split) {
+            ranges.first_end = largest_gap_begin;
+            ranges.second_begin = largest_gap_end;
+            ranges.second_end = active_end;
+          }
+
+          auto mask_range_is_zero = [&](int64_t range_begin,
+                                        int64_t range_end) {
+            for (int64_t col = range_begin; col < range_end; ++col) {
+              if ((column_states[col - block_begin] & uint8_t{2}) == 0) {
+                return false;
+              }
+            }
+            return true;
+          };
+          ranges.first_mask_is_zero =
+              mask_range_is_zero(ranges.first_begin, ranges.first_end);
+          if (ranges.second_begin < ranges.second_end) {
+            ranges.second_mask_is_zero =
+                mask_range_is_zero(ranges.second_begin, ranges.second_end);
+          }
+
+          const int64_t retained_size = ranges.first_end - ranges.first_begin +
+              ranges.second_end - ranges.second_begin;
+          if (retained_size < block_size || ranges.first_mask_is_zero ||
+              ranges.second_mask_is_zero) {
+            found_useful_range = true;
+          }
+        }
+        useful_mask_ranges[q_block] = found_useful_range;
+      }
+    };
+    const bool mask_ranges_computed =
+        torch::executor::parallel_for(0, qSlice, 1, find_mask_ranges);
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        mask_ranges_computed,
+        Internal,
+        ,
+        "parallel_for failed while precomputing attention mask ranges");
+    for (int64_t q_block = 0; q_block < qSlice; ++q_block) {
+      use_mask_ranges |= useful_mask_ranges[q_block];
+    }
+  }
+
   auto compute_lambda = [&](int64_t begin, int64_t end) {
     int64_t i = 0, j = 0, k = 0;
     data_index_init(begin, i, batchSize, j, num_head, k, qSlice);
@@ -1045,11 +1230,38 @@ void cpu_flash_attention(
           is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
-      fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
-      for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
-        int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
-        // Calculate scale * q @ k.T
-        fill_stub(qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
+      fill_stub(dst_data, static_cast<accum_t>(0), qBlockSize * headSize);
+      bool has_processed_kv = false;
+      const int64_t num_ranges = use_mask_ranges
+          ? 2 * num_kv_blocks
+          : (num_keys + kvSplitSize - 1) / kvSplitSize;
+      for (int64_t range = 0; range < num_ranges; ++range) {
+        int64_t kvBlockStart;
+        int64_t kvBlockEnd;
+        bool range_mask_is_zero = false;
+        if (use_mask_ranges) {
+          const int64_t kv_block = range / 2;
+          const bool use_second_range = range % 2 != 0;
+          const auto& ranges = mask_block_ranges[k * num_kv_blocks + kv_block];
+          if (use_second_range) {
+            kvBlockStart = ranges.second_begin;
+            kvBlockEnd = ranges.second_end;
+            range_mask_is_zero = ranges.second_mask_is_zero;
+          } else {
+            kvBlockStart = ranges.first_begin;
+            kvBlockEnd = ranges.first_end;
+            range_mask_is_zero = ranges.first_mask_is_zero;
+          }
+        } else {
+          kvBlockStart = range * kvSplitSize;
+          kvBlockEnd = std::min(kvBlockStart + kvSplitSize, kvSize);
+        }
+        kvBlockEnd = std::min(kvBlockEnd, num_keys);
+        if (kvBlockStart >= kvBlockEnd) {
+          continue;
+        }
+        const int64_t kvBlockSize = kvBlockEnd - kvBlockStart;
+        const bool apply_attn_mask = has_attn_mask && !range_mask_is_zero;
 
         const void* q_sub_matrix_data_ptr;
         const void* k_sub_matrix_data_ptr;
@@ -1058,12 +1270,14 @@ void cpu_flash_attention(
         const int8_t* q_zero_points_ptr = nullptr;
         const int8_t* k_zero_points_ptr = nullptr;
         int64_t q_offset = i * qStrideB + j * qStrideH + m * qStrideM;
-        int64_t k_offset = i * kStrideB + j_kv * kStrideH + n * kStrideN;
+        int64_t k_offset =
+            i * kStrideB + j_kv * kStrideH + kvBlockStart * kStrideN;
         if (is_quantized_sdpa) {
           int64_t q_quant_params_offset = i * q_quant_params_StrideB +
               j * q_quant_params_StrideH + m * q_quant_params_StrideM;
           int64_t k_quant_params_offset = i * k_quant_params_StrideB +
-              j_kv * k_quant_params_StrideH + n * k_quant_params_StrideN;
+              j_kv * k_quant_params_StrideH +
+              kvBlockStart * k_quant_params_StrideN;
           q_scales_ptr =
               q_scales.value().const_data_ptr<float>() + q_quant_params_offset;
           k_scales_ptr =
@@ -1106,57 +1320,31 @@ void cpu_flash_attention(
             (widen_qk && qBlockSize >= kMinQBlockForWidenedQK) ? widen_ptr
                                                                : nullptr);
 
-        // There are 4 cases that is_causal has to cover to fill
-        // not-attendable-position with -inf
-        /* 1. Everything is attended to. This happens when m_start_pos > n +
-        kvSplitSize e.g m_pos [8:15] and n_pos [0:7]. Since you must attend to
-        all previous tokens matrix is full
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           2. Everything is not attended to. However only some tokens at the
-        beginning dont attend to everything. This happens when m_start_pos <= n
-        + kvSplitSize but m_start_pos + qBlockSize > n + kvSplitSize m_start_pos
-        = 8 qBlockSize = 8 n = 4 kvSplitSize = 8 For example m_pos [8:15] but
-        n_pos is [4:11]
-        + + + + + - - -
-        + + + + + + - -
-        + + + + + + + -
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           3. In this case only last few tokens have something to attend to.
-        This happens when m_start_pos < n and m_start_pos + qBlockSize >= n and
-        m_start_pos + qBlockSize <= n + kvSplitSize m_start_pos = 8 qBlockSize =
-        8 n = 13 kvSplitSize = 8 For example m_pos [8:15] but n_pos is [13:20]
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        + - - - - - - -
-        + + - - - - - -
-        + + + - - - - -
-           4. In this no tokens attend to anything, but we dont really have to
-        take care of this case because the loop for (int64_t n = 0; n <
-        num_keys; n += kvSplitSize) will exit before that.
-        */
-        if (is_causal && m_start_pos <= n + kvSplitSize) {
-          // For this fn to work k_split_size > q_split_size
+        // Apply causal masking relative to the retained KV block. These are
+        // the two overlap configurations; a KV block wholly before the new
+        // query needs no causal masking. Rows are new-query tokens, columns
+        // are KV-block tokens, '+' is attendable, and '-' is causally masked:
+        //
+        // New query begins midway through KV block:  Tail of new query lies in
+        // KV block:
+        //   + + + - - -                         - - - - - -
+        //   + + + + - -                         - - - - - -
+        //   + + + + + -                         + - - - - -
+        //   + + + + + +                         + + - - - -
+        //   + + + + + +                         + + + - - -
+        //
+        // Each row may attend through its own logical position, so last_col
+        // is the number of keys in [kvBlockStart, kvBlockEnd) that are not in
+        // its future.
+        if (is_causal && m_start_pos < kvBlockEnd) {
           for (int32_t row = 0;
-               row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1));
+               row < qBlockSize && (m_start_pos + row < kvBlockEnd - 1);
                ++row) {
-            // When last_col is 0, it means that the entire row is not attended
-            // to because m_pos is smaller than n_pos. So everything in n is for
-            // future.
-            int64_t last_col =
-                n > (m_start_pos + row) ? 0 : row + m_start_pos + 1 - n;
+            // When last_col is 0, it means that the entire row is not
+            // attended to because the range begins after the query position.
+            int64_t last_col = kvBlockStart > (m_start_pos + row)
+                ? 0
+                : row + m_start_pos + 1 - kvBlockStart;
             accum_t* row_ptr = qk_data + row * kvBlockSize;
             fill_stub(
                 row_ptr + last_col,
@@ -1167,7 +1355,7 @@ void cpu_flash_attention(
         // Update attention weights with attention mask
         // And apply scaling factor
         // qk <- qk * scaling + attn_mask
-        if (has_attn_mask) {
+        if (apply_attn_mask) {
           for (int64_t row = 0; row < qBlockSize; ++row) {
             vec::map2<accum_t>(
                 [scaling_factor](Vec x, Vec y) {
@@ -1176,14 +1364,14 @@ void cpu_flash_attention(
                 qk_data + row * kvBlockSize,
                 qk_data + row * kvBlockSize,
                 mask_data + i * mStrideB + j * mStrideH + (m + row) * mStrideM +
-                    n,
+                    kvBlockStart,
                 kvBlockSize);
           }
         }
         // Update coefficients with Softmax
         accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
         for (int64_t row = 0; row < qBlockSize; ++row) {
-          if (has_attn_mask) {
+          if (apply_attn_mask) {
             // max per row
             tmp_max = vec::reduce_all<accum_t>(
                 [](Vec& x, Vec& y) { return vec::maximum(x, y); },
@@ -1220,7 +1408,7 @@ void cpu_flash_attention(
             // max[row] <- max
             qk_max_data[row] = tmp_max;
             // dst <- dst * exp_tmp
-            if (n > 0) {
+            if (has_processed_kv) {
               vec::map<accum_t>(
                   [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
                   dst_data + row * headSize,
@@ -1233,10 +1421,12 @@ void cpu_flash_attention(
         const void* v_sub_matrix_data_ptr;
         const float* v_scales_ptr = nullptr;
         const int8_t* v_zero_points_ptr = nullptr;
-        int64_t v_offset = i * vStrideB + j_kv * vStrideH + n * vStrideN;
+        int64_t v_offset =
+            i * vStrideB + j_kv * vStrideH + kvBlockStart * vStrideN;
         if (is_quantized_sdpa) {
           int64_t v_quant_params_offset = i * v_quant_params_StrideB +
-              j_kv * v_quant_params_StrideH + n * v_quant_params_StrideN;
+              j_kv * v_quant_params_StrideH +
+              kvBlockStart * v_quant_params_StrideN;
           v_scales_ptr =
               v_scales.value().const_data_ptr<float>() + v_quant_params_offset;
           v_zero_points_ptr = v_zero_points.value().const_data_ptr<int8_t>() +
@@ -1287,10 +1477,12 @@ void cpu_flash_attention(
             vStrideN,
             dst_data,
             headSize,
-            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
+            has_processed_kv ? static_cast<accum_t>(1)
+                             : static_cast<accum_t>(0),
             buf_qdq_ptr,
             widen_v,
             use_fp32_qk_weights);
+        has_processed_kv = true;
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides

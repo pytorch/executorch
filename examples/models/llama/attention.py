@@ -262,6 +262,23 @@ class CachePositionsManager(nn.Module):
         return indices
 
 
+def _get_ring_cache_size(
+    max_context_length: int,
+    window_size: int,
+    max_seq_len: Optional[int] = None,
+) -> int:
+    """Size an SWA cache for one retained window plus one in-flight chunk."""
+    assert window_size > 0, "Sliding-window size must be positive"
+    if max_seq_len is None:
+        max_seq_len = max_context_length
+    assert max_seq_len > 0, "Maximum sequence length must be positive"
+    assert window_size <= max_context_length, (
+        f"Sliding-window size ({window_size}) cannot exceed the full context "
+        f"length ({max_context_length})"
+    )
+    return min(max_context_length, window_size + max_seq_len)
+
+
 class RingKVCache(KVCache):
     def __init__(
         self,
@@ -271,10 +288,25 @@ class RingKVCache(KVCache):
         head_dim: int,
         enable_dynamic_shape: bool,
         dtype=torch.float32,
+        *,
+        window_size: int,
+        max_seq_len: Optional[int] = None,
     ):
-        self.window_size = max_context_length
+        self.window_size = window_size
+        self.full_context_length = max_context_length
+        self.max_seq_len = (
+            max_context_length if max_seq_len is None else int(max_seq_len)
+        )
+        ring_cache_size = _get_ring_cache_size(
+            max_context_length, window_size, self.max_seq_len
+        )
         """
-        Reason why we want the kv cache size to be twice the context length:
+        The cache needs room for the retained sliding window and the current
+        prefill chunk. Its size is window_size + max_seq_len, capped by the
+        full-context cache. If max_seq_len is omitted, the full context length
+        is used.
+
+        Reason why a cache larger than the sliding window is needed:
         Sliding window attention without ringbuffer
         pos   0  1  2  3  4  5  6  7  8  9  10
         0     x  0  0  0  0  0  0  0  0  0  0
@@ -307,8 +339,8 @@ class RingKVCache(KVCache):
         So not having kept 2, 3 and 4 in cache means we will have divergent behavior.
         Worst case of this would have been when update it equal to the length of
         the cache. like in our case pos = 5 seq len = 4.
-        Thus we need to have a cache that is larger. How much larger, as much as
-        the sliding window size. So twice the max_context_length.
+        Thus we need a cache larger than the sliding window by enough space for
+        the largest in-flight input chunk.
         How would that have helped. Lets see. At pos = 5 our cache would have
         [0, 1, 2, 3, 4, NA, NA, NA] After cache update we would have
         [8, 1, 2, 3, 4, 5, 6, 7]. We kicked out token at pos = 0. However, the
@@ -320,7 +352,7 @@ class RingKVCache(KVCache):
         """
         super().__init__(
             max_batch_size,
-            max_context_length * 2,
+            ring_cache_size,
             n_heads,
             head_dim,
             enable_dynamic_shape,

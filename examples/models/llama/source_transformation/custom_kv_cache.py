@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 from executorch.examples.models.llama.attention import (
     _create_causal_mask_for_ring_buffer,
+    _get_ring_cache_size,
     CachePositionsManager,
     KVCache,
     RingKVCache,
@@ -661,17 +662,19 @@ def _replace_kv_cache_with_custom_kv_cache(module):
             if sdpa is not None and hasattr(sdpa, "use_attention_mask"):
                 sdpa.use_attention_mask = True
         elif isinstance(child, RingKVCache):
-            # RingKVCache (e.g., from attention sink with sink_size=0) needs
-            # CustomRingKVCache, not plain CustomKVCache
+            # Preserve ring-buffer sizing and masking when converting a
+            # local-attention cache to the custom update op.
             setattr(
                 module,
                 name,
                 CustomRingKVCache(
                     child.max_batch_size,
-                    child.window_size,
+                    child.full_context_length,
                     child.n_heads,
                     child.head_dim,
                     dtype=child.k_cache.dtype,
+                    window_size=child.window_size,
+                    max_seq_len=child.max_seq_len,
                 ),
             )
             sdpa = getattr(module, "SDPA", None)
@@ -707,11 +710,20 @@ class QuantizedRingKVCache(QuantizedKVCache):
         cache_type: QuantizedCacheType = QuantizedCacheType.AffineSymmetric,
         use_custom_update_cache_op: bool = False,
         return_float_values: bool = True,
+        *,
+        window_size: int,
+        max_seq_len: Optional[int] = None,
     ):
-        # Look at attention.py for explanation on why max_context_length * 2
+        self.full_context_length = max_context_length
+        self.max_seq_len = (
+            max_context_length if max_seq_len is None else int(max_seq_len)
+        )
+        ring_cache_size = _get_ring_cache_size(
+            max_context_length, window_size, self.max_seq_len
+        )
         super().__init__(
             max_batch_size,
-            max_context_length * 2,
+            ring_cache_size,
             n_heads,
             head_dim,
             cache_type,
@@ -720,7 +732,7 @@ class QuantizedRingKVCache(QuantizedKVCache):
         )
         self.cache_positions_manager = CachePositionsManager(self.max_context_length)
         self.is_ring_buffer = True
-        self.window_size = max_context_length
+        self.window_size = window_size
 
     def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
         cache_positions = self.cache_positions_manager.cache_positions
@@ -755,19 +767,22 @@ class QuantizedRingKVCache(QuantizedKVCache):
         cls,
         kv_cache,
         sliding_window_size,
+        max_seq_len,
     ):
         assert isinstance(
             kv_cache, QuantizedKVCache
         ), "For QuantizedRingKVCache expect QuantizedKVCache as input kv_cache"
-        max_batch_size, _, n_heads, head_dim = kv_cache.k_cache.shape
+        max_batch_size, max_context_length, n_heads, head_dim = kv_cache.k_cache.shape
         return cls(
             max_batch_size,
-            sliding_window_size,
+            max_context_length,
             n_heads,
             head_dim,
             kv_cache.cache_type,
             kv_cache.use_custom_update_cache_op,
             kv_cache.return_float_values,
+            window_size=sliding_window_size,
+            max_seq_len=max_seq_len,
         )
 
 
@@ -783,19 +798,30 @@ class CustomKVCacheWithAttentionSink(CustomKVCache):
     def __init__(
         self,
         max_batch_size,
+        max_context_length,
         n_heads,
         head_dim,
         window_size,
         sink_size,
+        max_seq_len=None,
         dtype=torch.float32,
     ):
-        # Total cache size: sink slots + ring buffer (2x window for wrap safety)
-        total_cache_size = sink_size + window_size * 2
-        super().__init__(max_batch_size, total_cache_size, n_heads, head_dim, dtype)
         from executorch.examples.models.llama.source_transformation.attention_sink import (
+            _get_attention_sink_cache_size,
             CachePositionsManagerWithSink,
         )
 
+        self.full_context_length = max_context_length
+        self.max_seq_len = (
+            max_context_length if max_seq_len is None else int(max_seq_len)
+        )
+        total_cache_size = _get_attention_sink_cache_size(
+            max_context_length,
+            window_size,
+            sink_size,
+            self.max_seq_len,
+        )
+        super().__init__(max_batch_size, total_cache_size, n_heads, head_dim, dtype)
         self.cache_positions_manager = CachePositionsManagerWithSink(
             total_cache_size, sink_size
         )
@@ -846,10 +872,12 @@ class CustomKVCacheWithAttentionSink(CustomKVCache):
         max_batch_size, n_heads, _, head_dim = kv_cache.k_cache.shape
         return cls(
             max_batch_size,
+            kv_cache.full_context_length,
             n_heads,
             head_dim,
             kv_cache.window_size,
             kv_cache.sink_size,
+            max_seq_len=kv_cache.max_seq_len,
             dtype=kv_cache.k_cache.dtype,
         )
 
@@ -862,14 +890,21 @@ class CustomRingKVCache(CustomKVCache):
         n_heads,
         head_dim,
         dtype=torch.float32,
+        *,
+        window_size: int,
+        max_seq_len: Optional[int] = None,
     ):
-        # Look at attention.py for explanation on why max_context_length * 2
-        super().__init__(
-            max_batch_size, max_context_length * 2, n_heads, head_dim, dtype
+        self.full_context_length = max_context_length
+        self.max_seq_len = (
+            max_context_length if max_seq_len is None else int(max_seq_len)
         )
+        ring_cache_size = _get_ring_cache_size(
+            max_context_length, window_size, self.max_seq_len
+        )
+        super().__init__(max_batch_size, ring_cache_size, n_heads, head_dim, dtype)
         self.cache_positions_manager = CachePositionsManager(self.max_context_length)
         self.is_ring_buffer = True
-        self.window_size = max_context_length
+        self.window_size = window_size
 
     def create_causal_mask_for_ring_buffer(self, start_pos, seq_len):
         cache_positions = self.cache_positions_manager.cache_positions
@@ -904,21 +939,24 @@ class CustomRingKVCache(CustomKVCache):
         cls,
         kv_cache,
         sliding_window_size,
+        max_seq_len,
     ):
-        max_batch_size, n_heads, _, head_dim = kv_cache.k_cache.shape
-        if isinstance(kv_cache, CustomKVCache):
-            # If replacing custom kv cache, then the shape is [B, S, H, D]
-            max_batch_size, _, n_heads, head_dim = kv_cache.k_cache.shape
+        # CustomKVCache storage is [B, S, H, D].
+        max_batch_size, max_context_length, n_heads, head_dim = kv_cache.k_cache.shape
         return cls(
             max_batch_size,
-            sliding_window_size,
+            max_context_length,
             n_heads,
             head_dim,
             dtype=kv_cache.k_cache.dtype,
+            window_size=sliding_window_size,
+            max_seq_len=max_seq_len,
         )
 
 
-def _replace_kv_cache_with_ring_kv_cache(attention, layer_size):
+def _replace_kv_cache_with_ring_kv_cache(
+    attention, layer_size: int, max_seq_len: Optional[int]
+):
     sliding_window_size = layer_size
     assert (
         getattr(attention, "kv_cache", None) is not None
@@ -927,23 +965,28 @@ def _replace_kv_cache_with_ring_kv_cache(attention, layer_size):
     if isinstance(kv_cache, KVCache):
         attention.kv_cache = RingKVCache(
             kv_cache.max_batch_size,
-            sliding_window_size,
+            kv_cache.max_context_length,
             kv_cache.n_heads,
             kv_cache.head_dim,
             kv_cache.enable_dynamic_shape,
             kv_cache.k_cache.dtype,
+            window_size=sliding_window_size,
+            max_seq_len=max_seq_len,
         )
     elif isinstance(kv_cache, CustomKVCache):
         attention.kv_cache = CustomRingKVCache.from_custom_kv_cache(
-            kv_cache, layer_size
+            kv_cache, layer_size, max_seq_len
         )
     elif isinstance(kv_cache, QuantizedKVCache):
         attention.kv_cache = QuantizedRingKVCache.from_quantized_kv_cache(
-            kv_cache, layer_size
+            kv_cache, layer_size, max_seq_len
         )
 
 
-def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
+def replace_kv_cache_with_ring_kv_cache(
+    module, layer_sizes, max_seq_len: Optional[int] = None
+):
+    """Replace local-layer caches with window-plus-in-flight ring caches."""
     # This is needed to ensure that custom ops are registered
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
@@ -959,6 +1002,7 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
     logging.info(
         f"Applying local sliding window attention with following pattern {layer_sizes}."
     )
+    logged_full_context_cache = False
     assert len(layer_sizes) == len(
         module.layers
     ), f"Length of layer sizes {len(layer_sizes)} must match the number of layers in the module {len(module.layers)}."
@@ -970,7 +1014,23 @@ def replace_kv_cache_with_ring_kv_cache(module, layer_sizes):
             getattr(transformer_block, "attention", None) is not None
         ), f"Transfomer block must have attention module. Transformer block {transformer_block}"
         attention = transformer_block.attention
-        _replace_kv_cache_with_ring_kv_cache(attention, sliding_window_size)
+        full_context_length = attention.kv_cache.max_context_length
+        effective_max_seq_len = (
+            full_context_length if max_seq_len is None else max_seq_len
+        )
+        if (
+            not logged_full_context_cache
+            and sliding_window_size + effective_max_seq_len >= full_context_length
+        ):
+            logging.info(
+                "Local attention KV caches will use the full context length; "
+                "set max_seq_length below max_context_length - window_size "
+                "to retain KV-cache memory savings."
+            )
+            logged_full_context_cache = True
+        _replace_kv_cache_with_ring_kv_cache(
+            attention, sliding_window_size, max_seq_len
+        )
         # if attention's sdpa is custom sdpa then we have to make sure
         # it is not doing causal attention
         if "SDPACustom" in attention.SDPA.__class__.__name__:

@@ -967,6 +967,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
+            max_seq_len=llm_config.export.max_seq_length,
             use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
             quantize_with_hqq=llm_config.quantization.use_hqq,
@@ -2062,6 +2063,7 @@ def _get_source_transforms(  # noqa
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
     local_global_attention: Optional[List[int]] = None,
+    max_seq_len: Optional[int] = None,
     use_torchao_kernels_linear: bool = False,
     use_torchao_kernels_tied_embedding: bool = False,
     quantize_with_hqq: bool = True,
@@ -2102,6 +2104,8 @@ def _get_source_transforms(  # noqa
         preq_mode: Pre-quantization mode.
         preq_group_size: Pre-quantization group size.
         preq_embedding_quantize: Pre-quantization embedding quantize.
+        max_seq_len: Largest input chunk accepted by local-attention layers. If
+            omitted, each layer's full context length is used.
 
     Returns:
         A list of transformation functions.
@@ -2278,6 +2282,7 @@ def _get_source_transforms(  # noqa
             partial(
                 replace_kv_cache_with_ring_kv_cache,
                 layer_sizes=local_global_attention,
+                max_seq_len=max_seq_len,
             )
         )
 

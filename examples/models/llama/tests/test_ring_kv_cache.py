@@ -14,7 +14,9 @@ class TestRingKVCache(unittest.TestCase):
     def setUp(self):
         # Common test parameters
         self.max_batch_size = 2
-        self.max_context_length = 8
+        self.max_context_length = 16
+        self.window_size = 8
+        self.max_seq_len = 8
         self.n_heads = 4
         self.head_dim = 16
         self.enable_dynamic_shape = True
@@ -32,7 +34,7 @@ class TestRingKVCache(unittest.TestCase):
         self._require_usable_cuda()
         cache = KVCache(
             max_batch_size=1,
-            max_context_length=self.max_context_length,
+            max_context_length=self.window_size,
             n_heads=self.n_heads,
             head_dim=self.head_dim,
             enable_dynamic_shape=True,
@@ -60,6 +62,8 @@ class TestRingKVCache(unittest.TestCase):
             head_dim=self.head_dim,
             enable_dynamic_shape=True,
             dtype=self.dtype,
+            window_size=self.window_size,
+            max_seq_len=self.max_seq_len,
         ).cuda()
         input_pos = torch.tensor([0], dtype=torch.long, device="cuda")
         seq_len = 3
@@ -103,7 +107,10 @@ class TestRingKVCache(unittest.TestCase):
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.window_size,
         )
+
+        self.assertEqual(cache.max_seq_len, self.max_context_length)
 
         # Create input tensors
         input_pos = torch.tensor([0], dtype=torch.long)
@@ -129,7 +136,7 @@ class TestRingKVCache(unittest.TestCase):
             self.assertTrue(torch.all(v_out[:, :, i] == 2.0))
 
         # Check that the rest of the cache is still zeros
-        for i in range(seq_len, self.max_context_length):
+        for i in range(seq_len, self.window_size):
             self.assertTrue(torch.all(k_out[:, :, i] == 0.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 0.0))
 
@@ -153,6 +160,8 @@ class TestRingKVCache(unittest.TestCase):
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.window_size,
+            max_seq_len=self.max_seq_len,
         )
 
         # Create input tensors for first update
@@ -216,6 +225,8 @@ class TestRingKVCache(unittest.TestCase):
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.window_size,
+            max_seq_len=self.max_seq_len,
         )
 
         # First update
@@ -346,6 +357,8 @@ class TestRingKVCache(unittest.TestCase):
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.window_size,
+            max_seq_len=self.max_seq_len,
         )
 
         # Create input tensors
@@ -374,7 +387,7 @@ class TestRingKVCache(unittest.TestCase):
         self.assertTrue(torch.all(v_out[:, :, 0] == 12.0))
 
         # Check that the rest of the cache is still zeros
-        for i in range(1, self.max_context_length):
+        for i in range(1, self.window_size):
             self.assertTrue(torch.all(k_out[:, :, i] == 0.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 0.0))
 
@@ -390,7 +403,7 @@ class TestRingKVCache(unittest.TestCase):
         )
 
     def test_edge_case_exceeding_context_length(self):
-        """Test the edge case where input_pos + seq_len > max_context_length."""
+        """Test the edge case where input_pos + seq_len exceeds cache capacity."""
         cache = RingKVCache(
             self.max_batch_size,
             self.max_context_length,
@@ -398,6 +411,8 @@ class TestRingKVCache(unittest.TestCase):
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.window_size,
+            max_seq_len=self.max_seq_len,
         )
 
         # Create input tensors
@@ -462,6 +477,8 @@ class TestRingKVCache(unittest.TestCase):
             self.head_dim,
             self.enable_dynamic_shape,
             self.dtype,
+            window_size=self.window_size,
+            max_seq_len=self.max_seq_len,
         )
 
         # First update at position 10 (will be mapped to position 10 in the ring buffer)
@@ -481,7 +498,7 @@ class TestRingKVCache(unittest.TestCase):
 
         # Check that cache_positions correctly tracks the original indices
         # For input_pos=10 and seq_len=4, the original indices should be 10, 11, 12, 13
-        # These map to positions 10, 11, 12, 13 in the ring buffer (since max_context_length=8 but buffer size is 16)
+        # These map directly to positions 10, 11, 12, 13 in the 16-slot cache.
         # Note that positions 0-9 are 0 because in actual ring
         # updates those positions would have been updated for start_pos = 0.
         # So CachePositionsManager thinks they are updated because start_pos > (0-9)
@@ -532,6 +549,8 @@ class TestRingKVCache(unittest.TestCase):
             self.head_dim,
             enable_dynamic_shape=False,
             dtype=self.dtype,
+            window_size=self.window_size,
+            max_seq_len=self.max_seq_len,
         )
 
         # Create input tensors
@@ -561,6 +580,6 @@ class TestRingKVCache(unittest.TestCase):
             self.assertTrue(torch.all(v_out[:, :, i] == 16.0))
 
         # Check that the rest of the cache is still zeros
-        for i in range(seq_len, self.max_context_length):
+        for i in range(seq_len, self.window_size):
             self.assertTrue(torch.all(k_out[:, :, i] == 0.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 0.0))

@@ -84,7 +84,10 @@ class TestRingAttention(unittest.TestCase):
             return attention
 
     def _create_ring_attention(
-        self, attention, kv_cache_type: KVCacheType = KVCacheType.REGULAR
+        self,
+        attention,
+        max_seq_len,
+        kv_cache_type: KVCacheType = KVCacheType.REGULAR,
     ):
         """Create attention with ring buffer KV cache."""
         assert self.sliding_window is not None
@@ -98,24 +101,81 @@ class TestRingAttention(unittest.TestCase):
             baseline_attention.kv_cache = QuantizedRingKVCache.from_quantized_kv_cache(
                 baseline_attention.kv_cache,
                 self.sliding_window,
+                max_seq_len,
             )
         elif isinstance(baseline_attention.kv_cache, CustomKVCache):
             # Replace CustomKVCache with CustomRingKVCache
             baseline_attention.kv_cache = CustomRingKVCache.from_custom_kv_cache(
                 baseline_attention.kv_cache,
                 self.sliding_window,
+                max_seq_len,
             )
         else:
             # Replace regular KVCache with RingKVCache
             baseline_attention.kv_cache = RingKVCache(
                 self.args.max_batch_size,
-                self.sliding_window,
+                self.args.max_context_len,
                 self.n_kv_heads,
                 self.head_dim,
                 self.args.enable_dynamic_shape,
                 self.dtype,
+                window_size=self.sliding_window,
+                max_seq_len=max_seq_len,
             )
         return baseline_attention
+
+    def test_continuation_prefill_larger_than_window(
+        self, kv_cache_type: KVCacheType = KVCacheType.REGULAR
+    ):
+        """A W+C cache preserves history when the incoming chunk exceeds W."""
+        self.sliding_window = 4
+        chunk_size = 6
+        baseline_attn = self._create_baseline_attention(12, kv_cache_type)
+        ring_attn = self._create_ring_attention(
+            baseline_attn, chunk_size, kv_cache_type
+        )
+
+        self.assertEqual(ring_attn.kv_cache.max_context_length, 10)
+
+        with torch.nn.attention.sdpa_kernel(
+            [SDPBackend.FLASH_ATTENTION]
+        ), torch.no_grad():
+            for pos in (0, chunk_size):
+                x = torch.randn(
+                    (self.batch_size, chunk_size, self.dim), dtype=self.dtype
+                )
+                input_pos = torch.tensor([pos], dtype=torch.long)
+                freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, chunk_size)
+
+                baseline_out, _ = baseline_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
+                ring_out, _ = ring_attn.forward(
+                    x, freqs_cos, freqs_sin, input_pos=input_pos
+                )
+
+                tolerance = 1e-6 if kv_cache_type != KVCacheType.REGULAR else 1e-7
+                self.assertTrue(
+                    torch.allclose(
+                        baseline_out,
+                        ring_out,
+                        rtol=tolerance,
+                        atol=tolerance,
+                    ),
+                    f"Outputs differ at position {pos}",
+                )
+
+    def test_continuation_prefill_larger_than_window_quantized(self):
+        self._run_test_with_kv_cache_type(
+            self.test_continuation_prefill_larger_than_window,
+            KVCacheType.QUANTIZED,
+        )
+
+    def test_continuation_prefill_larger_than_window_custom(self):
+        self._run_test_with_kv_cache_type(
+            self.test_continuation_prefill_larger_than_window,
+            KVCacheType.CUSTOM,
+        )
 
     def _create_sliding_window_mask(self, seq_len, context_len, window_size):
         """Create a sliding window mask for the baseline."""
@@ -140,7 +200,7 @@ class TestRingAttention(unittest.TestCase):
         seq_len = 10
         self.sliding_window = 4
         baseline_attn = self._create_baseline_attention(seq_len, kv_cache_type)
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(baseline_attn, 1, kv_cache_type)
 
         # Process tokens one by one
         with torch.nn.attention.sdpa_kernel(
@@ -199,7 +259,7 @@ class TestRingAttention(unittest.TestCase):
         baseline_attn = self._create_baseline_attention(seq_len, kv_cache_type)
 
         # Create ring attention with sliding window size
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(baseline_attn, 1, kv_cache_type)
 
         # Process tokens one by one
         with torch.nn.attention.sdpa_kernel(
@@ -251,7 +311,7 @@ class TestRingAttention(unittest.TestCase):
         )
 
         # Create ring attention with sliding window size
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(baseline_attn, 1, kv_cache_type)
 
         # Process enough tokens to cause wrapping
         seq_len = 1
@@ -277,13 +337,12 @@ class TestRingAttention(unittest.TestCase):
                     f"Outputs differ at position {pos}",
                 )
 
-        # After processing 8 tokens with window size 4, the ring buffer should have wrapped around
+        # With W=3 and max_seq_len=1, the physical cache has 4 slots and wraps.
         # Check the cache positions to verify wrapping
         cache_positions = ring_attn.kv_cache.cache_positions_manager.cache_positions
 
-        # The cache positions should contain the most recent 4 positions (4, 5, 6, 7)
-        # mapped to the ring buffer indices
-        expected_positions = torch.tensor([6, 7, 2, 3, 4, 5], dtype=torch.long)
+        # Positions 4 through 7 occupy physical slots 0 through 3.
+        expected_positions = torch.tensor([4, 5, 6, 7], dtype=torch.long)
 
         self.assertTrue(
             torch.all(cache_positions == expected_positions),
@@ -316,7 +375,9 @@ class TestRingAttention(unittest.TestCase):
         baseline_attn = self._create_baseline_attention(seq_len, kv_cache_type)
 
         # Create ring attention with sliding window size
-        ring_attn = self._create_ring_attention(baseline_attn, kv_cache_type)
+        ring_attn = self._create_ring_attention(
+            baseline_attn, max(token_lens), kv_cache_type
+        )
 
         pos = 0
         with torch.nn.attention.sdpa_kernel(
