@@ -16,7 +16,7 @@ plugins {
 
 spotless {
     kotlin {
-        target '**/*.kt'
+        target '**/*.kt', '../../java/src/main/java/**/*.kt'
         ktfmt()
     }
 }
@@ -44,6 +44,9 @@ android {
     sourceSets {
         main {
             jniLibs.srcDirs = ['../../../cmake-out-android-so/']
+            // Platform-neutral API sources shared with the desktop JVM artifact.
+            // They are compiled directly into this AAR, keeping it self-contained.
+            java.srcDirs += ['../../java/src/main/java']
         }
         androidTest {
             resources.srcDirs += ['src/androidTest/resources']
