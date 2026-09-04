@@ -41,11 +41,21 @@ test_cases = {
 }
 
 
+ops_absent_after_transforms: list[str] = [
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
+]
+
+
 @parametrize("test_case", test_cases)
 def test_dialect_ds_cnn(test_case):
     inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
-    tester.test_dialect(ops_before_transforms, ops_after_transforms, qtol=1)
+    tester.test_dialect(
+        ops_before_transforms,
+        ops_after_transforms,
+        qtol=1,
+        ops_absent_after_transforms=ops_absent_after_transforms,
+    )
 
 
 @parametrize("test_case", test_cases)

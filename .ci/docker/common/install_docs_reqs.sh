@@ -20,7 +20,8 @@ if [ -n "$BUILD_DOCS" ]; then
 
   apt-get update
   apt-get install -y --no-install-recommends yarn
-  # 0.18.5 wants node >= 22.12; this is the last release node 16 can run.
+  # katex 0.18.5 requires commander@15 / node >= 22.12; pin to the last
+  # release compatible with the node 16 installed above
   yarn global add katex@0.18.4 --prefix /usr/local
 
   sudo apt-get -y install doxygen

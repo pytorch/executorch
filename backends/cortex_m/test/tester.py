@@ -132,6 +132,7 @@ class CortexMTester(TesterBase):
         qtol=0,
         atol=1e-03,
         calibration_samples=None,
+        ops_absent_after_transforms=None,
     ):
         """
         Test the python dialect op implementation.
@@ -142,13 +143,14 @@ class CortexMTester(TesterBase):
             )
         else:
             quantization_stage = None
-
         self.quantize(quantization_stage)
         self.export()
         self.to_edge()
         self.check_count(ops_before_transforms)
         self.run_passes()
         self.check_count(ops_after_transforms)
+        if ops_absent_after_transforms:
+            self.check_not(ops_absent_after_transforms)
         self.run_method_and_compare_outputs(
             inputs=self.example_inputs, qtol=qtol, atol=atol
         )

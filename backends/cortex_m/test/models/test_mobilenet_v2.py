@@ -52,6 +52,11 @@ test_cases = {
 }
 
 
+ops_absent_after_transforms: list[str] = [
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
+]
+
+
 @parametrize("test_case", test_cases)
 def test_dialect_mv2(test_case):
     inputs = test_case.get_example_inputs()
@@ -61,6 +66,7 @@ def test_dialect_mv2(test_case):
         ops_after_transforms,
         qtol=10,
         calibration_samples=calibration_samples,
+        ops_absent_after_transforms=ops_absent_after_transforms,
     )
 
     # assert that top 1 output matches

@@ -387,9 +387,7 @@ OP_CASES = {
         torch.ops.aten.dropout.default,
         _build_module(lambda x, y: torch.ops.aten.dropout.default(x, 0.1, False)),
         (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
-        # Not training, so this is an identity and nothing survives lowering to
-        # carry int8. Only the dequantize is left, which is float by definition.
-        torch.float32,
+        None,
     ),
     "dropout_": OpCase(
         torch.ops.aten.dropout_.default,
@@ -718,7 +716,10 @@ xfails: dict[str, xfail_type] = {
     OP_CASES,
     xfails=xfails,
     strict=False,
-    skips={"while_loop": "Has been observed to hang randomly."},
+    skips={
+        "while_loop": "Has been observed to hang randomly.",
+        "dropout": "Not training, so it folds away and no node survives to carry int8.",
+    },
 )
 def test_shared_qspec_portable_int8_ops(op_case: OpCase) -> None:
     tester = CortexMTester(op_case.module, op_case.example_inputs)

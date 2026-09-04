@@ -32,6 +32,8 @@ class MetalBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
+            # An operator named the way it is registered also needs the name
+            # Inductor derives for it, so several appear under both.
             "aoti_torch_mps_addmm_out": None,
             "aoti_torch_mps_bmm_out": None,
             "aoti_torch_mps_convolution": None,
@@ -41,7 +43,6 @@ class MetalBackend(AotiBackend, BackendDetails):
             "at::_ops::_scaled_dot_product_attention_math_for_mps_v2::call": None,
             "aoti_torch_mps__scaled_dot_product_attention_math_for_mps_v2": None,
             "torchao::_linear_fp_act_4bit_weight": None,
-            # Each custom op twice: as registered, and as Inductor derives it.
             "aoti_torch_mps__linear_fp_act_4bit_weight": None,
             "at::_ops::topk::call": None,
             "aoti_torch_mps_topk": None,
