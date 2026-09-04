@@ -126,18 +126,46 @@ void main() {
   const int z4 = div_4(input_z);
 
   const int stride_x = conv2d_params.stride.x;
-#define LOAD_IM2COL_INPUT(X)                                                  \
-  load_packed_input(                                                         \
-      (X), input_y, z4, n_idx, input_W, input_H, input_Z4, zp_packed)
 
-  // Keep writes static; some mobile drivers lose lanes on dynamic vector stores.
+  // Keep lane loads and their complete bounds checks static; some mobile
+  // drivers lose lanes otherwise.
   const ivec4 im2col_block = ivec4(
-      LOAD_IM2COL_INPUT(input_x_base),
-      LOAD_IM2COL_INPUT(input_x_base + stride_x),
-      LOAD_IM2COL_INPUT(input_x_base + 2 * stride_x),
-      LOAD_IM2COL_INPUT(input_x_base + 3 * stride_x));
-
-#undef LOAD_IM2COL_INPUT
+      load_packed_input(
+          input_x_base,
+          input_y,
+          z4,
+          n_idx,
+          input_W,
+          input_H,
+          input_Z4,
+          zp_packed),
+      load_packed_input(
+          input_x_base + stride_x,
+          input_y,
+          z4,
+          n_idx,
+          input_W,
+          input_H,
+          input_Z4,
+          zp_packed),
+      load_packed_input(
+          input_x_base + 2 * stride_x,
+          input_y,
+          z4,
+          n_idx,
+          input_W,
+          input_H,
+          input_Z4,
+          zp_packed),
+      load_packed_input(
+          input_x_base + 3 * stride_x,
+          input_y,
+          z4,
+          n_idx,
+          input_W,
+          input_H,
+          input_Z4,
+          zp_packed));
 
   // store_packed_int8_output_tile (with TILE_M4=1, TILE_N4=1)
   const int buffer_idx = n_idx * int(im2col_outp.strides[0][3])
