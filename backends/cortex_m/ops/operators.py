@@ -1642,6 +1642,73 @@ def quantized_avg_pool2d_impl(
     return output.to(torch.int8)
 
 
+lib.define(
+    "quantized_avg_pool2d_nhwc("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "bool ceil_mode, int zero_point, int multiplier, int shift, "
+    "Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_avg_pool2d_nhwc.out("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "bool ceil_mode, int zero_point, int multiplier, int shift, "
+    "Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_avg_pool2d_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_avg_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    ceil_mode: bool,
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_avg_pool2d_meta(
+        input.permute(0, 3, 1, 2),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        zero_point,
+        multiplier,
+        shift,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_avg_pool2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_avg_pool2d_nhwc_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    ceil_mode: bool,
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_avg_pool2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        zero_point,
+        multiplier,
+        shift,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
 # ===================================================================
 # QUANTIZED MAX POOL2D OPERATION DEFINITION
 # ===================================================================
@@ -1797,3 +1864,75 @@ def quantized_max_pool2d_impl(
     )
     result = torch.clamp(result, activation_min, activation_max)
     return result.to(torch.int8).contiguous(memory_format=torch.channels_last)
+
+
+lib.define(
+    "quantized_max_pool2d_nhwc("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "int[] dilation, bool ceil_mode, int input_zero_point, "
+    "int output_zero_point, int activation_min, int activation_max) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_nhwc.out("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "int[] dilation, bool ceil_mode, int input_zero_point, "
+    "int output_zero_point, int activation_min, int activation_max, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_max_pool2d_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_max_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    nchw = quantized_max_pool2d_meta(
+        input.permute(0, 3, 1, 2),
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        input_zero_point,
+        output_zero_point,
+        activation_min,
+        activation_max,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_max_pool2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_max_pool2d_nhwc_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    nchw = quantized_max_pool2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        input_zero_point,
+        output_zero_point,
+        activation_min,
+        activation_max,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
