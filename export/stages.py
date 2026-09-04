@@ -702,7 +702,7 @@ class EdgeProgramManagerTransformStage(Stage):
     def valid_predecessor_stages(self) -> List["StageType"]:
         return [
             StageType.TO_EDGE,
-            # StageType.TO_EDGE_TRANSFORM_AND_LOWER,  # TODO
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
         ]
 
     @property

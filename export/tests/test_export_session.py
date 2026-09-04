@@ -642,6 +642,36 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
         pipeline = session._get_default_pipeline()
         self.assertNotIn(StageType.TORCH_EXPORT, pipeline)
 
+    def test_edge_manager_transform_passes_get_their_stage(self) -> None:
+        # Nothing else in the default pipeline runs them, so without this the
+        # recipe's passes are accepted and then silently never applied.
+        session = ExportSession(
+            model=self.model,
+            example_inputs=[self.example_inputs],
+            export_recipe=ExportRecipe(
+                name="t",
+                lowering_recipe=LoweringRecipe(
+                    edge_manager_transform_passes=[lambda epm: []]
+                ),
+            ),
+        )
+        pipeline = session._get_default_pipeline()
+        self.assertIn(StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, pipeline)
+        self.assertGreater(
+            pipeline.index(StageType.EDGE_PROGRAM_MANAGER_TRANSFORM),
+            pipeline.index(StageType.TO_EDGE_TRANSFORM_AND_LOWER),
+        )
+
+    def test_no_transform_passes_means_no_stage(self) -> None:
+        session = ExportSession(
+            model=self.model,
+            example_inputs=[self.example_inputs],
+            export_recipe=self.recipe,
+        )
+        self.assertNotIn(
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, session._get_default_pipeline()
+        )
+
     def test_example_inputs_required_for_nn_module(self) -> None:
         """Test that example_inputs are required for nn.Module."""
         with self.assertRaises(ValueError) as cm:
