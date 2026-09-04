@@ -8,17 +8,27 @@ import multiprocessing
 import os
 
 try:
-    from eiq_neutron_sdk import neutron_converter, neutron_library_utils
+    from eiq_neutron_sdk import neutron_compiler, neutron_library_utils
+
+    _USING_NEUTRON_COMPILER = True
 except ImportError:
-    raise RuntimeError(
-        "eIQ Neutron SDK not found. To install it, run 'examples/nxp/setup.sh'."
-    )
+    try:
+        from eiq_neutron_sdk import (
+            neutron_converter as neutron_compiler,
+            neutron_library_utils,
+        )
+
+        _USING_NEUTRON_COMPILER = False
+    except ImportError:
+        raise RuntimeError(
+            "eIQ Neutron SDK not found. To install it, run 'examples/nxp/setup.sh'."
+        )
 
 
 def _build_compilation_context(compilation_opts):
     """Build a CompilationContext from a plain dict of options."""
-    cctx = neutron_converter.CompilationContext()
-    cctx.targetOpts = neutron_converter.getNeutronTarget(compilation_opts["target"])
+    cctx = neutron_compiler.CompilationContext()
+    cctx.targetOpts = neutron_compiler.getNeutronTarget(compilation_opts["target"])
     cctx.compilationOpts.minNumOpsPerGraph = compilation_opts["minNumOpsPerGraph"]
     cctx.compilationOpts.excludeGraphPasses = compilation_opts["excludeGraphPasses"]
     cctx.compilationOpts.fetchConstantsToSRAM = compilation_opts["fetchConstantsToSRAM"]
@@ -37,19 +47,22 @@ def _build_compilation_context(compilation_opts):
     return cctx
 
 
-def convert_unsafe(tflite_model, compilation_opts, queue):
+def compile_unsafe(tflite_model, compilation_opts, queue):
     """
-    Run neutron_converter on given tflite_model with the provided compilation options.
+    Run neutron_compiler on given tflite_model with the provided compilation options.
     This routine is supposed to run in a separate process.
-    If properly finished, the output queue contains the converted model,
-    otherwise the neutron_converter exits and the output queue is empty.
+    If properly finished, the output queue contains the compiled model,
+    otherwise the neutron_compiler exits and the output queue is empty.
     """
     cctx = _build_compilation_context(compilation_opts)
-    model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
-    queue.put(model_converted)
+    if _USING_NEUTRON_COMPILER:
+        model_compiled = neutron_compiler.compileModel(list(tflite_model), cctx)
+    else:
+        model_compiled = neutron_compiler.convertModel(list(tflite_model), cctx)
+    queue.put(model_compiled)
 
 
-class NeutronConverterManager:
+class NeutronCompilerManager:
     """
     Manager for conversion of TFLite model in flatbuffers format into TFLite model that
     contains NeutronGraph nodes.
@@ -69,8 +82,8 @@ class NeutronConverterManager:
         except OSError:
             logging.error("Failed to rename partition kernel selection file.")
 
-    def get_converter(self):
-        return neutron_converter
+    def get_compiler(self):
+        return neutron_compiler
 
     def get_library_utils(self):
         return neutron_library_utils
@@ -84,7 +97,7 @@ class NeutronConverterManager:
                 f"Target `{target}` is not a valid target. Must be one of `{valid_targets}`."
             )
 
-    def convert(
+    def compile(
         self,
         tflite_model: bytes,
         target: str,
@@ -93,9 +106,9 @@ class NeutronConverterManager:
         use_profiling: bool = False,
     ) -> bytes:
         """
-        Call Neutron Converter.
+        Call Neutron Compiler.
 
-        :param tflite_model: A generic TFLite model to be converted.
+        :param tflite_model: A generic TFLite model to be compiled.
         :param target: The target platform.
         :param delegation_tag: The delegation tag of model partition.
         :param fetch_constants_to_sram: Add microcode that fetches weights from external memory.
@@ -104,7 +117,7 @@ class NeutronConverterManager:
 
         :return: TFLite model with Neutron microcode as bytes.
         """
-        # Neutron converter crashes if we provide invalid target -> verify.
+        # Neutron compiler crashes if we provide invalid target -> verify.
         self.verify_target(target)
 
         compilation_opts = {
@@ -124,7 +137,7 @@ class NeutronConverterManager:
             queue = multiprocessing.Manager().Queue()
 
             process = multiprocessing.Process(
-                target=convert_unsafe,
+                target=compile_unsafe,
                 args=(tflite_model, compilation_opts, queue),
             )
             process.start()
@@ -132,20 +145,23 @@ class NeutronConverterManager:
 
             if queue.empty():  # signals the unsafe task did not run till the end
                 raise RuntimeError(
-                    f"Neutron converter module terminated unexpectedly with exit code {process.exitcode}"
+                    f"Neutron compiler module terminated unexpectedly with exit code {process.exitcode}"
                 )
 
-            model_converted = queue.get()
+            model_compiled = queue.get()
             process.close()
         except (EOFError, OSError, TypeError) as e:
             # Multiprocessing failed (likely due to environment restrictions)
             # Fall back to direct execution
             logging.warning(
-                f"Multiprocessing not available ({e}), running neutron converter directly"
+                f"Multiprocessing not available ({e}), running neutron compiler directly"
             )
             cctx = _build_compilation_context(compilation_opts)
-            model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
+            if _USING_NEUTRON_COMPILER:
+                model_compiled = neutron_compiler.compileModel(list(tflite_model), cctx)
+            else:
+                model_compiled = neutron_compiler.convertModel(list(tflite_model), cctx)
         if self.dump_kernel_selection_code:
             self._rename_partition_kernel_selection_file(delegation_tag)
 
-        return bytes(model_converted)
+        return bytes(model_compiled)

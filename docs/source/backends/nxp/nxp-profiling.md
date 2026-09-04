@@ -7,16 +7,16 @@ to provide visibility into delegated operator execution time.
 
 There are three steps required to obtain profiling results for an NXP‑delegated model:
 
-* Convert the model with profiling support enabled.
+* Compile the model with profiling support enabled.
 * Generate the artifacts consumed by the Developer Tools (`ETRecord`, `ETDump`).
 * Create and run the Inspector class to consume these artifacts and print the results.
 
 ---
 
-## Convert a model with the profiling support
+## Compile a model with the profiling support
 
 Profiling data is generated only for a **profilable** model. 
-To convert a model with profiling enabled, the `--use-profiling` flag must be set.
+To compile a model with profiling enabled, the `--use-profiling` flag must be set.
 
 See the `aot_neutron_compile.py` example and its
 [README](https://github.com/pytorch/executorch/blob/main/examples/nxp/README.md)
@@ -89,7 +89,7 @@ A full implementation is available
 in [aot_neutron_compile.py](https://github.com/pytorch/executorch/blob/main/examples/nxp/aot_neutron_compile.py).
 
 The `--use_profiling` flag is used to create a **profilable** model and the corresponding `ETRecord` file  
-(see [Convert a model with profiling support](#convert-a-model-with-profiling-support) for the full command).
+(see [Compile a model with profiling support](#compile-a-model-with-profiling-support) for the full command).
 
 
 ---
@@ -102,7 +102,7 @@ The next step is to generate an `ETDump`. An `ETDump` contains runtime data coll
 To generate an `ETDump`, ensure that the ExecuTorch runtime library is integrated with the Developer Tools and built 
 with the `ET_EVENT_TRACER_ENABLED` flag enabled.
 
-Only models converted with profiling support will produce an `ETDump` containing execution times for all Neutron 
+Only models compiled with profiling support will produce an `ETDump` containing execution times for all Neutron 
 operators. Otherwise, the dump will include only the final delegate execution time.
 
 Neutron software provides a profiling mechanism that logs individual operator execution times to a dedicated runtime 
@@ -176,7 +176,7 @@ The [Inspector](https://docs.pytorch.org/executorch/1.0/model-inspector.html) AP
 contents of `ETRecord` and `ETDump`, enabling developers to gain insights into model architecture 
 and performance statistics.
 
-`ETRecord` is an optional argument used to obtain a mapping between the original model and the converted Neutron model.
+`ETRecord` is an optional argument used to obtain a mapping between the original model and the compiled Neutron model.
 
 An `ETDump` generated on the board contains metadata for each Neutron operator, including its unique identifier.  
 To visualize this metadata in the Inspector results table, set the `include_delegate_debug_data = True` argument.

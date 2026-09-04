@@ -46,7 +46,7 @@ For a quick overview how to convert a custom PyTorch model, take a look at our [
 
 An example runtime application using the eIQ NSYS (eIQ Neutron Simulator) is available [examples/nxp/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/nxp/executor_runner/), described in the tutorial [Getting started with eIQ Neutron NPU ExecuTorch backend](tutorials/nxp-basic-tutorial.md)
 
-To learn how to run the converted model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list.
+To learn how to run the compiled model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list.
 For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/example_applications.html).
 
 For guideline how to update the eIQ Neutron Runtime on MCUXpresso SDK, follow the instructions from the eIQ Neutron SDK package `docs/NeutronSDKUserGuide.md` available
