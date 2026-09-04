@@ -162,6 +162,33 @@ def _is_aten_target(kwargs):
         for dep in kwargs.get(key) or []:
             if dep in aten_external_deps:
                 return True
+
+    # A target can also name one of those through external_dep_location, which
+    # hands back the resolved label and puts it in an ordinary dep list.
+    aten_targets = []
+    for name in aten_external_deps:
+        resolved = env.resolve_external_dep(name)
+        if resolved != env.EXTERNAL_DEP_FALLTHROUGH:
+            for target in resolved:
+                if target not in aten_targets:
+                    aten_targets.append(target)
+
+    # A dep list can be a select(), so collect through selects.apply rather than
+    # walking it. The lists it holds are the same shape either way.
+    found = []
+
+    def _note_aten_deps(targets):
+        for dep in targets:
+            if dep in aten_targets:
+                found.append(dep)
+        return targets
+
+    for key in ["deps", "exported_deps"]:
+        if kwargs.get(key):
+            selects.apply(obj = kwargs.get(key), function = _note_aten_deps)
+    if found:
+        return True
+
     for key in ["xplat_deps", "fbcode_deps"]:
         if _has_pytorch_dep(kwargs.get(key)):
             return True
