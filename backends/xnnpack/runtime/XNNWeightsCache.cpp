@@ -80,14 +80,28 @@ static T read_le(const uint8_t* src) {
 // Open the cache file and take an advisory exclusive lock. Returns the
 // fd, or -1 if open/flock failed (logs the failure). The caller decides
 // how to recover (typically: skip the mmap path for this init).
-static int open_locked(const std::string& path, int flags) {
+// out_errno receives the errno of whichever call failed. Reading errno at the
+// call site does not work: the flock path closes the fd first, and close() (or
+// ET_LOG) can overwrite it.
+static int open_locked(const std::string& path, int flags, int* out_errno) {
+  if (out_errno != nullptr) {
+    *out_errno = 0;
+  }
   int fd = open(path.c_str(), flags, 0600);
   if (fd < 0) {
-    ET_LOG(Error, "open(%s) failed (errno=%d)", path.c_str(), errno);
+    const int err = errno;
+    if (out_errno != nullptr) {
+      *out_errno = err;
+    }
+    ET_LOG(Error, "open(%s) failed (errno=%d)", path.c_str(), err);
     return -1;
   }
   if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
-    ET_LOG(Error, "flock(%s) failed (errno=%d)", path.c_str(), errno);
+    const int err = errno;
+    if (out_errno != nullptr) {
+      *out_errno = err;
+    }
+    ET_LOG(Error, "flock(%s) failed (errno=%d)", path.c_str(), err);
     close(fd);
     return -1;
   }
@@ -128,6 +142,72 @@ void XNNWeightsCache::reset_for_fresh_write() {
 }
 #endif
 
+void XNNWeightsCache::record_cache_failure(
+    PackedCacheFailure failure,
+    int err) noexcept {
+  state_.store(
+      static_cast<int32_t>(PackedCacheState::HeapFallback),
+      std::memory_order_relaxed);
+  failure_.store(static_cast<int32_t>(failure), std::memory_order_relaxed);
+  last_errno_.store(err, std::memory_order_relaxed);
+}
+
+PackedCacheStats XNNWeightsCache::stats() const noexcept {
+  PackedCacheStats out;
+  out.state =
+      static_cast<PackedCacheState>(state_.load(std::memory_order_relaxed));
+  out.failure =
+      static_cast<PackedCacheFailure>(failure_.load(std::memory_order_relaxed));
+  out.last_errno = last_errno_.load(std::memory_order_relaxed);
+  out.file_bytes = file_bytes_.load(std::memory_order_relaxed);
+  out.mapped_bytes = mapped_bytes_.load(std::memory_order_relaxed);
+  int64_t worst = 0;
+  for (size_t i = 0; i < heap_bytes_by_reason_.size(); ++i) {
+    const int64_t bytes =
+        heap_bytes_by_reason_[i].load(std::memory_order_relaxed);
+    out.heap_bytes_by_reason[i] = bytes;
+    if (i == static_cast<size_t>(PackedCacheHeapReason::NotOptedIn)) {
+      continue; // intended heap use, not a fallback
+    }
+    out.heap_bytes += bytes;
+    if (bytes > worst) {
+      worst = bytes;
+      out.heap_reason = static_cast<PackedCacheHeapReason>(i);
+    }
+  }
+  return out;
+}
+
+void XNNWeightsCache::record_heap_alloc(
+    size_t n,
+    PackedCacheHeapReason reason) noexcept {
+  // Re-bucket every reason to NotOptedIn when no path was configured. Such an
+  // instance is the shared heap-only cache handed to callers that never asked
+  // for file backing; counting its bytes as a fallback would inflate the
+  // metric for whichever model in the process *did* opt in.
+  // packed_cache_path_ is set once before the instance is published and never
+  // mutated, so this read needs no synchronization.
+  const PackedCacheHeapReason bucket =
+      packed_cache_path_.empty() ? PackedCacheHeapReason::NotOptedIn : reason;
+  heap_bytes_by_reason_[static_cast<size_t>(bucket)].fetch_add(
+      static_cast<int64_t>(n), std::memory_order_relaxed);
+}
+
+void XNNWeightsCache::record_mapped_alloc(size_t n) noexcept {
+  mapped_bytes_.fetch_add(static_cast<int64_t>(n), std::memory_order_relaxed);
+}
+
+void XNNWeightsCache::mark_cache_file_backed() noexcept {
+  // Only ever upgrades Disabled -> FileBacked. A fallback already recorded
+  // describes memory the process is carrying, so a later success must not
+  // mask it.
+  int32_t expected = static_cast<int32_t>(PackedCacheState::Disabled);
+  state_.compare_exchange_strong(
+      expected,
+      static_cast<int32_t>(PackedCacheState::FileBacked),
+      std::memory_order_relaxed);
+}
+
 Error XNNWeightsCache::initialize_for_runtime(
     MemoryAllocator* runtime_allocator,
     const NamedDataMap* named_data_map) {
@@ -147,7 +227,13 @@ Error XNNWeightsCache::initialize_for_runtime(
   // where fresh-write→save→re-init re-enters load_packed_cache and
   // double-mmaps the same file.
   if (!name_to_packed_data_metadata_.empty()) {
-    packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR);
+    int open_errno = 0;
+    packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR, &open_errno);
+    if (packed_file_fd_ < 0) {
+      record_cache_failure(PackedCacheFailure::OpenFailed, open_errno);
+    } else {
+      mark_cache_file_backed();
+    }
     return Error::Ok;
   }
 
@@ -160,27 +246,47 @@ Error XNNWeightsCache::initialize_for_runtime(
         "Loaded packed weight cache: %s (%zu entries)",
         packed_cache_path_.c_str(),
         name_to_packed_data_metadata_.size());
-    packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR);
+    int open_errno = 0;
+    packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR, &open_errno);
+    // Loaded entries are already mmap'd, so reads stay file-backed even if the
+    // write fd could not be reopened. Record the errno anyway: without it a
+    // partial cache silently re-packs to heap every launch with no reason.
+    if (packed_file_fd_ < 0) {
+      record_cache_failure(PackedCacheFailure::OpenFailed, open_errno);
+    }
+    mark_cache_file_backed();
     return Error::Ok;
   }
 
   // Fresh write. Skip O_TRUNC in open_locked so a concurrent holder's
   // mmap stays valid; truncate explicitly only after we hold the lock.
-  packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR | O_CREAT);
+  int create_errno = 0;
+  packed_file_fd_ =
+      open_locked(packed_cache_path_, O_RDWR | O_CREAT, &create_errno);
   if (packed_file_fd_ < 0) {
+    const int err = create_errno;
+    ET_LOG(
+        Error,
+        "open(O_RDWR|O_CREAT) failed for %s (errno=%d); heap fallback this init",
+        packed_cache_path_.c_str(),
+        err);
+    record_cache_failure(PackedCacheFailure::OpenFailed, err);
     return Error::Ok;
   }
   if (ftruncate(packed_file_fd_, 0) != 0) {
+    const int err = errno;
     ET_LOG(
         Error,
         "ftruncate(0) failed for %s (errno=%d); heap fallback this init",
         packed_cache_path_.c_str(),
-        errno);
+        err);
+    record_cache_failure(PackedCacheFailure::TruncateFailed, err);
     close(packed_file_fd_);
     packed_file_fd_ = -1;
     return Error::Ok;
   }
   reset_for_fresh_write();
+  mark_cache_file_backed();
   ET_LOG(
       Info,
       "Opened packed weight file for writing: %s",
@@ -394,6 +500,10 @@ void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
   // instead of re-packing into heap (dirty memory) every time.
   if (context->last_lookup_unnamed_ ||
       (context->loaded_from_disk_ && !seed_mismatch_repack)) {
+    context->record_heap_alloc(
+        n,
+        context->last_lookup_unnamed_ ? PackedCacheHeapReason::UnnamedConstant
+                                      : PackedCacheHeapReason::RepackAfterLoad);
     return context->reserve_space_heap(n);
   }
   if (context->packed_file_fd_ >= 0) {
@@ -403,13 +513,16 @@ void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
     size_t map_size = (n + page_size - 1) & ~(page_size - 1);
 
     if (ftruncate(context->packed_file_fd_, file_offset + map_size) != 0) {
+      const int err = errno;
       ET_LOG(
           Error,
           "reserve_space ftruncate to %zu failed (errno=%d)",
           file_offset + map_size,
-          errno);
+          err);
+      context->record_cache_failure(PackedCacheFailure::GrowFailed, err);
       close(context->packed_file_fd_);
       context->packed_file_fd_ = -1;
+      context->record_heap_alloc(n, PackedCacheHeapReason::GrowFailed);
       return context->reserve_space_heap(n);
     }
 
@@ -421,13 +534,16 @@ void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
         context->packed_file_fd_,
         file_offset);
     if (ptr == MAP_FAILED) {
+      const int err = errno;
       ET_LOG(
           Error,
           "reserve_space mmap %zu bytes failed (errno=%d)",
           map_size,
-          errno);
+          err);
+      context->record_cache_failure(PackedCacheFailure::MmapFailed, err);
       close(context->packed_file_fd_);
       context->packed_file_fd_ = -1;
+      context->record_heap_alloc(n, PackedCacheHeapReason::MmapFailed);
       return context->reserve_space_heap(n);
     }
 
@@ -439,12 +555,16 @@ void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
         kPackedAllocationAlignment);
 
     context->packed_file_used_ = file_offset + map_size;
+    // n, not map_size: the heap side records the raw request too, and the
+    // heap:mapped ratio is only meaningful if both measure the same thing.
+    context->record_mapped_alloc(n);
     context->file_ptr_to_region_index_[ptr] = context->mmap_regions_.size();
     context->mmap_regions_.push_back({ptr, map_size});
     context->ptr_to_file_offset_[ptr] = file_offset;
     return ptr;
   }
 #endif
+  context->record_heap_alloc(n, PackedCacheHeapReason::NoFileBacking);
   return context->reserve_space_heap(n);
 }
 
@@ -609,6 +729,8 @@ Error XNNWeightsCache::save_packed_index() {
   // trailer drops the old entry. Monitoring file_bytes over time tells
   // us when GC or a size cap is needed.
   const size_t file_bytes = index_start + buf.size();
+  file_bytes_.store(
+      static_cast<int64_t>(file_bytes), std::memory_order_relaxed);
   ET_LOG(
       Info,
       "Saved packed weight index: %u entries at offset %zu, file_bytes=%zu",
@@ -699,6 +821,9 @@ bool XNNWeightsCache::load_packed_cache() {
   }
   mmap_regions_.push_back({map, file_size});
 
+  // Bytes actually referenced by the index. Less than file_size whenever an
+  // earlier run re-packed a name and orphaned its old bytes.
+  size_t loaded_bytes = 0;
   const uint8_t* cursor = static_cast<const uint8_t*>(map) + index_start;
   const uint8_t* end = static_cast<const uint8_t*>(map) + index_region_end;
 
@@ -766,6 +891,7 @@ bool XNNWeightsCache::load_packed_cache() {
     meta.in_current_runtime = false;
     meta.from_load = true;
     meta.seed = seed;
+    loaded_bytes += static_cast<size_t>(data_size);
     name_to_packed_data_metadata_[name] = meta;
   }
 
@@ -783,6 +909,15 @@ bool XNNWeightsCache::load_packed_cache() {
   mmap_regions_at_last_save_ = mmap_regions_.size();
   mmap_regions_synced_ = mmap_regions_.size();
   loaded_from_disk_ = true;
+  // Success path only: the truncated-entry branch above munmaps and rolls
+  // back, so counting at the mmap call would over-report.
+  //
+  // loaded_bytes, not file_size. The file is append-only, so a same-name
+  // re-pack leaves the old bytes behind; file_size counts those orphans and
+  // would inflate mapped_bytes against heap_bytes. Without this a warm launch
+  // reports heap=0/mapped=0/file=0, identical to the feature being off.
+  record_mapped_alloc(loaded_bytes);
+  file_bytes_.store(static_cast<int64_t>(file_size), std::memory_order_relaxed);
   return true;
 #else
   return false;
