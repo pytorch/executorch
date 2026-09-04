@@ -1325,7 +1325,8 @@ void cpu_flash_attention(
         // query needs no causal masking. Rows are new-query tokens, columns
         // are KV-block tokens, '+' is attendable, and '-' is causally masked:
         //
-        // New query begins midway through KV block:  Tail of new query lies in KV block:
+        // New query begins midway through KV block:  Tail of new query lies in
+        // KV block:
         //   + + + - - -                         - - - - - -
         //   + + + + - -                         - - - - - -
         //   + + + + + -                         + - - - - -
