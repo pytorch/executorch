@@ -15,6 +15,10 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 get_filename_component(
   EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
 )
+include(${EXECUTORCH_SOURCE_DIR}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_SOURCE_DIR}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 get_filename_component(
   QNN_EXECUTORCH_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE
 )

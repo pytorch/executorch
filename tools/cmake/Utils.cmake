@@ -21,12 +21,36 @@
 # Create a directory link without requiring elevated privileges on Windows.
 function(_executorch_create_source_directory_link source_dir link_dir)
   get_filename_component(source_dir_real "${source_dir}" REALPATH)
+  set(include_tree_marker "${link_dir}/.executorch_include_tree")
+  if(EXISTS "${include_tree_marker}")
+    file(REMOVE_RECURSE "${link_dir}")
+  endif()
+
+  set(link_dir_exists FALSE)
+  if(EXISTS "${link_dir}")
+    set(link_dir_exists TRUE)
+    get_filename_component(linked_dir_real "${link_dir}" REALPATH)
+    if("${linked_dir_real}" STREQUAL "${source_dir_real}")
+      return()
+    endif()
+  endif()
+
   if(CMAKE_HOST_WIN32)
     file(TO_NATIVE_PATH "${link_dir}" link_dir_native)
     file(TO_NATIVE_PATH "${source_dir_real}" source_dir_native)
     execute_process(
-      COMMAND cmd /c rmdir "${link_dir_native}" OUTPUT_QUIET ERROR_QUIET
+      COMMAND cmd /c rmdir "${link_dir_native}"
+      RESULT_VARIABLE remove_result
+      OUTPUT_QUIET
+      ERROR_VARIABLE remove_error
     )
+    if(link_dir_exists AND NOT remove_result EQUAL 0)
+      message(
+        FATAL_ERROR
+          "Failed to remove stale source include junction at ${link_dir}: "
+          "${remove_error}"
+      )
+    endif()
     execute_process(
       COMMAND cmd /c mklink /J "${link_dir_native}" "${source_dir_native}"
       RESULT_VARIABLE link_result
@@ -34,17 +58,11 @@ function(_executorch_create_source_directory_link source_dir link_dir)
       ERROR_VARIABLE link_error
     )
   else()
-    if(EXISTS "${link_dir}")
-      get_filename_component(linked_dir_real "${link_dir}" REALPATH)
-      if("${linked_dir_real}" STREQUAL "${source_dir_real}")
-        return()
-      endif()
-      if(NOT IS_SYMLINK "${link_dir}")
-        message(FATAL_ERROR "${link_dir} exists and is not a symbolic link.")
-      endif()
+    # Unlike EXISTS, IS_SYMLINK also identifies a dangling link.
+    if(IS_SYMLINK "${link_dir}")
       file(REMOVE "${link_dir}")
-    elseif(IS_SYMLINK "${link_dir}")
-      file(REMOVE "${link_dir}")
+    elseif(link_dir_exists)
+      message(FATAL_ERROR "${link_dir} exists and is not a symbolic link.")
     endif()
     execute_process(
       COMMAND "${CMAKE_COMMAND}" -E create_symlink "${source_dir_real}"
@@ -62,11 +80,79 @@ function(_executorch_create_source_directory_link source_dir link_dir)
   endif()
 endfunction()
 
+# Mirror only the path containing the active build directory. Everything else
+# remains a directory link, so source edits are visible without making the build
+# directory reachable through the include namespace.
+function(_executorch_populate_source_include_tree source_dir include_dir)
+  set(include_tree_marker "${include_dir}/.executorch_include_tree")
+  if(CMAKE_HOST_WIN32 AND NOT EXISTS "${include_tree_marker}")
+    file(TO_NATIVE_PATH "${include_dir}" include_dir_native)
+    execute_process(
+      COMMAND cmd /c rmdir "${include_dir_native}"
+      RESULT_VARIABLE remove_result
+      OUTPUT_QUIET
+      ERROR_VARIABLE remove_error
+    )
+    if(EXISTS "${include_dir}" AND NOT remove_result EQUAL 0)
+      message(
+        FATAL_ERROR
+          "Failed to replace source include junction at ${include_dir}: "
+          "${remove_error}"
+      )
+    endif()
+  elseif(IS_SYMLINK "${include_dir}")
+    file(REMOVE "${include_dir}")
+  elseif(EXISTS "${include_dir}" AND NOT EXISTS "${include_tree_marker}")
+    message(FATAL_ERROR "${include_dir} is not an ExecuTorch include tree.")
+  endif()
+
+  file(MAKE_DIRECTORY "${include_dir}")
+  file(WRITE "${include_tree_marker}" "${source_dir}\n")
+  file(
+    GLOB source_entries
+    LIST_DIRECTORIES TRUE
+    "${source_dir}/*"
+  )
+  get_filename_component(binary_dir_real "${CMAKE_BINARY_DIR}" REALPATH)
+  foreach(source_path IN LISTS source_entries)
+    get_filename_component(entry_name "${source_path}" NAME)
+    set(include_path "${include_dir}/${entry_name}")
+
+    if(IS_DIRECTORY "${source_path}")
+      get_filename_component(source_path_real "${source_path}" REALPATH)
+      file(RELATIVE_PATH binary_relative "${source_path_real}"
+           "${binary_dir_real}"
+      )
+      if("${binary_relative}" STREQUAL "" OR "${binary_relative}" STREQUAL ".")
+        continue()
+      elseif(NOT IS_ABSOLUTE "${binary_relative}" AND NOT "${binary_relative}"
+                                                      MATCHES "^\\.\\.(/|$)"
+      )
+        _executorch_populate_source_include_tree(
+          "${source_path}" "${include_path}"
+        )
+      else()
+        _executorch_create_source_directory_link(
+          "${source_path}" "${include_path}"
+        )
+      endif()
+    else()
+      configure_file("${source_path}" "${include_path}" COPYONLY)
+    endif()
+  endforeach()
+endfunction()
+
 # Create an include root that exposes this checkout as `executorch/`, regardless
 # of the checkout directory's name. Source headers keep their public `#include
 # <executorch/...>` spelling without relying on the repository's parent
 # directory.
 function(executorch_get_build_include_dir source_root out_var)
+  if("${source_root}" STREQUAL "" OR NOT IS_DIRECTORY "${source_root}")
+    message(
+      FATAL_ERROR "ExecuTorch source root must name an existing directory; got "
+                  "'${source_root}'."
+    )
+  endif()
   get_filename_component(source_root_real "${source_root}" REALPATH)
   set(include_root "${CMAKE_BINARY_DIR}/executorch_source_include")
   set(source_namespace "${include_root}/executorch")
@@ -129,9 +215,22 @@ function(executorch_get_build_include_dir source_root out_var)
   foreach(source_include_root IN LISTS source_include_roots)
     set(source_path "${source_root_real}/${source_include_root}")
     if(EXISTS "${source_path}")
-      _executorch_create_source_directory_link(
-        "${source_path}" "${source_namespace}/${source_include_root}"
+      get_filename_component(source_path_real "${source_path}" REALPATH)
+      get_filename_component(binary_dir_real "${CMAKE_BINARY_DIR}" REALPATH)
+      file(RELATIVE_PATH binary_relative "${source_path_real}"
+           "${binary_dir_real}"
       )
+      if(NOT IS_ABSOLUTE "${binary_relative}" AND NOT "${binary_relative}"
+                                                  MATCHES "^\\.\\.(/|$)"
+      )
+        _executorch_populate_source_include_tree(
+          "${source_path}" "${source_namespace}/${source_include_root}"
+        )
+      else()
+        _executorch_create_source_directory_link(
+          "${source_path}" "${source_namespace}/${source_include_root}"
+        )
+      endif()
     endif()
   endforeach()
 

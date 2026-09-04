@@ -8,6 +8,16 @@
 */
 ]]
 
+if(NOT EXECUTORCH_ROOT)
+  get_filename_component(
+    EXECUTORCH_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
+  )
+endif()
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
+
 # Let include directory as "executorch/..."
 set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 

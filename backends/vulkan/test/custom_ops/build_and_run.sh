@@ -1,13 +1,14 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
 set -eux
 
-# Check that we're in the executorch directory
-current_dir=$(pwd)
-if [[ ! "$current_dir" =~ executorch$ ]]; then
-    echo "Error: This script must be run from a directory ending in 'executorch'"
-    echo "Current directory: $current_dir"
-    exit 1
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+executorch_root="$(cd "${script_dir}/../../../.." && pwd)"
+cd "${executorch_root}"
+
+if [[ "${1:-}" == "--print-source-root" ]]; then
+    printf '%s\n' "${executorch_root}"
+    exit 0
 fi
 
 # Function to configure and build main project
