@@ -35,6 +35,7 @@ class VgfPartitioner(TOSAPartitioner):
         self.delegation_spec = DelegationSpec(
             VgfBackend.__name__, compile_spec._to_list()
         )
+        self.compile_spec = compile_spec
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)

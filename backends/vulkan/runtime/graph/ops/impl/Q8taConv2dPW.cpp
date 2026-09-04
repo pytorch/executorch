@@ -375,9 +375,12 @@ void add_q8ta_conv2d_pw_node(
 // High level operator impl
 //
 
-bool can_use_unsigned_pw_dot(const vkapi::Adapter& adapter) {
+bool can_use_unsigned_pw_dot(
+    const vkapi::Adapter& adapter,
+    const int64_t k_per_group) {
   return adapter.accelerates_unsigned_packed4x8_dot() &&
-      !adapter.accelerates_signed_packed4x8_dot();
+      !adapter.accelerates_signed_packed4x8_dot() &&
+      k_per_group <= kMaxUnsignedDotAccumulatorBytes;
 }
 
 void q8ta_conv2d_pw_impl(
@@ -403,6 +406,12 @@ void q8ta_conv2d_pw_impl(
   (void)args.at(idx++); // groups
   const ValueRef activation_ref = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
+
+  VK_CHECK_COND(
+      !use_unsigned_dot ||
+          graph.size_at<int64_t>(-1, weight_data) <=
+              kMaxUnsignedDotAccumulatorBytes,
+      "Unsigned q8ta pointwise convolution exceeds the accumulator bound");
 
   uint32_t activation_type_val = static_cast<uint32_t>(
       activation_type_from_string(graph.extract_string(activation_ref)));
@@ -459,7 +468,9 @@ void q8ta_conv2d_pw_impl(
 
 void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
-  const bool use_unsigned_dot = can_use_unsigned_pw_dot(*adapter);
+  const ValueRef weight_data = args.at(3);
+  const int64_t k_per_group = graph.size_at<int64_t>(-1, weight_data);
+  const bool use_unsigned_dot = can_use_unsigned_pw_dot(*adapter, k_per_group);
   q8ta_conv2d_pw_impl(graph, use_unsigned_dot, args);
 }
 

@@ -25,13 +25,19 @@ using namespace vkcompute;
 
 static constexpr int64_t kRefDimSizeLimit = 100;
 
+struct PointwiseTestOptions {
+  int32_t input_zero_point = 2;
+  bool has_bias = true;
+};
+
 // Utility function to create a test case from a Conv2dConfig
 static TestCase create_test_case_from_config(
     const Conv2dConfig& config,
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
     utils::GPUMemoryLayout int8_memory_layout,
-    const std::string& impl_selector = "") {
+    const std::string& impl_selector = "",
+    const PointwiseTestOptions& options = {}) {
   TestCase test_case;
 
   // Calculate output dimensions
@@ -94,7 +100,7 @@ static TestCase create_test_case_from_config(
   float input_scale_val = 0.008123;
   ValueSpec input_scale(input_scale_val);
 
-  int32_t input_zero_point_val = 2;
+  const int32_t input_zero_point_val = options.input_zero_point;
   ValueSpec input_zero_point(input_zero_point_val);
 
   // Quantized weight tensor (int8) - [C_out, C_in_per_group * K_h * K_w]
@@ -156,6 +162,7 @@ static TestCase create_test_case_from_config(
       utils::kWidthPacked,
       DataGenType::ZEROS);
   bias.set_constant(true);
+  bias.set_none(!options.has_bias);
 
   // Output quantization parameters
   float output_scale_val = 0.05314;
@@ -424,6 +431,25 @@ static std::vector<TestCase> generate_quantized_conv2d_pw_test_cases(
     }
   }
 
+  Conv2dConfig edge_config{
+      OutInChannels(13, 7),
+      InputSize2D(7, 5),
+      KernelSize(1, 1),
+      Stride(1, 1),
+      Padding(0, 0),
+      Dilation(1, 1),
+      1};
+  edge_config.op_name = "conv2d_q8ta_q8csw_q8to";
+  edge_config.test_case_name = make_test_case_name(
+      edge_config, false, utils::kTexture3D, utils::kBuffer);
+  test_cases.push_back(create_test_case_from_config(
+      edge_config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4W4C,
+      pw_selector,
+      {.input_zero_point = -128, .has_bias = false}));
+
   return test_cases;
 }
 
@@ -511,6 +537,7 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   auto& weight_data = weight_spec.get_int8_data();
   auto& weight_scales_data = weight_scales_spec.get_float_data();
   auto& bias_data = bias_spec.get_float_data();
+  const bool has_bias = !bias_spec.is_none();
 
   const float output_scale = output_scale_spec.get_float_value();
   const int32_t output_zero_point = output_zeros_spec.get_int_value();
@@ -605,7 +632,9 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
               accum_adjusted * input_scale * weight_scales_data[out_c];
 
           // Add bias and store result
-          float_result += bias_data[out_c];
+          if (has_bias) {
+            float_result += bias_data[out_c];
+          }
 
           // Quantize the output to int8
           float quant_output_f =
@@ -666,7 +695,11 @@ int main(int argc, char* argv[]) {
   const bool prefers_unsigned_dot =
       adapter.accelerates_unsigned_packed4x8_dot() &&
       !adapter.accelerates_signed_packed4x8_dot();
-  VK_CHECK_COND(can_use_unsigned_pw_dot(adapter) == prefers_unsigned_dot);
+  VK_CHECK_COND(
+      can_use_unsigned_pw_dot(adapter, kMaxUnsignedDotAccumulatorBytes) ==
+      prefers_unsigned_dot);
+  VK_CHECK_COND(
+      !can_use_unsigned_pw_dot(adapter, kMaxUnsignedDotAccumulatorBytes + 1));
 
   std::string pw_impl_selector;
   for (int i = 1; i < argc; ++i) {
