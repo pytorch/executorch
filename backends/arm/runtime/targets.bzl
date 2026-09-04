@@ -40,6 +40,7 @@ def define_common_targets():
         name = "vgf_backend",
         srcs = [
             "VGFBackend.cpp",
+            "VGFDiagnostics.cpp",
             "VGFNeuralStatistics.cpp",
             "VGFSetup.cpp",
             # Volk must be compiled directly into this target so its global
@@ -49,6 +50,7 @@ def define_common_targets():
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
         exported_headers = [
+            "VGFDiagnostics.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
         ],

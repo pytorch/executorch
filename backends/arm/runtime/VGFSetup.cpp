@@ -786,6 +786,17 @@ static bool find_memory_index(
       memory_type_out);
 }
 
+static VkMemoryPropertyFlags memory_type_property_flags(
+    VkPhysicalDevice physical_device,
+    uint32_t memory_type_index) {
+  VkPhysicalDeviceMemoryProperties properties = {};
+  vkGetPhysicalDeviceMemoryProperties(physical_device, &properties);
+  if (memory_type_index >= properties.memoryTypeCount) {
+    return 0;
+  }
+  return properties.memoryTypes[memory_type_index].propertyFlags;
+}
+
 bool VgfRepr::map_persistent_io_memory() {
   unmap_persistent_io_memory();
 
@@ -937,9 +948,10 @@ VkResult create_tensor_unbound(
       .tensor = *tensor,
   };
 
+  void* requirements_pnext = memory_requirements->pNext;
   *memory_requirements = VkMemoryRequirements2{
       .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-      .pNext = nullptr,
+      .pNext = requirements_pnext,
   };
 
   vkGetTensorMemoryRequirementsARM(
@@ -999,13 +1011,18 @@ VkResult create_buffer_unbound(
     return result;
   }
 
-  VkMemoryRequirements memory_requirements1 = {};
-  vkGetBufferMemoryRequirements(device, *buffer, &memory_requirements1);
+  void* requirements_pnext = memory_requirements->pNext;
+  const VkBufferMemoryRequirementsInfo2 requirements_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
+      .pNext = nullptr,
+      .buffer = *buffer,
+  };
   *memory_requirements = VkMemoryRequirements2{
       .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-      .pNext = nullptr,
-      .memoryRequirements = memory_requirements1,
+      .pNext = requirements_pnext,
   };
+  vkGetBufferMemoryRequirements2(
+      device, &requirements_info, memory_requirements);
   return VK_SUCCESS;
 }
 
@@ -1044,13 +1061,18 @@ VkResult create_image_unbound(
     return result;
   }
 
-  VkMemoryRequirements reqs = {};
-  vkGetImageMemoryRequirements(device, *image, &reqs);
+  void* requirements_pnext = memory_requirements->pNext;
+  const VkImageMemoryRequirementsInfo2 requirements_info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+      .pNext = nullptr,
+      .image = *image,
+  };
   *memory_requirements = VkMemoryRequirements2{
       .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-      .pNext = nullptr,
-      .memoryRequirements = reqs,
+      .pNext = requirements_pnext,
   };
+  vkGetImageMemoryRequirements2(
+      device, &requirements_info, memory_requirements);
   return VK_SUCCESS;
 }
 
@@ -1098,7 +1120,10 @@ VkResult allocate_buffer(
     VkDeviceSize size,
     VkBufferUsageFlags usage,
     VkBuffer* buffer,
-    VkDeviceMemory* memory) {
+    VkDeviceMemory* memory,
+    VkMemoryRequirements2* memory_requirements_out = nullptr,
+    uint32_t* memory_type_index_out = nullptr,
+    VkMemoryDedicatedRequirements* dedicated_requirements_out = nullptr) {
   VkBufferCreateInfo buffer_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .pNext = nullptr,
@@ -1115,13 +1140,23 @@ VkResult allocate_buffer(
     return result;
   }
 
-  VkMemoryRequirements memory_requirements = {};
-  vkGetBufferMemoryRequirements(device, *buffer, &memory_requirements);
+  VkMemoryDedicatedRequirements dedicated_requirements = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS,
+      .pNext = nullptr,
+  };
+  const VkBufferMemoryRequirementsInfo2 requirements_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
+      .pNext = nullptr,
+      .buffer = *buffer,
+  };
   VkMemoryRequirements2 memory_requirements2 = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-      .pNext = nullptr,
-      .memoryRequirements = memory_requirements,
+      .pNext = &dedicated_requirements,
   };
+  vkGetBufferMemoryRequirements2(
+      device, &requirements_info, &memory_requirements2);
+  const VkMemoryRequirements& memory_requirements =
+      memory_requirements2.memoryRequirements;
 
   VkMemoryPropertyFlags aims = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -1150,6 +1185,18 @@ VkResult allocate_buffer(
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to bind buffer memory, error %d", result);
     return result;
+  }
+
+  if (memory_requirements_out != nullptr) {
+    *memory_requirements_out = memory_requirements2;
+    memory_requirements_out->pNext = nullptr;
+  }
+  if (memory_type_index_out != nullptr) {
+    *memory_type_index_out = memory_index;
+  }
+  if (dedicated_requirements_out != nullptr) {
+    *dedicated_requirements_out = dedicated_requirements;
+    dedicated_requirements_out->pNext = nullptr;
   }
 
   return VK_SUCCESS;
@@ -1863,9 +1910,13 @@ bool VgfRepr::process_vgf(
             VkTensorARM tensor = VK_NULL_HANDLE;
             VkTensorViewARM tensor_view = VK_NULL_HANDLE;
             VkTensorDescriptionARM tensor_description;
+            VkMemoryDedicatedRequirements tensor_dedicated_requirements = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS,
+                .pNext = nullptr,
+            };
             VkMemoryRequirements2 tensor_memory_requirements = {
                 .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-                .pNext = nullptr,
+                .pNext = &tensor_dedicated_requirements,
             };
             result = create_tensor_unbound(
                 vk_device,
@@ -1883,6 +1934,7 @@ bool VgfRepr::process_vgf(
               return false;
             }
             VkDeviceMemory tensor_memory = VK_NULL_HANDLE;
+            uint32_t tensor_memory_type_index = UINT32_MAX;
             bool owns_memory = true;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
@@ -1894,6 +1946,7 @@ bool VgfRepr::process_vgf(
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 return false;
               }
+              tensor_memory_type_index = alias_backing->memory_type_index;
             } else {
               const VkMemoryPropertyFlags aims =
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -1904,7 +1957,8 @@ bool VgfRepr::process_vgf(
                   vk_device,
                   tensor_memory_requirements,
                   aims,
-                  &tensor_memory);
+                  &tensor_memory,
+                  &tensor_memory_type_index);
               if (result != VK_SUCCESS) {
                 destroy_tensor(vk_device, VK_NULL_HANDLE, tensor);
                 ET_LOG(
@@ -1948,6 +2002,29 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+            auto& diagnostic_io = IOs.back();
+            diagnostic_io.format = resource_format;
+            diagnostic_io.memory_requirement_size =
+                tensor_memory_requirements.memoryRequirements.size;
+            diagnostic_io.memory_requirement_alignment =
+                tensor_memory_requirements.memoryRequirements.alignment;
+            diagnostic_io.memory_allocation_capacity = alias_backing != nullptr
+                ? alias_backing->allocation_size
+                : tensor_memory_requirements.memoryRequirements.size;
+            diagnostic_io.memory_type_bits =
+                tensor_memory_requirements.memoryRequirements.memoryTypeBits;
+            diagnostic_io.memory_type_index = tensor_memory_type_index;
+            diagnostic_io.memory_property_flags = memory_type_property_flags(
+                vk_physical, tensor_memory_type_index);
+            diagnostic_io.memory_dedicated_requirement_known = true;
+            diagnostic_io.memory_requires_dedicated_allocation =
+                tensor_dedicated_requirements.requiresDedicatedAllocation ==
+                VK_TRUE;
+            diagnostic_io.memory_prefers_dedicated_allocation =
+                tensor_dedicated_requirements.prefersDedicatedAllocation ==
+                VK_TRUE;
+            diagnostic_io.tensor_image_aliasing = image_aliasing;
+
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -1965,9 +2042,13 @@ bool VgfRepr::process_vgf(
                 element_count_from_shape(the_shape) * e_size;
 
             VkBuffer buffer = VK_NULL_HANDLE;
+            VkMemoryDedicatedRequirements buffer_dedicated_requirements = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS,
+                .pNext = nullptr,
+            };
             VkMemoryRequirements2 buffer_memory_requirements = {
                 .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-                .pNext = nullptr,
+                .pNext = &buffer_dedicated_requirements,
             };
             result = create_buffer_unbound(
                 vk_device,
@@ -1980,6 +2061,7 @@ bool VgfRepr::process_vgf(
               return false;
             }
             VkDeviceMemory buffer_memory = VK_NULL_HANDLE;
+            uint32_t buffer_memory_type_index = UINT32_MAX;
             bool owns_memory = true;
             auto* alias_backing = get_alias_backing();
             if (alias_backing != nullptr) {
@@ -1991,6 +2073,7 @@ bool VgfRepr::process_vgf(
                 destroy_buffer(vk_device, buffer);
                 return false;
               }
+              buffer_memory_type_index = alias_backing->memory_type_index;
             } else {
               const VkMemoryPropertyFlags aims =
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -2001,7 +2084,8 @@ bool VgfRepr::process_vgf(
                   vk_device,
                   buffer_memory_requirements,
                   aims,
-                  &buffer_memory);
+                  &buffer_memory,
+                  &buffer_memory_type_index);
               if (result != VK_SUCCESS) {
                 destroy_buffer(vk_device, buffer);
                 ET_LOG(
@@ -2041,6 +2125,28 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+            auto& diagnostic_io = IOs.back();
+            diagnostic_io.format = resource_format;
+            diagnostic_io.memory_requirement_size =
+                buffer_memory_requirements.memoryRequirements.size;
+            diagnostic_io.memory_requirement_alignment =
+                buffer_memory_requirements.memoryRequirements.alignment;
+            diagnostic_io.memory_allocation_capacity = alias_backing != nullptr
+                ? alias_backing->allocation_size
+                : buffer_memory_requirements.memoryRequirements.size;
+            diagnostic_io.memory_type_bits =
+                buffer_memory_requirements.memoryRequirements.memoryTypeBits;
+            diagnostic_io.memory_type_index = buffer_memory_type_index;
+            diagnostic_io.memory_property_flags = memory_type_property_flags(
+                vk_physical, buffer_memory_type_index);
+            diagnostic_io.memory_dedicated_requirement_known = true;
+            diagnostic_io.memory_requires_dedicated_allocation =
+                buffer_dedicated_requirements.requiresDedicatedAllocation ==
+                VK_TRUE;
+            diagnostic_io.memory_prefers_dedicated_allocation =
+                buffer_dedicated_requirements.prefersDedicatedAllocation ==
+                VK_TRUE;
+
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -2216,6 +2322,15 @@ bool VgfRepr::process_vgf(
             }
             VkBuffer staging_buffer = VK_NULL_HANDLE;
             VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+            VkMemoryRequirements2 staging_memory_requirements = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+                .pNext = nullptr,
+            };
+            VkMemoryDedicatedRequirements staging_dedicated_requirements = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS,
+                .pNext = nullptr,
+            };
+            uint32_t staging_memory_type_index = UINT32_MAX;
             result = allocate_buffer(
                 vk_physical,
                 vk_device,
@@ -2223,7 +2338,10 @@ bool VgfRepr::process_vgf(
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 &staging_buffer,
-                &staging_memory);
+                &staging_memory,
+                &staging_memory_requirements,
+                &staging_memory_type_index,
+                &staging_dedicated_requirements);
             if (result != VK_SUCCESS) {
               ET_LOG(
                   Error,
@@ -2257,6 +2375,28 @@ bool VgfRepr::process_vgf(
                    true,
                    owns_image_memory,
                    is_in});
+            auto& diagnostic_io = IOs.back();
+            diagnostic_io.format = resource_format;
+            diagnostic_io.memory_requirement_size =
+                staging_memory_requirements.memoryRequirements.size;
+            diagnostic_io.memory_requirement_alignment =
+                staging_memory_requirements.memoryRequirements.alignment;
+            diagnostic_io.memory_allocation_capacity =
+                staging_memory_requirements.memoryRequirements.size;
+            diagnostic_io.memory_type_bits =
+                staging_memory_requirements.memoryRequirements.memoryTypeBits;
+            diagnostic_io.memory_type_index = staging_memory_type_index;
+            diagnostic_io.memory_property_flags = memory_type_property_flags(
+                vk_physical, staging_memory_type_index);
+            diagnostic_io.memory_dedicated_requirement_known = true;
+            diagnostic_io.memory_requires_dedicated_allocation =
+                staging_dedicated_requirements.requiresDedicatedAllocation ==
+                VK_TRUE;
+            diagnostic_io.memory_prefers_dedicated_allocation =
+                staging_dedicated_requirements.prefersDedicatedAllocation ==
+                VK_TRUE;
+            diagnostic_io.tensor_image_aliasing = needs_tensor_aliasing;
+
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -3845,6 +3985,7 @@ bool VgfRepr::process_vgf(
               image,
               alias_state.current_layout,
               desired_layout);
+          ++execute_image_layout_transition_barrier_count;
         }
         alias_state.current_layout = desired_layout;
       }
@@ -3939,6 +4080,7 @@ bool VgfRepr::process_vgf(
               image,
               alias_state.current_layout,
               VK_IMAGE_LAYOUT_GENERAL);
+          ++execute_image_layout_transition_barrier_count;
         }
 
         alias_state.current_layout = VK_IMAGE_LAYOUT_GENERAL;
@@ -4004,6 +4146,7 @@ bool VgfRepr::process_vgf(
             image,
             alias_state.current_layout,
             alias_state.initial_layout);
+        ++execute_image_layout_transition_barrier_count;
       }
 
       alias_state.current_layout = alias_state.initial_layout;
@@ -4066,24 +4209,35 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
       return false;
     }
 
-    result = vkResetFences(vk_device, 1, &vk_execute_fence);
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF::fence_reset");
+      result = vkResetFences(vk_device, 1, &vk_execute_fence);
+    }
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "VGF/VkFence reset failed, error %d", result);
       return false;
     }
 
-    result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF::queue_submit");
+      ++execution_queue_submit_count;
+      result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    }
     if (result != VK_SUCCESS) {
-      ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
+      ET_LOG(Error, "VGF/VkQueue submit failed, error %d", result);
       return false;
     }
 
-    result = vkWaitForFences(
-        vk_device,
-        1,
-        &vk_execute_fence,
-        VK_TRUE,
-        std::numeric_limits<uint64_t>::max());
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF::host_wait");
+      ++execution_fence_wait_count;
+      result = vkWaitForFences(
+          vk_device,
+          1,
+          &vk_execute_fence,
+          VK_TRUE,
+          std::numeric_limits<uint64_t>::max());
+    }
   }
 
   if (result != VK_SUCCESS) {

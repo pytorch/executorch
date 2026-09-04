@@ -280,6 +280,24 @@ if(EXECUTORCH_BUILD_VGF)
 
   set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
 
+  if(EXECUTORCH_BUILD_TESTS)
+    add_executable(
+      vgf_diagnostics_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_diagnostics_test.cpp
+      ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFDiagnostics.cpp
+    )
+    target_include_directories(
+      vgf_diagnostics_test PRIVATE ${_common_include_directories}
+    )
+    target_link_libraries(vgf_diagnostics_test PRIVATE executorch_core)
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_diagnostics_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_diagnostics_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_diagnostics_test COMMAND vgf_diagnostics_test)
+  endif()
+
   add_library(vgf STATIC IMPORTED)
   set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
   target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
@@ -287,6 +305,7 @@ if(EXECUTORCH_BUILD_VGF)
   # Add backend delegate for VGF
   set(_vgf_backend_sources
       backends/arm/runtime/VGFBackend.cpp backends/arm/runtime/VGFSetup.cpp
+      backends/arm/runtime/VGFDiagnostics.cpp
       backends/arm/runtime/VGFNeuralStatistics.cpp
   )
   if(NOT EXECUTORCH_BUILD_VULKAN)

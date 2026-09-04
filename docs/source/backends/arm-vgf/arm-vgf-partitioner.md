@@ -31,20 +31,18 @@ Returns:
 ```python
 def VgfPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult:
 ```
-Partition the program and tag TOSA-compatible subgraphs.
+Partition the program and emit VGF boundary diagnostics.
 
-Run the FX capability-based partitioner to propose subgraphs, then
-refine tags by removing boundary-only quantize/dequantize nodes and by
-rejecting partitions that would lower to no-ops. Emit a detailed report
-of rejected nodes and their reasons.
+Run the inherited capability-based partitioning to identify and tag
+VGF-compatible subgraphs. After partitioning, collect diagnostics for
+operations and conversions at the VGF delegate boundaries.
 
 Args:
-- **exported_program (ExportedProgram)**: Program to analyze and
-        partition.
+- **exported_program**: Program to analyze and partition.
 
 Returns:
 - **PartitionResult**: The input program with nodes tagged for delegation
-    and a mapping of partition tags to delegation specs.
+    and a mapping of partition tags to delegation specifications.
 
 ```python
 def VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:

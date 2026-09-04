@@ -20,6 +20,8 @@
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace std;
 
@@ -60,8 +62,12 @@ using executorch::runtime::EventTracerEntry;
 
 // Dependencies for processing VGF files into Vulkan calls
 #include <vgf/decoder.hpp>
+#if __has_include(<vgf/version.h>)
+#include <vgf/version.h>
+#endif
 #include <vgf/vulkan_helpers.generated.hpp>
 
+#include <executorch/backends/arm/runtime/VGFDiagnostics.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 
 namespace executorch {
@@ -107,6 +113,8 @@ constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
 constexpr const char* kVgfDumpInputsAndExitEnv =
     "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
 std::atomic<uint64_t> g_vgf_dump_invocation{0};
+std::atomic<uint64_t> g_vgf_diagnostics_instance{0};
+std::atomic<uint64_t> g_vgf_diagnostics_invocation{0};
 
 bool env_flag_enabled(const char* name) {
   const char* value = std::getenv(name);
@@ -136,6 +144,262 @@ const char* descriptor_type_to_string(VkDescriptorType type) {
       return "VK_DESCRIPTOR_TYPE_UNKNOWN";
   }
 }
+
+bool is_image_descriptor_type_for_diagnostics(VkDescriptorType type) {
+  return type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
+      type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE ||
+      type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+}
+
+VgfCapabilityReport make_vgf_capability_report(
+    VkPhysicalDevice physical_device,
+    uint32_t queue_family_index,
+    const VgfRepr& repr) {
+  VgfCapabilityReport report;
+  report.method_instance_id = repr.diagnostics_instance_id;
+
+  const char* source_revision = std::getenv(kVgfDiagnosticsSourceRevisionEnv);
+  if (source_revision != nullptr && source_revision[0] != '\0') {
+    report.source_revision = source_revision;
+  }
+
+#if defined(MLSDK_VGF_LIBRARY_API_VERSION_MAJOR)
+  report.mlsdk_vgf_api_major = MLSDK_VGF_LIBRARY_API_VERSION_MAJOR;
+#endif
+#if defined(MLSDK_VGF_LIBRARY_API_VERSION_MINOR)
+  report.mlsdk_vgf_api_minor = MLSDK_VGF_LIBRARY_API_VERSION_MINOR;
+#endif
+
+  VkPhysicalDeviceProperties properties = {};
+  vkGetPhysicalDeviceProperties(physical_device, &properties);
+  report.vulkan_api_version = properties.apiVersion;
+  report.driver_version = properties.driverVersion;
+  report.vendor_id = properties.vendorID;
+  report.device_id = properties.deviceID;
+  report.device_name = properties.deviceName;
+  report.queue_family_index = queue_family_index;
+  report.non_coherent_atom_size = properties.limits.nonCoherentAtomSize;
+  report.buffer_image_granularity = properties.limits.bufferImageGranularity;
+
+  uint32_t queue_family_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(
+      physical_device, &queue_family_count, nullptr);
+  std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(
+      physical_device, &queue_family_count, queue_families.data());
+  if (queue_family_index < queue_families.size()) {
+    report.queue_flags = queue_families[queue_family_index].queueFlags;
+  }
+
+  VkPhysicalDeviceMemoryProperties memory_properties = {};
+  vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+  report.memory_type_count = memory_properties.memoryTypeCount;
+  for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
+    const auto flags = memory_properties.memoryTypes[i].propertyFlags;
+    if ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
+      ++report.host_visible_memory_type_count;
+    }
+    if ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+      ++report.host_coherent_memory_type_count;
+    }
+    if ((flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
+      ++report.device_local_memory_type_count;
+    }
+  }
+
+  uint32_t extension_count = 0;
+  VkResult extension_result = vkEnumerateDeviceExtensionProperties(
+      physical_device, nullptr, &extension_count, nullptr);
+  std::vector<VkExtensionProperties> available_extensions;
+  if (extension_result == VK_SUCCESS) {
+    available_extensions.resize(extension_count);
+    extension_result = vkEnumerateDeviceExtensionProperties(
+        physical_device,
+        nullptr,
+        &extension_count,
+        available_extensions.data());
+  }
+  report.device_extension_enumeration_ok = extension_result == VK_SUCCESS;
+
+  const char* relevant_extensions[] = {
+      "VK_ARM_tensors",
+      "VK_ARM_data_graph",
+      "VK_KHR_maintenance4",
+      "VK_KHR_maintenance5",
+      "VK_KHR_deferred_host_operations",
+      "VK_EXT_shader_replicated_composites",
+      "VK_EXT_external_memory_host",
+      "VK_KHR_external_memory",
+      "VK_EXT_external_memory_dma_buf",
+      "VK_ANDROID_external_memory_android_hardware_buffer",
+  };
+  for (const char* extension_name : relevant_extensions) {
+    VgfExtensionCapability extension;
+    extension.name = extension_name;
+    if (extension_result == VK_SUCCESS) {
+      auto it = std::find_if(
+          available_extensions.begin(),
+          available_extensions.end(),
+          [&](const auto& available) {
+            return std::strcmp(available.extensionName, extension_name) == 0;
+          });
+      if (it != available_extensions.end()) {
+        extension.available = true;
+        extension.spec_version = it->specVersion;
+      }
+    }
+    report.extensions.push_back(std::move(extension));
+  }
+
+  const auto extension_available = [&](const char* name) {
+    return std::any_of(
+        report.extensions.begin(),
+        report.extensions.end(),
+        [&](const auto& extension) {
+          return extension.name == name && extension.available;
+        });
+  };
+
+  if (extension_available("VK_ARM_tensors")) {
+    report.tensor_capabilities_queried = true;
+    VkPhysicalDeviceTensorFeaturesARM tensor_features{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM,
+        .pNext = nullptr,
+    };
+    VkPhysicalDeviceFeatures2 features2{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &tensor_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical_device, &features2);
+    report.tensor_feature_tensors = tensor_features.tensors == VK_TRUE;
+    report.tensor_feature_tensor_non_packed =
+        tensor_features.tensorNonPacked == VK_TRUE;
+    report.tensor_feature_shader_tensor_access =
+        tensor_features.shaderTensorAccess == VK_TRUE;
+
+    VkPhysicalDeviceTensorPropertiesARM tensor_properties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_PROPERTIES_ARM,
+        .pNext = nullptr,
+    };
+    VkPhysicalDeviceProperties2 properties2{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &tensor_properties,
+    };
+    vkGetPhysicalDeviceProperties2(physical_device, &properties2);
+    report.max_tensor_dimension_count =
+        tensor_properties.maxTensorDimensionCount;
+    report.max_tensor_elements = tensor_properties.maxTensorElements;
+    report.max_tensor_size = tensor_properties.maxTensorSize;
+    report.max_tensor_stride = tensor_properties.maxTensorStride;
+  }
+
+  if (extension_available("VK_EXT_external_memory_host")) {
+    report.external_memory_host_properties_queried = true;
+    VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_host_properties{
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT,
+        .pNext = nullptr,
+    };
+    VkPhysicalDeviceProperties2 properties2{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &external_host_properties,
+    };
+    vkGetPhysicalDeviceProperties2(physical_device, &properties2);
+    report.min_imported_host_pointer_alignment =
+        external_host_properties.minImportedHostPointerAlignment;
+  }
+
+  report.model_input_count = repr.model_input_count;
+  report.model_output_count = repr.model_output_count;
+  report.io_count = repr.IOs.size();
+
+  std::vector<VkDeviceMemory> unique_mapped_memories;
+  report.ios.reserve(repr.IOs.size());
+  for (size_t io_index = 0; io_index < repr.IOs.size(); ++io_index) {
+    const auto& io = repr.IOs[io_index];
+    VgfIoCapability io_report;
+    io_report.io_index = io_index;
+    io_report.direction = io.is_input ? "INPUT" : "OUTPUT";
+    io_report.descriptor_type = descriptor_type_to_string(io.descriptor_type);
+    io_report.vk_format = static_cast<uint32_t>(io.format);
+    io_report.shape = io.size;
+    io_report.strides = io.stride;
+    io_report.logical_bytes = io.allocation_size;
+    io_report.memory_requirement_size = io.memory_requirement_size;
+    io_report.memory_requirement_alignment = io.memory_requirement_alignment;
+    io_report.memory_allocation_capacity = io.memory_allocation_capacity;
+    io_report.memory_type_bits = io.memory_type_bits;
+    io_report.memory_type_index = io.memory_type_index;
+    io_report.memory_property_flags = io.memory_property_flags;
+    if (io.memory_dedicated_requirement_known) {
+      if (io.memory_requires_dedicated_allocation) {
+        io_report.dedicated_allocation_requirement = "required";
+      } else if (io.memory_prefers_dedicated_allocation) {
+        io_report.dedicated_allocation_requirement = "preferred";
+      } else {
+        io_report.dedicated_allocation_requirement = "not_required";
+      }
+    }
+    io_report.exact_resource_created = true;
+    io_report.persistent_mapped = io.persistent_memory != nullptr;
+    io_report.device_staging_copy =
+        is_image_descriptor_type_for_diagnostics(io.descriptor_type);
+    io_report.tensor_image_aliasing = io.tensor_image_aliasing;
+    report.ios.push_back(std::move(io_report));
+
+    if (io.persistent_memory != nullptr) {
+      ++report.persistently_mapped_io_count;
+      if (std::find(
+              unique_mapped_memories.begin(),
+              unique_mapped_memories.end(),
+              io.memory) == unique_mapped_memories.end()) {
+        unique_mapped_memories.push_back(io.memory);
+      }
+    }
+  }
+  report.unique_persistent_mapping_count = unique_mapped_memories.size();
+  report.init_image_layout_transition_count =
+      std::count_if(repr.IOs.begin(), repr.IOs.end(), [](const auto& io) {
+        return is_image_descriptor_type_for_diagnostics(io.descriptor_type);
+      });
+  report.init_image_layout_transition_count += std::count_if(
+      repr.extra_allocs.begin(),
+      repr.extra_allocs.end(),
+      [](const auto& alloc) {
+        return is_image_descriptor_type_for_diagnostics(alloc.descriptor_type);
+      });
+
+  return report;
+}
+
+void write_diagnostics_or_log(
+    const std::string& file_name,
+    const std::string& metadata) {
+  std::string written_path;
+  if (!write_vgf_diagnostics_report(file_name, metadata, &written_path)) {
+    ET_LOG(
+        Error, "Failed to write VGF diagnostics report %s", file_name.c_str());
+    return;
+  }
+  if (!written_path.empty()) {
+    ET_LOG(Info, "Wrote VGF diagnostics report to %s", written_path.c_str());
+  }
+}
+
+#ifdef ET_EVENT_TRACER_ENABLED
+void emit_vgf_metadata_event(
+    EventTracer* event_tracer,
+    const char* event_name,
+    const std::string& metadata) {
+  if (event_tracer == nullptr) {
+    return;
+  }
+  EventTracerEntry event = event_tracer_start_profiling_delegate(
+      event_tracer, event_name, /*delegate_debug_id=*/-1);
+  event_tracer_end_profiling_delegate(
+      event_tracer, event, metadata.data(), metadata.size());
+}
+#endif
 
 template <typename T>
 std::string array_ref_to_json(ArrayRef<T> values) {
@@ -544,7 +808,20 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       return Error::Internal;
     }
 
+    repr->diagnostics_instance_id = g_vgf_diagnostics_instance.fetch_add(1);
+    const VgfCapabilityReport capability_report = make_vgf_capability_report(
+        vk_physical_device, vk_queue_family_index, *repr);
+    const std::string capability_metadata =
+        serialize_vgf_capability_report(capability_report);
+    std::ostringstream capability_file_name;
+    capability_file_name << "capabilities_" << std::setw(6) << std::setfill('0')
+                         << repr->diagnostics_instance_id << ".json";
+    write_diagnostics_or_log(capability_file_name.str(), capability_metadata);
 #ifdef ET_EVENT_TRACER_ENABLED
+    emit_vgf_metadata_event(
+        event_tracer,
+        kVgfDiagnosticsCapabilitiesEventName,
+        capability_metadata);
     event_tracer_end_profiling_delegate(event_tracer, init_total_event);
 #endif
 
@@ -605,6 +882,38 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     (void)context;
 #endif
 
+    VgfExecutionReport execution_report;
+    execution_report.method_instance_id = repr->diagnostics_instance_id;
+    execution_report.invocation = g_vgf_diagnostics_invocation.fetch_add(1);
+    execution_report.host_to_device_barrier_count = 1;
+    execution_report.device_to_host_barrier_count = 1;
+    execution_report.segment_barrier_count =
+        repr->segments.empty() ? 0 : repr->segments.size() - 1;
+
+    for (const auto& io : repr->IOs) {
+      if (!is_image_descriptor_type_for_diagnostics(io.descriptor_type)) {
+        continue;
+      }
+      if (io.is_input) {
+        ++execution_report.input_device_copy_count;
+        execution_report.input_device_copy_bytes += io.allocation_size;
+      } else {
+        ++execution_report.output_device_copy_count;
+        execution_report.output_device_copy_bytes += io.allocation_size;
+      }
+    }
+    execution_report.input_image_transfer_barrier_count =
+        execution_report.input_device_copy_count == 0 ? 0 : 1;
+    execution_report.output_image_transfer_barrier_count =
+        execution_report.output_device_copy_count == 0 ? 0 : 1;
+    execution_report.image_layout_transition_barrier_count =
+        repr->execute_image_layout_transition_barrier_count;
+
+    // Current mapped IO allocation policy requires HOST_COHERENT memory, so
+    // no explicit vkFlushMappedMemoryRanges/vkInvalidateMappedMemoryRanges are
+    // issued by the VGF runtime. Portable/AoT conversions outside the delegate
+    // remain intentionally reported as unknown.
+
     // Copy all inputs from EValue to VkDeviceMemory
     for (size_t input_arg_idx = 0; input_arg_idx < input_count;
          ++input_arg_idx) {
@@ -655,7 +964,32 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "Failed to map Vulkan IO memory");
         return Error::Internal;
       }
+#ifdef ET_EVENT_TRACER_ENABLED
+      VgfTransferObservation input_observation;
+      input_observation.kind = "INPUT_COPY";
+      input_observation.direction = "INPUT";
+      input_observation.slot = input_arg_idx;
+      input_observation.io_index = io_idx;
+      input_observation.bytes_copied = io_size;
+      input_observation.descriptor_type =
+          descriptor_type_to_string(io->descriptor_type);
+      const std::string input_copy_metadata =
+          serialize_vgf_transfer_observation(input_observation);
+      EventTracerEntry input_copy_event = event_tracer_start_profiling_delegate(
+          event_tracer,
+          kVgfDiagnosticsInputCopyEventName,
+          /*delegate_debug_id=*/-1);
+#endif
       memcpy(data, tensor->mutable_data_ptr(), io_size);
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(
+          event_tracer,
+          input_copy_event,
+          input_copy_metadata.data(),
+          input_copy_metadata.size());
+#endif
+      ++execution_report.input_cpu_copy_count;
+      execution_report.input_cpu_copy_bytes += io_size;
       repr->unmap_io(io);
     }
 
@@ -670,13 +1004,27 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
     // Execute the workload
     bool execute_ok = false;
+    repr->execution_queue_submit_count = 0;
+    repr->execution_fence_wait_count = 0;
+
 #ifdef ET_EVENT_TRACER_ENABLED
     execute_ok = repr->execute_vgf(event_tracer);
 #else
     execute_ok = repr->execute_vgf();
 #endif
 
+    execution_report.queue_submit_count = repr->execution_queue_submit_count;
+    execution_report.fence_wait_count = repr->execution_fence_wait_count;
+
     if (!execute_ok) {
+      std::ostringstream diagnostics_file_name;
+      diagnostics_file_name << "execution_" << std::setw(6) << std::setfill('0')
+                            << execution_report.method_instance_id << "_"
+                            << std::setw(6) << execution_report.invocation
+                            << ".json";
+      write_diagnostics_or_log(
+          diagnostics_file_name.str(),
+          serialize_vgf_execution_report(execution_report));
 #ifdef ET_EVENT_TRACER_ENABLED
       event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
       event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
@@ -768,12 +1116,50 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "Failed to map Vulkan IO memory");
         return Error::Internal;
       }
+#ifdef ET_EVENT_TRACER_ENABLED
+      VgfTransferObservation output_observation;
+      output_observation.kind = "OUTPUT_COPY";
+      output_observation.direction = "OUTPUT";
+      output_observation.slot = output_rel_idx;
+      output_observation.io_index = io_idx;
+      output_observation.bytes_copied = io_size;
+      output_observation.descriptor_type =
+          descriptor_type_to_string(io->descriptor_type);
+      const std::string output_copy_metadata =
+          serialize_vgf_transfer_observation(output_observation);
+      EventTracerEntry output_copy_event =
+          event_tracer_start_profiling_delegate(
+              event_tracer,
+              kVgfDiagnosticsOutputCopyEventName,
+              /*delegate_debug_id=*/-1);
+#endif
       memcpy(tensor->mutable_data_ptr(), data, io_size);
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(
+          event_tracer,
+          output_copy_event,
+          output_copy_metadata.data(),
+          output_copy_metadata.size());
+#endif
+      ++execution_report.output_cpu_copy_count;
+      execution_report.output_cpu_copy_bytes += io_size;
       repr->unmap_io(io);
     }
 
+    execution_report.success = true;
+    const std::string execution_metadata =
+        serialize_vgf_execution_report(execution_report);
+    std::ostringstream diagnostics_file_name;
+    diagnostics_file_name << "execution_" << std::setw(6) << std::setfill('0')
+                          << execution_report.method_instance_id << "_"
+                          << std::setw(6) << execution_report.invocation
+                          << ".json";
+    write_diagnostics_or_log(diagnostics_file_name.str(), execution_metadata);
+
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, copy_outputs_event);
+    emit_vgf_metadata_event(
+        event_tracer, kVgfDiagnosticsExecutionEventName, execution_metadata);
     event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
 #endif
 

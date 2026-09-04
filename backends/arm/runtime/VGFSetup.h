@@ -51,6 +51,20 @@ typedef struct IO {
   bool owns_memory = true;
   bool owns_image_memory = true;
   bool is_input;
+
+  // P0 diagnostics for the persistently mapped IO allocation. For image IO,
+  // these fields describe the host-visible staging buffer.
+  VkFormat format = VK_FORMAT_UNDEFINED;
+  VkDeviceSize memory_requirement_size = 0;
+  VkDeviceSize memory_requirement_alignment = 0;
+  VkDeviceSize memory_allocation_capacity = 0;
+  uint32_t memory_type_bits = 0;
+  uint32_t memory_type_index = UINT32_MAX;
+  VkMemoryPropertyFlags memory_property_flags = 0;
+  bool memory_dedicated_requirement_known = false;
+  bool memory_requires_dedicated_allocation = false;
+  bool memory_prefers_dedicated_allocation = false;
+  bool tensor_image_aliasing = false;
 } IO;
 
 typedef struct PersistentMappedMemory {
@@ -149,6 +163,18 @@ class VgfRepr {
   size_t model_output_count = 0;
   std::vector<SegmentState> segments;
   std::vector<ResourceAlloc> extra_allocs;
+
+  // Number of image-memory barriers recorded into the reusable execution
+  // command buffer for tensor/image alias layout transitions.
+  uint64_t execute_image_layout_transition_barrier_count = 0;
+
+  // Per-invocation diagnostics. These count Vulkan API call attempts, including
+  // calls that return an error. VGFBackend resets them immediately before each
+  // execute_vgf() invocation and consumes them immediately afterwards.
+  uint64_t execution_queue_submit_count = 0;
+  uint64_t execution_fence_wait_count = 0;
+
+  uint64_t diagnostics_instance_id = 0;
 
   // Mapping to persistent IO memory
   static bool map_io(IO* io, void** handle) {

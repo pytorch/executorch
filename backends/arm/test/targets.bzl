@@ -79,6 +79,7 @@ def define_arm_tests():
         "misc/test_post_quant_device_switch.py",
         "misc/test_vgf_check_env.py",
         "misc/test_vgf_backend.py",
+        "misc/test_vgf_diagnostics.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
@@ -183,5 +184,14 @@ def define_arm_tests():
                 "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+        runtime.cxx_test(
+            name = "vgf_diagnostics_test",
+            srcs = ["vgf_diagnostics_test.cpp"],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
+                "//executorch/runtime/core:core",
             ],
         )

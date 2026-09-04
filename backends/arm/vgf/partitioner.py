@@ -10,9 +10,13 @@ from executorch.backends.arm.tosa.partitioner import (
     TOSAPartitioner,
 )
 from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec
-from executorch.exir.backend.partitioner import DelegationSpec
+from executorch.backends.arm.vgf.diagnostics import (
+    write_vgf_boundary_manifest_if_requested,
+)
+from executorch.exir.backend.partitioner import DelegationSpec, PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._ops import OpOverload
+from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 
@@ -43,3 +47,26 @@ class VgfPartitioner(TOSAPartitioner):
         self.intermediate_path = compile_spec._get_intermediate_path()
         # Preserve grid_sampler_2d for the VGF custom-lowering path only.
         self.register_custom_partition_op(exir_ops.edge.aten.grid_sampler_2d.default)
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        """Partition the program and emit VGF boundary diagnostics.
+
+        Run the inherited capability-based partitioning to identify and tag
+        VGF-compatible subgraphs. After partitioning, collect diagnostics for
+        operations and conversions at the VGF delegate boundaries.
+
+        Args:
+            exported_program: Program to analyze and partition.
+
+        Returns:
+            PartitionResult: The input program with nodes tagged for delegation
+            and a mapping of partition tags to delegation specifications.
+
+        """
+        result = super().partition(exported_program)
+        write_vgf_boundary_manifest_if_requested(
+            result.tagged_exported_program.graph_module,
+            result.partition_tags,
+            self.intermediate_path,
+        )
+        return result
