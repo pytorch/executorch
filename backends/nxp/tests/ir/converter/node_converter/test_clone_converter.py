@@ -220,8 +220,9 @@ class TestCloneConverter(unittest.TestCase):
             ],
         )
 
-        # Clone with inplace=True should not produce clone edge op and vice versa
-        assert inplace_dropout ^ has_clone
+        # Neither spelling leaves a clone behind on this PyTorch: the out-of-place
+        # one used to and no longer does.
+        assert not has_clone
 
     @parameterized.expand([("QAT", True), ("PTQ", False)])
     def test_clone_pool_view_copy_quant(
