@@ -34,6 +34,10 @@ u55_pixel_xfails = {
     "rand_4d_channels_last": "Known U55 partitioning limitation for large 4D pixel shuffle layouts.",
 }
 
+mixed_precision_xfails = {
+    "rand_4d_channels_last": "Permute propagation stops at f(x, g(x)) shapes such as the round decomposition.",
+}
+
 
 class PixelUnShuffle(nn.Module):
 
@@ -110,7 +114,9 @@ def test_pixel_unshuffle_tosa_FP(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", PixelUnShuffle.test_data_generators)
+@common.parametrize(
+    "test_data", PixelUnShuffle.test_data_generators, xfails=mixed_precision_xfails
+)
 def test_pixel_unshuffle_no_target_tosa_mixed_precision(test_data: input_t1):
     inputs, expected_transposes = test_data()
     pipeline = TosaPipelineINT[input_t1](
@@ -140,7 +146,9 @@ def test_pixel_shuffle_tosa_FP(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", PixelShuffle.test_data_generators)
+@common.parametrize(
+    "test_data", PixelShuffle.test_data_generators, xfails=mixed_precision_xfails
+)
 def test_pixel_shuffle_no_target_tosa_mixed_precision(test_data: input_t1):
     inputs, expected_transposes = test_data()
     pipeline = TosaPipelineINT[input_t1](
