@@ -10,6 +10,7 @@ import operator
 from typing import cast, Optional
 
 import executorch.backends.cortex_m.ops.operators  # noqa
+import executorch.backends.transforms.channels_last_ops  # noqa: F401
 import executorch.exir as exir
 import torch
 import torch.fx
@@ -75,6 +76,10 @@ class AtenToCortexMPass(AtenToDialectPass):
         )
 
         for node in result.graph_module.graph.nodes:
+            if getattr(node.target, "namespace", None) == "channels_last":
+                raise RuntimeError(
+                    f"Cortex-M lowering left {node.target} in the graph."
+                )
             self._initialize_alloc_node_size(node)
 
         return PassResult(result.graph_module, result.modified or max_pool_modified)
@@ -448,12 +453,17 @@ def _get_linear_replacement(
     return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_linear.default, args)
 
 
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.channels_last.convolution.default
+)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.convolution.default)
 def _get_convolution_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     if not _has_qparams(node):
         return None
+
+    explicit_nhwc = node.target == exir_ops.edge.channels_last.convolution.default
 
     exported_program = dialect_pass.exported_program
     conv_args = node.args
@@ -612,7 +622,11 @@ def _get_convolution_replacement(
             scratch,
         )
         return DialectNodeSpec(
-            exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
+            (
+                exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default
+                if explicit_nhwc
+                else exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default
+            ),
             depthwise_args,
         )
 
@@ -634,7 +648,14 @@ def _get_convolution_replacement(
         output_qmax,
         scratch,
     )
-    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_conv2d.default, conv2d_args)
+    return DialectNodeSpec(
+        (
+            exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+            if explicit_nhwc
+            else exir_ops.edge.cortex_m.quantized_conv2d.default
+        ),
+        conv2d_args,
+    )
 
 
 def _get_transpose_conv2d_replacement(
@@ -646,6 +667,7 @@ def _get_transpose_conv2d_replacement(
     if not _has_qparams(node):
         return None
 
+    explicit_nhwc = node.target == exir_ops.edge.channels_last.convolution.default
     exported_program = dialect_pass.exported_program
     conv_t_args = node.args
     (
@@ -758,7 +780,12 @@ def _get_transpose_conv2d_replacement(
         output_scratch,
     )
     return DialectNodeSpec(
-        exir_ops.edge.cortex_m.quantized_transpose_conv2d.default, new_args
+        (
+            exir_ops.edge.cortex_m.quantized_transpose_conv2d_nhwc.default
+            if explicit_nhwc
+            else exir_ops.edge.cortex_m.quantized_transpose_conv2d.default
+        ),
+        new_args,
     )
 
 
@@ -825,12 +852,16 @@ def _get_bmm_replacement(
 
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.avg_pool2d.default)
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.channels_last.avg_pool2d.default
+)
 def _get_avg_pool2d_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     if not _has_qparams(node):
         return None
 
+    explicit_nhwc = node.target == exir_ops.edge.channels_last.avg_pool2d.default
     exported_program = dialect_pass.exported_program
     pool_args = node.args
     kernel_size = cast(list[int], pool_args[1])
@@ -851,8 +882,11 @@ def _get_avg_pool2d_replacement(
     avg_padding = padding
     if count_include_pad:
         pad_h, pad_w = padding
-        input_tensor = get_first_fake_tensor(input_node)
-        pre_pad = post_pad = to_physical_order([0, 0, pad_h, pad_w], input_tensor)
+        if explicit_nhwc:
+            pre_pad = post_pad = [0, pad_h, pad_w, 0]
+        else:
+            input_tensor = get_first_fake_tensor(input_node)
+            pre_pad = post_pad = to_physical_order([0, 0, pad_h, pad_w], input_tensor)
         with node.graph.inserting_before(node):
             input_node = node.graph.create_node(
                 "call_function",
@@ -875,7 +909,12 @@ def _get_avg_pool2d_replacement(
         scratch,
     )
     return DialectNodeSpec(
-        exir_ops.edge.cortex_m.quantized_avg_pool2d.default, new_args
+        (
+            exir_ops.edge.cortex_m.quantized_avg_pool2d_nhwc.default
+            if explicit_nhwc
+            else exir_ops.edge.cortex_m.quantized_avg_pool2d.default
+        ),
+        new_args,
     )
 
 
@@ -1108,10 +1147,14 @@ def _get_softmax_replacement(
 
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.max_pool2d.default)
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.channels_last.max_pool2d.default
+)
 def _get_max_pool2d_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     del dialect_pass
+    explicit_nhwc = node.target == exir_ops.edge.channels_last.max_pool2d.default
     input_qparams = node.meta.get("input_qparams", {}).get(0)
     cortex_m_meta = node.meta.get("custom", {}).get("cortex_m", {})
     if input_qparams is None or cortex_m_meta.get("skip_quantized_max_pool2d", False):
@@ -1169,6 +1212,12 @@ def _get_max_pool2d_replacement(
         activation_min,
         activation_max,
     )
+    if explicit_nhwc:
+        quantized_op = getattr(
+            exir_ops.edge.cortex_m, "quantized_max_pool2d_nhwc", None
+        )
+        if quantized_op is None:
+            return None
     return DialectNodeSpec(quantized_op.default, args)
 
 
@@ -1194,6 +1243,14 @@ def _get_maximum_replacement(
     return DialectNodeSpec(exir_ops.edge.cortex_m.maximum.default, node.args)
 
 
+def _transpose_spec(node: Node, input_tensor) -> DialectNodeSpec:
+    rank = len(input_tensor.shape)
+    perms = [p % rank for p in cast(tuple[int, ...], node.args[1])]
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.transpose.default, (node.args[0], perms)
+    )
+
+
 @AtenToCortexMPass.register_dialect_substitution(
     exir_ops.edge.aten.permute_copy.default
 )
@@ -1204,12 +1261,17 @@ def _get_permute_replacement(
     input_tensor = _get_input_tensor_data(node)
     if input_tensor.dtype != torch.int8:
         return None
+    return _transpose_spec(node, input_tensor)
 
-    rank = len(input_tensor.shape)
-    perms = [p % rank for p in cast(tuple[int, ...], node.args[1])]
-    return DialectNodeSpec(
-        exir_ops.edge.cortex_m.transpose.default, (node.args[0], perms)
-    )
+
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.channels_last.permute_copy.default
+)
+def _get_layout_permute_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    return _transpose_spec(node, _get_input_tensor_data(node))
 
 
 @AtenToCortexMPass.register_dialect_substitution(
