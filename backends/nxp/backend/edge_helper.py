@@ -8,7 +8,7 @@ import operator
 
 import torch
 
-from executorch.backends.nxp.tests.ops_aliases import (
+from executorch.backends.nxp.ops_aliases import (
     AddTensor,
     Amax,
     Amin,
