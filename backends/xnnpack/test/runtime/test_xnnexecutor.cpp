@@ -10,6 +10,8 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <gtest/gtest.h>
 #include <xnnpack.h>
+#include <algorithm>
+#include <vector>
 
 using executorch::aten::Tensor;
 using executorch::backends::xnnpack::delegate::XNNExecutor;
@@ -95,6 +97,96 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
   Span<EValue*> stack_args(args.data(), 2);
   // Check for invalid number of dimensions should fail without stack overflow.
   EXPECT_EQ(executor.prepare_args(stack_args), Error::InvalidArgument);
+}
+
+// A quantized subgraph's externals are int8, so prepare_args must take their
+// address without naming a scalar type.
+TEST(XNNExecutorTest, PrepareArgsAcceptsQuantizedExternals) {
+  XNNExecutor executor({});
+  xnn_runtime_t rt = nullptr;
+  et_pal_init();
+  ASSERT_EQ(xnn_initialize(nullptr), xnn_status_success);
+
+  xnn_subgraph_t subgraph = nullptr;
+  ASSERT_EQ(xnn_create_subgraph(2, 0, &subgraph), xnn_status_success);
+  std::unique_ptr<xnn_subgraph, decltype(&xnn_delete_subgraph)> auto_subgraph(
+      subgraph, xnn_delete_subgraph);
+
+  // 64 so XNNPACK's SIMD reads stay inside the tensors.
+  constexpr int32_t kNumElements = 64;
+  std::vector<size_t> dims = {static_cast<size_t>(kNumElements)};
+  uint32_t input_id = XNN_INVALID_VALUE_ID;
+  uint32_t output_id = XNN_INVALID_VALUE_ID;
+
+  ASSERT_EQ(
+      xnn_status_success,
+      xnn_define_quantized_tensor_value(
+          subgraph,
+          xnn_datatype_qint8,
+          /*zero_point=*/0,
+          /*scale=*/1,
+          dims.size(),
+          dims.data(),
+          nullptr,
+          /*external_id=*/0,
+          XNN_VALUE_FLAG_EXTERNAL_INPUT,
+          &input_id));
+  ASSERT_EQ(
+      xnn_status_success,
+      xnn_define_quantized_tensor_value(
+          subgraph,
+          xnn_datatype_qint8,
+          /*zero_point=*/0,
+          /*scale=*/1,
+          dims.size(),
+          dims.data(),
+          nullptr,
+          /*external_id=*/1,
+          XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
+          &output_id));
+  ASSERT_EQ(
+      xnn_status_success,
+      xnn_define_clamp(
+          subgraph,
+          /*output_min=*/0,
+          /*output_max=*/10,
+          input_id,
+          output_id,
+          0));
+
+  ASSERT_EQ(xnn_create_runtime(subgraph, &rt), xnn_status_success);
+  ASSERT_EQ(executor.initialize(rt, {0}, {1}, {}), Error::Ok);
+
+  TensorFactory<executorch::aten::ScalarType::Char> tf;
+  std::vector<int8_t> input_data(kNumElements);
+  for (int32_t i = 0; i < kNumElements; ++i) {
+    input_data[i] = static_cast<int8_t>(i);
+  }
+  auto input_tensor = tf.make({kNumElements}, input_data);
+  auto output_tensor =
+      tf.make({kNumElements}, std::vector<int8_t>(kNumElements, -1));
+
+  EValue input_ev(input_tensor);
+  EValue output_ev(output_tensor);
+  std::array<EValue*, 2> args = {&input_ev, &output_ev};
+  Span<EValue*> stack_args(args.data(), 2);
+
+  ASSERT_EQ(executor.prepare_args(stack_args), Error::Ok);
+  executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext context;
+  ASSERT_EQ(executor.forward(context), Error::Ok);
+  ASSERT_EQ(executor.convert_outputs(stack_args), Error::Ok);
+
+  // Holds only if the clamp ran against the tensor's own int8 buffer.
+  Tensor& result = args[1]->toTensor();
+  std::vector<int8_t> expected(kNumElements);
+  for (int32_t i = 0; i < kNumElements; ++i) {
+    expected[i] = static_cast<int8_t>(std::min(i, 10));
+  }
+  EXPECT_EQ(
+      std::vector<int8_t>(
+          result.const_data_ptr<int8_t>(),
+          result.const_data_ptr<int8_t>() + kNumElements),
+      expected);
 }
 
 // Tests that resize_outputs correctly converts int32 indices to int64.
