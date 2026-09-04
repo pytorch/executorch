@@ -43,7 +43,6 @@ fbcode_target(
         "//executorch/backends/arm/tosa:compile_spec",
         "//executorch/backends/cortex_m/passes:replace_quant_nodes_pass",
         "//executorch/exir:lib",
-        "//executorch/exir/backend:op_backend",
         "//executorch/export:lib",
     ],
 )
