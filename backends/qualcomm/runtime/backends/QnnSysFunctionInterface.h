@@ -49,6 +49,22 @@ class QnnSystemInterface {
       system_dlc_create_from_binary,
       systemDlcCreateFromBinary);
   DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_dlc_free, systemDlcFree);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_dlc_create_with_destination_dir,
+      systemDlcCreateWithDestinationDir);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_dlc_get_binary_size,
+      systemDlcGetBinarySize);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_dlc_get_binary, systemDlcGetBinary);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_dlc_get_records_by_type,
+      systemDlcGetRecordsByType);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_dlc_get_record_data_size,
+      systemDlcGetRecordDataSize);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_dlc_read_record_data_memory_mapped,
+      systemDlcReadRecordDataMemoryMapped);
 
  private:
   const QnnSystemInterface_t* qnn_sys_interface_{nullptr};

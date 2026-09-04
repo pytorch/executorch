@@ -25,6 +25,13 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
     p_custom_config->weightSharingEnabled = true;
     ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
   }
+  if (fcb_options_ != nullptr && fcb_options_->fcb_reference_weight_sharing()) {
+    p_custom_config = AllocContextCustomConfig();
+    p_custom_config->option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_REFERENCE_WEIGHT_SHARING_ENABLED;
+    p_custom_config->referenceWeightSharingEnabled = true;
+    ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
+  }
 
   return ret;
 }

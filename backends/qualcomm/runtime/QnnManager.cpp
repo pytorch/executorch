@@ -46,6 +46,22 @@ int ExtractMutableBufferNumber(const std::string& name) {
   return -1;
 }
 
+class OpWrapperGraphStateGuard final {
+ public:
+  explicit OpWrapperGraphStateGuard(
+      const std::vector<std::shared_ptr<OpWrapper>>& op_wrappers)
+      : op_wrappers_(op_wrappers) {}
+
+  ~OpWrapperGraphStateGuard() {
+    for (const auto& op_wrapper : op_wrappers_) {
+      op_wrapper->ResetGraphState();
+    }
+  }
+
+ private:
+  const std::vector<std::shared_ptr<OpWrapper>>& op_wrappers_;
+};
+
 QnnManager::~QnnManager() {
   Destroy();
 }
@@ -226,6 +242,77 @@ Error QnnManager::RegisterCustomMem(
       "Fail to register to shared memory.");
 
   return Error::Ok;
+}
+
+Error QnnManager::GetContextBinarySize(uint64_t& out_size) {
+  Qnn_ContextBinarySize_t binary_size = 0;
+  auto error =
+      backend_bundle_ptr_->implementation->GetQnnInterface()
+          .qnn_context_get_binary_size(
+              backend_params_ptr_->qnn_context_ptr_->GetHandle(), &binary_size);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to get context binary size. Error %d",
+        QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  out_size = binary_size;
+  return Error::Ok;
+}
+
+Error QnnManager::CreateDlc(void*& out_dlc_handle) {
+  QnnSystemDlc_Handle_t handle = nullptr;
+  auto error =
+      backend_bundle_ptr_->system_implementation->GetQnnSystemInterface()
+          .qnn_system_dlc_create_with_destination_dir(
+              backend_bundle_ptr_->qnn_logger_ptr->GetHandle(),
+              nullptr,
+              &handle);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to create DLC. Error %d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  out_dlc_handle = handle;
+  return Error::Ok;
+}
+
+Error QnnManager::AddContextToDlc(void* dlc_handle) {
+  auto error =
+      backend_bundle_ptr_->implementation->GetQnnInterface()
+          .qnn_context_add_to_dlc(
+              backend_params_ptr_->qnn_context_ptr_->GetHandle(), dlc_handle);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to add context to  DLC. Error %d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  return Error::Ok;
+}
+
+Error QnnManager::GetDlcBinary(void* dlc_handle, std::vector<uint8_t>& binary) {
+  Qnn_SystemDlcBinarySize_t size = 0;
+  auto& system =
+      backend_bundle_ptr_->system_implementation->GetQnnSystemInterface();
+  if (system.qnn_system_dlc_get_binary_size(dlc_handle, &size) != QNN_SUCCESS) {
+    return Error::Internal;
+  }
+  binary.resize(size);
+  Qnn_SystemDlcBinarySize_t written = 0;
+  auto error = system.qnn_system_dlc_get_binary(
+      dlc_handle, binary.data(), size, &written);
+  if (error != QNN_SUCCESS || written > size) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to get DLC binary. Error %d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  binary.resize(written);
+  return Error::Ok;
+}
+
+void QnnManager::FreeDlc(void* dlc_handle) {
+  backend_bundle_ptr_->system_implementation->GetQnnSystemInterface()
+      .qnn_system_dlc_free(dlc_handle);
 }
 
 Error QnnManager::InitBackend() {
@@ -621,6 +708,7 @@ Error QnnManager::CompileDlc() {
 Error QnnManager::Compile(
     const std::string& graph_name,
     std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
+  OpWrapperGraphStateGuard reset_graph_state(op_wrappers);
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   QnnGraph* qnn_graph_ptr = backend_params_ptr_->qnn_graph_ptr_.get();
 

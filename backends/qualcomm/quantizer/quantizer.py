@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 from functools import partial
 from operator import attrgetter
-from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 # To support quantize op lowering in AOT
 try:
@@ -345,7 +345,9 @@ class QnnQuantizer(Quantizer):
 
     Args:
         backend: QnnQuantizer uses the backend_type to dynamically load the appropriate backend rules as needed.
-        soc_model: QnnQuantizer checks each operation according to the soc_model. For example, LPBQ requires V69 or a newer version.
+        soc_model:
+            QnnQuantizer checks each operation according to the soc_model.
+            For an FCB target list, validation uses the target with the lowest HTP architecture.
         strict:
           When enabled (default), the validation stage raises a ValueError if quantization constraints are not met.
           In this mode, all quantization constraints must be satisfied to fully delegate to the QNN Backend.
@@ -376,13 +378,26 @@ class QnnQuantizer(Quantizer):
     def __init__(
         self,
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
-        soc_model: QcomChipset = QcomChipset.SM8750,
+        soc_model: Union[QcomChipset, Sequence[QcomChipset]] = QcomChipset.SM8750,
         strict: bool = True,
     ):
         super().__init__()
         self.strict = strict
         self.backend = backend
-        self.soc_info = _soc_info_table[soc_model]
+        self.soc_models = (
+            (soc_model,) if isinstance(soc_model, QcomChipset) else tuple(soc_model)
+        )
+        if not self.soc_models:
+            raise ValueError("soc_model must not be empty")
+        if len(self.soc_models) > 1 and backend != QnnExecuTorchBackendType.kHtpBackend:
+            raise ValueError(
+                "multiple soc_model (FCB) is only supported for HTP backend"
+            )
+        least_soc_model = min(
+            self.soc_models,
+            key=lambda model: _soc_info_table[model].htp_info.htp_arch,
+        )
+        self.soc_info = _soc_info_table[least_soc_model]
 
         # Lazy load rules and constraints of current backend
         self._rules_map, self._constraint_cache = load_backend_rules_and_constraints(
@@ -396,8 +411,8 @@ class QnnQuantizer(Quantizer):
         # convolution, so a guard applied at lowering time comes after the risk has passed.
         disable_mkldnn_on_amd()
 
-        # Load backend_opinfo of current backend and soc_model
-        self.backend_opinfo = get_backend_opinfo(str(backend), soc_model)
+        # Validate against the least capable FCB target.
+        self.backend_opinfo = get_backend_opinfo(str(backend), least_soc_model)
 
         self.default_quant_config = ModuleQConfig()
         self.submodule_qconfig_list: List[
