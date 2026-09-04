@@ -31,7 +31,7 @@ unary_op:
     - NAME: exp
       OPERATOR: exp(X)
     - NAME: gelu
-      OPERATOR: 0.5 * X * (1 + tanh(sqrt(2 / 3.141593) * (X + 0.044715 * X * X * X)))
+      OPERATOR: 0.5 * X * (1 + tanh(clamp(sqrt(2 / 3.141593) * (X + 0.044715 * X * X * X), -15.0, 15.0)))
     - NAME: neg
       OPERATOR: -X
     - NAME: sigmoid
