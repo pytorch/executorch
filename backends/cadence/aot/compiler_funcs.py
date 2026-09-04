@@ -537,6 +537,7 @@ def _get_transparent_ops() -> set[Any]:
         torch.ops.aten.view.default,
         torch.ops.aten.reshape.default,
         torch.ops.aten.split.Tensor,
+        torch.ops.aten.split_with_sizes.default,
         torch.ops.aten.chunk.default,
         torch.ops.aten.slice_copy.Tensor,
         torch.ops.aten.permute_copy.default,
@@ -631,19 +632,20 @@ def _sink_dequant_to_quant_nodes(
     for quant_node in downstream_quants:
         quant_input = quant_node.args[0]
         assert isinstance(quant_input, torch.fx.Node)
-        quant_params = quant_node.args[1:]
 
         with graph.inserting_before(quant_node):
             new_dequant = graph.call_function(
                 dequant_op,
-                args=(quant_input, *quant_params),
+                args=(quant_input, *dequant_node.args[1:]),
+                kwargs=dict(dequant_node.kwargs),
             )
         new_dequant.meta = {**dequant_node.meta}
-        if "val" in quant_node.meta and isinstance(
-            quant_node.meta["val"], torch.Tensor
+        quant_val = quant_node.meta.get("val")
+        dequant_val = dequant_node.meta.get("val")
+        if isinstance(quant_val, torch.Tensor) and isinstance(
+            dequant_val, torch.Tensor
         ):
-            quant_val = quant_node.meta["val"]
-            new_dequant.meta["val"] = torch.empty(quant_val.shape, dtype=torch.float32)
+            new_dequant.meta["val"] = quant_val.to(dtype=dequant_val.dtype)
 
         quant_node.replace_input_with(quant_input, new_dequant)
 
@@ -658,7 +660,7 @@ def sink_input_dequant_through_transparent_ops(
     """
     Sinks dequantize nodes from quantized input placeholders through transparent ops
     to be adjacent to downstream quantize nodes, enabling dequant-quant fusion.
-    This creates per-branch dequants with matching params.
+    The per-branch dequants preserve the input's quantization parameters.
 
     Args:
         graph_module: The graph module to transform.
