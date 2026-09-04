@@ -187,6 +187,12 @@ void EthosUBackend_execute_end() {
 }
 
 void StartMeasurements() {
+#if defined(__ARM_ARCH_8_1M_MAIN__)
+  // StopMeasurements() disables the cycle counter after each measurement.
+  // Server mode starts a new measurement for every inference.
+  ARM_PMU_Enable();
+  ARM_PMU_CNTR_Enable(PMU_CNTENSET_CCNTR_ENABLE_Msk);
+#endif
   ethosu_delegation_count = 0;
   ethosu_ArmBackendExecuteCycleCount = 0;
   ethosu_ArmWhenNPURunCycleCount = 0;
