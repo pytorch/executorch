@@ -412,8 +412,7 @@ TEST(
   std::vector<executorch::aten::Half> value_values(kv_size);
   std::vector<float> mask_values(
       q_size * kv_size, -std::numeric_limits<float>::infinity());
-  std::vector<executorch::aten::Half> expected_values(
-      num_query_heads * q_size);
+  std::vector<executorch::aten::Half> expected_values(num_query_heads * q_size);
 
   for (int32_t col = 0; col < kv_size; ++col) {
     value_values[col] = static_cast<executorch::aten::Half>(col);
@@ -423,9 +422,8 @@ TEST(
     for (int32_t col = 100; col < q_size; ++col) {
       mask_values[row * kv_size + col] = 0.0f;
     }
-    const float expected = row < 100
-        ? 0.0f
-        : (100.0f + row) * (row - 99) / (2.0f * (row - 98));
+    const float expected =
+        row < 100 ? 0.0f : (100.0f + row) * (row - 99) / (2.0f * (row - 98));
     for (int32_t head = 0; head < num_query_heads; ++head) {
       expected_values[head * q_size + row] =
           static_cast<executorch::aten::Half>(expected);
@@ -448,8 +446,7 @@ TEST(
       /*scale=*/std::nullopt,
       out);
 
-  auto expected =
-      tfHalf.make({1, num_query_heads, q_size, 1}, expected_values);
+  auto expected = tfHalf.make({1, num_query_heads, q_size, 1}, expected_values);
   EXPECT_TENSOR_CLOSE_WITH_TOL(result, expected, 1e-2, 1e-2);
 }
 
