@@ -131,7 +131,10 @@ Error platform_execute(
   // Write outputs from scratch into EValue pointers
   for (int i = 0; i < output_count; i++) {
     int tensor_count = 1, io_count = 1;
-    const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
+    // The offset comes from the (potentially malformed) delegate blob and is
+    // used as the source of a copy out of the scratch buffer; reject anything
+    // that would read outside it.
+    const int out_offset = handles.outputs->io[i].offset;
     // Process input EValue into scratch
     // Outputs are in the index immediately after inputs
     auto tensor_out = args[input_count + i]->toTensor();
@@ -140,6 +143,19 @@ Error platform_execute(
         tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
 
     size_t tensor_bytes = tensor_out.nbytes();
+    if (out_offset < 0 ||
+        static_cast<size_t>(out_offset) + tensor_bytes >
+            handles.scratch_data_size) {
+      ET_LOG(
+          Error,
+          "Output %d scratch offset %d + size %zu out of range for scratch size %zu",
+          i,
+          out_offset,
+          tensor_bytes,
+          handles.scratch_data_size);
+      return Error::InvalidProgram;
+    }
+    const char* output_addr = ethosu_scratch + out_offset;
     size_t io_bytes = static_cast<size_t>(io_count) *
         static_cast<size_t>(handles.outputs->io[i].elem_size);
 
