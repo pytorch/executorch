@@ -77,6 +77,13 @@ class RotaryEmbeddingPattern(torch.nn.Module):
         return freqs_cis.view(shape)
 
 
+class VoxtralRotaryEmbeddingPattern(RotaryEmbeddingPattern):
+    """RoPE variant that broadcasts `[S, D/2]` frequencies explicitly."""
+
+    def _reshape_for_broadcast(self, freqs_cis: torch.Tensor, x: torch.Tensor):
+        return freqs_cis.unsqueeze(0).unsqueeze(2)
+
+
 @lru_cache(maxsize=2)
 @register_pattern_graph("export_llama_rope")
 def get_rope_graphs() -> List[torch.fx.GraphModule]:
@@ -105,6 +112,16 @@ def get_rope_graphs() -> List[torch.fx.GraphModule]:
     gm = edge.exported_program().graph_module
     graphs.append(gm)
 
+    edge = to_edge(
+        export(
+            VoxtralRotaryEmbeddingPattern(),
+            (xq, xk, freqs_cos, freqs_sin),
+            strict=True,
+        ),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    graphs.append(edge.exported_program().graph_module)
+
     return graphs
 
 
@@ -126,7 +143,108 @@ def identify_rotary_emb_io_nodes(
 
     xq_out, xk_out = output_nodes
 
-    return [xq, xk, freqs_cos, freqs_sin, xq_out, xk_out]
+    io_nodes = [xq, xk, freqs_cos, freqs_sin, xq_out, xk_out]
+    vals = [node.meta.get("val") for node in io_nodes]
+    if not all(isinstance(val, torch.Tensor) for val in vals):
+        return None
+
+    xq_val, xk_val, cos_val, sin_val, xq_out_val, xk_out_val = vals
+    if (
+        xq_val.dtype not in (torch.float16, torch.float32)
+        or any(val.dtype != xq_val.dtype for val in vals[1:])
+        or len(xq_val.shape) != 4
+        or len(xk_val.shape) != 4
+        or len(cos_val.shape) != 2
+        or sin_val.shape != cos_val.shape
+        or xq_out_val.shape != xq_val.shape
+        or xk_out_val.shape != xk_val.shape
+        or xq_val.shape[0] != xk_val.shape[0]
+        or xq_val.shape[1] != xk_val.shape[1]
+        or xq_val.shape[3] != xk_val.shape[3]
+        or cos_val.shape[0] != xq_val.shape[1]
+        or cos_val.shape[1] * 2 != xq_val.shape[3]
+        or xq_val.shape[2] < xk_val.shape[2]
+        or xq_val.shape[3] % 8 != 0
+    ):
+        return None
+
+    slice_nodes = [
+        node
+        for node in match.all_nodes
+        if node.target == exir_ops.edge.aten.slice_copy.Tensor
+    ]
+    slice_args = sorted(
+        (node.args[1], node.args[2], node.args[3]) for node in slice_nodes
+    )
+    if slice_args != [(4, 0, 1), (4, 0, 1), (4, 1, 2), (4, 1, 2)]:
+        return None
+
+    squeeze_nodes = [
+        node
+        for node in match.all_nodes
+        if node.target == exir_ops.edge.aten.squeeze_copy.dims
+    ]
+    if len(squeeze_nodes) != 4 or any(node.args[1] != [4] for node in squeeze_nodes):
+        return None
+
+    cat_nodes = [
+        node
+        for node in match.all_nodes
+        if node.target == exir_ops.edge.aten.cat.default
+    ]
+    if len(cat_nodes) != 2 or any(node.args[1] != -1 for node in cat_nodes):
+        return None
+
+    unsqueeze_dims = sorted(
+        node.args[1]
+        for node in match.all_nodes
+        if node.target == exir_ops.edge.aten.unsqueeze_copy.default
+    )
+    if unsqueeze_dims not in ([4] * 4, [0, 0, 2, 2] + [4] * 4):
+        return None
+
+    return io_nodes
+
+
+def _rewrite_frequency_lookup(
+    graph_module: torch.fx.GraphModule, node: torch.fx.Node
+) -> torch.fx.Node:
+    if node.target != exir_ops.edge.aten.index.Tensor or len(node.args) < 2:
+        return node
+
+    table = node.args[0]
+    indices = node.args[1]
+    if (
+        not isinstance(table, torch.fx.Node)
+        or not isinstance(indices, (list, tuple))
+        or len(indices) != 1
+        or not isinstance(indices[0], torch.fx.Node)
+    ):
+        return node
+
+    table_val = table.meta.get("val")
+    index_val = indices[0].meta.get("val")
+    output_val = node.meta.get("val")
+    if (
+        not isinstance(table_val, torch.Tensor)
+        or not isinstance(index_val, torch.Tensor)
+        or not isinstance(output_val, torch.Tensor)
+        or len(table_val.shape) != 2
+        or len(index_val.shape) != 1
+        or len(output_val.shape) != 2
+        or index_val.dtype not in (torch.int32, torch.int64)
+    ):
+        return node
+
+    with graph_module.graph.inserting_before(node):
+        index_select = graph_module.graph.create_node(
+            "call_function",
+            exir_ops.edge.aten.index_select.default,
+            args=(table, 0, indices[0]),
+        )
+    index_select.meta["val"] = output_val
+    node.replace_all_uses_with(index_select)
+    return index_select
 
 
 @register_pattern_replacement("export_llama_rope")
@@ -134,13 +252,15 @@ def create_rotary_emb_custom_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: PatternMatch,
-):
+) -> bool:
     io_nodes = identify_rotary_emb_io_nodes(ep, graph_module, match)
     if io_nodes is None:
-        return
+        return False
 
     assert len(io_nodes) == 6
     xq, xk, freqs_cos, freqs_sin, xq_out, xk_out = io_nodes
+    freqs_cos = _rewrite_frequency_lookup(graph_module, freqs_cos)
+    freqs_sin = _rewrite_frequency_lookup(graph_module, freqs_sin)
 
     # Create the custom op node
     with graph_module.graph.inserting_before(xq_out):
@@ -171,3 +291,4 @@ def create_rotary_emb_custom_op(
 
     xq_out.replace_all_uses_with(getitem_0)
     xk_out.replace_all_uses_with(getitem_1)
+    return True
