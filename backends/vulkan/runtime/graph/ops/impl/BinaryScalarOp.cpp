@@ -147,6 +147,16 @@ void ge_tensor_scalar(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   return add_binary_scalar_op_node(graph, args[0], args[1], args[2], "ge");
 }
 
+void remainder_tensor_scalar(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  VK_CHECK_COND(graph.dtype_of(args[0]) == vkapi::kInt);
+  VK_CHECK_COND(graph.dtype_of(args[2]) == vkapi::kInt);
+  VK_CHECK_COND(extract_int32_scalar(graph, args[1]) != 0);
+  return add_binary_scalar_op_node(
+      graph, args[0], args[1], args[2], "remainder");
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.pow.Tensor_Scalar, pow_tensor_scalar);
   VK_REGISTER_OP(aten.eq.Scalar, eq_tensor_scalar);
@@ -155,6 +165,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.le.Scalar, le_tensor_scalar);
   VK_REGISTER_OP(aten.gt.Scalar, gt_tensor_scalar);
   VK_REGISTER_OP(aten.ge.Scalar, ge_tensor_scalar);
+  VK_REGISTER_OP(aten.remainder.Scalar, remainder_tensor_scalar);
 }
 
 } // namespace vkcompute

@@ -8,6 +8,7 @@ binary_scalar_buffer:
   parameter_names_with_default_values:
     OPERATOR: power_of(X, Y)
     IS_COMPARISON_OP: false
+    IS_REMAINDER_OP: false
     DTYPE: float
     SCALAR_VALUE_TYPE: float
     STORAGE: buffer
@@ -39,3 +40,11 @@ binary_scalar_buffer:
     - NAME: ge_scalar_buffer
       OPERATOR: X >= Y
       IS_COMPARISON_OP: true
+    - NAME: remainder_scalar_buffer
+      OPERATOR: remainder_of(X, Y)
+      IS_REMAINDER_OP: true
+      generate_variant_forall:
+        combination:
+          parameter_names: [DTYPE, SCALAR_VALUE_TYPE]
+          combos:
+            - parameter_values: [int32, int32]
