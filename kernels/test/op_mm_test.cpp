@@ -294,3 +294,19 @@ TEST_F(OpMmOutTest, DISABLED_DynamicShapeUnbound) {
   Tensor ret = op_mm_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
+
+TEST_F(OpMmOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // All three tensors share the same non-default dim order, so the kernel's
+  // same dim order check passes and only the default dim order check rejects.
+  Tensor x = tf.make_with_dimorder({3, 4}, std::vector<float>(12, 2), {1, 0});
+  Tensor y = tf.make_with_dimorder({4, 5}, std::vector<float>(20, 3), {1, 0});
+  Tensor out = tf.make_with_dimorder({3, 5}, std::vector<float>(15), {1, 0});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, y, out));
+}
