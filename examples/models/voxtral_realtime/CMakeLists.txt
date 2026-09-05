@@ -100,6 +100,12 @@ if(TARGET mlxdelegate)
   executorch_target_link_options_shared_lib(mlxdelegate)
 endif()
 
+# Link Vulkan delegate and preserve its static backend registration.
+if(TARGET vulkan_backend)
+  list(APPEND link_libraries vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
+endif()
+
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
 

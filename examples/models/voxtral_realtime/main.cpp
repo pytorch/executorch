@@ -23,6 +23,7 @@
 
 #include <csignal>
 #include <cstdio>
+#include <sstream>
 
 #ifndef _WIN32
 #include <fcntl.h>
@@ -67,7 +68,13 @@ DEFINE_int32(
 DEFINE_string(
     data_path,
     "",
-    "Path to data file (.ptd) for delegate data (required for CUDA and ROCm).");
+    "Path to one delegate data file (.ptd; required for CUDA and ROCm). "
+    "Deprecated; use --data_paths.");
+DEFINE_string(
+    data_paths,
+    "",
+    "Comma-separated delegate data files (.ptd), required when the exported "
+    "model uses external constants.");
 DEFINE_string(
     color,
     "",
@@ -83,6 +90,21 @@ voxtral_realtime::StreamingTranscribeConfig make_streaming_config() {
   voxtral_realtime::StreamingTranscribeConfig config;
   config.temperature = static_cast<float>(FLAGS_temperature);
   return config;
+}
+
+std::vector<std::string> parse_data_paths(const std::string& input) {
+  std::vector<std::string> paths;
+  std::stringstream stream(input);
+  std::string item;
+  while (std::getline(stream, item, ',')) {
+    const auto first = item.find_first_not_of(" \t");
+    if (first == std::string::npos) {
+      continue;
+    }
+    const auto last = item.find_last_not_of(" \t");
+    paths.emplace_back(item.substr(first, last - first + 1));
+  }
+  return paths;
 }
 } // namespace
 
@@ -114,6 +136,15 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  if (!FLAGS_data_path.empty() && !FLAGS_data_paths.empty()) {
+    ET_LOG(Error, "--data_path and --data_paths are mutually exclusive.");
+    return 1;
+  }
+  auto data_paths = parse_data_paths(FLAGS_data_paths);
+  if (!FLAGS_data_path.empty()) {
+    data_paths.push_back(FLAGS_data_path);
+  }
+
   // Install signal handler early so Ctrl+C is caught during load/warmup.
   std::signal(SIGINT, sigint_handler);
 
@@ -124,7 +155,7 @@ int main(int argc, char** argv) {
       FLAGS_model_path,
       FLAGS_tokenizer_path,
       FLAGS_preprocessor_path,
-      FLAGS_data_path);
+      data_paths);
 
   stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
   stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
