@@ -6,7 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/overflows.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
+#include <type_traits>
 
 #include <executorch/backends/aoti/slim/factory/empty.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
@@ -31,10 +33,63 @@ const PalInitializer kPalInitializer{};
 } // namespace
 
 namespace c10 = executorch::backends::aoti::slim::c10;
+
 using c10::Device;
 using c10::DeviceIndex;
 using c10::DeviceType;
 using c10::ScalarType;
+
+namespace {
+
+// Reads the one element as T. Dispatch on the dtype the tensor actually holds:
+// item<T>() copies sizeof(T) bytes and does not check, so asking for the wrong
+// width reads past a one-element allocation.
+//
+// The dtype in each entry point's name is the type the caller wants back, not
+// the type the tensor holds. Generated code reads a boolean branch selector
+// through the int64 entry point, for instance. So convert, and refuse only when
+// the value does not fit, which is what the reference implementation does.
+template <typename To, typename From>
+AOTITorchError narrow_to(From value, To* ret_value) {
+  // Anything at all converts to a boolean, so there is nothing to check there.
+  if (!std::is_same_v<To, bool> && ::c10::overflows<To, From>(value)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        false, InvalidArgument, "reading a single element: value does not fit");
+  }
+  *ret_value = static_cast<To>(value);
+  return Error::Ok;
+}
+
+template <typename T>
+AOTITorchError read_one_element(const SlimTensor* tensor, T* ret_value) {
+  switch (tensor->dtype()) {
+    case ScalarType::Byte:
+      return narrow_to(tensor->item<uint8_t>(), ret_value);
+    case ScalarType::Char:
+      return narrow_to(tensor->item<int8_t>(), ret_value);
+    case ScalarType::Short:
+      return narrow_to(tensor->item<int16_t>(), ret_value);
+    case ScalarType::Int:
+      return narrow_to(tensor->item<int32_t>(), ret_value);
+    case ScalarType::Long:
+      return narrow_to(tensor->item<int64_t>(), ret_value);
+    case ScalarType::Float:
+      return narrow_to(tensor->item<float>(), ret_value);
+    case ScalarType::BFloat16:
+      return narrow_to(
+          static_cast<float>(tensor->item<c10::BFloat16>()), ret_value);
+    case ScalarType::Bool:
+      return narrow_to(tensor->item<bool>(), ret_value);
+    default:
+      ET_CHECK_OR_RETURN_ERROR(
+          false,
+          InvalidArgument,
+          "reading a single element: dtype %d is not supported",
+          static_cast<int>(tensor->dtype()));
+  }
+}
+
+} // namespace
 using executorch::backends::aoti::slim::empty_strided;
 using executorch::backends::aoti::slim::from_blob;
 using executorch::backends::aoti::slim::IntArrayRef;
@@ -195,6 +250,31 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<DeviceType>(device_type) == DeviceType::CPU,
+      InvalidArgument,
+      "aoti_torch_empty_strided_pinned: pinned memory is host memory, so the "
+      "device type must be CPU, got %d",
+      device_type);
+
+  return aoti_torch_empty_strided(
+      ndim,
+      sizes_ptr,
+      strides_ptr,
+      dtype,
+      device_type,
+      device_index,
+      ret_new_tensor);
+}
+
 AOTITorchError aoti_torch_delete_tensor_object(SlimTensor* tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       tensor != nullptr,
@@ -322,34 +402,36 @@ aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking) {
   return Error::Ok;
 }
 
-AOTITorchError aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value) {
-  ET_CHECK_OR_RETURN_ERROR(
-      tensor != nullptr,
-      InvalidArgument,
-      "aoti_torch_item_bool: tensor is null");
+#define ET_CUDA_DEFINE_ITEM_SHIM(SUFFIX, CTYPE)            \
+  AOTITorchError aoti_torch_item_##SUFFIX(                 \
+      SlimTensor* tensor, CTYPE* ret_value) {              \
+    ET_CHECK_OR_RETURN_ERROR(                              \
+        tensor != nullptr,                                 \
+        InvalidArgument,                                   \
+        "aoti_torch_item_" #SUFFIX ": tensor is null");    \
+    ET_CHECK_OR_RETURN_ERROR(                              \
+        ret_value != nullptr,                              \
+        InvalidArgument,                                   \
+        "aoti_torch_item_" #SUFFIX ": ret_value is null"); \
+    ET_CHECK_OR_RETURN_ERROR(                              \
+        tensor->numel() == 1,                              \
+        InvalidArgument,                                   \
+        "aoti_torch_item_" #SUFFIX                         \
+        ": tensor must have exactly 1 element, got %zu",   \
+        tensor->numel());                                  \
+    return read_one_element<CTYPE>(tensor, ret_value);     \
+  }
 
-  ET_CHECK_OR_RETURN_ERROR(
-      ret_value != nullptr,
-      InvalidArgument,
-      "aoti_torch_item_bool: ret_value is null");
+ET_CUDA_DEFINE_ITEM_SHIM(uint8, uint8_t)
+ET_CUDA_DEFINE_ITEM_SHIM(int8, int8_t)
+ET_CUDA_DEFINE_ITEM_SHIM(int16, int16_t)
+ET_CUDA_DEFINE_ITEM_SHIM(int32, int32_t)
+ET_CUDA_DEFINE_ITEM_SHIM(int64, int64_t)
+ET_CUDA_DEFINE_ITEM_SHIM(float32, float)
+ET_CUDA_DEFINE_ITEM_SHIM(bfloat16, c10::BFloat16)
+ET_CUDA_DEFINE_ITEM_SHIM(bool, bool)
 
-  ET_CHECK_OR_RETURN_ERROR(
-      tensor->numel() == 1,
-      InvalidArgument,
-      "aoti_torch_item_bool: tensor must have exactly 1 element, got %zu",
-      tensor->numel());
-
-  ET_CHECK_OR_RETURN_ERROR(
-      tensor->dtype() == ScalarType::Bool,
-      InvalidArgument,
-      "aoti_torch_item_bool: tensor dtype must be Bool");
-
-  // SlimTensor::item<T>() handles both CPU and CUDA tensors.
-  // For CUDA tensors, it copies the value to CPU automatically.
-  *ret_value = tensor->item<bool>();
-
-  return Error::Ok;
-}
+#undef ET_CUDA_DEFINE_ITEM_SHIM
 
 AOTITorchError aoti_torch_assign_tensors_out(
     SlimTensor* src,

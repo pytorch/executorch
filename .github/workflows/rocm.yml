@@ -169,7 +169,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.1"]
+        rocm-version: ["7.2"]
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -206,7 +206,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.1"]
+        rocm-version: ["7.2"]
     with:
       timeout: 180
       no-sudo: true
@@ -248,7 +248,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.1"]
+        rocm-version: ["7.2"]
     with:
       timeout: 180
       no-sudo: true

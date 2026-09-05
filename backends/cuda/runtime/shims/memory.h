@@ -96,6 +96,31 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     SlimTensor** ret_new_tensor);
 
 /**
+ * Allocates ordinary host memory where pinned host memory was asked for.
+ *
+ * There is no pinned allocator here. Pinning only lets a copy to the device
+ * overlap other work, so ordinary memory is correct and slower.
+ *
+ * @param ndim Number of dimensions
+ * @param sizes_ptr Pointer to the sizes, ndim of them
+ * @param strides_ptr Pointer to the strides, ndim of them, or null for
+ *   contiguous
+ * @param dtype Element type, as a scalar type value
+ * @param device_type Must be CPU, since pinned memory is host memory
+ * @param device_index Device index, unused for CPU
+ * @param ret_new_tensor Receives the new tensor
+ * @return Error::Ok on success, Error::InvalidArgument if the device is not CPU
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor);
+
+/**
  * Deletes a tensor object and frees associated resources.
  *
  * For SlimTensor, the underlying storage uses SharedPtr-based reference
@@ -170,18 +195,49 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking);
 
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
+
 /**
- * Extracts a boolean scalar value from a single-element tensor.
+ * Extracts a scalar value from a single-element tensor.
  *
- * The tensor must contain exactly one element and have Bool dtype.
- * For CUDA tensors, this will synchronize to copy the value to CPU.
+ * The type in the name is the type returned, not the tensor's dtype: generated
+ * code reads a boolean branch selector through the int64 entry point. The value
+ * is converted, and rejected only when it does not fit. The tensor must contain
+ * exactly one element. For CUDA tensors, this will synchronize to copy the
+ * value to CPU.
  *
- * @param tensor Single-element boolean tensor (must not be null)
- * @param ret_value Output parameter for the extracted boolean value
+ * @param tensor Single-element tensor (must not be null)
+ * @param ret_value Output parameter for the extracted value
  * @return AOTITorchError error code (Error::Ok on success)
  */
 AOTI_SHIM_EXPORT AOTITorchError
-aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
+aoti_torch_item_uint8(SlimTensor* tensor, uint8_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int8(SlimTensor* tensor, int8_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int16(SlimTensor* tensor, int16_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int32(SlimTensor* tensor, int32_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int64(SlimTensor* tensor, int64_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_float32(SlimTensor* tensor, float* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bfloat16(SlimTensor* tensor, c10::BFloat16* ret_value);
 
 /**
  * Moves a tensor into a new handle and assigns it to the output parameter.

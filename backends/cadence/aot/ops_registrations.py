@@ -490,6 +490,13 @@ lib.define(
 )
 
 lib.define(
+    "quantized_rope_rotate_stacked_halves(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point) -> (Tensor out)"
+)
+lib.define(
+    "quantized_rope_rotate_stacked_halves.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "quantized_softmax(Tensor input, Tensor mask, int dim, int mask_type, Tensor pos, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point) -> (Tensor out)"
 )
 lib.define(
@@ -3134,6 +3141,20 @@ def rope_rotate_stacked_halves_meta(
             len(pos.shape) == 1 and pos.shape[0] == seq
         ), f"{pos.shape} must be [{seq}]"
     return input.new_empty(input.shape, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_rope_rotate_stacked_halves")
+def quantized_rope_rotate_stacked_halves_meta(
+    input: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: Optional[torch.Tensor],
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return rope_rotate_stacked_halves_meta(input, sin_tensor, cos_tensor, pos)
 
 
 @register_fake("cadence::idma_copy")

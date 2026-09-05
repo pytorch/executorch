@@ -238,6 +238,9 @@ _CUDA_LIBRARY_DIRECTORIES = {
     "13": ("nvidia/cu13/lib",),
 }
 
+# Arch subdirectory names MKL's exported link interface appends to its prefix.
+_MKL_ARCH_DIRECTORIES = ("intel64", "intel64_win", "win-x64")
+
 
 def _cmake_args() -> List[str]:
     """CMAKE_ARGS split into arguments, tolerating an unbalanced quote.
@@ -598,6 +601,36 @@ def _is_cuda_toolkit_directory(entry: str) -> bool:
         return True
     # <toolkit>/targets/<arch>/lib
     return len(parts) >= 4 and parts[-3] == "targets" and cuda_named(parts[-4])
+
+
+def _is_unresolved_math_library_directory(entry: str) -> bool:
+    """Whether a runtime search path entry is a maths library directory whose prefix resolved empty.
+
+    Torch's exported CMake package creates a caffe2::mkl imported target, and linking torch brings it
+    in even though this project never asks for MKL. Its link directories are a hardcoded list of four,
+    spelled below MKL_ROOT, which resolves to nothing here, so what the linker records is left
+    anchored at the filesystem root: /lib, /lib/intel64, /lib/intel64_win, /lib/win-x64. The bare
+    /lib does not survive, because CMake filters its own implicit link directories out of the link
+    line.
+
+    An empty prefix is the whole signature, so the entry must be exactly /lib/<arch>. A real
+    installation spells the same arch directory below a prefix, as /opt/intel/mkl/lib/intel64, and
+    that one is a directory the environment genuinely provides.
+
+    Only the three arch directories are handled. The bare prefix/lib is deliberately left, because
+    with a resolving prefix it is an ordinary library directory this project has no business
+    dropping, and with an empty one CMake filters it out as an implicit link directory before the
+    link line is built, so it never reaches a shipped library.
+
+    Dropping these loses nothing: no shipped library names an MKL or OpenMP runtime in DT_NEEDED, so
+    nothing resolves through them, and they sit ahead of the relative hops appended below.
+    """
+    parts = PurePosixPath(entry).parts
+    return (
+        len(parts) == 3
+        and parts[:2] == ("/", "lib")
+        and parts[2] in _MKL_ARCH_DIRECTORIES
+    )
 
 
 def _package_relative_depth(library: Path) -> int:
@@ -1446,6 +1479,9 @@ def _is_usable_runtime_path(
     # directory from the machine that built it. It is kept when no relative route exists, because
     # then it is the only way this library finds torch.
     #
+    # A maths library directory whose prefix resolved empty is dropped for the same reason: nothing in
+    # the wheel resolves through it, and it sits ahead of the relative hops appended below.
+    #
     # Anything else absolute stays, because it is a dependency the environment provides and the wheel
     # has no relative answer for.
     #
@@ -1464,6 +1500,8 @@ def _is_usable_runtime_path(
     # path. A substring test dropped a torch directory that merely sat under a directory named after a
     # CUDA version, which is the one absolute path that has to survive.
     if safe_to_drop_toolkit_paths and _is_cuda_toolkit_directory(entry):
+        return False
+    if _is_unresolved_math_library_directory(entry):
         return False
     if entry.rstrip("/").endswith("/torch/lib") and has_relative_torch_route:
         return False

@@ -236,8 +236,9 @@ void add_q8ta_im2col_node(
 // High level operator impl
 //
 
-void q8ta_conv2d_im2col(
+void q8ta_conv2d_im2col_impl(
     ComputeGraph& graph,
+    const bool use_unsigned_dot,
     const std::vector<ValueRef>& args) {
   int32_t idx = 0;
   const ValueRef packed_int8_input = args.at(idx++);
@@ -260,8 +261,8 @@ void q8ta_conv2d_im2col(
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
   // Prepack weight using linear weight packing (for im2col approach)
-  ValueRef packed_weight =
-      prepack_quantized_linear_weight(graph, weight_quant_config, weight_data);
+  ValueRef packed_weight = prepack_quantized_linear_weight(
+      graph, weight_quant_config, weight_data, use_unsigned_dot);
 
   ValueRef packed_weight_sums = prepack_standard(
       graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
@@ -315,9 +316,15 @@ void q8ta_conv2d_im2col(
 
   // Step 2: Perform pointwise convolution on the im2col result
   const int32_t groups_val = graph.extract_scalar<int32_t>(groups);
+  VK_CHECK_COND(
+      !use_unsigned_dot ||
+          graph.size_at<int64_t>(-1, weight_data) <=
+              kMaxUnsignedDotAccumulatorBytes,
+      "Unsigned q8ta im2col convolution exceeds the accumulator bound");
 
   add_q8ta_conv2d_pw_node(
       graph,
+      use_unsigned_dot,
       packed_int8_im2col,
       input_scale,
       input_zp,
@@ -338,6 +345,16 @@ void q8ta_conv2d_im2col(
       stride,
       padding,
       dilation);
+}
+
+void q8ta_conv2d_im2col(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
+  const ValueRef weight_data = args.at(3);
+  const int64_t k_per_group = graph.size_at<int64_t>(-1, weight_data);
+  const bool use_unsigned_dot = can_use_unsigned_pw_dot(*adapter, k_per_group);
+  q8ta_conv2d_im2col_impl(graph, use_unsigned_dot, args);
 }
 
 REGISTER_OPERATORS {

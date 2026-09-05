@@ -76,21 +76,31 @@ install_pytorch_and_domains() {
   # the image compiler cannot satisfy. The venv inherits the image's
   # site-packages, so PyTorch still builds against the same numpy.
   #
-  # Keep the list in sync with pytorch/pyproject.toml [build-system].requires.
+  # Keep in sync with pytorch/pyproject.toml [build-system].requires.
   local build_venv=/tmp/pytorch-build-venv
   rm -rf "${build_venv}"
   conda_run python -m venv --system-site-packages "${build_venv}"
+  # No pip cmake: scikit-build-core would prefer it over the image's, and it
+  # searches site-packages, where MKL and libomp are not.
   conda_run "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" \
-    "setuptools>=77.0.0,<82" "cmake>=3.27,<4" ninja "packaging>=24.2" \
-    "typing-extensions>=4.10.0" pyyaml six
-  conda_run "${build_venv}/bin/python" -m build --wheel --no-isolation
+    ninja "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
+  # These images have no module scanner, and nothing here uses modules.
+  conda_run env CMAKE_CXX_SCAN_FOR_MODULES=OFF \
+    "${build_venv}/bin/python" -m build --wheel --no-isolation
   rm -rf "${build_venv}"
   pip_install "$(echo dist/*.whl)"
+
+  # A build with no BLAS succeeds silently. Run from / to import the wheel.
+  (cd / && conda_run python -c "
+import torch
+assert torch._C.has_lapack, 'built without LAPACK'
+torch.linalg.qr(torch.randn(4, 4))
+")
 
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.28
+  TORCHVISION_VERSION=release/0.29
   export TORCHVISION_VERSION
 
   install_domains

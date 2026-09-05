@@ -22,7 +22,6 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     ComputeConstantOpsAOTPass,
     ConstantFoldingPass,
     ControlFlowConstInlinePass,
-    Conv1dUnsqueezePass,
     ConvertEluFamilyToEluPass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
@@ -458,6 +457,12 @@ class ArmPassManager(ExportedProgramPassManager):
         shape_env = _get_shape_env_from_gm(graph_module)
         return TosaLoweringContext(self.tosa_spec, shape_env)
 
+    def transform_for_pre_decomposition_pipeline(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply Arm passes before default ATen decompositions."""
+        return exported_program
+
     def _transform_graph_module(self, graph_module: GraphModule):
         # TFA and control-flow submodule paths operate on bare GraphModules
         # without a standalone ExportedProgram to keep in sync.
@@ -597,7 +602,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
-                Conv1dUnsqueezePass(exported_program),
             ]
         )
 
