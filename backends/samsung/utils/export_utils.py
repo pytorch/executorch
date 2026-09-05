@@ -37,6 +37,11 @@ def get_edge_compile_config():
             exir_ops.edge.aten.layer_norm.default,
             exir_ops.edge.aten.matmul.default,
             exir_ops.edge.aten.hardsigmoid.default,
+            exir_ops.edge.aten.round.decimals,
+            exir_ops.edge.aten.median.dim,
+            exir_ops.edge.aten.median.default,
+            exir_ops.edge.aten.adaptive_max_pool2d.default,
+            exir_ops.edge.aten.adaptive_max_pool3d.default,
         ],
     )
 

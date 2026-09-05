@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Samsung Electronics Co. LTD
+# Copyright (c) 2026 Samsung Electronics Co. LTD
 # All rights reserved
 #
 # This source code is licensed under the BSD-style license found in the
@@ -15,8 +15,8 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
 @register_node_visitor
-class TanhVisitor(NodeVisitor):
-    target = "aten.tanh.default"
+class ExpVisitor(NodeVisitor):
+    target = "aten.exp.default"
 
     def define_node(
         self,
@@ -24,11 +24,10 @@ class TanhVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> bool:
-        input = node.args[0]
-        input_id = self.define_tensor(input, enn_graph, vals_to_ids)
+        input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(node.name, "TANH", [input_id], [output_id])
+        enn_graph.define_op(node.name, "Exp", [input_id], [output_id])
 
         return True

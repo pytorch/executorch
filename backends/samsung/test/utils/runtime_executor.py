@@ -157,7 +157,7 @@ class RuntimeExecutor:
                 output_tensor = (
                     torch.from_numpy(output_array)
                     .view(dtype=model_outputs[idx].dtype)
-                    .view(*model_outputs[idx].shape)
+                    .reshape(model_outputs[idx].shape)
                 )
                 result.append(output_tensor)
 
