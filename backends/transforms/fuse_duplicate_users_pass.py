@@ -14,6 +14,9 @@ from torch.fx import GraphModule, Node
 from torch.fx.node import Argument, map_arg
 
 
+DO_NOT_FUSE_DUPLICATE_META_KEY = "do_not_fuse_duplicate"
+
+
 class FuseDuplicateUsersPass(ExportPass):
     """Fuse identical users of a producer node into a single operation.
 
@@ -120,6 +123,8 @@ class FuseDuplicateUsersPass(ExportPass):
         return candidate_groups
 
     def _build_user_signature(self, node: Node) -> Tuple[Hashable, ...] | None:
+        if node.meta.get(DO_NOT_FUSE_DUPLICATE_META_KEY, False):
+            return None
         try:
             normalized_args = self._to_hashable(
                 map_arg(node.args, self._map_leaf_to_key)
