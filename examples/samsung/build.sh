@@ -7,6 +7,11 @@ PROJECT_DIR=$(realpath ${BASE_DIR}/../../)
 
 echo PROJECT_DIR=${PROJECT_DIR}
 
+if [[ -z ${ANDROID_NDK_ROOT} ]]; then
+  echo "Please export ANDROID_NDK_ROOT"
+  exit 1
+fi
+
 ANDROID_ABI=arm64-v8a
 ANDROID_PLATFORM=android-28 # Trace requires over android-23
 

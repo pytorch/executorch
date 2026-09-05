@@ -37,33 +37,9 @@ find_package(gflags REQUIRED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
-#
-# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
-#
-executorch_load_build_variables()
-
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
-)
-
-get_filename_component(
-  EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
-)
-
 add_compile_options(-Wall -Werror -fPIC)
 
 message("Build Samsung Android Examples")
-
-link_directories(${EXECUTORCH_ROOT}/build_samsung_android/lib)
-
-add_library(lib_portable_ops STATIC IMPORTED)
-
-set_target_properties(
-  lib_portable_ops
-  PROPERTIES
-    IMPORTED_LOCATION
-    "${EXECUTORCH_ROOT}/build_samsung_android/lib/libportable_ops_lib.a"
-)
 
 set(__enn_executor_runner__srcs
     ${CMAKE_CURRENT_LIST_DIR}/executor_runner/enn_executor_runner.cpp
@@ -71,12 +47,9 @@ set(__enn_executor_runner__srcs
 
 add_executable(enn_executor_runner ${__enn_executor_runner__srcs})
 
-add_dependencies(enn_executor_runner enn_backend)
+target_include_directories(enn_executor_runner PRIVATE ${EXECUTORCH_ROOT}/..)
 
-target_include_directories(
-  enn_executor_runner PUBLIC ${_common_include_directories}
-                             ${EXECUTORCH_ROOT}/..
-)
+target_compile_options(enn_executor_runner PRIVATE ${_common_compile_options})
 
 target_link_libraries(
   enn_executor_runner PRIVATE enn_logging enn_backend gflags executorch

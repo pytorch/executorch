@@ -45,11 +45,13 @@ firstly for checking stability. (https://soc-developer.semiconductor.samsung.com
 ## Building Executable
 ### Prerequisites
 Please set up the backend before building the executable, See the [backend README](../../backends/samsung/README.md) for details.
-### Building 'enn_executor_runner' for Andoird
-```
+### Building 'enn_executor_runner' for Android
+```bash
+export EXYNOS_AI_LITECORE_ROOT=/path/to/enn_sdk
+export ANDROID_NDK_ROOT=/path/to/android_ndk
 ${EXECUTORCH_ROOT}/examples/samsung/build.sh
 ```
-After the build completes, `enn_executor_runner` can be found at `${EXECUTORCH_ROOT}/build_samsung_andorid/examples/samsung/`
+After the build completes, `enn_executor_runner` can be found at `${EXECUTORCH_ROOT}/build_samsung_android/examples/samsung/`
 ## Execution
 
 
