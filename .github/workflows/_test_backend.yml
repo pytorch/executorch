@@ -40,21 +40,15 @@ on:
         description: 'Runner type for Linux jobs'
         required: false
         type: string
-        default: mt-l-x86iavx512-16-128
+        default: linux.4xlarge.memory
       docker-image:
-        description: 'Name of the docker image to use, without registry or tag suffix'
+        description: 'Docker image for Linux jobs'
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12
 
 jobs:
-  docker-image:
-    name: Resolve CI docker image
-    if: ${{ inputs.run-linux }}
-    uses: ./.github/workflows/_docker-image.yml
-
   test-backend-linux:
-    needs: docker-image
     if: ${{ inputs.run-linux }}
     strategy:
       fail-fast: false
@@ -63,14 +57,11 @@ jobs:
         suite: [models, operators]
         exclude: ${{ fromJSON(inputs.exclude) }}
 
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
-    permissions:
-      id-token: write
-      contents: read
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       ref: ${{ inputs.ref }}
       runner: ${{ inputs.runner-linux }}
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
+      docker-image: ${{ inputs.docker-image }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}

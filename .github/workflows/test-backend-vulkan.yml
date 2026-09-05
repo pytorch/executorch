@@ -21,9 +21,6 @@ jobs:
   # runners. Runs on every PR and nightly.
   test-vulkan:
     uses: ./.github/workflows/_test_backend.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       backend: vulkan
       flows: >-

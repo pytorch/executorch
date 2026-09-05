@@ -19,9 +19,6 @@ concurrency:
 jobs:
   test-arm:
     uses: ./.github/workflows/_test_backend.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       backend: arm
       flows: >-
@@ -38,9 +35,6 @@ jobs:
 
   test-arm-vgf:
     uses: ./.github/workflows/_test_backend.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       backend: arm-vgf
       flows: >-

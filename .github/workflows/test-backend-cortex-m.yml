@@ -49,9 +49,6 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-cortex-m.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
     uses: ./.github/workflows/_test_backend.yml
-    permissions:
-      id-token: write
-      contents: read
     with:
       backend: cortex_m
       flows: '["cortex_m"]'
