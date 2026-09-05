@@ -14,6 +14,7 @@ on:
       - .ci/scripts/cuda_perf_prompts/**
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
+      - .ci/scripts/model_blob_cache.py
   workflow_dispatch:
     inputs:
       models:
@@ -60,6 +61,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/model_blob_cache.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
     runs-on: ubuntu-22.04
     outputs:
@@ -163,6 +165,7 @@ jobs:
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
+        pip install awscli==1.37.21 || echo "::warning::awscli install failed; model blobs stay in the artifact"
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
@@ -178,8 +181,11 @@ jobs:
 
         bash .ci/scripts/export_model_artifact.sh cuda "${{ matrix.model }}" "${{ matrix.quant }}" "$OUTPUT_DIR"
 
-        # Move artifacts to RUNNER_ARTIFACT_DIR for upload
+        # Move artifacts to RUNNER_ARTIFACT_DIR for upload, swapping the
+        # multi-GB weight blob for a pointer into the shared S3 cache.
         mv "$OUTPUT_DIR"/* "${RUNNER_ARTIFACT_DIR}/"
+        python .ci/scripts/model_blob_cache.py stash "${RUNNER_ARTIFACT_DIR}" \
+          --model "${{ matrix.model }}"
         ls -lah "${RUNNER_ARTIFACT_DIR}"
         echo "::endgroup::"
 
@@ -204,6 +210,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/model_blob_cache.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -225,6 +232,8 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
+
+        python .ci/scripts/model_blob_cache.py restore "${RUNNER_ARTIFACT_DIR}"
 
         # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
         # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
@@ -402,6 +411,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/model_blob_cache.py') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
     runs-on: ubuntu-22.04
