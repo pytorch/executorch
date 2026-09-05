@@ -12,6 +12,9 @@ from executorch.backends.cortex_m.quantizer.pattern_checkers import (
     CortexMConv2DCheck,
     CortexMConvTranspose2DCheck,
     CortexMDivCheck,
+    CortexMExplicitConv1DCheck,
+    CortexMExplicitConv2DCheck,
+    CortexMExplicitConvTranspose2DCheck,
     CortexMLinearCheck,
     CortexMMaxPool2DCheck,
     CortexMSoftmaxCheck,
@@ -100,6 +103,42 @@ CONV_OP_PATTERNS = {
     ): CortexMConv2DCheck,
     (torch.ops.aten.conv2d.default, torch.ops.aten.clamp.default): CortexMConv2DCheck,
     (torch.ops.aten.conv2d.default, torch.ops.aten.clamp_.default): CortexMConv2DCheck,
+}
+
+CONV1D_OP_PATTERNS = {
+    (torch.ops.aten.conv1d.default,): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.relu.default,
+    ): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.relu_.default,
+    ): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardtanh_.default,
+    ): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardsigmoid.default,
+    ): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardsigmoid_.default,
+    ): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.clamp.default,
+    ): CortexMExplicitConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.clamp_.default,
+    ): CortexMExplicitConv1DCheck,
 }
 
 CONV_TRANSPOSE_OP_PATTERNS = {
@@ -208,4 +247,14 @@ CORTEX_M_QUANTIZER_SUPPORT_DICT = (
     | POOL_OP_PATTERNS
     | BMM_OP_PATTERNS
     | ACTIVATION_OP_PATTERNS
+)
+
+CORTEX_M_EXPLICIT_LAYOUT_QUANTIZER_SUPPORT_DICT = (
+    CORTEX_M_QUANTIZER_SUPPORT_DICT
+    | CONV1D_OP_PATTERNS
+    | {pattern: CortexMExplicitConv2DCheck for pattern in CONV_OP_PATTERNS}
+    | {
+        pattern: CortexMExplicitConvTranspose2DCheck
+        for pattern in CONV_TRANSPOSE_OP_PATTERNS
+    }
 )

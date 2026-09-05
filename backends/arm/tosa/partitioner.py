@@ -787,6 +787,22 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
         }
+        ops_to_not_decompose = (
+            ops_to_not_decompose_always
+            | ops_to_not_decompose_if_quant_op
+            | ops_to_not_decompose_if_fp
+            | ops_to_not_decompose_if_integer
+        )
+
+        if not self.tosa_spec.is_U55_subset:
+            # Tosa operator "RESIZE" is not supported on U55. Since
+            # upsample_bilinear2d and upsample_nearest2d decompose into that it
+            # will not be possible to delegate those operators on U55. If we
+            # have said here to not decompose them there will be an error saying
+            # the operator was not decomposed. It will not be possible for it
+            # to end up on either CPU or NPU.
+            ops_to_not_decompose.add(torch.ops.aten.upsample_nearest2d.vec)
+            ops_to_not_decompose.add(torch.ops.aten.upsample_bilinear2d.vec)
 
         def filter_fn(node: torch.fx.Node) -> bool:
             """Return True if an op should not be decomposed.
@@ -803,6 +819,11 @@ class TOSAPartitioner(Partitioner):
             """
             if _is_custom_partition_op(self._custom_partition_ops, node.target):
                 return True
+            if (
+                node.target in ops_to_not_decompose
+                and get_first_fake_tensor(node).dtype == torch.float64
+            ):
+                return False
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp
@@ -873,21 +894,5 @@ class TOSAPartitioner(Partitioner):
                 return True
             return False
 
-        ops_to_not_decompose = list(
-            ops_to_not_decompose_always
-            | ops_to_not_decompose_if_quant_op
-            | ops_to_not_decompose_if_fp
-            | ops_to_not_decompose_if_integer
-        )
-        ops_to_not_decompose.extend(self._custom_partition_ops)
-
-        if not self.tosa_spec.is_U55_subset:
-            # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
-            # and upsample_nearest2d decompose into that it will not be possible to
-            # delegate those operators on U55. If we have said here to not decompose
-            # them there will be an error saying the operator was not decomposed. It
-            # will not be possible for it to end up on either CPU or NPU.
-            ops_to_not_decompose.append(torch.ops.aten.upsample_nearest2d.vec)
-            ops_to_not_decompose.append(torch.ops.aten.upsample_bilinear2d.vec)
-
-        return (ops_to_not_decompose, filter_fn)
+        ops_to_not_decompose.update(self._custom_partition_ops)
+        return (list(ops_to_not_decompose), filter_fn)
