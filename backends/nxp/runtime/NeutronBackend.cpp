@@ -442,8 +442,20 @@ class NeutronBackend final : public PyTorchBackendInterface {
       auto arg = args[cfg->inputMap[i]]->toTensor();
       auto dim_order = arg.dim_order().data();
 
-      if (cfg->inputTranspositionFlags[i] &&
-          multipleChannelsPresent(arg.sizes())) {
+      if (cfg->inputTranspositionFlags[i]) {
+        if (!multipleChannelsPresent(arg.sizes())) {
+          // The input has only 1 channel, so NCHW and NHWC data is equivalent
+          // and no transposition is needed.
+          if (!is_channels_last_dim_order(dim_order, arg.dim()) &&
+              !is_contiguous_dim_order(dim_order, arg.dim())) {
+            ET_LOG(Error, "Input %d uses unsupported dim-order.", i);
+            print_dim_order(dim_order, arg.dim());
+            return Error::InvalidProgram;
+          }
+
+          cfg->dcfg.inputs[i] = arg.const_data_ptr();
+          continue;
+        }
         // The input must be transposed.
         if (arg.sizes().size() < 3) {
           ET_LOG(Error, "Unable to transpose 1D and 2D input to channel last");
@@ -496,10 +508,21 @@ class NeutronBackend final : public PyTorchBackendInterface {
       auto arg = args[cfg->numInputArgs + cfg->outputMap[i]]->toTensor();
       auto dim_order = arg.dim_order().data();
 
-      if (cfg->outputTranspositionFlags[i] &&
-          multipleChannelsPresent(arg.sizes())) {
-        // The output will have to be transposed.
+      if (cfg->outputTranspositionFlags[i]) {
+        if (!multipleChannelsPresent(arg.sizes())) {
+          // The output has only 1 channel, so NCHW and NHWC data is equivalent
+          // and no transposition is needed.
+          if (!is_channels_last_dim_order(dim_order, arg.dim()) &&
+              !is_contiguous_dim_order(dim_order, arg.dim())) {
+            ET_LOG(Error, "Output %d uses unsupported dim-order.", i);
+            print_dim_order(dim_order, arg.dim());
+            return Error::InvalidProgram;
+          }
 
+          cfg->dcfg.outputs[i] = arg.mutable_data_ptr();
+          continue;
+        }
+        // The output will have to be transposed.
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The tensor will already be correctly permuted. No transposition
           //  needed.
