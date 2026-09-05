@@ -13,6 +13,7 @@ from executorch.backends.vulkan.op_registry import (
     is_custom_sdpa_node_supported,
     is_general_sdpa_node_supported,
     is_integer_remainder_scalar_node_supported,
+    is_ring_sdpa_node_supported,
     is_update_cache_with_indices_node_supported,
     vulkan_supported_ops,
 )
@@ -204,6 +205,58 @@ class TestGeneralSDPASupport(TestCase):
         for node in cases:
             with self.subTest(args=node.args):
                 self.assertFalse(is_general_sdpa_node_supported(node))
+
+
+class TestRingSDPASupport(TestCase):
+    @staticmethod
+    def _tensor_node(shape, dtype=torch.float32):
+        node = torch.fx.Graph().placeholder("tensor")
+        node.meta["val"] = SimpleNamespace(shape=shape, dtype=dtype)
+        return node
+
+    def _node(
+        self,
+        q_shape=(1, 1, 32, 128),
+        k_shape=(1, 16384, 8, 128),
+        v_shape=(1, 16384, 8, 128),
+        window_size=8192,
+        dtype=torch.float32,
+    ):
+        return SimpleNamespace(
+            args=(
+                self._tensor_node(q_shape, dtype),
+                self._tensor_node(k_shape, dtype),
+                self._tensor_node(v_shape, dtype),
+                object(),
+                window_size,
+            )
+        )
+
+    def test_accepts_decoder_and_encoder_contracts(self) -> None:
+        self.assertTrue(is_ring_sdpa_node_supported(self._node()))
+        self.assertTrue(
+            is_ring_sdpa_node_supported(
+                self._node(
+                    q_shape=(1, 4, 32, 64),
+                    k_shape=(1, 1500, 32, 64),
+                    v_shape=(1, 1500, 32, 64),
+                    window_size=750,
+                    dtype=torch.float16,
+                )
+            )
+        )
+
+    def test_rejects_invalid_cache_head_and_window_contracts(self) -> None:
+        cases = (
+            self._node(k_shape=(1, 8192, 8, 128), window_size=8192),
+            self._node(v_shape=(1, 16384, 4, 128)),
+            self._node(q_shape=(1, 1, 30, 128)),
+            self._node(window_size=0),
+            self._node(window_size=8192.0),
+        )
+        for node in cases:
+            with self.subTest(args=node.args):
+                self.assertFalse(is_ring_sdpa_node_supported(node))
 
 
 class TestIntegerRemainderScalarSupport(TestCase):

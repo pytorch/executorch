@@ -22,6 +22,7 @@
 
 #include "test_utils.h"
 
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <limits>
@@ -655,6 +656,153 @@ at::Tensor general_sdpa_reference_impl(
   return at::matmul(attn, expanded_v);
 }
 
+at::Tensor ring_sdpa_reference_impl(
+    const at::Tensor& q,
+    const at::Tensor& k_cache,
+    const at::Tensor& v_cache,
+    const int64_t start_pos,
+    const int64_t window_size) {
+  const int64_t seq_len = q.size(1);
+  const int64_t cache_len = k_cache.size(1);
+  const int64_t oldest_pos = std::max(start_pos - window_size + 1, 0L);
+  const int64_t context_len = start_pos + seq_len - oldest_pos;
+  at::Tensor cache_indices = at::remainder(
+      at::arange(context_len, at::TensorOptions().dtype(at::kLong)) +
+          oldest_pos,
+      cache_len);
+
+  at::Tensor k = k_cache.index_select(1, cache_indices);
+  at::Tensor v = v_cache.index_select(1, cache_indices);
+  if (q.size(2) != k.size(2)) {
+    const int64_t repeats = q.size(2) / k.size(2);
+    k = at::repeat_interleave(k, repeats, 2);
+    v = at::repeat_interleave(v, repeats, 2);
+  }
+
+  const at::Tensor q_bhsd = q.transpose(1, 2).to(at::kFloat);
+  const at::Tensor k_bhsd = k.transpose(1, 2).to(at::kFloat);
+  const at::Tensor v_bhsd = v.transpose(1, 2).to(at::kFloat);
+  at::Tensor attn = at::matmul(q_bhsd, k_bhsd.transpose(-2, -1)) /
+      std::sqrt(static_cast<float>(q.size(-1)));
+
+  at::Tensor mask = at::full(
+      {seq_len, context_len},
+      -std::numeric_limits<float>::infinity(),
+      at::TensorOptions().dtype(at::kFloat));
+  auto mask_access = mask.accessor<float, 2>();
+  for (int64_t s = 0; s < seq_len; ++s) {
+    const int64_t query_pos = start_pos + s;
+    for (int64_t c = 0; c < context_len; ++c) {
+      const int64_t key_pos = oldest_pos + c;
+      const int64_t distance = query_pos - key_pos;
+      if (distance >= 0 && distance < window_size) {
+        mask_access[s][c] = 0.0f;
+      }
+    }
+  }
+
+  attn = at::softmax(attn + mask, -1);
+  return at::matmul(attn, v_bhsd).transpose(1, 2);
+}
+
+void test_vulkan_ring_sdpa(
+    const int64_t start_pos,
+    const int64_t seq_len,
+    const vkcompute::utils::StorageType storage_type,
+    const at::ScalarType dtype = at::kFloat,
+    const int64_t max_seq_len = -1,
+    const bool buffer_cache = false,
+    const int64_t window_size = 4) {
+  constexpr int64_t batch_size = 1;
+  constexpr int64_t num_heads = 4;
+  constexpr int64_t num_kv_heads = 2;
+  constexpr int64_t head_dim = 8;
+  const int64_t cache_len = window_size * 2;
+
+  at::manual_seed(20260816 + start_pos + seq_len);
+  at::Tensor q = at::rand(
+      {batch_size, seq_len, num_heads, head_dim},
+      at::TensorOptions().dtype(dtype));
+  at::Tensor k_cache = at::zeros(
+      {batch_size, cache_len, num_kv_heads, head_dim},
+      at::TensorOptions().dtype(dtype));
+  at::Tensor v_cache = at::zeros_like(k_cache);
+  for (int64_t pos = 0; pos < start_pos + seq_len; ++pos) {
+    k_cache.select(1, pos % cache_len)
+        .copy_(at::rand({batch_size, num_kv_heads, head_dim}).to(dtype));
+    v_cache.select(1, pos % cache_len)
+        .copy_(at::rand({batch_size, num_kv_heads, head_dim}).to(dtype));
+  }
+
+  const at::Tensor reference_out =
+      ring_sdpa_reference_impl(q, k_cache, v_cache, start_pos, window_size);
+
+  using namespace vkcompute;
+  GraphConfig config;
+  ComputeGraph graph(config);
+  std::vector<int64_t> graph_q_sizes = q.sizes().vec();
+  if (max_seq_len > 0) {
+    graph_q_sizes.at(1) = max_seq_len;
+  }
+  IOValueRef r_q = graph.add_input_tensor(
+      graph_q_sizes, from_at_scalartype(dtype), storage_type);
+  const utils::StorageType cache_storage =
+      buffer_cache ? utils::kBuffer : storage_type;
+  IOValueRef r_k = graph.add_input_tensor(
+      k_cache.sizes().vec(), from_at_scalartype(dtype), cache_storage);
+  IOValueRef r_v = graph.add_input_tensor(
+      v_cache.sizes().vec(), from_at_scalartype(dtype), cache_storage);
+  const ValueRef r_start_pos = graph.add_symint(start_pos);
+  const ValueRef r_window_size = graph.add_scalar<int64_t>(window_size);
+  const ValueRef r_out =
+      graph.add_tensor(graph_q_sizes, from_at_scalartype(dtype), storage_type);
+
+  VK_GET_OP_FN("et_vk.ring_sdpa.default")
+  (graph, {r_q.value, r_k.value, r_v.value, r_start_pos, r_window_size, r_out});
+  const ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+  if (max_seq_len > 0) {
+    graph.resize_input(0, q.sizes().vec());
+    graph.propagate_resize();
+  }
+  graph.maybe_cast_and_copy_into_staging(
+      r_q.staging, q.const_data_ptr(), q.numel(), from_at_scalartype(dtype));
+  graph.maybe_cast_and_copy_into_staging(
+      r_k.staging,
+      k_cache.const_data_ptr(),
+      k_cache.numel(),
+      from_at_scalartype(dtype));
+  graph.maybe_cast_and_copy_into_staging(
+      r_v.staging,
+      v_cache.const_data_ptr(),
+      v_cache.numel(),
+      from_at_scalartype(dtype));
+  graph.execute();
+
+  at::Tensor vk_out = at::zeros_like(q).contiguous();
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(dtype));
+
+  const double tolerance = dtype == at::kHalf ? 1e-2 : 1e-4;
+  const at::Tensor vk_out_float = vk_out.to(at::kFloat);
+  if (!at::allclose(reference_out, vk_out_float, tolerance, tolerance)) {
+    std::cout << "ring SDPA mismatch at start_pos=" << start_pos
+              << ", seq_len=" << seq_len << ", max_seq_len=" << max_seq_len
+              << ", storage=" << storage_type << std::endl;
+    std::cout << "reference=" << reference_out.flatten() << std::endl;
+    std::cout << "vulkan=" << vk_out_float.flatten() << std::endl;
+    std::cout << "max_diff="
+              << at::max(at::abs(reference_out - vk_out_float)).item<float>()
+              << std::endl;
+  }
+  ASSERT_TRUE(at::allclose(reference_out, vk_out_float, tolerance, tolerance));
+}
+
 void test_vulkan_general_sdpa(
     const int batch_size,
     const int num_heads,
@@ -771,9 +919,7 @@ void test_vulkan_general_sdpa(
       graph_bias_sizes.at(graph_bias_sizes.size() - 2) = max_q_seq_len;
     }
     r_bias_io = graph.add_input_tensor(
-        graph_bias_sizes,
-        from_at_scalartype(dtype),
-        kv_input_storage);
+        graph_bias_sizes, from_at_scalartype(dtype), kv_input_storage);
     r_bias = r_bias_io.value;
   }
 
@@ -1071,7 +1217,9 @@ TEST(VulkanGeneralSDPATest, test_general_sdpa_voxtral_streaming_initial) {
       /*causal_prefix_mask=*/true);
 }
 
-TEST(VulkanGeneralSDPATest, test_general_sdpa_voxtral_streaming_dynamic_buffer) {
+TEST(
+    VulkanGeneralSDPATest,
+    test_general_sdpa_voxtral_streaming_dynamic_buffer) {
   test_vulkan_general_sdpa(
       /*batch_size=*/1,
       /*num_heads=*/32,
@@ -1162,6 +1310,96 @@ TEST(
       /*clone_kv_mask_to_storage=*/true,
       /*permute_kv_before_clone=*/true,
       /*update_kv_before_permute=*/true);
+}
+
+TEST(VulkanRingSDPATest, test_decoder_wrap_boundaries) {
+  for (const auto storage_type :
+       {vkcompute::utils::kBuffer, vkcompute::utils::kTexture3D}) {
+    for (const int64_t start_pos : {0, 3, 4, 7, 8}) {
+      test_vulkan_ring_sdpa(start_pos, 1, storage_type);
+    }
+  }
+}
+
+TEST(VulkanRingSDPATest, test_encoder_wrap_boundaries) {
+  for (const auto storage_type :
+       {vkcompute::utils::kBuffer, vkcompute::utils::kTexture3D}) {
+    for (const int64_t start_pos : {0, 4, 8}) {
+      test_vulkan_ring_sdpa(start_pos, 4, storage_type);
+    }
+  }
+}
+
+TEST(VulkanRingSDPATest, test_encoder_wrap_fp16) {
+  test_vulkan_ring_sdpa(8, 4, vkcompute::utils::kBuffer, /*dtype=*/at::kHalf);
+}
+
+TEST(VulkanRingSDPATest, test_texture_io_buffer_cache) {
+  test_vulkan_ring_sdpa(
+      8,
+      1,
+      vkcompute::utils::kTexture3D,
+      /*dtype=*/at::kFloat,
+      /*max_seq_len=*/-1,
+      /*buffer_cache=*/true);
+  test_vulkan_ring_sdpa(
+      8,
+      4,
+      vkcompute::utils::kTexture3D,
+      /*dtype=*/at::kHalf,
+      /*max_seq_len=*/-1,
+      /*buffer_cache=*/true);
+}
+
+TEST(VulkanRingSDPATest, test_two_chunk_encoder) {
+  for (const int64_t start_pos : {0, 8, 12, 16}) {
+    test_vulkan_ring_sdpa(
+        start_pos,
+        8,
+        vkcompute::utils::kTexture3D,
+        /*dtype=*/at::kFloat,
+        /*max_seq_len=*/-1,
+        /*buffer_cache=*/true,
+        /*window_size=*/8);
+  }
+}
+
+TEST(VulkanRingSDPATest, test_dynamic_decoder_uses_tiled_path) {
+  for (const auto storage_type :
+       {vkcompute::utils::kBuffer, vkcompute::utils::kTexture3D}) {
+    test_vulkan_ring_sdpa(
+        0,
+        1,
+        storage_type,
+        /*dtype=*/at::kFloat,
+        /*max_seq_len=*/4);
+  }
+}
+
+TEST(VulkanRingSDPATest, test_rejects_resize_beyond_allocated_capacity) {
+  using namespace vkcompute;
+
+  GraphConfig config;
+  ComputeGraph graph(config);
+  IOValueRef q =
+      graph.add_input_tensor({1, 4, 4, 8}, vkapi::kFloat, utils::kBuffer);
+  IOValueRef k =
+      graph.add_input_tensor({1, 8, 2, 8}, vkapi::kFloat, utils::kBuffer);
+  IOValueRef v =
+      graph.add_input_tensor({1, 8, 2, 8}, vkapi::kFloat, utils::kBuffer);
+  const ValueRef start_pos = graph.add_symint(8);
+  const ValueRef window_size = graph.add_scalar<int64_t>(4);
+  const ValueRef out =
+      graph.add_tensor({1, 4, 4, 8}, vkapi::kFloat, utils::kBuffer);
+
+  VK_GET_OP_FN("et_vk.ring_sdpa.default")
+  (graph, {q.value, k.value, v.value, start_pos, window_size, out});
+  graph.set_output_tensor(out);
+  graph.prepare();
+  graph.prepack();
+
+  graph.resize_input(0, {1, 5, 4, 8});
+  EXPECT_THROW(graph.propagate_resize(), vkapi::Error);
 }
 
 #ifndef VULKAN_GENERAL_SDPA_ONLY
