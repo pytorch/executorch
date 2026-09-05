@@ -194,6 +194,12 @@ class ModelArgs:
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
 
+        if self.no_rope_layer_interval is not None and self.no_rope_layer_interval <= 0:
+            raise ValueError(
+                "no_rope_layer_interval must be a positive integer, "
+                f"got {self.no_rope_layer_interval}"
+            )
+
         # rope_theta overrides rope_freq_base since it's the official name.
         if self.rope_theta is not None:
             self.rope_freq_base = self.rope_theta

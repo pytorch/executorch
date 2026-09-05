@@ -439,6 +439,14 @@ class AttentionMHA(Attention):
         self.layer_id = layer_id
         self.rope = rope
 
+        interval = args.no_rope_layer_interval
+        rope_layer_id = (
+            args.n_layers - args.num_kv_shared_layers - 1
+            if self.is_kv_shared_layer
+            else layer_id
+        )
+        self.use_rope = interval is None or (rope_layer_id + 1) % interval != 0
+
         causal_mask = torch.tril(
             torch.ones(
                 self.max_context_len,
@@ -535,7 +543,8 @@ class AttentionMHA(Attention):
                 q = q * self.scale_query_by
 
         # Apply RoPE to Q only (K already has RoPE from donor layer)
-        q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
+        if self.use_rope:
+            q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
         q = q.transpose(1, 2)
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
@@ -569,7 +578,8 @@ class AttentionMHA(Attention):
                 q = q * self.scale_query_by
             k = self.k_norm_fn(k)
 
-        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
+        if self.use_rope:
+            q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
