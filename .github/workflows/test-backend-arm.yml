@@ -35,6 +35,12 @@ jobs:
       timeout: 120
       run-linux: true
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      # The Ethos-U models cells kill their OSDC pod partway through reporting
+      # failures, on every combination of vendor, worker count and memory
+      # tried, while the same suites complete on EC2. Back to v2 until that is
+      # understood. test-arm-vgf stays on v3, it is unaffected.
+      use-v2: true
+      runner-linux: linux.4xlarge.memory
 
   test-arm-vgf:
     uses: ./.github/workflows/_test_backend.yml

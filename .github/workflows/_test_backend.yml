@@ -46,16 +46,24 @@ on:
         required: false
         type: string
         default: ci-image:executorch-ubuntu-22.04-clang12
+      use-v2:
+        description: |
+          Run the Linux tests on linux_job_v2 and EC2 instead of linux_job_v3
+          and OSDC. Pass a `runner-linux` from scale-config.yml with it, since
+          the default here is an OSDC label.
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   docker-image:
     name: Resolve CI docker image
-    if: ${{ inputs.run-linux }}
+    if: ${{ inputs.run-linux && !inputs.use-v2 }}
     uses: ./.github/workflows/_docker-image.yml
 
   test-backend-linux:
     needs: docker-image
-    if: ${{ inputs.run-linux }}
+    if: ${{ inputs.run-linux && !inputs.use-v2 }}
     strategy:
       fail-fast: false
       matrix:
@@ -79,9 +87,33 @@ jobs:
 
         source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
 
+  test-backend-linux-v2:
+    if: ${{ inputs.run-linux && inputs.use-v2 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flow: ${{ fromJSON(inputs.flows) }}
+        suite: [models, operators]
+        exclude: ${{ fromJSON(inputs.exclude) }}
+
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      ref: ${{ inputs.ref }}
+      runner: ${{ inputs.runner-linux }}
+      docker-image: ${{ inputs.docker-image }}
+      submodules: recursive
+      timeout: ${{ inputs.timeout }}
+      upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
+      script: |
+        set -eux
+
+        source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
+
   package-golden-artifacts:
-    if: ${{ inputs.run-linux }}
-    needs: test-backend-linux
+    # Not cancelled rather than success: one of the two Linux jobs above is
+    # always skipped, and a skipped dependency would skip this too.
+    if: ${{ !cancelled() && inputs.run-linux }}
+    needs: [test-backend-linux, test-backend-linux-v2]
     runs-on: linux.2xlarge
     steps:
       - name: Download model test artifacts
