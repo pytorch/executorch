@@ -104,7 +104,8 @@ typedef struct {
 // Neutron compute has no access to FLASH.
 // Prefetch weights from FLASH to SRAM using memcpy.
 // For a model converted with --fetch_constants_to_sram.
-void copy(void* dst, const void* src, uint32_t size, uint32_t channel) {
+// cppcheck-suppress constParameterCallback
+void copy(void* dst, void* src, uint32_t size, uint32_t channel) {
   memcpy(dst, src, size);
 }
 void wait(uint32_t channel) {}
