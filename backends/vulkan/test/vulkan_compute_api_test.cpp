@@ -92,6 +92,14 @@ std::vector<std::vector<int64_t>> standard_sizes_to_test = {
     {3, 8, 13, 17},
 };
 
+TEST(TensorUtilsTest, CalculateBroadcastedOutputSizeHandlesScalars) {
+  EXPECT_EQ(
+      calculate_broadcasted_output_size({}, {}), (std::vector<int64_t>{}));
+  EXPECT_EQ(
+      calculate_broadcasted_output_size({}, {2, 3}),
+      (std::vector<int64_t>{2, 3}));
+}
+
 //
 // Compute API Tests
 //
@@ -3746,6 +3754,44 @@ void test_to_copy() {
 
 TEST(VulkanComputeGraphOpsTest, test_to_copy) {
   test_to_copy();
+}
+
+TEST(VulkanComputeGraphOpsTest, test_to_copy_buffer_same_dtype) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kBuffer);
+  ComputeGraph graph(config);
+
+  const std::vector<int64_t> sizes{2, 3, 4};
+  IOValueRef in = graph.add_input_tensor(
+      sizes, vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  std::vector<float> input_data = create_random_float_buffer(24, -1024, 1024);
+  graph.maybe_cast_and_copy_into_staging(
+      in.staging, input_data.data(), input_data.size(), vkapi::kFloat);
+
+  IOValueRef out;
+  out.value = graph.add_tensor(
+      sizes, vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  VK_GET_OP_FN("aten._to_copy.default")(
+      graph,
+      {in.value,
+       graph.add_none(),
+       graph.add_none(),
+       graph.add_none(),
+       graph.add_none(),
+       graph.add_none(),
+       graph.add_none(),
+       out.value});
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.prepack();
+  graph.propagate_resize();
+  graph.execute();
+
+  std::vector<float> output_data(input_data.size());
+  graph.maybe_cast_and_copy_from_staging(
+      out.staging, output_data.data(), output_data.size(), vkapi::kFloat);
+  EXPECT_EQ(input_data, output_data);
 }
 
 vkapi::ShaderInfo pick_dynamic_dispatch_shader(
