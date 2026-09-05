@@ -22,6 +22,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <array>
 #include <cmath>
 
 namespace vkcompute {
@@ -480,6 +481,29 @@ void add_sdpa_kv_cache_update_node(
       nullptr));
 }
 
+void add_sdpa_kv_cache_update_indices_node(
+    ComputeGraph& graph,
+    const ValueRef projected,
+    const ValueRef cache,
+    const ValueRef indices) {
+  std::string kernel_name("sdpa_kv_cache_update_indices");
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(cache));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(projected));
+  add_dtype_suffix(kernel_name, graph.dtype_of(projected));
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      kv_cache_update_gwg,
+      default_pick_lwg,
+      {{cache, vkapi::kWrite}, {{projected, indices}, vkapi::kRead}},
+      {graph.sizes_ubo(cache), graph.sizes_ubo(projected)},
+      {},
+      {},
+      {},
+      nullptr));
+}
+
 // Unified QK node (attn_weights = scale * Q @ K^T [+ bias]).
 // LLM: pass input_pos_symint (real symint), attn_mask = kDummyValueRef.
 // FUSED: pass input_pos_symint = kDummyValueRef, attn_mask = valid ref or
@@ -664,6 +688,40 @@ void update_cache_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   add_sdpa_kv_cache_update_node(graph, input_pos_symint, value, cache);
 }
 
+void update_cache_with_indices_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef value = args[arg_idx++];
+  const ValueRef cache = args[arg_idx++];
+  const ValueRef start_pos = args[arg_idx++];
+  const ValueRef indices = args[arg_idx++];
+  const ValueRef out = args[arg_idx++];
+
+  (void)start_pos;
+  (void)out;
+
+  VK_CHECK_COND(graph.dim_of(value) == 4);
+  VK_CHECK_COND(graph.dim_of(cache) == 4);
+  VK_CHECK_COND(graph.dim_of(indices) == 2);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, value) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, cache) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-2, indices) == 1);
+  VK_CHECK_COND(
+      graph.size_at<int32_t>(-1, indices) == graph.size_at<int32_t>(-3, value));
+  VK_CHECK_COND(
+      graph.size_at<int32_t>(-1, value) == graph.size_at<int32_t>(-1, cache));
+  VK_CHECK_COND(
+      graph.size_at<int32_t>(-2, value) == graph.size_at<int32_t>(-2, cache));
+  VK_CHECK_COND(graph.dtype_of(value) == graph.dtype_of(cache));
+  VK_CHECK_COND(graph.dtype_of(indices) == vkapi::kInt);
+  VK_CHECK_COND(graph.packed_dim_of(value) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(cache) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.is_contiguous_buffer_tensor(indices));
+
+  add_sdpa_kv_cache_update_indices_node(graph, value, cache, indices);
+}
+
 void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int arg_idx = 0;
   const ValueRef q_projected = args[arg_idx++];
@@ -727,7 +785,9 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // 32*2048*2048 lands exactly on maxStorageBufferRange/4 and the shaders index
   // out of bounds, corrupting attention output.
   if (attn_weights_storage == utils::kBuffer) {
-    const int64_t max_buffer_numel = graph.max_buffer_numel();
+    const int64_t max_buffer_numel =
+        graph.max_buffer_nbytes() /
+        static_cast<int64_t>(vkapi::element_size(graph.dtype_of(q_projected)));
     if (num_q_heads * utils::align_up_4(max_seq_len) * padded_context_len >=
         max_buffer_numel) {
       // Largest max_seq_len whose padded allocation stays under the limit.
@@ -906,14 +966,43 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.dim_of(q) == 4);
   VK_CHECK_COND(graph.dim_of(k) == 4);
   VK_CHECK_COND(graph.dim_of(v) == 4);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, q) == graph.size_at<int32_t>(-4, k));
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, q) == graph.size_at<int32_t>(-4, v));
   // Head dim must match between Q and K
   VK_CHECK_COND(graph.size_at<int32_t>(-1, q) == graph.size_at<int32_t>(-1, k));
+  VK_CHECK_COND(graph.size_at<int32_t>(-1, q) == graph.size_at<int32_t>(-1, v));
   // K and V must have same sequence length
   VK_CHECK_COND(graph.size_at<int32_t>(-2, k) == graph.size_at<int32_t>(-2, v));
+  const int32_t num_q_heads = graph.size_at<int32_t>(-3, q);
+  const int32_t num_kv_heads = graph.size_at<int32_t>(-3, k);
+  VK_CHECK_COND(num_kv_heads == graph.size_at<int32_t>(-3, v));
+  VK_CHECK_COND(num_kv_heads > 0);
+  VK_CHECK_COND(num_q_heads >= num_kv_heads);
+  VK_CHECK_COND(num_q_heads % num_kv_heads == 0);
+  VK_CHECK_COND(graph.dtype_of(q) == graph.dtype_of(k));
+  VK_CHECK_COND(graph.dtype_of(q) == graph.dtype_of(v));
   // All tensors must be width-packed
   VK_CHECK_COND(graph.packed_dim_of(q) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(k) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(v) == WHCN::kWidthDim);
+
+  if (!graph.val_is_none(attn_mask)) {
+    const int32_t mask_dim = graph.dim_of(attn_mask);
+    VK_CHECK_COND(mask_dim >= 2 && mask_dim <= 4);
+    VK_CHECK_COND(graph.dtype_of(attn_mask) == graph.dtype_of(q));
+    VK_CHECK_COND(graph.packed_dim_of(attn_mask) == WHCN::kWidthDim);
+
+    const std::array<int32_t, 4> output_sizes = {
+        graph.size_at<int32_t>(-4, q),
+        num_q_heads,
+        graph.size_at<int32_t>(-2, q),
+        graph.size_at<int32_t>(-2, k)};
+    for (int32_t i = 1; i <= mask_dim; ++i) {
+      const int32_t mask_size = graph.size_at<int32_t>(-i, attn_mask);
+      const int32_t output_size = output_sizes[4 - i];
+      VK_CHECK_COND(mask_size == 1 || mask_size == output_size);
+    }
+  }
 
   // Compute scale
   const int32_t head_dim = graph.size_at<int32_t>(-1, q);
@@ -941,6 +1030,22 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // entire fused SDPA pipeline uses a uniform storage type. attn_weights stays
   // in fp32 for numerical stability of the Q@K^T accumulation.
   const utils::StorageType attn_storage = graph.storage_type_of(out);
+
+  if (attn_storage == utils::kBuffer) {
+    const int64_t elements_per_query = B * H * L;
+    VK_CHECK_COND(elements_per_query > 0);
+    const int64_t max_buffer_numel =
+        graph.max_buffer_nbytes() /
+        static_cast<int64_t>(vkapi::element_size(vkapi::ScalarType::Float));
+    const int64_t max_buffer_query_len =
+        max_buffer_numel / elements_per_query;
+    VK_CHECK_COND(
+        max_buffer_query_len > 0,
+        "fused SDPA attention weights exceed maxStorageBufferRange");
+    if (S > max_buffer_query_len) {
+      attn_weight_sizes.at(2) = max_buffer_query_len;
+    }
+  }
 
   TmpTensor attn_weights(
       &graph,
@@ -992,6 +1097,8 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 REGISTER_OPERATORS {
   VK_REGISTER_OP(sdpa_with_kv_cache.default, sdpa_with_kv_cache_impl);
   VK_REGISTER_OP(update_cache.default, update_cache_impl);
+  VK_REGISTER_OP(
+      update_cache_with_indices.default, update_cache_with_indices_impl);
   VK_REGISTER_OP(llama.custom_sdpa.default, sdpa_impl);
   VK_REGISTER_OP(
       testing.compute_attn_weight_with_kv_cache.default,

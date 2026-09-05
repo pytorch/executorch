@@ -44,7 +44,9 @@ static void test_sdpa_impl(
   // (mirrors sdpa_impl; a no-op for the texture path the harness uses). The
   // check must use the padded sizes actually allocated, not the raw ones.
   if (attn_weights_storage == utils::kBuffer) {
-    const int64_t max_buffer_numel = graph.max_buffer_numel();
+    const int64_t max_buffer_numel =
+        graph.max_buffer_nbytes() /
+        static_cast<int64_t>(vkapi::element_size(graph.dtype_of(q_projected)));
     if (num_q_heads * utils::align_up_4(max_seq_len) * padded_context_len >=
         max_buffer_numel) {
       max_seq_len = max_buffer_numel / (num_q_heads * padded_context_len);
