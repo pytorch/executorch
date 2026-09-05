@@ -27,7 +27,10 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test.misc.test_dw_convs_with_shared_weights import (
     DWConvsModule,
 )
-from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    PassPipeline,
+)
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
@@ -267,7 +270,9 @@ def _get_expected_int32_scales(
 
 
 def _rewrite_a16w8_convs(
-    model: nn.Module, inputs: tuple[torch.Tensor, ...]
+    model: nn.Module,
+    inputs: tuple[torch.Tensor, ...],
+    tosa_spec: TosaSpecification | None = None,
 ) -> tuple[torch.fx.GraphModule, list[list[float]]]:
     """Run the passes needed to inspect rewritten A16W8 convolutions."""
     exported_program = _export_quantized_a16w8(model, inputs)
@@ -276,7 +281,7 @@ def _rewrite_a16w8_convs(
     ).exported_program()
     gm = _run_pre_rewrite_passes(edge_program)
     rewrite_pass = RewriteConvPass(edge_program)
-    with TosaLoweringContext(_compile_spec_int16().tosa_spec):
+    with TosaLoweringContext(tosa_spec or _compile_spec_int16().tosa_spec):
         rescale_result = InsertRescaleInt32Pass()(gm)
         assert rescale_result is not None
         expected_int32_scales = _get_expected_int32_scales(
@@ -292,6 +297,29 @@ def _get_call_function_node(gm: torch.fx.GraphModule, target):
         if node.op == "call_function" and node.target == target:
             return node
     raise AssertionError(f"Node with target {target} not found")
+
+
+def _add_a16w8_rescale_head(
+    graph: torch.fx.Graph,
+    accumulator: torch.fx.Node,
+    positional_unsigned: tuple[bool, ...] = (),
+) -> tuple[torch.fx.Node, torch.fx.Node]:
+    rescale = graph.call_function(
+        exir_ops.backend.tosa.RESCALE.default,
+        args=(
+            accumulator,
+            torch.int16,
+            [1.0],
+            0,
+            0,
+            *positional_unsigned,
+        ),
+    )
+    layout_permute = graph.call_function(
+        exir_ops.edge.aten.permute_copy.default,
+        args=(rescale, [0, 3, 1, 2]),
+    )
+    return rescale, layout_permute
 
 
 class ConvModule(torch.nn.Module):
@@ -508,6 +536,139 @@ def test_rewrite_conv_a16w8_mixed_consumers_restore_int16(
         int32_rescale.args[2] == pytest.approx(expected)
         for expected in expected_int32_scales
     )
+
+
+def test_rewrite_conv_rescale_signature_includes_positional_unsigned_flags() -> None:
+    graph = torch.fx.Graph()
+    accumulator = graph.placeholder("accumulator")
+    signed_rescale, _ = _add_a16w8_rescale_head(graph, accumulator, (False, False))
+    unsigned_rescale, _ = _add_a16w8_rescale_head(graph, accumulator, (False, True))
+
+    assert RewriteConvPass._node_signature_without_input(
+        signed_rescale
+    ) != RewriteConvPass._node_signature_without_input(unsigned_rescale)
+
+
+def test_rewrite_conv_a16w8_unknown_accumulator_user_is_unchanged() -> None:
+    graph = torch.fx.Graph()
+    accumulator = graph.placeholder("accumulator")
+    _, first_permute = _add_a16w8_rescale_head(graph, accumulator)
+    _, second_permute = _add_a16w8_rescale_head(graph, accumulator)
+    unexpected_user = graph.call_function(torch.neg, args=(accumulator,))
+    graph.output((first_permute, second_permute, unexpected_user))
+    graph_module = torch.fx.GraphModule({}, graph)
+    nodes_before = list(graph.nodes)
+    users_before = {node: tuple(node.users) for node in graph.nodes}
+    node_order = {node: index for index, node in enumerate(graph.nodes)}
+
+    result = RewriteConvPass._deduplicate_a16w8_output_rescales(
+        graph_module, accumulator, node_order
+    )
+
+    assert result is None
+    assert list(graph.nodes) == nodes_before
+    assert {node: tuple(node.users) for node in graph.nodes} == users_before
+    graph.lint()
+
+
+def test_rewrite_conv_a16w8_multi_consumer_rescale_is_not_deduplicated() -> None:
+    graph = torch.fx.Graph()
+    accumulator = graph.placeholder("accumulator")
+    first_rescale, first_permute = _add_a16w8_rescale_head(graph, accumulator)
+    second_rescale, second_permute = _add_a16w8_rescale_head(graph, accumulator)
+    output = graph.output((first_permute, second_permute, second_rescale))
+    graph_module = torch.fx.GraphModule({}, graph)
+    node_order = {node: index for index, node in enumerate(graph.nodes)}
+
+    result = RewriteConvPass._deduplicate_a16w8_output_rescales(
+        graph_module, accumulator, node_order
+    )
+
+    assert result == [first_rescale, second_rescale]
+    assert set(second_rescale.users) == {second_permute, output}
+    graph.lint()
+
+
+def test_rewrite_conv_a16w8_deduplication_uses_graph_order() -> None:
+    graph = torch.fx.Graph()
+    accumulator = graph.placeholder("accumulator")
+    temporary_input = graph.placeholder("temporary_input")
+    early_rescale, early_permute = _add_a16w8_rescale_head(graph, temporary_input)
+    late_rescale, late_permute = _add_a16w8_rescale_head(graph, accumulator)
+    early_rescale.replace_input_with(temporary_input, accumulator)
+    graph.output((early_permute, late_permute))
+    graph_module = torch.fx.GraphModule({}, graph)
+    node_order = {node: index for index, node in enumerate(graph.nodes)}
+
+    assert list(accumulator.users) == [late_rescale, early_rescale]
+    assert node_order[early_rescale] < node_order[late_rescale]
+
+    result = RewriteConvPass._deduplicate_a16w8_output_rescales(
+        graph_module, accumulator, node_order
+    )
+
+    assert result == [early_rescale]
+    assert late_rescale not in graph.nodes
+    assert late_permute not in graph.nodes
+    graph.lint()
+
+
+def test_rewrite_conv_a16w8_deduplication_tolerates_new_users() -> None:
+    graph = torch.fx.Graph()
+    accumulator = graph.placeholder("accumulator")
+    first_rescale, first_permute = _add_a16w8_rescale_head(graph, accumulator)
+    node_order = {node: index for index, node in enumerate(graph.nodes)}
+    second_rescale, second_permute = _add_a16w8_rescale_head(graph, accumulator)
+    graph.output((first_permute, second_permute))
+    graph_module = torch.fx.GraphModule({}, graph)
+
+    result = RewriteConvPass._deduplicate_a16w8_output_rescales(
+        graph_module, accumulator, node_order
+    )
+
+    assert result == [first_rescale]
+    assert second_rescale not in graph.nodes
+    graph.lint()
+
+
+def test_rewrite_conv_a16w8_u55_separates_distinct_output_rescales() -> None:
+    model = A16W8MixedConsumerChain(nn.Conv2d(4, 4, 1))
+    inputs = (torch.randn(1, 4, 8, 8),)
+    generic_graph, _ = _rewrite_a16w8_convs(model, inputs)
+    u55_graph, _ = _rewrite_a16w8_convs(
+        model,
+        inputs,
+        TosaSpecification.create_from_string("TOSA-1.0+INT+int16+int4+u55"),
+    )
+
+    conv_targets = {
+        exir_ops.backend.tosa.CONV2D.default,
+        exir_ops.backend.tosa.DEPTHWISE_CONV2D.default,
+    }
+    generic_convs = [
+        node for node in generic_graph.graph.nodes if node.target in conv_targets
+    ]
+    u55_convs = [node for node in u55_graph.graph.nodes if node.target in conv_targets]
+
+    assert len(u55_convs) == len(generic_convs) + 1
+    assert all(len(conv.users) == 1 for conv in u55_convs)
+    assert all(
+        next(iter(conv.users)).target == exir_ops.backend.tosa.RESCALE.default
+        for conv in u55_convs
+    )
+
+
+def test_rewrite_conv_a16w8_mixed_consumers_lowers_on_u55() -> None:
+    inputs = (torch.randn(1, 4, 8, 8),)
+    pipeline = EthosU55PipelineINT[tuple[torch.Tensor]](
+        A16W8MixedConsumerChain(nn.Conv2d(4, 4, 1)),
+        inputs,
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=False,
+        a16w8_quantization=True,
+    )
+    pipeline.run()
 
 
 def test_rewrite_conv_a16w8_preserves_int32_for_int32_consumers() -> None:
