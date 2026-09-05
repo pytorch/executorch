@@ -1259,7 +1259,7 @@ def _get_permute_replacement(
 ) -> DialectNodeSpec | None:
     del dialect_pass
     input_tensor = _get_input_tensor_data(node)
-    if input_tensor.dtype != torch.int8:
+    if input_tensor.dtype != torch.int8 or not 1 <= input_tensor.dim() <= 4:
         return None
     return _transpose_spec(node, input_tensor)
 
