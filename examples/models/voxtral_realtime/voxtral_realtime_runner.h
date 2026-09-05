@@ -28,10 +28,12 @@ namespace voxtral_realtime {
 struct OfflineTranscribeConfig {
   int max_new_tokens = 500;
   float temperature = 0.0f; // 0 = greedy
+  bool profile_methods = false;
 };
 
 struct StreamingTranscribeConfig {
   float temperature = 0.0f; // 0 = greedy
+  bool profile_methods = false;
 };
 
 using TokenCallback = std::function<void(const std::string&)>;
@@ -99,6 +101,7 @@ class VoxtralRealtimeRunner {
   bool is_streaming_ = false;
   int64_t num_mel_bins_ = 128;
   int64_t chunk_mel_len_ = 8;
+  int64_t encoder_batch_chunks_ = 1;
   int64_t max_enc_len_ = 750;
   int64_t enc_dim_ = 1280;
   int64_t conv1_pad_ = 2;
@@ -172,8 +175,21 @@ class StreamingSession {
   int num_generated_ = 0;
   bool eos_reached_ = false;
   bool flushed_ = false;
+  bool profile_methods_ = false;
+  int64_t pending_flush_decode_steps_ = -1;
+  int64_t profile_steps_ = 0;
+  double profile_total_ms_ = 0.0;
+  double profile_framing_ms_ = 0.0;
+  double profile_preprocessor_ms_ = 0.0;
+  double profile_encoder_ms_ = 0.0;
+  double profile_embedding_ms_ = 0.0;
+  double profile_add_ms_ = 0.0;
+  double profile_decoder_ms_ = 0.0;
+  double profile_sampling_ms_ = 0.0;
 
   ::executorch::extension::llm::Sampler sampler_;
+  std::vector<::executorch::aten::BFloat16> audio_embeds_bf16_copy_;
+  std::vector<float> audio_embeds_fp32_copy_;
   ::executorch::extension::TensorPtr input_embeds_;
   std::vector<float> logits_fp32_buf_;
 
@@ -184,6 +200,8 @@ class StreamingSession {
   // (token_embed + audio_embed -> logits).
   bool decode_step(
       const ::executorch::extension::TensorPtr& audio_embeds_tensor);
+
+  void print_profile() const;
 };
 
 } // namespace voxtral_realtime
