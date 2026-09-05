@@ -124,6 +124,9 @@ jobs:
   export-models:
     name: export-models
     needs: set-parameters
+    # Skip fork PRs: they get no OIDC token, so the OSDC runner cannot
+    # assume the role that uploads to S3 (and the HF secret is unavailable).
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
@@ -141,6 +144,7 @@ jobs:
       use-custom-docker-registry: false
       submodules: recursive
       upload-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}
+      upload-artifact-to-s3: true
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -178,9 +182,13 @@ jobs:
 
         bash .ci/scripts/export_model_artifact.sh cuda "${{ matrix.model }}" "${{ matrix.quant }}" "$OUTPUT_DIR"
 
-        # Move artifacts to RUNNER_ARTIFACT_DIR for upload
-        mv "$OUTPUT_DIR"/* "${RUNNER_ARTIFACT_DIR}/"
-        ls -lah "${RUNNER_ARTIFACT_DIR}"
+        # Move artifacts to RUNNER_ARTIFACT_DIR for upload, namespaced per
+        # matrix cell: S3 uploads share one run-level prefix, so same-named
+        # files (model.pte) would otherwise collide.
+        ARTIFACT_SUBDIR="${RUNNER_ARTIFACT_DIR}/model-${{ matrix.model_safe }}-${{ matrix.quant }}"
+        mkdir -p "${ARTIFACT_SUBDIR}"
+        mv "$OUTPUT_DIR"/* "${ARTIFACT_SUBDIR}/"
+        ls -lah "${ARTIFACT_SUBDIR}"
         echo "::endgroup::"
 
   benchmark-cuda:
@@ -195,9 +203,11 @@ jobs:
     # cuda running even when some export-models matrix cells fail —
     # but only if the gate itself is open. Without the explicit gate
     # here, `always()` would fire benchmark-cuda even when set-
-    # parameters was gated out.
+    # parameters was gated out. Fork PRs are skipped like export-models:
+    # there is nothing in S3 for them to download.
     if: |
       always() &&
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
@@ -220,7 +230,6 @@ jobs:
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}
       upload-artifact: results-${{ matrix.model_safe }}-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -245,39 +254,19 @@ jobs:
         pip list
         echo "::endgroup::"
 
-        echo "::group::Prepare model artifacts"
+        echo "::group::Download model artifacts from S3"
+        # Anonymous HTTPS from the public-read bucket, so the benchmark
+        # image needs no AWS CLI.
+        S3_URL="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/model-${{ matrix.model_safe }}-${{ matrix.quant }}"
         mkdir -p model_artifacts
-        cp "${RUNNER_ARTIFACT_DIR}/model.pte" model_artifacts/model.pte
-        cp "${RUNNER_ARTIFACT_DIR}/aoti_cuda_blob.ptd" model_artifacts/aoti_cuda_blob.ptd
-
-        # Copy additional files if they exist
-        if [ -f "${RUNNER_ARTIFACT_DIR}/voxtral_preprocessor.pte" ]; then
-          cp "${RUNNER_ARTIFACT_DIR}/voxtral_preprocessor.pte" model_artifacts/
-        fi
-        if [ -f "${RUNNER_ARTIFACT_DIR}/whisper_preprocessor.pte" ]; then
-          cp "${RUNNER_ARTIFACT_DIR}/whisper_preprocessor.pte" model_artifacts/
-        fi
-        if [ -f "${RUNNER_ARTIFACT_DIR}/tekken.json" ]; then
-          cp "${RUNNER_ARTIFACT_DIR}/tekken.json" model_artifacts/
-        fi
-        if [ -f "${RUNNER_ARTIFACT_DIR}/poem.wav" ]; then
-          cp "${RUNNER_ARTIFACT_DIR}/poem.wav" model_artifacts/
-        fi
-        if [ -f "${RUNNER_ARTIFACT_DIR}/output.wav" ]; then
-          cp "${RUNNER_ARTIFACT_DIR}/output.wav" model_artifacts/
-        fi
-        if [ -f "${RUNNER_ARTIFACT_DIR}/tokenizer.model" ]; then
-          cp "${RUNNER_ARTIFACT_DIR}/tokenizer.model" model_artifacts/
-        fi
-        if [ -f "${RUNNER_ARTIFACT_DIR}/test_audio.wav" ]; then
-          cp "${RUNNER_ARTIFACT_DIR}/test_audio.wav" model_artifacts/
-        fi
-        # Copy tokenizer files
-        for file in tokenizer.json tokenizer_config.json special_tokens_map.json; do
-          if [ -f "${RUNNER_ARTIFACT_DIR}/$file" ]; then
-            cp "${RUNNER_ARTIFACT_DIR}/$file" model_artifacts/
-          fi
+        pushd model_artifacts
+        curl -fsSL --retry 3 -O "${S3_URL}/model.pte"
+        curl -fsSL --retry 3 -O "${S3_URL}/aoti_cuda_blob.ptd"
+        # Optional per-model files (preprocessors, tokenizers, test audio)
+        for file in voxtral_preprocessor.pte whisper_preprocessor.pte tekken.json poem.wav output.wav tokenizer.model test_audio.wav tokenizer.json tokenizer_config.json special_tokens_map.json; do
+          curl -fsSL --retry 3 -O "${S3_URL}/${file}" || true
         done
+        popd
 
         ls -lah model_artifacts/
         echo "::endgroup::"
@@ -377,11 +366,7 @@ jobs:
         }
         EOF
 
-        # Only copy benchmark results to RUNNER_ARTIFACT_DIR for upload (not the entire model)
-        # First, clean up the downloaded model artifacts from RUNNER_ARTIFACT_DIR
-        rm -rf "${RUNNER_ARTIFACT_DIR}"/*
-
-        # Then copy only the benchmark result JSON files
+        # Stage only the benchmark result JSON files for upload
         cp "$RESULTS_DIR"/*.json "${RUNNER_ARTIFACT_DIR}/"
         echo "Benchmark results prepared for upload:"
         ls -lah "${RUNNER_ARTIFACT_DIR}"
@@ -396,6 +381,7 @@ jobs:
     # closed (no benchmarks ran).
     if: |
       always() &&
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||

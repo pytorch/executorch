@@ -74,10 +74,14 @@ jobs:
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
-        source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
+        # Namespace per matrix cell: S3 uploads share one run-level prefix.
+        ARTIFACT_SUBDIR="${RUNNER_ARTIFACT_DIR}/test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}"
+        mkdir -p "${ARTIFACT_SUBDIR}"
+        source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${ARTIFACT_SUBDIR}"
 
   package-golden-artifacts:
     if: ${{ inputs.run-linux }}
@@ -85,10 +89,11 @@ jobs:
     runs-on: linux.2xlarge
     steps:
       - name: Download model test artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: test-report-${{ inputs.backend }}-*-models
-          path: downloaded/
+        run: |
+          set -eux
+          aws s3 cp --recursive \
+            "s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/" downloaded/ \
+            --exclude "*" --include "test-report-${{ inputs.backend }}-*-models/*"
 
       - name: Package golden artifacts
         run: |
@@ -115,13 +120,6 @@ jobs:
           else
             echo "No golden artifacts found."
           fi
-
-      - name: Upload combined golden artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: golden-artifacts-${{ inputs.backend }}
-          path: golden_artifacts_*.zip
-          if-no-files-found: ignore
 
       - name: Upload golden artifacts to S3
         uses: seemethere/upload-artifact-s3@v5
@@ -152,10 +150,14 @@ jobs:
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
+      upload-artifact-to-s3: true
       script: |
         set -eux
 
         # This is needed to get the prebuilt PyTorch wheel from S3
         ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
 
-        source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
+        # Namespace per matrix cell: S3 uploads share one run-level prefix.
+        ARTIFACT_SUBDIR="${RUNNER_ARTIFACT_DIR}/test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}"
+        mkdir -p "${ARTIFACT_SUBDIR}"
+        source .ci/scripts/test_backend.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${ARTIFACT_SUBDIR}"
