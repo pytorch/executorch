@@ -158,7 +158,12 @@ GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
 
 EXIT_CODE=0
-PYTEST_ARGS=(-c /dev/null -n auto)
+# An Ethos-U failure captures a few hundred thousand lines of Vela operator
+# listings, and the runner agent throws System.OutOfMemoryException processing
+# a step that size, taking the whole job down before pytest can report. The
+# reason for each failure is in its exception message and traceback, which are
+# unaffected.
+PYTEST_ARGS=(-c /dev/null -n auto --show-capture=no)
 if [[ ${#PYTEST_RETRY_ARGS[@]} -gt 0 ]]; then
     PYTEST_ARGS+=("${PYTEST_RETRY_ARGS[@]}")
 fi
