@@ -219,7 +219,9 @@ if(APPLE)
   target_include_directories(
     coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
   )
-  target_include_directories(coremldelegate PRIVATE ${PROJECT_SOURCE_DIR}/..)
+  target_include_directories(
+    coremldelegate PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+  )
   target_include_directories(
     coremldelegate PRIVATE ${PROJECT_SOURCE_DIR}/runtime/core/portable_type/c10
   )

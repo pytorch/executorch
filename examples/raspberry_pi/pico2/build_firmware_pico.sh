@@ -133,7 +133,11 @@ echo "ExecuTorch cross compile complete."
 
 cd "${PICO2_DIR}"
 
-PICO_CMAKE_FLAGS=(-DPICO_BOARD=pico2 -DCMAKE_BUILD_TYPE=Release)
+PICO_CMAKE_FLAGS=(
+  -DPICO_BOARD=pico2
+  -DCMAKE_BUILD_TYPE=Release
+  -DBAREMETAL_BUILD_DIR="${EXECUTORCH_BUILD_DIR}"
+)
 
 if [ $USE_CMSIS -eq 1 ]; then
   PICO_CMAKE_FLAGS+=(-DUSE_CMSIS_NN=ON)

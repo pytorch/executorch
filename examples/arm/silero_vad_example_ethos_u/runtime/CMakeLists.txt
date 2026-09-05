@@ -11,13 +11,15 @@ set(ET_DIR_PATH
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../.."
     CACHE PATH "Path to ExecuTorch dir"
 )
+include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir("${ET_DIR_PATH}" EXECUTORCH_SOURCE_INCLUDE_DIR)
 
 set(ET_BUILD_DIR_PATH
     "${ET_DIR_PATH}/cmake-out-arm"
     CACHE PATH "Path to ExecuTorch build/install dir"
 )
 set(ET_INCLUDE_PATH
-    "${ET_DIR_PATH}/.."
+    "${EXECUTORCH_SOURCE_INCLUDE_DIR}"
     CACHE PATH "Path to ExecuTorch headers"
 )
 

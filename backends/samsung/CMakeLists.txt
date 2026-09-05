@@ -11,6 +11,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 get_filename_component(
   EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
 )
+include(${EXECUTORCH_SOURCE_DIR}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_SOURCE_DIR}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 if(NOT DEFINED EXYNOS_AI_LITECORE_ROOT)
   message(
@@ -37,7 +41,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 include_directories(
-  ${EXECUTORCH_SOURCE_DIR}/..
+  ${EXECUTORCH_SOURCE_INCLUDE_DIR}
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
   ${EXYNOS_AI_LITECORE_ROOT}
 )

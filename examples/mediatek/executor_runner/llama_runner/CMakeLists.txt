@@ -5,13 +5,11 @@
 # directory of this source tree for more details.
 
 # Let include directory as "executorch/..."
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 include_directories(BEFORE ${_common_include_directories})
 
 # shortcut include directory for neuron headers
-include_directories(
-  BEFORE ${_common_include_directories}/backends/mediatek/runtime/include
-)
+include_directories(BEFORE ${EXECUTORCH_ROOT}/backends/mediatek/runtime/include)
 
 add_library(llm_helper STATIC)
 target_sources(

@@ -20,10 +20,14 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories
-    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+    ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
 
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
@@ -59,7 +63,7 @@ if(EXECUTORCH_CADENCE_CPU_RUNNER)
   )
 
   target_include_directories(
-    cadence_runner PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
+    cadence_runner PUBLIC ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${CMAKE_BINARY_DIR}
                           ${_common_include_directories}
   )
 

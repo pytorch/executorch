@@ -34,6 +34,9 @@ if(TARGET vulkan_backend)
 
   # Include this file to access executorch_target_link_options_shared_lib
   include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+  executorch_get_build_include_dir(
+    "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+  )
   include(${EXECUTORCH_ROOT}/backends/vulkan/cmake/ShaderLibrary.cmake)
 
   # Third party include paths
@@ -42,8 +45,8 @@ if(TARGET vulkan_backend)
   set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
   set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
-  set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
-                      ${VMA_PATH}
+  set(COMMON_INCLUDES ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${VULKAN_HEADERS_PATH}
+                      ${VOLK_PATH} ${VMA_PATH}
   )
 
   # Prototyping utility files

@@ -34,6 +34,9 @@ endif()
 # allows libraries to be linked with the --whole-archive flag. This is required
 # for libraries that perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 get_torch_base_path(TORCH_BASE_PATH)
 if(NOT TORCH_INSTALL_PREFIX)
@@ -57,7 +60,7 @@ set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
 set(COMMON_INCLUDES
-    ${EXECUTORCH_ROOT}/..
+    ${EXECUTORCH_SOURCE_INCLUDE_DIR}
     ${VULKAN_HEADERS_PATH}
     ${VOLK_PATH}
     ${VMA_PATH}

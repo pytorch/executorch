@@ -22,7 +22,13 @@ include(${PICO_SDK_PATH}/pico_sdk_init.cmake)
 project(executorch_pico C CXX ASM)
 pico_sdk_init()
 
-set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+get_filename_component(
+  EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE
+)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Configure input model file
@@ -64,14 +70,11 @@ set(MODEL_STAMP "${CMAKE_CURRENT_BINARY_DIR}/model_pte.stamp")
 
 add_custom_command(
   OUTPUT ${MODEL_STAMP}
-  COMMAND
-    python3
-    ${EXECUTORCH_ROOT}/executorch/examples/raspberry_pi/pico2/pte_to_array.py
-    --model ${INPUT_MODEL} --file ${MODEL_PTE_C}
+  COMMAND python3 ${EXECUTORCH_ROOT}/examples/raspberry_pi/pico2/pte_to_array.py
+          --model ${INPUT_MODEL} --file ${MODEL_PTE_C}
   COMMAND ${CMAKE_COMMAND} -E touch ${MODEL_STAMP}
-  DEPENDS
-    ${INPUT_MODEL}
-    ${EXECUTORCH_ROOT}/executorch/examples/raspberry_pi/pico2/pte_to_array.py
+  DEPENDS ${INPUT_MODEL}
+          ${EXECUTORCH_ROOT}/examples/raspberry_pi/pico2/pte_to_array.py
   COMMENT "Injecting PTE data from '${INPUT_MODEL}' into model_pte.c"
   VERBATIM
 )
@@ -108,8 +111,8 @@ target_compile_options(
 
 target_include_directories(
   executorch_pico
-  PRIVATE ${EXECUTORCH_ROOT} ${EXECUTORCH_ROOT}/executorch/third-party
-          ${EXECUTORCH_ROOT}/executorch/runtime/core/portable_type/c10
+  PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${EXECUTORCH_ROOT}/third-party
+          ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
 
 target_compile_definitions(
@@ -126,7 +129,7 @@ target_compile_options(
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
 
 set(BAREMETAL_BUILD_DIR
-    ${EXECUTORCH_ROOT}/executorch/cmake-out/
+    ${EXECUTORCH_ROOT}/cmake-out/
     CACHE STRING "ExecuTorch baremetal build dir"
 )
 

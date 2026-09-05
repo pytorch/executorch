@@ -30,6 +30,9 @@ endif()
 # allows libraries to be linked with the --whole-archive flag. This is required
 # for libraries that perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 include(cmake/ShaderLibrary.cmake)
 
@@ -60,7 +63,7 @@ if(NOT EXISTS "${VOLK_PATH}/volk.c"
 endif()
 
 set(COMMON_INCLUDES
-    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+    $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${VULKAN_HEADERS_PATH}/include>
     $<BUILD_INTERFACE:${VOLK_PATH}> $<BUILD_INTERFACE:${VMA_PATH}>
 )
