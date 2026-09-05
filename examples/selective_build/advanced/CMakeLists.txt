@@ -92,7 +92,7 @@ gen_selected_ops(
   "select_build_lib"
   OPS_SCHEMA_YAML
   "${_custom_ops_yaml}"
-  ROOT_OPS
+  SELECT_OPS_LIST
   "${EXECUTORCH_SELECT_OPS_LIST}"
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"

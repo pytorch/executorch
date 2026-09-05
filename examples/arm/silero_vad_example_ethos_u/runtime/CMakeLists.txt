@@ -97,7 +97,7 @@ gen_selected_ops(
   "silero_vad_portable_ops_lib"
   OPS_SCHEMA_YAML
   ""
-  ROOT_OPS
+  SELECT_OPS_LIST
   ""
   INCLUDE_ALL_OPS
   ""
