@@ -88,13 +88,20 @@ void register_sym_binary(
     g.set_symint(out, op(read_scalar(g, a), read_scalar(g, b)));
   };
   recompute(graph); // seed the build-time value
-  if (graph.get_value_type(a) == WebGPUGraph::ValueType::SymInt) {
-    graph.add_resize_hook(a, recompute);
-  }
+  const bool a_live =
+      graph.get_value_type(a) == WebGPUGraph::ValueType::SymInt;
   // b != a: for a self-op (e.g. x + x) both operands share one id; register the
   // recompute hook once, not twice.
-  if (b != a && graph.get_value_type(b) == WebGPUGraph::ValueType::SymInt) {
+  const bool b_live =
+      b != a && graph.get_value_type(b) == WebGPUGraph::ValueType::SymInt;
+  if (a_live) {
+    graph.add_resize_hook(a, recompute);
+  }
+  if (b_live) {
     graph.add_resize_hook(b, recompute);
+  }
+  if (a_live || b_live) {
+    graph.add_symint_computed(out);
   }
 }
 
