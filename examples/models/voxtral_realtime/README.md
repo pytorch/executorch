@@ -119,12 +119,49 @@ python export_voxtral_rt.py \
 | `cuda` | ✓ | ✓ | `4w`, `8w` |
 | `cuda-windows` | ✓ | ✓ | `4w`, `8w` |
 | `rocm` | ✓ | ✓ | BF16; packed linear `4w` and embedding `8w` |
-| `vulkan` | ✓ | ✓ | `8w`, `8da4w` |
+| `vulkan` | ✓ | ✓ | `8da4w` linear, `4w` embedding |
 
 
 MLX and Metal backends provide Apple GPU acceleration. CUDA provides NVIDIA GPU
 acceleration, and experimental ROCm support provides AMD GPU acceleration, both
 through AOTInductor.
+
+#### Vulkan export examples
+
+Offline production export:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend vulkan \
+    --dtype fp32 \
+    --max-seq-len 4096 \
+    --delay-tokens 6 \
+    --output-dir ./voxtral_vulkan_offline \
+    --qlinear-encoder 8da4w --qlinear-encoder-group-size 32 \
+    --qlinear 8da4w --qlinear-group-size 32 \
+    --qembedding 4w --qembedding-group-size 32
+```
+
+Streaming production export:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend vulkan \
+    --dtype fp32 \
+    --streaming --streaming-encoder-batch-chunks 2 \
+    --max-enc-len 750 --sliding-window 8192 \
+    --max-seq-len 4096 \
+    --delay-tokens 6 \
+    --output-dir ./voxtral_vulkan_streaming \
+    --qlinear-encoder 8da4w --qlinear-encoder-group-size 32 \
+    --qlinear 8da4w --qlinear-group-size 32 \
+    --qembedding 4w --qembedding-group-size 32
+```
+
+These exports create `model.pte` plus multiple content-addressed `.ptd`
+files. Pass all generated PTDs to the runner with `--data_paths`.
 
 #### CUDA export examples
 
@@ -354,6 +391,7 @@ python export_voxtral_rt.py \
 | `--qembedding` | (none) | Embedding layer quantization (`4w`, `8w`, `nvfp4`) |
 | `--qembedding-group-size` | auto | Group size for embedding quantization |
 | `--streaming` | off | Export streaming model with ring buffer KV caches (unlimited duration) |
+| `--streaming-encoder-batch-chunks` | `1` | Encoder chunks per streaming call (`2` improves Vulkan throughput with about 80ms additional live latency) |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
 | `--sliding-window` | from `params.json` | Decoder sliding window size (streaming only; ignored in offline mode). Smaller values reduce memory and improve decode speed but limit context |
 **Notes:**
@@ -490,6 +528,31 @@ For CUDA and ROCm exports, add
 `--data_path voxtral_rt_exports/aoti_cuda_blob.ptd`. For Vulkan exports with
 external constants, pass all generated files in order, for example
 `--data_paths voxtral_rt_exports/model_0.ptd,voxtral_rt_exports/model_1.ptd`.
+
+### NVIDIA acceptance lane
+
+The full checkpoint export is intentionally not part of default PR CI. On an
+NVIDIA Linux host with the pinned checkpoint and the fixed 16-kHz `poem.wav`
+fixture (SHA-256
+`0dd03dfb6fe83b7d10df166cb77d28bf139f9be2c739e9927c757d88255aa88b`),
+run:
+
+```bash
+VOXTRAL_STREAMING_ENCODER_BATCH_CHUNKS=2 \
+  examples/models/voxtral_realtime/tests/run_vulkan_acceptance.sh \
+    ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    input.wav \
+    /path/to/empty/acceptance-output
+```
+
+The script records the Git revision and Vulkan/NVIDIA hardware, validates the
+full checkpoint and fixture hashes, rebuilds the default runner, performs both
+production q4/8da4w exports, runs offline and streaming transcription, verifies
+the accepted fixture transcript, and writes location-independent hashes and
+resource logs. Every risky phase runs in a separate process group with core
+dumps disabled, a virtual-memory cap, reduced CPU/I/O priority, bounded build
+parallelism, and per-phase CPU-load, memory-pressure, RAM, disk, GPU-memory, and
+swap-out guards. See `--help` for threshold overrides and artifact-reuse mode.
 
 **Windows (PowerShell):**
 
