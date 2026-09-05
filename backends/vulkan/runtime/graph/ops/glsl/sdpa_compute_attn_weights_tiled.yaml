@@ -20,6 +20,7 @@ sdpa_compute_attn_weights_tiled:
       parameter_names: [IO_STORAGE, K_CACHE_STORAGE]
       combos:
         - parameter_values: [texture3d, texture3d]
+        - parameter_values: [texture3d, buffer]
         - parameter_values: [buffer, texture3d]
         - parameter_values: [buffer, buffer]
     combination1:
@@ -31,6 +32,8 @@ sdpa_compute_attn_weights_tiled:
           suffix: half
   shader_variants:
     - NAME: sdpa_compute_attn_weights_tiled
+    - NAME: sdpa_compute_attn_weights_tiled_ring
+      MODE: ring
     - NAME: fused_sdpa_qk_tiled
       MODE: fused
       OUT_DTYPE: float

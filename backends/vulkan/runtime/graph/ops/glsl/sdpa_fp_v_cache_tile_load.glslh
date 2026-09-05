@@ -48,18 +48,23 @@ LINEAR_FP_WEIGHT_TILE_VEC4_T load_v_cache_d4(
     const int kv_h,
     const int D4,
     const int C,
-    const int KV_H) {
+    const int KV_H,
+    const int cache_start) {
+  int cache_c = cache_start + c;
+  if (cache_c >= C) {
+    cache_c -= C;
+  }
 #ifdef _SDPA_V_USE_BUFFER
   #if V_LAYOUT == DSHB
-    return LINEAR_FP_WEIGHT_TILE_VEC4_T(SDPA_V_BUF[(kv_h * C * D4) + (c * D4) + d4]);
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(SDPA_V_BUF[(kv_h * C * D4) + (cache_c * D4) + d4]);
   #elif V_LAYOUT == DHSB
-    return LINEAR_FP_WEIGHT_TILE_VEC4_T(SDPA_V_BUF[(c * KV_H * D4) + (kv_h * D4) + d4]);
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(SDPA_V_BUF[(cache_c * KV_H * D4) + (kv_h * D4) + d4]);
   #endif
 #else // texture
   #if V_LAYOUT == DSHB
-    return LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(SDPA_V_BUF, ivec3(d4, c, kv_h), 0));
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(SDPA_V_BUF, ivec3(d4, cache_c, kv_h), 0));
   #elif V_LAYOUT == DHSB
-    return LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(SDPA_V_BUF, ivec3(d4, kv_h, c), 0));
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(SDPA_V_BUF, ivec3(d4, kv_h, cache_c), 0));
   #endif
 #endif
 }
@@ -72,11 +77,19 @@ void load_v_cache_tile_no_checks(
     const int D4,
     const int context_len,
     const int C,
-    const int KV_H) {
+    const int KV_H,
+    const int cache_start) {
   [[unroll]] for (int c = 0; c < TILE_K; ++c) {
     [[unroll]] for (int d4 = 0; d4 < TILE_N4; ++d4) {
       tile.data[c][d4] =
-          load_v_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+          load_v_cache_d4(
+              d4_start + d4,
+              c_start + c,
+              kv_h,
+              D4,
+              C,
+              KV_H,
+              cache_start);
     }
   }
 }
@@ -89,12 +102,20 @@ void load_v_cache_tile_with_checks(
     const int D4,
     const int context_len,
     const int C,
-    const int KV_H) {
+    const int KV_H,
+    const int cache_start) {
   [[unroll]] for (int c = 0; c < TILE_K; ++c) {
     [[unroll]] for (int d4 = 0; d4 < TILE_N4; ++d4) {
       if (d4_start + d4 < D4 && c_start + c < context_len) {
         tile.data[c][d4] =
-            load_v_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+            load_v_cache_d4(
+                d4_start + d4,
+                c_start + c,
+                kv_h,
+                D4,
+                C,
+                KV_H,
+                cache_start);
       } else {
         tile.data[c][d4] = LINEAR_FP_WEIGHT_TILE_VEC4_T(0.0);
       }
