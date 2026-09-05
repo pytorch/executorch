@@ -777,18 +777,20 @@ class PackedDimInfo:
             raise ValueError(f"Unknown memory layout: {memory_layout}")
 
 
-def within_buffer_limit(node: torch.fx.Node, buffer_limit: int) -> bool:
+def within_buffer_limit(node: torch.fx.Node, buffer_limit_bytes: int) -> bool:
     """
     Checks whether the tensors produced by the given node can fit within the device's
-    GPU buffer limit, which represents the maximum number of elements that can be stored
-    in a GPU buffer.
+    GPU buffer limit, expressed in bytes.
     """
     assert is_tensor_node(node)
 
     if isinstance(node.meta["val"], FakeTensor):
-        return node.meta["val"].numel() <= buffer_limit
+        val = node.meta["val"]
+        return val.numel() * val.element_size() <= buffer_limit_bytes
     elif isinstance(node.meta["val"], list) or isinstance(node.meta["val"], tuple):
-        return all(x.numel() <= buffer_limit for x in node.meta["val"])
+        return all(
+            x.numel() * x.element_size() <= buffer_limit_bytes for x in node.meta["val"]
+        )
     else:
         raise RuntimeError(f"Cannot get numel for val of type {type(node.meta['val'])}")
 

@@ -1149,7 +1149,9 @@ def register_update_cache():
     )
 
 
-def is_update_cache_with_indices_node_supported(node: torch.fx.Node) -> bool:
+def _get_update_cache_with_indices_tensor_args(
+    node: torch.fx.Node,
+) -> Optional[Tuple[torch.fx.Node, torch.fx.Node, torch.fx.Node]]:
     if node.target == torch.ops.higher_order.auto_functionalized_v2:
         all_bases = node.kwargs.get("_all_bases", ())
         cache_base_index = node.kwargs.get("_cache_base_index")
@@ -1158,7 +1160,7 @@ def is_update_cache_with_indices_node_supported(node: torch.fx.Node) -> bool:
             or cache_base_index < 0
             or cache_base_index >= len(all_bases)
         ):
-            return False
+            return None
         value = node.kwargs.get("value")
         cache = all_bases[cache_base_index]
         indices = node.kwargs.get("indices")
@@ -1169,11 +1171,32 @@ def is_update_cache_with_indices_node_supported(node: torch.fx.Node) -> bool:
     elif len(node.args) >= 4:
         value, cache, _, indices = node.args[:4]
     else:
-        return False
+        return None
 
     if not all(isinstance(arg, torch.fx.Node) for arg in (value, cache, indices)):
+        return None
+
+    return value, cache, indices
+
+
+def is_update_cache_with_indices_dtype_supported(
+    node: torch.fx.Node, downcast_64_bit: bool = True
+) -> bool:
+    tensor_args = _get_update_cache_with_indices_tensor_args(node)
+    if tensor_args is None:
+        return False
+    indices_dtype = tensor_args[2].meta["val"].dtype
+    return indices_dtype == torch.int32 or (
+        indices_dtype == torch.int64 and downcast_64_bit
+    )
+
+
+def is_update_cache_with_indices_node_supported(node: torch.fx.Node) -> bool:
+    tensor_args = _get_update_cache_with_indices_tensor_args(node)
+    if tensor_args is None:
         return False
 
+    value, cache, indices = tensor_args
     value_meta = value.meta["val"]
     cache_meta = cache.meta["val"]
     indices_meta = indices.meta["val"]
@@ -1183,7 +1206,8 @@ def is_update_cache_with_indices_node_supported(node: torch.fx.Node) -> bool:
     return (
         value_meta.dtype in utils.FP_T
         and cache_meta.dtype == value_meta.dtype
-        and indices_meta.dtype == torch.int64
+        # The partitioner repeats this check with its actual downcast setting.
+        and is_update_cache_with_indices_dtype_supported(node)
         and len(value_shape) == 4
         and len(cache_shape) == 4
         and len(indices_shape) == 2
@@ -1203,7 +1227,12 @@ def register_update_cache_with_indices():
             utils.NO_STORAGE,  # start_pos
             utils.CONTIGUOUS_BUFFER,  # indices
         ],
-        inputs_dtypes=[utils.FP_T, utils.FP_T, utils.NONE_T, {torch.int64}],
+        inputs_dtypes=[
+            utils.FP_T,
+            utils.FP_T,
+            utils.NONE_T,
+            {torch.int32, torch.int64},
+        ],
         outputs_dtypes=utils.FP_T,
         supports_resize=True,
         are_node_inputs_supported_fn=is_update_cache_with_indices_node_supported,
