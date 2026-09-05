@@ -275,6 +275,14 @@ class Verifier:
         for nd in graph_module.graph.nodes:
             if nd.op in check_list:
                 if not (specs := get_node_tensor_specs(nd)):
+                    # A node that carries no tensor specs has nothing to
+                    # allocate. An output node can legitimately be in that
+                    # position, e.g. when a delegated subgraph's only results
+                    # are symints, and skipping it silently leaves
+                    # graph_output_allocated unset so the assert below fires on
+                    # a graph that is in fact fully planned.
+                    if nd.op == "output":
+                        graph_output_allocated = self.alloc_graph_output
                     continue
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
