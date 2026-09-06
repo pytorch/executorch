@@ -43,11 +43,20 @@ class FuseDuplicateUsersPass(ExportPass):
 
         node_order = {node: index for index, node in enumerate(graph.nodes)}
         producers: Deque[Node] = deque(node for node in graph.nodes)
+        queued_producers: Set[Node] = set(producers)
+        erased_nodes: Set[Node] = set()
+
+        def enqueue_producer(node: Node) -> None:
+            if node in erased_nodes or node in queued_producers:
+                return
+            producers.append(node)
+            queued_producers.add(node)
 
         while producers:
             producer = producers.popleft()
+            queued_producers.discard(producer)
 
-            if producer.graph is None:
+            if producer in erased_nodes:
                 # Node was deleted by a previous rewrite while still queued.
                 continue
 
@@ -56,7 +65,9 @@ class FuseDuplicateUsersPass(ExportPass):
             if len(user_nodes) < 2:
                 continue
 
-            candidate_groups = self._get_candidate_groups(node_order, user_nodes)
+            candidate_groups = self._get_candidate_groups(
+                node_order, user_nodes, erased_nodes
+            )
 
             signature_to_user: Dict[Tuple[Hashable, ...], Node] = {}
             for group in candidate_groups:
@@ -77,13 +88,14 @@ class FuseDuplicateUsersPass(ExportPass):
 
                     user.replace_all_uses_with(representative)
                     graph.erase_node(user)
+                    erased_nodes.add(user)
                     modified = True
 
                     # Revisit the current producer and the surviving user so that
                     # newly formed duplicate chains can be fused in later
                     # iterations.
-                    producers.append(producer)
-                    producers.append(representative)
+                    enqueue_producer(producer)
+                    enqueue_producer(representative)
 
         if modified:
             if self._recompile_before_retrace:
@@ -93,10 +105,10 @@ class FuseDuplicateUsersPass(ExportPass):
 
         return PassResult(graph_module, modified)
 
-    def _get_candidate_groups(self, node_order, user_nodes):
+    def _get_candidate_groups(self, node_order, user_nodes, erased_nodes):
         users_by_target: Dict[Tuple[str, Hashable], List[Node]] = {}
         for user in user_nodes:
-            if user.graph is None:
+            if user in erased_nodes:
                 # User might already have been removed by a prior rewrite.
                 continue
 
