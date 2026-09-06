@@ -144,7 +144,7 @@ cmake --preset arm-baremetal \
   -DCMAKE_BUILD_TYPE=Release \
   -DEXECUTORCH_BUILD_DEVTOOLS=ON \
   -Bcmake-out-arm
-cmake --build cmake-out-arm --target install -j$(nproc)
+cmake --build cmake-out-arm --target install -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 
 # Build the executor runner, linking the .pte into the binary
 cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake \
@@ -153,7 +153,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/examples/arm/ethos-u-setup/arm-none-eabi-gcc
       -DTARGET_CPU=cortex-m55 \
       -Bbuild \
       examples/arm/executor_runner
-cmake --build build -j$(nproc) -- arm_executor_runner
+cmake --build build -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) -- arm_executor_runner
 ```
 
 Run on a simulated Cortex-M target:
