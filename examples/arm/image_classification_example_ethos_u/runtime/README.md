@@ -8,7 +8,7 @@
 $ cmake --preset arm-baremetal \
 -DCMAKE_BUILD_TYPE=Release \
 -B../../cmake-out-arm ../..
-cmake --build ../../cmake-out-arm --target install -j$(nproc)
+cmake --build ../../cmake-out-arm --target install -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 3. Set up the build system. You need to provide path to the DEiT-Tiny pte generated in the
@@ -21,7 +21,7 @@ $ cmake -DCMAKE_TOOLCHAIN_FILE=$(pwd)/ethos-u-setup/arm-none-eabi-gcc.cmake -DET
 4. Compile the application.
 
 ```
-$ cmake --build simple_app_deit_tiny -j$(nproc) -- img_class_example
+$ cmake --build simple_app_deit_tiny -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) -- img_class_example
 ```
 
 5. Deploy the application on the Corstone-320 Fixed Virtual Platform. Assuming you have the Corstone-320 installed on your path, do the following command to deploy the application.
