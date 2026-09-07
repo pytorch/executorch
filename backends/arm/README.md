@@ -156,6 +156,49 @@ compile specs, see:
 
 Additional examples are available in `examples/arm`.
 
+#### Export recipes
+
+An `ExportRecipe` bundles those steps for a target, so a standard export needs
+no compile spec, quantizer or partitioner of its own. Each recipe carries the
+settings its target expects:
+
+```python
+from executorch.backends.arm.recipes.arm_recipe_types import ArmRecipeType
+from executorch.export import export, ExportRecipe
+
+session = export(
+    model=model,
+    example_inputs=[example_inputs],
+    export_recipe=ExportRecipe.get_recipe(ArmRecipeType.ETHOS_U55_INT8),
+)
+session.save_to_pte("model")
+```
+
+The recipe quantizes the model, so pass `example_inputs` that are representative
+of real data; they are used to calibrate.
+
+Available recipes:
+
+| Recipe | Target |
+| --- | --- |
+| `ETHOS_U55_INT8`, `ETHOS_U65_INT8`, `ETHOS_U85_INT8` | Ethos-U NPUs, int8 |
+| `TOSA_FP`, `TOSA_INT8`, `TOSA_A16W8` | TOSA, for testing without hardware |
+| `VGF_FP`, `VGF_INT8` | VGF, for the ML SDK for Vulkan |
+
+The Ethos-U recipes accept `macs`, `system_config`, `memory_mode`,
+`extra_flags` and `config_ini`, matching the corresponding Vela options:
+
+```python
+ExportRecipe.get_recipe(ArmRecipeType.ETHOS_U85_INT8, macs=512)
+```
+
+`macs` is validated against the accelerator configurations the installed Vela
+accepts, so an unsupported count fails at recipe construction rather than during
+compilation.
+
+Reach for the step-by-step flow above when a recipe does not fit -- a custom
+quantization scheme, extra passes, or a compile spec the recipe does not expose.
+
 ### Direct Drive (experimental, Ethos-U85 on Linux) workflow
 
 Direct Drive enables execution on Ethos-U85 via the Linux driver stack.
