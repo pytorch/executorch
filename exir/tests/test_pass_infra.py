@@ -22,7 +22,13 @@ from executorch.exir.pass_base import (
 )
 from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
+from executorch.exir.passes.memory_format_ops_pass import (
+    DimOrderOpsRevertPass,
+    MemoryFormatOpsPass,
+)
+from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
 from executorch.exir.passes.pass_registry import PassRegistry
+from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.program import to_edge
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import Dim, export, ExportedProgram
@@ -227,6 +233,143 @@ class TestProxyValueSymbolicCoercions(unittest.TestCase):
 
         with self.assertRaisesRegex(ExportPassBaseError, "converted to float"):
             float(ProxyValue(sym_float, torch.fx.Graph().placeholder("x")))
+
+
+class TestExportPassTargetedOps(unittest.TestCase):
+    def test_memory_format_passes_rewrite_only_targeted_ops(self) -> None:
+        class MemoryFormatModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.relu(x.to(memory_format=torch.channels_last))
+
+        sample_input = torch.randn(1, 2, 3, 4)
+        exported = export(MemoryFormatModule(), (sample_input,), strict=True)
+        edge_program = to_edge(
+            exported,
+            compile_config=exir.EdgeCompileConfig(_skip_dim_order=True),
+        ).exported_program()
+        graph_module = edge_program.graph_module
+
+        memory_format_result = MemoryFormatOpsPass()(graph_module).graph_module
+        self.assertEqual(
+            len(
+                memory_format_result.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                memory_format_result.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.relu.default
+                )
+            ),
+            1,
+        )
+
+        reverted_result = DimOrderOpsRevertPass()(memory_format_result).graph_module
+        self.assertEqual(
+            len(
+                reverted_result.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten._to_copy.default
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                reverted_result.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.relu.default
+                )
+            ),
+            1,
+        )
+        torch.testing.assert_close(
+            reverted_result(sample_input)[0],
+            MemoryFormatModule()(sample_input),
+        )
+
+    def test_normalize_transpose_rewrites_transpose_to_copy(self) -> None:
+        class TransposeModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.relu(torch.ops.aten.t.default(x))
+
+        graph_module = export(
+            TransposeModule(), (torch.randn(3, 4),), strict=True
+        ).module()
+        self.assertEqual(
+            len(
+                graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.t.default
+                )
+            ),
+            1,
+        )
+
+        new_graph_module = NormalizeTransposePass()(graph_module).graph_module
+
+        self.assertEqual(
+            len(
+                new_graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.t.default
+                )
+            ),
+            0,
+        )
+        self.assertEqual(
+            len(
+                new_graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.t_copy.default
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                new_graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.relu.default
+                )
+            ),
+            1,
+        )
+
+    def test_remove_mixed_type_operators_promotes_operands(self) -> None:
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return torch.relu(x + y)
+
+        int_tensor = torch.tensor([[1, 2, 3]], dtype=torch.int64)
+        float_tensor = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float)
+        graph_module = export(
+            AddModule(), (int_tensor, float_tensor), strict=True
+        ).module()
+        add_node = graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.add.Tensor
+        )[0]
+        self.assertEqual(add_node.args[0].meta["val"].dtype, torch.int64)
+        self.assertEqual(add_node.args[1].meta["val"].dtype, torch.float)
+
+        new_graph_module = RemoveMixedTypeOperators()(graph_module).graph_module
+
+        add_nodes = new_graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.add.Tensor
+        )
+        to_copy_nodes = new_graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten._to_copy.default
+        )
+        relu_nodes = new_graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.relu.default
+        )
+        self.assertEqual(len(add_nodes), 1)
+        self.assertEqual(len(to_copy_nodes), 1)
+        self.assertEqual(len(relu_nodes), 1)
+        for arg in add_nodes[0].args:
+            self.assertEqual(arg.meta["val"].dtype, torch.float)
+        torch.testing.assert_close(
+            new_graph_module(int_tensor, float_tensor),
+            AddModule()(int_tensor, float_tensor),
+        )
 
 
 class TestExportedProgramPassManager(unittest.TestCase):
