@@ -15,7 +15,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.serialization.qc_schema import HtpArch
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    HtpArch,
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
@@ -78,6 +81,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         # checker (e.g. the LPAI fallback pass) are distinguishable in the logs.
         self.phase = phase
         self.soc_info = python_options.soc_info
+        self.backend_type = python_options.backend_options.backend_type
         self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = get_current_qnn_manager(
             python_options.backend_options.backend_type, compiler_specs
@@ -90,8 +94,10 @@ class QnnOperatorSupport(OperatorSupportBase):
         # Per-channel-group lowers to blockwise expansion (the encoding LPBQ
         # uses), which requires HTP >= V69. Pre-quantized weights bypass the
         # quantizer's validate_lpbq_support check, so gate the delegation here.
+        # Scoped to HTP: other backends reusing this checker have no htp_arch.
         if (
             node.target in PER_CHANNEL_GROUP_ENCODING
+            and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
             and self.soc_info.htp_info.htp_arch < HtpArch.V69
         ):
             logger.warning(

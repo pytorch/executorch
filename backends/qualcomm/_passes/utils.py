@@ -8,8 +8,8 @@ from typing import Callable, Dict, List
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
-    PER_CHANNEL_GROUP_ENCODING,
     dq_ops,
+    PER_CHANNEL_GROUP_ENCODING,
     q_ops,
 )
 from executorch.backends.qualcomm.builders.utils import get_parameter
