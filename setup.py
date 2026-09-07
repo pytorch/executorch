@@ -48,6 +48,7 @@
 # derivative works thereof, in binary and source code form.
 
 import contextlib
+import functools
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
@@ -64,7 +65,7 @@ import sys
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path, PurePosixPath
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # Clean dynamic import using importlib
 _install_utils_path = Path(__file__).parent / "install_utils.py"
@@ -177,6 +178,106 @@ def _minimal_cmake_flags() -> List[str]:
     ]
 
 
+_VENDORED_DIR_NAMES = frozenset({"third-party", "third_party"})
+
+# Used only when .gitmodules cannot be read, as in a source distribution. A test keeps it in step.
+_VENDORED_SUBMODULE_FALLBACK = (
+    "backends/cadence/utils/FACTO",
+    "extension/llm/tokenizers",
+)
+
+
+@functools.lru_cache(maxsize=None)
+def _vendored_prefixes() -> Tuple[str, ...]:
+    """Source-tree prefixes holding code from another repository.
+
+    Two shapes reach the wheel. Most vendored code sits in a directory named third-party,
+    which the name above covers wherever it appears. The rest are git submodules checked out
+    under an ordinary name, so they can only be recognized by asking git what they are.
+
+    None of them are importable from where they sit. FACTO is pure Python but its nested copy
+    cannot satisfy backends/cadence/utils/facto_util.py, which imports the top level facto.specdb,
+    and the tokenizers ship separately as pytorch-tokenizers in the dependency list. The rest,
+    XNNPACK and the Vulkan headers among them, are C++ sources that the wheel has no use for once
+    the libraries are built.
+
+    Read through git rather than by scanning the file, so only real submodule entries count.
+    A hand-rolled reader accepts a `path` line from any section, and one stray line elsewhere
+    in the file would drop a first-party package from the wheel with nothing to warn about.
+
+    Submodules at the repository root are skipped. Those are build tooling, never copied into
+    the package, and carrying a bare single-word name here would make the match below drop any
+    directory that happened to share it.
+    """
+    root = Path(__file__).parent
+    if not (root / ".gitmodules").is_file():
+        # A source distribution carries no .gitmodules, so nothing can be read there. Fall
+        # back to the directories the vendored trees occupy, or the exclusion would quietly
+        # do half its job and those files would ship again.
+        return _VENDORED_SUBMODULE_FALLBACK
+    try:
+        listed = subprocess.run(
+            [
+                "git",
+                "config",
+                "-f",
+                ".gitmodules",
+                "--get-regexp",
+                r"^submodule\..*\.path$",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        # No git on PATH, so fall back for the same reason as above.
+        return _VENDORED_SUBMODULE_FALLBACK
+
+    if listed.returncode or not listed.stdout.strip():
+        # git ran and told us nothing useful, which happens when the file has a bad section
+        # header or conflict markers in it. Reading that as "no submodules" would turn the
+        # exclusion off without a word, so fall back rather than trust an empty answer.
+        return _VENDORED_SUBMODULE_FALLBACK
+
+    prefixes = []
+    for line in listed.stdout.splitlines():
+        # Split on the LAST space, not the first: git prints "<key> <value>" and a submodule name
+        # may itself contain spaces, which would otherwise truncate the key and leave a value that
+        # matches nothing.
+        _, separator, value = line.rpartition(" ")
+        if not separator:
+            continue
+        # Normalize, because git accepts a trailing slash, a ./ prefix and doubled
+        # separators as the same path, and the raw text would stop matching the real
+        # directory.
+        parts = Path(value.strip()).parts
+        if len(parts) < 2 or any(part in _VENDORED_DIR_NAMES for part in parts):
+            continue
+        prefixes.append("/".join(parts))
+    return tuple(sorted(prefixes))
+
+
+def _is_vendored_path(path: str) -> bool:
+    """Whether a source-tree path holds code from another repository."""
+    parts = Path(path).parts
+    if any(part in _VENDORED_DIR_NAMES for part in parts):
+        return True
+    # A submodule path is relative to the repository root, while a path here may be relative
+    # to src/executorch or carry a src/executorch prefix, so match on any suffix boundary.
+    # Whole-component match: the prefix must be the entire path, or sit at its start, end, or
+    # middle bounded by separators. Substring matching would let a directory whose name merely
+    # begins with a prefix be dropped.
+    posix = "/".join(parts)
+    return any(
+        posix == prefix
+        or posix.startswith(f"{prefix}/")
+        or posix.endswith(f"/{prefix}")
+        or f"/{prefix}/" in posix
+        for prefix in _vendored_prefixes()
+    )
+
+
 def _minimal_packages() -> List[str]:
     return sorted(
         find_namespace_packages(
@@ -201,6 +302,31 @@ def _minimal_packages() -> List[str]:
                 "*.__pycache__.*",
             ],
         )
+    )
+
+
+def _full_packages() -> List[str]:
+    """Every package the full wheel ships.
+
+    Without an explicit list setuptools discovers all of src/executorch, which pulls in the
+    Python files and codegen scripts of the vendored third-party checkouts. Those exist to
+    build the C++ targets, so once the libraries are built no shipped module imports them.
+
+    Test packages deliberately stay. The suites in this repository import each other through
+    the installed name, for example `from executorch.backends.arm.test import common`, so
+    dropping them from the wheel stops the suites collecting under a non-editable install.
+    """
+    return sorted(
+        package
+        # Anchored on this file rather than the working directory, so the list does not
+        # change with where the build or a test was started from.
+        for package in find_namespace_packages(
+            where=str(Path(__file__).parent / "src"),
+            include=["executorch", "executorch.*"],
+        )
+        # The include patterns above DO match these, since they are ordinary dotted names,
+        # which is exactly why they have to be removed here instead.
+        if not _is_vendored_path(package.replace(".", "/"))
     )
 
 
@@ -1642,6 +1768,11 @@ class CustomBuildPy(build_py):
                     _f
                     for _f in self.manifest_files[_pkg]
                     if os.path.isfile(os.path.join(_root, _f))
+                    # A directory left out of `packages` is not simply skipped. setuptools
+                    # walks up to the nearest listed package and records the file as that
+                    # package's data, so a vendored *.yaml still arrives under its parent.
+                    # Filter with the same list so the two agree.
+                    and not _is_vendored_path(_f)
                 ]
 
     def _copy_extra_files(self, src_to_dst, dst_root: str) -> None:
@@ -2325,6 +2456,7 @@ if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
     setup_kwargs["install_requires"] = _minimal_dependencies()
 else:
+    setup_kwargs["packages"] = _full_packages()
     # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
     # carry it are declared here. A CPU wheel adds nothing.
     setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()
