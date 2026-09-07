@@ -12,7 +12,7 @@ See: https://github.com/pytorch/executorch/discussions/10661. tl;dr instead of t
 
 ```bash
 $ cmake --preset macos
-$ cmake --build cmake-out -j100 --target executor_runner
+$ cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target executor_runner
 ```
 
 ## Working with Presets

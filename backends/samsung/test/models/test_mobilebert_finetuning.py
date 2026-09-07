@@ -18,7 +18,11 @@ from executorch.examples.samsung.scripts.mobilebert_finetune import MobileBertFi
 class Test_Milestone_MobileBertFinetune(unittest.TestCase):
     def test_mobilebert_finetuning_fp16(self):
         mobilebert_finetune = MobileBertFinetune()
-        model, _ = mobilebert_finetune.get_finetune_mobilebert(None)
+        # Smaller batches, because training keeps every intermediate value until
+        # the backward pass is done and a test runner cannot hold them all. The
+        # number of passes is left alone: it is what the example script uses, and
+        # the range this model ends up with does not fall off with fewer of them.
+        model, _ = mobilebert_finetune.get_finetune_mobilebert(None, batch_size=8)
         example_input = mobilebert_finetune.get_example_inputs()
         tester = SamsungTester(
             model, example_input, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
