@@ -118,8 +118,11 @@ license-files = ["LICENSE"]
 "executorch" = "src/executorch"
 
 [tool.setuptools.package-data]
-# TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we
-# don't need.
+# Vendored third-party dirs are excluded in setup.py, so the globs below only reach the dirs
+# the wheel ships.
+# TODO(dbort): Prune /test[s]/ dirs and yaml files that we don't need. Test dirs cannot simply
+#  be dropped yet: the suites here import each other through the installed name, for example
+#  `from executorch.backends.arm.test import common`, so a non-editable install stops collecting.
 # TODO(RobertKalmar): When test[s] dirs pruned the PROJECT_DIR resolution in backends.nxp.tests_models.config.py can
 #  avoid exporting and reading env variable.
 "*" = [
