@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Tuple
 
 import pytest
@@ -718,6 +718,109 @@ def test_down_pass_moves_matching_input_permutations_after_binary_op() -> None:
 
     assert targets.count(PERMUTE) == 1
     assert targets.index(ADD) < targets.index(PERMUTE)
+
+
+def test_down_pass_moves_permute_through_single_exit_pointwise_region() -> None:
+    """Move a dimension reorder after related per-value operations.
+
+    Here ``P`` means permute, Both ``floor`` and ``sub`` process values independently:
+
+        Before:  P(x) --+-----------------> sub -> output
+                        |                    ^
+                        +-> floor -----------+
+
+        After:       x --+-----------------> sub -> P -> output
+                        |                    ^
+                        +-> floor -----------+
+
+    The first check confirms that the permute moved after both operations. The second
+    check confirms that the rewritten graph still calculates the same values.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    floor = graph.call_function(FLOOR, args=(permute,))
+    floor.meta["val"] = torch.empty((1, 3, 4, 2))
+    sub = graph.call_function(SUB, args=(permute, floor))
+    sub.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(sub)
+
+    x_data = torch.randn(1, 2, 3, 4)
+    expected = x_data.permute(0, 2, 3, 1)
+    expected = expected - expected.floor()
+    graph_module = _run_pass_on_graph_module(graph, PropagateViewCopyPermuteDownPass)
+    call_nodes = [
+        node for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+    targets = [node.target for node in call_nodes]
+
+    assert targets.index(FLOOR) < targets.index(SUB) < targets.index(PERMUTE)
+    torch.testing.assert_close(graph_module(x_data), expected)
+
+
+class _BlockFloorToSubPass(PropagateViewCopyPermuteDownPass):
+    def blocks_moving(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> bool:
+        return frontier.target == FLOOR and any(
+            next_node.target == SUB for next_node in next_nodes
+        )
+
+
+def test_down_pass_checks_each_path_into_shared_pointwise_node() -> None:
+    """Keep a permute when a backend rejects one path into a shared node."""
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    floor = graph.call_function(FLOOR, args=(permute,))
+    floor.meta["val"] = torch.empty((1, 3, 4, 2))
+    sub = graph.call_function(SUB, args=(permute, floor))
+    sub.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(sub)
+
+    targets = _run_pass_on_graph(graph, _BlockFloorToSubPass)
+
+    assert targets.index(PERMUTE) < targets.index(FLOOR) < targets.index(SUB)
+
+
+def test_down_pass_keeps_permute_before_multiple_exit_pointwise_region() -> None:
+    """Keep a dimension reorder in place when two results are returned.
+
+    Here ``P`` means permute. Both ``floor`` and ``sub`` are returned from the graph:
+
+        P(x) --+-----------------> sub -> output 1
+               |                    ^
+               +-> floor -----------+
+                         |
+                         +---------------> output 0
+
+    Moving the permute would require adding a separate reorder before each output.
+    This rewrite deliberately handles only one outgoing result, so the graph
+    must remain unchanged.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    floor = graph.call_function(FLOOR, args=(permute,))
+    floor.meta["val"] = torch.empty((1, 3, 4, 2))
+    sub = graph.call_function(SUB, args=(permute, floor))
+    sub.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output((floor, sub))
+
+    targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
+
+    assert targets.index(PERMUTE) < targets.index(FLOOR) < targets.index(SUB)
 
 
 def test_down_pass_keeps_lower_rank_singleton_input_before_binary_op() -> None:
