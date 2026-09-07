@@ -1,6 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -40,7 +39,7 @@ class TestResNet18(unittest.TestCase):
             )
             return self.model(x)
 
-    def _test_exported_resnet(self, tester, xnnpack_perf=False):
+    def _test_exported_resnet(self, tester):
         (
             tester.export()
             .to_edge_transform_and_lower()
@@ -53,16 +52,11 @@ class TestResNet18(unittest.TestCase):
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method_and_compare_outputs(
-                xnnpack_perf=xnnpack_perf,
-            )
+            .run_method_and_compare_outputs()
         )
 
     def test_fp32_resnet18(self):
-        self._test_exported_resnet(
-            Tester(torchvision.models.resnet18(), self.inputs),
-            xnnpack_perf=True,
-        )
+        self._test_exported_resnet(Tester(torchvision.models.resnet18(), self.inputs))
 
     @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
     def _test_qs8_resnet18(self):
