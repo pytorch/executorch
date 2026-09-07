@@ -84,7 +84,8 @@ extern size_t ethosu_fast_scratch_size;
 
 PlatformState* platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> specs,
-    executorch::runtime::MemoryAllocator* allocator);
+    executorch::runtime::MemoryAllocator* allocator,
+    const ExecutionHandle* handle);
 
 void platform_destroy(PlatformState* state);
 

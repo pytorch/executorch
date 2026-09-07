@@ -56,7 +56,8 @@ struct PlatformState {};
 
 PlatformState* platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
-    executorch::runtime::MemoryAllocator* /*allocator*/) {
+    executorch::runtime::MemoryAllocator* /*allocator*/,
+    const ExecutionHandle* /*handle*/) {
   return nullptr;
 }
 
