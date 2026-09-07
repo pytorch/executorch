@@ -12,7 +12,7 @@ Before you begin, make sure you have:
    - For HuggingFace tokenizers, this is a JSON file `tokenizer.json`
    - For SentencePiece tokenizers, this is a `tokenizer.model` file and normally lives alongside the weights file
 3. CMake and a C++ compiler installed
-   - CMake version 3.29 or higher
+   - CMake version 3.26 or higher
    - g++ or clang compiler
 
 ## Model Metadata
