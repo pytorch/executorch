@@ -14,6 +14,10 @@
 #include "MLXSequenceCache.h"
 #include "mlx_mutable_state.h"
 
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+#include "SwiftPMMetallibPath.h"
+#endif
+
 #include <executorch/extension/llm/cache/cache_registry.h>
 
 #include <executorch/runtime/backend/interface.h>
@@ -215,6 +219,23 @@ static std::mutex& mlx_global_mutex() {
   return m;
 }
 
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+// Must be called while holding mlx_global_mutex() and before MLX initializes
+// its Metal device. An application-provided path always takes precedence.
+static bool configure_metallib_path_locked() {
+  if (!::mlx::core::metal::get_metallib_path().empty()) {
+    return true;
+  }
+
+  const auto path = resolve_swiftpm_metallib_path();
+  if (!path.has_value()) {
+    return false;
+  }
+  ::mlx::core::metal::set_metallib_path(*path);
+  return true;
+}
+#endif
+
 class MLXBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~MLXBackend() override = default;
@@ -237,6 +258,17 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     std::lock_guard<std::mutex> lock(mlx_global_mutex());
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+    if (!configure_metallib_path_locked()) {
+      ET_LOG(
+          Error,
+          "Failed to find the MLX metallib in the SwiftPM resource bundle");
+      if (processed != nullptr) {
+        processed->Free();
+      }
+      return Error::NotFound;
+    }
+#endif
     auto* handle =
         context.get_runtime_allocator()->allocateInstance<MLXHandle>();
     if (handle == nullptr) {
