@@ -63,6 +63,7 @@ if(APPLE)
     mlx_metallib_path_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../runtime
   )
   set_source_files_properties(
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
     ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc"
   )
