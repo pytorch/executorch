@@ -82,6 +82,19 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "voxtral-realtime-vulkan",
+            "displayName": "Voxtral Realtime runner (Vulkan)",
+            "inherits": ["voxtral-realtime-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_VULKAN": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
         }
     ],
     "buildPresets": [
@@ -125,6 +138,15 @@
             "name": "voxtral-realtime-mlx",
             "displayName": "Build Voxtral Realtime runner (MLX)",
             "configurePreset": "voxtral-realtime-mlx",
+            "configuration": "Release",
+            "targets": [
+                "voxtral_realtime_runner"
+            ]
+        },
+        {
+            "name": "voxtral-realtime-vulkan",
+            "displayName": "Build Voxtral Realtime runner (Vulkan)",
+            "configurePreset": "voxtral-realtime-vulkan",
             "configuration": "Release",
             "targets": [
                 "voxtral_realtime_runner"
@@ -199,6 +221,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-realtime-mlx"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-realtime-vulkan",
+            "displayName": "Configure and build Voxtral Realtime runner (Vulkan)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-realtime-vulkan"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-realtime-vulkan"
                 }
             ]
         }

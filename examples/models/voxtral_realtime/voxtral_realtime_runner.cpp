@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <vector>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
@@ -31,20 +32,45 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     const std::string& tokenizer_path,
     const std::string& preprocessor_path,
     const std::string& data_path,
+    bool warmup)
+    : VoxtralRealtimeRunner(
+          model_path,
+          tokenizer_path,
+          preprocessor_path,
+          data_path.empty() ? std::vector<std::string>{}
+                            : std::vector<std::string>{data_path},
+          warmup) {}
+
+VoxtralRealtimeRunner::VoxtralRealtimeRunner(
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    const std::string& preprocessor_path,
+    const std::vector<std::string>& data_paths,
     bool warmup) {
   // Load the main model (.pte with audio_encoder, text_decoder,
   // token_embedding methods). Mmap avoids copying the file into memory.
-  // For CUDA backend, data_path points to the .ptd file with compiled kernels.
+  // Delegate data files hold external constants or compiled kernels.
   ET_LOG(Info, "Loading model from: %s", model_path.c_str());
-  if (!data_path.empty()) {
-    ET_LOG(Info, "Loading data from: %s", data_path.c_str());
-    model_ =
-        std::make_unique<Module>(model_path, data_path, Module::LoadMode::Mmap);
+  if (!data_paths.empty()) {
+    for (const auto& data_path : data_paths) {
+      std::ifstream data_file(data_path, std::ios::binary);
+      ET_CHECK_MSG(
+          data_file.good(),
+          "Delegate data file not found or unreadable: %s",
+          data_path.c_str());
+      ET_LOG(Info, "Loading data from: %s", data_path.c_str());
+    }
+    model_ = std::make_unique<Module>(
+        model_path, data_paths, Module::LoadMode::Mmap);
   } else {
     model_ = std::make_unique<Module>(model_path, Module::LoadMode::Mmap);
   }
   auto load_error = model_->load();
-  ET_CHECK_MSG(load_error == Error::Ok, "Failed to load model.");
+  ET_CHECK_MSG(
+      load_error == Error::Ok,
+      "Failed to load model or %zu delegate data file(s); verify every .ptd "
+      "belongs to this .pte.",
+      data_paths.size());
 
   // Model metadata is exported as constant_methods (zero-input methods that
   // return a scalar). These tell the runner the model's dimensions so it can
@@ -451,9 +477,10 @@ StreamingSession::StreamingSession(
           config.temperature,
           ::executorch::extension::llm::kTopp,
           static_cast<unsigned long long>(std::time(nullptr))),
-      input_embeds_(::executorch::extension::empty(
-          {1, 1, static_cast<int>(runner.dim_)},
-          runner.model_dtype_)) {}
+      input_embeds_(
+          ::executorch::extension::empty(
+              {1, 1, static_cast<int>(runner.dim_)},
+              runner.model_dtype_)) {}
 
 int StreamingSession::feed_audio(const float* data, int64_t num_samples) {
   audio_buf_.insert(audio_buf_.end(), data, data + num_samples);

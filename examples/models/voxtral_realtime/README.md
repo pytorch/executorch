@@ -119,6 +119,7 @@ python export_voxtral_rt.py \
 | `cuda` | ✓ | ✓ | `4w`, `8w` |
 | `cuda-windows` | ✓ | ✓ | `4w`, `8w` |
 | `rocm` | ✓ | ✓ | BF16; packed linear `4w` and embedding `8w` |
+| `vulkan` | ✓ | ✓ | `8w`, `8da4w` |
 
 
 MLX and Metal backends provide Apple GPU acceleration. CUDA provides NVIDIA GPU
@@ -371,6 +372,7 @@ make voxtral_realtime-cpu      # XNNPACK (CPU)
 make voxtral_realtime-metal    # Metal (Apple GPU)
 make voxtral_realtime-cuda     # CUDA (NVIDIA GPU)
 make voxtral_realtime-rocm     # ROCm (AMD GPU, experimental)
+make voxtral_realtime-vulkan   # Vulkan (Linux/Windows GPU)
 ```
 
 The CPU, CUDA, Metal, and MLX targets produce the runner at
@@ -484,8 +486,10 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
 Omit `--streaming` for offline transcription (requires an offline-exported
 model and offline preprocessor).
 
-For CUDA and ROCm, add
-`--data_path voxtral_rt_exports/aoti_cuda_blob.ptd`.
+For CUDA and ROCm exports, add
+`--data_path voxtral_rt_exports/aoti_cuda_blob.ptd`. For Vulkan exports with
+external constants, pass all generated files in order, for example
+`--data_paths voxtral_rt_exports/model_0.ptd,voxtral_rt_exports/model_1.ptd`.
 
 **Windows (PowerShell):**
 
@@ -522,7 +526,8 @@ Ctrl+C stops recording and flushes remaining text.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model_path` | `model.pte` | Path to exported model |
-| `--data_path` | (none) | Path to delegate data file (`.ptd`, required for CUDA and ROCm) |
+| `--data_path` | (none) | Path to one delegate data file (`.ptd`, required for CUDA and ROCm) |
+| `--data_paths` | (none) | Comma-separated delegate data files (`.ptd`, for external constants) |
 | `--tokenizer_path` | `tekken.json` | Path to Tekken tokenizer |
 | `--preprocessor_path` | (none) | Path to mel preprocessor `.pte` |
 | `--audio_path` | (none) | Path to 16kHz mono WAV file |
