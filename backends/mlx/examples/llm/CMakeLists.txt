@@ -67,7 +67,18 @@ target_include_directories(
 )
 target_link_libraries(mlx_run_llm_hf PUBLIC ${link_libraries})
 
+add_executable(mlx_run_llm_batched run_llm_batched.cpp)
+target_include_directories(
+  mlx_run_llm_batched PUBLIC ${_common_include_directories} ${_json_include}
+                             ${_flatbuffers_include}
+)
+target_link_libraries(
+  mlx_run_llm_batched
+  PUBLIC ${link_libraries} extension_llm_batching extension_llm_batching_module
+)
+
 # The copy helper is gated on EXECUTORCH_BUILD_MLX, which the installed config
 # does not set; reaching here means mlxdelegate exists.
 set(EXECUTORCH_BUILD_MLX ON)
 executorch_target_copy_mlx_metallib(mlx_run_llm_hf)
+executorch_target_copy_mlx_metallib(mlx_run_llm_batched)
