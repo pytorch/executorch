@@ -129,10 +129,9 @@ TEST(ValueSpecTest, ResizeData_PreservesGeneratedPattern) {
       DataGenType::ONES);
   value.resize_data(8);
   const ValueSpec& const_value = value;
-  ASSERT_EQ(const_value.get_float_data().size(), 8u);
-  for (size_t i = 0; i < 4; ++i) {
-    EXPECT_FLOAT_EQ(const_value.get_float_data()[i], 1.0f);
-  }
+  const std::vector<float> expected(
+      {1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+  EXPECT_EQ(const_value.get_float_data(), expected);
 }
 
 TEST(ValueSpecTest, MutableDataPtr_DetachesSharedTensorData) {
@@ -163,9 +162,12 @@ TEST(ValueSpecTest, ShareReferenceFrom_IgnoresNonTensorSpecs) {
       vkcompute::utils::kBuffer,
       vkcompute::utils::kWidthPacked,
       DataGenType::ZEROS);
+  tensor.get_ref_float_data() = {1.0f, 2.0f, 3.0f, 4.0f};
   const void* before = tensor.get_ref_float_data().data();
   tensor.share_reference_from(scalar);
   EXPECT_EQ(tensor.get_ref_float_data().data(), before);
+  const std::vector<float> expected({1.0f, 2.0f, 3.0f, 4.0f});
+  EXPECT_EQ(tensor.get_ref_float_data(), expected);
 }
 
 } // namespace

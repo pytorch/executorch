@@ -398,6 +398,10 @@ struct ValueSpec {
     return sizes;
   }
 
+  // References and pointers into tensor data must not be held across any other
+  // access to the same spec: a mutable access may detach the shared payload,
+  // leaving a previously returned reference bound to the old payload. Consume
+  // immediately.
   const std::vector<float>& get_float_data() const {
     ensure_data_generated();
     return data_->float_data;
@@ -486,7 +490,16 @@ struct ValueSpec {
   void* get_mutable_data_ptr();
   float get_element(size_t index) const;
 
-  // Data generation methods for deferred generation and caching
+  // Data generation methods for deferred generation and caching.
+  //
+  // ValueSpec is not thread-safe: lazy materialization and copy-on-write
+  // detach mutate shared state from const methods. Test cases are built and
+  // executed on a single thread.
+  //
+  // Implicit materialization (any data getter, resize_data) consumes the
+  // global seed counter. Callers needing deterministic data must call
+  // ensure_data_generated(explicit_seed) before any other access; a later
+  // seeded call is a no-op once data is generated.
   bool is_data_generated() const {
     return data_generated_;
   }
