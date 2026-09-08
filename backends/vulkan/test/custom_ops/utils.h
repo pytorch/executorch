@@ -14,6 +14,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -220,20 +221,7 @@ struct ValueSpec {
   bool is_constant_tensor;
   bool is_none_flag;
   bool is_int4_tensor;
-  bool data_generated_ = false;
-
-  std::vector<float> float_data;
-  std::vector<int32_t> int32_data;
-  std::vector<uint16_t> half_data; // Using uint16_t as substitute for half
-  std::vector<int8_t> int8_data; // For kChar (signed 8-bit)
-  std::vector<uint8_t> uint8_data; // For kByte (unsigned 8-bit)
   std::string string_data;
-
-  std::vector<float> ref_float_data;
-  std::vector<int32_t> ref_int32_data;
-  std::vector<uint16_t> ref_half_data;
-  std::vector<int8_t> ref_int8_data;
-  std::vector<uint8_t> ref_uint8_data;
 
   ValueSpec(
       const std::vector<int64_t>& sizes,
@@ -250,7 +238,8 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(false) {
-    // Data generation is deferred until ensure_data_generated() is called
+    // Data generation is deferred until first access (any data getter or
+    // ensure_data_generated() triggers it).
   }
 
   // Constructor for tensor with custom data generation type
@@ -270,7 +259,8 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(false) {
-    // Data generation is deferred until ensure_data_generated() is called
+    // Data generation is deferred until first access (any data getter or
+    // ensure_data_generated() triggers it).
   }
 
   // Constructor for single int
@@ -285,7 +275,7 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(true) {
-    int32_data.push_back(value);
+    data_->int32_data.push_back(value);
   }
 
   // Constructor for single float
@@ -300,7 +290,7 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(true) {
-    float_data.push_back(value);
+    data_->float_data.push_back(value);
   }
 
   // Constructor for single bool
@@ -315,7 +305,7 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(true) {
-    int32_data.push_back(value ? 1 : 0);
+    data_->int32_data.push_back(value ? 1 : 0);
   }
 
   // Constructor for int list
@@ -329,8 +319,9 @@ struct ValueSpec {
         is_constant_tensor(false),
         is_none_flag(false),
         is_int4_tensor(false),
-        data_generated_(true),
-        int32_data(values) {}
+        data_generated_(true) {
+    data_->int32_data = values;
+  }
 
   // Factory method for string (avoids ambiguity with vector constructor)
   static ValueSpec make_string(const std::string& value) {
@@ -385,86 +376,110 @@ struct ValueSpec {
   }
 
   int32_t get_int_value() const {
-    return int32_data.empty() ? 0 : int32_data[0];
+    ensure_data_generated();
+    return data_->int32_data.empty() ? 0 : data_->int32_data[0];
   }
   float get_float_value() const {
-    return float_data.empty() ? 0.0f : float_data[0];
+    ensure_data_generated();
+    return data_->float_data.empty() ? 0.0f : data_->float_data[0];
   }
   bool get_bool_value() const {
-    return int32_data.empty() ? false : (int32_data[0] != 0);
+    ensure_data_generated();
+    return data_->int32_data.empty() ? false : (data_->int32_data[0] != 0);
   }
   const std::string& get_string_value() const {
     return string_data;
   }
   const std::vector<int32_t>& get_int_list() const {
-    return int32_data;
+    ensure_data_generated();
+    return data_->int32_data;
   }
   const std::vector<int64_t>& get_tensor_sizes() const {
     return sizes;
   }
 
   const std::vector<float>& get_float_data() const {
-    return float_data;
+    ensure_data_generated();
+    return data_->float_data;
   }
   const std::vector<int32_t>& get_int32_data() const {
-    return int32_data;
+    ensure_data_generated();
+    return data_->int32_data;
   }
   const std::vector<uint16_t>& get_half_data() const {
-    return half_data;
+    ensure_data_generated();
+    return data_->half_data;
   }
   const std::vector<int8_t>& get_int8_data() const {
-    return int8_data;
+    ensure_data_generated();
+    return data_->int8_data;
   }
   const std::vector<uint8_t>& get_uint8_data() const {
-    return uint8_data;
+    ensure_data_generated();
+    return data_->uint8_data;
   }
 
   std::vector<float>& get_float_data() {
-    return float_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->float_data;
   }
   std::vector<int32_t>& get_int32_data() {
-    return int32_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->int32_data;
   }
   std::vector<uint16_t>& get_half_data() {
-    return half_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->half_data;
   }
   std::vector<int8_t>& get_int8_data() {
-    return int8_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->int8_data;
   }
   std::vector<uint8_t>& get_uint8_data() {
-    return uint8_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->uint8_data;
   }
 
   const std::vector<float>& get_ref_float_data() const {
-    return ref_float_data;
+    return reference_data_->float_data;
   }
   const std::vector<int32_t>& get_ref_int32_data() const {
-    return ref_int32_data;
+    return reference_data_->int32_data;
   }
   const std::vector<uint16_t>& get_ref_half_data() const {
-    return ref_half_data;
+    return reference_data_->half_data;
   }
   const std::vector<int8_t>& get_ref_int8_data() const {
-    return ref_int8_data;
+    return reference_data_->int8_data;
   }
   const std::vector<uint8_t>& get_ref_uint8_data() const {
-    return ref_uint8_data;
+    return reference_data_->uint8_data;
   }
 
   std::vector<float>& get_ref_float_data() {
-    return ref_float_data;
+    ensure_unique_reference_data();
+    return reference_data_->float_data;
   }
   std::vector<int32_t>& get_ref_int32_data() {
-    return ref_int32_data;
+    ensure_unique_reference_data();
+    return reference_data_->int32_data;
   }
   std::vector<uint16_t>& get_ref_half_data() {
-    return ref_half_data;
+    ensure_unique_reference_data();
+    return reference_data_->half_data;
   }
   std::vector<int8_t>& get_ref_int8_data() {
-    return ref_int8_data;
+    ensure_unique_reference_data();
+    return reference_data_->int8_data;
   }
   std::vector<uint8_t>& get_ref_uint8_data() {
-    return ref_uint8_data;
+    ensure_unique_reference_data();
+    return reference_data_->uint8_data;
   }
 
   void resize_data(size_t new_size);
@@ -475,8 +490,9 @@ struct ValueSpec {
   bool is_data_generated() const {
     return data_generated_;
   }
-  void ensure_data_generated(int seed = -1);
-  void copy_data_from(const ValueSpec& other);
+  void ensure_data_generated(int seed = -1) const;
+  void share_data_from(const ValueSpec& other);
+  void share_reference_from(const ValueSpec& other);
 
   // Set/get constant flag
   bool is_constant() const {
@@ -484,10 +500,6 @@ struct ValueSpec {
   }
   void set_constant(bool is_constant) {
     is_constant_tensor = is_constant;
-    // Constant tensors need data immediately for test case setup
-    if (is_constant && is_tensor()) {
-      ensure_data_generated();
-    }
   }
 
   // Set/get none flag
@@ -517,7 +529,22 @@ struct ValueSpec {
       float rel_tolerance = 1e-3f) const;
 
  private:
-  void generate_tensor_data(int seed = -1);
+  struct TensorData {
+    std::vector<float> float_data;
+    std::vector<int32_t> int32_data;
+    std::vector<uint16_t> half_data;
+    std::vector<int8_t> int8_data;
+    std::vector<uint8_t> uint8_data;
+  };
+
+  void ensure_unique_data() const;
+  void ensure_unique_reference_data() const;
+  void generate_tensor_data(int seed = -1) const;
+
+  mutable bool data_generated_ = false;
+  mutable std::shared_ptr<TensorData> data_ = std::make_shared<TensorData>();
+  mutable std::shared_ptr<TensorData> reference_data_ =
+      std::make_shared<TensorData>();
 };
 
 //
