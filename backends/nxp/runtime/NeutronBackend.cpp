@@ -636,6 +636,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
           index++;
         }
       }
+      // The neutronGetSdkVersion() function is available starting with Neutron Software 3.2.1.
+      // The code below is not backward compatible with earlier Neutron Software versions.
       NeutronSdkVersion neutron_sdk_version = neutronGetSdkVersion();
       uint16_t neutron_sdk_version_uint16 =
           static_cast<const uint16_t>(neutron_sdk_version.major << 8) |
