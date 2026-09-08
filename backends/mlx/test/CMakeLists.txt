@@ -62,7 +62,19 @@ if(EXECUTORCH_MLX_SWIFTPM_RESOURCES)
   target_include_directories(
     mlx_metallib_path_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../runtime
   )
-  target_compile_options(mlx_metallib_path_test PRIVATE -fobjc-arc)
+  set_source_files_properties(
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+  )
+  if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+    target_compile_options(
+      mlx_metallib_path_test PRIVATE -fsanitize=address,undefined
+                                     -fno-omit-frame-pointer
+    )
+    target_link_options(
+      mlx_metallib_path_test PRIVATE ${_mlx_sanitizer_link_options}
+    )
+  endif()
   target_link_libraries(mlx_metallib_path_test ${FOUNDATION_FRAMEWORK})
 endif()
 

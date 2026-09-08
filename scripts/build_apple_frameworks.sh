@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 MODES=()
-PRESETS=("ios" "ios-simulator" "macos")
+PRESETS=("apple-framework-ios" "apple-framework-ios-simulator" "apple-framework-macos")
 # To support backwards compatibility, we want to retain the same output directory.
 PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 
@@ -291,7 +291,6 @@ for preset_index in "${!PRESETS[@]}"; do
           --fresh \
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
-          -DEXECUTORCH_MLX_SWIFTPM_RESOURCES=ON \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
           --preset "${preset}"
 

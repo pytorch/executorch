@@ -12,8 +12,9 @@
 
 namespace executorch::backends::mlx {
 
-// Finds the current platform's metallib under the SwiftPM resource bundle in
-// one of the supplied container directories. Exposed for focused path tests.
+// Finds the current platform's metallib in the named SwiftPM resource bundle.
+// Each path may be a containing directory, a code bundle, or the resource
+// bundle itself. Exposed for focused path tests.
 std::optional<std::string> find_swiftpm_metallib_path(
     const std::vector<std::string>& container_paths);
 

@@ -30,6 +30,70 @@ const char* metallib_filename() {
 #endif
 }
 
+std::optional<std::string> regular_file_path(NSURL* url) {
+  if (url == nil || !url.fileURL || url.path == nil) {
+    return std::nullopt;
+  }
+
+  std::error_code error;
+  const std::filesystem::path path(url.fileSystemRepresentation);
+  if (!std::filesystem::is_regular_file(path, error)) {
+    return std::nullopt;
+  }
+  return path.string();
+}
+
+std::optional<std::string> find_in_resource_bundle(NSURL* bundle_url) {
+  if (bundle_url == nil || !bundle_url.fileURL) {
+    return std::nullopt;
+  }
+
+  NSBundle* bundle = [NSBundle bundleWithURL:bundle_url];
+  if (bundle == nil) {
+    return std::nullopt;
+  }
+
+  NSString* filename = [NSString stringWithUTF8String:metallib_filename()];
+  if (filename == nil) {
+    return std::nullopt;
+  }
+
+  if (auto path = regular_file_path(
+          [bundle URLForResource:filename.stringByDeletingPathExtension
+                   withExtension:filename.pathExtension])) {
+    return path;
+  }
+
+  // SwiftPM's native build system can emit a flat resource bundle. Check the
+  // bundle root explicitly in addition to Foundation's platform resource URL.
+  return regular_file_path([bundle_url URLByAppendingPathComponent:filename]);
+}
+
+std::optional<std::string> find_from_container(NSURL* container_url) {
+  if (container_url == nil || !container_url.fileURL) {
+    return std::nullopt;
+  }
+
+  NSString* resource_bundle_name =
+      [NSString stringWithUTF8String:kResourceBundleName];
+  if ([container_url.lastPathComponent isEqualToString:resource_bundle_name]) {
+    return find_in_resource_bundle(container_url);
+  }
+
+  NSBundle* container_bundle = [NSBundle bundleWithURL:container_url];
+  if (container_bundle != nil) {
+    NSURL* resource_bundle_url = [container_bundle
+        URLForResource:resource_bundle_name.stringByDeletingPathExtension
+         withExtension:resource_bundle_name.pathExtension];
+    if (auto path = find_in_resource_bundle(resource_bundle_url)) {
+      return path;
+    }
+  }
+
+  return find_in_resource_bundle(
+      [container_url URLByAppendingPathComponent:resource_bundle_name]);
+}
+
 void append_path(NSMutableOrderedSet<NSString*>* paths, NSURL* url) {
   if (url != nil && url.fileURL && url.path != nil) {
     [paths addObject:url.path];
@@ -40,25 +104,19 @@ void append_path(NSMutableOrderedSet<NSString*>* paths, NSURL* url) {
 
 std::optional<std::string> find_swiftpm_metallib_path(
     const std::vector<std::string>& container_paths) {
-  const char* filename = metallib_filename();
-  if (filename == nullptr) {
+  if (metallib_filename() == nullptr) {
     return std::nullopt;
   }
 
-  for (const auto& container_path : container_paths) {
-    const std::filesystem::path container(container_path);
-    std::filesystem::path resource =
-        container / kResourceBundleName / filename;
-    std::error_code error;
-    if (std::filesystem::is_regular_file(resource, error)) {
-      return resource.string();
-    }
-
-    if (container.filename() == kResourceBundleName) {
-      resource = container / filename;
-      error.clear();
-      if (std::filesystem::is_regular_file(resource, error)) {
-        return resource.string();
+  @autoreleasepool {
+    for (const auto& container_path : container_paths) {
+      NSString* path = [NSString stringWithUTF8String:container_path.c_str()];
+      if (path == nil) {
+        continue;
+      }
+      if (auto metallib_path =
+              find_from_container([NSURL fileURLWithPath:path])) {
+        return metallib_path;
       }
     }
   }

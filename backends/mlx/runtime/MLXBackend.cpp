@@ -219,15 +219,19 @@ static std::mutex& mlx_global_mutex() {
 }
 
 #ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
-// Must be called while holding mlx_global_mutex() and before any MLX operation.
-// If the bundle is not loaded yet, leave MLX unchanged and retry from init().
-void configure_metallib_path_locked() {
+// Must be called while holding mlx_global_mutex() and before MLX initializes
+// its Metal device. An application-provided path always takes precedence.
+static bool configure_metallib_path_locked() {
   if (!::mlx::core::metal::get_metallib_path().empty()) {
-    return;
+    return true;
   }
-  if (auto path = resolve_swiftpm_metallib_path()) {
-    ::mlx::core::metal::set_metallib_path(*path);
+
+  const auto path = resolve_swiftpm_metallib_path();
+  if (!path.has_value()) {
+    return false;
   }
+  ::mlx::core::metal::set_metallib_path(*path);
+  return true;
 }
 #endif
 
@@ -236,10 +240,6 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
   ~MLXBackend() override = default;
 
   bool is_available() const override {
-#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
-    std::lock_guard<std::mutex> lock(mlx_global_mutex());
-    configure_metallib_path_locked();
-#endif
 #if TARGET_OS_SIMULATOR
     // The simulator's Metal device reports no architecture, which MLX reads
     // without a null check while constructing its device. Past that, requesting
@@ -258,7 +258,15 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     std::lock_guard<std::mutex> lock(mlx_global_mutex());
 #ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
-    configure_metallib_path_locked();
+    if (!configure_metallib_path_locked()) {
+      ET_LOG(
+          Error,
+          "Failed to find the MLX metallib in the SwiftPM resource bundle");
+      if (processed != nullptr) {
+        processed->Free();
+      }
+      return Error::NotFound;
+    }
 #endif
     auto* handle =
         context.get_runtime_allocator()->allocateInstance<MLXHandle>();
