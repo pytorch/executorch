@@ -18,7 +18,14 @@ Major usage is to store data outside of the PTE file for clean program-data sepa
 
 ### Python APIs
 
-[serialize.py](https://github.com/pytorch/executorch/blob/main/extension/flat_tensor/serialize/serialize.py) contains the Python serialization and deserialization APIs.
+[serialize.py](https://github.com/pytorch/executorch/blob/main/extension/flat_tensor/serialize/serialize.py) contains the Python serialization and deserialization APIs, including `save_ptd` and `load_ptd`, which write and read a `Dict[str, torch.Tensor]` and mirror the C++ `save_ptd`.
+
+```python
+from executorch.extension.flat_tensor.serialize.serialize import load_ptd, save_ptd
+
+save_ptd("params.ptd", {"weight": torch.ones(2, 2)})
+tensors = load_ptd("params.ptd")
+```
 
 ### Alignment Considerations
 

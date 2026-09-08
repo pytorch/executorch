@@ -13,14 +13,19 @@ import math
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional
+from typing import BinaryIO, ClassVar, Dict, List, Literal, Optional, Union
 
 import executorch.extension.flat_tensor.serialize as serialize_package
+
+import torch
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
-from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir._serialize._named_data_store import (
+    _tensor_to_bytes,
+    NamedDataStoreOutput,
+)
 from executorch.exir._serialize._program import _insert_flatbuffer_header
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
@@ -28,6 +33,9 @@ from executorch.exir._serialize.data_serializer import (
     DataSerializer,
 )
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
+from executorch.exir._warnings import experimental
+from executorch.exir.tensor import get_scalar_type, stride_from_dim_order
+from executorch.exir.tensor_layout import TensorLayout
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
     DataSegment,
     FlatTensor,
@@ -47,6 +55,12 @@ _FLATBUFFER_ALIGNMENT: int = 16
 # //executorch/extension/flat_tensor/flat_tensor_data_map.h, which is the
 # highest version the runtime agrees to load.
 _FLAT_TENSOR_VERSION: int = 0
+
+# Default alignment of tensor data written by save_ptd. Matches
+# ExecutorchBackendConfig.segment_alignment in
+# //executorch/exir/capture/_config.py, so these files are aligned like the ones
+# export produces.
+_DEFAULT_TENSOR_ALIGNMENT: int = 128
 
 
 def _serialize_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
@@ -449,3 +463,121 @@ class FlatTensorSerializer(DataSerializer):
             pte_data={},
             external_data={name: data_payload.named_data},
         )
+
+
+@experimental("This API is experimental and subject to change without notice.")
+def save_ptd(
+    path: Union[str, os.PathLike, BinaryIO],
+    tensors: Dict[str, torch.Tensor],
+    tensor_alignment: int = _DEFAULT_TENSOR_ALIGNMENT,
+) -> None:
+    """Serializes a map of tensors to a .ptd file.
+
+    The Python counterpart of save_ptd in
+    executorch/extension/flat_tensor/serialize/serialize.h.
+
+    Args:
+        path: Destination .ptd path, or an open binary file to write to.
+        tensors: Map of key to tensor. Each tensor must be contiguous in either
+            the default or the channels-last memory format; load_ptd restores
+            the memory format it was saved with. Keys holding the same tensor
+            object share one copy of the data in the file.
+        tensor_alignment: Byte alignment of the tensor data in the file.
+
+    Raises:
+        TypeError: If a value in tensors is not a torch.Tensor.
+        ValueError: If tensor_alignment is not positive, or a tensor is neither
+            contiguous nor channels-last, or a tensor is a view into a larger
+            storage.
+    """
+    if tensor_alignment <= 0:
+        raise ValueError(
+            f"tensor_alignment must be greater than 0, received {tensor_alignment}."
+        )
+
+    buffers: List[bytes] = []
+    named_data: Dict[str, DataEntry] = {}
+    # Tied weights, such as an embedding reused as the output projection, reach
+    # us as one tensor under several keys. Point those keys at a single buffer
+    # instead of writing the same bytes twice. Every tensor stays referenced by
+    # `tensors` for the whole loop, so its id is not reused underneath us.
+    entry_by_tensor: Dict[int, DataEntry] = {}
+    for key, tensor in tensors.items():
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError(
+                f"Value for {key!r} must be a torch.Tensor, received "
+                f"{type(tensor).__name__}."
+            )
+        entry = entry_by_tensor.get(id(tensor))
+        if entry is None:
+            cpu_tensor = tensor.detach().cpu()
+            layout = TensorLayout.from_tensor(cpu_tensor)
+            data = _tensor_to_bytes(cpu_tensor)
+            # _tensor_to_bytes reads the whole storage for a non-contiguous
+            # tensor, so a channels-last view would be written as its base
+            # tensor's bytes.
+            if len(data) != cpu_tensor.nbytes:
+                raise ValueError(
+                    f"Tensor {key!r} is a view into a larger storage, which "
+                    "cannot be serialized without copying. Call .clone() on it "
+                    "first."
+                )
+            entry = DataEntry(
+                buffer_index=len(buffers),
+                alignment=tensor_alignment,
+                tensor_layout=layout,
+            )
+            entry_by_tensor[id(tensor)] = entry
+            buffers.append(data)
+        named_data[key] = entry
+
+    serializer = FlatTensorSerializer(
+        FlatTensorConfig(segment_alignment=tensor_alignment)
+    )
+    blob = serializer.serialize(DataPayload(buffers=buffers, named_data=named_data))
+
+    if isinstance(path, (str, os.PathLike)):
+        with open(path, "wb") as file:
+            blob.write_to_file(file)
+    else:
+        blob.write_to_file(path)
+
+
+@experimental("This API is experimental and subject to change without notice.")
+def load_ptd(path: Union[str, os.PathLike, BinaryIO]) -> Dict[str, torch.Tensor]:
+    """Deserializes the tensors in a .ptd file into a map of key to tensor.
+
+    The inverse of save_ptd. Backends may store opaque blobs in the same file;
+    named data with no tensor layout is skipped.
+
+    Args:
+        path: The .ptd path, or an open binary file to read from.
+
+    Returns:
+        Map of key to tensor.
+    """
+    if isinstance(path, (str, os.PathLike)):
+        with open(path, "rb") as file:
+            blob = file.read()
+    else:
+        blob = path.read()
+
+    payload = FlatTensorSerializer().deserialize(Cord(blob))
+
+    tensors: Dict[str, torch.Tensor] = {}
+    for key, entry in payload.named_data.items():
+        layout = entry.tensor_layout
+        if layout is None:
+            continue
+        dtype = get_scalar_type(layout.scalar_type)
+        # Cord handles buffers that may be file-backed. The copy is what gives
+        # the tensor memory it owns; frombuffer would otherwise alias the blob.
+        data = bytearray(bytes(Cord(payload.buffers[entry.buffer_index])))
+        # torch.frombuffer rejects an empty buffer.
+        flat = (
+            torch.frombuffer(data, dtype=dtype) if data else torch.empty(0, dtype=dtype)
+        )
+        tensors[key] = torch.as_strided(
+            flat, layout.sizes, stride_from_dim_order(layout.sizes, layout.dim_order)
+        )
+    return tensors
