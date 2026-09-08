@@ -19,11 +19,13 @@ namespace vkcompute {
 //           context_len. attn_weights are padded to multiples of 4 in the
 //           S/context_len dims and carry the input dtype. A coop (GEMV)
 //           shader variant is selected for single-token decode.
+//   RING  — Sliding-window KV-cache SDPA. Same layout as LLM, with logical
+//           context positions mapped into a wrapped physical cache.
 //   FUSED — General SDPA fused op. Q layout [B, H, S, D] (DSHB). No cache,
 //           optional additive attn_mask, optional scale arg. attn_weights
 //           are unpadded and always fp32. Tiled shader variant only.
 //
-enum class SDPAMode { LLM, FUSED };
+enum class SDPAMode { LLM, RING, FUSED };
 
 void add_sdpa_compute_attn_weights_node(
     ComputeGraph& graph,
@@ -33,7 +35,10 @@ void add_sdpa_compute_attn_weights_node(
     const ValueRef attn_mask,
     const float scale_val,
     const ValueRef attn_weights,
-    const SDPAMode mode);
+    const SDPAMode mode,
+    const ValueRef window_size = kDummyValueRef,
+    const int64_t max_seq_len = -1,
+    const int64_t max_context_len = -1);
 
 void add_sdpa_attn_weights_softmax_node(
     ComputeGraph& graph,
@@ -42,7 +47,8 @@ void add_sdpa_attn_weights_softmax_node(
     const ValueRef k,
     const ValueRef input_pos_symint,
     const ValueRef attn_weights_softmax,
-    const SDPAMode mode);
+    const SDPAMode mode,
+    const ValueRef window_size = kDummyValueRef);
 
 // Scalar values for the shader_override knob (see add_sdpa_compute_out_node).
 constexpr int64_t kShaderOverrideForceNonGqa = 0;
@@ -78,6 +84,7 @@ void add_sdpa_compute_out_node(
     const ValueRef input_pos_symint,
     const ValueRef out,
     const SDPAMode mode,
-    const ValueRef shader_override = kDummyValueRef);
+    const ValueRef shader_override = kDummyValueRef,
+    const ValueRef window_size = kDummyValueRef);
 
 } // namespace vkcompute
