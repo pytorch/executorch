@@ -12,11 +12,25 @@ namespace executorch::vulkan::prototyping {
 namespace {
 
 int operator_build_count = 0;
+int encode_count = 0;
+
+class CountingEncodeNode final : public ExecuteNode {
+ public:
+  explicit CountingEncodeNode(int& count) : count_(count) {}
+  void encode(ComputeGraph* graph) override {
+    (void)graph;
+    ++count_;
+  }
+
+ private:
+  int& count_;
+};
 
 void counting_operator(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   (void)args;
   ++operator_build_count;
-  graph.execute_nodes().emplace_back(std::make_unique<ExecuteNode>());
+  graph.execute_nodes().emplace_back(
+      std::make_unique<CountingEncodeNode>(encode_count));
 }
 
 REGISTER_OPERATORS {
@@ -189,17 +203,23 @@ TEST(BenchmarkGraphTest, ChainedDispatchesBuildOperatorOnce) {
 
   TestCase test_case;
   operator_build_count = 0;
+  encode_count = 0;
 
-  ComputeGraph graph = setup_compute_graph(
+  BenchmarkGraph benchmark = setup_compute_graph(
       test_case,
       "test_etvk.counting_operator.default",
       /*op_invocations_per_execute=*/8);
+  ComputeGraph& graph = benchmark.graph;
 
   EXPECT_EQ(operator_build_count, 1);
-  EXPECT_EQ(graph.execute_nodes().size(), 1);
+  ASSERT_EQ(graph.execute_nodes().size(), 1u);
+  EXPECT_EQ(benchmark.op_nodes.begin, 0u);
+  EXPECT_EQ(benchmark.op_nodes.end, 1u);
 
-  // Exercise the benchmark-only record-once/replay path over the built graph.
-  RepeatedGraphExecutor graph_executor(graph, /*repetitions=*/8);
+  // The replay path must encode the operator node once per repetition.
+  RepeatedGraphExecutor graph_executor(
+      graph, /*repetitions=*/8, benchmark.op_nodes);
+  EXPECT_EQ(encode_count, 8);
   graph_executor.execute();
 }
 

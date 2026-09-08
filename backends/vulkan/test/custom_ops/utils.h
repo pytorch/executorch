@@ -645,13 +645,15 @@ class TestCase {
 
   // When true, the ComputeGraph built for this test case sets
   // GraphConfig::force_resize, so every DynamicDispatchNode runs its resize
-  // function on each execute() even when no input shape changed. Because the
-  // output is already allocated at the swept shape, the resize must recompute
-  // the same shape from the current input — a wrong resize formula resizes the
-  // output to a mismatched shape and surfaces as a test failure. Default true
-  // (opt-out): every custom_ops test exercises its resize formulas across the
-  // swept shapes. Call set_force_resize(false) for the rare op whose resize fn
-  // is intentionally not shape-preserving under a fixed output allocation.
+  // function once during measurement setup (execute_test_case runs
+  // propagate_resize() after prepack) even when no input shape changed.
+  // Because the output is already allocated at the swept shape, the resize
+  // must recompute the same shape from the current input — a wrong resize
+  // formula resizes the output to a mismatched shape and surfaces as a test
+  // failure. Default true (opt-out): every custom_ops test exercises its
+  // resize formulas across the swept shapes. Call set_force_resize(false) for
+  // the rare op whose resize fn is intentionally not shape-preserving under a
+  // fixed output allocation.
   void set_force_resize(bool force_resize) {
     force_resize_ = force_resize;
   }
@@ -940,22 +942,42 @@ int64_t default_flop_calculator(const TestCase& test_case);
 
 using ReferenceComputeFunc = std::function<void(TestCase&)>;
 
-// Benchmark-only executor that records a graph's execute nodes N times into a
-// single reusable command buffer, then replays it on every execute().
-// Production ComputeGraph::execute() behavior is unchanged.
+// Half-open index range of the operator's own dispatch nodes within a
+// benchmark graph's execute_nodes(). Staging upload nodes precede it, staging
+// download nodes follow it.
+struct OpNodeRange {
+  size_t begin = 0;
+  size_t end = 0;
+};
+
+// A benchmark graph plus the location of its repeatable operator nodes.
+struct BenchmarkGraph {
+  ComputeGraph graph;
+  OpNodeRange op_nodes;
+};
+
+// Benchmark-only executor that records a graph's execute nodes into a single
+// reusable command buffer, then replays it on every execute(). Staging uploads
+// are encoded once, operator nodes N times, staging downloads once, so each
+// iteration performs the same work as the old stacked-nodes layout (1 upload +
+// N ops + 1 download) and the per-invocation divisor is unchanged. Production
+// ComputeGraph::execute() behavior is unchanged.
 //
 // Notes for interpreting benchmark numbers:
-// - Submit granularity differs from stacking N distinct nodes: all N encodings
+// - Submit granularity differs from stacking N distinct nodes: all encodings
 //   live in one command buffer with one submit per iteration (the old path
 //   could split across command buffers at the node-count threshold), so
 //   per-dispatch times may shift systematically against older data.
-// - No resize is triggered on the benchmark path in either design; resize
-//   coverage comes from the probe pass via graph.execute().
+// - Resize functions run once via propagate_resize() in execute_test_case
+//   before recording; replay itself never re-triggers resize.
 // - Repeated encodings share one node/dispatch id, so per-repetition
 //   querypool attribution is unavailable (aggregation keys on kernel name).
 class RepeatedGraphExecutor final {
  public:
-  RepeatedGraphExecutor(ComputeGraph& graph, int repetitions);
+  RepeatedGraphExecutor(
+      ComputeGraph& graph,
+      int repetitions,
+      OpNodeRange op_nodes);
   void execute();
 
  private:
@@ -1046,8 +1068,9 @@ float half_to_float(uint16_t half_val);
 
 // Setup compute graph based on TestCase and operation name. The op function is
 // invoked once. op_invocations_per_execute is used only to reserve enough
-// descriptor capacity for benchmark-only repeated command encoding.
-ComputeGraph setup_compute_graph(
+// descriptor capacity for benchmark-only repeated command encoding. Returns
+// the graph plus the range of the operator's own nodes for repeated encoding.
+BenchmarkGraph setup_compute_graph(
     TestCase& test_case,
     std::string op_name,
     int op_invocations_per_execute = 1);
