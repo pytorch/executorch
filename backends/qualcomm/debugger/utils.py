@@ -604,6 +604,14 @@ def _validate_pte_profile_level(pte_path: str) -> None:
             )
 
 
+def _validate_hextimate_soc(soc_id: QcomChipset) -> None:
+    if soc_id not in _HEXTIMATE_SUPPORTED_SOCS:
+        supported = ", ".join(soc.name for soc in _HEXTIMATE_SUPPORTED_SOCS)
+        raise AssertionError(
+            f"hextimate currently supports only {supported}; got {soc_id.name}."
+        )
+
+
 def _generate_htp_analysis_result(
     artifact_dir: str,
     soc_id: QcomChipset,
@@ -676,4 +684,28 @@ def generate_htp_profile_result(
         inputs=inputs,
         mode="optrace",
         adb=adb,
+    )
+
+
+def estimate_htp_profile_result(
+    artifact_dir: str,
+    soc_id: QcomChipset,
+    pte_path: str,
+) -> List[QnnHtpProfileArtifacts]:
+    """Estimate HTP performance with host-only hextimate artifacts.
+
+    Arguments:
+    - artifact_dir: host directory for dumped `.dlc`, QNN configs, and
+      qnn-profile-viewer outputs.
+    - soc_id: target SoC used by the compiled `.pte`; currently limited to:
+      SA8540, SA8255, QCS9100, and SA8797.
+    - pte_path: `.pte` produced by build_executorch_binary(),  requiring
+    `QnnConfig.online_prepare=True` for `.pte` generation and QNN SDK >= 2.41.
+    """
+    _validate_hextimate_soc(soc_id)
+    return _generate_htp_analysis_result(
+        artifact_dir=artifact_dir,
+        soc_id=soc_id,
+        pte_path=pte_path,
+        mode="hextimate",
     )
