@@ -36,7 +36,12 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     ModelInputSpec,
     to_model_input_spec,
 )
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchBackendConfig,
+    ExportedProgram,
+)
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
@@ -76,7 +81,7 @@ class NeutronRecipeConfig:
         target: Neutron hardware target string. Default: "imxrt700".
         operators_not_to_delegate: Optional list of op names excluded from NPU delegation.
                                    For example ["aten::convolution"].
-        intermediates_dir: Optional directory to dump intermediate compilation artefacts.
+        intermediates_dir: Optional directory to dump intermediate compilation artifacts.
         get_quantizer_fn: Optional factory that returns a custom Quantizer. When None,
                           the default NeutronQuantizer is used.
         custom_delegation_options: Optional fine-grained control over which ops are
@@ -88,7 +93,8 @@ class NeutronRecipeConfig:
         use_neutron_for_format_conversion: Whether Neutron handles data-format conversion.
         fetch_constants_to_sram: Place constant tensors in SRAM on the target.
         dump_kernel_selection_code: Generate kernel-selection files after compilation.
-        use_profiling: Enable execution profiling / ETRecord generation.
+        use_profiling: Enable Neutron execution profiling. IMPORTANT: To also generate an
+                       ETRecord, pass generate_etrecord=True to export() separately.
     """
 
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]]
@@ -187,6 +193,9 @@ class NXPRecipeProvider(BackendRecipeProvider):
             name=recipe_type.value,
             quantization_recipe=quantization_recipe,
             lowering_recipe=lowering_recipe,
+            executorch_backend_config=ExecutorchBackendConfig(
+                extract_delegate_segments=False
+            ),
         )
 
 
