@@ -74,8 +74,17 @@ target_include_directories(
 )
 target_link_libraries(
   mlx_run_llm_batched
-  PUBLIC ${link_libraries} extension_llm_batching extension_llm_batching_module
+  PUBLIC executorch
+         extension_llm_batching_module
+         extension_llm_runner
+         gflags
+         mlxdelegate
+         mlx
+         tokenizers::tokenizers
 )
+if(TARGET optimized_native_cpu_ops_lib)
+  target_link_libraries(mlx_run_llm_batched PUBLIC optimized_native_cpu_ops_lib)
+endif()
 
 # The copy helper is gated on EXECUTORCH_BUILD_MLX, which the installed config
 # does not set; reaching here means mlxdelegate exists.

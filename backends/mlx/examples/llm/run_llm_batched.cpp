@@ -6,19 +6,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Continuously batches independent prompts through one MLX-backed module.
+// Sample application demonstrating continuous batching and streaming output
+// for independent prompts submitted by a bounded set of worker threads.
 //
-//   mlx_run_llm_batched --pte model.pte --tokenizer tokenizer.json \
-//       --out_prefix gen "first prompt" "second prompt"
+// Required flags are --pte and --tokenizer. Each remaining positional argument
+// is a prompt. --n_workers controls concurrent submission, and generated text is
+// streamed to <out_prefix>_<prompt-index>.txt.
 
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -45,6 +51,8 @@ DEFINE_int32(
     -1,
     "Initial cache pool capacity; -1 keeps the cache default");
 DEFINE_int32(max_new_tokens, 128, "Maximum generated tokens per prompt");
+DEFINE_int32(n_workers, 4, "Number of prompt workers");
+DEFINE_int32(flush_every, 8, "Flush each output file every N generated tokens");
 DEFINE_int32(
     max_decode_sequences,
     32,
@@ -67,30 +75,59 @@ using ::executorch::runtime::Result;
 
 namespace {
 
-struct PreparedPrompt {
-  std::vector<batching::Token> tokens;
-  std::string output_path;
-};
-
 struct Emitter {
-  Emitter(const tokenizers::Tokenizer& tokenizer, batching::Token previous)
-      : stream(
+  Emitter(
+      const tokenizers::Tokenizer& tokenizer,
+      batching::Token previous,
+      const std::string& path,
+      std::size_t flush_every)
+      : file(path, std::ios::binary),
+        flush_every(flush_every),
+        stream(
             tokenizer,
-            [this](const std::string& piece) { text += piece; },
+            [this](const std::string& piece) {
+              file.write(
+                  piece.data(), static_cast<std::streamsize>(piece.size()));
+            },
             previous) {}
 
-  std::string text;
+  void append(batching::Token token) {
+    if (stream.append(token) != Error::Ok || !file) {
+      throw std::runtime_error("failed to decode or write output");
+    }
+    if (++tokens_since_flush == flush_every) {
+      file.flush();
+      tokens_since_flush = 0;
+      if (!file) {
+        throw std::runtime_error("failed to flush output");
+      }
+    }
+  }
+
+  void finish() {
+    stream.flush();
+    file.flush();
+    if (!file) {
+      throw std::runtime_error("failed to flush output");
+    }
+  }
+
+  std::ofstream file;
+  const std::size_t flush_every;
+  std::size_t tokens_since_flush = 0;
   TextStream stream;
 };
 
-struct Outcome {
+struct WorkerResult {
+  std::optional<batching::Session> session;
+  batching::GenerationHandle handle;
   std::optional<batching::FinishReason> reason;
+  std::optional<batching::GenerationMetrics> metrics;
   std::string message;
-  bool output_failed = false;
+  std::string output_path;
 
   bool failed() const {
-    return output_failed || !reason ||
-        *reason == batching::FinishReason::Cancelled ||
+    return !reason || *reason == batching::FinishReason::Cancelled ||
         *reason == batching::FinishReason::Failed;
   }
 };
@@ -186,20 +223,80 @@ bool get_stop_tokens(
   return true;
 }
 
-bool write_output(const std::string& path, const std::string& text) {
-  std::ofstream file(path, std::ios::binary);
-  if (!file) {
-    return false;
+void submit_prompt(
+    batching::Runner& runner,
+    const tokenizers::Tokenizer& tokenizer,
+    const std::string& prompt,
+    const std::vector<batching::Token>& stop_tokens,
+    WorkerResult& result) {
+  try {
+    std::string wrapped;
+    if (!wrap_turn(FLAGS_chat, prompt, wrapped)) {
+      result.message = "unknown --chat template: " + FLAGS_chat;
+      return;
+    }
+    auto encoded = tokenizer.encode(wrapped, FLAGS_chat == "0" ? 1 : 0, 0);
+    if (!encoded.ok() || encoded->empty()) {
+      result.message = "could not encode prompt";
+      return;
+    }
+    if (encoded->size() >
+        static_cast<std::size_t>(
+            FLAGS_max_session_tokens - FLAGS_max_new_tokens)) {
+      result.message =
+          "prompt plus --max_new_tokens exceeds --max_session_tokens";
+      return;
+    }
+
+    result.session = runner.open_session_async().get();
+    if (!result.session) {
+      result.message = "could not open session";
+      return;
+    }
+
+    auto emitter = std::make_shared<Emitter>(
+        tokenizer,
+        encoded->back(),
+        result.output_path,
+        static_cast<std::size_t>(FLAGS_flush_every));
+    if (!emitter->file) {
+      result.message = "could not open output file";
+      return;
+    }
+
+    batching::GenConfig config;
+    config.max_new_tokens = FLAGS_max_new_tokens;
+    config.sampling.temperature = static_cast<float>(FLAGS_temperature);
+    config.sampling.top_p = static_cast<float>(FLAGS_top_p);
+    config.sampling.top_k = FLAGS_top_k;
+    config.stop_tokens = stop_tokens;
+    config.seed = FLAGS_seed;
+
+    result.handle = result.session->generate_async(
+        std::move(*encoded),
+        std::move(config),
+        [emitter](const batching::GenerationUpdate& update) {
+          std::size_t count = update.tokens.size();
+          if (update.finish_reason == batching::FinishReason::StopToken &&
+              count > 0) {
+            --count;
+          }
+          for (std::size_t i = 0; i < count; ++i) {
+            emitter->append(update.tokens[i]);
+          }
+          if (update.finish_reason) {
+            emitter->finish();
+          }
+        });
+  } catch (const std::exception& error) {
+    result.message = error.what();
   }
-  file.write(text.data(), static_cast<std::streamsize>(text.size()));
-  file.flush();
-  return file.good();
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-  gflags::ParseCommandLineFlags(&argc, &argv, /*remove_flags=*/true);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
   const std::vector<std::string> prompts(argv + 1, argv + argc);
 
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || prompts.empty()) {
@@ -209,9 +306,12 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (FLAGS_max_session_tokens <= 0 || FLAGS_max_new_tokens <= 0 ||
-      FLAGS_max_decode_sequences <= 0) {
-    std::cerr << "session, generation, and decode limits must be positive"
-              << std::endl;
+      FLAGS_max_decode_sequences <= 0 || FLAGS_n_workers <= 0 ||
+      FLAGS_flush_every <= 0) {
+    std::cerr
+        << "session, generation, decode, worker, and flush limits must be "
+           "positive"
+        << std::endl;
     return 1;
   }
   if (FLAGS_temperature < 0.0 || FLAGS_top_p <= 0.0 || FLAGS_top_p > 1.0 ||
@@ -273,33 +373,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::vector<PreparedPrompt> prepared;
-  prepared.reserve(prompts.size());
-  const std::size_t max_prompt_tokens =
-      static_cast<std::size_t>(FLAGS_max_session_tokens - FLAGS_max_new_tokens);
-  for (std::size_t i = 0; i < prompts.size(); ++i) {
-    std::string wrapped;
-    if (!wrap_turn(FLAGS_chat, prompts[i], wrapped)) {
-      std::cerr << "unknown --chat template: " << FLAGS_chat << std::endl;
-      return 1;
-    }
-    auto encoded = tokenizer->encode(
-        wrapped, /*bos=*/FLAGS_chat == "0" ? 1 : 0, /*eos=*/0);
-    if (!encoded.ok() || encoded->empty()) {
-      std::cerr << "could not encode prompt " << i << std::endl;
-      return 1;
-    }
-    if (encoded->size() > max_prompt_tokens) {
-      std::cerr << "prompt " << i << " plus --max_new_tokens exceeds "
-                << "--max_session_tokens" << std::endl;
-      return 1;
-    }
-    prepared.push_back(
-        PreparedPrompt{
-            std::move(*encoded),
-            FLAGS_out_prefix + "_" + std::to_string(i) + ".txt"});
-  }
-
+  const std::size_t worker_count =
+      std::min(prompts.size(), static_cast<std::size_t>(FLAGS_n_workers));
   auto executor = batching::ModuleExecutor::create(
       std::move(module),
       static_cast<int>(prompts.size()),
@@ -337,102 +412,89 @@ int main(int argc, char** argv) {
   }
 
   batching::Runner runner(**executor, std::move(scheduler));
-  std::vector<batching::Session> sessions;
-  sessions.reserve(prepared.size());
-  for (std::size_t i = 0; i < prepared.size(); ++i) {
-    auto session = runner.open_session_async().get();
-    if (!session) {
-      std::cerr << "could not open session " << i << std::endl;
+  std::vector<WorkerResult> results(prompts.size());
+  for (std::size_t i = 0; i < results.size(); ++i) {
+    results[i].output_path =
+        FLAGS_out_prefix + "_" + std::to_string(i) + ".txt";
+    std::ofstream output(
+        results[i].output_path, std::ios::binary | std::ios::trunc);
+    if (!output) {
       runner.shutdown();
+      std::cerr << "could not create " << results[i].output_path << std::endl;
       return 1;
     }
-    sessions.push_back(std::move(*session));
   }
 
-  std::vector<std::shared_ptr<Emitter>> emitters;
-  std::vector<batching::GenerationHandle> handles;
-  emitters.reserve(prepared.size());
-  handles.reserve(prepared.size());
-
-  for (std::size_t i = 0; i < prepared.size(); ++i) {
-    auto emitter =
-        std::make_shared<Emitter>(*tokenizer, prepared[i].tokens.back());
-    batching::GenConfig config;
-    config.max_new_tokens = FLAGS_max_new_tokens;
-    config.sampling.temperature = static_cast<float>(FLAGS_temperature);
-    config.sampling.top_p = static_cast<float>(FLAGS_top_p);
-    config.sampling.top_k = FLAGS_top_k;
-    config.stop_tokens = stop_tokens;
-    config.seed = FLAGS_seed;
-
-    handles.push_back(
-        sessions[i].generate_async(
-            std::move(prepared[i].tokens),
-            std::move(config),
-            [emitter](const batching::GenerationUpdate& update) {
-              std::size_t count = update.tokens.size();
-              if (update.finish_reason == batching::FinishReason::StopToken &&
-                  count > 0) {
-                --count;
-              }
-              for (std::size_t j = 0; j < count; ++j) {
-                if (emitter->stream.append(update.tokens[j]) != Error::Ok) {
-                  throw std::runtime_error(
-                      "tokenizer failed while decoding output");
-                }
-              }
-              if (update.finish_reason) {
-                emitter->stream.flush();
-              }
-            }));
-    emitters.push_back(std::move(emitter));
+  std::atomic<std::size_t> next_prompt{0};
+  std::vector<std::thread> workers;
+  workers.reserve(worker_count);
+  try {
+    for (std::size_t i = 0; i < worker_count; ++i) {
+      workers.emplace_back([&] {
+        while (true) {
+          const std::size_t prompt_index =
+              next_prompt.fetch_add(1, std::memory_order_relaxed);
+          if (prompt_index >= prompts.size()) {
+            return;
+          }
+          submit_prompt(
+              runner,
+              *tokenizer,
+              prompts[prompt_index],
+              stop_tokens,
+              results[prompt_index]);
+        }
+      });
+    }
+  } catch (const std::exception& error) {
+    for (auto& worker : workers) {
+      worker.join();
+    }
+    runner.shutdown();
+    std::cerr << "could not start worker: " << error.what() << std::endl;
+    return 1;
   }
-
-  std::vector<batching::GenerationMetrics> per_generation(prepared.size());
-  std::vector<Outcome> outcomes(prepared.size());
-  for (std::size_t i = 0; i < handles.size(); ++i) {
-    handles[i].wait();
-    per_generation[i] = handles[i].metrics();
-    outcomes[i].reason = handles[i].finish_reason();
-    outcomes[i].message = handles[i].error_message();
+  for (auto& worker : workers) {
+    worker.join();
+  }
+  for (WorkerResult& result : results) {
+    if (!result.handle.valid()) {
+      continue;
+    }
+    result.handle.wait();
+    result.metrics = result.handle.metrics();
+    result.reason = result.handle.finish_reason();
+    result.message = result.handle.error_message();
   }
 
   runner.shutdown();
   const batching::EngineMetrics engine = runner.metrics();
 
-  for (std::size_t i = 0; i < prepared.size(); ++i) {
-    if (!write_output(prepared[i].output_path, emitters[i]->text)) {
-      outcomes[i].output_failed = true;
-      if (!outcomes[i].message.empty()) {
-        outcomes[i].message += "; ";
-      }
-      outcomes[i].message += "could not write " + prepared[i].output_path;
-    }
-  }
-
   if (FLAGS_metrics) {
     std::cout << "\n";
-    for (std::size_t i = 0; i < per_generation.size(); ++i) {
-      std::cout << "[" << i << "] "
-                << batching::format_report(per_generation[i]);
+    for (std::size_t i = 0; i < results.size(); ++i) {
+      if (results[i].metrics) {
+        std::cout << "[" << i << "] "
+                  << batching::format_report(*results[i].metrics);
+      }
     }
     std::cout << "\n" << batching::format_report(engine);
   }
 
   std::size_t failures = 0;
-  for (const Outcome& outcome : outcomes) {
-    failures += outcome.failed() ? 1 : 0;
+  for (const WorkerResult& result : results) {
+    failures += result.failed() ? 1 : 0;
   }
   if (failures > 0) {
     std::cout << "\nfailures:\n";
-    for (std::size_t i = 0; i < outcomes.size(); ++i) {
-      if (!outcomes[i].failed()) {
+    for (std::size_t i = 0; i < results.size(); ++i) {
+      if (!results[i].failed()) {
         continue;
       }
-      std::cout << "  [" << i << "] " << prepared[i].output_path << ": "
-                << reason_name(outcomes[i].reason);
-      if (!outcomes[i].message.empty()) {
-        std::cout << ": " << outcomes[i].message;
+      std::cout << "  [" << i << "] " << results[i].output_path << ": "
+                << reason_name(results[i].reason);
+      if (!results[i].message.empty()) {
+        std::cout << ": " << results[i].message;
       }
       std::cout << "\n";
     }
