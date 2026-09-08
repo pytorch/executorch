@@ -181,19 +181,12 @@ set(_mlx_metallib ${_mlx_binary_dir}/mlx/backend/metal/kernels/mlx.metallib)
 message(
   STATUS "Building MLX from submodule (ExternalProject): ${MLX_SOURCE_DIR}"
 )
-# Local patches applied to the MLX submodule before its build. The migration
-# inputs recognize the exact predecessor patch state without resetting unrelated
-# submodule edits. A context mismatch fails loudly rather than guessing.
-set(_mlx_sdk_patch
+# Local patches applied to the MLX submodule before its build. Kept minimal and
+# idempotent (patches/apply.sh reverse-checks each before applying); a context
+# mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
+# each patch file under patches/ for its rationale.
+set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform.patch
-)
-set(_mlx_legacy_sdk_patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_sdk_per_platform_legacy.patch
-)
-set(_mlx_legacy_swiftpm_patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_swiftpm_metallib_name_legacy.patch
-)
-set(_mlx_addrspace_patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_metal_remove_addrspace_compat.patch
 )
 
@@ -290,17 +283,15 @@ ExternalProject_Add(
 # ExternalProject stamps the patch step and BUILD_ALWAYS does not re-run it, so
 # a reused build directory whose MLX source was reset (patches reverted) would
 # recompile an unpatched MLX and silently drop the iOS Metal SDK selection.
-# Re-apply the patches on every build. apply.sh migrates the exact predecessor
-# SDK patch, removes the retired SwiftPM-name patch, and idempotently applies
-# the current patches. DEPENDERS configure, not build: the SDK patch edits the
-# sub-project's own CMake, so it must land before the sub-configure runs. That
-# means the sub-configure re-runs on each build, which is the price of ordering.
+# Re-apply the patches on every build; apply.sh is idempotent (it reverse-checks
+# each patch, skipping those already applied). DEPENDERS configure, not build:
+# mlx_metal_sdk_per_platform.patch edits the sub-project's own CMake to select
+# the Metal SDK, so it must land before the sub-configure runs. That means the
+# sub-configure re-runs on each build, which is the price of the ordering.
 ExternalProject_Add_Step(
   mlx_external reapply_patches
-  COMMAND
-    bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
-    --migrate ${_mlx_legacy_sdk_patch} ${_mlx_sdk_patch} --remove
-    ${_mlx_legacy_swiftpm_patch} --apply ${_mlx_addrspace_patch}
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh ${MLX_SOURCE_DIR}
+          ${_mlx_patches}
   DEPENDEES patch
   DEPENDERS configure
   ALWAYS 1

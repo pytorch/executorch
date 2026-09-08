@@ -54,10 +54,6 @@ jobs:
       script: |
         set -eux
 
-        echo "::group::Test MLX patch migration"
-        bash backends/mlx/patches/test_apply.sh
-        echo "::endgroup::"
-
         echo "::group::Install ExecuTorch and configure build"
         ${CONDA_RUN} python install_executorch.py > /dev/null
         # The sanitizers fail on github VM runner, but pass on real device
