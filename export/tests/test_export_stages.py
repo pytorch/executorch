@@ -1231,6 +1231,15 @@ class TestEmptyPassDictIsNotApplied(unittest.TestCase):
         manager.exported_program.return_value = Mock()
         return manager
 
+    def test_edge_program_manager_stage_may_follow_partitioning(self) -> None:
+        # The point of the stage for a delegate recipe: its passes act on what
+        # the partitioner left outside the delegates, so it has to be able to
+        # run after TO_EDGE_TRANSFORM_AND_LOWER and not only after TO_EDGE.
+        self.assertEqual(
+            set(EdgeProgramManagerTransformStage().valid_predecessor_stages),
+            {StageType.TO_EDGE, StageType.TO_EDGE_TRANSFORM_AND_LOWER},
+        )
+
     def test_edge_program_manager_stage_skips_empty_transform(self) -> None:
         manager = self._manager()
         stage = EdgeProgramManagerTransformStage(

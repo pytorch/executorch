@@ -48,6 +48,11 @@ def define_arm_tests():
         "ops/test_split.py",
     ]
 
+    # Export recipes
+    test_files += [
+        "recipes/test_arm_recipes.py",
+    ]
+
     # Quantization
     test_files += [
         "quantizer/test_generic_annotater.py",
@@ -131,6 +136,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
                 "//executorch/backends/arm:ao_ext",
                 "//executorch/backends/arm:ethosu",
+                "//executorch/backends/arm/recipes:recipes",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
                 "//executorch/backends/arm:vgf",

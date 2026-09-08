@@ -87,12 +87,30 @@ Result<cache::CacheConfig> config_from_program(Module& module) {
 
 std::uint64_t nondeterministic_seed() {
   std::random_device device;
-  return (static_cast<std::uint64_t>(device()) << 32) ^ device();
+  return device();
 }
 
-} // namespace
+// One forward's inputs, flattened across the batch. Entry i of `tokens` and of
+// `positions` names the same token, which is how the cache pairs them.
+struct Step {
+  // Signed to match the model's token input, not Token.
+  std::vector<std::int64_t> tokens;
+  std::vector<std::int64_t> positions;
+  // The sequence each token belongs to, declared to the cache one slice at a
+  // time so a declaration always matches the forward that places it.
+  std::vector<std::int32_t> seq_ids;
+  // Per input: the logits row it draws from, or -1 when its prediction is
+  // discarded. An input of any width contributes one, since only its last row
+  // predicts a token the session does not hold.
+  std::vector<int> logit_indices;
+};
 
-std::optional<Step> build_step(
+// Flatten the batch and truncate whatever it reopens; execute() declares each
+// slice to the cache as it runs it. A per-sequence cursor carries the batch's
+// own writes, so consecutive chunks of one prompt abut and only the first can
+// reopen committed ground. Every input is checked before any is truncated, so
+// a refusal leaves the cache untouched.
+Result<Step> build_step(
     cache::BatchControl& ctl,
     const BatchInput& batch,
     const std::unordered_map<SessionId, SessionInfo>& sessions,
@@ -103,8 +121,7 @@ std::optional<Step> build_step(
   step.positions.reserve(total);
   step.logit_indices.reserve(batch.inputs.size());
 
-  std::vector<std::int32_t> seq_ids;
-  seq_ids.reserve(total);
+  step.seq_ids.reserve(total);
   // Truncations the batch asks for, held until every input has been checked.
   std::vector<std::pair<std::int32_t, int>> rewinds;
   // Where each sequence stands mid-batch: the cache still reports what it held
@@ -115,21 +132,23 @@ std::optional<Step> build_step(
     const auto seq_it = sessions.find(input.sid);
     if (seq_it == sessions.end()) {
       ET_LOG(Error, "build_step: session %" PRId64 " is not open", input.sid);
-      return std::nullopt;
+      return Error::InvalidArgument;
     }
-    const std::int32_t seq = seq_it->second.seq;
+    const std::int32_t seq_id = seq_it->second.seq_id;
     if (input.size == 0 || !input.tokens ||
         input.offset + input.size > input.tokens->size()) {
       ET_LOG(
           Error,
           "build_step: session %" PRId64 " gave a slice its tokens do not hold",
           input.sid);
-      return std::nullopt;
+      return Error::InvalidArgument;
     }
 
     const std::int64_t start = static_cast<std::int64_t>(input.position) +
         static_cast<std::int64_t>(input.offset);
-    int& at = cursor.try_emplace(seq, ctl.next_pos(seq)).first->second;
+    const auto [cursor_it, first_for_seq] =
+        cursor.try_emplace(seq_id, ctl.next_pos(seq_id));
+    int& at = cursor_it->second;
     if (start > at) {
       // Positions nothing attended, and nothing later reaches back to fill.
       ET_LOG(
@@ -139,18 +158,28 @@ std::optional<Step> build_step(
           input.sid,
           start,
           at);
-      return std::nullopt;
+      return Error::InvalidArgument;
     }
     if (start < at) {
+      if (!first_for_seq) {
+        // Its predecessor in this batch has already been laid down, so a
+        // rewind now would truncate committed cells for a step whose
+        // positions repeat and cannot be placed.
+        ET_LOG(
+            Error,
+            "build_step: session %" PRId64 " overlaps its earlier input",
+            input.sid);
+        return Error::InvalidArgument;
+      }
       if (start == 0) {
         // Emptying a sequence hands its id back, and the step names it.
         ET_LOG(
             Error,
             "build_step: session %" PRId64 " reopens from the start",
             input.sid);
-        return std::nullopt;
+        return Error::InvalidArgument;
       }
-      rewinds.emplace_back(seq, static_cast<int>(start));
+      rewinds.emplace_back(seq_id, static_cast<int>(start));
       at = static_cast<int>(start);
     }
 
@@ -162,7 +191,7 @@ std::optional<Step> build_step(
           input.sid,
           end,
           max_session_tokens);
-      return std::nullopt;
+      return Error::OutOfResources;
     }
 
     const Token* slice = input.tokens->data() + input.offset;
@@ -172,25 +201,22 @@ std::optional<Step> build_step(
     for (std::size_t k = 0; k < input.size; ++k) {
       step.positions.push_back(start + static_cast<std::int64_t>(k));
     }
-    seq_ids.insert(seq_ids.end(), input.size, seq);
+    step.seq_ids.insert(step.seq_ids.end(), input.size, seq_id);
     at = static_cast<int>(end);
     step.logit_indices.push_back(
         input.produce_output ? static_cast<int>(step.tokens.size()) - 1 : -1);
   }
 
-  for (const auto& [seq, from] : rewinds) {
-    if (!ctl.seq_rm(seq, from, std::nullopt)) {
-      ET_LOG(Error, "build_step: sequence %d would not truncate", seq);
-      return std::nullopt;
+  for (const auto& [seq_id, from] : rewinds) {
+    if (!ctl.seq_rm(seq_id, from, std::nullopt)) {
+      ET_LOG(Error, "build_step: sequence %d would not truncate", seq_id);
+      return Error::Internal;
     }
-  }
-  // After the truncations, so the cells they freed count toward admission.
-  if (!ctl.declare_step(seq_ids)) {
-    ET_LOG(Error, "build_step: the cache turned the step down");
-    return std::nullopt;
   }
   return step;
 }
+
+} // namespace
 
 ModuleExecutor::ModuleExecutor(
     std::unique_ptr<Module> module,
@@ -349,12 +375,12 @@ std::optional<SessionId> ModuleExecutor::open_session() {
   if (static_cast<int>(sessions_.size()) >= max_sessions_) {
     return std::nullopt;
   }
-  const std::optional<std::int32_t> seq = ctl_->seq_new();
-  if (!seq) {
+  const std::optional<std::int32_t> seq_id = ctl_->seq_new();
+  if (!seq_id) {
     return std::nullopt;
   }
   const SessionId session = next_session_++;
-  sessions_.emplace(session, SessionInfo{*seq, nullptr});
+  sessions_.emplace(session, SessionInfo{*seq_id, nullptr});
   return session;
 }
 
@@ -364,7 +390,7 @@ void ModuleExecutor::close_session(SessionId session) {
     return;
   }
   // Frees the cells and hands the sequence id back. The session id is not.
-  ctl_->seq_rm(it->second.seq, 0, std::nullopt);
+  ctl_->seq_rm(it->second.seq_id, 0, std::nullopt);
   sessions_.erase(it);
 }
 
@@ -389,9 +415,9 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
 
-  const std::optional<Step> step =
+  const Result<Step> step =
       build_step(*ctl_, batch, sessions_, max_session_tokens_);
-  if (!step) {
+  if (!step.ok()) {
     return false;
   }
 
@@ -401,6 +427,15 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   const int total = static_cast<int>(step->tokens.size());
   for (int off = 0; off < total; off += max_step_tokens_) {
     const int n = std::min(max_step_tokens_, total - off);
+    // Placement checks the forward's token count against the declaration, so
+    // each slice declares its own.
+    if (!ctl_->declare_step(
+            std::vector<std::int32_t>(
+                step->seq_ids.begin() + off,
+                step->seq_ids.begin() + off + n))) {
+      ET_LOG(Error, "ModuleExecutor: the cache refused a slice of %d", n);
+      return false;
+    }
     auto tokens = make_tensor_ptr(
         {1, n},
         std::vector<std::int64_t>(

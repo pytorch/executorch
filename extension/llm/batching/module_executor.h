@@ -24,6 +24,8 @@
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/runtime/core/result.h>
+#include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
 namespace executorch {
 namespace extension {
@@ -37,39 +39,11 @@ namespace cache = ::executorch::extension::llm::cache;
 
 // A session's cache sequence and the sampler its generation draws from.
 struct SessionInfo {
-  std::int32_t seq;
+  std::int32_t seq_id;
   std::unique_ptr<Sampler> sampler;
 };
 
-// One forward's inputs, flattened across the batch. Entry i of `tokens` and of
-// `positions` names the same token, which is how the cache pairs them.
-struct Step {
-  // Signed to match the model's token input, not Token.
-  std::vector<std::int64_t> tokens;
-  std::vector<std::int64_t> positions;
-  // Per input: the logits row it draws from, or -1 when its prediction is
-  // discarded. An input of any width contributes one, since only its last row
-  // predicts a token the session does not hold.
-  std::vector<int> logit_indices;
-};
-
-// Flatten the batch, truncate whatever it reopens, and declare it to the cache.
-// A per-sequence cursor carries the batch's own writes, so consecutive chunks
-// of one prompt abut and only the first can reopen committed ground. Every
-// input is checked before any is truncated, so a refusal leaves the cache
-// untouched.
-//
-// nullopt = an input names an unknown session, starts past the end of its
-// sequence, carries it past `max_session_tokens`, reopens from the start, or
-// the cache turned the declaration down. Width is not checked; execute()
-// slices a step wider than the method takes.
-std::optional<Step> build_step(
-    cache::BatchControl& ctl,
-    const BatchInput& batch,
-    const std::unordered_map<SessionId, SessionInfo>& sessions,
-    int max_session_tokens);
-
-class ModuleExecutor : public Executor {
+class ET_EXPERIMENTAL ModuleExecutor : public Executor {
  public:
   ~ModuleExecutor() override;
 
