@@ -24,7 +24,7 @@ jobs:
 
   run:
     needs: docker-image
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.14
     permissions:
       id-token: write
       contents: read

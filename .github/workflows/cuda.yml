@@ -67,7 +67,7 @@ jobs:
         cuda-version: ["12.6", "13.0"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -126,7 +126,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -167,7 +167,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -211,7 +211,7 @@ jobs:
     name: test-cuda-target-smem-cross-arch-a10g
     needs: [export-cuda-target-smem-cross-arch]
     if: needs.export-cuda-target-smem-cross-arch.result == 'success'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -272,7 +272,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -352,7 +352,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -394,7 +394,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -564,7 +564,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -639,7 +639,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read

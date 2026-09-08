@@ -46,7 +46,7 @@ concurrency:
 jobs:
   build-cmsis-pack:
     name: build-cmsis-pack
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read

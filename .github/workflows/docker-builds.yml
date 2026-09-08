@@ -126,7 +126,7 @@ jobs:
       # No step timeout: the action retries a cold BuildKit pool for at least two
       # hours, and the job's timeout-minutes is what bounds that.
       - name: Build and push to ECR
-        uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
+        uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@release/2.14
         with:
           # calculate-docker-image wrapped the build in three retries because it
           # "frequently fails with network error downloading various stuffs".

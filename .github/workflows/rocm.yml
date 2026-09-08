@@ -170,7 +170,7 @@ jobs:
       fail-fast: false
       matrix:
         rocm-version: ["7.2"]
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -198,7 +198,7 @@ jobs:
       needs.voxtral-run-decision.outputs.run-voxtral == 'true' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read
@@ -240,7 +240,7 @@ jobs:
     concurrency:
       group: rocm-gfx1100-${{ github.event.pull_request.number || github.ref_name }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.14
     permissions:
       id-token: write
       contents: read
