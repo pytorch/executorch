@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <limits>
 #include <random>
 #include <utility>
 
@@ -18,6 +19,7 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch {
@@ -90,31 +92,15 @@ std::uint64_t nondeterministic_seed() {
   return device();
 }
 
-// One forward's inputs, flattened across the batch. Entry i of `tokens` and of
-// `positions` names the same token, which is how the cache pairs them.
-struct Step {
-  // Signed to match the model's token input, not Token.
-  std::vector<std::int64_t> tokens;
-  std::vector<std::int64_t> positions;
-  // The sequence each token belongs to, declared to the cache one slice at a
-  // time so a declaration always matches the forward that places it.
-  std::vector<std::int32_t> seq_ids;
-  // Per input: the logits row it draws from, or -1 when its prediction is
-  // discarded. An input of any width contributes one, since only its last row
-  // predicts a token the session does not hold.
-  std::vector<int> logit_indices;
-};
+} // namespace
 
-// Flatten the batch and truncate whatever it reopens; execute() declares each
-// slice to the cache as it runs it. A per-sequence cursor carries the batch's
-// own writes, so consecutive chunks of one prompt abut and only the first can
-// reopen committed ground. Every input is checked before any is truncated, so
-// a refusal leaves the cache untouched.
-Result<Step> build_step(
-    cache::BatchControl& ctl,
-    const BatchInput& batch,
-    const std::unordered_map<SessionId, SessionInfo>& sessions,
-    int max_session_tokens) {
+Result<ModuleExecutor::Step> ModuleExecutor::build_step(
+    const BatchInput& batch) {
+  // Flatten the batch and truncate whatever it reopens; execute() declares each
+  // slice to the cache as it runs it. A per-sequence cursor carries the batch's
+  // own writes, so consecutive chunks of one prompt abut and only the first can
+  // reopen committed ground. Every input is checked before any is truncated, so
+  // a refusal leaves the cache untouched.
   Step step;
   const std::size_t total = batch.size();
   step.tokens.reserve(total);
@@ -129,14 +115,15 @@ Result<Step> build_step(
   std::unordered_map<std::int32_t, int> cursor;
 
   for (const Input& input : batch.inputs) {
-    const auto seq_it = sessions.find(input.sid);
-    if (seq_it == sessions.end()) {
+    const auto seq_it = sessions_.find(input.sid);
+    if (seq_it == sessions_.end()) {
       ET_LOG(Error, "build_step: session %" PRId64 " is not open", input.sid);
       return Error::InvalidArgument;
     }
     const std::int32_t seq_id = seq_it->second.seq_id;
     if (input.size == 0 || !input.tokens ||
-        input.offset + input.size > input.tokens->size()) {
+        input.offset > input.tokens->size() ||
+        input.size > input.tokens->size() - input.offset) {
       ET_LOG(
           Error,
           "build_step: session %" PRId64 " gave a slice its tokens do not hold",
@@ -147,7 +134,7 @@ Result<Step> build_step(
     const std::int64_t start = static_cast<std::int64_t>(input.position) +
         static_cast<std::int64_t>(input.offset);
     const auto [cursor_it, first_for_seq] =
-        cursor.try_emplace(seq_id, ctl.next_pos(seq_id));
+        cursor.try_emplace(seq_id, ctl_->next_pos(seq_id));
     int& at = cursor_it->second;
     if (start > at) {
       // Positions nothing attended, and nothing later reaches back to fill.
@@ -184,13 +171,13 @@ Result<Step> build_step(
     }
 
     const std::int64_t end = start + static_cast<std::int64_t>(input.size);
-    if (end > max_session_tokens) {
+    if (end > max_session_tokens_) {
       ET_LOG(
           Error,
           "build_step: session %" PRId64 " reaches %" PRId64 " of %d cells",
           input.sid,
           end,
-          max_session_tokens);
+          max_session_tokens_);
       return Error::OutOfResources;
     }
 
@@ -208,15 +195,13 @@ Result<Step> build_step(
   }
 
   for (const auto& [seq_id, from] : rewinds) {
-    if (!ctl.seq_rm(seq_id, from, std::nullopt)) {
+    if (!ctl_->seq_rm(seq_id, from, std::nullopt)) {
       ET_LOG(Error, "build_step: sequence %d would not truncate", seq_id);
       return Error::Internal;
     }
   }
   return step;
 }
-
-} // namespace
 
 ModuleExecutor::ModuleExecutor(
     std::unique_ptr<Module> module,
@@ -239,7 +224,7 @@ ModuleExecutor::ModuleExecutor(
 
 ModuleExecutor::~ModuleExecutor() = default;
 
-std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
+Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     std::unique_ptr<Module> module,
     int max_sessions,
     int max_session_tokens,
@@ -249,20 +234,26 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
     std::string method) {
   if (module == nullptr) {
     ET_LOG(Error, "ModuleExecutor: no program");
-    return nullptr;
+    return Error::InvalidArgument;
   }
   if (max_sessions <= 0 || max_session_tokens <= 0) {
     ET_LOG(Error, "ModuleExecutor: session limits must be positive");
-    return nullptr;
+    return Error::InvalidArgument;
   }
-  if (module->load() != Error::Ok) { // a no-op once the caller has loaded it
+  const Error load_error =
+      module->load(); // no-op once the caller has loaded it
+  if (load_error != Error::Ok) {
     ET_LOG(Error, "ModuleExecutor: the program did not load");
-    return nullptr;
+    return load_error;
   }
 
   auto cfg = config_from_program(*module);
   if (!cfg.ok()) {
-    return nullptr;
+    return cfg.error();
+  }
+  if (max_sessions > std::numeric_limits<int>::max() / max_session_tokens) {
+    ET_LOG(Error, "ModuleExecutor: total cache capacity exceeds int range");
+    return Error::InvalidArgument;
   }
   cfg->capacity = max_sessions * max_session_tokens;
   cfg->kv_dtype = kv_dtype;
@@ -271,13 +262,13 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
   }
   if (!cache::valid(*cfg)) {
     ET_LOG(Error, "ModuleExecutor: the program's layout is unusable");
-    return nullptr;
+    return Error::InvalidProgram;
   }
 
   const auto meta = module->method_meta(method);
   if (!meta.ok()) {
     ET_LOG(Error, "ModuleExecutor: %s has no metadata", method.c_str());
-    return nullptr;
+    return meta.error();
   }
 
   std::string backend_id;
@@ -286,7 +277,7 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
     if (!name.ok()) {
       ET_LOG(
           Error, "ModuleExecutor: %s has an unnamed delegate", method.c_str());
-      return nullptr;
+      return name.error();
     }
     if (backend_id.empty()) {
       backend_id = name.get();
@@ -296,12 +287,12 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
           "ModuleExecutor: %s spans more than one backend, so which holds the "
           "cache is ambiguous",
           method.c_str());
-      return nullptr;
+      return Error::InvalidProgram;
     }
   }
   if (backend_id.empty()) {
     ET_LOG(Error, "ModuleExecutor: %s delegates to nothing", method.c_str());
-    return nullptr;
+    return Error::InvalidProgram;
   }
 
   auto built =
@@ -312,30 +303,41 @@ std::unique_ptr<ModuleExecutor> ModuleExecutor::create(
         "ModuleExecutor: backend %s registers no %s cache",
         backend_id.c_str(),
         cache_kind.c_str());
-    return nullptr;
+    return built.error();
   }
   std::shared_ptr<cache::Cache> cache = built.get();
   if (cache->as<cache::BatchControl>() == nullptr) {
     ET_LOG(Error, "ModuleExecutor: the cache carries no sequence identity");
-    return nullptr;
+    return Error::InvalidType;
   }
 
   if (meta->num_outputs() == 0) {
     ET_LOG(Error, "ModuleExecutor: %s publishes no outputs", method.c_str());
-    return nullptr;
+    return Error::InvalidProgram;
   }
   const auto logits_info = meta->output_tensor_meta(0);
-  if (!logits_info.ok() || logits_info->sizes().empty()) {
+  if (!logits_info.ok()) {
+    ET_LOG(Error, "ModuleExecutor: %s has no logits metadata", method.c_str());
+    return logits_info.error();
+  }
+  if (logits_info->sizes().empty()) {
     ET_LOG(Error, "ModuleExecutor: %s has no logits shape", method.c_str());
-    return nullptr;
+    return Error::InvalidProgram;
   }
   const auto logits_sizes = logits_info->sizes();
 
   const auto tokens_info = meta->input_tensor_meta(0);
-  if (!tokens_info.ok() || tokens_info->sizes().empty()) {
+  if (!tokens_info.ok()) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %s has no token input metadata",
+        method.c_str());
+    return tokens_info.error();
+  }
+  if (tokens_info->sizes().empty()) {
     ET_LOG(
         Error, "ModuleExecutor: %s has no token input shape", method.c_str());
-    return nullptr;
+    return Error::InvalidProgram;
   }
   const auto tokens_sizes = tokens_info->sizes();
 
@@ -380,7 +382,7 @@ std::optional<SessionId> ModuleExecutor::open_session() {
     return std::nullopt;
   }
   const SessionId session = next_session_++;
-  sessions_.emplace(session, SessionInfo{*seq_id, nullptr});
+  sessions_.emplace(session, SessionState{*seq_id, nullptr});
   return session;
 }
 
@@ -415,8 +417,7 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   out.outputs.clear();
   out.outputs.resize(batch.inputs.size());
 
-  const Result<Step> step =
-      build_step(*ctl_, batch, sessions_, max_session_tokens_);
+  const Result<Step> step = build_step(batch);
   if (!step.ok()) {
     return false;
   }

@@ -37,12 +37,6 @@ namespace batching {
 
 namespace cache = ::executorch::extension::llm::cache;
 
-// A session's cache sequence and the sampler its generation draws from.
-struct SessionInfo {
-  std::int32_t seq_id;
-  std::unique_ptr<Sampler> sampler;
-};
-
 class ET_EXPERIMENTAL ModuleExecutor : public Executor {
  public:
   ~ModuleExecutor() override;
@@ -60,10 +54,10 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   // `cache_kind` must name a builder that carries batch control -- a cache
   // serving one sequence cannot back a batch of them.
   //
-  // nullptr = unusable limits, no published KV layout, a method spanning
-  // several backends, or no such cache for the backend it names. A method that
-  // will not load is reported by initialize().
-  static std::unique_ptr<ModuleExecutor> create(
+  // Returns an error for unusable limits, no published KV layout, a method
+  // spanning several backends, or no such cache for the backend it names. A
+  // method that will not load is reported by initialize().
+  static ::executorch::runtime::Result<std::unique_ptr<ModuleExecutor>> create(
       std::unique_ptr<Module> module,
       int max_sessions,
       int max_session_tokens,
@@ -92,6 +86,20 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   bool execute(const BatchInput& batch, BatchOutput& out) override;
 
  private:
+  struct SessionState {
+    std::int32_t seq_id;
+    std::unique_ptr<Sampler> sampler;
+  };
+
+  struct Step {
+    std::vector<std::int64_t> tokens;
+    std::vector<std::int64_t> positions;
+    std::vector<std::int32_t> seq_ids;
+    std::vector<int> logit_indices;
+  };
+
+  ::executorch::runtime::Result<Step> build_step(const BatchInput& batch);
+
   ModuleExecutor(
       std::unique_ptr<Module> module,
       std::shared_ptr<cache::Cache> cache,
@@ -121,7 +129,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   int max_step_tokens_;
 
   SessionId next_session_ = 1; // never reused, unlike the cache's sequence ids
-  std::unordered_map<SessionId, SessionInfo> sessions_;
+  std::unordered_map<SessionId, SessionState> sessions_;
 };
 
 } // namespace batching
