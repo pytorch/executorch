@@ -1387,6 +1387,7 @@ def get_soc_to_chipset_map():
         "SW6100": QcomChipset.SW6100,
         "QCM6490": QcomChipset.QCM6490,
         "SM8845": QcomChipset.SM8845,
+        "SA8540": QcomChipset.SA8540,
     }
 
 

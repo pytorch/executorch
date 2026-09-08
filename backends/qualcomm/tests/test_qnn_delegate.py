@@ -23,6 +23,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.debugger.utils import (
+    estimate_htp_profile_result,
     generate_htp_profile_result,
 )
 
@@ -33,6 +34,7 @@ from executorch.backends.qualcomm.export_utils import (
 )
 from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
 )
@@ -99,6 +101,19 @@ from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
 from torchao.quantization.pt2e.quantizer import SharedQuantizationSpec
+
+
+class TestQNNDebuggerProfilePublicApis(unittest.TestCase):
+    def test_estimate_htp_profile_result_rejects_unsupported_soc_before_pte(self):
+        with self.assertRaisesRegex(
+            AssertionError,
+            "hextimate currently supports only.*SA8540.*SA8255.*QCS9100.*SA8797",
+        ):
+            estimate_htp_profile_result(
+                artifact_dir="/path/that/must/not/be/read",
+                soc_id=QcomChipset.SM8650,
+                pte_path="/path/that/must/not/be/read/model.pte",
+            )
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -8826,6 +8841,56 @@ class TestQNNQuantizedUtils(TestQNN):
                     )
                     with open(a.qhas_json, "r") as f:
                         self.assertIn("data", json.load(f))
+
+    def test_qnn_backend_generate_hextimate(self):
+        if not self.enable_x86_64:
+            self.skipTest(
+                "Hextimate is host-side (compile-time); requires --enable_x86_64."
+            )
+        if get_backend_type(self.backend) == QnnExecuTorchBackendType.kLpaiBackend:
+            self.skipTest("LPAI does not support hextimate generation.")
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+
+        # Hextimate hard-requires online prepare (.dlc). No profile_level
+        # required — hextimate profiling is attached by the QNN CLI at
+        # context-binary-generation time.
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            online_prepare=True,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_spec
+            ).to_executorch()
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                edge_prog_mgr.write_to_file(f)
+
+            artifacts = estimate_htp_profile_result(
+                artifact_dir=tmp_dir,
+                soc_id=self.chipset_table[self.soc_model],
+                pte_path=pte_path,
+            )
+            for a in artifacts:
+                with open(a.chrometrace_json, "r") as f:
+                    chrometrace = json.load(f)
+                for row in chrometrace["traceEvents"]:
+                    self.assertIn("pid", row)
+                # QHAS JSON is truncated by an upstream SDK bug (division by
+                # zero on time_us=0). We surface this by setting qhas_json to
+                # None; the HTML report and chrometrace remain usable.
+                self.assertIsNone(
+                    a.qhas_json,
+                    "hextimate QHAS JSON is expected to be truncated by the "
+                    "SDK bug; QnnTool should have detected it and returned "
+                    "qhas_json=None.",
+                )
+                self.assertTrue(os.path.isfile(a.qhas_html))
 
     def test_qnn_backend_seq_mse(self):
         from executorch.backends.qualcomm._passes.seq_mse import SeqMSE
