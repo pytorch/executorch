@@ -49,6 +49,8 @@ class OpFeatures:
         # Optional function to determine valid representation sets for input and outputs
         # once a node's actual inputs are known.
         "pick_io_storage_fn",
+        # Tensor argument indices that must fit the partitioner's buffer limit.
+        "buffer_limit_args",
     ]
 
     def __init__(
@@ -66,6 +68,7 @@ class OpFeatures:
         supports_prepacking: bool = False,
         are_node_inputs_supported_fn: Optional[Callable] = allow_node,
         pick_io_storage_fn: Optional[Callable] = None,
+        buffer_limit_args: Tuple[int, ...] = (),
     ):
         # Dtype initialization
         self.inputs_dtypes: utils.DtypeSetList = utils.DtypeSetList(
@@ -93,6 +96,7 @@ class OpFeatures:
 
         self.are_node_inputs_supported_fn = are_node_inputs_supported_fn
         self.pick_io_storage_fn = pick_io_storage_fn
+        self.buffer_limit_args = buffer_limit_args
 
     def check_dtypes(self, node: torch.fx.Node) -> Tuple[bool, str]:
         """
@@ -339,6 +343,27 @@ def register_eq_scalar():
     )
 
 
+def is_integer_remainder_scalar_node_supported(node: torch.fx.Node) -> bool:
+    if len(node.args) < 2:
+        return False
+    divisor = node.args[1]
+    if isinstance(divisor, bool) or not isinstance(divisor, int):
+        return False
+    return -(2**31) <= divisor < 2**31 and divisor != 0
+
+
+@update_features(exir_ops.edge.aten.remainder.Scalar)
+def register_integer_remainder_scalar():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.INT_T,
+        outputs_dtypes=utils.INT_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=is_integer_remainder_scalar_node_supported,
+    )
+
+
 # =============================================================================
 # ToCopy.cpp
 # =============================================================================
@@ -486,6 +511,7 @@ def register_linear_dq8ca_q4gsw():
             utils.NO_STORAGE,  # bias (prepacked)
         ],
         inputs_dtypes=utils.FP_T,
+        supports_resize=True,
         supports_prepacking=True,
     )
 
@@ -1085,13 +1111,37 @@ def register_sdpa_with_kv_cache():
     )
 
 
-@update_features(
-    [
-        "llama::update_cache",
-        "llama::custom_sdpa",
-    ]
-)
-def register_sdpa_cpp_ops():
+def is_custom_sdpa_node_supported(node: torch.fx.Node) -> bool:
+    def optional_arg(index: int, name: str, default: Any) -> Any:
+        if len(node.args) > index:
+            return node.args[index]
+        return node.kwargs.get(name, default)
+
+    attn_mask = optional_arg(4, "attn_mask", None)
+    dropout_p = optional_arg(5, "drpout_p", 0.0)
+    is_causal = optional_arg(6, "is_causal", False)
+    scale = optional_arg(7, "scale", None)
+    return (
+        attn_mask is None
+        and isinstance(dropout_p, (int, float))
+        and dropout_p == 0
+        and (is_causal is None or is_causal is True)
+        and scale is None
+    )
+
+
+@update_features("llama::custom_sdpa")
+def register_custom_sdpa():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=is_custom_sdpa_node_supported,
+    )
+
+
+@update_features("llama::update_cache")
+def register_update_cache():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
@@ -1104,12 +1154,79 @@ def register_sdpa_cpp_ops():
 # =============================================================================
 
 
+def is_general_sdpa_node_supported(node: torch.fx.Node) -> bool:
+    if len(node.args) < 3:
+        return False
+
+    q, k, v = node.args[:3]
+    attn_mask = (
+        node.args[3]
+        if len(node.args) > 3
+        else getattr(node, "kwargs", {}).get("attn_mask")
+    )
+    scale = (
+        node.args[4] if len(node.args) > 4 else getattr(node, "kwargs", {}).get("scale")
+    )
+    if not all(isinstance(arg, torch.fx.Node) for arg in (q, k, v)):
+        return False
+    if scale is not None and not isinstance(scale, (int, float)):
+        return False
+
+    q_meta = q.meta["val"]
+    k_meta = k.meta["val"]
+    v_meta = v.meta["val"]
+    q_shape = q_meta.shape
+    k_shape = k_meta.shape
+    v_shape = v_meta.shape
+    if (
+        q_meta.dtype not in utils.FP_T
+        or k_meta.dtype != q_meta.dtype
+        or v_meta.dtype != q_meta.dtype
+        or len(q_shape) != 4
+        or len(k_shape) != 4
+        or len(v_shape) != 4
+        or q_shape[0] != k_shape[0]
+        or q_shape[0] != v_shape[0]
+        or k_shape[1] != v_shape[1]
+        or k_shape[2] != v_shape[2]
+        or q_shape[3] != k_shape[3]
+        or q_shape[3] != v_shape[3]
+        or k_shape[1] <= 0
+        or q_shape[1] < k_shape[1]
+        or q_shape[1] % k_shape[1] != 0
+    ):
+        return False
+
+    if attn_mask is None:
+        return True
+    if not isinstance(attn_mask, torch.fx.Node):
+        return False
+
+    mask_meta = attn_mask.meta["val"]
+    mask_shape = mask_meta.shape
+    if mask_meta.dtype != q_meta.dtype or not 2 <= len(mask_shape) <= 4:
+        return False
+
+    output_shape = (q_shape[0], q_shape[1], q_shape[2], k_shape[2])
+    for mask_size, output_size in zip(reversed(mask_shape), reversed(output_shape)):
+        if mask_size != 1 and mask_size != output_size:
+            return False
+    return True
+
+
 @update_features("et_vk::sdpa")
 def register_general_sdpa():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
-        inputs_dtypes=utils.FP_T,
+        inputs_dtypes=[
+            utils.FP_T,
+            utils.FP_T,
+            utils.FP_T,
+            utils.FP_T,
+            utils.NONE_T,
+        ],
         supports_resize=True,
+        are_node_inputs_supported_fn=is_general_sdpa_node_supported,
     )
 
 
@@ -1543,10 +1660,15 @@ def register_full_cpp_ops():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.scalar_tensor.default)
+@update_features(
+    [
+        exir_ops.edge.aten.scalar_tensor.default,
+        torch.ops.aten.scalar_tensor.default,
+    ]
+)
 def register_scalar_tensor():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
     )
@@ -1680,20 +1802,12 @@ def register_repeat():
 
 @update_features(exir_ops.edge.aten.embedding.default)
 def register_embedding():
-    def check_embedding_weight_size(node: torch.fx.Node) -> bool:
-        weight = node.args[0]
-        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
-            numel = weight.meta["val"].numel()
-            if numel > utils.DEFAULT_BUFFER_LIMIT:
-                return False
-        return True
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=[utils.FP_T, utils.INT_T],
         supports_prepacking=True,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_embedding_weight_size,
+        buffer_limit_args=(0,),
     )
 
 
@@ -1704,19 +1818,11 @@ def register_embedding():
 
 @update_features(exir_ops.edge.quantized_decomposed.embedding_4bit.dtype)
 def register_quantized_decomposed_embedding_4bit():
-    def check_embedding_4bit_weight_size(node: torch.fx.Node) -> bool:
-        weight = node.args[0]
-        if isinstance(weight, torch.fx.Node) and utils.is_tensor_node(weight):
-            numel = weight.meta["val"].numel()
-            if numel > utils.DEFAULT_BUFFER_LIMIT:
-                return False
-        return True
-
     return OpFeatures(
         inputs_storage=utils.ANY_BUFFER,
         supports_prepacking=True,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_embedding_4bit_weight_size,
+        buffer_limit_args=(0,),
     )
 
 
@@ -1821,16 +1927,6 @@ def register_compare_scalar_ops():
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         outputs_dtypes=utils.BOOL_T,
-        supports_resize=True,
-        supports_highdim=True,
-    )
-
-
-@update_features(exir_ops.edge.aten.logical_not.default)
-def register_logical_not():
-    return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
     )

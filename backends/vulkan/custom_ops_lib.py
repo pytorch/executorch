@@ -1117,6 +1117,10 @@ def sdpa_impl(
 ):
     if scale is None:
         scale = 1.0 / (q.size(-1) ** 0.5)
+    if q.size(-3) != k.size(-3):
+        repeats = q.size(-3) // k.size(-3)
+        k = torch.repeat_interleave(k, repeats, dim=-3)
+        v = torch.repeat_interleave(v, repeats, dim=-3)
     attn = torch.matmul(q, k.transpose(-2, -1)) * scale
     if attn_mask is not None:
         attn = attn + attn_mask
