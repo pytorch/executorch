@@ -54,6 +54,10 @@ BACKEND_NAME = "VGF"
 BACKEND_PIPELINE_CLASS_NAMES = frozenset({"VgfPipeline"})
 BACKEND_PIPELINE_LABEL = "VgfPipeline"
 BACKEND_TOSA_SPEC = "TOSA-1.0+FP+INT+int4+int16"
+BACKEND_PROFILE_TOSA_SPECS = {
+    "FP": "TOSA-1.0+FP",
+    "INT": "TOSA-1.0+INT",
+}
 
 GENERATOR_PATH = Path("backends/arm/scripts/docgen/generate_vgf_op_support.py")
 GENERATOR_COMMAND = f"python {GENERATOR_PATH}"
@@ -2197,6 +2201,37 @@ def _profiles_for_checker(
     return profiles
 
 
+def _collect_backend_custom_partition_ops(
+    backend_tosa_spec: TosaSpecificationLike,
+) -> dict[str, set[object]]:
+    """Collect VGF custom partition ops for each enabled support profile.
+
+    Instantiate the partitioner with a single-profile compile spec so custom
+    registrations that are conditional on the compile spec are attributed only
+    to the profiles for which they are actually registered.
+
+    """
+    from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
+
+    enabled_profiles = {
+        "FP": backend_tosa_spec.support_float(),
+        "INT": backend_tosa_spec.support_integer(),
+    }
+    custom_ops_by_profile: dict[str, set[object]] = {}
+
+    for profile, enabled in enabled_profiles.items():
+        if not enabled:
+            continue
+        partitioner = VgfPartitioner(
+            VgfCompileSpec(BACKEND_PROFILE_TOSA_SPECS[profile])
+        )
+        custom_ops_by_profile[profile] = set(
+            getattr(partitioner, "_custom_partition_ops", ())
+        )
+
+    return custom_ops_by_profile
+
+
 def _collect_backend_supported_ops(  # noqa: C901
     repo_root: Path,
 ) -> dict[str, SupportedOperatorEvidence]:
@@ -2247,6 +2282,10 @@ def _collect_backend_supported_ops(  # noqa: C901
         for target in getattr(checker, "targets", ()):  # type: ignore[attr-defined]
             for profile in _profiles_for_checker(checker, tosa_spec):
                 add(target, profile, checker_evidence)
+
+    for profile, targets in _collect_backend_custom_partition_ops(tosa_spec).items():
+        for target in targets:
+            add(target, profile, "VgfPartitioner.register_custom_partition_op")
 
     # Lowering visitors are not the source of partitioner support, but they are
     # useful evidence when the exported op name matches a registered visitor

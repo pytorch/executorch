@@ -364,6 +364,33 @@ def test_matching_evidence_accepts_stage_equivalent_alias() -> None:
     assert records[0].asserted_op == alias
 
 
+def test_collect_backend_custom_partition_ops_discovers_fp_and_int_profiles() -> None:
+    from executorch.backends.arm.tosa import TosaSpecification
+
+    tosa_spec = TosaSpecification.create_from_string(docgen.BACKEND_TOSA_SPEC)
+    custom_ops = docgen._collect_backend_custom_partition_ops(tosa_spec)
+    canonical_by_profile = {
+        profile: {
+            docgen._canonical_pytorch_op_from_target(target) for target in targets
+        }
+        for profile, targets in custom_ops.items()
+    }
+
+    expected = "torch.ops.aten.grid_sampler_2d.default"
+    assert expected in canonical_by_profile["FP"]
+    assert expected in canonical_by_profile["INT"]
+
+
+def test_collect_backend_supported_ops_includes_vgf_custom_partition_ops() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+
+    expected = docgen._collect_backend_supported_ops(repo_root)
+    row = expected["torch.ops.aten.grid_sampler_2d.default"]
+
+    assert row.support_profiles == {"FP", "INT"}
+    assert "VgfPartitioner.register_custom_partition_op" in row.evidence
+
+
 def test_run_check_reports_missing_profile(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
