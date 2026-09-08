@@ -47,6 +47,7 @@
 # other computer software, distribute, and sublicense such enhancements or
 # derivative works thereof, in binary and source code form.
 
+import ast
 import contextlib
 import functools
 
@@ -65,7 +66,7 @@ import sys
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path, PurePosixPath
-from typing import List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 # Clean dynamic import using importlib
 _install_utils_path = Path(__file__).parent / "install_utils.py"
@@ -303,6 +304,189 @@ def _minimal_packages() -> List[str]:
             ],
         )
     )
+
+
+_WALK_SKIP_DIRS = frozenset(
+    {".git", "pip-out", "cmake-out", "third-party", "third_party", "__pycache__"}
+)
+
+_TEST_DIR_NAMES = frozenset({"test", "tests"})
+
+# Named only by a workflow, so no import reaches them. Listed here rather than scanned from
+# .github, which a source distribution does not carry; a test re-derives the list so it cannot drift.
+_CI_ENTRY_POINTS = (
+    "executorch.backends.mlx.test.run_all_tests",
+    "executorch.backends.samsung.test.utils.run_tests",
+    "executorch.backends.test.suite.generate_markdown_summary_json",
+    "executorch.extension.pybindings.test.test_pybindings",
+)
+
+# Directories whose test modules are reached without any import statement naming them, so no scan
+# of the source can find them: mlx.yml runs each file it discovers under custom_kernel_ops, the
+# webgpu scripts import one module per operator, runner.py resolves a suite root out of a dict and
+# then walks it, and the llava README documents a `python -m` command. Directories rather than file
+# names, so a new test is covered when it is added.
+_CI_ENTRY_POINT_DIRS = (
+    "executorch.backends.mlx.custom_kernel_ops",
+    "executorch.backends.webgpu.test",
+    "executorch.backends.test.suite",
+    "executorch.examples.models.llava.test",
+)
+
+
+def _is_test_module(dotted: str) -> bool:
+    return any(part in _TEST_DIR_NAMES for part in dotted.split("."))
+
+
+def _module_name(root: Path, path: Path) -> str:
+    parts = list(path.relative_to(root).parts)
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]
+    else:
+        parts[-1] = parts[-1][: -len(".py")]
+    return ".".join(["executorch"] + parts)
+
+
+def _import_graph(root: Path) -> Tuple[Set[str], Dict[str, Set[str]], Set[str]]:
+    """Every module under root, what each imports, and literal importlib targets."""
+    modules: Set[str] = set()
+    edges: Dict[str, Set[str]] = {}
+    dynamic: Set[str] = set()
+
+    # followlinks, because src/executorch is a tree of symlinks into the repository root.
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+        dirnames[:] = [d for d in dirnames if d not in _WALK_SKIP_DIRS]
+        for filename in filenames:
+            if not filename.endswith(".py"):
+                continue
+            path = Path(dirpath) / filename
+            me = _module_name(root, path)
+            modules.add(me)
+            out = edges.setdefault(me, set())
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            except SyntaxError:
+                continue
+            package = me if filename == "__init__.py" else me.rsplit(".", 1)[0]
+            for node in ast.walk(tree):
+                out.update(_import_targets(node, package, dynamic))
+
+    return modules, edges, dynamic
+
+
+def _import_targets(node: ast.AST, package: str, dynamic: Set[str]) -> Set[str]:
+    """The executorch modules one AST node refers to."""
+    found: Set[str] = set()
+    if isinstance(node, ast.Import):
+        found.update(a.name for a in node.names if a.name.startswith("executorch."))
+    elif isinstance(node, ast.ImportFrom):
+        if node.level:
+            # A relative import names a real module too, and inside a kept package its target
+            # has to ship: stages/__init__.py does `from .export import Export`, so dropping
+            # stages.export would break every importer of that package.
+            parts = package.split(".")
+            if node.level > 1:
+                parts = parts[: len(parts) - (node.level - 1)]
+            base = ".".join(parts + (node.module.split(".") if node.module else []))
+        elif node.module and node.module.startswith("executorch."):
+            base = node.module
+        else:
+            return found
+        if base.startswith("executorch"):
+            found.add(base)
+            # `from pkg import name` may name a submodule rather than an attribute, and there
+            # is no way to tell without importing, so both readings are kept.
+            found.update(f"{base}.{a.name}" for a in node.names)
+    elif (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "import_module"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ):
+        target = node.args[0].value
+        if target.startswith("."):
+            target = package + target
+        if target.startswith("executorch."):
+            dynamic.add(target)
+    return found
+
+
+@functools.lru_cache(maxsize=None)
+def _reachable_test_modules() -> FrozenSet[str]:
+    """Test modules something can still reach once the wheel is installed.
+
+    A test case that nothing imports is dead weight in the wheel: pytest loads it from a path in
+    the checkout, never through the installed name. A shared helper is the opposite, because the
+    suites import each other by installed name, so it has to ship or collection breaks.
+
+    The seed is every import in the tree, including those made by test modules themselves. That
+    looks circular and is not: a test collected from the checkout still resolves
+    `from executorch.x.test import helper` through the INSTALLED package, so the helper must be
+    in the wheel even though the file importing it is not.
+    """
+    root = Path(__file__).parent / "src" / "executorch"
+    modules, edges, dynamic = _import_graph(root)
+
+    pending = list(dynamic) + list(_CI_ENTRY_POINTS)
+    for targets in edges.values():
+        pending.extend(targets)
+
+    seen: Set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        pending.extend(edges.get(name, ()))
+
+    keep = {name for name in seen if _is_test_module(name)} & modules
+    # Everything under a directory whose tests are run one file at a time by a discovery loop.
+    keep |= {
+        name
+        for name in modules
+        if _is_test_module(name)
+        and any(
+            name == prefix or name.startswith(f"{prefix}.")
+            for prefix in _CI_ENTRY_POINT_DIRS
+        )
+    }
+    # Parent packages of anything kept, or the dotted path cannot resolve.
+    for name in list(keep):
+        parts = name.split(".")
+        for end in range(2, len(parts)):
+            parent = ".".join(parts[:end])
+            if _is_test_module(parent):
+                keep.add(parent)
+    return frozenset(keep)
+
+
+_SHADER_TEMPLATE_MARKERS = (
+    "parameter_names_with_default_values",
+    "shader_variants",
+    "generate_variant_forall",
+)
+
+
+@functools.lru_cache(maxsize=None)
+def _is_shader_template(path: str) -> bool:
+    """Whether a yaml file is a shader codegen input rather than data the wheel needs.
+
+    gen_vulkan_spv.py and gen_wgsl_headers.py expand these into SPIR-V and WGSL headers during
+    the cmake build, so the wheel already carries the compiled result. Matched on content rather
+    than on a directory list, because the same shape appears under vulkan and webgpu and a path
+    list goes stale as soon as a backend adds one. The op and kernel definitions that ARE read
+    at run time, edge.yaml among them, carry none of these keys.
+    """
+    if not path.endswith(".yaml"):
+        return False
+    full = Path(__file__).parent / path
+    try:
+        head = full.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(marker in head for marker in _SHADER_TEMPLATE_MARKERS)
 
 
 def _full_packages() -> List[str]:
@@ -1754,6 +1938,28 @@ class CustomBuildPy(build_py):
     a file to a different relative location under the output package directory.
     """
 
+    def find_package_modules(self, package, package_dir):
+        modules = super().find_package_modules(package, package_dir)
+        if self.editable_mode or not _is_test_module(package):
+            # An editable install exposes the whole source tree whatever is listed here, and a
+            # package outside a test directory has nothing to drop.
+            return modules
+        keep = _reachable_test_modules()
+        return [
+            entry
+            for entry in modules
+            if entry[1] == "__init__" or f"{package}.{entry[1]}" in keep
+        ]
+
+    def find_data_files(self, package, src_dir):
+        files = super().find_data_files(package, src_dir)
+        if self.editable_mode:
+            return files
+        root = os.path.dirname(os.path.abspath(__file__))
+        return [
+            _f for _f in files if not _is_shader_template(os.path.relpath(_f, root))
+        ]
+
     def analyze_manifest(self):
         super().analyze_manifest()
         # Recent versions of setuptools may include bare directory symlinks from version
@@ -1773,6 +1979,8 @@ class CustomBuildPy(build_py):
                     # package's data, so a vendored *.yaml still arrives under its parent.
                     # Filter with the same list so the two agree.
                     and not _is_vendored_path(_f)
+                    # Shader templates are consumed by the cmake build, not at run time.
+                    and not _is_shader_template(_f)
                 ]
 
     def _copy_extra_files(self, src_to_dst, dst_root: str) -> None:

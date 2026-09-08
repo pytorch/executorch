@@ -47,6 +47,9 @@ _HELPERS = (
     "_VENDORED_SUBMODULE_FALLBACK",
     "_vendored_prefixes",
     "_is_vendored_path",
+    # CustomBuildPy calls this, so the class cannot be exec'd without it.
+    "_SHADER_TEMPLATE_MARKERS",
+    "_is_shader_template",
     "_full_packages",
 )
 
