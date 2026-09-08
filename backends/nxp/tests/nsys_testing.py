@@ -59,10 +59,6 @@ from torch.fx import GraphModule
 logger = logging.getLogger(__name__)
 
 OUTPUTS_DIR = outputs_dir.OUTPUTS_DIR
-NSYS_PATH = test_config.NSYS_PATH
-NSYS_CONFIG_PATH = test_config.NSYS_CONFIG_PATH
-NSYS_FIRMWARE_PATH = test_config.NSYS_FIRMWARE_PATH
-NEUTRON_TEST_PATH = test_config.NEUTRON_TEST_PATH
 PROJECT_DIR = test_config.PROJECT_DIR
 
 
@@ -183,8 +179,8 @@ def _run_delegated_executorch_program(
         os.path.join(test_dir, f"{test_name}_delegated.pte")
     )
 
-    delegated_cmd = f"{NEUTRON_TEST_PATH} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
-        --output {npu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
+    delegated_cmd = f"{test_config.neutron_test_path()} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
+        --output {npu_results_dir} --firmware {test_config.nsys_firmware_path()} --nsys {test_config.nsys_path()} --nsys_config {test_config.nsys_config_path()}"
     execute_cmd(delegated_cmd)
 
     return exported_program, testing_dataset_dir
@@ -227,8 +223,8 @@ def _run_non_delegated_executorch_program(
         os.path.join(test_dir, f"{test_name}_non_delegated.pte")
     )
 
-    non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
-        --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
+    non_delegated_cmd = f"{test_config.neutron_test_path()} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
+        --output {cpu_results_dir} --firmware {test_config.nsys_firmware_path()} --nsys {test_config.nsys_path()} --nsys_config {test_config.nsys_config_path()}"
     execute_cmd(non_delegated_cmd)
 
     return non_delegated_program.exported_program()
@@ -421,9 +417,9 @@ def _run_python_program(
 
 
 def assert_NSYS():
-    assert os.path.exists(NSYS_PATH)
-    assert os.path.exists(NSYS_CONFIG_PATH)
-    assert os.path.exists(NSYS_FIRMWARE_PATH)
+    assert os.path.exists(test_config.nsys_path())
+    assert os.path.exists(test_config.nsys_config_path())
+    assert os.path.exists(test_config.nsys_firmware_path())
 
 
 def lower_run_compare(
@@ -739,7 +735,7 @@ def get_test_name(request):
 
 def execute_cmd(cmd, cwd="."):
     env = environ.copy()  # Copy the current environment
-    env["LD_LIBRARY_PATH"] = str(NSYS_PATH.parent)
+    env["LD_LIBRARY_PATH"] = str(test_config.nsys_path().parent)
     logger.debug(f"Running command: {cmd}")
 
     with subprocess.Popen(
@@ -812,7 +808,7 @@ def dump_debug_test_summary(test_name: str, test_dir: str):
     # During development, the NSYS in virtual env is not used.
     nsys_version = (
         "Internal build from executorch-integration"
-        if NSYS_PATH is not None
+        if shutil.which("nsys") is not None
         else version("eiq_nsys")
     )
     summary = {
