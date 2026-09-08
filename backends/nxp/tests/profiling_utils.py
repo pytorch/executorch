@@ -78,6 +78,7 @@ def get_neutron_compiler_version() -> str:
     """
 
     try:
+        # Use neutron_compiler because neutron_converter executable is unavailable since NS 3.2.1.
         proc = subprocess.Popen(
             ["neutron_compiler", "--version"],
             stdout=subprocess.PIPE,
@@ -117,6 +118,8 @@ def get_neutron_kernel_kinds(target: str = "imxrt700") -> dict[int, str]:
             - key: kernel ID (int)
             - value: kernel name (str)
     """
+
+    # Use neutron_compiler because neutron_converter executable is unavailable since NS 3.2.1.
     proc = subprocess.Popen(
         ["neutron_compiler", "--target", target, "--show-kernel-kinds"],
         stdout=subprocess.PIPE,
