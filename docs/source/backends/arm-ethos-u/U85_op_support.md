@@ -6,7 +6,7 @@ This page lists Ethos-U85-supported PyTorch APIs and the dtype and quantization 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **126**.
+Total supported PyTorch APIs: **127**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -104,6 +104,7 @@ Total supported PyTorch APIs: **126**.
 | `torch.relu` / `torch.nn.ReLU` | INT | `INT8` | 8x8 |
 | `torch.remainder` | INT | `INT8` | 8x8 |
 | `torch.repeat_interleave` | INT | `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.roll` | INT | `INT8` | 8x8 |
 | `torch.round` | INT | `INT8` | 8x8 |
 | `torch.rsqrt` | INT | `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.scalar_tensor` | INT | `INT8` | 8x8 |

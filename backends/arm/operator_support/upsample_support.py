@@ -6,6 +6,9 @@
 
 import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
+    is_exact_tosa_boundary_bilinear_downscale,
+)
 from executorch.backends.arm._passes.rewrite_upsample import RewriteUpsamplePass
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -112,6 +115,9 @@ class UpsampleBilinear2dSupported(SupportedTOSAOperatorCheck):
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
+        if is_exact_tosa_boundary_bilinear_downscale(node, tosa_spec):
+            return True
+
         align_corners = ensure_type(bool, node.args[2])
         return _is_upsample_node_tosa_supported(
             self, node, tosa_spec, align_corners=align_corners, resize_mode="bilinear"

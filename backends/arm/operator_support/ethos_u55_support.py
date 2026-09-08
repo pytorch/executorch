@@ -18,8 +18,12 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     is_param_node,
 )
+from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
+    is_exact_tosa_boundary_bilinear_downscale,
+)
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.constants import MAX_U55_INDEX_TENSOR_ELEMENTS
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -214,14 +218,18 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.where.self,  # SELECT
     ]
 
-    def __init__(self, reporter: WhyNoPartitionReporter):
+    def __init__(
+        self, reporter: WhyNoPartitionReporter, tosa_spec: TosaSpecification
+    ) -> None:
         """Initialize the check with a reporter.
 
         Args:
             reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+            tosa_spec (TosaSpecification): Active TOSA specification.
 
         """
         self.reporter = reporter
+        self.tosa_spec = tosa_spec
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
@@ -237,6 +245,8 @@ class EthosU55NotSupported(OperatorSupportBase):
 
         """
         if node.target in self.unsupported_ops:
+            if is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec):
+                return True
             self.reporter.report_reject(node, "Op is not supported on U55.")
             return False
 
