@@ -358,6 +358,7 @@ def export_streaming(
     qembedding_group_size=None,
     use_aoti_packed_int4=False,
     backend="xnnpack",
+    encoder_batch_chunks=1,
 ):
     """Export streaming model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
@@ -389,10 +390,18 @@ def export_streaming(
         if use_aoti_packed_int4 and qlinear_encoder == "4w":
             packed_linear_count = _pack_aoti_int4_weights(streaming_enc)
 
+    encoder_chunk_mel_len = 8 * encoder_batch_chunks
+    encoder_frames_per_call = 4 * encoder_batch_chunks
     sample_mel_chunk = torch.randn(
-        1, model.config.num_mel_bins, 8, dtype=param_dtype, device=device
+        1,
+        model.config.num_mel_bins,
+        encoder_chunk_mel_len,
+        dtype=param_dtype,
+        device=device,
     )
-    sample_enc_pos = torch.arange(4, dtype=torch.long, device=device)
+    sample_enc_pos = torch.arange(
+        encoder_frames_per_call, dtype=torch.long, device=device
+    )
 
     programs["encode_audio_chunk"] = export(
         streaming_enc,
@@ -453,6 +462,7 @@ def export_streaming(
         "streaming": 1,
         "step_samples": step_samples,
         "chunk_mel_len": chunk_mel_len,
+        "encoder_batch_chunks": encoder_batch_chunks,
         "max_enc_len": max_enc_len,
         "conv1_pad": 2,
         "conv2_pad": 2,
@@ -847,6 +857,14 @@ def main():
         help="Encoder sliding window size for streaming (default: 750).",
     )
     parser.add_argument(
+        "--streaming-encoder-batch-chunks",
+        type=int,
+        default=1,
+        choices=[1, 2],
+        help="Number of contiguous 80-ms chunks processed by each streaming "
+        "encoder call (default: 1).",
+    )
+    parser.add_argument(
         "--sliding-window",
         type=int,
         default=None,
@@ -878,6 +896,8 @@ def main():
         "cuda" if args.backend in ("cuda-windows", "rocm") else args.backend
     )
     _validate_export_args(parser, args, backend_for_export)
+    if args.streaming_encoder_batch_chunks != 1 and not args.streaming:
+        parser.error("--streaming-encoder-batch-chunks requires --streaming")
     if args.vulkan_force_fp16 and args.backend != "vulkan":
         parser.error("--vulkan-force-fp16 requires --backend=vulkan")
     validate_vulkan_options(args, parser)
@@ -927,7 +947,11 @@ def main():
     }
     if args.streaming:
         programs, metadata, packed_linear_counts = export_streaming(
-            model, args.max_seq_len, args.max_enc_len, **quant_args
+            model,
+            args.max_seq_len,
+            args.max_enc_len,
+            encoder_batch_chunks=args.streaming_encoder_batch_chunks,
+            **quant_args,
         )
     else:
         programs, metadata, packed_linear_counts = export_all(

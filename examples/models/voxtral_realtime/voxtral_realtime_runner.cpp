@@ -8,6 +8,8 @@
 
 #include "voxtral_realtime_runner.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -26,6 +28,16 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 
 namespace voxtral_realtime {
+namespace {
+
+using ProfileClock = std::chrono::steady_clock;
+
+double elapsed_milliseconds(ProfileClock::time_point start) {
+  return std::chrono::duration<double, std::milli>(ProfileClock::now() - start)
+      .count();
+}
+
+} // namespace
 
 VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     const std::string& model_path,
@@ -123,6 +135,9 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
     auto cm = model_->execute("chunk_mel_len", empty);
     if (cm.ok())
       chunk_mel_len_ = cm.get()[0].toInt();
+    auto ebc = model_->execute("encoder_batch_chunks", empty);
+    if (ebc.ok())
+      encoder_batch_chunks_ = ebc.get()[0].toInt();
     auto me = model_->execute("max_enc_len", empty);
     if (me.ok())
       max_enc_len_ = me.get()[0].toInt();
@@ -160,8 +175,10 @@ VoxtralRealtimeRunner::VoxtralRealtimeRunner(
 
     ET_LOG(
         Info,
-        "Streaming: chunk_mel=%ld, max_enc=%ld, enc_dim=%ld",
+        "Streaming: chunk_mel=%ld, encoder_batch_chunks=%ld, max_enc=%ld, "
+        "enc_dim=%ld",
         static_cast<long>(chunk_mel_len_),
+        static_cast<long>(encoder_batch_chunks_),
         static_cast<long>(max_enc_len_),
         static_cast<long>(enc_dim_));
   }
@@ -328,7 +345,9 @@ int VoxtralRealtimeRunner::transcribe(
     TokenCallback token_cb) {
   // --- Step 1: Preprocess raw audio to mel spectrogram ---
   ET_CHECK_MSG(preprocessor_ != nullptr, "No preprocessor provided.");
+  const auto preprocessor_start = ProfileClock::now();
   TensorPtr mel_fp32 = run_preprocessor(audio_data, num_samples);
+  const double preprocessor_ms = elapsed_milliseconds(preprocessor_start);
 
   // Convert mel from fp32 (preprocessor) to model dtype (may be bf16)
   TensorPtr mel = convert_to_model_dtype(std::move(mel_fp32));
@@ -336,7 +355,9 @@ int VoxtralRealtimeRunner::transcribe(
   // --- Step 2: Encode mel to audio embeddings ---
   // audio_encoder: (1, 128, T_mel) -> (1, T_audio, 3072)
   // T_audio = T_mel / 8 (conv stride 2, then downsample by 4).
+  const auto encoder_start = ProfileClock::now();
   auto enc_result = model_->execute("audio_encoder", std::vector<EValue>{*mel});
+  const double encoder_ms = elapsed_milliseconds(encoder_start);
   ET_CHECK_MSG(enc_result.ok(), "audio_encoder failed.");
 
   auto& enc_outputs = enc_result.get();
@@ -373,6 +394,10 @@ int VoxtralRealtimeRunner::transcribe(
   std::vector<float> logits_fp32_buf;
   auto input_embeds = ::executorch::extension::empty(
       {1, 1, static_cast<int>(dim_)}, model_dtype_);
+  double embedding_ms = 0.0;
+  double add_ms = 0.0;
+  double decoder_ms = 0.0;
+  double sampling_ms = 0.0;
 
   for (int64_t pos = 0; pos < max_pos; pos++) {
     // a. Look up embedding for the previous token.
@@ -380,14 +405,19 @@ int VoxtralRealtimeRunner::transcribe(
     auto token_tensor =
         from_blob(&token_id, {1, 1}, ::executorch::aten::ScalarType::Long);
 
+    const auto embedding_start = ProfileClock::now();
     auto tok_result =
         model_->execute("token_embedding", std::vector<EValue>{*token_tensor});
+    if (config.profile_methods) {
+      embedding_ms += elapsed_milliseconds(embedding_start);
+    }
     ET_CHECK_MSG(tok_result.ok(), "token_embedding failed.");
     auto tok_embed = tok_result.get()[0].toTensor();
 
     // b. Sum audio + token embeddings (or token-only after audio ends).
     // Both audio_embeds and tok_embed are in model_dtype_ (fp32 or bf16).
     // Reuses pre-allocated input_embeds buffer (no per-token allocation).
+    const auto add_start = ProfileClock::now();
     if (pos < t_audio) {
       // Element-wise sum: audio_frame[i] + tok_data[i]
       // Works for any dtype since we operate on raw bytes via BFloat16 type.
@@ -417,17 +447,25 @@ int VoxtralRealtimeRunner::transcribe(
           tok_embed.const_data_ptr(),
           static_cast<size_t>(dim_) * input_embeds->element_size());
     }
+    if (config.profile_methods) {
+      add_ms += elapsed_milliseconds(add_start);
+    }
 
     // c. Run one decoder step. KV cache is updated internally by the model.
     auto cache_pos = from_blob(&pos, {1}, ::executorch::aten::ScalarType::Long);
 
+    const auto decoder_start = ProfileClock::now();
     auto dec_result = model_->execute(
         "text_decoder", std::vector<EValue>{*input_embeds, *cache_pos});
+    if (config.profile_methods) {
+      decoder_ms += elapsed_milliseconds(decoder_start);
+    }
     ET_CHECK_MSG(dec_result.ok(), "text_decoder failed.");
 
     auto logits = dec_result.get()[0].toTensor();
 
     // d. Sample next token (persistent sampler preserves RNG state).
+    const auto sampling_start = ProfileClock::now();
     float* logits_data = get_logits_fp32(logits, vocab_size_, logits_fp32_buf);
     int64_t next_token = static_cast<int64_t>(sampler.sample(logits_data));
     num_generated++;
@@ -438,6 +476,9 @@ int VoxtralRealtimeRunner::transcribe(
     if (piece.ok()) {
       token_cb(*piece);
     }
+    if (config.profile_methods) {
+      sampling_ms += elapsed_milliseconds(sampling_start);
+    }
 
     // f. Stop on end-of-sequence.
     if (static_cast<uint64_t>(next_token) == eos_id_) {
@@ -445,6 +486,21 @@ int VoxtralRealtimeRunner::transcribe(
     }
 
     prev_token = static_cast<uint64_t>(next_token);
+  }
+
+  if (config.profile_methods) {
+    ET_LOG(
+        Info,
+        "VOXTRAL_PROFILE mode=offline steps=%d preprocessor_ms=%.3f "
+        "encoder_ms=%.3f embedding_ms=%.3f add_ms=%.3f decoder_ms=%.3f "
+        "sampling_ms=%.3f",
+        num_generated,
+        preprocessor_ms,
+        encoder_ms,
+        embedding_ms,
+        add_ms,
+        decoder_ms,
+        sampling_ms);
   }
 
   return num_generated;
@@ -472,11 +528,20 @@ StreamingSession::StreamingSession(
     : runner_(runner),
       token_cb_(std::move(token_cb)),
       prev_token_(runner.bos_id_),
+      profile_methods_(config.profile_methods),
       sampler_(
           static_cast<int32_t>(runner.vocab_size_),
           config.temperature,
           ::executorch::extension::llm::kTopp,
           static_cast<unsigned long long>(std::time(nullptr))),
+      audio_embeds_bf16_copy_(
+          runner.model_dtype_ == ::executorch::aten::ScalarType::BFloat16
+              ? static_cast<size_t>(runner.encoder_batch_chunks_ * runner.dim_)
+              : 0),
+      audio_embeds_fp32_copy_(
+          runner.model_dtype_ != ::executorch::aten::ScalarType::BFloat16
+              ? static_cast<size_t>(runner.encoder_batch_chunks_ * runner.dim_)
+              : 0),
       input_embeds_(
           ::executorch::extension::empty(
               {1, 1, static_cast<int>(runner.dim_)},
@@ -504,15 +569,20 @@ int StreamingSession::feed_audio(const float* data, int64_t num_samples) {
 }
 
 bool StreamingSession::try_process_step() {
+  const auto step_start = ProfileClock::now();
+  auto framing_start = step_start;
   const int64_t step = runner_.step_samples_;
   const int64_t left_overlap = runner_.stft_left_overlap_;
   const int64_t right_lookahead = runner_.stft_right_lookahead_;
   const int64_t mel_skip = runner_.mel_skip_frames_;
   const int64_t chunk_mel_len = runner_.chunk_mel_len_;
+  const int64_t encoder_batch_chunks = runner_.encoder_batch_chunks_;
+  const int64_t encoder_chunk_mel_len = chunk_mel_len * encoder_batch_chunks;
 
   // Need enough audio for: current step + right look-ahead.
   // Left overlap comes from audio before samples_consumed_ (already in buffer).
-  const int64_t need_end = samples_consumed_ + step + right_lookahead;
+  const int64_t batched_step = step * encoder_batch_chunks;
+  const int64_t need_end = samples_consumed_ + batched_step + right_lookahead;
   if (static_cast<int64_t>(audio_buf_.size()) < need_end) {
     return false;
   }
@@ -520,79 +590,80 @@ bool StreamingSession::try_process_step() {
   // Old .pte files use a flat decoder KV cache bounded by max_seq_len.
   // New .pte files (with sliding_window metadata) use a ring buffer with
   // no position limit.
-  const int64_t enc_frames_per_chunk = chunk_mel_len / 2;
+  const int64_t enc_frames_per_chunk = encoder_chunk_mel_len / 2;
   if (runner_.sliding_window_ == 0 && dec_pos_ >= runner_.max_seq_len_) {
     return false;
   }
 
-  // --- Build the overlapping audio window ---
-  // Window: [left_overlap] + [step (1280)] + [right_lookahead (40)] = 1640
-  // samples For the first step (samples_consumed_=0), left side is zero-padded.
+  const int64_t num_mel_bins = runner_.num_mel_bins_;
+  std::vector<float> mel_chunk_fp32(
+      static_cast<size_t>(num_mel_bins * encoder_chunk_mel_len));
   const int64_t window_size = left_overlap + step + right_lookahead;
-  std::vector<float> window_buf(static_cast<size_t>(window_size), 0.0f);
-
-  // Left overlap: copy from audio_buf_ before samples_consumed_
-  int64_t left_start = samples_consumed_ - left_overlap;
-  if (left_start >= 0) {
-    std::memcpy(
-        window_buf.data(),
-        audio_buf_.data() + left_start,
-        static_cast<size_t>(left_overlap) * sizeof(float));
-  } else {
-    // Partial left overlap (first step): zero-pad then copy available
-    int64_t available_left = samples_consumed_;
-    int64_t zero_pad = left_overlap - available_left;
-    // window_buf[0..zero_pad) is already 0.0f
-    if (available_left > 0) {
+  for (int64_t batch_idx = 0; batch_idx < encoder_batch_chunks; ++batch_idx) {
+    const auto chunk_framing_start = ProfileClock::now();
+    const int64_t chunk_start = samples_consumed_ + batch_idx * step;
+    std::vector<float> window_buf(static_cast<size_t>(window_size), 0.0f);
+    const int64_t left_start = chunk_start - left_overlap;
+    if (left_start >= 0) {
       std::memcpy(
-          window_buf.data() + zero_pad,
-          audio_buf_.data(),
-          static_cast<size_t>(available_left) * sizeof(float));
+          window_buf.data(),
+          audio_buf_.data() + left_start,
+          static_cast<size_t>(left_overlap) * sizeof(float));
+    } else {
+      const int64_t available_left = chunk_start;
+      const int64_t zero_pad = left_overlap - available_left;
+      if (available_left > 0) {
+        std::memcpy(
+            window_buf.data() + zero_pad,
+            audio_buf_.data(),
+            static_cast<size_t>(available_left) * sizeof(float));
+      }
+    }
+    std::memcpy(
+        window_buf.data() + left_overlap,
+        audio_buf_.data() + chunk_start,
+        static_cast<size_t>(step + right_lookahead) * sizeof(float));
+    auto audio_tensor = from_blob(
+        window_buf.data(),
+        {static_cast<int>(window_size)},
+        ::executorch::aten::ScalarType::Float);
+    if (profile_methods_) {
+      profile_framing_ms_ += elapsed_milliseconds(chunk_framing_start);
+    }
+
+    const auto preprocessor_start = ProfileClock::now();
+    auto mel_result = runner_.preprocessor_->execute(
+        "forward", std::vector<EValue>{*audio_tensor});
+    if (profile_methods_) {
+      profile_preprocessor_ms_ += elapsed_milliseconds(preprocessor_start);
+    }
+    ET_CHECK_MSG(mel_result.ok(), "Streaming preprocessor failed.");
+
+    const auto copy_start = ProfileClock::now();
+    auto mel = mel_result.get()[0].toTensor();
+    ET_CHECK_MSG(
+        mel.size(1) == num_mel_bins && mel.size(2) >= mel_skip + chunk_mel_len,
+        "Preprocessor produced an unexpected mel shape.");
+    const int64_t total_mel_frames = mel.size(2);
+    const float* mel_data = mel.const_data_ptr<float>();
+    for (int64_t c = 0; c < num_mel_bins; ++c) {
+      std::memcpy(
+          mel_chunk_fp32.data() + c * encoder_chunk_mel_len +
+              batch_idx * chunk_mel_len,
+          mel_data + c * total_mel_frames + mel_skip,
+          static_cast<size_t>(chunk_mel_len) * sizeof(float));
+    }
+    if (profile_methods_) {
+      profile_framing_ms_ += elapsed_milliseconds(copy_start);
     }
   }
 
-  // Step + right look-ahead
-  std::memcpy(
-      window_buf.data() + left_overlap,
-      audio_buf_.data() + samples_consumed_,
-      static_cast<size_t>(step + right_lookahead) * sizeof(float));
-
-  // --- Compute mel spectrogram on the full window ---
-  auto audio_tensor = from_blob(
-      window_buf.data(),
-      {static_cast<int>(window_size)},
-      ::executorch::aten::ScalarType::Float);
-
-  auto mel_result = runner_.preprocessor_->execute(
-      "forward", std::vector<EValue>{*audio_tensor});
-  ET_CHECK_MSG(mel_result.ok(), "Streaming preprocessor failed.");
-
-  auto mel = mel_result.get()[0].toTensor();
-  // mel shape: (1, 128, 10) — 10 frames from 1640 samples with center=True
-  const int64_t num_mel_bins = mel.size(1);
-  const int64_t total_mel_frames = mel.size(2);
-
-  ET_CHECK_MSG(
-      total_mel_frames >= mel_skip + chunk_mel_len,
-      "Preprocessor produced fewer mel frames than expected.");
-
-  // --- Extract frames [mel_skip, mel_skip+8) = frames 2-9 ---
-  // These align exactly with the offline mel frames for this step.
-  // Output layout is channels-first: (1, 128, T). For each channel,
-  // copy 8 contiguous frames starting at offset mel_skip.
-  std::vector<float> mel_chunk_fp32(
-      static_cast<size_t>(num_mel_bins * chunk_mel_len));
-  const float* mel_data = mel.const_data_ptr<float>();
-  for (int64_t c = 0; c < num_mel_bins; c++) {
-    std::memcpy(
-        mel_chunk_fp32.data() + c * chunk_mel_len,
-        mel_data + c * total_mel_frames + mel_skip,
-        static_cast<size_t>(chunk_mel_len) * sizeof(float));
-  }
-
+  framing_start = ProfileClock::now();
   auto mel_chunk_tensor = from_blob(
       mel_chunk_fp32.data(),
-      {1, static_cast<int>(num_mel_bins), static_cast<int>(chunk_mel_len)},
+      {1,
+       static_cast<int>(num_mel_bins),
+       static_cast<int>(encoder_chunk_mel_len)},
       ::executorch::aten::ScalarType::Float);
 
   // Convert to model dtype if needed (e.g., fp32 -> bf16 for CUDA)
@@ -606,22 +677,70 @@ bool StreamingSession::try_process_step() {
       enc_pos_data.data(),
       {static_cast<int>(enc_frames_per_chunk)},
       ::executorch::aten::ScalarType::Long);
+  if (profile_methods_) {
+    profile_framing_ms_ += elapsed_milliseconds(framing_start);
+  }
 
   // --- Run streaming encoder ---
+  const auto encoder_start = ProfileClock::now();
   auto enc_result = runner_.model_->execute(
       "encode_audio_chunk", std::vector<EValue>{*mel_chunk, *enc_pos});
+  if (profile_methods_) {
+    profile_encoder_ms_ += elapsed_milliseconds(encoder_start);
+  }
   ET_CHECK_MSG(enc_result.ok(), "encode_audio_chunk failed.");
 
-  auto& enc_outputs = enc_result.get();
-  auto audio_embeds_tensor =
-      std::make_shared<::executorch::aten::Tensor>(enc_outputs[0].toTensor());
-  auto audio_embeds_ptr = TensorPtr(audio_embeds_tensor);
+  auto audio_embeds = enc_result.get()[0].toTensor();
+  ET_CHECK_MSG(
+      audio_embeds.dim() == 3 && audio_embeds.size(1) == encoder_batch_chunks &&
+          audio_embeds.size(2) == runner_.dim_,
+      "Unexpected batched encoder output shape.");
 
   enc_frame_pos_ += enc_frames_per_chunk;
-  samples_consumed_ += step;
+  samples_consumed_ += batched_step;
 
-  // --- Decode one step ---
-  return decode_step(audio_embeds_ptr);
+  int64_t decode_count = encoder_batch_chunks;
+  if (pending_flush_decode_steps_ >= 0) {
+    decode_count = std::min(decode_count, pending_flush_decode_steps_);
+  }
+  int64_t decoded = 0;
+  // Decoder execution may reuse module-managed output storage, so preserve the
+  // batched encoder result across all decoder calls in this step.
+  if (runner_.model_dtype_ == ::executorch::aten::ScalarType::BFloat16) {
+    auto& copied_audio = audio_embeds_bf16_copy_;
+    std::memcpy(
+        copied_audio.data(),
+        audio_embeds.const_data_ptr<::executorch::aten::BFloat16>(),
+        copied_audio.size() * sizeof(::executorch::aten::BFloat16));
+    for (; decoded < decode_count && !eos_reached_; ++decoded) {
+      auto audio_embed = from_blob(
+          copied_audio.data() + decoded * runner_.dim_,
+          {1, 1, static_cast<int>(runner_.dim_)},
+          ::executorch::aten::ScalarType::BFloat16);
+      decode_step(audio_embed);
+    }
+  } else {
+    auto& copied_audio = audio_embeds_fp32_copy_;
+    std::memcpy(
+        copied_audio.data(),
+        audio_embeds.const_data_ptr<float>(),
+        copied_audio.size() * sizeof(float));
+    for (; decoded < decode_count && !eos_reached_; ++decoded) {
+      auto audio_embed = from_blob(
+          copied_audio.data() + decoded * runner_.dim_,
+          {1, 1, static_cast<int>(runner_.dim_)},
+          ::executorch::aten::ScalarType::Float);
+      decode_step(audio_embed);
+    }
+  }
+  if (pending_flush_decode_steps_ >= 0) {
+    pending_flush_decode_steps_ -= decoded;
+  }
+  if (profile_methods_) {
+    profile_total_ms_ += elapsed_milliseconds(step_start);
+    profile_steps_ += decoded;
+  }
+  return true;
 }
 
 bool StreamingSession::decode_step(const TensorPtr& audio_embeds_tensor) {
@@ -633,13 +752,18 @@ bool StreamingSession::decode_step(const TensorPtr& audio_embeds_tensor) {
   auto token_tensor =
       from_blob(&token_id, {1, 1}, ::executorch::aten::ScalarType::Long);
 
+  const auto embedding_start = ProfileClock::now();
   auto tok_result = runner_.model_->execute(
       "token_embedding", std::vector<EValue>{*token_tensor});
+  if (profile_methods_) {
+    profile_embedding_ms_ += elapsed_milliseconds(embedding_start);
+  }
   ET_CHECK_MSG(tok_result.ok(), "token_embedding failed.");
   auto tok_embed = tok_result.get()[0].toTensor();
 
   // Sum audio + token embeddings.
   // Reuses pre-allocated input_embeds_ buffer (no per-token allocation).
+  const auto add_start = ProfileClock::now();
   auto& audio_embeds = *audio_embeds_tensor;
   if (model_dtype == ::executorch::aten::ScalarType::BFloat16) {
     auto* out = input_embeds_->mutable_data_ptr<::executorch::aten::BFloat16>();
@@ -658,17 +782,25 @@ bool StreamingSession::decode_step(const TensorPtr& audio_embeds_tensor) {
       out[i] = af[i] + tf[i];
     }
   }
+  if (profile_methods_) {
+    profile_add_ms_ += elapsed_milliseconds(add_start);
+  }
 
   auto cache_pos =
       from_blob(&dec_pos_, {1}, ::executorch::aten::ScalarType::Long);
 
+  const auto decoder_start = ProfileClock::now();
   auto dec_result = runner_.model_->execute(
       "text_decoder", std::vector<EValue>{*input_embeds_, *cache_pos});
+  if (profile_methods_) {
+    profile_decoder_ms_ += elapsed_milliseconds(decoder_start);
+  }
   ET_CHECK_MSG(dec_result.ok(), "text_decoder failed.");
 
   auto logits = dec_result.get()[0].toTensor();
 
   // Sample next token (persistent sampler preserves RNG state).
+  const auto sampling_start = ProfileClock::now();
   float* logits_data =
       get_logits_fp32(logits, runner_.vocab_size_, logits_fp32_buf_);
   int64_t next_token = static_cast<int64_t>(sampler_.sample(logits_data));
@@ -678,6 +810,9 @@ bool StreamingSession::decode_step(const TensorPtr& audio_embeds_tensor) {
       prev_token_, static_cast<uint64_t>(next_token));
   if (piece.ok()) {
     token_cb_(*piece);
+  }
+  if (profile_methods_) {
+    profile_sampling_ms_ += elapsed_milliseconds(sampling_start);
   }
 
   if (static_cast<uint64_t>(next_token) == runner_.eos_id_) {
@@ -707,9 +842,14 @@ int StreamingSession::flush() {
     // step, the preprocessor look-ahead, and the model's transcription delay.
     // Matches vLLM flush behavior:
     // https://github.com/vllm-project/vllm/blob/2f9f946/vllm/model_executor/models/voxtral_realtime.py#L239-L270
-    int64_t pad_to =
-        (((remaining + step - 1) / step) + right_pad_audio_steps) * step +
-        right_lookahead;
+    const int64_t remaining_audio_steps = (remaining + step - 1) / step;
+    const int64_t remaining_decode_steps =
+        remaining_audio_steps + right_pad_audio_steps;
+    const int64_t padded_audio_steps =
+        ((remaining_decode_steps + runner_.encoder_batch_chunks_ - 1) /
+         runner_.encoder_batch_chunks_) *
+        runner_.encoder_batch_chunks_;
+    const int64_t pad_to = padded_audio_steps * step + right_lookahead;
     const int64_t silence_padded_samples = pad_to - remaining;
     std::vector<float> silence(
         static_cast<size_t>(silence_padded_samples), 0.0f);
@@ -717,11 +857,41 @@ int StreamingSession::flush() {
 
     // Guaranteed to terminate b/c each call to try_process_step() consumes a
     // fixed number of audio samples and the padded audio buffer is finite.
-    while (!eos_reached_ && try_process_step()) {
+    pending_flush_decode_steps_ = remaining_decode_steps;
+    while (!eos_reached_ && pending_flush_decode_steps_ > 0 &&
+           try_process_step()) {
     }
+    pending_flush_decode_steps_ = -1;
   }
 
+  print_profile();
+
   return num_generated_;
+}
+
+void StreamingSession::print_profile() const {
+  if (!profile_methods_) {
+    return;
+  }
+  const double accounted_ms = profile_framing_ms_ + profile_preprocessor_ms_ +
+      profile_encoder_ms_ + profile_embedding_ms_ + profile_add_ms_ +
+      profile_decoder_ms_ + profile_sampling_ms_;
+  ET_LOG(
+      Info,
+      "VOXTRAL_PROFILE mode=streaming steps=%ld total_ms=%.3f "
+      "framing_ms=%.3f preprocessor_ms=%.3f encoder_ms=%.3f "
+      "embedding_ms=%.3f add_ms=%.3f decoder_ms=%.3f sampling_ms=%.3f "
+      "other_ms=%.3f",
+      static_cast<long>(profile_steps_),
+      profile_total_ms_,
+      profile_framing_ms_,
+      profile_preprocessor_ms_,
+      profile_encoder_ms_,
+      profile_embedding_ms_,
+      profile_add_ms_,
+      profile_decoder_ms_,
+      profile_sampling_ms_,
+      profile_total_ms_ - accounted_ms);
 }
 
 } // namespace voxtral_realtime
