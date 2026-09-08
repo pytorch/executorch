@@ -13,6 +13,7 @@ from executorch.backends.vulkan.op_registry import (
     is_custom_sdpa_node_supported,
     is_general_sdpa_node_supported,
     is_integer_remainder_scalar_node_supported,
+    is_update_cache_with_indices_node_supported,
     vulkan_supported_ops,
 )
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
@@ -36,6 +37,111 @@ class TestCustomSDPASupport(TestCase):
             args=(object(), object(), object(), 0, object()), kwargs={}
         )
         self.assertFalse(is_custom_sdpa_node_supported(node))
+
+
+class TestUpdateCacheWithIndicesSupport(TestCase):
+    @staticmethod
+    def _tensor_node(shape, dtype=torch.float32):
+        node = torch.fx.Graph().placeholder("tensor")
+        node.meta["val"] = SimpleNamespace(shape=shape, dtype=dtype)
+        return node
+
+    def test_accepts_production_contract(self) -> None:
+        node = SimpleNamespace(
+            target=None,
+            args=(
+                self._tensor_node((1, 4, 8, 128)),
+                self._tensor_node((1, 32, 8, 128)),
+                0,
+                self._tensor_node((1, 4), torch.int64),
+            ),
+        )
+        self.assertTrue(is_update_cache_with_indices_node_supported(node))
+
+    def test_rejects_batch_greater_than_one(self) -> None:
+        node = SimpleNamespace(
+            target=None,
+            args=(
+                self._tensor_node((2, 4, 8, 128)),
+                self._tensor_node((2, 32, 8, 128)),
+                0,
+                self._tensor_node((2, 4), torch.int64),
+            ),
+        )
+        self.assertFalse(is_update_cache_with_indices_node_supported(node))
+
+    def test_accepts_auto_functionalized_v2_contract(self) -> None:
+        value = self._tensor_node((1, 4, 8, 128))
+        cache = self._tensor_node((1, 32, 8, 128))
+        indices = self._tensor_node((1, 4), torch.int64)
+        node = SimpleNamespace(
+            target=torch.ops.higher_order.auto_functionalized_v2,
+            args=(torch.ops.aten.add_.Tensor,),
+            kwargs={
+                "value": value,
+                "indices": indices,
+                "_cache_base_index": 0,
+                "_all_bases": [cache],
+            },
+        )
+        self.assertTrue(is_update_cache_with_indices_node_supported(node))
+
+    def test_rejects_mismatched_dtype(self) -> None:
+        node = SimpleNamespace(
+            target=None,
+            args=(
+                self._tensor_node((1, 4, 8, 128)),
+                self._tensor_node((1, 32, 8, 128), torch.float16),
+                0,
+                self._tensor_node((1, 4), torch.int64),
+            ),
+        )
+        self.assertFalse(is_update_cache_with_indices_node_supported(node))
+
+    def test_rejects_unsupported_shapes_and_index_dtype(self) -> None:
+        cases = (
+            (
+                (1, 4, 8, 128),
+                (1, 32, 8, 128),
+                (1, 3),
+                torch.int64,
+            ),
+            (
+                (1, 4, 8, 128),
+                (1, 32, 4, 128),
+                (1, 4),
+                torch.int64,
+            ),
+            (
+                (1, 4, 8),
+                (1, 32, 8, 128),
+                (1, 4),
+                torch.int64,
+            ),
+            (
+                (1, 4, 8, 128),
+                (1, 32, 8, 128),
+                (1, 4),
+                torch.int32,
+            ),
+        )
+        for value_shape, cache_shape, indices_shape, indices_dtype in cases:
+            with self.subTest(
+                value_shape=value_shape,
+                cache_shape=cache_shape,
+                indices_shape=indices_shape,
+                indices_dtype=indices_dtype,
+            ):
+                node = SimpleNamespace(
+                    target=None,
+                    args=(
+                        self._tensor_node(value_shape),
+                        self._tensor_node(cache_shape),
+                        0,
+                        self._tensor_node(indices_shape, indices_dtype),
+                    ),
+                )
+                self.assertFalse(is_update_cache_with_indices_node_supported(node))
 
 
 class TestGeneralSDPASupport(TestCase):

@@ -1149,6 +1149,67 @@ def register_update_cache():
     )
 
 
+def is_update_cache_with_indices_node_supported(node: torch.fx.Node) -> bool:
+    if node.target == torch.ops.higher_order.auto_functionalized_v2:
+        all_bases = node.kwargs.get("_all_bases", ())
+        cache_base_index = node.kwargs.get("_cache_base_index")
+        if (
+            not isinstance(cache_base_index, int)
+            or cache_base_index < 0
+            or cache_base_index >= len(all_bases)
+        ):
+            return False
+        value = node.kwargs.get("value")
+        cache = all_bases[cache_base_index]
+        indices = node.kwargs.get("indices")
+    elif node.target == torch.ops.higher_order.auto_functionalized:
+        value = node.kwargs.get("value")
+        cache = node.kwargs.get("cache")
+        indices = node.kwargs.get("indices")
+    elif len(node.args) >= 4:
+        value, cache, _, indices = node.args[:4]
+    else:
+        return False
+
+    if not all(isinstance(arg, torch.fx.Node) for arg in (value, cache, indices)):
+        return False
+
+    value_meta = value.meta["val"]
+    cache_meta = cache.meta["val"]
+    indices_meta = indices.meta["val"]
+    value_shape = value_meta.shape
+    cache_shape = cache_meta.shape
+    indices_shape = indices_meta.shape
+    return (
+        value_meta.dtype in utils.FP_T
+        and cache_meta.dtype == value_meta.dtype
+        and indices_meta.dtype == torch.int64
+        and len(value_shape) == 4
+        and len(cache_shape) == 4
+        and len(indices_shape) == 2
+        and value_shape[0] == cache_shape[0] == indices_shape[0] == 1
+        and value_shape[1] == indices_shape[1]
+        and value_shape[2] == cache_shape[2]
+        and value_shape[3] == cache_shape[3]
+    )
+
+
+@update_features("llama::update_cache_with_indices")
+def register_update_cache_with_indices():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,  # value
+            utils.CONTIGUOUS_ANY,  # cache
+            utils.NO_STORAGE,  # start_pos
+            utils.CONTIGUOUS_BUFFER,  # indices
+        ],
+        inputs_dtypes=[utils.FP_T, utils.FP_T, utils.NONE_T, {torch.int64}],
+        outputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=is_update_cache_with_indices_node_supported,
+    )
+
+
 # =============================================================================
 # SDPA.cpp (fused SDPA entry point)
 # =============================================================================
