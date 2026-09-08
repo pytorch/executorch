@@ -429,10 +429,8 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
     const int n = std::min(max_step_tokens_, total - off);
     // Placement checks the forward's token count against the declaration, so
     // each slice declares its own.
-    if (!ctl_->declare_step(
-            std::vector<std::int32_t>(
-                step->seq_ids.begin() + off,
-                step->seq_ids.begin() + off + n))) {
+    if (!ctl_->declare_step(std::vector<std::int32_t>(
+            step->seq_ids.begin() + off, step->seq_ids.begin() + off + n))) {
       ET_LOG(Error, "ModuleExecutor: the cache refused a slice of %d", n);
       return false;
     }
