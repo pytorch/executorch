@@ -158,10 +158,50 @@ def _is_aten_target(kwargs):
         "libtorch_python",
         "torch-core-cpp",
     ]
+    aten_resolved_external_deps = [
+        "c10",
+        "libtorch",
+        "libtorch_python",
+        "torch-core-cpp",
+    ]
+    # The ATen-flavored gtest and gmock names resolve to the same internal
+    # labels as their ordinary variants, so only their short names are unique.
     for key in ["external_deps", "exported_external_deps"]:
         for dep in kwargs.get(key) or []:
             if dep in aten_external_deps:
                 return True
+
+    # A target can also name one of those through external_dep_location, which
+    # hands back the resolved label and puts it in an ordinary dep list.
+    aten_targets = []
+
+    def _note_aten_targets(targets):
+        for target in targets:
+            if target not in aten_targets:
+                aten_targets.append(target)
+        return targets
+
+    for name in aten_resolved_external_deps:
+        resolved = env.resolve_external_dep(name)
+        if resolved != env.EXTERNAL_DEP_FALLTHROUGH:
+            selects.apply(obj = resolved, function = _note_aten_targets)
+
+    # A dep list can be a select(), so collect through selects.apply rather than
+    # walking it. The lists it holds are the same shape either way.
+    found = []
+
+    def _note_aten_deps(targets):
+        for dep in targets:
+            if dep in aten_targets:
+                found.append(dep)
+        return targets
+
+    for key in ["deps", "exported_deps"]:
+        if kwargs.get(key):
+            selects.apply(obj = kwargs.get(key), function = _note_aten_deps)
+    if found:
+        return True
+
     for key in ["xplat_deps", "fbcode_deps"]:
         if _has_pytorch_dep(kwargs.get(key)):
             return True
@@ -172,7 +212,8 @@ def _patch_test_compiler_flags(kwargs, aten_mode = False):
         kwargs["compiler_flags"] = []
 
     # A test that compiles against ATen needs C++20, which PyTorch's headers
-    # require. Every other test stays at C++17, which the embedded builds use.
+    # require. Other tests stay at C++17 for embedded builds, but Apple plugin
+    # generation also requires C++20.
     name = kwargs.get("name", "")
     is_aten_test = (
         aten_mode or
@@ -187,6 +228,11 @@ def _patch_test_compiler_flags(kwargs, aten_mode = False):
         kwargs["compiler_flags"] += [
             "-std=c++17",
         ]
+        if env.is_xplat():
+            kwargs["fbobjc_compiler_flags"] = kwargs.get(
+                "fbobjc_compiler_flags",
+                [],
+            ) + ["-std=c++20"]
 
     # Relaxing some constraints for tests
     kwargs["compiler_flags"] += [

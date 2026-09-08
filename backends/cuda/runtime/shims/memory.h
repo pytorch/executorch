@@ -195,18 +195,49 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch__reinterpret_tensor(
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_copy_(SlimTensor* self, SlimTensor* src, int32_t non_blocking);
 
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
+
 /**
- * Extracts a boolean scalar value from a single-element tensor.
+ * Extracts a scalar value from a single-element tensor.
  *
- * The tensor must contain exactly one element and have Bool dtype.
- * For CUDA tensors, this will synchronize to copy the value to CPU.
+ * The type in the name is the type returned, not the tensor's dtype: generated
+ * code reads a boolean branch selector through the int64 entry point. The value
+ * is converted, and rejected only when it does not fit. The tensor must contain
+ * exactly one element. For CUDA tensors, this will synchronize to copy the
+ * value to CPU.
  *
- * @param tensor Single-element boolean tensor (must not be null)
- * @param ret_value Output parameter for the extracted boolean value
+ * @param tensor Single-element tensor (must not be null)
+ * @param ret_value Output parameter for the extracted value
  * @return AOTITorchError error code (Error::Ok on success)
  */
 AOTI_SHIM_EXPORT AOTITorchError
-aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
+aoti_torch_item_uint8(SlimTensor* tensor, uint8_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int8(SlimTensor* tensor, int8_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int16(SlimTensor* tensor, int16_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int32(SlimTensor* tensor, int32_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_int64(SlimTensor* tensor, int64_t* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_float32(SlimTensor* tensor, float* ret_value);
+
+/// See aoti_torch_item_uint8.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_item_bfloat16(SlimTensor* tensor, c10::BFloat16* ret_value);
 
 /**
  * Moves a tensor into a new handle and assigns it to the output parameter.
