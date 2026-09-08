@@ -51,7 +51,8 @@ class VoxtralRealtimeConfig:
     max_seq_len: int = 4096
     sliding_window: int = 8192
     streaming: bool = False
-    backend: str = "xnnpack"  # "xnnpack", "mlx", "metal", "cuda", or "portable"
+    # "xnnpack", "vulkan", "mlx", "metal", "cuda", or "portable"
+    backend: str = "xnnpack"
 
     @staticmethod
     def from_params_json(path: str) -> "VoxtralRealtimeConfig":
@@ -180,6 +181,10 @@ class EncoderAttention(nn.Module):
         k = self.wk(x).view(B, T, self.n_heads, self.head_dim)
         v = self.wv(x).view(B, T, self.n_heads, self.head_dim)
         q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        if self.backend == "vulkan":
+            y = torch.ops.llama.custom_sdpa(q, k, v, 0, None, 0.0, True)
+            return self.wo(y.contiguous().view(B, T, -1))
+
         q, k, v = (t.transpose(1, 2) for t in (q, k, v))
         if self.backend == "mlx":
             # Use MLX custom SDPA for Apple Silicon GPU
@@ -1403,7 +1408,7 @@ def load_model(
         streaming: If True, use ring buffer KV cache for unlimited streaming.
         sliding_window: Override decoder sliding window size (default: from params.json).
     """
-    _VALID_BACKENDS = ("xnnpack", "mlx", "metal", "cuda", "portable")
+    _VALID_BACKENDS = ("xnnpack", "vulkan", "mlx", "metal", "cuda", "portable")
 
     if backend not in _VALID_BACKENDS:
         raise ValueError(

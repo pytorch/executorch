@@ -18,6 +18,8 @@ With --streaming, produces a streaming .pte instead:
 
 Backend support:
   - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
+  - Vulkan: Uses Vulkan-compatible SDPA/cache forms and requires every tensor-compute
+            operator to lower to Vulkan
   - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for both text_decoder
                 and streaming encoder (transpose_kv=True), avoiding custom_sdpa which is
                 incompatible with AOTI. Uses Dim.AUTO for audio encoder dynamic shapes
@@ -31,12 +33,14 @@ Backend support:
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend vulkan --dtype fp32
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal --dtype bf16 --qlinear-encoder fpa4w --qlinear fpa4w
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend cuda --qlinear 4w
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend rocm --dtype bf16 --streaming
 """
 
 import argparse
+import operator
 import os
 
 import torch
@@ -47,8 +51,13 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
+from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes import MemoryPlanningPass
 from torch.export import Dim, export
+
+VULKAN_EXTERNAL_CONSTANTS_MAX_DATA_BYTES = 1_500_000_000
+
 
 # ---------------------------------------------------------------------------
 # Export wrappers
@@ -152,6 +161,13 @@ def _export_decoder_and_embedding(
     print("\nExporting text_decoder...")
     text_decoder = TextDecoderExport(model)
     text_decoder.eval()
+    tied_embedding_weight = None
+    tied_embedding_version = None
+    tied_embedding_storage = None
+    if model.decoder.output.weight is model.decoder.tok_embeddings.weight:
+        tied_embedding_weight = model.decoder.tok_embeddings.weight
+        tied_embedding_version = tied_embedding_weight._version
+        tied_embedding_storage = tied_embedding_weight.untyped_storage().data_ptr()
 
     packed_linear_count = 0
     use_packed_matvec = use_aoti_packed_int4 and qlinear == "4w"
@@ -163,6 +179,20 @@ def _export_decoder_and_embedding(
             qlinear_group_size=qlinear_group_size,
             qlinear_packing_format=qlinear_packing_format,
         )
+        if tied_embedding_weight is not None:
+            if model.decoder.output.weight is tied_embedding_weight:
+                raise RuntimeError(
+                    "Linear quantization did not split the tied output/embedding weight"
+                )
+            if (
+                model.decoder.tok_embeddings.weight is not tied_embedding_weight
+                or tied_embedding_weight._version != tied_embedding_version
+                or tied_embedding_weight.untyped_storage().data_ptr()
+                != tied_embedding_storage
+            ):
+                raise RuntimeError(
+                    "Linear quantization mutated the tied FP32 embedding weight"
+                )
         if use_packed_matvec:
             packed_linear_count = _pack_aoti_int4_weights(
                 text_decoder,
@@ -447,6 +477,100 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
+_VULKAN_PORTABLE_CONSTRUCTORS = {
+    exir_ops.edge.aten.arange.start_step,
+    exir_ops.edge.aten.full.default,
+}
+_VULKAN_PORTABLE_SCALAR_GLUE = {
+    torch.ops.aten.sym_size.int,
+}
+
+
+def _format_vulkan_audit_failure(method_name, node, reason):
+    val = node.meta.get("val")
+    dtype = getattr(val, "dtype", None)
+    shape = getattr(val, "shape", None)
+    spec = node.meta.get("spec")
+    layout = getattr(spec, "etvk_node_repr", None)
+    return (
+        f"method={method_name}, target={node.target}, dtype={dtype}, "
+        f"shape={shape}, layout={layout}, reason={reason}"
+    )
+
+
+def audit_vulkan_delegation(edge_program):
+    failures = []
+    for method_name in edge_program.methods:
+        graph_module = edge_program.exported_program(method_name).graph_module
+        vulkan_segments = 0
+        for node in graph_module.graph.nodes:
+            if node.op == "get_attr" and node.name.startswith("lowered_module_"):
+                lowered_module = getattr(graph_module, node.name)
+                if lowered_module.backend_id != "VulkanBackend":
+                    failures.append(
+                        _format_vulkan_audit_failure(
+                            method_name,
+                            node,
+                            f"delegated to {lowered_module.backend_id}",
+                        )
+                    )
+                else:
+                    vulkan_segments += 1
+                continue
+
+            if node.op != "call_function":
+                continue
+            if (
+                node.target
+                in (
+                    executorch_call_delegate,
+                    operator.getitem,
+                )
+                or node.target in _VULKAN_PORTABLE_CONSTRUCTORS
+                or node.target in _VULKAN_PORTABLE_SCALAR_GLUE
+            ):
+                continue
+            failures.append(
+                _format_vulkan_audit_failure(
+                    method_name,
+                    node,
+                    "tensor compute remains outside Vulkan",
+                )
+            )
+
+        if vulkan_segments == 0:
+            failures.append(f"method={method_name}, reason=no Vulkan delegate segment")
+
+    if failures:
+        details = "\n  ".join(failures)
+        raise RuntimeError(f"Incomplete Vulkan delegation:\n  {details}")
+
+
+def validate_vulkan_options(args, parser):
+    if args.backend != "vulkan":
+        return
+    if args.dtype != "fp32":
+        parser.error("--backend=vulkan currently requires --dtype=fp32")
+    for option_name in ("qlinear", "qlinear_encoder"):
+        value = getattr(args, option_name)
+        if value not in (None, "8da4w"):
+            parser.error(
+                f"--{option_name.replace('_', '-')}={value} is not supported by Vulkan"
+            )
+    if args.qembedding not in (None, "4w"):
+        parser.error(f"--qembedding={args.qembedding} is not supported by Vulkan")
+    if args.qlinear_packing_format is not None:
+        parser.error("--qlinear-packing-format is not supported by Vulkan")
+    if args.qlinear_encoder_packing_format is not None:
+        parser.error("--qlinear-encoder-packing-format is not supported by Vulkan")
+
+
+def _requires_explicit_output_weight_clone(backend, qlinear, qembedding):
+    if not (qlinear or qembedding):
+        return False
+    return not (backend == "vulkan" and qlinear == "8da4w" and qembedding == "4w")
+
+
 def lower_to_executorch(
     programs,
     metadata,
@@ -468,6 +592,31 @@ def lower_to_executorch(
             key: [XnnpackDynamicallyQuantizedPartitioner(), XnnpackPartitioner()]
             for key in programs
         }
+    elif backend == "vulkan":
+        from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+            VulkanPartitioner,
+        )
+        from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+            VkStorageType,
+        )
+
+        print("\nLowering to ExecuTorch with Vulkan...")
+        partitioner = {}
+        for key in programs:
+            compile_options = {
+                "require_dynamic_shapes": True,
+                "external_constants_max_data_bytes": (
+                    VULKAN_EXTERNAL_CONSTANTS_MAX_DATA_BYTES
+                ),
+            }
+            if key in ("encode_audio_chunk", "text_decoder"):
+                compile_options["alias_buffer_mutations"] = True
+            if key == "token_embedding":
+                compile_options["buffer_limit"] = (
+                    metadata["vocab_size"] * metadata["dim"]
+                )
+                compile_options["storage_type_override"] = VkStorageType.BUFFER
+            partitioner[key] = [VulkanPartitioner(compile_options=compile_options)]
     elif backend == "metal":
         from executorch.backends.apple.metal.metal_backend import MetalBackend
         from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
@@ -542,6 +691,9 @@ def lower_to_executorch(
         constant_methods=metadata,
     )
 
+    if backend == "vulkan":
+        audit_vulkan_delegation(et_prog)
+
     return et_prog.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
@@ -606,6 +758,7 @@ def main():
         choices=[
             "portable",
             "xnnpack",
+            "vulkan",
             "mlx",
             "metal",
             "cuda",
@@ -716,6 +869,7 @@ def main():
         "cuda" if args.backend in ("cuda-windows", "rocm") else args.backend
     )
     _validate_export_args(parser, args, backend_for_export)
+    validate_vulkan_options(args, parser)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -737,9 +891,11 @@ def main():
         print("Moving model to CUDA...")
         model.to(torch.device("cuda:0"))
 
-    # Untie output/embedding weights before quantization so each layer gets
-    # its own quantization config (embedding: 8w, output linear: 8da4w).
-    if args.qlinear or args.qembedding:
+    # TorchAO's Vulkan 8da4w transform replaces the output weight and breaks
+    # the tie without modifying the FP32 embedding consumed by the 4w pass.
+    if _requires_explicit_output_weight_clone(
+        backend_for_export, args.qlinear, args.qembedding
+    ):
         model.decoder.output.weight = torch.nn.Parameter(
             model.decoder.tok_embeddings.weight.clone()
         )
