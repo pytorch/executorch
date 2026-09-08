@@ -172,10 +172,29 @@ void set_debugging(bool enable_debugging) {
 }
 
 // ValueSpec implementation
-void ValueSpec::generate_tensor_data(int seed) {
+void ValueSpec::ensure_unique_data() const {
+  if (data_.use_count() != 1) {
+    data_ = std::make_shared<TensorData>(*data_);
+  }
+}
+
+void ValueSpec::ensure_unique_reference_data() const {
+  if (reference_data_.use_count() != 1) {
+    reference_data_ = std::make_shared<TensorData>(*reference_data_);
+  }
+}
+
+void ValueSpec::generate_tensor_data(int seed) const {
   if (spec_type != SpecType::Tensor) {
     return;
   }
+
+  ensure_unique_data();
+  auto& float_data = data_->float_data;
+  auto& int32_data = data_->int32_data;
+  auto& half_data = data_->half_data;
+  auto& int8_data = data_->int8_data;
+  auto& uint8_data = data_->uint8_data;
 
   int64_t num_elements = numel();
 
@@ -498,81 +517,95 @@ std::string ValueSpec::to_string() const {
 
 // Additional ValueSpec methods
 void ValueSpec::resize_data(size_t new_size) {
+  // Generate first so a deferred tensor keeps its data-gen pattern (resized,
+  // not pinned to zeros by the data_generated_ flag set below).
+  ensure_data_generated();
+  ensure_unique_data();
   switch (dtype) {
     case vkapi::kFloat:
-      float_data.resize(new_size);
+      data_->float_data.resize(new_size);
       break;
     case vkapi::kHalf:
-      half_data.resize(new_size);
+      data_->half_data.resize(new_size);
       break;
     case vkapi::kInt:
-      int32_data.resize(new_size);
+      data_->int32_data.resize(new_size);
       break;
     case vkapi::kChar:
-      int8_data.resize(new_size);
+      data_->int8_data.resize(new_size);
       break;
     case vkapi::kByte:
-      uint8_data.resize(new_size);
+      data_->uint8_data.resize(new_size);
       break;
     default:
-      float_data.resize(new_size);
+      data_->float_data.resize(new_size);
       break;
   }
+  data_generated_ = true;
 }
 
 void* ValueSpec::get_mutable_data_ptr() {
+  ensure_data_generated();
+  ensure_unique_data();
   switch (dtype) {
     case vkapi::kFloat:
-      return float_data.data();
+      return data_->float_data.data();
     case vkapi::kHalf:
-      return half_data.data();
+      return data_->half_data.data();
     case vkapi::kInt:
-      return int32_data.data();
+      return data_->int32_data.data();
     case vkapi::kChar:
-      return int8_data.data();
+      return data_->int8_data.data();
     case vkapi::kByte:
-      return uint8_data.data();
+      return data_->uint8_data.data();
     default:
-      return float_data.data();
+      return data_->float_data.data();
   }
 }
 
 float ValueSpec::get_element(size_t index) const {
+  ensure_data_generated();
   if (index >= static_cast<size_t>(numel())) {
     return 0.0f;
   }
 
   switch (dtype) {
     case vkapi::kFloat:
-      return index < float_data.size() ? float_data[index] : 0.0f;
+      return index < data_->float_data.size() ? data_->float_data[index] : 0.0f;
     case vkapi::kHalf:
-      return index < half_data.size() ? half_to_float(half_data[index]) : 0.0f;
+      return index < data_->half_data.size()
+          ? half_to_float(data_->half_data[index])
+          : 0.0f;
     case vkapi::kInt:
-      return index < int32_data.size() ? static_cast<float>(int32_data[index])
-                                       : 0.0f;
+      return index < data_->int32_data.size()
+          ? static_cast<float>(data_->int32_data[index])
+          : 0.0f;
     case vkapi::kChar:
-      return index < int8_data.size() ? static_cast<float>(int8_data[index])
-                                      : 0.0f;
+      return index < data_->int8_data.size()
+          ? static_cast<float>(data_->int8_data[index])
+          : 0.0f;
     case vkapi::kByte:
-      return index < uint8_data.size() ? static_cast<float>(uint8_data[index])
-                                       : 0.0f;
+      return index < data_->uint8_data.size()
+          ? static_cast<float>(data_->uint8_data[index])
+          : 0.0f;
     default:
       return 0.0f;
   }
 }
 
 const void* ValueSpec::get_data_ptr() const {
+  ensure_data_generated();
   switch (dtype) {
     case vkapi::kFloat:
-      return float_data.data();
+      return data_->float_data.data();
     case vkapi::kHalf:
-      return half_data.data();
+      return data_->half_data.data();
     case vkapi::kInt:
-      return int32_data.data();
+      return data_->int32_data.data();
     case vkapi::kChar:
-      return int8_data.data();
+      return data_->int8_data.data();
     case vkapi::kByte:
-      return uint8_data.data();
+      return data_->uint8_data.data();
     default:
       throw std::runtime_error("Unsupported data type for get_data_ptr");
   }
@@ -801,7 +834,7 @@ bool ValueSpec::validate_against_reference(
 }
 
 // Ensure data is generated for this ValueSpec
-void ValueSpec::ensure_data_generated(int seed) {
+void ValueSpec::ensure_data_generated(int seed) const {
   if (data_generated_) {
     return;
   }
@@ -809,18 +842,22 @@ void ValueSpec::ensure_data_generated(int seed) {
   data_generated_ = true;
 }
 
-// Copy input data from another ValueSpec
-void ValueSpec::copy_data_from(const ValueSpec& other) {
+void ValueSpec::share_data_from(const ValueSpec& other) {
   if (!is_tensor() || !other.is_tensor()) {
     return;
   }
-  // Copy raw data based on dtype
-  float_data = other.float_data;
-  int32_data = other.int32_data;
-  half_data = other.half_data;
-  int8_data = other.int8_data;
-  uint8_data = other.uint8_data;
-  data_generated_ = other.data_generated_;
+  // Materialize the source first: sharing an ungenerated payload would let a
+  // later access materialize each spec independently under different seeds.
+  other.ensure_data_generated();
+  data_ = other.data_;
+  data_generated_ = true;
+}
+
+void ValueSpec::share_reference_from(const ValueSpec& other) {
+  if (!is_tensor() || !other.is_tensor()) {
+    return;
+  }
+  reference_data_ = other.reference_data_;
 }
 
 // ReferenceKey implementation
@@ -1743,17 +1780,11 @@ TestResult execute_test_cases(
 
     // Compute reference once for prototype
     bool ref_computed = false;
-    std::vector<std::vector<float>> ref_data;
     if (reference_compute_func) {
       try {
         reference_compute_func(prototype);
         ref_computed = true;
-
-        // Cache the reference output for this group
-        for (const auto& output : prototype.outputs()) {
-          ref_data.push_back(output.get_ref_float_data());
-        }
-      } catch (const std::invalid_argument& _) {
+      } catch (const std::invalid_argument&) {
         // Reference computation skipped for this group
       }
     }
@@ -1771,15 +1802,21 @@ TestResult execute_test_cases(
         const auto& src = prototype.inputs()[j];
         if (dest.is_tensor() && src.is_tensor() && dest.sizes == src.sizes &&
             dest.dtype == src.dtype) {
-          dest.copy_data_from(src);
+          dest.share_data_from(src);
         }
       }
 
       // Copy reference output data if available
       if (ref_computed) {
-        for (size_t j = 0; j < tc.outputs().size() && j < ref_data.size();
+        for (size_t j = 0;
+             j < tc.outputs().size() && j < prototype.outputs().size();
              ++j) {
-          tc.outputs()[j].get_ref_float_data() = ref_data[j];
+          const auto& src = prototype.outputs()[j];
+          auto& dest = tc.outputs()[j];
+          if (dest.is_tensor() && src.is_tensor() && dest.sizes == src.sizes &&
+              dest.dtype == src.dtype) {
+            dest.share_reference_from(src);
+          }
         }
       }
     }
@@ -1924,6 +1961,8 @@ TestResult execute_test_cases(
 
       // Add result to collection
       results.add_result(std::move(result));
+
+      test_case.clear();
     }
   }
 
