@@ -126,6 +126,11 @@ class NXPRecipeProvider(BackendRecipeProvider):
             raise KeyError(
                 f"NXP backend: create_recipe() requires `{NEUTRON_RECIPE_CONFIG_KEY}=<NeutronRecipeConfig>`."
             )
+        if not isinstance(original_rc, NeutronRecipeConfig):
+            raise TypeError(
+                f"NXP backend: `{NEUTRON_RECIPE_CONFIG_KEY}` must be a NeutronRecipeConfig, "
+                f"got {type(original_rc).__name__}."
+            )
 
         rc = cast(NeutronRecipeConfig, deepcopy(original_rc))
         if rc.custom_delegation_options is None:
@@ -214,7 +219,7 @@ def _build_lowering_recipe(
     """Build the LoweringRecipe, optionally including NPU delegation."""
     partitioners = _build_partitioners(compile_spec, neutron_target_spec, rc, delegate)
     pre_partitioning_callback = _build_pre_partitioning_callback(rc)
-    post_partitioning_transforms = _build_post_partitioning_transforms(rc)
+    edge_manager_transform_passes = _build_edge_manager_transform_passes(rc)
 
     # The edge pass manager must be wrapped: EdgeTransformAndLowerStage calls
     # edge_transform_passes with (method_name, ep) and expects a PassManager back.
@@ -226,7 +231,7 @@ def _build_lowering_recipe(
             _core_aten_ops_exception_list=core_aten_ops_exception_list,
         ),
         pre_partitioning_callback=pre_partitioning_callback,
-        post_partitioning_transforms=post_partitioning_transforms,
+        edge_manager_transform_passes=edge_manager_transform_passes,
     )
 
 
@@ -262,7 +267,7 @@ def _build_pre_partitioning_callback(rc: NeutronRecipeConfig):
         _partitioners: list[Partitioner] | None,
         programs: dict[str, ExportedProgram],
     ) -> None:
-        if _partitioners is None:
+        if not _partitioners:
             return
 
         if _use_quant_state_dict:
@@ -279,38 +284,40 @@ def _build_pre_partitioning_callback(rc: NeutronRecipeConfig):
     return _callback
 
 
-def _build_post_partitioning_transforms(rc: NeutronRecipeConfig) -> list:
-    """Build the list of post-partitioning EdgeProgramManager transforms.
+def _build_edge_manager_transform_passes(rc: NeutronRecipeConfig) -> list:
+    """Build edge_manager_transform_passes for the post-partitioning graph cleanup.
 
-    These mirror what the imperative pipeline did after to_edge_transform_and_lower:
+    These run in EdgeProgramManagerTransformStage, after to_edge_transform_and_lower:
       - RemoveIOQuantOpsPass (optional, when remove_quant_io_ops=True)
       - RemoveAdditionalQDQClustersPass (always applied)
       - handle_kernel_selection side-effect (optional, when dump_kernel_selection_code=True)
+
+    Each callable receives EdgeProgramManager and returns passes for epm.transform(),
+    or an empty list when no graph transformation is needed (side-effect only).
     """
-    transforms = []
+    passes = []
 
     if rc.remove_quant_io_ops:
 
-        def _remove_io_quant_ops(epm: EdgeProgramManager) -> EdgeProgramManager:
-            return epm.transform([RemoveIOQuantOpsPass(edge_program_manager=epm)])
+        def _remove_io_quant_ops(epm: EdgeProgramManager) -> list:
+            return [RemoveIOQuantOpsPass(edge_program_manager=epm)]
 
-        transforms.append(_remove_io_quant_ops)
+        passes.append(_remove_io_quant_ops)
 
-    def _remove_additional_qdq_clusters(epm: EdgeProgramManager) -> EdgeProgramManager:
-        return epm.transform(
-            NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
-        )
+    def _remove_additional_qdq_clusters(
+        epm: EdgeProgramManager,
+    ) -> NeutronEdgePassManager:
+        return NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
 
-    transforms.append(_remove_additional_qdq_clusters)
+    passes.append(_remove_additional_qdq_clusters)
 
     if rc.dump_kernel_selection_code:
 
-        def _handle_kernel_selection_transform(
-            epm: EdgeProgramManager,
-        ) -> EdgeProgramManager:
+        def _handle_kernel_selection_side_effect(_epm: EdgeProgramManager) -> list:
+            # Side-effect only: write kernel-selection files. No graph transform needed.
             handle_kernel_selection()
-            return epm
+            return []
 
-        transforms.append(_handle_kernel_selection_transform)
+        passes.append(_handle_kernel_selection_side_effect)
 
-    return transforms
+    return passes

@@ -10,6 +10,10 @@ import torch.nn
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.recipes.nxp_recipe_provider import (
     NEUTRON_RECIPE_CONFIG_KEY,
@@ -22,7 +26,6 @@ from executorch.backends.nxp.tests.executors import (
     graph_contains_any,
     graph_contains_any_of_ops,
 )
-from executorch.backends.nxp.tests.ops_aliases import ExecutorchDelegateCall
 from executorch.export import export
 from executorch.export.recipe import ExportRecipe
 from torch._inductor.lowering import quantized_decomposed
@@ -71,8 +74,10 @@ def test_ptq_neutron_basic():
     assert not graph_contains_any(graph, is_cnn_op)
 
     nodes = list(graph.nodes)
-    assert nodes[2].target == quantized_decomposed.quantize_per_tensor.out
-    assert nodes[-2].target == quantized_decomposed.dequantize_per_tensor.out
+    first_call = next(n for n in nodes if n.op == "call_function" and n.name != "alloc")
+    last_call = next(n for n in reversed(nodes) if n.op == "call_function")
+    assert first_call.target == quantized_decomposed.quantize_per_tensor.out
+    assert last_call.target == quantized_decomposed.dequantize_per_tensor.out
 
 
 class TestInt8PTQNoDelegate:
@@ -374,25 +379,10 @@ class TestRecipeCombination:
         # Calling the combined callback should not raise.
         combined.lowering_recipe.pre_partitioning_callback(None, {})
 
-    def test__collects_post_partitioning_transforms(self):
-        """Combining two NXP recipes collects post_partitioning_transforms from both."""
-        recipe1 = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_PTQ_NEUTRON,
-            neutron_recipe_config=NeutronRecipeConfig(INPUT_SHAPE),
-        )
-        recipe2 = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_PTQ_NEUTRON,
-            neutron_recipe_config=NeutronRecipeConfig(INPUT_SHAPE),
-        )
-        n1 = len(recipe1.lowering_recipe.post_partitioning_transforms)
-        n2 = len(recipe2.lowering_recipe.post_partitioning_transforms)
-        combined = ExportRecipe.combine([recipe1, recipe2])
-        assert len(combined.lowering_recipe.post_partitioning_transforms) == n1 + n2
 
-
-class TestPostPartitioningTransforms:
+class TestEdgeManagerTransformPasses:
     def test__executed(self):
-        """post_partitioning_transforms are called after partitioning."""
+        """edge_manager_transform_passes are called after partitioning."""
         model = SimpleCNN()
         rc = NeutronRecipeConfig(INPUT_SHAPE)
         recipe = NXPRecipeProvider().create_recipe(
@@ -401,12 +391,25 @@ class TestPostPartitioningTransforms:
 
         transform_called = []
 
-        def tracking_transform(epm):
+        def tracking_pass(epm):
             transform_called.append(True)
-            return epm
+            return []
 
-        recipe.lowering_recipe.post_partitioning_transforms = [tracking_transform]
+        recipe.lowering_recipe.edge_manager_transform_passes = [tracking_pass]
 
         example_inputs = [(torch.randn(INPUT_SHAPE),)]
         export(model, example_inputs=example_inputs, export_recipe=recipe)
-        assert transform_called, "post_partitioning_transforms were not executed."
+        assert transform_called, "edge_manager_transform_passes were not executed."
+
+    def test__qdq_pass_callable_returns_pass_manager(self, mocker):
+        """_remove_additional_qdq_clusters returns a bare NeutronEdgePassManager, not a
+        list containing one. EdgeProgramManagerTransformStage calls epm.transform(passes)
+        directly, so a list-of-PassManager would be silently mis-applied."""
+        rc = NeutronRecipeConfig(INPUT_SHAPE)
+        recipe = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_PTQ_NEUTRON, neutron_recipe_config=rc
+        )
+        # remove_quant_io_ops=False (default): first callable is _remove_additional_qdq_clusters.
+        qdq_callable = recipe.lowering_recipe.edge_manager_transform_passes[0]
+        result = qdq_callable(mocker.MagicMock())
+        assert isinstance(result, NeutronEdgePassManager)

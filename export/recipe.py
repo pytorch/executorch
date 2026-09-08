@@ -211,11 +211,6 @@ class LoweringRecipe:
         edge_compile_config: Optional edge compilation configuration
         pre_partitioning_callback: Optional callable invoked just before partitioning with
                                    `(partitioners, programs)` arguments.
-        post_partitioning_transforms: Optional list of callables each with signature
-                                      `(EdgeProgramManager) -> EdgeProgramManager`, applied in
-                                      order after partitioning. Use this for graph transforms that
-                                      require the fully partitioned graph, or for side-effect
-                                      operations that must run after delegation.
     """
 
     partitioners: Optional[Union[List[Partitioner], Dict[str, List[Partitioner]]]] = (
@@ -232,9 +227,6 @@ class LoweringRecipe:
     edge_compile_config: Optional[EdgeCompileConfig] = None
     pre_partitioning_callback: Optional[
         Callable[[Optional[list[Partitioner]], dict[str, ExportedProgram]], None]
-    ] = None
-    post_partitioning_transforms: Optional[
-        List[Callable[["EdgeProgramManager"], "EdgeProgramManager"]]
     ] = None
 
 
@@ -263,7 +255,6 @@ class _CombineAccumulator:
     source_transform_in_place_values: list = field(default_factory=list)
     backend_config: object = None
     pre_partitioning_callbacks: list = field(default_factory=list)
-    post_partitioning_transforms: list = field(default_factory=list)
 
 
 @experimental(
@@ -453,7 +444,6 @@ class ExportRecipe:
         all_edge_transform_passes: list,
         all_edge_manager_transform_passes: list,
         all_pre_partitioning_callbacks: list,
-        all_post_partitioning_transforms: list,
     ) -> "Optional[LoweringRecipe]":
         """
         Build the combined LoweringRecipe from per-recipe collected lists.
@@ -513,7 +503,6 @@ class ExportRecipe:
             or all_edge_manager_transform_passes
             or edge_compile_config
             or combined_pre_partitioning_callback
-            or all_post_partitioning_transforms
         ):
             logging.info(
                 "Combined recipe has no lowering fields; lowering_recipe will be None."
@@ -526,7 +515,6 @@ class ExportRecipe:
             edge_manager_transform_passes=all_edge_manager_transform_passes or None,
             edge_compile_config=edge_compile_config or EdgeCompileConfig(),
             pre_partitioning_callback=combined_pre_partitioning_callback,
-            post_partitioning_transforms=all_post_partitioning_transforms or None,
         )
 
     @staticmethod
@@ -548,8 +536,6 @@ class ExportRecipe:
             acc.edge_manager_transform_passes.extend(lr.edge_manager_transform_passes)
         if lr.pre_partitioning_callback:
             acc.pre_partitioning_callbacks.append(lr.pre_partitioning_callback)
-        if lr.post_partitioning_transforms:
-            acc.post_partitioning_transforms.extend(lr.post_partitioning_transforms)
 
     @staticmethod
     def _collect_quantization_fields(
@@ -653,7 +639,6 @@ class ExportRecipe:
             all_edge_transform_passes=acc.edge_transform_passes,
             all_edge_manager_transform_passes=acc.edge_manager_transform_passes,
             all_pre_partitioning_callbacks=acc.pre_partitioning_callbacks,
-            all_post_partitioning_transforms=acc.post_partitioning_transforms,
         )
 
         recipe_name = recipe_name or "_".join(

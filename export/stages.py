@@ -312,18 +312,6 @@ class EdgeTransformAndLowerStage(Stage):
                 generate_etrecord=generate_etrecord,
             )
 
-        # Apply post-partitioning transforms if specified in the lowering recipe. These are used for graph transforms
-        #  that require the fully partitioned graph or for side effect operations.
-        if lowering_recipe is not None and lowering_recipe.post_partitioning_transforms:
-            for transform in lowering_recipe.post_partitioning_transforms:
-                edge_program_manager = transform(edge_program_manager)
-                if not isinstance(edge_program_manager, EdgeProgramManager):
-                    name = getattr(transform, "__qualname__", repr(transform))
-                    raise TypeError(
-                        f"Post-partitioning transform `{name}` must return an EdgeProgramManager, "
-                        f"got {type(edge_program_manager).__name__}."
-                    )
-
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
         _add_delegation_info_context(self._artifact, edge_program_manager)
 
