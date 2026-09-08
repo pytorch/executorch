@@ -94,9 +94,36 @@ return PreprocessResult(
 ```
 
 Declare it here rather than in `partition()`, because the size is usually only
-known once the partition has been compiled. A spec carries a size and nothing
-else: which memory pool the bytes come from is a property of the target, and is
-chosen by the integrator's memory planning pass rather than by the backend.
+known once the partition has been compiled. A spec carries a size and a label:
+which memory pool the bytes come from is a property of the target, and is chosen
+by the integrator's memory planning pass rather than by the backend.
+
+The label is how the two sides meet without either learning the other's numbering.
+A backend that wants its spill buffer and its weight staging in different local
+memories says what each one is for:
+
+```python
+scratch_specs=[
+    DelegateScratchSpec(nbytes=spill_size, label="spill"),
+    DelegateScratchSpec(nbytes=staging_size, label="weights"),
+]
+```
+
+and the integrator's memory planning pass decides where those belong:
+
+```python
+class ScratchPoolPass(MemoryPlanningPass):
+    POOLS = {"spill": 2, "weights": 3}
+
+    def run(self, graph_module, graph_signature=None):
+        for node in graph_module.graph.nodes:
+            for scratch in memory.delegate_scratch(node):
+                scratch.spec.mem_id = self.POOLS[scratch.label]
+        return super().run(graph_module, graph_signature)
+```
+
+Labels are descriptive rather than identifying, so two buffers that belong in the
+same pool may share one. They still get separate memory.
 
 The alternative is to take the memory from `BackendExecutionContext::get_temp_allocator()`
 at runtime, which requires the integrator to have sized a temp pool large enough

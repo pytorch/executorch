@@ -114,6 +114,48 @@ class TwoBufferScratchTestBackend(BackendDetails):
         )
 
 
+# What the backend calls its buffers. The integrator maps these onto pools.
+SCRATCH_LABELS = ("spill", "weights")
+
+
+@final
+class LabelledScratchTestBackend(BackendDetails):
+    """Declares two buffers the integrator is meant to place separately."""
+
+    @staticmethod
+    def preprocess(
+        edge_program: ExportedProgram, compile_specs: List[CompileSpec]
+    ) -> PreprocessResult:
+        return PreprocessResult(
+            processed_bytes=b"labelled-scratch-backend-blob",
+            scratch_specs=[
+                DelegateScratchSpec(
+                    nbytes=TWO_BUFFER_SIZES[0], label=SCRATCH_LABELS[0]
+                ),
+                DelegateScratchSpec(
+                    nbytes=TWO_BUFFER_SIZES[1], label=SCRATCH_LABELS[1]
+                ),
+            ],
+        )
+
+
+@final
+class SharedLabelScratchTestBackend(BackendDetails):
+    """Two buffers that belong in one pool, so they carry the same label."""
+
+    @staticmethod
+    def preprocess(
+        edge_program: ExportedProgram, compile_specs: List[CompileSpec]
+    ) -> PreprocessResult:
+        return PreprocessResult(
+            processed_bytes=b"shared-label-scratch-backend-blob",
+            scratch_specs=[
+                DelegateScratchSpec(nbytes=size, label="tcm")
+                for size in TWO_BUFFER_SIZES
+            ],
+        )
+
+
 class AddSupport(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         return (
@@ -180,6 +222,23 @@ class SkipScratchPlanner(MemoryPlanningPass):
                 spec.mem_id = None
                 spec.mem_offset = None
         return result
+
+
+class LabelledPoolPlanner(MemoryPlanningPass):
+    """Stands in for an integrator mapping backend labels onto target pools."""
+
+    def __init__(self, pools, **kwargs):
+        super().__init__(**kwargs)
+        self.pools = pools
+
+    def run(self, graph_module, graph_signature=None):
+        for module in graph_module.modules():
+            if not isinstance(module, torch.fx.GraphModule):
+                continue
+            for node in module.graph.nodes:
+                for scratch in memory.delegate_scratch(node):
+                    scratch.spec.mem_id = self.pools[scratch.label]
+        return super().run(graph_module, graph_signature)
 
 
 class RetracingPlanner(MemoryPlanningPass):
@@ -745,8 +804,10 @@ class TestDelegateScratch(unittest.TestCase):
             if node.op == "call_function"
             and node.target is not executorch_call_delegate
         ][0]
-        stray.meta[memory.DELEGATE_SCRATCH_SPECS_META_KEY] = [
-            TensorSpec(dtype=torch.uint8, shape=torch.Size([100000]))
+        stray.meta[memory.DELEGATE_SCRATCH_META_KEY] = [
+            memory.PlannedScratch(
+                label="", spec=TensorSpec(dtype=torch.uint8, shape=torch.Size([100000]))
+            )
         ]
         self.assertEqual(memory.delegate_scratch_specs(stray), [])
 
@@ -796,12 +857,12 @@ class TestDelegateScratch(unittest.TestCase):
         first, second = [
             node for node in nodes if node.target is executorch_call_delegate
         ]
-        shared = first.meta[memory.DELEGATE_SCRATCH_SPECS_META_KEY]
-        second.meta[memory.DELEGATE_SCRATCH_SPECS_META_KEY] = shared
+        shared = first.meta[memory.DELEGATE_SCRATCH_META_KEY]
+        second.meta[memory.DELEGATE_SCRATCH_META_KEY] = shared
 
         update_all_tensors_lifetime(program.graph_module, program.graph_signature)
 
-        (spec,) = shared
+        ((_, spec),) = [(s.label, s.spec) for s in shared]
         self.assertEqual(spec.lifetime, [nodes.index(first), nodes.index(second)])
 
     def test_a_memory_planning_pass_that_retraces_is_supported(self):
@@ -820,6 +881,69 @@ class TestDelegateScratch(unittest.TestCase):
 
         (delegate_call,) = _delegate_calls(plan)
         self.assertEqual(_scratch_sizes(delegate_call), [12 * BYTES_PER_ELEMENT])
+
+    def _lower_with_pools(self, backend_id, pools, edge=None):
+        inputs = (torch.randn(3, 4), torch.randn(3, 4))
+        if edge is None:
+            exported = torch.export.export(SingleDelegateModule().eval(), inputs)
+            edge = to_edge_transform_and_lower(
+                exported,
+                partitioner=[OneDelegatePerAddPartitioner(backend_id)],
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+        return edge.to_executorch(
+            ExecutorchBackendConfig(memory_planning_pass=LabelledPoolPlanner(pools))
+        ).executorch_program.execution_plan[0]
+
+    def test_a_label_reaches_the_planner_and_chooses_the_pool(self):
+        # The backend says what a buffer is for; the integrator says where that
+        # belongs. Neither has to know the other's numbering.
+        plan = self._lower_with_pools(
+            "LabelledScratchTestBackend", {"spill": 2, "weights": 3}
+        )
+
+        (delegate_call,) = _delegate_calls(plan)
+        spill, weights = _scratch(delegate_call)
+        self.assertEqual(spill.allocation.memory_id, 2)
+        self.assertEqual(weights.allocation.memory_id, 3)
+        self.assertEqual(_scratch_sizes(delegate_call), list(TWO_BUFFER_SIZES))
+
+    def test_two_buffers_may_share_a_label_without_sharing_bytes(self):
+        # A label is descriptive, not identifying: two concurrent buffers can
+        # belong in one pool. They still need distinct bytes.
+        plan = self._lower_with_pools("SharedLabelScratchTestBackend", {"tcm": 2})
+
+        (delegate_call,) = _delegate_calls(plan)
+        first, second = _scratch(delegate_call)
+        self.assertEqual(first.allocation.memory_id, 2)
+        self.assertEqual(second.allocation.memory_id, 2)
+        self.assertTrue(
+            _scratch_offset(first) + first.size <= _scratch_offset(second)
+            or _scratch_offset(second) + second.size <= _scratch_offset(first),
+            "two buffers live at the same time overlap in the arena",
+        )
+
+    def test_labels_survive_a_serde_round_trip(self):
+        # The label is only useful if it is still there when the planner runs,
+        # and serde is between the backend and the planner.
+        inputs = (torch.randn(3, 4), torch.randn(3, 4))
+        exported = torch.export.export(SingleDelegateModule().eval(), inputs)
+        edge = to_edge_transform_and_lower(
+            exported,
+            partitioner=[OneDelegatePerAddPartitioner("LabelledScratchTestBackend")],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        buffer = io.BytesIO()
+        exir.save(edge.exported_program(), buffer)
+        buffer.seek(0)
+        reloaded = EdgeProgramManager(exir.load(buffer))
+
+        plan = self._lower_with_pools(None, {"spill": 2, "weights": 3}, edge=reloaded)
+        (delegate_call,) = _delegate_calls(plan)
+        spill, weights = _scratch(delegate_call)
+        self.assertEqual(
+            (spill.allocation.memory_id, weights.allocation.memory_id), (2, 3)
+        )
 
     def test_unusable_requests_are_rejected_at_declaration(self):
         # A backend author should see these at preprocess(), not deep inside

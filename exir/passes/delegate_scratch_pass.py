@@ -10,7 +10,7 @@ from typing import List, Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
-from executorch.exir.memory import DELEGATE_SCRATCH_SPECS_META_KEY
+from executorch.exir.memory import DELEGATE_SCRATCH_META_KEY, PlannedScratch
 from executorch.exir.memory_planning import get_node_tensor_specs
 from executorch.exir.tensor import TensorSpec
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -70,12 +70,12 @@ class DelegateScratchSpecPass(PassBase):
             # its lowered graph back into the edge program, so a second call
             # finds the first call's specs still here, including when the
             # backend has since stopped asking for any.
-            modified |= node.meta.pop(DELEGATE_SCRATCH_SPECS_META_KEY, None) is not None
+            modified |= node.meta.pop(DELEGATE_SCRATCH_META_KEY, None) is not None
 
             lowered_module = _lowered_module(graph_module, node)
             if lowered_module is None or not lowered_module.scratch_specs:
                 continue
-            node.meta[DELEGATE_SCRATCH_SPECS_META_KEY] = self._make_specs(
+            node.meta[DELEGATE_SCRATCH_META_KEY] = self._make_specs(
                 node, lowered_module
             )
             modified = True
@@ -83,7 +83,7 @@ class DelegateScratchSpecPass(PassBase):
 
     def _make_specs(
         self, node: torch.fx.Node, lowered_module: torch.nn.Module
-    ) -> List[TensorSpec]:
+    ) -> List[PlannedScratch]:
         delegate_specs = get_node_tensor_specs(node)
         if not delegate_specs:
             raise RuntimeError(
@@ -96,5 +96,5 @@ class DelegateScratchSpecPass(PassBase):
             spec = TensorSpec(dtype=torch.uint8, shape=torch.Size([declared.nbytes]))
             spec.device = delegate_specs[0].device
             spec.device_index = delegate_specs[0].device_index
-            specs.append(spec)
+            specs.append(PlannedScratch(label=declared.label, spec=spec))
         return specs

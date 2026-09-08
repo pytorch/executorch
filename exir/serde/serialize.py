@@ -36,6 +36,7 @@ from executorch.exir.lowered_backend_module import (
 from executorch.exir.serde.export_serialize import SerializeError
 from executorch.exir.serde.schema import (
     CompileSpec,
+    DelegateScratchSpec as SerdeDelegateScratchSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
     SCHEMA_VERSION,
     SchemaVersion,
@@ -300,7 +301,10 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             compile_specs=serialized_compile_spec,
             backend_id=lowered_module.backend_id,
             named_data_store=named_data_store,
-            scratch_specs=[spec.nbytes for spec in lowered_module.scratch_specs],
+            scratch_specs=[
+                SerdeDelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
+                for spec in lowered_module.scratch_specs
+            ],
         )
 
         json_lowered_module = json.dumps(
@@ -620,8 +624,8 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             compile_specs,
             named_data_store,
             [
-                DelegateScratchSpec(nbytes=nbytes)
-                for nbytes in (serialized_lowered_module.scratch_specs or [])
+                DelegateScratchSpec(nbytes=spec.nbytes, label=spec.label)
+                for spec in (serialized_lowered_module.scratch_specs or [])
             ],
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)

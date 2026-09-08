@@ -35,11 +35,15 @@ class DelegateScratchSpec:
 
     Which memory pool a buffer lands in is a property of the target rather than
     of the backend, so it is not expressed here. An integrator who needs
-    scratch in a particular pool sets ``mem_id`` on the allocation from their
-    own memory planning pass.
+    scratch in a particular pool sets ``mem_id`` on the spec from their own
+    memory planning pass, and ``label`` is how they tell the buffers apart:
+    the backend says what a buffer is for, the integrator decides where that
+    belongs. Labels are descriptive rather than identifying, so two buffers
+    may share one and land in the same pool without being the same buffer.
     """
 
     nbytes: int
+    label: str = ""
 
     def __post_init__(self) -> None:
         if self.nbytes <= 0:

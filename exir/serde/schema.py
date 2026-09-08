@@ -399,6 +399,12 @@ class CompileSpec:
 
 
 @dataclass
+class DelegateScratchSpec:
+    nbytes: int
+    label: str = ""
+
+
+@dataclass
 class LoweredBackendModule:
     backend_id: str
     processed_bytes: str
@@ -407,5 +413,5 @@ class LoweredBackendModule:
     original_state_dict: str
     original_constants: str
     named_data_store: Optional[bytes] = None
-    # Byte sizes of the delegate scratch buffers, in declaration order.
-    scratch_specs: Optional[List[int]] = None
+    # The delegate scratch buffers, in declaration order.
+    scratch_specs: Optional[List[DelegateScratchSpec]] = None

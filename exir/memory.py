@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from dataclasses import dataclass
 from typing import List, Tuple, Union
 
 import torch
@@ -34,10 +35,24 @@ def alloc(spec: AllocSpec) -> pytree.PyTree:
     return torch.empty(shape, dtype=dtype)
 
 
-DELEGATE_SCRATCH_SPECS_META_KEY = "delegate_scratch_specs"
+DELEGATE_SCRATCH_META_KEY = "delegate_scratch"
 
 
-def delegate_scratch_specs(node: torch.fx.Node) -> List[TensorSpec]:
+@dataclass
+class PlannedScratch:
+    """A scratch buffer a delegate declared, and the spec the planner places.
+
+    ``label`` is the backend's word for what the buffer is for. It is carried
+    so that an integrator's memory planning pass can tell one buffer from
+    another without depending on declaration order. It is descriptive rather
+    than identifying: two buffers of a single delegate may share a label.
+    """
+
+    label: str
+    spec: TensorSpec
+
+
+def delegate_scratch(node: torch.fx.Node) -> List[PlannedScratch]:
     """Returns the scratch buffers a delegate call needs while it executes.
 
     ``DelegateScratchSpecPass`` puts them here, the memory planner places them,
@@ -51,7 +66,12 @@ def delegate_scratch_specs(node: torch.fx.Node) -> List[TensorSpec]:
     """
     if node.target is not executorch_call_delegate:
         return []
-    return node.meta.get(DELEGATE_SCRATCH_SPECS_META_KEY, [])
+    return node.meta.get(DELEGATE_SCRATCH_META_KEY, [])
+
+
+def delegate_scratch_specs(node: torch.fx.Node) -> List[TensorSpec]:
+    """The specs alone, for everything that places rather than identifies."""
+    return [scratch.spec for scratch in delegate_scratch(node)]
 
 
 def free(spec: TensorSpec) -> None:
