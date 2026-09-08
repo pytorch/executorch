@@ -16,6 +16,7 @@ on:
     paths:
       - .github/workflows/vulkan.yml
       - backends/vulkan/**
+      - examples/models/voxtral_realtime/**
       - examples/vulkan/**
       - .ci/scripts/setup-vulkan-linux-deps.sh
       - .ci/scripts/setup-vulkan-windows-deps.ps1
@@ -46,6 +47,7 @@ jobs:
     # on sampled full runs (see _ci-run-decision.yml).
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/vulkan/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/voxtral_realtime/') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/vulkan/') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-vulkan-linux-deps.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/vulkan.yml') ||
@@ -71,12 +73,17 @@ jobs:
         # not run, so setup-vulkan-linux-deps.sh sources those from conda-forge and
         # the system package manager instead. The NVIDIA container runtime mounts
         # the driver's Vulkan library but not its ICD manifest, so the script
-        # synthesizes one and pins the loader to it; if no NVIDIA library is found
-        # it falls back to SwiftShader.
-        # NOTE: first-run check - inspect the vulkaninfo output below to confirm a
-        # real NVIDIA device is selected (not llvmpipe/SwiftShader).
+        # synthesizes one and pins the loader to it. This specialized lane must
+        # exercise a real NVIDIA device; fail instead of accepting the setup
+        # helper's SwiftShader fallback.
         source .ci/scripts/setup-vulkan-linux-deps.sh real-gpu
-        vulkaninfo --summary || true
+        if [ -n "${ETVK_USING_SWIFTSHADER:-}" ]; then
+          echo "The NVIDIA Vulkan lane fell back to SwiftShader."
+          exit 1
+        fi
+        vulkan_summary=$(vulkaninfo --summary)
+        printf '%s\n' "$vulkan_summary"
+        printf '%s\n' "$vulkan_summary" | grep -Eiq 'deviceName[[:space:]]*=[[:space:]]*NVIDIA'
 
         # Full from-source install. Unlike the SwiftShader jobs in pull.yml, the
         # CUDA runner image does not pre-install ExecuTorch's dependencies, so
@@ -99,31 +106,26 @@ jobs:
           python -m examples.vulkan.export --model_name=$model --test -d
         done
 
+        python -m unittest examples.models.voxtral_realtime.tests.test_export_vulkan
+
         # Operator coverage (mirrors test-vulkan-operators-linux, on real hardware).
         # The custom-op prototyping binaries are GPU microbenchmarks that rely on
-        # GPU timestamp queries; they need a real device and crash on the
-        # SwiftShader software fallback. Always build them (compile coverage), but
-        # only run them when a real GPU was selected (setup-vulkan-linux-deps.sh
-        # exports ETVK_USING_SWIFTSHADER when it falls back to SwiftShader).
+        # GPU timestamp queries and run only in this real-device lane.
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh
-        if [ -z "${ETVK_USING_SWIFTSHADER:-}" ]; then
-          ./cmake-out/backends/vulkan/test/custom_ops/test_add
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_linear
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_conv2d
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q4gsw_linear
-          ./cmake-out/backends/vulkan/test/custom_ops/test_choose_qparams_per_row
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
-          ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary
-        else
-          echo "SwiftShader fallback active: built custom-op benchmarks but skipping execution (they require real-GPU timestamp queries)."
-        fi
+        ./cmake-out/backends/vulkan/test/custom_ops/test_add
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8csw_conv2d
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q4gsw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/test_choose_qparams_per_row
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_qdq
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_clone
+        ./cmake-out/backends/vulkan/test/custom_ops/test_q8ta_binary
 
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
 
         # Run e2e testing for selected operators.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
-        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+        ETVK_RUN_8DA4W_TESTS=1 python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
   build-vulkan-windows-msvc:
     needs: [changed-files, run-decision]

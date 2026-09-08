@@ -4,23 +4,35 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import operator
 import copy
+import operator
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import call, MagicMock, patch
 
 import torch
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkStorageType
 from executorch.examples.models.voxtral_realtime.export_voxtral_rt import (
-    VULKAN_EXTERNAL_CONSTANTS_MAX_DATA_BYTES,
     _requires_explicit_output_weight_clone,
     audit_vulkan_delegation,
+    export_streaming,
     lower_to_executorch,
+    TextDecoderExport,
+    TokenEmbeddingExport,
     validate_vulkan_options,
+    VULKAN_EXTERNAL_CONSTANTS_MAX_DATA_BYTES,
 )
+from executorch.examples.models.voxtral_realtime.model import (
+    compute_time_embedding,
+    StreamingAudioEncoderExport,
+    VoxtralRealtimeConfig,
+    VoxtralRealtimeModel,
+)
+from executorch.exir._serialize.data_serializer import DataPayload
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.extension.pybindings import portable_lib
 
 
 def make_node(op, name, target, val=None, layout=None):
@@ -274,6 +286,320 @@ class TestVulkanExportOptions(unittest.TestCase):
         )
         audit_mock.assert_called_once_with(edge)
         edge.to_executorch.assert_called_once()
+
+    @patch(
+        "executorch.backends.vulkan.partitioner.vulkan_partitioner.VulkanPartitioner"
+    )
+    @patch(
+        "executorch.examples.models.voxtral_realtime.export_voxtral_rt.audit_vulkan_delegation"
+    )
+    @patch(
+        "executorch.examples.models.voxtral_realtime.export_voxtral_rt.to_edge_transform_and_lower"
+    )
+    def test_vulkan_force_fp16_is_applied_to_every_method(
+        self,
+        lower_mock,
+        audit_mock,
+        partitioner_mock,
+    ):
+        edge = MagicMock()
+        lower_mock.return_value = edge
+        programs = {
+            "encode_audio_chunk": MagicMock(),
+            "text_decoder": MagicMock(),
+            "token_embedding": MagicMock(),
+        }
+        metadata = {"vocab_size": 131072, "dim": 3072}
+
+        lower_to_executorch(
+            programs,
+            metadata,
+            backend="vulkan",
+            vulkan_force_fp16=True,
+        )
+
+        self.assertEqual(len(partitioner_mock.call_args_list), 3)
+        for partitioner_call in partitioner_mock.call_args_list:
+            self.assertTrue(partitioner_call.kwargs["compile_options"]["force_fp16"])
+        audit_mock.assert_called_once_with(edge)
+        edge.to_executorch.assert_called_once()
+
+
+class TestStreamingEncoderBatching(unittest.TestCase):
+    def test_two_chunk_export_and_runtime(self):
+        config = VoxtralRealtimeConfig(
+            dim=32,
+            n_layers=1,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=8,
+            hidden_dim=64,
+            vocab_size=64,
+            ada_rms_norm_t_cond_dim=8,
+            enc_dim=32,
+            enc_n_layers=1,
+            enc_n_heads=4,
+            enc_head_dim=8,
+            enc_hidden_dim=64,
+            num_mel_bins=8,
+            downsample_factor=4,
+            max_seq_len=8,
+            sliding_window=8,
+            streaming=True,
+            backend="vulkan",
+        )
+        model = VoxtralRealtimeModel(config).eval()
+        model.register_buffer("t_cond", compute_time_embedding(1, config.dim))
+        reference_encoder = StreamingAudioEncoderExport(
+            copy.deepcopy(model), max_enc_len=10
+        ).eval()
+
+        programs, metadata, _ = export_streaming(
+            model,
+            max_seq_len=config.max_seq_len,
+            max_enc_len=10,
+            backend="vulkan",
+            encoder_batch_chunks=2,
+        )
+
+        self.assertEqual(metadata["chunk_mel_len"], 8)
+        self.assertEqual(metadata["encoder_batch_chunks"], 2)
+        encoder_targets = {
+            node.target for node in programs["encode_audio_chunk"].graph.nodes
+        }
+        self.assertIn(torch.ops.et_vk.ring_sdpa.default, encoder_targets)
+
+        et_program = lower_to_executorch(
+            {"encode_audio_chunk": programs["encode_audio_chunk"]},
+            metadata,
+            backend="vulkan",
+        )
+        buffers = []
+        named_data = {}
+        for data_file in et_program._tensor_data.values():
+            payload = et_program._data_serializer.deserialize(data_file)
+            buffer_index_offset = len(buffers)
+            buffers.extend(payload.buffers)
+            for name, entry in payload.named_data.items():
+                self.assertNotIn(name, named_data)
+                named_data[name] = replace(
+                    entry,
+                    buffer_index=entry.buffer_index + buffer_index_offset,
+                )
+        data_buffer = bytes(
+            et_program._data_serializer.serialize(
+                DataPayload(buffers=buffers, named_data=named_data)
+            )
+        )
+        module = portable_lib._load_for_executorch_from_buffer(
+            et_program.buffer, data_buffer
+        )
+
+        mel_0 = torch.randn(1, config.num_mel_bins, 16)
+        mel_1 = torch.randn(1, config.num_mel_bins, 16)
+        mel_wrap = torch.randn(1, config.num_mel_bins, 16)
+        positions = (torch.arange(8), torch.arange(8, 16), torch.arange(16, 24))
+        with torch.inference_mode():
+            expected = (
+                reference_encoder(mel_0, positions[0]),
+                reference_encoder(mel_1, positions[1]),
+                reference_encoder(mel_wrap, positions[2]),
+            )
+            actual = (
+                module.run_method("encode_audio_chunk", (mel_0, positions[0]))[0],
+                module.run_method("encode_audio_chunk", (mel_1, positions[1]))[0],
+                module.run_method("encode_audio_chunk", (mel_wrap, positions[2]))[0],
+            )
+
+        for actual_output, expected_output in zip(actual, expected):
+            torch.testing.assert_close(
+                actual_output, expected_output, atol=1e-3, rtol=1e-3
+            )
+
+
+class TestTinyStreamingVulkan(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(20260816)
+        config = VoxtralRealtimeConfig(
+            dim=32,
+            n_layers=1,
+            n_heads=4,
+            n_kv_heads=2,
+            head_dim=8,
+            hidden_dim=64,
+            vocab_size=64,
+            ada_rms_norm_t_cond_dim=8,
+            enc_dim=32,
+            enc_n_layers=1,
+            enc_n_heads=4,
+            enc_head_dim=8,
+            enc_hidden_dim=64,
+            num_mel_bins=8,
+            downsample_factor=4,
+            max_seq_len=8,
+            sliding_window=4,
+            streaming=True,
+            backend="vulkan",
+        )
+        model = VoxtralRealtimeModel(config).eval()
+        model.register_buffer("t_cond", compute_time_embedding(1, config.dim))
+        cls.reference_model = copy.deepcopy(model)
+
+        programs, metadata, _ = export_streaming(
+            model,
+            max_seq_len=config.max_seq_len,
+            max_enc_len=4,
+            backend="vulkan",
+        )
+        for method_name in ("encode_audio_chunk", "text_decoder"):
+            targets = {node.target for node in programs[method_name].graph.nodes}
+            if torch.ops.et_vk.ring_sdpa.default not in targets:
+                raise RuntimeError(
+                    f"Expected {method_name} to preserve et_vk.ring_sdpa"
+                )
+        cls.et_program = lower_to_executorch(
+            programs,
+            metadata,
+            backend="vulkan",
+        )
+        data_files = cls.et_program._tensor_data
+        if not data_files:
+            raise RuntimeError("Expected external Vulkan constants for the tiny model")
+        # The Python binding accepts one data map; the C++ runner covers PTD vectors.
+        buffers = []
+        named_data = {}
+        for data_file in data_files.values():
+            payload = cls.et_program._data_serializer.deserialize(data_file)
+            buffer_index_offset = len(buffers)
+            buffers.extend(payload.buffers)
+            for name, entry in payload.named_data.items():
+                if name in named_data:
+                    raise RuntimeError(f"Duplicate external constant: {name}")
+                named_data[name] = replace(
+                    entry,
+                    buffer_index=entry.buffer_index + buffer_index_offset,
+                )
+        cls.data_buffer = bytes(
+            cls.et_program._data_serializer.serialize(
+                DataPayload(buffers=buffers, named_data=named_data)
+            )
+        )
+
+    def test_runtime_lifecycle_and_fresh_state(self):
+        module = portable_lib._load_for_executorch_from_buffer(
+            self.et_program.buffer, self.data_buffer
+        )
+        reference_encoder = StreamingAudioEncoderExport(
+            self.reference_model, max_enc_len=4
+        ).eval()
+        reference_decoder = TextDecoderExport(self.reference_model).eval()
+        reference_embedding = TokenEmbeddingExport(self.reference_model).eval()
+
+        mel_0 = torch.randn(1, 8, 8)
+        mel_1 = torch.randn(1, 8, 8)
+        mel_wrap = torch.randn(1, 8, 8)
+        enc_pos_0 = torch.arange(4)
+        enc_pos_1 = torch.arange(4, 8)
+        enc_pos_wrap = torch.arange(8, 12)
+        decoder_input_0 = torch.randn(1, 1, 32)
+        decoder_input_1 = torch.randn(1, 1, 32)
+        decoder_input_wrap = torch.randn(1, 1, 32)
+        decoder_pos_0 = torch.tensor([0])
+        decoder_pos_1 = torch.tensor([1])
+        decoder_pos_wrap = torch.tensor([8])
+        token_ids = torch.tensor([[1, 2, 3, 4]])
+
+        with torch.inference_mode():
+            expected_encoder_0 = reference_encoder(mel_0, enc_pos_0)
+            expected_encoder_1 = reference_encoder(mel_1, enc_pos_1)
+            expected_encoder_wrap = reference_encoder(mel_wrap, enc_pos_wrap)
+            expected_encoder_reset = reference_encoder(mel_0, enc_pos_0)
+            expected_decoder_0 = reference_decoder(decoder_input_0, decoder_pos_0)
+            expected_decoder_1 = reference_decoder(decoder_input_1, decoder_pos_1)
+            expected_decoder_wrap = reference_decoder(
+                decoder_input_wrap, decoder_pos_wrap
+            )
+            expected_decoder_reset = reference_decoder(decoder_input_0, decoder_pos_0)
+            expected_embedding = reference_embedding(token_ids)
+
+            actual_encoder_0 = module.run_method(
+                "encode_audio_chunk", (mel_0, enc_pos_0)
+            )[0]
+            actual_encoder_1 = module.run_method(
+                "encode_audio_chunk", (mel_1, enc_pos_1)
+            )[0]
+            actual_encoder_wrap = module.run_method(
+                "encode_audio_chunk", (mel_wrap, enc_pos_wrap)
+            )[0]
+            actual_encoder_reset = module.run_method(
+                "encode_audio_chunk", (mel_0, enc_pos_0)
+            )[0]
+            actual_decoder_0 = module.run_method(
+                "text_decoder", (decoder_input_0, decoder_pos_0)
+            )[0]
+            actual_decoder_1 = module.run_method(
+                "text_decoder", (decoder_input_1, decoder_pos_1)
+            )[0]
+            actual_decoder_wrap = module.run_method(
+                "text_decoder", (decoder_input_wrap, decoder_pos_wrap)
+            )[0]
+            actual_decoder_reset = module.run_method(
+                "text_decoder", (decoder_input_0, decoder_pos_0)
+            )[0]
+            actual_embedding = module.run_method("token_embedding", (token_ids,))[0]
+
+        torch.testing.assert_close(
+            actual_encoder_0, expected_encoder_0, atol=1e-3, rtol=1e-3
+        )
+        torch.testing.assert_close(
+            actual_encoder_1, expected_encoder_1, atol=1e-3, rtol=1e-3
+        )
+        torch.testing.assert_close(
+            actual_encoder_wrap, expected_encoder_wrap, atol=1e-3, rtol=1e-3
+        )
+        torch.testing.assert_close(
+            actual_encoder_reset,
+            expected_encoder_reset,
+            atol=1e-3,
+            rtol=1e-3,
+        )
+        torch.testing.assert_close(
+            actual_decoder_0, expected_decoder_0, atol=1e-3, rtol=1e-3
+        )
+        torch.testing.assert_close(
+            actual_decoder_1, expected_decoder_1, atol=1e-3, rtol=1e-3
+        )
+        torch.testing.assert_close(
+            actual_decoder_wrap, expected_decoder_wrap, atol=1e-3, rtol=1e-3
+        )
+        torch.testing.assert_close(
+            actual_decoder_reset,
+            expected_decoder_reset,
+            atol=1e-3,
+            rtol=1e-3,
+        )
+        torch.testing.assert_close(actual_embedding, expected_embedding)
+        self.assertTrue(torch.equal(actual_encoder_0, actual_encoder_reset))
+        self.assertTrue(torch.equal(actual_decoder_0, actual_decoder_reset))
+
+        fresh_module = portable_lib._load_for_executorch_from_buffer(
+            self.et_program.buffer, self.data_buffer
+        )
+        with torch.inference_mode():
+            fresh_encoder = fresh_module.run_method(
+                "encode_audio_chunk", (mel_0, enc_pos_0)
+            )[0]
+            fresh_decoder = fresh_module.run_method(
+                "text_decoder", (decoder_input_0, decoder_pos_0)
+            )[0]
+            fresh_embedding = fresh_module.run_method("token_embedding", (token_ids,))[
+                0
+            ]
+
+        self.assertTrue(torch.equal(actual_encoder_0, fresh_encoder))
+        self.assertTrue(torch.equal(actual_decoder_0, fresh_decoder))
+        self.assertTrue(torch.equal(actual_embedding, fresh_embedding))
 
 
 if __name__ == "__main__":
