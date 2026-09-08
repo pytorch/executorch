@@ -38,7 +38,7 @@ ivec4 quantize(
     const VEC4_T val,
     const float q_inv_scale,
     const int q_zero_point) {
-  vec4 quantized = round(vec4(val) * q_inv_scale) + q_zero_point;
+  vec4 quantized = roundEven(vec4(val) * q_inv_scale) + q_zero_point;
   // hard-code 8 bit quantization range
   return clamp(ivec4(quantized), -128, 127);
 }

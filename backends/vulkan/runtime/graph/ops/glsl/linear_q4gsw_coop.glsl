@@ -97,6 +97,13 @@ void main() {
   FPInputTile in_tile;
   Int4WeightTile int4_weight_tile;
 
+$if DYNAMIC_QUANT_VARIANT:
+  const T input_scale = T(texelFetch(t_input_scale, ivec3(0, 0, 0), 0).x);
+  $if ZP_DTYPE_MODE == "zpint8":
+    const int input_zp = texelFetch(t_input_zp, ivec3(0, 0, 0), 0).x;
+  $else:
+    const int input_zp = int(texelFetch(t_input_zp, ivec3(0, 0, 0), 0).x);
+
   FPPerOutChannelParams weight_scales_tile;
   FPPerOutChannelParams weight_zeros_tile;
   weight_zeros_tile.data[0] = VEC4_T(0.0);
@@ -116,6 +123,17 @@ void main() {
     }
 
     load_input_tile_no_checks(in_tile, k4, 0, K4, 1);
+    $if DYNAMIC_QUANT_VARIANT:
+      const float input_inv_scale = 1.0 / float(input_scale);
+      // Keep this quantization in sync with linear_int8_input_block.glslh.
+      const vec4 quantized_input = clamp(
+          roundEven(vec4(in_tile.data[0][0]) * input_inv_scale) +
+              float(input_zp),
+          vec4(-128.0),
+          vec4(127.0));
+      in_tile.data[0][0] =
+          (VEC4_T(quantized_input) - VEC4_T(input_zp)) *
+          VEC4_T(input_scale);
     load_int4_weight_tile(int4_weight_tile, k4, n8, K4);
 
     fp_accumulate_with_int4_weight(

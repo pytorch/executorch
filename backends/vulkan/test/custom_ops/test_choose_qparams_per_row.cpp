@@ -18,7 +18,7 @@ using namespace executorch::vulkan::prototyping;
 using namespace vkcompute;
 
 static constexpr int64_t kRefDimSizeLimit = 2050;
-static constexpr float SMALL_SCALE_THRESHOLD = 6.1e-5f;
+static constexpr float SMALL_SCALE_THRESHOLD = 6.25e-5f;
 
 // ChooseQParams configuration struct
 struct ChooseQParamsConfig {

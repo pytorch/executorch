@@ -463,15 +463,6 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
         "One or more dimensions (batch_size, in_features, out_features) exceed the allowed limit for reference implementation.");
   }
 
-  // Skip correctness for kHalf: this reference quantizes the activation in fp32
-  // (round(x/scale)+zp), but the GPU does the dynamic int8 activation quant in
-  // fp16, so the round-trip diverges. dq8ca_q4gsw coopmat half-validation needs
-  // an fp16-accurate reference (Step 2). Perf timings still run.
-  if (input_spec.dtype == vkapi::kHalf) {
-    throw std::invalid_argument(
-        "dq8ca_q4gsw reference skipped for kHalf (fp16 dyn-act quant diverges)");
-  }
-
   if (input_spec.dtype != vkapi::kFloat && input_spec.dtype != vkapi::kHalf) {
     throw std::invalid_argument("Unsupported dtype");
   }
@@ -495,6 +486,7 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   for (int64_t b = 0; b < batch_size; ++b) {
     // Use per-input channel scale and zero point - index by batch dimension
     float input_scale = input_scale_spec.get_element(b); // {1, M}
+    const float input_inv_scale = 1.0f / input_scale;
     int8_t input_zero_point = input_zero_point_data[b];
 
     for (int64_t out_f = 0; out_f < out_features; ++out_f) {
@@ -509,7 +501,7 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
         float input_val = input_spec.get_element(input_idx);
 
         float quant_input_f =
-            std::round(input_val / input_scale) + input_zero_point;
+            std::nearbyint(input_val * input_inv_scale) + input_zero_point;
         quant_input_f = std::min(std::max(quant_input_f, -128.0f), 127.0f);
         int8_t quantized_input = static_cast<int8_t>(quant_input_f);
 
