@@ -14,14 +14,19 @@
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#ifndef VULKAN_GENERAL_SDPA_ONLY
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
+#endif
 
 #include "test_utils.h"
 
 #include <cassert>
 #include <iostream>
+#include <limits>
+
+#ifndef VULKAN_GENERAL_SDPA_ONLY
 
 //
 // SDPA Mode Enum
@@ -616,6 +621,8 @@ void test_vulkan_sdpa(
   }
 }
 
+#endif // VULKAN_GENERAL_SDPA_ONLY
+
 //
 // General-purpose fused SDPA tests (et_vk.sdpa)
 //
@@ -633,12 +640,19 @@ at::Tensor general_sdpa_reference_impl(
     const std::optional<double> scale = std::nullopt) {
   float scale_val =
       scale.has_value() ? scale.value() : (1.0 / sqrt(q.size(-1)));
-  at::Tensor attn = at::matmul(q, k.transpose(-2, -1)) * scale_val;
+  at::Tensor expanded_k = k;
+  at::Tensor expanded_v = v;
+  if (q.size(-3) != k.size(-3)) {
+    const int64_t repeats = q.size(-3) / k.size(-3);
+    expanded_k = at::repeat_interleave(k, repeats, -3);
+    expanded_v = at::repeat_interleave(v, repeats, -3);
+  }
+  at::Tensor attn = at::matmul(q, expanded_k.transpose(-2, -1)) * scale_val;
   if (attn_mask.has_value()) {
     attn = attn + attn_mask.value();
   }
   attn = at::softmax(attn, -1);
-  return at::matmul(attn, v);
+  return at::matmul(attn, expanded_v);
 }
 
 void test_vulkan_general_sdpa(
@@ -648,28 +662,61 @@ void test_vulkan_general_sdpa(
     const int kv_seq_len,
     const int head_dim,
     const bool has_bias,
-    at::ScalarType dtype = at::kFloat) {
-  torch::manual_seed(42);
+    at::ScalarType dtype = at::kFloat,
+    const int requested_num_kv_heads = -1,
+    const std::vector<int64_t>& requested_bias_shape = {},
+    const bool causal_prefix_mask = false,
+    const vkcompute::utils::StorageType storage_type =
+        vkcompute::utils::kBuffer,
+    const bool clone_kv_mask_to_storage = false,
+    const bool permute_kv_before_clone = false,
+    const bool update_kv_before_permute = false,
+    const int max_q_seq_len = -1) {
+  at::manual_seed(42);
+  const int num_kv_heads =
+      requested_num_kv_heads > 0 ? requested_num_kv_heads : num_heads;
 
   // Generate random inputs in [B, H, S, D] layout
   at::Tensor q = at::rand(
       {batch_size, num_heads, q_seq_len, head_dim},
       at::device(at::kCPU).dtype(at::kFloat));
   at::Tensor k = at::rand(
-      {batch_size, num_heads, kv_seq_len, head_dim},
+      {batch_size, num_kv_heads, kv_seq_len, head_dim},
       at::device(at::kCPU).dtype(at::kFloat));
   at::Tensor v = at::rand(
-      {batch_size, num_heads, kv_seq_len, head_dim},
+      {batch_size, num_kv_heads, kv_seq_len, head_dim},
       at::device(at::kCPU).dtype(at::kFloat));
 
   std::optional<at::Tensor> bias = std::nullopt;
   if (has_bias) {
-    // Broadcastable bias: [B, 1, 1, kv_seq_len]
-    bias = at::rand(
-               {batch_size, 1, 1, kv_seq_len},
-               at::device(at::kCPU).dtype(at::kFloat)) *
-            2.0 -
-        1.0;
+    const std::vector<int64_t> bias_shape = requested_bias_shape.empty()
+        ? std::vector<int64_t>{batch_size, 1, 1, kv_seq_len}
+        : requested_bias_shape;
+    if (causal_prefix_mask) {
+      bias = at::full(
+          bias_shape,
+          -std::numeric_limits<float>::infinity(),
+          at::device(at::kCPU).dtype(at::kFloat));
+      if (bias_shape.size() == 2) {
+        auto mask = bias.value().accessor<float, 2>();
+        for (int q_idx = 0; q_idx < q_seq_len; ++q_idx) {
+          for (int k_idx = 0; k_idx <= q_idx; ++k_idx) {
+            mask[q_idx][k_idx] = 0.0f;
+          }
+        }
+      } else {
+        auto mask = bias.value().accessor<float, 4>();
+        for (int q_idx = 0; q_idx < q_seq_len; ++q_idx) {
+          for (int k_idx = 0; k_idx <= q_idx; ++k_idx) {
+            mask[0][0][q_idx][k_idx] = 0.0f;
+          }
+        }
+      }
+    } else {
+      bias =
+          at::rand(bias_shape, at::device(at::kCPU).dtype(at::kFloat)) * 2.0 -
+          1.0;
+    }
   }
 
   // Compute reference output in fp32
@@ -682,40 +729,128 @@ void test_vulkan_general_sdpa(
   if (bias.has_value()) {
     bias = bias.value().to(dtype);
   }
+  at::Tensor k_input = update_kv_before_permute
+      ? k.slice(2, 0, q_seq_len).permute({0, 2, 1, 3}).contiguous()
+      : (permute_kv_before_clone ? k.permute({0, 2, 1, 3}).contiguous() : k);
+  at::Tensor v_input = update_kv_before_permute
+      ? v.slice(2, 0, q_seq_len).permute({0, 2, 1, 3}).contiguous()
+      : (permute_kv_before_clone ? v.permute({0, 2, 1, 3}).contiguous() : v);
+  at::Tensor cache = at::zeros(
+      {batch_size, kv_seq_len, num_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(dtype));
+  at::Tensor indices =
+      at::arange(q_seq_len, at::device(at::kCPU).dtype(at::kLong))
+          .reshape({1, q_seq_len});
 
   // Build Vulkan compute graph
   using namespace vkcompute;
 
   GraphConfig config;
   ComputeGraph graph(config);
+  std::vector<int64_t> graph_q_sizes = q.sizes().vec();
+  if (max_q_seq_len > 0) {
+    graph_q_sizes.at(2) = max_q_seq_len;
+  }
+  const utils::StorageType kv_input_storage =
+      clone_kv_mask_to_storage ? utils::kBuffer : storage_type;
+  const utils::StorageType projected_storage =
+      update_kv_before_permute ? storage_type : kv_input_storage;
 
   IOValueRef r_q = graph.add_input_tensor(
-      q.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+      graph_q_sizes, from_at_scalartype(dtype), storage_type);
   IOValueRef r_k = graph.add_input_tensor(
-      k.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+      k_input.sizes().vec(), from_at_scalartype(dtype), projected_storage);
   IOValueRef r_v = graph.add_input_tensor(
-      v.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+      v_input.sizes().vec(), from_at_scalartype(dtype), projected_storage);
 
   ValueRef r_bias = kDummyValueRef;
   IOValueRef r_bias_io = {};
   if (has_bias) {
+    std::vector<int64_t> graph_bias_sizes = bias.value().sizes().vec();
+    if (max_q_seq_len > 0) {
+      graph_bias_sizes.at(graph_bias_sizes.size() - 2) = max_q_seq_len;
+    }
     r_bias_io = graph.add_input_tensor(
-        bias.value().sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+        graph_bias_sizes,
+        from_at_scalartype(dtype),
+        kv_input_storage);
     r_bias = r_bias_io.value;
   }
 
+  ValueRef r_k_sdpa = r_k.value;
+  ValueRef r_v_sdpa = r_v.value;
+  ValueRef r_bias_sdpa = r_bias;
+  IOValueRef r_k_cache_io = {};
+  IOValueRef r_v_cache_io = {};
+  IOValueRef r_indices_io = {};
+  if (update_kv_before_permute) {
+    r_k_cache_io = graph.add_input_tensor(
+        cache.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+    r_v_cache_io = graph.add_input_tensor(
+        cache.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+    r_indices_io = graph.add_input_tensor(
+        indices.sizes().vec(), vkapi::kInt, utils::kBuffer);
+    const ValueRef start_pos = graph.add_symint(0);
+    const ValueRef k_dummy =
+        graph.add_tensor({1}, from_at_scalartype(dtype), projected_storage);
+    const ValueRef v_dummy =
+        graph.add_tensor({1}, from_at_scalartype(dtype), projected_storage);
+    VK_GET_OP_FN("update_cache_with_indices.default")
+    (graph,
+     {r_k.value, r_k_cache_io.value, start_pos, r_indices_io.value, k_dummy});
+    VK_GET_OP_FN("update_cache_with_indices.default")
+    (graph,
+     {r_v.value, r_v_cache_io.value, start_pos, r_indices_io.value, v_dummy});
+    r_k_sdpa = r_k_cache_io.value;
+    r_v_sdpa = r_v_cache_io.value;
+  }
+  if (permute_kv_before_clone) {
+    const ValueRef r_k_permuted = graph.add_tensor(
+        k.sizes().vec(), from_at_scalartype(dtype), kv_input_storage);
+    const ValueRef r_v_permuted = graph.add_tensor(
+        v.sizes().vec(), from_at_scalartype(dtype), kv_input_storage);
+    const ValueRef permute_dims = graph.add_scalar_list<int64_t>({0, 2, 1, 3});
+    VK_GET_OP_FN("aten.permute_copy.default")
+    (graph, {r_k_sdpa, permute_dims, r_k_permuted});
+    VK_GET_OP_FN("aten.permute_copy.default")
+    (graph, {r_v_sdpa, permute_dims, r_v_permuted});
+    r_k_sdpa = r_k_permuted;
+    r_v_sdpa = r_v_permuted;
+  }
+  if (clone_kv_mask_to_storage) {
+    const ValueRef r_k_texture = graph.add_tensor(
+        k.sizes().vec(), from_at_scalartype(dtype), storage_type);
+    const ValueRef r_v_texture = graph.add_tensor(
+        v.sizes().vec(), from_at_scalartype(dtype), storage_type);
+    VK_GET_OP_FN("aten.clone.default")
+    (graph, {r_k_sdpa, kDummyValueRef, r_k_texture});
+    VK_GET_OP_FN("aten.clone.default")
+    (graph, {r_v_sdpa, kDummyValueRef, r_v_texture});
+    r_k_sdpa = r_k_texture;
+    r_v_sdpa = r_v_texture;
+    if (has_bias) {
+      r_bias_sdpa = graph.add_tensor(
+          bias.value().sizes().vec(), from_at_scalartype(dtype), storage_type);
+      VK_GET_OP_FN("aten.clone.default")
+      (graph, {r_bias, kDummyValueRef, r_bias_sdpa});
+    }
+  }
+
   const ValueRef r_out = graph.add_tensor(
-      {batch_size, num_heads, q_seq_len, head_dim},
+      {batch_size,
+       num_heads,
+       max_q_seq_len > 0 ? max_q_seq_len : q_seq_len,
+       head_dim},
       from_at_scalartype(dtype),
-      utils::kBuffer);
+      storage_type);
 
   VK_GET_OP_FN("et_vk.sdpa.default")
   (graph,
    {
        r_q.value,
-       r_k.value,
-       r_v.value,
-       r_bias,
+       r_k_sdpa,
+       r_v_sdpa,
+       r_bias_sdpa,
        kDummyValueRef, // scale (None -> 1/sqrt(head_dim))
        r_out,
    });
@@ -724,14 +859,44 @@ void test_vulkan_general_sdpa(
 
   graph.prepare();
   graph.prepack();
+  if (max_q_seq_len > 0) {
+    graph.resize_input(0, q.sizes().vec());
+    if (has_bias) {
+      graph.resize_input(3, bias.value().sizes().vec());
+    }
+    graph.propagate_resize();
+  }
 
   // Copy inputs
   graph.maybe_cast_and_copy_into_staging(
       r_q.staging, q.const_data_ptr(), q.numel(), from_at_scalartype(dtype));
   graph.maybe_cast_and_copy_into_staging(
-      r_k.staging, k.const_data_ptr(), k.numel(), from_at_scalartype(dtype));
+      r_k.staging,
+      k_input.const_data_ptr(),
+      k_input.numel(),
+      from_at_scalartype(dtype));
   graph.maybe_cast_and_copy_into_staging(
-      r_v.staging, v.const_data_ptr(), v.numel(), from_at_scalartype(dtype));
+      r_v.staging,
+      v_input.const_data_ptr(),
+      v_input.numel(),
+      from_at_scalartype(dtype));
+  if (update_kv_before_permute) {
+    graph.maybe_cast_and_copy_into_staging(
+        r_k_cache_io.staging,
+        cache.const_data_ptr(),
+        cache.numel(),
+        from_at_scalartype(dtype));
+    graph.maybe_cast_and_copy_into_staging(
+        r_v_cache_io.staging,
+        cache.const_data_ptr(),
+        cache.numel(),
+        from_at_scalartype(dtype));
+    graph.maybe_cast_and_copy_into_staging(
+        r_indices_io.staging,
+        indices.const_data_ptr(),
+        indices.numel(),
+        vkapi::kLong);
+  }
   if (has_bias) {
     graph.maybe_cast_and_copy_into_staging(
         r_bias_io.staging,
@@ -761,6 +926,11 @@ void test_vulkan_general_sdpa(
   double rtol = dtype == at::kHalf ? 1e-2 : 1e-5;
 
   const bool output_correct = at::allclose(reference_out, vk_out, rtol, atol);
+  if (causal_prefix_mask) {
+    const at::Tensor diffs = at::abs(reference_out - vk_out);
+    std::cout << "Causal prefix SDPA max diff: " << at::max(diffs).item()
+              << ", mean diff: " << at::mean(diffs).item() << std::endl;
+  }
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_out - vk_out);
     std::cout << "General SDPA test failed:" << " B=" << batch_size
@@ -848,6 +1018,154 @@ TEST(VulkanGeneralSDPATest, test_general_sdpa_fp16_with_bias) {
       /*dtype=*/at::kHalf);
 }
 
+TEST(VulkanGeneralSDPATest, test_general_sdpa_gqa_broadcast_mask) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/2,
+      /*num_heads=*/8,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/16,
+      /*head_dim=*/32,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/2,
+      /*requested_bias_shape=*/{1, 1, 4, 16});
+}
+
+TEST(VulkanGeneralSDPATest, test_general_sdpa_voxtral_encoder_shape) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/128,
+      /*head_dim=*/64,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/32,
+      /*requested_bias_shape=*/{4, 128});
+}
+
+TEST(VulkanGeneralSDPATest, test_general_sdpa_voxtral_gqa_fp16) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/128,
+      /*head_dim=*/128,
+      /*has_bias=*/true,
+      /*dtype=*/at::kHalf,
+      /*requested_num_kv_heads=*/8,
+      /*requested_bias_shape=*/{1, 1, 4, 128});
+}
+
+TEST(VulkanGeneralSDPATest, test_general_sdpa_voxtral_streaming_initial) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/16384,
+      /*head_dim=*/128,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/8,
+      /*requested_bias_shape=*/{1, 1, 4, 16384},
+      /*causal_prefix_mask=*/true);
+}
+
+TEST(VulkanGeneralSDPATest, test_general_sdpa_voxtral_streaming_dynamic_buffer) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/16384,
+      /*head_dim=*/128,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/8,
+      /*requested_bias_shape=*/{4, 16384},
+      /*causal_prefix_mask=*/true,
+      /*storage_type=*/vkcompute::utils::kBuffer,
+      /*clone_kv_mask_to_storage=*/false,
+      /*permute_kv_before_clone=*/false,
+      /*update_kv_before_permute=*/false,
+      /*max_q_seq_len=*/2048);
+}
+
+TEST(
+    VulkanGeneralSDPATest,
+    test_general_sdpa_voxtral_streaming_initial_texture) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/16384,
+      /*head_dim=*/128,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/8,
+      /*requested_bias_shape=*/{4, 16384},
+      /*causal_prefix_mask=*/true,
+      /*storage_type=*/vkcompute::utils::kTexture3D);
+}
+
+TEST(
+    VulkanGeneralSDPATest,
+    test_general_sdpa_voxtral_streaming_initial_clones) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/16384,
+      /*head_dim=*/128,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/8,
+      /*requested_bias_shape=*/{4, 16384},
+      /*causal_prefix_mask=*/true,
+      /*storage_type=*/vkcompute::utils::kTexture3D,
+      /*clone_kv_mask_to_storage=*/true);
+}
+
+TEST(
+    VulkanGeneralSDPATest,
+    test_general_sdpa_voxtral_streaming_initial_permute_clones) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/16384,
+      /*head_dim=*/128,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/8,
+      /*requested_bias_shape=*/{4, 16384},
+      /*causal_prefix_mask=*/true,
+      /*storage_type=*/vkcompute::utils::kTexture3D,
+      /*clone_kv_mask_to_storage=*/true,
+      /*permute_kv_before_clone=*/true);
+}
+
+TEST(
+    VulkanGeneralSDPATest,
+    test_general_sdpa_voxtral_streaming_initial_cache_chain) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/32,
+      /*q_seq_len=*/4,
+      /*kv_seq_len=*/16384,
+      /*head_dim=*/128,
+      /*has_bias=*/true,
+      /*dtype=*/at::kFloat,
+      /*requested_num_kv_heads=*/8,
+      /*requested_bias_shape=*/{4, 16384},
+      /*causal_prefix_mask=*/true,
+      /*storage_type=*/vkcompute::utils::kTexture3D,
+      /*clone_kv_mask_to_storage=*/true,
+      /*permute_kv_before_clone=*/true,
+      /*update_kv_before_permute=*/true);
+}
+
+#ifndef VULKAN_GENERAL_SDPA_ONLY
+
 //
 // Existing KV-cache SDPA tests
 //
@@ -892,3 +1210,5 @@ TEST(VulkanSDPATest, test_sdpa_op_gqa_group4) {
   test_vulkan_sdpa(
       0, {5, 1, 1, 1, 1, 3, 1}, head_dim, num_heads, num_kv_heads, 1);
 }
+
+#endif // VULKAN_GENERAL_SDPA_ONLY
