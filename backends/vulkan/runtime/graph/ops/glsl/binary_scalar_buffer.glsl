@@ -32,6 +32,8 @@ $if IS_COMPARISON_OP:
   #define OUT_T ${buffer_scalar_type("uint8")}
 $else:
   #define OUT_T ${buffer_scalar_type(DTYPE)}
+$if IS_REMAINDER_OP:
+  #define IS_REMAINDER_OP
 
 #define op(X, Y) ${OPERATOR}
 

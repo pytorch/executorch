@@ -20,7 +20,7 @@ std::vector<int64_t> calculate_broadcasted_output_size(
   std::vector<int64_t> out_sizes(std::max(sizes1.size(), sizes2.size()));
 
   // Match the sizes in reverse because sizes are in NCHW order
-  for (int i = -1; i >= -out_sizes.size(); --i) {
+  for (int64_t i = -1; i >= -static_cast<int64_t>(out_sizes.size()); --i) {
     out_sizes.at(out_sizes.size() + i) =
         std::max(utils::val_at(i, sizes1), utils::val_at(i, sizes2));
   }
