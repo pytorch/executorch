@@ -1740,6 +1740,11 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     target_compile_definitions(
       executor_runner PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
     )
+    target_sources(
+      executor_runner
+      PRIVATE
+        ${EXECUTORCH_ROOT}/examples/arm/executor_runner/arm_perf_monitor.cpp
+    )
     target_link_libraries(
       executor_runner
       PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,executorch_delegate_ethos_u>

@@ -339,6 +339,68 @@ void StopMeasurements(int num_inferences) {
 #endif
 }
 
+#elif defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+#include <time.h>
+
+#include <executorch/runtime/platform/log.h>
+
+namespace {
+static inline uint64_t arm_cpu_time_ns() {
+  struct timespec ts;
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+  return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull + ts.tv_nsec;
+}
+
+uint32_t ethosu_delegation_count = 0;
+uint64_t ethosu_ArmCpuTimeStart = 0;
+uint64_t ethosu_ArmBackendExecuteCpuTimeStart = 0;
+uint64_t ethosu_ArmBackendExecuteCpuTime = 0;
+} // namespace
+
+extern "C" {
+// Callback invoked at start of EthosUBackend::execute()
+void EthosUBackend_execute_begin() {
+  ethosu_ArmBackendExecuteCpuTimeStart = arm_cpu_time_ns();
+}
+
+// Callback invoked at end of EthosUBackend::execute()
+void EthosUBackend_execute_end() {
+  ethosu_ArmBackendExecuteCpuTime +=
+      arm_cpu_time_ns() - ethosu_ArmBackendExecuteCpuTimeStart;
+  ethosu_delegation_count++;
+}
+}
+
+void StartMeasurements() {
+  ethosu_delegation_count = 0;
+  ethosu_ArmBackendExecuteCpuTime = 0;
+  ethosu_ArmCpuTimeStart = arm_cpu_time_ns();
+}
+
+void StopMeasurements(int num_inferences) {
+  const uint64_t cpu_time = arm_cpu_time_ns() - ethosu_ArmCpuTimeStart;
+
+  ET_LOG(Info, "NPU Inferences : %d", num_inferences);
+  ET_LOG(
+      Info,
+      "NPU delegations: %" PRIu32 " (%.2f per inference)",
+      ethosu_delegation_count,
+      (double)ethosu_delegation_count / num_inferences);
+  ET_LOG(Info, "Profiler report, CPU time per operator:");
+  // CPU time spent in EthosUBackend::execute(), summed over all delegations
+  ET_LOG(
+      Info,
+      "ethos-u : cpu_time : %.3f ms (%.3f ms per inference)",
+      ethosu_ArmBackendExecuteCpuTime / 1e6,
+      ethosu_ArmBackendExecuteCpuTime / 1e6 / num_inferences);
+  // CPU time of the whole measured region, delegated and non-delegated work
+  ET_LOG(
+      Info,
+      "Inference runtime: %.3f ms CPU time total (%.3f ms per inference)",
+      cpu_time / 1e6,
+      cpu_time / 1e6 / num_inferences);
+}
+
 #else
 // cppcheck-suppress unusedFunction
 void StartMeasurements() {}
