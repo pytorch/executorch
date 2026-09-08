@@ -6,6 +6,8 @@
 from copy import deepcopy
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (

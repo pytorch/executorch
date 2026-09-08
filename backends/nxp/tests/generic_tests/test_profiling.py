@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import ast
 import logging
 import os
@@ -9,6 +10,8 @@ import re
 from typing import Any, Union
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier

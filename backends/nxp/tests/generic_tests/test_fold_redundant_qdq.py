@@ -6,12 +6,11 @@
 
 import torch
 
+from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.edge_passes.fold_redundant_qdq_pass import (
     FoldRedundantDequantizeQuantizePass,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-
-ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 
 
 class ConvDropoutConvModule(torch.nn.Module):

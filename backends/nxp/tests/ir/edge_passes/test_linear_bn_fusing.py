@@ -21,6 +21,7 @@ from executorch.backends.nxp.backend.graph_utils import (
     batch_norm_target_ops,
     is_batch_norm,
 )
+from executorch.backends.nxp.backend.ops_aliases import AddMM, Linear
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_random_calibration_inputs,
@@ -34,7 +35,6 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export, ExportedProgram
 from torchao.quantization.pt2e.prepare import _is_activation_post_process_node
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
@@ -243,8 +243,8 @@ def test_linear_bn_full_qat_pipeline_conversion(
     assert not graph_contains_any_of_ops(
         graph=edge_program.graph,
         ops=[
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.linear.default,
+            AddMM,
+            Linear,
         ]
         + batch_norm_target_ops,
     )
@@ -303,8 +303,8 @@ def test_incompatible_linear_bn_not_fused(mocker, input_shape, linear_bias, bn_e
     assert graph_contains_any_of_ops(
         graph=edge_program.graph,
         ops=[
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.linear.default,
+            AddMM,
+            Linear,
         ],
     )
     assert graph_contains_any_of_ops(

@@ -4,12 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.nxp.backend.ops_aliases import PermuteCopy
 
-from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
-from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
-
-from executorch.backends.nxp.ops_aliases import (
+from executorch.backends.nxp.backend.ops_aliases import (
     AdaptiveAvgPool2D,
     AddMM,
     AvgPool2D,
@@ -25,11 +21,14 @@ from executorch.backends.nxp.ops_aliases import (
     QuantizePerTensor,
     Relu,
     Sigmoid,
-    SqueezeCopy,
+    SqueezeCopyDims,
     Tanh,
     UnsqueezeCopy,
     ViewCopy,
 )
+
+from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
+from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
 from torch.fx import Node
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -238,19 +237,19 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
         AvgPool2D: [
             ViewCopy,
-            SqueezeCopy,
+            SqueezeCopyDims,
         ],
         # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> GetItem -> Squeeze. The reshaping nodes must be moved out
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
         GetItem: [
             ViewCopy,
-            SqueezeCopy,
+            SqueezeCopyDims,
         ],
         # AdaptiveAvgPool1D is represented in edge as Unsqueeze -> AdaptiveAvgPool2D -> Squeeze. The reshaping nodes
         # must be moved out of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
         AdaptiveAvgPool2D: [
             ViewCopy,
-            SqueezeCopy,
+            SqueezeCopyDims,
         ],
     }
 

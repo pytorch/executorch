@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.backend.edge_program_converter import exir_ops

@@ -7,6 +7,8 @@ import logging
 import os
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 

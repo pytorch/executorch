@@ -7,6 +7,8 @@ import os
 
 import eiq_neutron_sdk
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 

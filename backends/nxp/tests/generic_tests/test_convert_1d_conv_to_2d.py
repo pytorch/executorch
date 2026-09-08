@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
@@ -14,6 +16,10 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ops_aliases import (
+    Convolution,
+    ExecutorchDelegateCall,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import (
     neutron_target_spec,
     to_quantized_edge_program,
@@ -23,7 +29,6 @@ from executorch.backends.nxp.tests.executors import (
     graph_contains_any_of_ops,
 )
 from executorch.backends.nxp.tests.models import Conv1dModule, ConvTranspose1dModule
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch import nn
 from torch.export import ExportedProgram
 
@@ -45,9 +50,6 @@ AtenSigmoid = torch.ops.aten.sigmoid.default
 AtenTanh = torch.ops.aten.tanh.default
 AtenHardtanh = torch.ops.aten.hardtanh.default
 AtenBatchNorm = torch.ops.aten.batch_norm.default
-
-EdgeConvolution = exir_ops.edge.aten.convolution.default
-ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 
 
 @pytest.mark.parametrize(
@@ -301,7 +303,7 @@ def test_convert_conv_1d_to_conv2d_full_pipeline(
     # Make sure `edge.aten.convolution.default` is in the model.
     assert graph_contains_any_of_ops(
         exported_program.graph,
-        [EdgeConvolution],
+        [Convolution],
     )
 
     example_input = (np.random.random(input_shape).astype(np.float32) * 50).astype(
@@ -378,7 +380,7 @@ def test_convert_conv_1d_to_conv2d_transp_full_pipeline(
     # Make sure `edge.aten.convolution.default` is in the model.
     assert graph_contains_any_of_ops(
         exported_program.graph,
-        [EdgeConvolution],
+        [Convolution],
     )
 
     example_input = (np.random.random(input_shape).astype(np.float32) * 50).astype(
