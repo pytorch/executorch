@@ -886,8 +886,11 @@ void ValueSpec::share_data_from(const ValueSpec& other) {
   if (!is_tensor() || !other.is_tensor()) {
     return;
   }
+  // Materialize the source first: sharing an ungenerated payload would let a
+  // later access materialize each spec independently under different seeds.
+  other.ensure_data_generated();
   data_ = other.data_;
-  data_generated_ = other.data_generated_;
+  data_generated_ = true;
 }
 
 void ValueSpec::share_reference_from(const ValueSpec& other) {
