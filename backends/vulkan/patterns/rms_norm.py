@@ -4,10 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import Optional
 
 import torch
 
+from executorch.backends.vulkan import utils
 from executorch.backends.vulkan.patterns.pattern_registry import (
     PatternMatch,
     register_pattern_detector,
@@ -16,12 +18,21 @@ from executorch.backends.vulkan.patterns.pattern_registry import (
 
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 
 
 _CAST_OPS = {
     exir_ops.edge.aten._to_copy.default,
     exir_ops.edge.aten.to.dtype,
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
 }
+
+_ADD_OPS = {
+    exir_ops.edge.aten.add.Scalar,
+    exir_ops.edge.aten.add.Tensor,
+}
+
+_SUPPORTED_DTYPES = {torch.float16, torch.float32}
 
 
 def _skip_casts(node: torch.fx.Node) -> torch.fx.Node:
@@ -40,19 +51,19 @@ class RmsNormMatch(PatternMatch):
     Detects the decomposed RMSNorm pattern, including variants where dtype
     casts (to_copy) are inserted around the computation.
 
-    The canonical pattern emitted by the Llama RMSNorm implementation is:
+    The canonical FP32 pattern is:
 
       x_orig (any dtype)
         -> to_copy(fp32) -> x_f32
            -> mul(x_f32, x_f32) -> mean(dim=-1, keepdim=True)
            -> add(eps) -> rsqrt -> rstd_f32
         -> mul(x_f32, rstd_f32) -> norm_f32
-        -> to_copy(orig dtype) -> norm_cast
-      weight -> to_copy(orig dtype) -> weight_cast
-      -> mul(norm_cast, weight_cast)   ← anchor node
+      weight -> mul(norm_f32, weight)   ← anchor node
 
-    We look through to_copy nodes when comparing tensor identities so that
-    the match also handles fp32-only models where no casts are present.
+    FP16 variants may cast the normalized value before scaling, or cast the
+    input and weight to FP32 and cast the scaled result back to FP16. Casts are
+    removed only when the input, weight, FP32 compute, and output dtypes match
+    that contract.
 
     The anchor node is the final mul (scale by weight).
     """
@@ -83,7 +94,15 @@ class RmsNormMatch(PatternMatch):
         add_node = self._get_single_arg_node(
             rsqrt_node, exir_ops.edge.aten.rsqrt.default
         )
-        if add_node is None or add_node.target != exir_ops.edge.aten.add.Tensor:
+        if add_node is None or add_node.target not in _ADD_OPS:
+            return
+
+        alpha = (
+            add_node.args[2]
+            if len(add_node.args) > 2
+            else add_node.kwargs.get("alpha", 1)
+        )
+        if isinstance(alpha, bool) or not isinstance(alpha, (int, float)) or alpha != 1:
             return
 
         self.all_nodes.append(add_node)
@@ -102,20 +121,36 @@ class RmsNormMatch(PatternMatch):
         if mean_node is None or self.eps_node is None:
             return
 
+        if add_node.target == exir_ops.edge.aten.add.Scalar:
+            if isinstance(self.eps_node, bool) or not isinstance(
+                self.eps_node, (int, float)
+            ):
+                return
+            if not math.isfinite(float(self.eps_node)) or self.eps_node < 0:
+                return
+        elif not self._is_scalar_float_tensor(self.eps_node):
+            return
+
         self.all_nodes.append(mean_node)
 
-        # Verify mean has keepdim=True and dim=[-1]
+        # Verify mean reduces exactly the last dimension and keeps it.
         if len(mean_node.args) < 3:
             return
         mean_dims = mean_node.args[1]
-        if mean_dims != [-1]:
-            return
         if not mean_node.args[2]:
             return
 
         # mean's input should be x_sq = mul(x, x) or pow(x, 2)
         sq_node = mean_node.args[0]
         if not isinstance(sq_node, torch.fx.Node):
+            return
+
+        sq_val = sq_node.meta.get("val")
+        if not isinstance(sq_val, torch.Tensor) or len(sq_val.shape) == 0:
+            return
+        if not isinstance(mean_dims, (list, tuple)) or len(mean_dims) != 1:
+            return
+        if mean_dims[0] not in (-1, len(sq_val.shape) - 1):
             return
 
         self.all_nodes.append(sq_node)
@@ -165,7 +200,77 @@ class RmsNormMatch(PatternMatch):
             self.all_nodes.append(cast_node)
             cast_node = cast_node.args[0] if cast_node.args else cast_node
 
+        if not self._has_supported_tensor_contract(x_for_norm):
+            return
+
         self.match_found = True
+
+    def _is_scalar_float_tensor(self, node) -> bool:
+        if not isinstance(node, torch.fx.Node):
+            return False
+        val = node.meta.get("val")
+        return (
+            isinstance(val, torch.Tensor)
+            and val.numel() == 1
+            and val.dtype in _SUPPORTED_DTYPES
+        )
+
+    def _has_supported_tensor_contract(self, x_for_norm) -> bool:
+        if not all(
+            isinstance(node, torch.fx.Node)
+            for node in (self.input_node, x_for_norm, self.weight_node)
+        ):
+            return False
+
+        input_val = self.input_node.meta.get("val")
+        compute_val = x_for_norm.meta.get("val")
+        weight_val = self.weight_node.meta.get("val")
+        scale_weight_val = self.weight_for_scale_node.meta.get("val")
+        norm_for_scale_val = self.norm_for_scale_node.meta.get("val")
+        scaled_val = self.anchor_node.meta.get("val")
+        if not all(
+            isinstance(val, torch.Tensor)
+            for val in (
+                input_val,
+                compute_val,
+                weight_val,
+                scale_weight_val,
+                norm_for_scale_val,
+                scaled_val,
+            )
+        ):
+            return False
+
+        if (
+            input_val.dtype not in _SUPPORTED_DTYPES
+            or compute_val.dtype != torch.float32
+            or weight_val.dtype != input_val.dtype
+            or scale_weight_val.dtype != scaled_val.dtype
+            or norm_for_scale_val.dtype != scaled_val.dtype
+            or len(input_val.shape) == 0
+            or len(weight_val.shape) != 1
+            or weight_val.shape[0] != input_val.shape[-1]
+            or input_val.shape != scaled_val.shape
+        ):
+            return False
+
+        self.output_node = self.anchor_node
+        output_val = scaled_val
+        if scaled_val.dtype != input_val.dtype:
+            if input_val.dtype != torch.float16 or scaled_val.dtype != torch.float32:
+                return False
+            users = list(self.anchor_node.users)
+            if len(users) != 1 or users[0].target not in _CAST_OPS:
+                return False
+            self.output_node = users[0]
+            output_val = self.output_node.meta.get("val")
+            if not isinstance(output_val, torch.Tensor):
+                return False
+            self.all_nodes.append(self.output_node)
+
+        return (
+            output_val.dtype == input_val.dtype and input_val.shape == output_val.shape
+        )
 
     def _identify_norm_mul_and_weight(self, final_mul_node):
         """From mul(norm_cast, weight_cast), unwrap casts and find the
@@ -184,7 +289,11 @@ class RmsNormMatch(PatternMatch):
                 and norm_candidate.target == exir_ops.edge.aten.mul.Tensor
                 and self._has_rsqrt_ancestor(norm_candidate)
             ):
-                return norm_candidate, weight_candidate_raw
+                if not isinstance(weight_candidate_raw, torch.fx.Node):
+                    return None, None
+                self.norm_for_scale_node = norm_candidate_raw
+                self.weight_for_scale_node = weight_candidate_raw
+                return norm_candidate, _skip_casts(weight_candidate_raw)
 
         return None, None
 
@@ -245,16 +354,41 @@ def find_rms_norm_patterns(
 ##
 
 
-def _extract_eps_value(eps_node) -> float:
+def _validate_eps_value(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"RMSNorm epsilon must be a numeric scalar, got {value}")
+    value = float(value)
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"RMSNorm epsilon must be finite and nonnegative, got {value}")
+    return value
+
+
+def _extract_eps_value(ep: ExportedProgram, eps_node) -> float:
     if isinstance(eps_node, (int, float)):
-        return float(eps_node)
-    if isinstance(eps_node, torch.fx.Node) and "val" in eps_node.meta:
-        val = eps_node.meta["val"]
-        if isinstance(val, torch.Tensor):
-            return float(val.item())
-        if isinstance(val, (int, float)):
-            return float(val)
-    raise ValueError(f"Cannot extract epsilon value from {eps_node}")
+        return _validate_eps_value(eps_node)
+
+    tensor = None
+    if isinstance(eps_node, torch.fx.Node):
+        if is_param(ep, eps_node):
+            tensor = get_param(ep, eps_node)
+        elif is_buffer(ep, eps_node):
+            tensor = get_buffer(ep, eps_node)
+        elif utils.is_constant(ep, eps_node):
+            constant_name = ep.graph_signature.inputs_to_lifted_tensor_constants[
+                eps_node.name
+            ]
+            tensor = ep.constants.get(constant_name)
+        elif utils.is_get_attr_node(eps_node):
+            tensor = getattr(ep.graph_module, eps_node.target, None)
+
+    if (
+        not isinstance(tensor, torch.Tensor)
+        or tensor.numel() != 1
+        or tensor.dtype not in _SUPPORTED_DTYPES
+    ):
+        raise ValueError(f"Cannot extract constant scalar epsilon from {eps_node}")
+
+    return _validate_eps_value(tensor.detach().item())
 
 
 @register_pattern_replacement("rms_norm")
@@ -262,8 +396,11 @@ def replace_rms_norm_with_fused_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: RmsNormMatch,
-):
-    eps_val = _extract_eps_value(match.eps_node)
+) -> bool:
+    try:
+        eps_val = _extract_eps_value(ep, match.eps_node)
+    except ValueError:
+        return False
 
     with graph_module.graph.inserting_before(match.anchor_node):
         rms_norm_node = graph_module.graph.create_node(
@@ -276,5 +413,6 @@ def replace_rms_norm_with_fused_op(
             ),
         )
 
-    rms_norm_node.meta["val"] = match.anchor_node.meta["val"]
-    match.anchor_node.replace_all_uses_with(rms_norm_node)
+    rms_norm_node.meta["val"] = match.output_node.meta["val"]
+    match.output_node.replace_all_uses_with(rms_norm_node)
+    return True

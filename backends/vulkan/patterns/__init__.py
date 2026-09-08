@@ -105,14 +105,33 @@ def create_replacement_for_pattern(
 
     for pattern in patterns:
         sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
-        matches = list(sm.match(graph_module.graph))
-
-        for partition_to_replace in matches:
-            pattern = create_pattern_match_from_internal_match(partition_to_replace)
-            create_replacement_func(ep, graph_module, pattern)
+        pending_matches = [
+            create_pattern_match_from_internal_match(match)
+            for match in sm.match(graph_module.graph)
+        ]
+        live_nodes = set(graph_module.graph.nodes)
+        while pending_matches:
+            match = pending_matches.pop(0)
+            if any(
+                node not in live_nodes
+                for node in (
+                    *match.input_nodes,
+                    *match.output_nodes,
+                    *match.all_nodes,
+                )
+            ):
+                pending_matches = [
+                    create_pattern_match_from_internal_match(match)
+                    for match in sm.match(graph_module.graph)
+                ]
+                live_nodes = set(graph_module.graph.nodes)
+                continue
+            replacement_result = create_replacement_func(ep, graph_module, match)
+            if replacement_result is False:
+                continue
             total_replaced += 1
-            # Remove dead code so they won't be matched again
             graph_module.graph.eliminate_dead_code()
+            live_nodes = set(graph_module.graph.nodes)
 
     return total_replaced
 
@@ -144,7 +163,11 @@ def replace_all_fusable_subgraphs(
                 maybe_match = entry.detector_fn(node)
                 if maybe_match is not None:
                     assert entry.create_replacement_fn is not None
-                    entry.create_replacement_fn(ep, graph_module, maybe_match)
+                    replacement_result = entry.create_replacement_fn(
+                        ep, graph_module, maybe_match
+                    )
+                    if replacement_result is False:
+                        continue
                     total_replaced += 1
 
     graph_module.graph.eliminate_dead_code()

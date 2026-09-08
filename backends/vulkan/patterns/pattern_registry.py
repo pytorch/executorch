@@ -69,7 +69,7 @@ def create_pattern_match_from_internal_match(
 
 
 CreateReplacementFn = Callable[
-    [ExportedProgram, torch.fx.GraphModule, PatternMatch], None
+    [ExportedProgram, torch.fx.GraphModule, PatternMatch], Optional[bool]
 ]
 
 
