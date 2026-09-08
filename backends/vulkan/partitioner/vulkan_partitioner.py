@@ -17,6 +17,7 @@ import torch
 from executorch.backends.vulkan.op_registry import (
     get_op_features,
     has_impl,
+    is_update_cache_with_indices_dtype_supported,
     OpFeatures,
     OpKey,
     vulkan_supported_ops,
@@ -60,6 +61,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         self,
         texture_limits: utils.ImageExtents,
         buffer_limit: int,
+        downcast_64_bit: bool = True,
         require_dynamic_shape: bool = False,
         skip_bool_tensors: bool = False,
         operator_blocklist: Optional[Set[OpKey]] = None,
@@ -70,7 +72,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
-        self.buffer_limit = buffer_limit
+        self.buffer_limit_bytes = buffer_limit
+        self.downcast_64_bit = downcast_64_bit
         self.require_dynamic_shapes = require_dynamic_shape
         self.skip_bool_tensors = skip_bool_tensors
         self.operator_blocklist: Set[OpKey] = (
@@ -264,6 +267,21 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, dtype_reason)
             return False
 
+        target_name = target.name() if hasattr(target, "name") else target
+        if (
+            target_name == "llama::update_cache_with_indices"
+            and not is_update_cache_with_indices_dtype_supported(
+                node, self.downcast_64_bit
+            )
+        ):
+            self.log_skip(
+                node,
+                "int64 cache indices require downcast_64_bit=True",
+            )
+            return False
+
+        # Buffer-limited operators are currently ordinary ops. A future
+        # auto-functionalized user must first map these indices to HOP kwargs.
         for arg_index in features.buffer_limit_args:
             if arg_index >= len(node.args):
                 self.log_skip(node, f"missing buffer-limited input[{arg_index}]")
@@ -272,10 +290,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if not isinstance(arg, torch.fx.Node) or not utils.is_tensor_node(arg):
                 self.log_skip(node, f"invalid buffer-limited input[{arg_index}]")
                 return False
-            if not utils.within_buffer_limit(arg, self.buffer_limit):
+            if not utils.within_buffer_limit(arg, self.buffer_limit_bytes):
                 self.log_skip(
                     node,
-                    f"input[{arg_index}] exceeds {self.buffer_limit}-element buffer limit",
+                    f"input[{arg_index}] exceeds "
+                    f"{self.buffer_limit_bytes}-byte buffer limit",
                 )
                 return False
 
@@ -417,12 +436,15 @@ class VulkanPartitioner(Partitioner):
             texture_limits = utils.SMALL_TEXTURE_LIMITS
         else:
             texture_limits = utils.DEFAULT_TEXTURE_LIMITS
-        buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
+        buffer_limit_bytes: int = self.options.get(
+            "buffer_limit", utils.DEFAULT_BUFFER_LIMIT
+        )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             VulkanSupportedOperators(
                 texture_limits,
-                buffer_limit,
+                buffer_limit_bytes,
+                downcast_64_bit=self.options.get("downcast_64_bit", True),
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
                 skip_bool_tensors=self.options.get("skip_bool_tensors", False),
                 operator_blocklist=self.operator_blocklist,

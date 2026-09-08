@@ -57,6 +57,27 @@ from executorch.exir.passes import MemoryPlanningPass
 from torch.export import Dim, export
 
 VULKAN_EXTERNAL_CONSTANTS_MAX_DATA_BYTES = 1_500_000_000
+TOKEN_EMBEDDING_TARGETS = {
+    "aten.embedding.default",
+    "quantized_decomposed.embedding_4bit.dtype",
+}
+
+
+def _token_embedding_weight_nbytes(program: torch.export.ExportedProgram) -> int:
+    weight_nbytes = []
+    for node in program.graph.nodes:
+        if str(node.target) not in TOKEN_EMBEDDING_TARGETS or not node.args:
+            continue
+        weight = node.args[0]
+        weight_val = getattr(weight, "meta", {}).get("val")
+        if isinstance(weight_val, torch.Tensor):
+            weight_nbytes.append(int(weight_val.numel()) * weight_val.element_size())
+    if len(weight_nbytes) != 1:
+        raise RuntimeError(
+            "Expected exactly one token embedding weight, "
+            f"found {len(weight_nbytes)}"
+        )
+    return weight_nbytes[0]
 
 
 # ---------------------------------------------------------------------------
@@ -625,8 +646,8 @@ def lower_to_executorch(
             if key in ("encode_audio_chunk", "text_decoder"):
                 compile_options["alias_buffer_mutations"] = True
             if key == "token_embedding":
-                compile_options["buffer_limit"] = (
-                    metadata["vocab_size"] * metadata["dim"]
+                compile_options["buffer_limit"] = _token_embedding_weight_nbytes(
+                    programs[key]
                 )
                 compile_options["storage_type_override"] = VkStorageType.BUFFER
             partitioner[key] = [VulkanPartitioner(compile_options=compile_options)]
