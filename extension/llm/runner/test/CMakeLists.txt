@@ -23,6 +23,7 @@ set(_test_srcs
     test_text_prefiller.cpp
     test_text_decoder_runner.cpp
     test_multimodal_input.cpp
+    test_text_stream.cpp
     test_util.cpp
     test_wav_loader.cpp
 )
