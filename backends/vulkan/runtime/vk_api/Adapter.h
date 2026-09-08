@@ -451,7 +451,7 @@ class Adapter final {
     return physical_device_.properties.limits.maxImageDimension3D;
   }
 
-  inline uint32_t max_buffer_numel() const {
+  inline uint32_t max_buffer_nbytes() const {
     return physical_device_.properties.limits.maxStorageBufferRange;
   }
 

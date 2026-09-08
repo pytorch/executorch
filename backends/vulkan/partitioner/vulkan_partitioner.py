@@ -264,6 +264,21 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, dtype_reason)
             return False
 
+        for arg_index in features.buffer_limit_args:
+            if arg_index >= len(node.args):
+                self.log_skip(node, f"missing buffer-limited input[{arg_index}]")
+                return False
+            arg = node.args[arg_index]
+            if not isinstance(arg, torch.fx.Node) or not utils.is_tensor_node(arg):
+                self.log_skip(node, f"invalid buffer-limited input[{arg_index}]")
+                return False
+            if not utils.within_buffer_limit(arg, self.buffer_limit):
+                self.log_skip(
+                    node,
+                    f"input[{arg_index}] exceeds {self.buffer_limit}-element buffer limit",
+                )
+                return False
+
         if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
             return False
@@ -418,7 +433,11 @@ class VulkanPartitioner(Partitioner):
             ),
             allows_single_node_partition=True,
         )
-        partition_list = capability_partitioner.propose_partitions()
+        partition_list = [
+            partition
+            for partition in capability_partitioner.propose_partitions()
+            if any(utils.is_tensor_node(node) for node in partition.nodes)
+        ]
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f"tag{partition.id}"

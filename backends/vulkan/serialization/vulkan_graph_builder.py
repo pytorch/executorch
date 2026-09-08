@@ -193,13 +193,17 @@ class VkGraphBuilder:
     def create_node_value(self, node: Node) -> int:
         if node.name in self.buffer_mutation_inputs:
             input_node = self.buffer_mutation_inputs[node.name]
-            if input_node not in self.node_to_value_ids:
-                raise AssertionError(
-                    "Cannot alias a buffer mutation before its input is serialized"
-                )
-            value_id = self.node_to_value_ids[input_node]
-            self.node_to_value_ids[node] = value_id
-            return value_id
+            mutation_output_is_input = (
+                input_node is node or node in input_node.all_input_nodes
+            )
+            if not mutation_output_is_input:
+                if input_node not in self.node_to_value_ids:
+                    raise AssertionError(
+                        "Cannot alias a buffer mutation before its input is serialized"
+                    )
+                value_id = self.node_to_value_ids[input_node]
+                self.node_to_value_ids[node] = value_id
+                return value_id
 
         # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
         if is_symint_node(node) or node.meta.get("etvk_is_scalar_tensor", False):
@@ -230,12 +234,7 @@ class VkGraphBuilder:
         return new_id
 
     def get_or_create_scalar_value(self, scalar: _ScalarType) -> int:
-        scalar_key = scalar
-        # Since Python considers 1 and True to be "equivalent" (as well as 0 and False)
-        # to distinguish entries in the dictionary, if scalar is bool then convert it
-        # to a string representation to use as a key for the dictionary
-        if isinstance(scalar, bool):
-            scalar_key = str(scalar)
+        scalar_key = (type(scalar), scalar)
 
         if scalar_key in self.const_scalar_to_value_ids:
             return self.const_scalar_to_value_ids[scalar_key]
@@ -418,8 +417,10 @@ class VkGraphBuilder:
             raise RuntimeError(f"Cannot create value for arg of type {type(arg)}")
 
     def process_placeholder_node(self, node: Node) -> None:
-        # ignores any tensors that don't get used in any ops
-        if len(node.users) == 0:
+        # Unused parameters do not need to be serialized. User inputs must retain
+        # their original order even if a preprocessing pass removed their users,
+        # since the delegate call ABI still includes those arguments.
+        if len(node.users) == 0 and is_param_node(self.program, node):
             return None
         ids = self.create_node_value(node)
         if not is_param_node(self.program, node):
@@ -492,6 +493,13 @@ class VkGraphBuilder:
             if out_node.name in self.buffer_mutation_inputs:
                 if out_node.name not in self.buffer_mutation_user_outputs:
                     continue
+                mutation_input = self.buffer_mutation_inputs[out_node.name]
+                if mutation_input not in self.node_to_value_ids:
+                    raise AssertionError(
+                        "Cannot find the aliased buffer mutation input in node_to_value_ids"
+                    )
+                self.output_ids.append(self.node_to_value_ids[mutation_input])
+                continue
             elif is_mutable_buffer_node(out_node, self.program):
                 continue
 

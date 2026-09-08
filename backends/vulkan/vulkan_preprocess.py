@@ -230,6 +230,7 @@ class VulkanBackend(BackendDetails):
                         default_storage_type=default_storage_type,
                         default_memory_layout=default_memory_layout,
                         force_fp16=force_fp16,
+                        alias_buffer_mutations=alias_buffer_mutations,
                     ),
                 ],
             )

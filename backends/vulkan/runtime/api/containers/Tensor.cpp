@@ -691,10 +691,9 @@ vkapi::VulkanBuffer allocate_buffer(
       element_size(dtype) * static_cast<size_t>(numel),
       static_cast<size_t>(16));
 
-  // TODO: this check is incorrect. max_buffer_numel() returns
-  // maxStorageBufferRange, which is a size in bytes, so the comparison should
-  // use the buffer's byte size (alloc_nbytes), not the element count.
-  VK_CHECK_COND(numel <= context_ptr->adapter_ptr()->max_buffer_numel());
+  VK_CHECK_COND(
+      alloc_nbytes <= context_ptr->adapter_ptr()->max_buffer_nbytes(),
+      "buffer allocation exceeds maxStorageBufferRange");
 
   return adapter_ptr->vma().create_storage_buffer(
       alloc_nbytes, allocate_memory);

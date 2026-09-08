@@ -93,7 +93,7 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
     }
   }
 
-  if (--tref->prepack_use_count == 0) {
+  if (--tref->prepack_use_count == 0 && !tref->is_graph_output) {
     tref->free_buffer();
   }
 

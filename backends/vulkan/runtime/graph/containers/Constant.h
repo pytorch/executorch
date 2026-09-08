@@ -35,6 +35,10 @@ struct TensorRef final {
   // (e.g. shared/tied weights).
   int32_t prepack_use_count{0};
 
+  // Graph outputs are copied from TensorRef data during execution, so their
+  // backing buffers must remain alive after prepacking completes.
+  bool is_graph_output{false};
+
   explicit TensorRef(
       const std::vector<int64_t>& t_sizes,
       vkapi::ScalarType t_dtype,

@@ -7,6 +7,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import math
 import random
 import unittest
 from types import SimpleNamespace
@@ -14,15 +15,22 @@ from typing import List, Tuple
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
 import torch
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from executorch.backends.vulkan.serialization import (
     vulkan_graph_builder as graph_builder_module,
 )
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    Bool,
+    Double,
+    DoubleList,
+    Int,
     IntList,
     OperatorCall,
     String,
+    SymInt,
     VkGraph,
+    VkTensor,
     VkValue,
 )
 
@@ -35,6 +43,62 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
 
 
 class TestSerialization(unittest.TestCase):
+    def test_scalar_deduplication_preserves_numeric_types(self) -> None:
+        builder = graph_builder_module.VkGraphBuilder(
+            SimpleNamespace(),
+            graph_builder_module.DelegateMappingBuilder(generated_identifiers=True),
+        )
+
+        scalar_ids = [
+            builder.get_or_create_scalar_value(value)
+            for value in (False, 0, 0.0, True, 1, 1.0)
+        ]
+
+        self.assertEqual(len(set(scalar_ids)), 6)
+        self.assertEqual(
+            [type(builder.values[value_id].value) for value_id in scalar_ids],
+            [Bool, Int, Double, Bool, Int, Double],
+        )
+        self.assertEqual(
+            builder.get_or_create_scalar_value(0),
+            scalar_ids[1],
+        )
+
+    def test_unused_user_inputs_preserve_delegate_abi_order(self) -> None:
+        graph = torch.fx.Graph()
+        unused_scalar = graph.placeholder("unused_scalar")
+        used_tensor = graph.placeholder("used_tensor")
+        unused_scalar.meta["val"] = ShapeEnv().create_unbacked_symint()
+        used_tensor.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(
+            torch.ones(4)
+        )
+        graph.output((used_tensor,))
+
+        graph_module = torch.fx.GraphModule({}, graph)
+        signature = SimpleNamespace(
+            buffers_to_mutate={},
+            inputs_to_buffers={},
+            inputs_to_lifted_tensor_constants={},
+            inputs_to_parameters={},
+            non_persistent_buffers=set(),
+            user_outputs=(used_tensor.name,),
+        )
+        program = SimpleNamespace(
+            constants={},
+            graph_module=graph_module,
+            graph_signature=signature,
+            state_dict={},
+        )
+
+        vk_graph = graph_builder_module.VkGraphBuilder(
+            program,
+            graph_builder_module.DelegateMappingBuilder(generated_identifiers=True),
+        ).build_graph()
+
+        self.assertEqual(len(vk_graph.input_ids), 2)
+        self.assertIsInstance(vk_graph.values[vk_graph.input_ids[0]].value, SymInt)
+        self.assertIsInstance(vk_graph.values[vk_graph.input_ids[1]].value, VkTensor)
+
     def _build_mutation_program(
         self, prepack: bool, shared_user_output: bool = False
     ) -> Tuple[SimpleNamespace, torch.fx.Node, torch.fx.Node, torch.fx.Node]:
@@ -166,6 +230,55 @@ class TestSerialization(unittest.TestCase):
                     [builder.node_to_value_ids[mutation]],
                 )
 
+    def test_alias_buffer_mutation_when_input_is_mutation_output(self) -> None:
+        for prepack in (False, True):
+            with self.subTest(prepack=prepack):
+                graph = torch.fx.Graph()
+                state = graph.placeholder("state")
+                state.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(
+                    torch.zeros(4)
+                )
+                mutation_input = state
+                if prepack:
+                    mutation_input = graph.call_function(
+                        graph_builder_module.exir_ops.edge.et_vk.prepack.default,
+                        (state,),
+                    )
+                    mutation_input.meta["spec"] = (
+                        graph_builder_module.TensorSpec.from_tensor(torch.zeros(4))
+                    )
+                graph.output((state,))
+
+                graph_module = torch.fx.GraphModule({}, graph)
+                signature = SimpleNamespace(
+                    buffers_to_mutate={state.name: "state"},
+                    inputs_to_buffers={state.name: "state"},
+                    inputs_to_lifted_tensor_constants={},
+                    inputs_to_parameters={},
+                    non_persistent_buffers=set(),
+                    user_outputs=(state.name,),
+                )
+                program = SimpleNamespace(
+                    constants={},
+                    graph_module=graph_module,
+                    graph_signature=signature,
+                    state_dict={"state": torch.zeros(4)},
+                )
+                builder = graph_builder_module.VkGraphBuilder(
+                    program,
+                    graph_builder_module.DelegateMappingBuilder(
+                        generated_identifiers=True
+                    ),
+                    alias_buffer_mutations=True,
+                )
+
+                serialized_graph = builder.build_graph()
+
+                self.assertEqual(
+                    serialized_graph.output_ids,
+                    [builder.node_to_value_ids[mutation_input]],
+                )
+
     def _generate_random_const_tensors(self, num_tensors: int) -> List[torch.Tensor]:
         """
         Helper function to generate `num_tensor` buffers of random sizes and random contents,
@@ -269,3 +382,29 @@ class TestSerialization(unittest.TestCase):
         out_vk_graph = flatbuffer_to_vk_graph(bs)
 
         self.assertEqual(in_vk_graph, out_vk_graph)
+
+    def test_serialize_nonfinite_scalar_values(self) -> None:
+        vk_graph = VkGraph(
+            version="1",
+            chain=[],
+            values=[
+                VkValue(value=Double(float("-inf"))),
+                VkValue(value=Double(float("inf"))),
+                VkValue(value=Double(float("nan"))),
+                VkValue(
+                    value=DoubleList(
+                        items=[float("-inf"), 0.0, float("inf"), float("nan")]
+                    )
+                ),
+            ],
+            input_ids=[],
+            output_ids=[],
+            constants=[],
+            shaders=[],
+        )
+
+        serialized = convert_to_flatbuffer(vk_graph)
+
+        self.assertGreater(len(serialized), 0)
+        self.assertTrue(math.isinf(vk_graph.values[0].value.double_val))
+        self.assertTrue(math.isnan(vk_graph.values[2].value.double_val))

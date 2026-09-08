@@ -47,7 +47,7 @@ namespace {
 uint64_t q8ta_conv2d_im2col_scratch_limit(ComputeGraph& graph) {
   constexpr uint64_t kMaxBatchedIm2ColScratchBytes = 32ULL * 1024ULL * 1024ULL;
   const uint64_t device_scratch_limit =
-      graph.context()->adapter_ptr()->max_buffer_numel();
+      graph.context()->adapter_ptr()->max_buffer_nbytes();
   return device_scratch_limit < kMaxBatchedIm2ColScratchBytes
       ? device_scratch_limit
       : kMaxBatchedIm2ColScratchBytes;
