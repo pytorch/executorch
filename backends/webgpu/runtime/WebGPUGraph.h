@@ -12,11 +12,16 @@
 
 #include <cstdint>
 #include <functional>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <executorch/backends/webgpu/runtime/WebGPUDispatchMath.h>
+#include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch::backends::webgpu {
@@ -34,6 +39,8 @@ struct WebGPUTensor {
   // Serialized (GPU-side) element type, used to narrow wider host inputs.
   size_t elem_size = 0;
   bool is_int = false;
+  // Exact BOOL tag for byte-packed WGSL storage.
+  bool is_bool = false;
   // Exactly int8 (not uint8/bool), so int8-only ops can guard their dtype.
   bool is_int8 = false;
 };
@@ -43,6 +50,15 @@ struct InputData {
   const void* data = nullptr;
   size_t nbytes = 0;
   bool host_is_int64 = false;
+  bool host_is_fp32 = false;
+};
+
+// Host destination for a graph output. host_is_fp32 gates the fp16->fp32 widen
+// on readback (mirrors InputData's guard on the copy_inputs narrow path).
+struct OutputData {
+  void* data = nullptr;
+  size_t nbytes = 0;
+  bool host_is_fp32 = false;
 };
 
 struct WebGPUDispatch {
@@ -59,6 +75,37 @@ struct WebGPUDispatch {
   size_t copy_nbytes = 0;
 };
 
+struct WebGPUBufferBinding {
+  WGPUBuffer buffer = nullptr;
+  uint64_t offset = 0;
+  uint64_t size = 0;
+};
+
+struct WebGPUSpecializationConstant {
+  std::string name;
+  double value = 0.0;
+};
+
+struct WebGPUDispatchGrid {
+  uint32_t x = 1;
+  uint32_t y = 1;
+};
+
+struct WebGPUComputeDispatchDescriptor {
+  std::string shader_name;
+  std::string entry_point = "main";
+  std::string kernel_name;
+  std::vector<WebGPUBufferBinding> bindings;
+  std::vector<WebGPUSpecializationConstant> constants;
+  WebGPUDispatchGrid grid;
+};
+
+std::string make_compute_pipeline_key(
+    const WebGPUComputeDispatchDescriptor& descriptor);
+
+void validate_compute_dispatch_descriptor(
+    const WebGPUComputeDispatchDescriptor& descriptor);
+
 struct OutputCopy {
   WGPUBuffer src_buffer = nullptr;
   WGPUBuffer staging_buffer = nullptr;
@@ -72,11 +119,6 @@ struct ConstantSource {
   uint64_t inline_offset = UINT64_MAX; // offset into constant_data_; else key
   std::string named_key; // non-empty => fetch from named_data_map_
   size_t nbytes = 0;
-};
-
-struct ExecuteConfig {
-  size_t chunk_size = 0;
-  size_t initial_chunk_size = 0;
 };
 
 struct WebGPUMemoryStats {
@@ -96,6 +138,13 @@ struct WebGPUMemoryStats {
   }
 };
 
+struct WebGPUGraphConfig {
+  bool f16_kv_cache = false;
+  bool f16_accumulate_gemm = false;
+  int sdpa_query_tile = 0;
+  bool record_q4gsw_decode_route = false;
+};
+
 class WebGPUGraph {
  public:
   WebGPUGraph();
@@ -106,19 +155,25 @@ class WebGPUGraph {
   void build(
       const void* flatbuffer_data,
       const uint8_t* constant_data,
+      size_t constant_data_size,
       const executorch::runtime::NamedDataMap* named_data_map = nullptr,
-      bool f16_kv_cache = false,
-      bool f16_accumulate_gemm = false);
+      WebGPUGraphConfig config = {});
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
 
-  // Execute all recorded dispatches.
-  void execute();
+  WebGPUExecutionPlan make_execution_plan(
+      const WebGPUGraphExecutionOptions& options) const;
+
+  // Execute the dispatches selected by a plan created for this graph. Returns
+  // the number of GPU queue submissions performed.
+  size_t execute(const WebGPUExecutionPlan& plan);
 
   // Copy output tensor data from GPU buffers back to host pointers.
   // Uses mapAsync + ASYNCIFY in Wasm.
-  void copy_outputs(std::vector<std::pair<void*, size_t>>& outputs);
+  void copy_outputs(
+      std::vector<OutputData>& outputs,
+      const WebGPUExecutionPlan& plan);
 
   const std::vector<int>& input_ids() const {
     return input_ids_;
@@ -197,12 +252,41 @@ class WebGPUGraph {
     symint_dim_sources_.push_back({symint_id, tensor_id, dim});
   }
 
+  bool tensor_has_dynamic_dims(int tensor_id) const {
+    return dynamic_tensor_ids_.count(tensor_id) != 0;
+  }
+
+  bool has_dynamic_shapes() const {
+    return !dynamic_tensor_ids_.empty();
+  }
+
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
   void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
   // Per-SymInt resize hook; mirrors Vulkan DynamicDispatchNode::trigger_resize.
   void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
+    if (symint_id < 0 || symint_id >= num_values() ||
+        get_value_type(symint_id) != ValueType::SymInt) {
+      throw std::runtime_error("WebGPU resize: trigger must be a SymInt");
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null SymInt resize hook");
+    }
     resize_hooks_.push_back({symint_id, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_resize_hook(
+      int symint_id,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null SymInt resize hook");
+    }
+    add_resize_hook(
+        symint_id, [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
   }
 
   // Set a graph input's live dims (<= max) + dirty it; static path stays inert.
@@ -219,7 +303,29 @@ class WebGPUGraph {
   void add_tensor_resize_hook(
       int trigger_tensor_id,
       std::function<void(WebGPUGraph&)> fn) {
+    if (trigger_tensor_id < 0 || trigger_tensor_id >= num_values() ||
+        get_value_type(trigger_tensor_id) != ValueType::Tensor) {
+      throw std::runtime_error("WebGPU resize: trigger must be a Tensor");
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null tensor resize hook");
+    }
     tensor_resize_hooks_.push_back({trigger_tensor_id, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_tensor_resize_hook(
+      int trigger_tensor_id,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null tensor resize hook");
+    }
+    add_tensor_resize_hook(
+        trigger_tensor_id,
+        [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
   }
 
   // Run hooks for changed SymInts and tensors, then clear; call before execute.
@@ -231,6 +337,26 @@ class WebGPUGraph {
   }
   size_t num_dispatches() const {
     return dispatches_.size();
+  }
+
+  size_t register_dispatch_route_group(
+      const std::vector<utils::DispatchRange>& ranges) {
+    validate_dynamic_dispatch_route_ranges(ranges);
+    return dispatch_routes_.register_group(
+        dispatches_.size(), ranges, [&](size_t i) {
+          return dispatches_[i].kind == WebGPUDispatch::Kind::Compute;
+        });
+  }
+
+  void select_dispatch_route(
+      size_t group,
+      size_t active_route,
+      const std::vector<utils::WgCount>& active_grids) {
+    dispatch_routes_.select(
+        group, active_route, active_grids, [&](size_t i, utils::WgCount grid) {
+          dispatches_[i].workgroup_count_x = grid.x;
+          dispatches_[i].workgroup_count_y = grid.y;
+        });
   }
 
   WGPUDevice device() const {
@@ -286,6 +412,24 @@ class WebGPUGraph {
     owned_uniform_buffers_.push_back(buffer);
   }
 
+  template <typename Block>
+  WGPUBuffer create_params_buffer(const Block& data) {
+    static_assert(
+        std::is_trivially_copyable<Block>::value,
+        "WebGPU parameter blocks must be trivially copyable");
+    static_assert(
+        sizeof(Block) % 4u == 0u,
+        "WebGPU parameter blocks must have a 4-byte-aligned size");
+    WGPUBuffer buffer = make_uniform_buffer(&data, sizeof(Block));
+    try {
+      own_uniform_buffer(buffer);
+    } catch (...) {
+      wgpuBufferRelease(buffer);
+      throw;
+    }
+    return buffer;
+  }
+
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
 
@@ -321,6 +465,26 @@ class WebGPUGraph {
   // Create a mapped-at-creation uniform buffer from `size` bytes and track it
   // in the memory stats. Shared helper for ops needing a uniform Params buffer.
   WGPUBuffer make_uniform_buffer(const void* data, size_t size);
+
+  size_t add_compute_dispatch(
+      const WebGPUComputeDispatchDescriptor& descriptor);
+
+  template <typename Context>
+  size_t add_dynamic_compute_dispatch(
+      const WebGPUComputeDispatchDescriptor& descriptor,
+      int trigger_tensor_id,
+      WebGPUDispatchGrid (*pick_grid)(const WebGPUGraph&, const Context&),
+      Context context) {
+    if (pick_grid == nullptr) {
+      throw std::runtime_error("WebGPU dynamic dispatch: null grid picker");
+    }
+    return add_dynamic_compute_dispatch_impl(
+        descriptor,
+        trigger_tensor_id,
+        [pick_grid, context = std::move(context)](const WebGPUGraph& graph) {
+          return pick_grid(graph, context);
+        });
+  }
 
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
@@ -365,6 +529,19 @@ class WebGPUGraph {
     return value_types_[id];
   }
 
+  // Memory-aliasing group id for the tensor's shared buffer, or -1 if it has
+  // none; fusion passes use this to reject candidates aliased with something
+  // the planner may reuse outside the fusion's control.
+  int mem_obj_id(int id) const {
+    return tensor_mem_obj_ids_[id];
+  }
+
+  // True if id is a prepack-routed constant with a recorded source (inline
+  // offset or named-data-map key); fusion passes require direct constants.
+  bool has_constant_source(int id) const {
+    return constant_sources_.count(id) != 0;
+  }
+
  public:
   // True when the sdpa K/V cache is stored f16-packed (runtime opt-in).
   bool kv_f16() const {
@@ -374,13 +551,27 @@ class WebGPUGraph {
   // True when the q4gsw steel prefill GEMM uses the lossy f16-accumulate kernel
   // (runtime opt-in; perplexity-gated, not bit-exact).
   bool f16_accumulate_gemm() const {
-    return f16_accumulate_gemm_;
+    return config_.f16_accumulate_gemm;
+  }
+
+  // Runtime-selected SDPA query-tile candidate; 0 = geometry default (Q16),
+  // 32 = Q32 candidate.
+  int sdpa_query_tile() const {
+    return config_.sdpa_query_tile;
+  }
+
+  const WebGPUGraphConfig& config() const {
+    return config_;
   }
 
  private:
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  void record_active_route(const std::string& kernel_name);
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
-  bool f16_accumulate_gemm_ = false;
+  WebGPUGraphConfig config_;
 
  private:
   WGPUInstance instance_ = nullptr;
@@ -406,6 +597,7 @@ class WebGPUGraph {
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
   std::vector<SymIntDimSource> symint_dim_sources_;
+  std::unordered_set<int> dynamic_tensor_ids_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
   struct ResizeHook {
@@ -423,6 +615,29 @@ class WebGPUGraph {
   };
   std::vector<TensorResizeHook> tensor_resize_hooks_;
   std::unordered_set<int> dirty_tensors_;
+
+  // Dynamic grids are stored separately so ordinary dispatches remain compact.
+  // The graph owns each dispatch index and picker; ops only provide typed
+  // context and a named grid function.
+  struct DynamicDispatchGrid {
+    size_t dispatch_index;
+    int trigger_tensor_id;
+    std::function<WebGPUDispatchGrid(const WebGPUGraph&)> pick_grid;
+  };
+  std::vector<DynamicDispatchGrid> dynamic_dispatch_grids_;
+
+  struct PendingDynamicDispatchGrid {
+    size_t dispatch_index;
+    WebGPUDispatchGrid grid;
+  };
+  std::vector<PendingDynamicDispatchGrid> pending_dynamic_dispatch_grids_;
+
+  size_t add_dynamic_compute_dispatch_impl(
+      const WebGPUComputeDispatchDescriptor& descriptor,
+      int trigger_tensor_id,
+      std::function<WebGPUDispatchGrid(const WebGPUGraph&)> pick_grid);
+  void validate_dynamic_dispatch_route_ranges(
+      const std::vector<utils::DispatchRange>& ranges) const;
 
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;
@@ -454,12 +669,16 @@ class WebGPUGraph {
   // Pre-computed output copy descriptors for execute().
   std::vector<OutputCopy> output_copies_;
 
+  std::vector<SuppressibleOutput> suppressible_outputs_;
+
   std::vector<WebGPUDispatch> dispatches_;
+  utils::DispatchRouteRegistry dispatch_routes_;
 
   // Prepack-routed constant sources (offset/named-key + size); the prepack node
   // materializes these once. constant_data_/named_data_map_ point at the .pte
   // bytes and are valid only during build().
   const uint8_t* constant_data_ = nullptr;
+  size_t constant_data_size_ = 0;
   const executorch::runtime::NamedDataMap* named_data_map_ = nullptr;
   std::unordered_map<int, ConstantSource> constant_sources_;
 
@@ -471,43 +690,11 @@ class WebGPUGraph {
   std::unordered_map<std::string, WGPUBindGroupLayout> bgl_cache_;
 
   size_t uniform_buffer_bytes_ = 0;
-
-  // QKV-concat fusion: one detected attention q/k/v linear
-  // triple sharing an input activation (value ids + shapes), fused in build()
-  // into a single multi-output q4gsw GEMM that scatter-writes q/k/v. Only used
-  // during build(); inert (never populated) when no q/k/v triple matches.
-  struct QkvFusionGroup {
-    int input_id = -1;
-    int out_q = -1, out_k = -1, out_v = -1;
-    int weight_q = -1, weight_k = -1, weight_v = -1;
-    int scales_q = -1, scales_k = -1, scales_v = -1;
-    uint32_t Nq = 0, Nk = 0, Nv = 0; // 2048, 512, 512
-    uint32_t K = 0, K_packed = 0, group_size = 0, num_groups = 0;
-    uint32_t padded_N_q = 0, padded_N_k = 0, padded_N_v = 0;
-    unsigned op_idx[3] = {0, 0, 0}; // the 3 q/k/v linear op-chain indices
-    size_t sep_dispatch[3] = {
-        0,
-        0,
-        0}; // their dispatch indices (filled in build())
-    size_t fused_dispatch = 0; // the fused GEMM dispatch index
-    WGPUBuffer fused_params =
-        nullptr; // the fused params UBO (rewritten by the hook)
-  };
-  // Concat the 3 packed weights (row-stack) + scales (strided gather) into
-  // fused buffers, then record ONE fused-GEMM dispatch (bespoke 8-binding
-  // layout) that writes the 3 original q/k/v output buffers, plus a 3-output
-  // resize hook.
-  void add_qkv_fused_dispatch(QkvFusionGroup& g);
-  void add_qkv_fused_hook(const QkvFusionGroup& g);
-
-  // SwiGLU fusion: emit ONE fused elementwise dispatch
-  // computing out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2
-  // muls. `out` is repointed to a private pooled buffer (aliasing guard);
-  // `gate` is likewise given a private pooled buffer at its producer op by the
-  // build() walk (the planner reuse-aliases up onto gate's slot, so up_proj
-  // would stomp gate before the fused reads it). Only used during build(); the
-  // detection maps are empty (inert) when no SwiGLU triple matches.
-  void add_swiglu_fused_dispatch(int gate_id, int up_id, int out_id);
 };
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+extern uint32_t g_last_route_mask;
+extern uint32_t g_last_route_conflict_count;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 } // namespace executorch::backends::webgpu

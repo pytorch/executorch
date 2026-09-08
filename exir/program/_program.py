@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,7 +33,10 @@ from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import (
+    contains_any_call_fn_target_op,
+    get_control_flow_submodules,
+)
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import PassBase
@@ -1111,6 +1114,14 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     return check_op_support is None
 
 
+def _apply_pre_decomposition_transforms(
+    program: ExportedProgram, partitioners: List[Partitioner]
+) -> ExportedProgram:
+    for partitioner in partitioners:
+        program = partitioner.transform_for_pre_decomposition(program)
+    return program
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1134,11 +1145,13 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        partitioners_for_program = partitioner.get(name, [])
+        program = _apply_pre_decomposition_transforms(program, partitioners_for_program)
+
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
 
         if partitioner is not None:
-            partitioners_for_program = partitioner.get(name, [])
             final_ops_to_preserve = set()
 
             # Decompose by default if there are no partitioners for the method
@@ -1166,7 +1179,12 @@ def _gen_edge_manager_for_partitioners(
                         if table.pop(op, None) is not None:
                             ops_needing_preservation.append(op)
 
-                    program = program.run_decompositions(table)
+                    # The initial ``run_decompositions({})`` above has already
+                    # functionalized the graph. This second call only applies
+                    # operator decompositions from the remaining table, so it is
+                    # safe to skip when none of those targets occur in the graph.
+                    if contains_any_call_fn_target_op(program.graph_module, table):
+                        program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
                     # EDGE_DO_NOT_DECOMP path for the partitioner
@@ -1342,6 +1360,8 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
+        for method in edge_manager.methods:
+            lift_constant_tensor_pass(edge_manager.exported_program(method))
 
         if generate_etrecord:
             edge_manager._etrecord.add_extra_export_modules(

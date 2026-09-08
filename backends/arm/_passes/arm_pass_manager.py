@@ -11,17 +11,17 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from executorch.backends.arm._passes import (
+from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     AccumulateIndexPutPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
     CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
+    CastIntComparisonInputsPass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
     ConstantFoldingPass,
     ControlFlowConstInlinePass,
-    Conv1dUnsqueezePass,
     ConvertEluFamilyToEluPass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
@@ -69,6 +69,7 @@ from executorch.backends.arm._passes import (
     DecomposeIndexSelectToGatherPass,
     DecomposeIndexTensorToGatherPass,
     DecomposeIntPowPass,
+    DecomposeLargeStrideMaxPool2dForU55Pass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinalgVectorNormPass,
@@ -83,6 +84,7 @@ from executorch.backends.arm._passes import (
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
     DecomposePReLUPass,
+    DecomposeProdPass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -135,6 +137,7 @@ from executorch.backends.arm._passes import (
     NormalizeDelegateIOLayoutPass,
     NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
+    NormalizeMaxPool2dInputRankPass,
     NormalizeTransformInputPlaceholdersPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
@@ -144,8 +147,10 @@ from executorch.backends.arm._passes import (
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
+    RemoveSafeSoftmaxGuardPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    ResolveViewCopyInferredDimPass,
     RewriteAdaptiveAvgPool2dPass,
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
@@ -170,8 +175,9 @@ from executorch.backends.arm._passes import (
 )
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import (
+from executorch.backends.arm.common.pipeline_config import (  # type: ignore[attr-defined]
     LeakyReLULoweringConfig,
+    SDPASafeSoftmaxGuardPolicy,
     SoftmaxDecompositionConfig,
 )
 from executorch.backends.arm.tosa.specification import (
@@ -179,7 +185,6 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-
 from executorch.exir import ExportedProgram
 from executorch.exir._program_utils import _get_updated_graph_signature
 from executorch.exir.pass_base import (
@@ -286,8 +291,10 @@ class ArmPassManager(ExportedProgramPassManager):
         self.configure_skip_passes()
 
     def configure_skip_passes(self) -> tuple[type, ...]:
-        """Configures the pass manager to skip certain passes based on the
-        ArmPassPipelineConfig class found in the compile spec.
+        """Configure pass manager skip rules.
+
+        Uses the ArmPassPipelineConfig class found in the compile spec.
+
         """
         skip_set: set[type] = set()
 
@@ -299,8 +306,19 @@ class ArmPassManager(ExportedProgramPassManager):
                 pass
             case SoftmaxDecompositionConfig.STABLE:
                 skip_set.add(DecomposeMaskedFillPass)
+
         if config.leaky_relu == LeakyReLULoweringConfig.TABLE:
             skip_set.add(DecomposeLeakyReLUPass)
+
+        match config.sdpa_safe_softmax_guard:  # type: ignore[attr-defined]
+            case (
+                SDPASafeSoftmaxGuardPolicy.PRESERVE
+                | SDPASafeSoftmaxGuardPolicy.REMOVE_WHEN_PROVEN
+            ):
+                skip_set.add(RemoveSafeSoftmaxGuardPass)
+            case SDPASafeSoftmaxGuardPolicy.REMOVE:
+                pass
+
         self._skip_pass_types = tuple(skip_set)
         skip_names = [skipped_pass.__name__ for skipped_pass in self._skip_pass_types]
         logger.debug(f"Passes in skip list: {skip_names}")
@@ -308,8 +326,7 @@ class ArmPassManager(ExportedProgramPassManager):
         return self._skip_pass_types
 
     def validate_constraints_mandatory(self):
-        """Validates that necessary passes have run before transforming to
-        backend.
+        """Validate that required passes run before backend transforms.
 
         Note that this differs from the original validate_constraints function,
         which only checks the order of passes.
@@ -338,6 +355,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self, target_pass_type: type, passes: list[ExportPass]
     ) -> None:
         """Register passes to be inserted before instances of target_pass_type.
+
         Insertions are deferred and applied via _apply_pass_insertions().
 
         Args:
@@ -353,6 +371,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self, target_pass_type: type, passes: list[ExportPass]
     ) -> None:
         """Register passes to be inserted after instances of target_pass_type.
+
         Insertions are deferred and applied via _apply_pass_insertions().
 
         Args:
@@ -415,8 +434,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self._insertions_applied = True
 
     def _configure_pass_insertions(self, exported_program: ExportedProgram) -> None:
-        """Hook for subclasses to configure pass insertions. Called at the START
-        of pipeline construction, before any passes are added.
+        """Configure pass insertions before pipeline construction.
 
         Subclasses can override this to call insert_passes_before/after.
 
@@ -438,6 +456,12 @@ class ArmPassManager(ExportedProgramPassManager):
     def _tosa_context(self, graph_module: GraphModule) -> TosaLoweringContext:
         shape_env = _get_shape_env_from_gm(graph_module)
         return TosaLoweringContext(self.tosa_spec, shape_env)
+
+    def transform_for_pre_decomposition_pipeline(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply Arm passes before default ATen decompositions."""
+        return exported_program
 
     def _transform_graph_module(self, graph_module: GraphModule):
         # TFA and control-flow submodule paths operate on bare GraphModules
@@ -501,13 +525,20 @@ class ArmPassManager(ExportedProgramPassManager):
                 ConvertELUParamsPass(),
                 ControlFlowConstInlinePass(),
                 NormalizeWhileInitialArgsPass(use_exir_clone=True),
+                RemoveSafeSoftmaxGuardPass(),
             ]
         )
 
         # Fold Q/DQ nodes, insert INT8/INT32 rescales, decompose quantization nodes.
         self.add_passes(
             [
-                FoldAndAnnotateQParamsPass(exported_program),
+                FoldAndAnnotateQParamsPass(
+                    exported_program,
+                    preserve_partial_binary_tensor_qdq=(
+                        self.tosa_spec.support_float()
+                        or self.compile_spec._get_output_format() == "vgf"
+                    ),
+                ),
                 # Both hardtanh and relu are normalized to clamp by
                 # ConvertToClampPass; after q/dq folding above, adjacent clamps
                 # (e.g. from HardTanh+ReLU) are directly connected and can be
@@ -560,7 +591,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
-                DecomposeUnfoldToGatherPass(),
+                DecomposeUnfoldToGatherPass(use_slice=self.tosa_spec.is_U55_subset),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
                 CastInt64BuffersToInt32Pass(exported_program),
@@ -571,7 +602,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
-                Conv1dUnsqueezePass(),
             ]
         )
 
@@ -579,6 +609,7 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 ReplaceScalarWithTensorByProfilePass(),
+                CastIntComparisonInputsPass(),
                 RewriteLeLtToGeGtPass(),
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
                 DecomposePReLUPass(),
@@ -611,7 +642,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
+                NormalizeMaxPool2dInputRankPass(),
                 DecomposeMaxPool2dPass(),
+                DecomposeLargeStrideMaxPool2dForU55Pass(),
                 SizeAdjustInputPass(),
                 DecomposeUnsupportedBilinearResizePass(self.tosa_spec),
                 RewriteAdaptiveAvgPool2dPass(),
@@ -623,6 +656,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
                 BroadcastArgsPass(),
+                DecomposeProdPass(),
                 DecomposeSumPass(),
                 InsertTableOpsPass(exported_program),
                 RemoveNoopPass(),
@@ -641,10 +675,10 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMXFPConv2dPass(exported_program),
                 RewriteMXFPLinearPass(exported_program),
                 RewriteMatmulPass(),
-                RewritePadPass(),
                 FuseViewCopyTransformPass(),
                 PropagateViewCopyPermuteDownPass(self.compile_spec, exported_program),
                 PropagateViewCopyPermuteUpPass(self.compile_spec, exported_program),
+                RewritePadPass(),
                 # Propagation can leave a binary op with mismatched operand ranks,
                 # which TOSA rejects; re-match ranks before lowering.
                 MoveDataMovementOpsToSmallerDtypePass(),
@@ -657,6 +691,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 # permute pairs they expose.
                 RemoveNoopPass(),
                 CanonicalizeViewCopyPermutePass(),
+                # Fuse views again after permutes may have been replaced by views.
+                FuseViewCopyTransformPass(),
+                ResolveViewCopyInferredDimPass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]
@@ -669,8 +706,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 FuseEqualPlaceholdersPass(exported_program),
                 NormalizeTransformInputPlaceholdersPass(exported_program),
                 ExirToTosaPass(exported_program),
-                SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
+                ResolveViewCopyInferredDimPass(),
+                SymbolicToTosaShapesPass(),
                 FuseConsecutiveConcatShapesPass(),
                 RemoveNoopPass(),
                 # Fuse duplicates exposed by late rewrites before inserting rescales;
@@ -691,7 +729,6 @@ class ArmPassManager(ExportedProgramPassManager):
         self, exported_program: ExportedProgram, graph_module: GraphModule
     ):
         """Apply passes before transforming program to backend."""
-
         if not tosa_spec_in_set(
             self.tosa_spec,
             set(TosaSpecification.all_versions_and_profiles()),
@@ -737,6 +774,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     ConvertEluFamilyToEluPass(tfa_pass=True),
                     DecomposeGroupNormPass(tfa_pass=True),
                     DecomposeLayerNormPass(tfa_pass=True),
+                    DecomposeBatchNormNoStatsPass(tfa_pass=True),
                     DecomposeVarPass(tfa_pass=True),
                     DecomposeMeanDimPass(graph_module, self.tosa_spec, tfa_pass=True),
                     DecomposeAdaptiveAvgPool2dPass(tfa_pass=True),
@@ -796,4 +834,4 @@ class ArmPassManager(ExportedProgramPassManager):
                 ]
             )
 
-            return self._transform_graph_module(graph_module)
+            return GraphModulePassManager(self.passes)(graph_module).graph_module

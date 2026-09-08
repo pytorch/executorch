@@ -8,11 +8,14 @@
 
 import copy
 import hashlib
+import os
+import tempfile
 import unittest
 from typing import Any, cast
 
 import torch
 
+from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir.scalar_type import ScalarType
@@ -400,3 +403,34 @@ class TestNamedDataStore(unittest.TestCase):
         self.assertEqual(output.pte_data["key1"].buffer_index, 0)
         self.assertEqual(output.pte_data["key2"].buffer_index, 1)
         self.assertEqual(output.pte_data["key3"].buffer_index, 0)
+
+    def test_file_backed_data_dedup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [os.path.join(directory, f"data{i}") for i in range(2)]
+            for path in paths:
+                with open(path, "wb") as f:
+                    f.write(b"file-backed data")
+
+            with (
+                FileBackedData.move_from(paths[0]) as file1,
+                FileBackedData.move_from(paths[1]) as file2,
+            ):
+                store1 = NamedDataStore()
+                store1.add_named_data("key1", file1, external_tag="model")
+
+                store2 = NamedDataStore()
+                store2.add_named_data("key2", file2, external_tag="model")
+                output2 = store2.get_named_data_store_output()
+
+                store1.merge_named_data_store(output2)
+                output1 = store1.get_named_data_store_output()
+                self.assertEqual(1, len(output1.buffers))
+                self.assertIs(output1.buffers[0], file1)
+                self.assertIs(output2.buffers[0], file2)
+                self.assertEqual(2, len(os.listdir(directory)))
+
+                store3 = NamedDataStore()
+                store3.merge_named_data_store(output2)
+                self.assertIs(store3.buffers[0], file2)
+
+            self.assertEqual([], os.listdir(directory))

@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from exp.wgsl - DO NOT EDIT.
+// @generated from unary.wgsl - DO NOT EDIT.
 // wgsl-sha256: 3171399bc36acf9c1cb2a03c2a31038318203c4c63ab03c4881df7a660346020
 inline constexpr const char* kExpWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;

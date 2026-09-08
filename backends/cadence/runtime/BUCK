@@ -21,7 +21,6 @@ fbcode_target(_kind = runtime.python_library,
     ] + glob([
         "xtsc-cfg/**/*",
     ]),
-    typing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/devtools/bundled_program:config",

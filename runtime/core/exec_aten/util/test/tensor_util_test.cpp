@@ -31,6 +31,12 @@ class TensorUtilTest : public ::testing::Test {
   TensorFactory<ScalarType::Double> tf_double_;
   TensorFactory<ScalarType::Bool> tf_bool_;
 
+  static void SetUpTestSuite() {
+    // Fork-based death tests deadlock when libtorch's thread pool (~40
+    // threads) is active; use threadsafe style.
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+  }
+
   void SetUp() override {
     // As some of these tests cause ET_LOG to be called, the PAL must be
     // initialized first by calling runtime_init();

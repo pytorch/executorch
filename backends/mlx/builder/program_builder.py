@@ -152,6 +152,13 @@ class MLXProgramBuilder:
         # Unprefixed canonical-name → Slot for constants, populated by _build_io_maps().
         # Used by get_named_data_store() to look up tensors without prefix interference.
         self._constant_name_to_slot: Dict[str, Slot] = {}
+        # Per-weight memo for repacking handlers, keyed by the raw weight's
+        # canonical name. Lets a weight feeding two ops (a tied embedding and
+        # lm_head, say) be repacked once, which also makes it safe to release
+        # the raw tensor after the first repack.
+        self.repack_cache: Dict[str, Any] = {}
+        # True while classifying nodes rather than emitting; gates weight release.
+        self._check_only: bool = False
 
     def _prefix_key(self, name: str) -> str:
         """Apply the named-data key prefix for the .pte namespace.
@@ -289,6 +296,42 @@ class MLXProgramBuilder:
                 return (target, consts[target])
 
         raise KeyError(f"Unable to resolve placeholder {placeholder_name}")
+
+    def get_placeholder_target(self, node: Node) -> str:
+        """Resolve a placeholder to its state_dict / constants key.
+
+        Unlike get_placeholder_target_and_tensor this never touches the data, so
+        it still answers after the tensor has been released.
+        """
+        assert node.op == "placeholder"
+        for ispec in self.ep.graph_signature.input_specs:
+            if ispec.arg.name == node.name and ispec.target is not None:
+                return ispec.target
+        raise KeyError(f"Unable to resolve placeholder {node.name}")
+
+    def release_placeholder_tensor(self, node: Node) -> None:
+        """Drop a placeholder's data once a handler has finished repacking it.
+
+        A repacking handler replaces a raw weight with new constants, leaving
+        the original dead. It would otherwise stay in the ExportedProgram until
+        get_named_data_store() sweeps unused constants -- which only runs after
+        the whole graph is built, so every raw weight and every repacked weight
+        are live simultaneously (+16 GB on a 16 GB Q4_K model).
+
+        Only call this when the raw data is fully consumed: the lowering must
+        not reference the placeholder's slot in any emitted instruction, or it
+        will have no data to serialize (get_named_data_store raises in that
+        case rather than emitting a .pte with a missing weight).
+
+        Ignored during a support check. Those run against the caller's own
+        program rather than a delegate submodule, and torch still needs its
+        state dict afterwards -- deleting there fails later in
+        _unlift_exported_program_lifted_states. The check-only builder is
+        discarded anyway, so there is nothing to reclaim.
+        """
+        if self._check_only:
+            return
+        self._delete_constant_tensor(self.get_placeholder_target(node))
 
     def slot_to_tid(self, slot: Slot) -> Tid:
         """Convert a tensor Slot to a Tid, recording it for later remapping."""
@@ -523,7 +566,7 @@ class MLXProgramBuilder:
         for handler in matcher.find_patterns():
             handler.set_handlers(self)
 
-    def _process_nodes(self) -> None:  # noqa C901
+    def _process_nodes(self, check_only: bool = False) -> None:  # noqa C901
         """
         Common logic for processing all nodes: create slots, match patterns, run handlers.
 
@@ -536,7 +579,12 @@ class MLXProgramBuilder:
         The ordering is important: patterns must be matched before noops because
         some pattern body nodes (e.g., update_cache) have no users since they
         mutate in-place, but they're not dead - they're handled by the pattern.
+
+        With ``check_only``, a handler that provides a support check is asked
+        instead of being run. Only support status is populated in that mode; no
+        instructions are emitted for those nodes and no constants are repacked.
         """
+        self._check_only = check_only
         self._make_io_slots()
 
         # Apply patterns BEFORE _mark_noop so pattern body nodes don't get
@@ -545,12 +593,31 @@ class MLXProgramBuilder:
         self._apply_patterns()
         self._mark_noop()
 
+        def mark_unsupported(n: Node, reason: str) -> None:
+            if n.meta.get("val", None) is not None:
+                self.slot_manager.make_or_get_slots(n)
+            self._mark_unsupported(n, reason)
+
         for n in self.ep.graph.nodes:
             if self._is_handled(n):
                 continue
 
             if self.node_info[n].handler is not None:
                 handler = self.node_info[n].handler
+                if (
+                    check_only
+                    and isinstance(handler, PatternHandler)
+                    and type(handler).has_support_check()
+                ):
+                    if handler.supported(self, n):
+                        self._mark_supported(n, handler=handler)
+                    else:
+                        mark_unsupported(
+                            n,
+                            f"{type(handler).__name__}.supported() rejected "
+                            f"target={n.target}",
+                        )
+                    continue
                 with self.tmp_scope():
                     handler(self, n)
                 self._mark_supported(n, handler=handler)
@@ -559,9 +626,7 @@ class MLXProgramBuilder:
             # Check input dtypes before processing node
             unsupported_dtype_msg = _check_input_dtypes(n)
             if unsupported_dtype_msg is not None:
-                if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slots(n)
-                self._mark_unsupported(n, unsupported_dtype_msg)
+                mark_unsupported(n, unsupported_dtype_msg)
                 continue
 
             if n.op in ("placeholder", "output"):
@@ -591,11 +656,19 @@ class MLXProgramBuilder:
 
             handler = REGISTRY.get_handler(n)
             if handler is None:
-                msg = f"no handler for target={n.target}"
-                if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slots(n)
-                self._mark_unsupported(n, msg)
+                mark_unsupported(n, f"no handler for target={n.target}")
                 continue
+
+            if check_only:
+                check = REGISTRY.get_support_check(n)
+                if check is not None:
+                    if check(self, n):
+                        self._mark_supported(n, handler=handler)
+                    else:
+                        mark_unsupported(
+                            n, f"{check.__name__} rejected target={n.target}"
+                        )
+                    continue
 
             try:
                 with self.tmp_scope():
@@ -604,9 +677,7 @@ class MLXProgramBuilder:
             except Exception as e:
                 trace_str = traceback.format_exc()
                 msg = f"{handler} failed for {n.target}: {e}.\n{trace_str}"
-                if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slots(n)
-                self._mark_unsupported(n, msg)
+                mark_unsupported(n, msg)
 
     def check_support_only(self) -> None:
         """
@@ -618,8 +689,12 @@ class MLXProgramBuilder:
 
         Use this method for ops_to_not_decompose() and similar queries where you
         only need to know support status, not the full compiled graph.
+
+        Handlers that provide a support check are asked rather than run, so they
+        do not repack their weights here; the rest are still run, because
+        whether a handler throws is the only way to know if it can lower a node.
         """
-        self._process_nodes()
+        self._process_nodes(check_only=True)
         # NOTE: We intentionally skip _verify_build() and _build_mlx_graph() here
         # because _build_mlx_graph() calls int() on tensor shapes which evaluates
         # SymInts and corrupts the shape_env. This method is used for
@@ -1075,7 +1150,15 @@ class MLXProgramBuilder:
         for canonical_name, _slot in entries:
             tensor = self._find_constant_tensor(canonical_name)
             if tensor is None:
-                continue
+                # Every entry here is a constant the graph references, so missing
+                # data means a handler released a weight it still needed (see
+                # release_placeholder_tensor). Serializing anyway would emit a
+                # .pte with a silently missing weight.
+                raise RuntimeError(
+                    f"No data for constant '{canonical_name}', which the MLX "
+                    f"graph references. A handler likely released it while a "
+                    f"lowering still needed it."
+                )
 
             t = tensor.detach().cpu().contiguous()
             named_data_store.add_named_data(

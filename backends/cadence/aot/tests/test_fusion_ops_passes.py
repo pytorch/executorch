@@ -534,12 +534,28 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         builder.output([quant])
         original_graph = builder.get_graph_module()
+        original_fx_graph = original_graph.graph
+        quant_node = original_graph.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )[0]
+        quant_node.meta["tier_2a_sentinel"] = object()
+        quant_sentinel = quant_node.meta["tier_2a_sentinel"]
         gm_before = copy.deepcopy(original_graph)
 
         p = FuseQuantDequantToRequantizePass()
         result = cast(PassResult, p(original_graph))
         self.assertTrue(result.modified)
+        self.assertIs(result.graph_module, original_graph)
+        self.assertIs(result.graph_module.graph, original_fx_graph)
         converted_graph = result.graph_module
+        requantize_node = converted_graph.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.cadence.requantize.per_tensor
+        )[0]
+        self.assertIs(requantize_node.meta["tier_2a_sentinel"], quant_sentinel)
+        self.assertIsNot(requantize_node.meta, quant_node.meta)
+        self.assertEqual(requantize_node.meta["val"].shape, x_input.shape)
+        self.assertEqual(requantize_node.meta["val"].dtype, torch.int8)
 
         # Validate numerical accuracy
         validate_numerics(
@@ -947,6 +963,51 @@ class TestFuseTransposeOrPermuteOpPairsPass(TestFusionPassesBase):
         else:
             raise ValueError(f"Unsupported op: {op}")
 
+    def test_per_channel_qdq_is_not_bypassed_without_axis_remap(self) -> None:
+        for op, x_data in (
+            (
+                exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+                torch.randn(1, 2, 3, 4),
+            ),
+            (
+                exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+                torch.randint(-128, 127, (1, 2, 3, 4), dtype=torch.int8),
+            ),
+        ):
+            with self.subTest(op=op):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", x_data)
+                scales = builder.placeholder("scales", torch.tensor([0.25, 0.5]))
+                zero_points = builder.placeholder(
+                    "zero_points", torch.tensor([0, 0], dtype=torch.int64)
+                )
+                to_nhwc = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                qdq = builder.call_operator(
+                    op=op,
+                    args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+                )
+                to_nchw = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(qdq, [0, 3, 1, 2]),
+                )
+                builder.output([to_nchw])
+                graph_module = builder.get_graph_module()
+
+                result = cast(
+                    PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module)
+                )
+
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    2,
+                )
+
 
 class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
     def _create_operator(
@@ -1156,12 +1217,27 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
         )
 
         # Check that the pass fuses the two transpose/permute ops.
+        original_fx_graph = gm.graph
+        output_node = next(
+            node for node in reversed(gm.graph.nodes) if node.op == "call_function"
+        )
+        output_node.meta["tier_2a_sentinel"] = object()
+        output_sentinel = output_node.meta["tier_2a_sentinel"]
+        output_shape = output_node.meta["val"].shape
         fusion_pass_result = FuseTransposeOrPermuteOpPairsPass()(gm)
         self.assertIsNotNone(fusion_pass_result)
+        self.assertIs(fusion_pass_result.graph_module, gm)
+        self.assertIs(fusion_pass_result.graph_module.graph, original_fx_graph)
         gm_after_pass = fusion_pass_result.graph_module
         if expected_is_fused:
             expected_op_counts[op1] = 0
             expected_op_counts[op2] = 0
+            replacement_view = gm_after_pass.graph.find_nodes(
+                op="call_function", target=exir_ops.edge.aten.view_copy.default
+            )[0]
+            self.assertIs(replacement_view.meta["tier_2a_sentinel"], output_sentinel)
+            self.assertIsNot(replacement_view.meta, output_node.meta)
+            self.assertEqual(replacement_view.meta["val"].shape, output_shape)
         self.check_op_counts(
             gm_after_pass,
             # pyre-fixme[6]: Incompatible parameter type

@@ -107,9 +107,12 @@ cd "$PACK_BUILD"
 if command -v zip &> /dev/null; then
     zip -r "$PACK_FILE" . -x "*.DS_Store" -x ".git*" -x "*/generated/*" -x "*.py"
 else
-    python3 -c "
-import zipfile, os
-with zipfile.ZipFile('$PACK_FILE', 'w', zipfile.ZIP_DEFLATED) as zf:
+    # Pass $PACK_FILE as sys.argv[1] so the path is safe against
+    # shell-special characters (single quotes in particular).
+    python3 - "$PACK_FILE" <<'PYEOF'
+import sys, zipfile, os
+pack_file = sys.argv[1]
+with zipfile.ZipFile(pack_file, 'w', zipfile.ZIP_DEFLATED) as zf:
     for root, dirs, files in os.walk('.'):
         dirs[:] = [d for d in dirs if not d.startswith('.') and d != 'generated']
         for f in files:
@@ -117,8 +120,8 @@ with zipfile.ZipFile('$PACK_FILE', 'w', zipfile.ZIP_DEFLATED) as zf:
                 continue
             p = os.path.join(root, f)
             zf.write(p, os.path.relpath(p, '.'))
-print(f'Created: $PACK_FILE')
-"
+print(f'Created: {pack_file}')
+PYEOF
 fi
 
 echo ""

@@ -165,6 +165,50 @@ python backends/qualcomm/tests/test_qnn_delegate.py \
 
 Always ask user for `--model`, `--host`, `--device`, `--build_folder` values.
 
+## Step 8b: Add Rework Framework Tests (Emulator-Based)
+
+Emulator-based tests at `backends/qualcomm/tests/rework/` — no device needed, preferred for CI. Read existing ops in `src/op.py` for reference patterns.
+
+**Add op class** to `tests/rework/src/op.py` (alphabetical by *class name* in `src/op.py` and by *function name* in `test.py`
+). All imports (`torch`, `itertools`, `unpack_fixtures`, `export_and_verify`) are file-level — don't add per-class. Class is auto-exported via `from ... import *` in test.py. Use `__class__` (Python idiom for enclosing class in `@staticmethod`):
+```python
+class MyOp(torch.nn.Module):
+    def __init__(self, param):
+        super().__init__()
+        self.param = param
+    def forward(self, x):
+        return torch.my_op(x, self.param)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        for param, inputs in [(1, (torch.randn(3,4),)), (2, (torch.randn(3,4),))]:
+            with subtests.test(msg=f"param:{param}"):
+                with expected as metrics:
+                    export_and_verify(module=__class__(param=param), inputs=inputs,
+                        qnn_config=qnn_config, quantizer=quantizer,
+                        compile_specs=compile_spec, metrics=metrics)
+```
+
+**Register test** in `tests/rework/htp/op/v68/test.py` (alphabetical). Function signature must be exactly `(request, kwargs)`:
+```python
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_my_op(request, kwargs):
+    MyOp.test(request, kwargs)  # noqa: F405
+```
+
+**Expected results** — list of 3: [8a, 16a, fp]. Options: `Tolerance()`, `Tolerance(rtol=1e-1)`, `CosineSimilarity(0.95)`, `pytest.raises(AssertionError)`, `SkipOutputCheck()`.
+
+**Run:** `pytest backends/qualcomm/tests/rework/htp/op/v68/test.py -k "test_my_op" -v`
+
+**Gotchas:**
+- Multi-output ops (sort, topk): only return float tensors — don't expose raw int indices as outputs (causes dtype/memory issues). Use `gather` to consume indices or return only values.
+- `subtests` fixture requires `pytest-subtests` package. Omit for single-case ops (use just `qnn_config, quantizer, compile_spec, expected` params).
+- Some ops fail on x86 emulator but work on-device (TopK/Sort fp, scatter.value quantized). Mark with `pytest.raises(AssertionError)`.
+
+---
+
 ## Step 9: Prevent Decomposition (if needed)
 
 If the ATen op exists in ExecuTorch's decomp table and you have a builder for it:

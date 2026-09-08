@@ -155,6 +155,7 @@ FUSED_RELU_OP_PATTERNS = (
 ALL_QPARAM_OP_PATTERNS = (
     [(target,) for target in _one_to_one]
     + ACTIVATION_FUNCTION_PATTERNS
+    + combo_pattern(BATCH_NORM_OPS)
     + CONV_OP_PATTERNS
     + LINEAR_OP_PATTERNS
     + BINARY_OP_PATTERNS
@@ -220,7 +221,10 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.ge.Scalar,),
         (torch.ops.aten.eq.Scalar,),
         (torch.ops.aten.ne.Scalar,),
+        # TFA decomposes these recurrent ops after quantization support is
+        # selected, so the original operators must be admitted here.
         (torch.ops.aten.lstm.input,),
+        (torch.ops.aten.lstm_cell.default,),
         (torch.ops.aten.rnn_tanh.input,),
         (torch.ops.aten.rnn_relu.input,),
         (torch.ops.aten.gru.input,),

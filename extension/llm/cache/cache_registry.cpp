@@ -69,6 +69,14 @@ Result<std::shared_ptr<CacheBase>> CacheBuilderRegistry::build(
         kind.c_str());
     builder = it->second;
   }
+  // Checked here rather than in each cache: `layers` is indexed directly, so a
+  // list that is neither size 1 nor n_layers reads past the end.
+  ET_CHECK_OR_RETURN_ERROR(
+      valid(cfg),
+      InvalidArgument,
+      "cache: invalid CacheConfig for %s:%s",
+      backend_id.c_str(),
+      kind.c_str());
   return builder(cfg);
 }
 

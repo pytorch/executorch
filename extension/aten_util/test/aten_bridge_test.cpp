@@ -296,3 +296,85 @@ TEST(ATenBridgeTest, AliasETensorToATenTensorFailUnsupportedDimOrder) {
   torch::executor::Tensor etensor(&tensor_impl);
   ET_EXPECT_DEATH(alias_etensor_to_attensor(at_tensor, etensor), "");
 }
+
+TEST(ATenBridgeTest, DeviceMapping) {
+  // Needs no accelerator: only the mapping is under test.
+  using executorch::runtime::etensor::Device;
+  using executorch::runtime::etensor::DeviceType;
+
+  EXPECT_EQ(
+      executorch_to_torch_device(Device(DeviceType::CPU)).type(),
+      c10::DeviceType::CPU);
+  EXPECT_EQ(
+      executorch_to_torch_device(Device(DeviceType::CUDA, 1)).type(),
+      c10::DeviceType::CUDA);
+  EXPECT_EQ(executorch_to_torch_device(Device(DeviceType::CUDA, 1)).index(), 1);
+}
+
+TEST(ATenBridgeTest, DeviceMappingAbortsOnUnknownType) {
+  using executorch::runtime::etensor::Device;
+  using executorch::runtime::etensor::DeviceType;
+  ET_EXPECT_DEATH(
+      (void)executorch_to_torch_device(Device(static_cast<DeviceType>(99))),
+      "");
+}
+
+TEST(ATenBridgeTest, ReverseDeviceMapping) {
+  // Needs no accelerator: only the mapping is under test.
+  using executorch::runtime::etensor::DeviceType;
+
+  const auto cpu =
+      torch_to_executorch_device(c10::Device(c10::DeviceType::CPU));
+  ASSERT_TRUE(cpu.has_value());
+  EXPECT_EQ(cpu->type(), DeviceType::CPU);
+
+  const auto cuda =
+      torch_to_executorch_device(c10::Device(c10::DeviceType::CUDA, 7));
+  ASSERT_TRUE(cuda.has_value());
+  EXPECT_EQ(cuda->type(), DeviceType::CUDA);
+  EXPECT_EQ(cuda->index(), 7);
+}
+
+TEST(ATenBridgeTest, ReverseDeviceMappingReportsAnUnrepresentableDevice) {
+  // Reported rather than fatal, unlike the other direction: a caller can hand
+  // in any device PyTorch supports, and the caller is the one holding the
+  // context worth putting in the error.
+  EXPECT_FALSE(torch_to_executorch_device(c10::Device(c10::DeviceType::Meta))
+                   .has_value());
+}
+
+TEST(ATenBridgeTest, AliasATTensorToETensorHandlesAnEmptyTensor) {
+  // An empty tensor has a null data pointer, so this is the only case that
+  // distinguishes dropping the device, passing it through options alone (which
+  // raises), and passing target_device. Needs no accelerator: nothing
+  // allocates.
+  auto at_tensor = at::empty({0});
+  std::vector<Tensor::SizesType> sizes(
+      at_tensor.sizes().begin(), at_tensor.sizes().end());
+  auto dim_order = get_default_dim_order(at_tensor);
+  std::vector<Tensor::StridesType> strides(
+      at_tensor.strides().begin(), at_tensor.strides().end());
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      at_tensor.dim(),
+      sizes.data(),
+      /*data=*/nullptr,
+      dim_order.data(),
+      strides.data(),
+      executorch::runtime::TensorShapeDynamism::STATIC,
+      executorch::runtime::etensor::DeviceType::CUDA,
+      0);
+  torch::executor::Tensor etensor(&tensor_impl);
+
+  auto aliased = alias_attensor_to_etensor(etensor);
+  EXPECT_EQ(aliased.numel(), 0);
+  EXPECT_EQ(aliased.device().type(), c10::DeviceType::CUDA);
+  EXPECT_EQ(aliased.device().index(), 0);
+  // The dispatch key too, not just the label. The key comes from the options
+  // while the label can come from target_device, so a call site that passes the
+  // device only as target_device still satisfies the checks above and produces
+  // a tensor that dispatches to CPU kernels.
+  EXPECT_TRUE(aliased.is_cuda());
+  EXPECT_TRUE(aliased.key_set().has(c10::DispatchKey::CUDA));
+}

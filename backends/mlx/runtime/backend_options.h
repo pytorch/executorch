@@ -42,6 +42,14 @@ inline constexpr char kClearCacheIntervalKey[] = "clear_cache_interval";
 // errors otherwise). Saves one full mutable-buffer (KV-cache) copy per handle.
 inline constexpr char kSkipMutableBufferInitKey[] = "skip_mutable_buffer_init";
 
+// Per-model runtime-spec key (string). Names the off-graph KV cache this handle
+// binds to: the runner creates the cache, installs it in the process-global
+// CacheRegistry under this key, and the delegate looks it up in init(). The
+// DelegateHandle is opaque to the host, so the key is the only rendezvous
+// channel. Unset means no cache, and any update_and_attend node then fails at
+// execute() rather than silently attending nothing.
+inline constexpr char kCacheKeyKey[] = "cache_key";
+
 } // namespace mlx
 } // namespace backends
 } // namespace executorch

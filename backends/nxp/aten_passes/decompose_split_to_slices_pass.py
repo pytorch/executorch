@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, TypeAlias
+from typing import TypeAlias
 
 import torch
 from torch._subclasses import FakeTensor, FakeTensorMode
@@ -150,7 +150,7 @@ class DecomposeSplitToSlicesPass(PassBase):
         split_node.replace_all_uses_with(input_node)
         self.graph_module.graph.erase_node(split_node)
 
-    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: GraphModule) -> PassResult:
         self.graph_module = graph_module
         made_changes = False
 

@@ -12,9 +12,8 @@
 // is opaque to the host, so the runner (which knows the cache kind) creates the
 // cache and binds it to the delegate through a process-global registry; the two
 // sides rendezvous on a cache_key passed as a runtime backend-load option.
-// Caches are owned as CacheBase* and the faces are recovered via
-// as_control()/as_planner() (no RTTI). This layer is delegate-specific and may
-// use ExecuTorch Error/Result directly; the cache core (cache.h) stays ET-free.
+// Caches are owned as CacheBase* and the faces are recovered through its as_*
+// accessors (no RTTI), each null for a face the cache does not implement.
 
 #include <functional>
 #include <map>

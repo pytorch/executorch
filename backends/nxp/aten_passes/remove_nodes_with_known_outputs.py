@@ -150,7 +150,7 @@ class RemoveNodesWithKnownOutputs(PassBase):
             for get_item in users
         )
 
-    def call(self, module: GraphModule) -> bool:
+    def call(self, module: GraphModule) -> PassResult:
         self.module = module
         made_changes = False
 

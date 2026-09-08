@@ -95,13 +95,17 @@ fbcode_target(_kind = runtime.python_test,
         "test_xnnpack_utils.py",
     ],
     deps = [
+        "//executorch/backends/test/harness:tester",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/devtools:lib",
         "//executorch/devtools/bundled_program:config",
         "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/capture:config",
         "//executorch/exir/passes:constant_prop_pass",
+        "//executorch/runtime:runtime",
         "//pytorch/ao:torchao",  # @manual
     ],
     external_deps = [

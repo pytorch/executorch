@@ -13,7 +13,8 @@
   <name>ExecuTorch</name>
   <description overview="Documentation/README.md">ExecuTorch: PyTorch Edge Runtime for on-device AI inference on Arm Cortex-M processors.</description>
   
-  <url>https://github.com/pytorch/executorch/releases/download/%{RELEASE_VERSION}%/</url>
+  <!-- Release tags carry a leading 'v'; without it this path 404s. -->
+  <url>https://github.com/pytorch/executorch/releases/download/v%{RELEASE_VERSION}%/</url>
   <license>LICENSE</license>
   <repository type="git">https://github.com/pytorch/executorch.git</repository>
   
@@ -93,6 +94,11 @@
       <require Cclass="Machine Learning" Cgroup="NPU Support" Csub="Ethos-U Driver"/>
     </condition>
 
+    <condition id="Extension Tensor">
+      <description>ExecuTorch Tensor extension (TensorPtr utilities)</description>
+      <require condition="Runtime"/>
+    </condition>
+
     <!-- Operator conditions - each operator requires Kernel Utils -->
 %{OPERATOR_CONDITIONS}%
   </conditions>
@@ -130,6 +136,17 @@
       </RTE_Components_h>
       <files>
 %{KERNEL_UTILS_FILES}%
+      </files>
+    </component>
+
+    <!-- ==================== Extensions ==================== -->
+    <component Cclass="Machine Learning" Cgroup="ExecuTorch" Csub="Extension Tensor" Cversion="%{RELEASE_VERSION}%" condition="Extension Tensor">
+      <description>ExecuTorch Tensor Extension - TensorPtr / make_tensor_ptr utilities</description>
+      <RTE_Components_h>
+        #define RTE_ML_EXECUTORCH_EXTENSION_TENSOR     /* ExecuTorch Tensor Extension */
+      </RTE_Components_h>
+      <files>
+%{TENSOR_EXTENSION_FILES}%
       </files>
     </component>
 
@@ -185,14 +202,5 @@
     </component>
 
   </components>
-
-  <examples>
-    <example name="ExecuTorch Inference" doc="README.md" folder="examples/inference">
-      <description>Basic ExecuTorch inference example</description>
-      <project>
-        <environment name="csolution" load="inference.csolution.yml"/>
-      </project>
-    </example>
-  </examples>
 
 </package>

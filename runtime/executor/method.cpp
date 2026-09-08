@@ -761,7 +761,10 @@ Error Method::resolve_operator(
   // However, it does not have to be provided, so if it
   // is not provided (or an empty one is provided), we
   // fall back to the method allocator.
-  if (allocator == nullptr || allocator->size() == 0) {
+  if (allocator == nullptr || allocator->size() == 0 ||
+      allocator->size() < (sizeof(TensorMeta) * n_args) +
+              (sizeof(executorch::aten::DimOrderType) * kTensorDimensionLimit *
+               n_args)) {
     allocator = memory_manager_->method_allocator();
   }
   TensorMeta* meta = allocator->allocateList<TensorMeta>(n_args);

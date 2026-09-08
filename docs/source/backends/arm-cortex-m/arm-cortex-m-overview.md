@@ -6,6 +6,8 @@ This backend is in **beta**. It has been validated with a set of small models (e
 
 The Arm&reg; Cortex&reg;-M backend accelerates quantized model execution on Arm Cortex-M CPUs using [CMSIS-NN](https://arm-software.github.io/CMSIS-NN/latest/) optimized kernels. Unlike delegate-based backends, it operates as an operator library: quantized subgraphs are replaced with CMSIS-NN accelerated kernels during the pass-lowering stage, while unsupported operators fall back to portable fp32 kernels.
 
+The default AOT flow uses channels-last inputs and the existing dim-order representation. The experimental explicit-layout flow uses ordinary contiguous inputs, represents NCHW/NHWC conversions as graph operators, and selects the experimental `cortex_m::*_nhwc` kernels. Enable it with `--cortex-m-explicit-layout`. Layout modes are selected independently of the Cortex-M CPU target and never mix operator families.
+
 ## Target Support
 
 The backend targets Arm Cortex-M CPUs via CMSIS-NN, which provides optimized kernel implementations for three instruction set variants:
@@ -100,23 +102,20 @@ quantized_exported_program = torch.export.export(quantized, (example_input,))
 
 ### 2. Lower to edge and apply Cortex-M passes
 
-Lower to the edge dialect with a custom `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:
+Lower to the edge dialect with the backend's `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:
 
 ```python
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
+from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
-config = EdgeCompileConfig(
-    preserve_ops=[
-        torch.ops.aten.linear.default,
-        torch.ops.aten.hardsigmoid.default,
-        torch.ops.aten.hardsigmoid_.default,
-        torch.ops.aten.hardswish.default,
-        torch.ops.aten.hardswish_.default,
-    ],
-    _check_ir_validity=False,
-    _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-)
+# Use the backend's own configuration rather than hand-writing one. Ops such as
+# silu and hardswish must survive to_edge for the Cortex-M passes to lower them,
+# and omitting one does not degrade gracefully: an activation fails the
+# AtenToCortexMPass, and linear silently falls back to portable float kernels.
+config = cortex_m_edge_compile_config()
 
 edge_program_manager = to_edge(quantized_exported_program, compile_config=config)
 

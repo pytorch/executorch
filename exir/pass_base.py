@@ -29,6 +29,7 @@ from typing import (
 import torch
 from executorch.exir import memory
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
@@ -120,6 +121,8 @@ def _leaf_symbolic_snapshot(value: Argument) -> Any:
         return scalar_snapshot
 
     if isinstance(value, FakeTensor):
+        if value.constant is not None:
+            return None
         dims = []
         has_symbolic_dim = False
         for dim in value.shape:
@@ -651,6 +654,58 @@ class _ExportPassBase(PassBase):
         meta: NodeMetadata,
     ) -> ProxyValue:
         return self._fx("call_function", op, args, kwargs, meta)
+
+    def call_size_operator(
+        self,
+        tensor_proxy: ProxyValue,
+        dim: int,
+        meta: NodeMetadata,
+        *,
+        edge_dialect: bool = False,
+    ) -> Union[ProxyValue, int]:
+        """Read ``tensor_proxy.size(dim)`` as a value usable in graph args.
+        Returns a plain ``int`` for static dims; emits and returns a
+        ``sym_size.int`` ``ProxyValue`` for SymInt dims (since
+        ``Graph.create_node`` rejects raw SymInts in call_function args).
+
+        When ``edge_dialect`` is True, emits ``exir_ops.edge.aten.sym_size.int``
+        so the node fits an edge-lowered graph; otherwise emits the raw
+        ``torch.ops.aten.sym_size.int``.
+        """
+        size = tensor_proxy.data.shape[dim]
+        if isinstance(size, torch.SymInt):
+            sym_size_op = (
+                exir_ops.edge.aten.sym_size.int
+                if edge_dialect
+                else torch.ops.aten.sym_size.int
+            )
+            new_proxy = self.call_operator(sym_size_op, (tensor_proxy, dim), {}, meta)
+            # Mirror source's "example_value" if present, so the new node
+            # matches the surrounding graph's meta-key convention. "val"
+            # is already set by call_operator → _fx → set_metadata.
+            if "example_value" in tensor_proxy.node.meta:
+                new_proxy.node.meta["example_value"] = new_proxy.node.meta["val"]
+            return new_proxy
+        return int(size)
+
+    def call_size_operator_all(
+        self,
+        tensor_proxy: ProxyValue,
+        meta: NodeMetadata,
+        *,
+        edge_dialect: bool = False,
+    ) -> list[Union[ProxyValue, int]]:
+        """Return all dims of ``tensor_proxy.shape`` as a list of values
+        usable in graph args. Each entry is an ``int`` (static dim) or a
+        ``sym_size.int`` ``ProxyValue`` (dynamic dim) — see
+        ``call_size_operator``.
+
+        ``edge_dialect`` selects the edge vs raw ATen ``sym_size.int`` op.
+        """
+        return [
+            self.call_size_operator(tensor_proxy, d, meta, edge_dialect=edge_dialect)
+            for d in range(len(tensor_proxy.data.shape))
+        ]
 
     def call_sym(
         self,

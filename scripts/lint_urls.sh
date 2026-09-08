@@ -12,6 +12,7 @@ trap 'kill 0' SIGINT
 status=0
 green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; yellow='\e[1;33m'; reset='\e[0m'
 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+egress_probe_url="https://api.github.com"
 max_jobs=10
 pids=()
 
@@ -26,28 +27,18 @@ while IFS=: read -r filepath url; do
       sleep 1
       code=$(curl -k -gsLm30 --retry 3 --retry-delay 3 --retry-connrefused -o /dev/null -w "%{http_code}" -r 0-0 -A "$user_agent" "$url") || code=000
     fi
-    if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
-      sleep 1
-      request_id=$(curl -sS -G -H 'Accept: application/json' \
-        --data-urlencode "host=$url" \
-        --data-urlencode "max_nodes=1" \
-        --data-urlencode "node=us3.node.check-host.net" \
-        https://check-host.net/check-http \
-        | jq -r .request_id) || request_id=""
-      if [ -n "$request_id" ]; then
-        sleep 5
-        for _ in {1..5}; do
-          new_code=$(curl -sS -H 'Accept: application/json' \
-            "https://check-host.net/check-result/$request_id" \
-            | jq -r -e '.[][0][3]') || new_code=000
-          [[ "$new_code" =~ ^[0-9]+$ ]] || new_code=000
-          if [ "$new_code" -ge 200 ] && [ "$new_code" -lt 400 ]; then
-            code=$new_code
-            break
-          fi
-          sleep 5
-        done
+    if [[ "$code" == "000" ]]; then
+      # No HTTP response at all. Usually a dead host, but a runner with no egress
+      # gets 000 for everything, and failing 2000 live links helps nobody. One
+      # probe of a host the runner already depends on tells the two apart.
+      probe=$(curl -k -gsLm10 -o /dev/null -w "%{http_code}" "$egress_probe_url") || probe=000
+      if [[ "$probe" == "000" ]]; then
+        printf "${yellow}WARN %s${reset} ${cyan}%s${reset} %s\n" "$code" "$url" "$filepath"
+        exit 0
       fi
+      # Egress works, so the host is either dead or slow. Give it one more try
+      # with a longer timeout before failing it.
+      code=$(curl -k -gsLm60 -o /dev/null -w "%{http_code}" -A "$user_agent" "$url") || code=000
     fi
     # Treat Cloudflare JS-challenge and rate-limit as success.
     if [[ "$code" == "403" || "$code" == "429" || "$code" == "503" ]]; then
@@ -79,8 +70,10 @@ done < <(
     ':(exclude,glob)**/third_party/**'
   )
   if [ $# -eq 2 ]; then
-    for filename in $(git diff --name-only --unified=0 "$1..$2"); do
-      git diff --unified=0 "$1..$2" -- "$filename" "${excludes[@]}" \
+    # Three dots, not two. Against the base branch tip, a branch cut before recent
+    # commits looks like it is adding back every line those commits touched.
+    for filename in $(git diff --no-color --name-only --unified=0 "$1...$2"); do
+      git diff --no-color --unified=0 "$1...$2" -- "$filename" "${excludes[@]}" \
         | grep -E '^\+' \
         | grep -Ev '^\+\+\+' \
         | perl -nle 'print for m#'"$pattern"'#g' \

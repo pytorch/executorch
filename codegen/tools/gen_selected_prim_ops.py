@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,9 +9,11 @@
 
 import argparse
 import os
+import re
 import sys
 from typing import Any, List
 
+import yaml
 from torchgen.code_template import CodeTemplate  # type: ignore[import-not-found]
 
 
@@ -34,11 +37,30 @@ def normalize_op_name(op_name: str) -> str:
     normalized = op_name.replace("::", "_")
     # Replace dots with underscores
     normalized = normalized.replace(".", "_")
+    # Collapse cases like aten::_local_scalar_dense to the macro spelling used
+    # by register_prim_ops.cpp.
+    normalized = re.sub("_+", "_", normalized)
     # Convert to uppercase
     normalized = normalized.upper()
     # Add INCLUDE_ prefix
     normalized = f"INCLUDE_{normalized}"
     return normalized
+
+
+def read_prim_op_names_from_yaml(op_selection_yaml_path: str) -> List[str]:
+    with open(op_selection_yaml_path, "r") as f:
+        selected_operators = yaml.safe_load(f) or {}
+
+    prim_op_names = set()
+    operators = selected_operators.get("operators", {})
+    if operators:
+        prim_op_names.update(operators.keys())
+
+    et_kernel_metadata = selected_operators.get("et_kernel_metadata", {})
+    if et_kernel_metadata:
+        prim_op_names.update(et_kernel_metadata.keys())
+
+    return sorted(prim_op_names)
 
 
 def write_selected_prim_ops(prim_op_names: List[str], output_dir: str) -> None:
@@ -73,7 +95,13 @@ def main(argv: List[Any]) -> None:
         "--prim-op-names",
         "--prim_op_names",
         help="Comma-separated list of prim op names to include",
-        required=True,
+        required=False,
+    )
+    parser.add_argument(
+        "--op-selection-yaml-path",
+        "--op_selection_yaml_path",
+        help="Path to selected_operators.yaml containing prim op names to include",
+        required=False,
     )
     parser.add_argument(
         "--output-dir",
@@ -84,12 +112,21 @@ def main(argv: List[Any]) -> None:
 
     options = parser.parse_args(argv)
 
-    # Parse comma-separated prim op names
-    prim_op_names = [
-        name.strip() for name in options.prim_op_names.split(",") if name.strip()
-    ]
+    if options.prim_op_names is None and not options.op_selection_yaml_path:
+        parser.error("one of --prim-op-names or --op-selection-yaml-path is required")
 
-    write_selected_prim_ops(prim_op_names, options.output_dir)
+    prim_op_names: List[str] = []
+    if options.prim_op_names is not None:
+        # Parse comma-separated prim op names
+        prim_op_names.extend(
+            name.strip() for name in options.prim_op_names.split(",") if name.strip()
+        )
+    if options.op_selection_yaml_path:
+        prim_op_names.extend(
+            read_prim_op_names_from_yaml(options.op_selection_yaml_path)
+        )
+
+    write_selected_prim_ops(sorted(set(prim_op_names)), options.output_dir)
 
 
 if __name__ == "__main__":

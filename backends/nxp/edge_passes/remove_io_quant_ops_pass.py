@@ -69,7 +69,7 @@ class RemoveIOQuantOpsPass(ExportPass):
 
         return outputs_to_quantization
 
-    def call(self, graph_module: torch.fx.GraphModule):
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         input_indices = self._get_quantizable_input_indices()
         output_indices = self._get_quantizable_output_indices()
 

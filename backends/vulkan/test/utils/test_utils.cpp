@@ -18,6 +18,21 @@
 
 using namespace vkcompute;
 
+namespace {
+
+GlobalWorkGrid make_linear_dispatch(
+    api::Context* const context,
+    const uint64_t numel,
+    const LocalWorkGroup& lwg) {
+  vkapi::Adapter* const adapter = context->adapter_ptr();
+  GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(numel), 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(adapter->max_compute_workgroup_count(), lwg);
+  return gwg;
+}
+
+} // namespace
+
 bool is_bitw8(vkapi::ScalarType dtype) {
   return dtype == vkapi::kByte || dtype == vkapi::kChar ||
       dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8;
@@ -92,12 +107,13 @@ void record_nchw_to_buffer_op(
     api::vTensor& v_dst) {
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {v_dst.hashed_layout()};
+  const LocalWorkGroup lwg(64u, 1u, 1u);
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(v_dst, true),
       pipeline_barrier,
-      {uint32_t(v_dst.numel()), 1, 1},
-      {64, 1, 1},
+      make_linear_dispatch(context, v_dst.numel(), lwg),
+      lwg,
       specialization_constants,
       VK_NULL_HANDLE,
       0,
@@ -114,11 +130,12 @@ void record_buffer_to_nchw_op(
     api::vTensor& v_src,
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
+  const LocalWorkGroup lwg(64u, 1u, 1u);
   context->submit_compute_job(
       get_tensor_to_nchw_shader(v_src, true),
       pipeline_barrier,
-      {uint32_t(v_src.numel()), 1, 1},
-      {64, 1, 1},
+      make_linear_dispatch(context, v_src.numel(), lwg),
+      lwg,
       {},
       VK_NULL_HANDLE,
       0,
@@ -137,6 +154,9 @@ void record_nchw_to_image_op(
   bool int8_buffer_enabled =
       context->adapter_ptr()->has_full_int8_buffers_support();
   auto shader = get_nchw_to_tensor_shader(v_dst, int8_buffer_enabled);
+  const GlobalWorkGrid gwg(
+      utils::make_uvec3(v_dst.logical_limits()), kTextureExtentsWorkGrid);
+  const LocalWorkGroup lwg = adaptive_lwg(gwg);
 
   // bitw8 _no_pc shaders expect ivec4 sizes UBO; regular shaders expect
   // TextureMetadata UBO. The bitw8 path is only used when int8 buffers are
@@ -147,8 +167,8 @@ void record_nchw_to_image_op(
     context->submit_compute_job(
         shader,
         pipeline_barrier,
-        v_dst.logical_limits(),
-        adaptive_work_group_size(v_dst.logical_limits()),
+        gwg,
+        lwg,
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -162,8 +182,8 @@ void record_nchw_to_image_op(
     context->submit_compute_job(
         shader,
         pipeline_barrier,
-        v_dst.logical_limits(),
-        adaptive_work_group_size(v_dst.logical_limits()),
+        gwg,
+        lwg,
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -186,6 +206,9 @@ void record_image_to_nchw_op(
   bool int8_buffer_enabled =
       context->adapter_ptr()->has_full_int8_buffers_support();
   auto shader = get_tensor_to_nchw_shader(v_src, int8_buffer_enabled);
+  const GlobalWorkGrid gwg(
+      utils::make_uvec3(v_src.logical_limits()), kTextureExtentsWorkGrid);
+  const LocalWorkGroup lwg = adaptive_lwg(gwg);
 
   // bitw8 _no_pc shaders expect ivec4 sizes UBO; regular shaders expect
   // TextureMetadata UBO. The bitw8 path is only used when int8 buffers are
@@ -196,8 +219,8 @@ void record_image_to_nchw_op(
     context->submit_compute_job(
         shader,
         pipeline_barrier,
-        v_src.logical_limits(),
-        adaptive_work_group_size(v_src.logical_limits()),
+        gwg,
+        lwg,
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -208,8 +231,8 @@ void record_image_to_nchw_op(
     context->submit_compute_job(
         shader,
         pipeline_barrier,
-        v_src.logical_limits(),
-        adaptive_work_group_size(v_src.logical_limits()),
+        gwg,
+        lwg,
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -225,7 +248,8 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
     api::StagingBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
-  utils::uvec3 global_wg_size = {buffer_len, 1, 1};
+  const LocalWorkGroup lwg(64u, 1u, 1u);
+  const GlobalWorkGrid gwg = make_linear_dispatch(context, buffer_len, lwg);
 
   std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer_no_pc";
   add_storage_type_suffix(kernel_name, v_src.storage_type());
@@ -234,8 +258,8 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
-      global_wg_size,
-      adaptive_work_group_size(global_wg_size),
+      gwg,
+      lwg,
       {v_src.hashed_layout()},
       VK_NULL_HANDLE,
       0,
@@ -256,11 +280,14 @@ void record_binary_op(
 
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {};
+  const GlobalWorkGrid gwg(
+      utils::make_uvec3(v_dst.logical_limits()), kTextureExtentsWorkGrid);
+  const LocalWorkGroup lwg = adaptive_lwg(gwg);
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
-      v_dst.logical_limits(),
-      adaptive_work_group_size(v_dst.logical_limits()),
+      gwg,
+      lwg,
       specialization_constants,
       VK_NULL_HANDLE,
       0,
@@ -320,11 +347,12 @@ void record_index_fill_buffer(api::Context* context, api::vTensor& v_ten) {
   {
     vkapi::PipelineBarrier pipeline_barrier{};
     vkapi::SpecVarList specialization_constants = {};
+    const LocalWorkGroup lwg(64u, 1u, 1u);
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        {uint32_t(v_ten.numel()), 1, 1},
-        {64, 1, 1},
+        make_linear_dispatch(context, v_ten.numel(), lwg),
+        lwg,
         specialization_constants,
         VK_NULL_HANDLE,
         0,
@@ -344,11 +372,12 @@ void record_scalar_add_buffer(
   vkapi::SpecVarList specialization_constants = {SV(offset)};
   std::string kernel = "scalar_add_buffer";
   add_dtype_suffix(kernel, v_ten.dtype());
+  const LocalWorkGroup lwg(64u, 1u, 1u);
   api::context()->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel),
       pipeline_barrier,
-      {uint32_t(v_ten.numel()), 1, 1},
-      {64, 1, 1},
+      make_linear_dispatch(context, v_ten.numel(), lwg),
+      lwg,
       specialization_constants,
       VK_NULL_HANDLE,
       0,
@@ -368,8 +397,9 @@ void record_reference_matmul(
   api::context()->submit_compute_job(
       VK_KERNEL(reference_matmul),
       pipeline_barrier,
-      {uint32_t(out.size(1)), uint32_t(out.size(0)), 1},
-      {64, 1, 1},
+      GlobalWorkGrid(
+          {uint32_t(out.size(1)), uint32_t(out.size(0)), 1u}, kTiledWorkGrid),
+      LocalWorkGroup(64u, 1u, 1u),
       {},
       VK_NULL_HANDLE,
       0,
@@ -399,7 +429,8 @@ void record_matmul_texture3d(
   add_storage_type_suffix(kernel_name, out.storage_type());
   add_dtype_suffix(kernel_name, out.dtype());
 
-  utils::uvec3 global_wg_size = out.logical_limits();
+  const GlobalWorkGrid gwg(
+      utils::make_uvec3(out.logical_limits()), kTextureExtentsWorkGrid);
 
   struct PushConstants {
     utils::ivec4 out_sizes;
@@ -435,11 +466,11 @@ void record_matmul_texture3d(
   vkapi::SpecVarList specialization_constants = {
       out.hashed_layout(), mat1.hashed_layout(), mat2.hashed_layout()};
 
-  utils::uvec3 local_wg_size = {8, 8, 1};
+  const LocalWorkGroup lwg(8u, 8u, 1u);
 
   vkapi::DescriptorSet descriptor_set = api::context()->get_descriptor_set(
       VK_KERNEL_FROM_STR(kernel_name),
-      utils::WorkgroupSize(local_wg_size),
+      lwg,
       specialization_constants,
       sizeof(push_constants));
 
@@ -458,7 +489,8 @@ void record_matmul_texture3d(
       descriptor_set,
       pipeline_barrier,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
+      gwg,
+      lwg,
       &push_constants,
       sizeof(push_constants));
 }

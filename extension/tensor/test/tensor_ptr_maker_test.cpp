@@ -195,6 +195,7 @@ TEST_F(TensorPtrMakerTest, TensorDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {4, 5},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);
@@ -505,4 +506,55 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensorWithIntType) {
     auto val = tensor->const_data_ptr<int32_t>()[i];
     EXPECT_EQ(val, 0);
   }
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobDefaultsToCPU) {
+  float data[8] = {};
+  auto tensor = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float)
+                    .make_tensor_ptr();
+
+  // Type only: the default index is 0 in one build mode and -1 in the other, so
+  // asserting it would pass in one and fail in the other.
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CPU);
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobCarriesTheDeviceItIsGiven) {
+  float data[8] = {};
+  auto tensor = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float)
+                    .device(executorch::aten::Device(
+                        executorch::aten::DeviceType::CUDA, 3))
+                    .make_tensor_ptr();
+
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CUDA);
+  EXPECT_EQ(tensor->device().index(), 3);
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobDeviceSurvivesLaterSetters) {
+  float data[8] = {};
+  auto tensor = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float)
+                    .device(executorch::aten::Device(
+                        executorch::aten::DeviceType::CUDA, 0))
+                    .dim_order({1, 0})
+                    .strides({1, 2})
+                    .make_tensor_ptr();
+
+  // The strides are asserted with a value a contiguous tensor would not have,
+  // so a setter that silently ignored its argument would fail here rather than
+  // pass.
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CUDA);
+  EXPECT_EQ(tensor->device().index(), 0);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->strides()[1], 2);
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobDeviceAcceptsANamedBuilder) {
+  float data[8] = {};
+  auto maker = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float);
+  maker.device(executorch::aten::Device(executorch::aten::DeviceType::CUDA, 1));
+  auto tensor = std::move(maker).make_tensor_ptr();
+
+  // Choosing a device at run time and applying it to a named builder is the
+  // case this setter exists for, and an rvalue-only qualifier would reject it.
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CUDA);
+  EXPECT_EQ(tensor->device().index(), 1);
 }

@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/common_shims_slim.h>
 #include <executorch/backends/aoti/export.h>
+#include <executorch/extension/cuda/runtime_api.h>
 
 namespace executorch::backends::cuda {
 

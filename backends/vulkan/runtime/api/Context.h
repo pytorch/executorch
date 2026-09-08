@@ -16,6 +16,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Command.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Fence.h>
 #include <executorch/backends/vulkan/runtime/vk_api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
@@ -150,8 +151,8 @@ class Context final {
    */
   void report_shader_dispatch_start(
       const std::string& shader_name,
-      const utils::uvec3& global_wg_size,
-      const utils::WorkgroupSize& local_wg_size,
+      const GlobalWorkGrid& gwg,
+      const LocalWorkGroup& lwg,
       const uint32_t dispatch_id = UINT32_MAX);
 
   /*
@@ -190,23 +191,26 @@ class Context final {
 
   vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo&,
-      const utils::WorkgroupSize&,
+      const LocalWorkGroup&,
       const vkapi::SpecVarList&,
       const uint32_t push_constants_size);
 
   inline vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo& shader_descriptor,
-      const utils::WorkgroupSize& local_work_group_size) {
-    return get_descriptor_set(shader_descriptor, local_work_group_size, {}, 0u);
+      const LocalWorkGroup& lwg) {
+    return get_descriptor_set(shader_descriptor, lwg, {}, 0u);
   }
 
   void register_shader_dispatch(
       const vkapi::DescriptorSet&,
       vkapi::PipelineBarrier&,
       const vkapi::ShaderInfo&,
-      const utils::uvec3&,
+      const GlobalWorkGrid&,
+      const LocalWorkGroup&,
       const void* = nullptr,
       const uint32_t = 0);
+
+  void register_barrier(vkapi::PipelineBarrier& pipeline_barrier);
 
   void register_blit(
       vkapi::PipelineBarrier&,
@@ -217,8 +221,8 @@ class Context final {
   bool submit_compute_job(
       const vkapi::ShaderInfo&,
       vkapi::PipelineBarrier&,
-      const utils::uvec3&,
-      const utils::uvec3&,
+      const GlobalWorkGrid&,
+      const LocalWorkGroup&,
       const vkapi::SpecVarList&,
       VkFence fence_handle,
       const uint32_t dispatch_id,
@@ -331,8 +335,8 @@ template <typename... Arguments>
 inline bool Context::submit_compute_job(
     const vkapi::ShaderInfo& shader,
     vkapi::PipelineBarrier& pipeline_barrier,
-    const utils::uvec3& global_work_group,
-    const utils::uvec3& local_work_group_size,
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg,
     const vkapi::SpecVarList& specialization_constants,
     VkFence fence_handle,
     const uint32_t dispatch_id,
@@ -365,20 +369,17 @@ inline bool Context::submit_compute_job(
 
   set_cmd();
 
+  const LocalWorkGroup& dispatch_lwg =
+      gwg.required_lwg_size().is_valid() ? gwg.required_lwg_size() : lwg;
+
   report_shader_dispatch_start(
-      shader.kernel_name,
-      global_work_group,
-      utils::WorkgroupSize(local_work_group_size),
-      dispatch_id);
+      shader.kernel_name, gwg, dispatch_lwg, dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
   // Note that push constants are not exposed yet via this API, therefore the
   // push constants size is assumed to be 0.
-  vkapi::DescriptorSet descriptor_set = get_descriptor_set(
-      shader,
-      utils::WorkgroupSize(local_work_group_size),
-      specialization_constants,
-      0u);
+  vkapi::DescriptorSet descriptor_set =
+      get_descriptor_set(shader, dispatch_lwg, specialization_constants, 0u);
 
   detail::bind(
       descriptor_set,
@@ -387,7 +388,7 @@ inline bool Context::submit_compute_job(
 
   // Factor out template parameter independent code to minimize code bloat.
   register_shader_dispatch(
-      descriptor_set, pipeline_barrier, shader, global_work_group);
+      descriptor_set, pipeline_barrier, shader, gwg, dispatch_lwg);
 
   report_shader_dispatch_end();
 

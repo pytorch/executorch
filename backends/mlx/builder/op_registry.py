@@ -8,7 +8,17 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional, Tuple, Type, TYPE_CHECKING, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TYPE_CHECKING,
+    Union,
+)
 
 from executorch.backends.mlx._logging import logger
 from torch.fx.node import Node
@@ -22,6 +32,10 @@ if TYPE_CHECKING:
 Handler = Callable[
     ["MLXProgramBuilder", Node], Optional[Union["Slot", Tuple["Slot", ...]]]
 ]
+
+# Support-check type: takes (builder, node) and returns whether the handler for
+# that node will lower it. See PatternHandler.supported for the contract.
+SupportCheck = Callable[["MLXProgramBuilder", Node], bool]
 
 
 class PatternHandler:
@@ -39,6 +53,32 @@ class PatternHandler:
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> None:
         raise NotImplementedError
+
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        """Optional: answer "would __call__ lower this node?" without running it.
+
+        Support is normally decided by running the handler and seeing whether it
+        throws, but handlers that repack a quantized weight copy the whole tensor
+        to answer that question -- and the partitioner asks it several times per
+        export. Overriding this lets such a handler answer from node metadata
+        instead; it is then consulted in place of running the handler during
+        support checks (never during build(), which has to emit).
+
+        Implementations must decide from ``n.meta`` alone and must never read
+        constant data, which is the cost being avoided. They must also agree with
+        __call__: saying yes to a node the handler then rejects makes
+        ops_to_not_decompose preserve an op that afterwards neither decomposes
+        nor lowers. Disagreement is caught by the op tests rather than a
+        dedicated check -- a false positive fails the export outright when
+        build() runs the handler for real, and a false negative shows up as a
+        missing delegate segment.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def has_support_check(cls) -> bool:
+        """Whether this class overrides supported()."""
+        return cls.supported is not PatternHandler.supported
 
     def set_handlers(self, P: MLXProgramBuilder):
         if P.node_info[self.head].handler is not None:
@@ -67,11 +107,13 @@ class MLXOpRegistry:
 
     def __init__(self):
         self._handlers: Dict[Union[str, Callable], Handler] = {}
+        self._support_checks: Dict[Union[str, Callable], SupportCheck] = {}
         self._patterns: Dict[str, Type[PatternHandler]] = {}
 
     def reset(self) -> None:
         """Reset the registry to empty state. Useful for testing."""
         self._handlers.clear()
+        self._support_checks.clear()
         self._patterns.clear()
 
     def register(self, target: Union[str, Callable, list, tuple]):
@@ -89,16 +131,44 @@ class MLXOpRegistry:
 
     def get_handler(self, node: Node) -> Optional[Handler]:
         """Get the handler for a node, or None if not registered."""
+        return self._lookup(self._handlers, node)
+
+    def register_support_check(self, target: Union[str, Callable, list, tuple]):
+        """Decorator registering a cheap support predicate for an op handler.
+
+        The predicate takes (builder, node) and returns whether the handler will
+        lower the node. It is consulted instead of running the handler during
+        support checks, so it must decide from node metadata alone -- reading
+        constant data is exactly the cost being avoided. See
+        PatternHandler.supported for the full contract.
+        """
+
+        def deco(fn: SupportCheck):
+            targets = target if isinstance(target, (list, tuple)) else [target]
+            for t in targets:
+                if t in self._support_checks:
+                    raise ValueError(f"Support check for {t} already registered")
+                self._support_checks[t] = fn
+            return fn
+
+        return deco
+
+    def get_support_check(self, node: Node) -> Optional[SupportCheck]:
+        """Get the support predicate for a node, or None if it has none."""
+        return self._lookup(self._support_checks, node)
+
+    @staticmethod
+    def _lookup(table: Dict[Union[str, Callable], Any], node: Node) -> Optional[Any]:
         t = node.target
-        if t in self._handlers:
-            return self._handlers[t]
+        if t in table:
+            return table[t]
         # Handle EdgeOpOverload by extracting the underlying ATen op
-        if hasattr(t, "_op") and t._op in self._handlers:
-            return self._handlers[t._op]
+        if hasattr(t, "_op") and t._op in table:
+            return table[t._op]
         # Check for string-based targets (e.g., higher_order ops)
         target_str = str(t)
-        if target_str in self._handlers:
-            return self._handlers[target_str]
+        if target_str in table:
+            return table[target_str]
         return None
 
     def registered_ops(self) -> set:
@@ -118,6 +188,8 @@ class MLXOpRegistry:
         for t in targets:
             if t in self._handlers:
                 del self._handlers[t]
+            if t in self._support_checks:
+                del self._support_checks[t]
 
     def register_pattern(self, name: str):
         """Decorator to register a pattern handler class."""

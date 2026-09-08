@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from sin.wgsl - DO NOT EDIT.
+// @generated from unary.wgsl - DO NOT EDIT.
 // wgsl-sha256: e5762804773659d348fddddcef4935807ae6fe7d92c92eb17a2f44aae8f2c5b9
 inline constexpr const char* kSinWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;

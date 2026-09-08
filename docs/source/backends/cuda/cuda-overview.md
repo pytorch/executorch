@@ -103,6 +103,144 @@ No additional steps are necessary to use the backend beyond linking the target. 
 
 ----
 
+## Activation memory: who owns the GPU copies
+
+A CUDA model has to get its input data onto the GPU somehow. There are two ways, and you pick
+one at export time.
+
+**Default: the runtime copies for you.** Export inserts a host-to-device copy in front of each
+delegate input and a device-to-host copy after each delegate output. You pass ordinary CPU
+tensors and the runtime moves the data:
+
+```python
+exec_program = et_program.to_executorch()
+```
+
+```python
+# CPU tensors. The runtime copies them to the GPU and copies results back.
+outputs = method([torch.randn(4, 64)])
+```
+
+This is the simplest option and the right default. The cost is a copy in each direction on
+every call.
+
+**Opt out: you hand over GPU memory directly.** If your data is already on the device, those
+copies are wasted. Turn them off and the input placeholders are treated as device memory
+instead:
+
+```python
+from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
+
+exec_program = et_program.to_executorch(
+    ExecutorchBackendConfig(
+        propagate_device_config=PropagateDeviceConfig(
+            skip_h2d_for_method_inputs=True,
+            skip_d2h_for_method_outputs=True,
+        ),
+        enable_non_cpu_memory_planning=True,
+        # Required alongside the skips. Memory planning reserves a buffer for graph inputs and
+        # outputs by default, and the runtime fills a planned input by copying the caller's
+        # memory into that buffer, which reintroduces the copy you just asked to skip. On device
+        # memory that copy is a host memcpy into a device pointer, which is undefined.
+        memory_planning_pass=MemoryPlanningPass(
+            alloc_graph_input=False, alloc_graph_output=False
+        ),
+    )
+)
+```
+
+```python
+# Now the tensors must already be on the GPU. Passing CPU tensors is a caller error.
+outputs = method([torch.randn(4, 64, device="cuda")])
+```
+
+Outputs also stay on the device, which is what you want when the next stage of your pipeline is
+also on the GPU.
+
+### Things worth knowing
+
+**The two flags are independent.** Skip only the input copies if you produce data on the GPU but
+want results back on the host, or only the output copies for the reverse.
+
+**Both flags need `enable_non_cpu_memory_planning=True`.** It defaults to `True`, so leaving it
+out works, and the snippet above sets it explicitly only to make the requirement visible. Setting
+it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
+during device-aware memory planning.
+
+**Both flags also need unplanned graph inputs and outputs**, via
+`MemoryPlanningPass(alloc_graph_input=False, alloc_graph_output=False)` as shown above. Without
+it the program still reserves its own buffer and the runtime copies into it, so the copy comes
+back at run time. On device memory that copy is a host memcpy into a device pointer, which is
+undefined, so the program crashes rather than returning a wrong answer.
+
+**Per-method selection is on the outer config, not on the flags.** Pass a dict of
+`PropagateDeviceConfig` keyed by method name:
+
+```python
+ExecutorchBackendConfig(
+    propagate_device_config={
+        "forward": PropagateDeviceConfig(
+            skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+        ),
+        "forward_from_host": PropagateDeviceConfig(),
+    },
+    ...
+)
+```
+
+Do not pass a dict to `skip_h2d_for_method_inputs` itself. The pass reads that field for
+truthiness, so any non-empty dict enables the skip for every method regardless of the values
+inside it.
+
+**The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
+exported without them expects device tensors. Passing the wrong kind is a caller error, not
+something the runtime corrects, so the two are not interchangeable at run time.
+
+**From C++ it is the same contract.** With the copies skipped, the input has to be a tensor
+the delegate will accept as device resident. There are two ways to build one, and which is
+right depends on where the data already is.
+
+If the data is already in device memory, wrap the pointer with `from_blob` and name the
+device right after the scalar type. Nothing is copied:
+
+```cpp
+auto input = from_blob(device_data, {rows, columns}, ScalarType::Float, DeviceType::CUDA);
+auto result = module.forward(input);
+```
+
+This is the path to use when the producer of the data is another GPU kernel, a camera or
+video decoder that writes to the GPU, or an earlier model whose output you kept on device.
+`from_blob` does not allocate or migrate anything, so the pointer has to be genuinely valid
+on the device you name, and it has to outlive the tensor.
+
+If the data starts on the host, `clone_tensor_ptr_to` allocates on the device and copies it
+across, which costs one transfer:
+
+```cpp
+auto host_input = make_tensor_ptr({rows, columns}, std::move(data));
+auto input = clone_tensor_ptr_to(host_input, DeviceType::CUDA);
+auto result = module.forward(input);
+```
+
+The device argument defaults to `DeviceType::CPU` in the overloads that do not take a custom
+deleter, so a plain `from_blob(host_ptr, sizes, type)` still means host memory. The deleter
+overloads require the device to be named. Leaving the device at CPU while handing over a
+device pointer produces a CPU-tagged tensor that the delegate rejects.
+
+**How the delegate decides a tensor is device resident.** Two checks, in this order. First
+the tensor's own `device_type` has to be `CUDA`, which is metadata set by whoever built the
+tensor. Then, because that tag is only a claim, the delegate calls
+`cudaPointerGetAttributes` on the data pointer and requires the memory to really be
+`cudaMemoryTypeDevice` or `cudaMemoryTypeManaged`. A CUDA-tagged tensor backed by host
+memory is caught there rather than corrupting the run.
+
+With the default export, pass an ordinary host tensor instead and the runtime handles the
+transfer.
+
+----
+
 ## Examples
 
 For complete end-to-end examples of exporting and running models with the CUDA backend, see:

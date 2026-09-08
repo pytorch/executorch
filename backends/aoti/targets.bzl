@@ -73,6 +73,9 @@ def define_common_targets():
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
         visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:evalue",
+        ],
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",

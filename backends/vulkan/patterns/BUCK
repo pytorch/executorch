@@ -32,5 +32,4 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/transforms:utils",
         "//executorch/backends/vulkan:utils_lib",
     ],
-    typing = True,
 )

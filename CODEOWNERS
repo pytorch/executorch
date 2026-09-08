@@ -4,13 +4,12 @@
 # file are not required for merges.
 
 /backends/apple @shoumikhin
-/backends/apple/mps @DenisVieriu97
 /backends/arm @digantdesai
 /backends/cadence
 /backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
 /backends/mediatek @neuropilot-captain
-/backends/qualcomm @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu @psiddh
+/backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
 /backends/test
 /backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA

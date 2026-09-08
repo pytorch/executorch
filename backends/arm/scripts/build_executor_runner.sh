@@ -37,6 +37,17 @@ select_ops_list=""
 build_bundleio_flags=" -DET_BUNDLE_IO=OFF "
 build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF "
 
+find_executorch_flatc() {
+    python3 - <<'PY' 2>/dev/null || true
+import os
+import executorch.data.bin as bin
+
+path = os.path.join(os.path.dirname(bin.__file__), "flatc")
+if os.path.isfile(path) and os.access(path, os.X_OK):
+    print(path)
+PY
+}
+
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Note: this developer build script is not a stable public API."
@@ -208,6 +219,13 @@ if [ "$bundleio" = true ] || [ "$build_with_etdump" = true ] ; then
     devtools_flags=" -DEXECUTORCH_BUILD_DEVTOOLS=ON "
 fi
 
+flatc_flags=""
+flatc_executable="$(find_executorch_flatc)"
+if [[ -n "${flatc_executable}" ]]; then
+    flatc_flags=" -DFLATC_EXECUTABLE:FILEPATH=${flatc_executable} "
+    echo "Using ExecuTorch flatc: ${flatc_executable}"
+fi
+
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${devtools_flags} ${extra_build_flags}"
 cmake \
     -S ${runner_source_dir}                    \
@@ -225,6 +243,7 @@ cmake \
     ${devtools_flags}                          \
     -DSYSTEM_CONFIG=${system_config}           \
     -DMEMORY_MODE=${memory_mode}               \
+    ${flatc_flags}                             \
     -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}" \
     -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}  \
     ${cmsis_nn_local_path:+-DCMSIS_NN_LOCAL_PATH:PATH=${cmsis_nn_local_path}} \

@@ -114,7 +114,7 @@ export_llava() {
 # Download a new image
 download_image() {
     echo "Downloading image"
-    curl -o basketball.jpg https://upload.wikimedia.org/wikipedia/commons/7/73/Chicago_Bulls_and_New_Jersey_Nets%2C_March_28%2C_1991.jpg
+    curl -fL -o basketball.jpg https://upload.wikimedia.org/wikipedia/commons/3/3e/Chicago_Bulls_-_New_Jersey_Nets_match_on_March_28%2C_1991.jpg
 }
 
 run_and_verify() {

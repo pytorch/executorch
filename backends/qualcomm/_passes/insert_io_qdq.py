@@ -10,7 +10,7 @@ from executorch.backends.qualcomm._passes.utils import (
     insert_quant_node,
 )
 
-from executorch.backends.qualcomm.builders.node_visitor import q_dq_map, q_ops
+from executorch.backends.qualcomm.builders.node_visitor import q_ops, to_dq_op
 
 from executorch.backends.qualcomm.builders.utils import (
     is_mutable_buffer_input,
@@ -76,7 +76,7 @@ class InsertIOQDQ(ExportPass):
                         graph_module=graph_module,
                         input_node=n,
                         output_node=user,
-                        target=q_dq_map[n.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]],
+                        target=to_dq_op(n.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]),
                     )
 
     def call(self, graph_module: torch.fx.GraphModule):

@@ -33,6 +33,9 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
@@ -623,6 +626,14 @@ def _get_args():
         choices=TARGETS,
         help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m<variant> (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
     )
+    parser.add_argument(
+        "--cortex-m-explicit-layout",
+        action="store_true",
+        help=(
+            "Use explicit NCHW/NHWC permutes for Cortex-M instead of dim-order "
+            "operators. This is an experimental Cortex-M-only option."
+        ),
+    )
     # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
     # They are deprecated and no longer functional in this script.
     parser.add_argument(
@@ -920,17 +931,28 @@ def _to_edge_cortex_m(
     """Cortex-M/CMSIS-NN compilation path with no delegation."""
     logging.info(
         f"Using Cortex-M/CMSIS-NN compilation path for cpu={target_config.cpu.name} "
-        f"backend={target_config.backend.name}"
+        f"backend={target_config.backend.name} "
+        f"layout={'explicit' if args.cortex_m_explicit_layout else 'dim-order'}"
     )
+
+    if args.cortex_m_explicit_layout and not args.quantize:
+        raise RuntimeError(
+            "--cortex-m-explicit-layout requires --quantize; explicit layout "
+            "does not fall back to portable float spatial operators."
+        )
 
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
-            if x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
-                logging.warning(
-                    "Converting input tensor with shape %s to channels_last",
-                    list(x.shape),
-                )
-                return x.to(memory_format=torch.channels_last)
+            if x.dim() == 4:
+                # Singleton channels can satisfy both contiguity checks while
+                # retaining NCHW strides, so always request the target format.
+                channels_last = x.to(memory_format=torch.channels_last)
+                if channels_last.stride() != x.stride():
+                    logging.warning(
+                        "Converting input tensor with shape %s to channels_last",
+                        list(x.shape),
+                    )
+                return channels_last
             return x
         elif isinstance(x, tuple):
             return tuple(_to_channels_last(t) for t in x)
@@ -942,17 +964,26 @@ def _to_edge_cortex_m(
         )
         model_quant = None
     else:
-        model = model.to(memory_format=torch.channels_last)  # type: ignore[call-overload]
-        example_inputs = tuple(_to_channels_last(x) for x in example_inputs)
+        if not args.cortex_m_explicit_layout:
+            model = model.to(memory_format=torch.channels_last)  # type: ignore[call-overload]
+            example_inputs = tuple(_to_channels_last(x) for x in example_inputs)
+            # Refresh fake-tensor strides after changing the captured module's
+            # memory format so the legacy quantizer sees channels-last inputs.
+            model = torch.export.export(
+                model, example_inputs, strict=args.strict_export
+            ).module()
 
-        quantizer = CortexMQuantizer()
+        quantizer = CortexMQuantizer(use_explicit_layout=args.cortex_m_explicit_layout)
+
         prepared = prepare_pt2e(model, quantizer)
 
         if calibration_samples is None:
             calibration_samples = [example_inputs]
 
         for sample in calibration_samples:
-            prepared(*tuple(_to_channels_last(x) for x in sample))
+            if not args.cortex_m_explicit_layout:
+                sample = tuple(_to_channels_last(x) for x in sample)
+            prepared(*sample)
 
         model_quant = convert_pt2e(prepared)
 
@@ -962,24 +993,17 @@ def _to_edge_cortex_m(
 
     edge = to_edge_transform_and_lower(
         exported_program,
-        compile_config=EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-            ],
-            _check_ir_validity=False,
-        ),
+        compile_config=cortex_m_edge_compile_config(),
     )
 
     pass_manager = CortexMPassManager(
-        edge.exported_program(), target_config=target_config
+        edge.exported_program(),
+        target_config=target_config,
+        use_explicit_layout=args.cortex_m_explicit_layout,
     )
     edge._edge_programs["forward"] = pass_manager.transform()
 
-    return model_quant, edge
+    return model_quant, edge, example_inputs
 
 
 def _to_edge_no_delegate(
@@ -1078,7 +1102,7 @@ def main() -> None:  # noqa: C901
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
-        model_quant, edge = _to_edge_cortex_m(
+        model_quant, edge, example_inputs = _to_edge_cortex_m(
             exported_program,
             args,
             model,

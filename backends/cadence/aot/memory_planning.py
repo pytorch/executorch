@@ -19,6 +19,7 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
     MemoryPlanningAlgo,
     MemoryPlanningState,
 )
+from executorch.backends.cadence.aot.pass_utils import CompileMode
 from executorch.backends.cadence.aot.utils import (
     MemoryConfig,
     MemoryPlanningAlgoFailure,
@@ -287,14 +288,14 @@ def find_peak_memory_usage(
 def print_memory_planning_info(
     executorch_prog: ExecutorchProgramManager,
     memory_config: MemoryConfig,
-    opt_level: int,
+    mode: CompileMode,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     log_level=logging.INFO,
 ) -> None:
     # Get the peak memory usages per memory space
     mem_constraints = MemConstraints(
-        opt_level=opt_level,
+        mode=mode,
         alloc_graph_input=alloc_graph_input,
         alloc_graph_output=alloc_graph_output,
     )
@@ -397,20 +398,19 @@ class CadenceMemoryPlanning:
     def __init__(
         self,
         memory_config: MemoryConfig,
-        opt_level: int,
+        mode: CompileMode,
         mem_algo: int,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
         additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> None:
         self.memory_config = memory_config
-        self.opt_level = opt_level
+        self.mode = mode
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
-
         self.algo: MemoryPlanningAlgo = self.get_mem_algos(
             memory_config,
-            opt_level,
+            mode,
             alloc_graph_input,
             alloc_graph_output,
             additional_constraint_gen_passes,
@@ -419,7 +419,7 @@ class CadenceMemoryPlanning:
     @staticmethod
     def get_mem_algos(
         memory_config: MemoryConfig,
-        opt_level: int,
+        mode: CompileMode,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
         additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]],
@@ -427,14 +427,14 @@ class CadenceMemoryPlanning:
         return [
             PositionBasedGreedyWithHierarchy(
                 memory_config=memory_config,
-                opt_level=opt_level,
+                mode=mode,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
                 additional_constraint_gen_passes=additional_constraint_gen_passes,
             ),
             GreedyWithHeuristic(
                 memory_config=memory_config,
-                opt_level=opt_level,
+                mode=mode,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
                 additional_constraint_gen_passes=additional_constraint_gen_passes,

@@ -42,6 +42,12 @@ CUSTOM_TIMEOUT = {
     # Just some examples on how custom timeout can be set
     "linux": {
         "mobilebert": 90,
+        # dl3 and edsr on the portable backend take about 100 and 205 minutes, so at
+        # the default 90 they were killed on every periodic run and never reported a
+        # result. Both pass given the time. This also raises the cap for their xnnpack
+        # variants, which still finish in about 10 minutes and are unaffected.
+        "dl3": 150,
+        "edsr": 300,
         "emformer_predict": 360,
         "llama3_2_text_decoder": 360,
     },
@@ -107,6 +113,11 @@ def model_should_run_on_target_os(model: str, target_os: str) -> bool:
     A helper function to decide whether a model should be tested on a target os (linux/macos).
     For example, a big model can be disabled in macos due to the limited macos resources.
     """
+    # yolo26 was contributed as an OpenVINO/XNNPACK example and has never passed on
+    # the portable backend, so gathering it only ever produces a permanently red job.
+    # TODO(#21621): drop this skip once yolo26 exports cleanly on portable.
+    if model == "yolo26":
+        return False
     if target_os == "macos":
         # Disabled in macos due to limited resources, and should stay that way even if
         # we otherwise re-enable.

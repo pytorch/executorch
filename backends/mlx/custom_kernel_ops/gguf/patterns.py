@@ -40,6 +40,9 @@ from executorch.backends.mlx.builder.op_helpers import get_aten_target
 from executorch.backends.mlx.builder.op_registry import PatternHandler, REGISTRY
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
+from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.common import Q4K_BLOCK_BYTES
+from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.common import Q5K_BLOCK_BYTES
+from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.common import Q6K_BLOCK_BYTES
 from executorch.backends.mlx.pattern_utils import has_single_user, match_target
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
@@ -48,6 +51,29 @@ from torch.fx.node import Node
 # custom Metal kernels via ``ET_MLX_EMIT_DIRECT_GGUF=1``).
 _LINEAR_TYPES = {"q4_k", "q5_k", "q6_k"}
 _EMBEDDING_TYPES = {"q4_k", "q5_k", "q6_k"}
+
+_BLOCK_BYTES = {
+    "q4_k": Q4K_BLOCK_BYTES,
+    "q5_k": Q5K_BLOCK_BYTES,
+    "q6_k": Q6K_BLOCK_BYTES,
+}
+
+
+def _blob_lowers(weight_node: Node, ggml_type: str) -> bool:
+    """Whether the raw GGUF blob has a shape every lowering path can consume.
+
+    Mirrors the checks each ``emit_*`` makes before touching the blob: 2-D
+    ``(rows, row_bytes)``, statically shaped, a whole number of super-blocks per
+    row. Deliberately shape-only, so it holds for both the fused-kernel and the
+    MLX-native repack path (which one runs depends on ET_MLX_EMIT_DIRECT_GGUF).
+    """
+    val = weight_node.meta.get("val", None)
+    if val is None or val.dim() != 2:
+        return False
+    rows, row_bytes = val.shape
+    if not isinstance(rows, int) or not isinstance(row_bytes, int):
+        return False
+    return row_bytes % _BLOCK_BYTES[ggml_type] == 0
 
 
 def parse_dequantize_gguf_node(
@@ -108,6 +134,9 @@ class GGUFQuantizedLinearHandler(PatternHandler):
             return None
         return cls(head, [dequant], weight, ggml_type, output_dtype)
 
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _blob_lowers(self.weight, self.ggml_type)
+
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
         x_node = n.args[0]
@@ -158,6 +187,9 @@ class GGUFQuantizedEmbeddingHandler(PatternHandler):
         if ggml_type not in _EMBEDDING_TYPES:
             return None
         return cls(head, [dequant], weight, ggml_type, output_dtype)
+
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _blob_lowers(self.weight, self.ggml_type)
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head

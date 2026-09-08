@@ -108,7 +108,7 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
     float temperature = -1.0f,
-    const std::string& method_name = "forward",
+    const std::string& method_name = kForwardMethod,
     Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
 
 /**
@@ -124,7 +124,10 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
  * @param temperature Optional temperature parameter for controlling randomness
  * (deprecated)
  * @param event_tracer Optional event tracer for profiling
- * @param method_name Name of the method to execute in the model
+ * @param method_name Name of the method to execute in the model. Falls back to
+ * kPrefillMethod when absent from the model. When the model also exports
+ * kDecodeMethod, the resolved method drives prefill only and kDecodeMethod
+ * drives decode.
  * @param load_mode Loading strategy for the model file. Defaults to
  * MmapUseMlockIgnoreErrors which uses mmap to avoid loading the entire
  * model into RAM and attempts to pin pages with mlock for lower inference
@@ -138,7 +141,7 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::vector<std::string> data_files = {},
     float temperature = -1.0f,
     std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr,
-    const std::string& method_name = "forward",
+    const std::string& method_name = kForwardMethod,
     Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
 
 /**

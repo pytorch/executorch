@@ -236,6 +236,16 @@ class XNNWeightsCache {
   // different runtime context) that doesn't need to persist.
   bool loaded_from_disk_{false};
 
+  // Set by look_up when a named entry is present but its cached seed does not
+  // match the current ukernel's seed (i.e. an XNNPACK upgrade invalidated the
+  // loaded packing). Unlike an incidental re-pack of an already-valid loaded
+  // cache, this stale entry MUST be re-packed to the file and persisted;
+  // otherwise every launch re-packs it into heap (anonymous dirty memory that
+  // can OOM/jetsam the app in the background) and the cache never converges.
+  // Consumed (and cleared) by reserve_space so the file-backed path is taken
+  // only by the re-pack that directly follows the seed-mismatch look_up.
+  bool last_lookup_seed_mismatch_{false};
+
   // See mutex() for the locking contract — caller-owned, no internal
   // use within this class.
   std::mutex instance_mutex_;

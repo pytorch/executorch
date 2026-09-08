@@ -361,21 +361,23 @@ class ConvolutionConfig(GEMMConfig):
         if not super().check_constraints(node, ep):
             return False
 
-        conv_stride = cast(List[int], node.args[3])
-        if len(conv_stride) > 2:
+        kernel_node = get_input_node(node, 1)
+        kernel_shape = get_shape(kernel_node)
+        # The weight rank is the only reliable indicator of the conv dimensionality.
+        # stride, padding and dilation may each be a single value that ATen
+        # broadcasts over every spatial dim.
+        conv_dim = len(kernel_shape) - 2
+        if conv_dim > 2:
             why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
-        kernel_node = get_input_node(node, 1)
-        kernel_shape = get_shape(kernel_node)
         weight_quant_params = QuantParams.from_weights(kernel_node, ep)
         groups = cast(int, node.args[8])
         is_transpose = node.args[6]
 
         # XNNPACK does not support dynamic quantization convs that are not 2D or are depthwise
         if self._detect_precision(node) == ConfigPrecisionType.DYNAMIC_QUANT and (
-            len(conv_stride) != 2
-            or is_depthwise_conv(kernel_shape, groups, is_transpose)
+            conv_dim != 2 or is_depthwise_conv(kernel_shape, groups, is_transpose)
         ):
             why(
                 node,
@@ -409,9 +411,9 @@ class ConvolutionConfig(GEMMConfig):
             and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
             and len(act_input.users) == 1
         ):
-            conv_padding = cast(List[int], node.args[4])
-            is_1d = len(conv_padding) == 1
-            is_2d = len(conv_padding) == 2
+            conv_dim = len(get_shape(get_input_node(node, 1))) - 2
+            is_1d = conv_dim == 1
+            is_2d = conv_dim == 2
 
             pad_value = (
                 cast(float, act_input.args[2]) if len(act_input.args) > 2 else 0.0

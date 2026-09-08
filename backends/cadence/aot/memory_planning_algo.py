@@ -15,6 +15,7 @@ from executorch.backends.cadence.aot.memory_constraints import (
     GenerateMemConstraints,
     MemConstraints,
 )
+from executorch.backends.cadence.aot.pass_utils import CompileMode
 from executorch.backends.cadence.aot.utils import MemoryConfig
 from executorch.exir.memory_planning import Verifier
 from executorch.exir.tensor import TensorSpec
@@ -85,7 +86,7 @@ class MemoryPlanningAlgo(ABC):
     def __init__(
         self,
         memory_config: MemoryConfig,
-        opt_level: int = 1,
+        mode: CompileMode = CompileMode.DEFAULT,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
         additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
@@ -94,7 +95,7 @@ class MemoryPlanningAlgo(ABC):
         self.additional_constraint_gen_passes: Optional[
             Sequence[ConstraintsGenPass]
         ] = additional_constraint_gen_passes
-        self.opt_level: int = opt_level
+        self.mode: CompileMode = mode
         self.alloc_graph_input: bool = alloc_graph_input
         self.alloc_graph_output: bool = alloc_graph_output
         self.memory_id_is_valid: list[bool] = [True] * self.get_num_memories()
@@ -118,7 +119,7 @@ class MemoryPlanningAlgo(ABC):
         """Populate the constraints for the memory planning algorithm."""
         state = MemoryPlanningState(self.memory_config)
         placement_constraints = MemConstraints(
-            self.opt_level, self.alloc_graph_input, self.alloc_graph_output
+            self.mode, self.alloc_graph_input, self.alloc_graph_output
         )
         GenerateMemConstraints(
             mem_constraints=placement_constraints,

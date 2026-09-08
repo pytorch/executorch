@@ -5,7 +5,6 @@
 | XNNPACK | All | CPU | `backends/xnnpack/` |
 | CUDA | Linux/Windows | GPU | `backends/cuda/` |
 | CoreML | iOS, macOS | NPU/GPU/CPU | `backends/apple/coreml/` |
-| MPS | iOS, macOS | GPU | `backends/apple/mps/` |
 | Vulkan | Android | GPU | `backends/vulkan/` |
 | QNN | Android | NPU | `backends/qualcomm/` |
 | MediaTek | Android | NPU | `backends/mediatek/` |

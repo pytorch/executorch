@@ -19,6 +19,11 @@ import unittest
 import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.test.ops.test_logical_and import (
+    LOGICAL_BINARY_CASES,
+    logical_binary_gen_a,
+    logical_binary_gen_b,
+)
 from executorch.exir import to_edge_transform_and_lower
 
 
@@ -50,11 +55,10 @@ def _bw_gen(seed):
 
 
 bw_gen_a = _bw_gen(0)
-bw_gen_b = _bw_gen(1)
 
 
 # All shapes have numel % 4 == 0 (bool tensors pack 4 bytes/word).
-SHAPES = [(4, 8), (2, 3, 8), (16, 16)]
+BITWISE_NOT_SHAPES = ((4, 8), (2, 3, 8), (16, 16))
 
 
 class BitwiseTest(unittest.TestCase):
@@ -75,13 +79,17 @@ class BitwiseTest(unittest.TestCase):
         )
 
     def test_export_delegates(self) -> None:
-        for shape in SHAPES:
-            with self.subTest(shape=shape):
-                a = bw_gen_a(shape)
-                b = bw_gen_b(shape)
+        for case_name, shape in LOGICAL_BINARY_CASES:
+            with self.subTest(op="bitwise_and", case=case_name, shape=shape):
+                a = logical_binary_gen_a(shape)
+                b = logical_binary_gen_b(shape)
                 self._assert_delegates(
                     BitwiseAndModule(shape), (a, b), "bitwise_and", shape
                 )
+
+        for shape in BITWISE_NOT_SHAPES:
+            with self.subTest(op="bitwise_not", shape=shape):
+                a = bw_gen_a(shape)
                 self._assert_delegates(
                     BitwiseNotModule(shape), (a,), "bitwise_not", shape
                 )

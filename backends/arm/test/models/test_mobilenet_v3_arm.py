@@ -18,6 +18,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.backends.test.harness.stages import StageType
+from torch.export.graph_signature import InputKind, OutputKind
 
 from torchvision import models, transforms  # type: ignore[import-untyped]
 
@@ -34,6 +36,10 @@ normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 
 input_tensor = torch.rand(1, 3, 232, 232)
 
 model_inputs = (normalize(input_tensor),)
+input_tensor_fp16 = torch.rand(
+    1, 3, 232, 232, generator=torch.Generator().manual_seed(0)
+)
+model_inputs_fp16 = (normalize(input_tensor_fp16).to(torch.float16),)
 input_t = Tuple[torch.Tensor]
 
 
@@ -48,13 +54,9 @@ def test_mv3_tosa_FP():
 # Slightly higher atol for TOSA FP16 on aarch64 (MLETORCH-2048: numeric mismatch)
 @pytest.mark.slow
 def test_mv3_tosa_FP_fp16():
-    input_tensor_fp16 = torch.rand(
-        1, 3, 232, 232, generator=torch.Generator().manual_seed(0)
-    )
-    inputs_fp16 = (normalize(input_tensor_fp16).to(torch.float16),)
     pipeline = TosaPipelineFP[input_t](
         mv3_fp16,
-        inputs_fp16,
+        model_inputs_fp16,
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
@@ -134,5 +136,50 @@ def test_mv3_vgf_no_quant():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
         quantize=False,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@pytest.mark.slow
+def test_mv3_vgf_fp16_runtime():
+    pipeline = VgfPipeline[input_t](
+        mv3_fp16,
+        model_inputs_fp16,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        quantize=False,
+        atol=6.5e-2,
+        rtol=1e-2,
+    )
+
+    def assert_fp16_lowered_program_io() -> None:
+        edge_program = pipeline.tester.get_artifact(
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER
+        ).exported_program()
+        graph_nodes = {
+            node.name: node for node in edge_program.graph_module.graph.nodes
+        }
+        user_inputs = [
+            spec
+            for spec in edge_program.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT
+        ]
+        user_outputs = [
+            spec
+            for spec in edge_program.graph_signature.output_specs
+            if spec.kind == OutputKind.USER_OUTPUT
+        ]
+
+        assert len(user_inputs) == 1
+        assert len(user_outputs) == 1
+        assert graph_nodes[user_inputs[0].arg.name].meta["val"].dtype == torch.float16
+        assert graph_nodes[user_outputs[0].arg.name].meta["val"].dtype == torch.float16
+
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower",
+        assert_fp16_lowered_program_io,
+        suffix="fp16_lowered_io",
     )
     pipeline.run()

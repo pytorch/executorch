@@ -8,6 +8,7 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUBackend.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDelegateHeader.h>
+#include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
@@ -17,6 +18,7 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <cstring>
 #include <vector>
 
 #include <new>
@@ -42,6 +44,27 @@ using executorch::runtime::resize_tensor;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
+Result<WebGPUGraphConfig> parse_webgpu_graph_config(
+    ArrayRef<CompileSpec> compile_specs) {
+  WebGPUGraphConfig config;
+  for (const CompileSpec& spec : compile_specs) {
+    if (spec.key == nullptr ||
+        std::strcmp(spec.key, "webgpu_record_q4gsw_decode_route") != 0) {
+      continue;
+    }
+    if (spec.value.nbytes != sizeof(uint8_t) || spec.value.buffer == nullptr) {
+      ET_LOG(
+          Error,
+          "WebGPU compile option webgpu_record_q4gsw_decode_route must be "
+          "exactly one byte");
+      return Error::DelegateInvalidCompatibility;
+    }
+    config.record_q4gsw_decode_route =
+        *static_cast<const uint8_t*>(spec.value.buffer) != 0;
+  }
+  return config;
+}
+
 bool WebGPUBackend::is_available() const {
   return true;
 }
@@ -50,6 +73,13 @@ Result<DelegateHandle*> WebGPUBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
+  Result<WebGPUGraphConfig> parsed_config =
+      parse_webgpu_graph_config(compile_specs);
+  if (!parsed_config.ok()) {
+    return parsed_config.error();
+  }
+  WebGPUGraphConfig config = parsed_config.get();
+
   // Allocate graph on the runtime allocator
   WebGPUGraph* graph =
       context.get_runtime_allocator()->allocateInstance<WebGPUGraph>();
@@ -60,7 +90,7 @@ Result<DelegateHandle*> WebGPUBackend::init(
 
   // Parse header to locate flatbuffer and constant data
   Result<WebGPUDelegateHeader> header =
-      WebGPUDelegateHeader::parse(processed->data());
+      WebGPUDelegateHeader::parse(processed->data(), processed->size());
   if (!header.ok()) {
     ET_LOG(Error, "WebGPUDelegateHeader may be corrupt");
     return header.error();
@@ -70,6 +100,17 @@ Result<DelegateHandle*> WebGPUBackend::init(
       reinterpret_cast<const uint8_t*>(processed->data());
   const uint8_t* flatbuffer_data = buffer_start + header->flatbuffer_offset;
   const uint8_t* constant_data = buffer_start + header->bytes_offset;
+
+  size_t constant_data_size = header->bytes_size;
+  if (constant_data_size == 0 && processed->size() > header->bytes_offset) {
+    constant_data_size = processed->size() - header->bytes_offset;
+  }
+
+  flatbuffers::Verifier verifier(flatbuffer_data, header->flatbuffer_size);
+  if (!vkgraph::VerifyVkGraphBuffer(verifier)) {
+    ET_LOG(Error, "WebGPU delegate FlatBuffer verification failed");
+    return Error::DelegateInvalidCompatibility;
+  }
 
   // Verify FlatBuffer identifier
   if (!vkgraph::VkGraphBufferHasIdentifier(flatbuffer_data)) {
@@ -82,19 +123,23 @@ Result<DelegateHandle*> WebGPUBackend::init(
   // Load-time backend option (BackendOption / LoadBackendOptionsMap), keyed by
   // the registered backend name; default false. Mirrors the CoreML/XNNPACK
   // runtime-spec pattern -- no compile flag and no .pte re-export needed.
-  bool enable_f16_kv_cache = false;
   {
     Result<bool> spec = context.get_runtime_spec<bool>("enable_f16_kv_cache");
     if (spec.ok()) {
-      enable_f16_kv_cache = spec.get();
+      config.f16_kv_cache = spec.get();
     }
   }
-  bool enable_f16_accumulate_gemm = false;
   {
     Result<bool> spec =
         context.get_runtime_spec<bool>("enable_f16_accumulate_gemm");
     if (spec.ok()) {
-      enable_f16_accumulate_gemm = spec.get();
+      config.f16_accumulate_gemm = spec.get();
+    }
+  }
+  {
+    Result<int> spec = context.get_runtime_spec<int>("sdpa_query_tile");
+    if (spec.ok()) {
+      config.sdpa_query_tile = spec.get();
     }
   }
 
@@ -102,9 +147,9 @@ Result<DelegateHandle*> WebGPUBackend::init(
     graph->build(
         flatbuffer_data,
         constant_data,
+        constant_data_size,
         context.get_named_data_map(),
-        enable_f16_kv_cache,
-        enable_f16_accumulate_gemm);
+        config);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
@@ -121,9 +166,11 @@ Error WebGPUBackend::execute(
     DelegateHandle* handle,
     Span<EValue*> args) const {
   WebGPUGraph* graph = static_cast<WebGPUGraph*>(handle);
+  const WebGPUExecutionOptions options = current_webgpu_execution_options();
 
   const size_t num_inputs = graph->input_ids().size();
   const size_t num_outputs = graph->output_ids().size();
+  WebGPUGraphExecutionOptions graph_options;
 
   // Copy inputs from EValue tensors to GPU buffers
   std::vector<InputData> inputs;
@@ -137,8 +184,13 @@ Error WebGPUBackend::execute(
       const auto& tensor = args[i]->toTensor();
       const bool host_is_int64 =
           tensor.scalar_type() == executorch::aten::ScalarType::Long;
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
       inputs.push_back(
-          {tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
+          {tensor.const_data_ptr(),
+           tensor.nbytes(),
+           host_is_int64,
+           host_is_fp32});
       const auto sizes = tensor.sizes();
       std::vector<int64_t> new_dims(sizes.begin(), sizes.end());
       graph->resize_input(graph->input_ids()[i], new_dims);
@@ -159,6 +211,14 @@ Error WebGPUBackend::execute(
         return Error::Internal;
       }
     }
+    std::vector<const void*> delegate_outputs;
+    delegate_outputs.reserve(num_outputs);
+    for (size_t i = 0; i < num_outputs; i++) {
+      delegate_outputs.push_back(
+          args[num_inputs + i]->toTensor().mutable_data_ptr());
+    }
+    graph_options =
+        resolve_webgpu_graph_execution_options(delegate_outputs, options);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU input/output resize / copy failed: %s", e.what());
     return Error::Internal;
@@ -167,15 +227,21 @@ Error WebGPUBackend::execute(
   // Execute + read back; fail loud as a runtime Error so a throw never crosses
   // the backend boundary.
   try {
-    graph->execute();
-    std::vector<std::pair<void*, size_t>> outputs;
+    const WebGPUExecutionPlan plan = graph->make_execution_plan(graph_options);
+    graph->execute(plan);
+
+    // Copy outputs from GPU staging buffers to EValue tensor data pointers
+    std::vector<OutputData> outputs;
     outputs.reserve(num_outputs);
     for (size_t i = 0; i < num_outputs; i++) {
       const size_t arg_idx = num_inputs + i;
       auto& tensor = args[arg_idx]->toTensor();
-      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
+      outputs.push_back(
+          {tensor.mutable_data_ptr(), tensor.nbytes(), host_is_fp32});
     }
-    graph->copy_outputs(outputs);
+    graph->copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
     return Error::Internal;

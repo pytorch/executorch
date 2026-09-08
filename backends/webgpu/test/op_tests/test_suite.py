@@ -58,6 +58,9 @@ class Case:
     required: bool = True
     heavy: bool = False
     golden_fn: Callable | None = None
+    # Optional upper-bound export inputs; `inputs` stay live manifest tensors.
+    export_inputs: tuple[Input, ...] | None = None
+    dynamic_shapes: object | None = None
 
     def __post_init__(self) -> None:
         # Mirror kQ4gswConfigs: every heavy config is required=False (export-gated, never FAILs on absence).

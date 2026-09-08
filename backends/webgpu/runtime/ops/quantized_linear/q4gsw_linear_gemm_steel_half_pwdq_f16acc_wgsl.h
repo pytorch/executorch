@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: a4346ddef028036f29aa73f0620c586467627626a745159fccef816a32f9475a
+// wgsl-sha256: 99b460d282c04a4f624e03f8216d3f36ba5f5562b6f60ff752ed9a7f4becffdc
 inline constexpr const char* kQ4gswLinearGemmSteelHalfPwdqF16accWGSL = R"(
 enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
@@ -47,6 +47,7 @@ struct Params {
 //   ACC=half (PWDQ only)  f16 accumulate with fma(), cast to f32 in the epilogue
 //     -- LOSSY, perplexity-gated, opt-in via a runtime spec. ACC=float is f32
 //     accumulate -- BIT-EXACT to the per-nibble half kernel.
+//   BK=64 (PWDQ + ACC=half only) stages a full quantization group at once.
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
 var<workgroup> As: array<f16, 1024>;   // BM*BK
 var<workgroup> Bs: array<f16, 1024>;   // BK*BN
@@ -94,7 +95,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
         // group sizes; K%BK==0 on the steel route), so hoist it to one read.
         let scale_row = (k0 / params.group_size) * params.padded_N;
         let scale = f16(t_scales[scale_row + n]);
-        // Column n's 16-nibble K-slice for this tile = two consecutive words.
+        // Column n's BK-nibble K-slice starts at this packed word.
         // K_packed multiple of 8 => base_word stays inside column n's own region.
         let base_word = n * (params.K_packed >> 2u) + (k0 >> 3u);
         let w0 = t_weight[base_word];

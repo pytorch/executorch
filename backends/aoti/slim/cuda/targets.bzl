@@ -18,6 +18,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/backends/aoti/slim/c10/core:device",
             "//executorch/backends/aoti/slim/c10/cuda:exception",
+            "//executorch/extension/cuda:runtime_api",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten:lib",
         ],

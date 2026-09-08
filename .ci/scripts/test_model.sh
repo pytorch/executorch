@@ -309,11 +309,6 @@ test_model_with_coreml() {
   fi
 }
 
-test_model_with_mps() {
-  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
-  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
-}
-
 test_model_with_mediatek() {
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
@@ -363,12 +358,6 @@ elif [[ "${BACKEND}" == *"coreml"* ]]; then
     dtype=float32
   fi
   test_model_with_coreml "${should_test_coreml}" "${test_with_pybindings}" "${dtype}"
-  if [[ $? -eq 0 ]]; then
-    prepare_artifacts_upload
-  fi
-elif [[ "${BACKEND}" == *"mps"* ]]; then
-  echo "Testing ${MODEL_NAME} with mps..."
-  test_model_with_mps
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

@@ -63,7 +63,7 @@ void resize_q8ta_conv2d_transposed_node(
 // stride-alignment patterns). Keeping local_y=1 ensures all threads in a
 // workgroup process the same height row, maximizing branch coherence.
 
-utils::uvec3 pick_q8ta_conv2d_transposed_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_transposed_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -80,13 +80,13 @@ utils::uvec3 pick_q8ta_conv2d_transposed_global_wg_size(
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid({W4, H, C4}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_q8ta_conv2d_transposed_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_transposed_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
@@ -95,16 +95,16 @@ utils::uvec3 pick_q8ta_conv2d_transposed_local_wg_size(
   (void)args;
 
   // Always keep local_y=1 to avoid branch divergence between height rows.
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
+  if (gwg[0u] >= 6 && gwg[2u] >= 6) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
-  if (global_workgroup_size[0u] < 2u) {
-    return {1u, 1u, 64u};
+  if (gwg[0u] < 2u) {
+    return LocalWorkGroup(1u, 1u, 64u);
   }
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
+  if (gwg[2u] < 2u) {
+    return LocalWorkGroup(64u, 1u, 1u);
   }
-  return {16u, 1u, 4u};
+  return LocalWorkGroup(16u, 1u, 4u);
 }
 
 void add_q8ta_conv2d_transposed_node(
@@ -200,8 +200,8 @@ void add_q8ta_conv2d_transposed_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_transposed_global_wg_size,
-      pick_q8ta_conv2d_transposed_local_wg_size,
+      pick_q8ta_conv2d_transposed_gwg,
+      pick_q8ta_conv2d_transposed_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,

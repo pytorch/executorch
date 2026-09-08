@@ -55,12 +55,6 @@ class AnnotateQuantAttrs(ExportPass):
             source_n = quant_node.args[0]
         source_n.meta[QCOM_QUANT_ATTRS] = quant_attrs
 
-    def _expand(self, tensor, dim, axis) -> torch.Tensor:
-        tensor = tensor[(...,) + (None,) * (dim - 1)]
-        order = torch.arange(dim).tolist()
-        order[axis], order[0] = order[0], order[axis]
-        return tensor.permute(order)
-
     # Find the the last dq nodes between regular op nodes
     # Return dq2 in example below when q1 is given as node parameter:
     # ... -> n1 -> q1 -> dq1 -> q2 -> dq2 -> n2 -> ...

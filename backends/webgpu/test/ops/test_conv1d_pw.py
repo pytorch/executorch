@@ -27,12 +27,53 @@ CONFIGS = {
     "batch2": (2, 3, 4, 5, True),
 }
 
+# name -> N, C_in, C_out, L, K, stride, padding, dilation, bias
+GENERAL_CONFIGS = {
+    "voxtral_stride1": (1, 4, 6, 10, 3, 1, 0, 1, True),
+    "voxtral_stride2": (1, 6, 5, 10, 3, 2, 0, 1, True),
+    "no_bias": (1, 3, 2, 9, 3, 1, 0, 1, False),
+    "padded": (1, 3, 4, 9, 3, 1, 1, 1, True),
+    "dilated": (1, 2, 3, 11, 3, 1, 2, 2, True),
+    "batch2": (2, 3, 4, 8, 3, 2, 1, 1, True),
+}
+
 
 class Conv1dPwModule(torch.nn.Module):
     def __init__(self, in_channels, out_channels, bias) -> None:
         super().__init__()
         g = torch.Generator().manual_seed(0)
         self.conv = torch.nn.Conv1d(in_channels, out_channels, 1, bias=bias)
+        with torch.no_grad():
+            self.conv.weight.normal_(generator=g)
+            if bias:
+                self.conv.bias.normal_(generator=g)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+class Conv1dModule(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        bias,
+    ) -> None:
+        super().__init__()
+        g = torch.Generator().manual_seed(0)
+        self.conv = torch.nn.Conv1d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+        )
         with torch.no_grad():
             self.conv.weight.normal_(generator=g)
             if bias:
@@ -54,6 +95,14 @@ def _lower(cfg):
     return to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
 
 
+def _lower_general(cfg, dynamic_shapes=None):
+    n, ic, oc, length, kernel, stride, padding, dilation, bias = cfg
+    module = Conv1dModule(ic, oc, kernel, stride, padding, dilation, bias).eval()
+    inputs = (_det_input((n, ic, length)),)
+    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
+    return to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+
+
 def _delegated(et) -> bool:
     return any(
         d.id == "VulkanBackend"
@@ -63,9 +112,17 @@ def _delegated(et) -> bool:
 
 
 def _op_delegated(edge, op_substr: str) -> bool:
-    # op must be absorbed into the delegate, not left as a top-level CPU-fallback node.
+    # Require the op in a delegate, not merely absent from the host graph.
+    from executorch.exir.lowered_backend_module import get_lowered_submodules
+
     gm = edge.exported_program().graph_module
-    return all(op_substr not in str(getattr(n, "target", "")) for n in gm.graph.nodes)
+    if any(op_substr in str(getattr(n, "target", "")) for n in gm.graph.nodes):
+        return False
+    return any(
+        op_substr in str(getattr(dn, "target", ""))
+        for _, lowered, _ in get_lowered_submodules(gm)
+        for dn in lowered.original_module.graph_module.graph.nodes
+    )
 
 
 class Conv1dPwTest(unittest.TestCase):
@@ -82,3 +139,24 @@ class Conv1dPwTest(unittest.TestCase):
                     _op_delegated(edge, "convolution"),
                     f"conv1d not delegated (fell back to CPU) for {name}",
                 )
+
+
+class Conv1dTest(unittest.TestCase):
+    def test_export_delegates(self) -> None:
+        for name, cfg in GENERAL_CONFIGS.items():
+            with self.subTest(name=name):
+                edge = _lower_general(cfg)
+                self.assertTrue(
+                    _delegated(edge.to_executorch()),
+                    f"Expected a VulkanBackend delegate (conv1d {name})",
+                )
+                self.assertTrue(
+                    _op_delegated(edge, "convolution"),
+                    f"conv1d not delegated (fell back to CPU) for {name}",
+                )
+
+    def test_dynamic_length_export_delegates(self) -> None:
+        length = torch.export.Dim("conv1d_length", min=5, max=16)
+        edge = _lower_general(GENERAL_CONFIGS["padded"], dynamic_shapes=({2: length},))
+        self.assertTrue(_delegated(edge.to_executorch()))
+        self.assertTrue(_op_delegated(edge, "convolution"))

@@ -7,12 +7,17 @@
 from __future__ import annotations
 
 import inspect
+import math
+import operator
 from typing import TYPE_CHECKING
 
 import pytest
 import torch
 
 from executorch.backends.qualcomm import _passes
+
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
@@ -21,11 +26,15 @@ from executorch.backends.qualcomm.tests.rework.conftest import (
     check_exception,
     EXCEPTION_FROM_PASSES,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
 )
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
@@ -131,6 +140,59 @@ class AnnotateAvgPool1D:
         assert all(
             QCOM_QUANT_ATTRS in n.meta for n in nodes
         ), "avg_pool1d partition nodes should have QCOM_QUANT_ATTRS"
+
+
+class AnnotateGetAttr:
+    class _Conv1d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv1d(4, 8, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        # Workflow:
+        # 1. CanonicalizeConv rewrites the conv1d weight into a new get_attr node
+        #    (dq_ops-consuming, in the quantized flow) with QCOM_QUANT_ATTRS set.
+        # 2. LayoutTransform rebuilds the GraphModule and drops the quant metadata.
+        # 3. AnnotateGetAttr repopulates it on the corresponding get_attr node.
+        # 4. lift_constant_tensor_pass converts get_attr node into a
+        #    "_lifted_tensor_constant*" placeholder while preserving its metadata.
+        module = AnnotateGetAttr._Conv1d()
+        inputs = (torch.randn(1, 4, 16),)
+        target_pass = _passes.AnnotateGetAttr
+        _ = assertions
+        gm = pass_pipeline.lower_edge_ep(
+            module=module,
+            sample_input=inputs,
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=target_pass,
+            quantizer=quantizer,
+        ).graph_module
+
+        lifted_constant_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "placeholder"
+            and n.name.startswith("_lifted_tensor_constant")
+            and list(n.users)[0].target in dq_ops
+        ]
+        assert (
+            len(lifted_constant_nodes) > 0
+        ), "expected at least one lifted tensor constant feeding a dequantize op"
+        assert all(
+            QCOM_QUANT_ATTRS in n.meta for n in lifted_constant_nodes
+        ), "lifted tensor constants feeding a dequantize op should have QCOM_QUANT_ATTRS after AnnotateGetAttr"
 
 
 class AnnotateQuantAttrs:
@@ -304,7 +366,7 @@ class CanonicalizeConv:
         def forward(self, x):
             return self.conv(x)
 
-    # --- Group 2: transpose conv dilation (kernel dilated manually, dilation arg removed) ---
+    # --- Group 2: transpose conv dilation (kernel dilated manually, dilation arg calibrated) ---
     class _ConvTranspose1dDilation(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -330,13 +392,14 @@ class CanonicalizeConv:
             return self.conv(x)
 
     @staticmethod
-    def _assert_no_dilation(gm, targets):
-        """Assert dilation arg has been removed from all matching nodes."""
+    def _assert_no_dilation(gm):
+        """Assert dilation arg has been calibrated from edge convolution op."""
         for node in gm.graph.nodes:
-            if node.target in targets:
-                assert len(node.args) <= 7 or all(
-                    d == 1 for d in node.args[7]
-                ), f"{node.target} dilation arg (index 7) should be all ones"
+            if node.target is exir_ops.edge.aten.convolution.default:
+                dilation = node.args[5]
+                assert all(
+                    d == 1 for d in dilation
+                ), f"{node.target} dilation arg (index 5) should be all ones"
 
     @staticmethod
     @unpack_pass_fixtures
@@ -349,79 +412,77 @@ class CanonicalizeConv:
         pass_pipeline: PassPipeline,
     ):
         target_pass = _passes.CanonicalizeConv
-        _ = compile_spec
+        conv = exir_ops.edge.aten.convolution.default
 
         # --- Group 1: conv1d → unsqueeze_copy + conv2d + squeeze_copy ---
         with subtests.test(msg="conv1d"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._Conv1d(),
                 sample_input=(torch.randn(1, 4, 16),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            assertions.assert_target_count(
+                gm, exir_ops.edge.aten.unsqueeze_copy.default, 1
             )
-            assertions.assert_no_target(gm, torch.ops.aten.conv1d.default)
-            assertions.assert_target_count(gm, torch.ops.aten.conv2d.default, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.unsqueeze_copy.default, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.squeeze_copy.dims, 1)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.squeeze_copy.dims, 1)
 
         with subtests.test(msg="conv1d_transpose"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._ConvTranspose1d(),
                 sample_input=(torch.randn(1, 4, 8),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            assertions.assert_target_count(
+                gm, exir_ops.edge.aten.unsqueeze_copy.default, 1
             )
-            assertions.assert_no_target(gm, torch.ops.aten.conv_transpose1d.default)
-            assertions.assert_target_count(gm, torch.ops.aten.conv_transpose2d.input, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.unsqueeze_copy.default, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.squeeze_copy.dims, 1)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.squeeze_copy.dims, 1)
 
-        # --- Group 2: transpose conv dilation — kernel dilated, dilation arg removed ---
+        # --- Group 2: transpose conv dilation — kernel dilated, dilation arg calibrated ---
         with subtests.test(msg="conv_transpose1d_dilation"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._ConvTranspose1dDilation(),
                 sample_input=(torch.randn(1, 4, 8),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
-            )
-            assertions.assert_no_target(gm, torch.ops.aten.conv_transpose1d.default)
-            assertions.assert_target_count(gm, torch.ops.aten.conv_transpose2d.input, 1)
-            CanonicalizeConv._assert_no_dilation(
-                gm, {torch.ops.aten.conv_transpose2d.input}
-            )
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            CanonicalizeConv._assert_no_dilation(gm)
 
         with subtests.test(msg="conv_transpose2d_dilation"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._ConvTranspose2dDilation(),
                 sample_input=(torch.randn(1, 4, 8, 8),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
-            )
-            assertions.assert_target_count(gm, torch.ops.aten.conv_transpose2d.input, 1)
-            CanonicalizeConv._assert_no_dilation(
-                gm, {torch.ops.aten.conv_transpose2d.input}
-            )
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            CanonicalizeConv._assert_no_dilation(gm)
 
         # TODO: update this once lpai starts to support transpose_conv3d
         if backend_type != QnnExecuTorchBackendType.kLpaiBackend:
             with subtests.test(msg="conv_transpose3d_dilation"):
-                gm = pass_pipeline.lower_export_gm(
+                gm = pass_pipeline.lower_edge_ep(
                     module=CanonicalizeConv._ConvTranspose3dDilation(),
                     sample_input=(torch.randn(1, 4, 4, 4, 4),),
                     target_pass=target_pass,
                     backend_type=backend_type,
+                    compile_spec=compile_spec,
                     quantizer=quantizer,
-                )
-                assertions.assert_target_count(
-                    gm, torch.ops.aten.conv_transpose3d.input, 1
-                )
-                CanonicalizeConv._assert_no_dilation(
-                    gm, {torch.ops.aten.conv_transpose3d.input}
-                )
+                ).graph_module
+                assertions.assert_target_count(gm, conv, 1)
+                CanonicalizeConv._assert_no_dilation(gm)
 
 
 class ConvertBmmToMatmul:
@@ -469,32 +530,71 @@ class ConvertLinearToConv2d:
         def forward(self, x):
             return self.linear(x)
 
+    class _SharedWeight(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(4, 8))
+
+        def forward(self, x, y):
+            return torch.nn.functional.linear(
+                x, self.weight
+            ) + torch.nn.functional.linear(y, self.weight)
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
+        subtests,
         quantizer,
         compile_spec,
         backend_type: QnnExecuTorchBackendType,
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        module = ConvertLinearToConv2d._Basic()
-        inputs = (torch.randn(2, 8),)
         target_pass = _passes.ConvertLinearToConv2d
-        _ = compile_spec
-        gm = pass_pipeline.lower_export_gm(
-            module=module,
-            sample_input=inputs,
-            target_pass=target_pass,
-            backend_type=backend_type,
-            quantizer=quantizer,
-            convert_linear_to_conv2d=True,
-        )
-        assertions.assert_no_target(gm, torch.ops.aten.linear.default)
-        assertions.assert_target_count(gm, torch.ops.aten.conv2d.default, 1)
-        # rank-2 input: reshape×2 (input + output restore) + permute×2 (pre/post conv)
-        assertions.assert_target_count(gm, torch.ops.aten.reshape.default, 2)
-        assertions.assert_target_count(gm, torch.ops.aten.permute.default, 2)
+        conv = exir_ops.edge.aten.convolution.default
+
+        with subtests.test(msg="basic"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=ConvertLinearToConv2d._Basic(),
+                sample_input=(torch.randn(2, 8),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+                convert_linear_to_conv2d=True,
+            ).graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.linear.default)
+            assertions.assert_target_count(gm, conv, 1)
+            # rank-2 input: reshape×2 (input + output restore) + permute×2 (pre/post conv)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.view_copy.default, 2)
+            assertions.assert_target_count(
+                gm, exir_ops.edge.aten.permute_copy.default, 2
+            )
+
+        with subtests.test(msg="shared_weight"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=ConvertLinearToConv2d._SharedWeight(),
+                sample_input=(torch.randn(2, 8), torch.randn(2, 8)),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+                convert_linear_to_conv2d=True,
+            ).graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.linear.default)
+            assertions.assert_target_count(gm, conv, 2)
+            conv_weight_sources = set()
+            for node in gm.graph.nodes:
+                if node.target is conv:
+                    weight_arg = node.args[1]
+                    conv_weight_sources.add(
+                        weight_arg.args[0]
+                        if weight_arg.target in dq_ops
+                        else weight_arg
+                    )
+            assert (
+                len(conv_weight_sources) == 1
+            ), f"expected both convolution nodes to share one weight source, got {conv_weight_sources}"
 
 
 class ConvertMhaToSha:
@@ -4128,6 +4228,114 @@ class LpaiPartitionFallbackSupport:
                     )
 
 
+class RecomposeHadamard:
+    class _Linear(torch.nn.Module):
+        def __init__(self, weight: torch.Tensor, bias: bool = False):
+            super().__init__()
+            dim = weight.shape[0]
+            self.linear = torch.nn.Linear(dim, dim, bias=bias).eval()
+            # nn.Linear computes x @ Wᵀ; a Hadamard matrix is symmetric so
+            # x @ Hᵀ == x @ H, matching hadamard_transform(x).
+            self.linear.weight.data.copy_(weight)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    class _MatMul(torch.nn.Module):
+        def __init__(self, weight: torch.Tensor):
+            super().__init__()
+            self.register_buffer("weight", weight)
+
+        def forward(self, x):
+            return torch.matmul(x, self.weight)
+
+    class _Conv(torch.nn.Module):
+        def __init__(self, weight: torch.Tensor, bias: bool = False):
+            super().__init__()
+            dim = weight.shape[0]
+            self.conv = torch.nn.Conv2d(dim, dim, kernel_size=1, bias=bias).eval()
+            self.conv.weight.data.copy_(weight.reshape(dim, dim, 1, 1))
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        subtests,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        if is_qnn_sdk_version_less_than("2.47"):
+            pytest.skip("HadamardTransform requires QNN SDK 2.47 or newer")
+
+        dim = 8
+        target_pass = _passes.RecomposeHadamard
+        hadamard = torch.ops.qnn_custom.hadamard_transform.default
+        permute = torch.ops.aten.permute.default
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        vector_input = (torch.randn(1, dim),)
+        image_input = (torch.randn(1, dim, 4, 4),)
+        non_hadamard = torch.randn(dim, dim)
+        # (label, module, source, inputs, exp_hadamard, exp_permute)
+        cases = [
+            (
+                "linear",
+                RecomposeHadamard._Linear(H),
+                torch.ops.aten.linear.default,
+                vector_input,
+                1,
+                0,
+            ),
+            (
+                "matmul",
+                RecomposeHadamard._MatMul(H),
+                torch.ops.aten.matmul.default,
+                vector_input,
+                1,
+                0,
+            ),
+            # conv mixes the channel dim, so the rewrite is wrapped in permutes.
+            (
+                "conv",
+                RecomposeHadamard._Conv(H),
+                torch.ops.aten.conv2d.default,
+                image_input,
+                1,
+                2,
+            ),
+            # A bias makes the op more than a plain Hadamard product.
+            (
+                "linear_bias",
+                RecomposeHadamard._Linear(H, bias=True),
+                torch.ops.aten.linear.default,
+                vector_input,
+                0,
+                0,
+            ),
+            (
+                "non_hadamard",
+                RecomposeHadamard._Linear(non_hadamard),
+                torch.ops.aten.linear.default,
+                vector_input,
+                0,
+                0,
+            ),
+        ]
+        for label, module, source, inputs, exp_hadamard, exp_permute in cases:
+            with subtests.test(msg=label):
+                gm = pass_pipeline.lower_annotation_gm(
+                    module=module,
+                    sample_input=inputs,
+                    target_pass=target_pass,
+                    backend_type=backend_type,
+                )
+                assertions.assert_target_count(gm, hadamard, exp_hadamard)
+                assertions.assert_target_count(gm, permute, exp_permute)
+                assertions.assert_target_count(gm, source, 0 if exp_hadamard else 1)
+
+
 class RecomposePadMaxPool2d:
     class _MaxPoolPadded(torch.nn.Module):
         def __init__(self):
@@ -4479,12 +4687,34 @@ class TagQuantIO:
             return torch.relu(x)
 
     @staticmethod
+    def _delegate_output_arity(gm: torch.fx.GraphModule) -> dict[torch.fx.Node, int]:
+        """Map every delegate users to the number of users, so we can ensure
+        both the single-output and multi-output scenarios are covered."""
+        arity = {}
+        for n in gm.graph.nodes:
+            if n.op == "call_function" and n.target is executorch_call_delegate:
+                getitems = [u for u in n.users if u.target is operator.getitem]
+                arity.update(dict.fromkeys(getitems, len(getitems)))
+        return arity
+
+    @staticmethod
     @unpack_pass_fixtures
-    def test():
+    def test(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+    ):
+        from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+            get_qnn_pass_manager_cls,
+        )
+        from executorch.backends.qualcomm.tests.models import SkipSplitToConcat
         from executorch.backends.qualcomm.utils.constants import (
+            QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
             QCOM_QUANT_ATTRS,
             QCOM_QUANT_ATTRS_MAP,
             QCOM_QUANTIZED_IO,
+        )
+        from executorch.backends.qualcomm.utils.utils import (
+            to_edge_transform_and_lower_to_qnn,
         )
 
         module = TagQuantIO._Relu()
@@ -4529,3 +4759,59 @@ class TagQuantIO:
                 f"expected {num_returned} entries in QCOM_QUANT_ATTRS_MAP, "
                 f"got {len(n.meta[QCOM_QUANT_ATTRS_MAP])}"
             )
+
+        # Trait 3: QCOM_QUANTIZED_IO tags applied before to_backend survive on
+        # delegate-output getitems. Keeping split/cat on CPU splits the graph so
+        # that both the single-output and multi-output scenarios are covered.
+        skip_targets = {
+            exir_ops.edge.aten.split_with_sizes_copy.default,
+            exir_ops.edge.aten.cat.default,
+        }
+
+        def get_boundary_dtype(node):
+            targets = {node.target, *(u.target for u in node.users)}
+            return torch.uint8 if targets & skip_targets else None
+
+        passes_job = get_qnn_pass_manager_cls(backend_type).get_capture_program_passes()
+        passes_job[_passes.TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[_passes.TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "get_quant_io_dtype_fn"
+        ] = get_boundary_dtype
+
+        module = SkipSplitToConcat()
+        inputs = (
+            torch.randn(1, 4, 4, 6),
+            torch.randn(1, 4, 4, 2),
+            torch.randn(1, 4, 4, 2),
+            torch.randn(1, 4, 4, 2),
+        )
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module,
+            inputs,
+            compile_spec,
+            passes_job=passes_job,
+            skip_node_op_set={t.__name__ for t in skip_targets},
+        )
+
+        gm = edge_prog_mgr.exported_program().graph_module
+        arity = TagQuantIO._delegate_output_arity(gm)
+
+        # get_boundary_dtype tagged the nodes feeding the CPU-side split/cat, so
+        # after lowering, those delegate outputs must carry the QCOM_QUANTIZED_IO tag.
+        expected = {n for n in arity if any(u.target in skip_targets for u in n.users)}
+        assert expected, "no delegate-output getitem feeds the skipped nodes"
+
+        tagged = {
+            n: n.meta[QCOM_QUANTIZED_IO] for n in arity if QCOM_QUANTIZED_IO in n.meta
+        }
+        assert tagged == dict.fromkeys(expected, torch.uint8), (
+            f"delegate outputs should be carrying {QCOM_QUANTIZED_IO!r} {tagged} "
+            f"!= boundaries tagged uint8 before to_backend "
+            f"{dict.fromkeys(expected, torch.uint8)}"
+        )
+
+        arities = {arity[n] for n in expected}
+        assert 1 in arities and arities != {1}, (
+            f"expected both single-output and multi-output delegates to be covered, "
+            f"got output counts {sorted(arities)}"
+        )

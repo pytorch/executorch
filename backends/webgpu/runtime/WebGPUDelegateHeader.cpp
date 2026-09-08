@@ -65,13 +65,19 @@ bool WebGPUDelegateHeader::is_valid() const {
   if (flatbuffer_size == 0) {
     return false;
   }
-  if (bytes_offset < flatbuffer_offset + flatbuffer_size) {
+  if (bytes_offset < flatbuffer_offset ||
+      flatbuffer_size > bytes_offset - flatbuffer_offset) {
     return false;
   }
   return true;
 }
 
-Result<WebGPUDelegateHeader> WebGPUDelegateHeader::parse(const void* data) {
+Result<WebGPUDelegateHeader> WebGPUDelegateHeader::parse(
+    const void* data,
+    size_t buffer_size) {
+  if (data == nullptr || buffer_size < kExpectedSize) {
+    return Error::InvalidArgument;
+  }
   const uint8_t* header_data = (const uint8_t*)data;
 
   const uint8_t* magic_start = header_data + kMagic.offset;
@@ -88,6 +94,13 @@ Result<WebGPUDelegateHeader> WebGPUDelegateHeader::parse(const void* data) {
   };
 
   if (!header.is_valid()) {
+    return Error::InvalidArgument;
+  }
+
+  if (header.flatbuffer_offset > buffer_size ||
+      header.flatbuffer_size > buffer_size - header.flatbuffer_offset ||
+      header.bytes_offset > buffer_size ||
+      header.bytes_size > buffer_size - header.bytes_offset) {
     return Error::InvalidArgument;
   }
 

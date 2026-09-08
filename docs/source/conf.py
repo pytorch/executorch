@@ -308,14 +308,20 @@ redirects = {
     "executorch-arm-delegate-tutorial": "backends/arm-ethos-u/tutorials/ethos-u-getting-started.html",
     "build-run-coreml": "backends/coreml/coreml-overview.html",
     "build-run-mediatek-backend": "backends-mediatek.html",
-    "build-run-mps": "backends/mps/mps-overview.html",
+    "build-run-mps": "backends-overview.html",
     "build-run-qualcomm-ai-engine-direct-backend": "backends-qualcomm.html",
     "build-run-xtensa": "backends-cadence.html",
     "apple-runtime": "using-executorch-ios.html",
     "backends-arm-ethos-u": "backends/arm-ethos-u/arm-ethos-u-overview.html",
     "backends-arm-vgf": "backends/arm-vgf/arm-vgf-overview.html",
     "backends-coreml": "backends/coreml/coreml-overview.html",
-    "backends-mps": "backends/mps/mps-overview.html",
+    "backends-mps": "backends-overview.html",
+    # The MPS backend was removed after being deprecated in 1.2. Point its pages at the
+    # backend list, which is where a reader finds the Apple backends that remain, rather
+    # than 404.
+    "backends/mps/mps-overview": "../../backends-overview.html",
+    "ios-mps": "backends-overview.html",
+    "desktop-mps": "backends-overview.html",
     "backends-xnnpack": "backends/xnnpack/xnnpack-overview.html",
     "backend-delegates-xnnpack-reference": "backends/xnnpack/xnnpack-arch-internals.html",
     "llm/llama-demo-android": "../using-executorch-android.html",

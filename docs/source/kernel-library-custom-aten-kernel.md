@@ -207,7 +207,7 @@ Unlike the YAML entry API, the C++ API only uses C++ macros `EXECUTORCH_LIBRARY`
 
 Please refer to [Custom Ops Best Practices](#custom-ops-api-best-practices) on which API to use.
 
-Similar to [`TORCH_LIBRARY`](https://pytorch.org/cppdocs/library.html#library_8h_1a0bd5fb09d25dfb58e750d712fc5afb84) in PyTorch, `EXECUTORCH_LIBRARY` takes the operator name and the C++ function name and register them into ExecuTorch runtime.
+Similar to [`TORCH_LIBRARY`](https://docs.pytorch.org/cppdocs/api/library/index.html) in PyTorch, `EXECUTORCH_LIBRARY` takes the operator name and the C++ function name and register them into ExecuTorch runtime.
 
 #### Prepare custom kernel implementation
 

@@ -58,13 +58,13 @@ void compare_impl(
       in2_tensor.elem_size != 4) {
     throw std::runtime_error("compare: fp32 inputs only");
   }
-  if (!out_tensor.is_int || out_tensor.elem_size != 1) {
+  if (!out_tensor.is_bool || out_tensor.elem_size != 1) {
     throw std::runtime_error("compare: output must be a 1-byte bool tensor");
   }
   const uint64_t numel = out_tensor.nbytes;
-  // out bool packed 4/word (array<u32>); numel%4==0 gates the readback map.
-  if (numel == 0u || numel % 4u != 0u || numel > UINT32_MAX) {
-    throw std::runtime_error("compare: numel must be a nonzero mult of 4");
+  // out bool is byte-packed into ceil(numel / 4) u32 storage words.
+  if (numel == 0u || numel > UINT32_MAX) {
+    throw std::runtime_error("compare: numel must be nonzero and fit u32");
   }
   const uint64_t in_numel = in1_tensor.nbytes / sizeof(float);
   if (in1_tensor.nbytes != in2_tensor.nbytes || in_numel != numel) {
@@ -75,7 +75,7 @@ void compare_impl(
   params.num_elements = static_cast<uint32_t>(numel);
   params.op = op;
 
-  const uint32_t words = static_cast<uint32_t>(numel / 4u);
+  const uint32_t words = static_cast<uint32_t>((numel + 3u) / 4u);
   uint32_t wg_size =
       utils::clamp_workgroup_size(device, kCompareWorkgroupSizeX);
   utils::WgCount workgroup_count =
@@ -85,9 +85,7 @@ void compare_impl(
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(CompareParams));
-  graph.add_uniform_buffer_bytes(sizeof(CompareParams));
+  WGPUBuffer uniform_buffer = graph.create_params_buffer(params);
 
   // out (rw storage) + in1/in2 (ro storage) + params (uniform).
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
@@ -97,7 +95,7 @@ void compare_impl(
           {0,
            WGPUBufferBindingType_Storage,
            out_tensor.buffer,
-           out_tensor.nbytes},
+           static_cast<size_t>(words) * sizeof(uint32_t)},
           {1,
            WGPUBufferBindingType_ReadOnlyStorage,
            in1_tensor.buffer,
@@ -127,9 +125,8 @@ void compare_impl(
                     WebGPUGraph& g) {
     const auto& d = g.cur_dims(in1_id);
     const uint64_t n = utils::numel_of(d);
-    if (n == 0u || n % 4u != 0u || n > UINT32_MAX ||
-        utils::numel_of(g.cur_dims(in2_id)) != n) {
-      throw std::runtime_error("compare(resize): numel must be a mult of 4");
+    if (n == 0u || n > UINT32_MAX || utils::numel_of(g.cur_dims(in2_id)) != n) {
+      throw std::runtime_error("compare(resize): invalid numel");
     }
     g.set_cur_dims(out_id, d);
     CompareParams p = {};
@@ -137,14 +134,12 @@ void compare_impl(
     p.op = op;
     wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
     const utils::WgCount wgc = utils::compute_2d_workgroup_count(
-        g.device(), static_cast<uint32_t>(n / 4u), wg_size, "compare");
+        g.device(), static_cast<uint32_t>((n + 3u) / 4u), wg_size, "compare");
     g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
     g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
   };
   graph.add_tensor_resize_hook(in1_id, resize);
   graph.add_tensor_resize_hook(in2_id, resize);
-
-  graph.own_uniform_buffer(uniform_buffer);
 }
 
 void eq_op(WebGPUGraph& graph, const std::vector<int>& args) {

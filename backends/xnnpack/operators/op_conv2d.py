@@ -141,8 +141,14 @@ class Conv2d(NodeVisitor):
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
         output_padding = cast(List[int], node.args[7])
+        # ATen broadcasts a single spatial value over every spatial dim, so any of
+        # these may arrive with length 1 for a 2d convolution.
+        if len(stride) == 1:
+            stride = stride + stride
         if len(padding) == 1:
             padding = padding + padding
+        if len(dilation) == 1:
+            dilation = dilation + dilation
         if len(output_padding) == 1:
             output_padding = output_padding + output_padding
 

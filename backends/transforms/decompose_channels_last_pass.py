@@ -56,7 +56,10 @@ class DecomposeChannelsLastPass(ExportPass):
                 {},
                 meta,
             )
-        if op == exir_ops.edge.channels_last.max_pool2d_with_indices.default:
+        if op in (
+            exir_ops.edge.channels_last.max_pool2d.default,
+            exir_ops.edge.channels_last.max_pool2d_with_indices.default,
+        ):
             nchw_in = super().call_operator(
                 exir_ops.edge.aten.permute_copy.default,
                 (args[0], _NHWC_TO_NCHW),
@@ -70,21 +73,23 @@ class DecomposeChannelsLastPass(ExportPass):
                 meta,
             )
             values = super().call_operator(operator.getitem, (pooled, 0), {}, meta)
-            indices = super().call_operator(operator.getitem, (pooled, 1), {}, meta)
-            return (
-                super().call_operator(
-                    exir_ops.edge.aten.permute_copy.default,
-                    (values, _NCHW_TO_NHWC),
-                    {},
-                    meta,
-                ),
-                super().call_operator(
-                    exir_ops.edge.aten.permute_copy.default,
-                    (indices, _NCHW_TO_NHWC),
-                    {},
-                    meta,
-                ),
+            values = super().call_operator(
+                exir_ops.edge.aten.permute_copy.default,
+                (values, _NCHW_TO_NHWC),
+                {},
+                meta,
             )
+            if op == exir_ops.edge.channels_last.max_pool2d.default:
+                return values
+
+            indices = super().call_operator(operator.getitem, (pooled, 1), {}, meta)
+            indices = super().call_operator(
+                exir_ops.edge.aten.permute_copy.default,
+                (indices, _NCHW_TO_NHWC),
+                {},
+                meta,
+            )
+            return values, indices
         if op == exir_ops.edge.channels_last.permute_copy.default:
             return super().call_operator(
                 exir_ops.edge.aten.permute_copy.default, args, kwargs, meta

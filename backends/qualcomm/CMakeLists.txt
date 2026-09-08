@@ -255,8 +255,26 @@ target_link_libraries(
 )
 target_link_libraries(
   qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_core qnn_backend_options
+                                 qnn_backend_options
 )
+# Resolve the runtime from the shared library when one is built, so this
+# delegate does not carry its own copy of the backend registry.
+if(EXECUTORCH_BUILD_SHARED)
+  target_link_libraries(qnn_executorch_backend PRIVATE executorch_shared)
+  executorch_target_link_shared_runtime(qnn_executorch_backend)
+  # Named like the other shipped delegates, so a consumer of the wheel finds it
+  # where it finds them and the package config needs no special case. Only the
+  # shared build renames: the device and direct-mode builds keep the original
+  # name, which their own tooling and the signing step expect.
+  set_target_properties(
+    qnn_executorch_backend PROPERTIES OUTPUT_NAME executorch_backend_qnn
+  )
+  executorch_target_shared_runtime_path(
+    qnn_executorch_backend "lib" "${CMAKE_INSTALL_LIBDIR}"
+  )
+else()
+  target_link_libraries(qnn_executorch_backend PRIVATE executorch_core)
+endif()
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
   # Add macro here so we can dlopen the correct .so library.
@@ -324,12 +342,20 @@ add_subdirectory(
   ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
   ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
 )
+# The shared build installs beside the other delegates; every other build keeps
+# the original location, which the device tooling and the exporter's push list
+# expect.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_qnn_install_dir ${CMAKE_INSTALL_LIBDIR})
+else()
+  set(_qnn_install_dir ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm)
+endif()
 install(
   TARGETS qnn_executorch_backend
   EXPORT ExecuTorchTargets
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
-  RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  LIBRARY DESTINATION ${_qnn_install_dir}
+  ARCHIVE DESTINATION ${_qnn_install_dir}
+  RUNTIME DESTINATION ${_qnn_install_dir}
 )
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
@@ -359,12 +385,27 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
             qnn_schema
             qnn_manager
             qnn_executorch_header
-            executorch
-            extension_tensor
             qnn_backend_options
             wrappers
             qnn_executorch_logging
   )
+  # extension_tensor is bundled into the shared runtime, so naming it again here
+  # would give this module a second copy of what that library already provides.
+  if(NOT EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE extension_tensor)
+  endif()
+  # Same reasoning as the delegate above: take the runtime from the shared
+  # library when there is one, rather than embedding a second registry.
+  if(EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE executorch_shared)
+    executorch_target_link_shared_runtime(PyQnnManagerAdaptor)
+    executorch_target_shared_runtime_path(
+      PyQnnManagerAdaptor "backends/qualcomm/python"
+      "${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python"
+    )
+  else()
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE executorch)
+  endif()
 
   pybind11_extension(PyQnnManagerAdaptor)
   if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES RelWithDebInfo)

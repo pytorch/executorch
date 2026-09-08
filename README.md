@@ -7,7 +7,7 @@
 <div align="center">
   <a href="https://pypi.org/project/executorch/"><img src="https://img.shields.io/pypi/v/executorch?style=for-the-badge&color=blue" alt="PyPI - Version"></a>
   <a href="https://github.com/pytorch/executorch/graphs/contributors"><img src="https://img.shields.io/github/contributors/pytorch/executorch?style=for-the-badge&color=blue" alt="GitHub - Contributors"></a>
-  <a href="https://github.com/pytorch/executorch/stargazers"><img src="https://img.shields.io/github/stars/pytorch/executorch?style=for-the-badge&color=blue" alt="GitHub - Stars"></a>
+  <a href="https://github.com/pytorch/executorch/stargazers"><!-- @lint-ignore GitHub serves 404 on /stargazers to non-browser clients --><img src="https://img.shields.io/github/stars/pytorch/executorch?style=for-the-badge&color=blue" alt="GitHub - Stars"></a>
   <a href="https://discord.gg/Dh43CKSAdc"><img src="https://img.shields.io/badge/Discord-Join%20Us-blue?logo=discord&logoColor=white&style=for-the-badge" alt="Discord - Chat with Us"></a>
   <a href="https://docs.pytorch.org/executorch/main/index.html"><img src="https://img.shields.io/badge/Documentation-blue?logo=googledocs&logoColor=white&style=for-the-badge" alt="Documentation"></a>
 </div>
@@ -187,9 +187,9 @@ See [examples/models/llama](examples/models/llama/README.md) for complete workfl
 | **Platform**     | **Supported Backends**                                   |
 |------------------|----------------------------------------------------------|
 | Android          | XNNPACK, Vulkan, Qualcomm, MediaTek, Samsung Exynos      |
-| iOS              | XNNPACK, CoreML (Neural Engine), MPS *(deprecated)*      |
+| iOS              | XNNPACK, CoreML (Neural Engine)                          |
 | Linux / Windows  | XNNPACK, OpenVINO, CUDA *(experimental)*                 |
-| macOS            | XNNPACK, Metal *(experimental)*, MPS *(deprecated)*      |
+| macOS            | XNNPACK, Metal *(experimental)*, MLX *(experimental)*    |
 | Embedded / MCU   | XNNPACK, ARM Ethos-U, NXP, Cadence DSP                   |
 
 See [Backend Documentation](https://docs.pytorch.org/executorch/main/backends-overview.html) for detailed hardware requirements and optimization guides. For desktop/laptop GPU inference with CUDA and Metal, see the [Desktop Guide](desktop/README.md). For Zephyr RTOS integration, see the [Zephyr Guide](zephyr/README.md).
@@ -204,7 +204,7 @@ ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devi
 
 **Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language), [Gemma](examples/models/gemma3) (vision-language)
 
-**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [YOLO26](examples/models/yolo26/README.md), [Whisper](examples/models/whisper/README.md) <!-- @lint-ignore -->
+**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [YOLO26](examples/models/yolo26/README.md), [Whisper](examples/models/whisper/README.md), [Supertonic](examples/models/supertonic/README.md) <!-- @lint-ignore -->
 
 **Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models • [Unsloth](https://docs.unsloth.ai/new/deploy-llms-phone) for fine-tuned LLM deployment <!-- @lint-ignore -->
 

@@ -67,7 +67,8 @@ class TestAvgPool2d(unittest.TestCase):
 
     def test_fp32_avgpool2d_count_include_pad_unsupported(self):
         """
-        The XNNPACK backend does not support count_include_pad=True.
+        The XNNPACK backend does not support count_include_pad=True with
+        non-zero padding.
         """
         inputs = (torch.randn(1, 1, 10, 10),)
         (
@@ -76,6 +77,32 @@ class TestAvgPool2d(unittest.TestCase):
             .check_count({"torch.ops.aten.avg_pool2d.default": 1})
             .to_edge_transform_and_lower()
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+        )
+
+    class AvgPool2dAllDefaults(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.avgPool = torch.nn.AvgPool2d(2)
+
+        def forward(self, x):
+            return self.avgPool(x)
+
+    def test_fp32_avgpool2d_default_args(self):
+        """
+        count_include_pad defaults to True, but with the default zero padding
+        there are no padded elements to count, so the node must still delegate.
+        """
+        inputs = (torch.randn(1, 1, 10, 10),)
+        (
+            Tester(self.AvgPool2dAllDefaults(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
         )
 
     class AvgPool2dSingleElementKernel(torch.nn.Module):
