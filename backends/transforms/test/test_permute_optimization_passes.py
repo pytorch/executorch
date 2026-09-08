@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 import copy
+import operator
 import unittest
 from typing import cast
 
@@ -2391,5 +2392,47 @@ class LayoutPermuteVisibilityTest(unittest.TestCase):
             gm_before,
             gm,
             (torch.randn(1, 2, 3, 4),),
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+    def test_permutes_around_split_and_getitem_are_removed(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 6, 4))
+        to_nlc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        split = builder.call_operator(
+            op=exir_ops.edge.aten.split_with_sizes_copy.default,
+            args=(to_nlc, [2, 4], 2),
+        )
+        lhs = builder.call_operator(op=operator.getitem, args=(split, 0))
+        rhs = builder.call_operator(op=operator.getitem, args=(split, 1))
+        widened = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default, args=([lhs, lhs], 2)
+        )
+        added = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(widened, rhs)
+        )
+        to_ncl = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(added, [0, 2, 1])
+        )
+        builder.output([to_ncl])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        gm = result.graph_module
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        # The split's dim follows the removed permutation, as cat's already did.
+        (split_node,) = gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.aten.split_with_sizes_copy.default,
+        )
+        self.assertEqual(split_node.args[2], 1)
+        validate_numerics(
+            gm_before,
+            gm,
+            (torch.randn(1, 6, 4),),
             "RemovePermutesAroundElementwiseOps",
         )
