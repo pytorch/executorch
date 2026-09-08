@@ -11,6 +11,18 @@
 namespace executorch::vulkan::prototyping {
 namespace {
 
+int operator_build_count = 0;
+
+void counting_operator(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  (void)args;
+  ++operator_build_count;
+  graph.execute_nodes().emplace_back(std::make_unique<ExecuteNode>());
+}
+
+REGISTER_OPERATORS {
+  VK_REGISTER_OP(test_etvk.counting_operator.default, counting_operator);
+}
+
 TEST(ValueSpecTest, SetConstant_DoesNotMaterializeTensorData) {
   ValueSpec value(
       {16},
@@ -166,6 +178,27 @@ TEST(ValueSpecTest, ShareReferenceFrom_IgnoresNonTensorSpecs) {
   const void* before = tensor.get_ref_float_data().data();
   tensor.share_reference_from(scalar);
   EXPECT_EQ(tensor.get_ref_float_data().data(), before);
+}
+
+TEST(BenchmarkGraphTest, ChainedDispatchesBuildOperatorOnce) {
+  if (!vkcompute::api::available()) {
+    return;
+  }
+
+  TestCase test_case;
+  operator_build_count = 0;
+
+  ComputeGraph graph = setup_compute_graph(
+      test_case,
+      "test_etvk.counting_operator.default",
+      /*op_invocations_per_execute=*/8);
+
+  EXPECT_EQ(operator_build_count, 1);
+  EXPECT_EQ(graph.execute_nodes().size(), 1);
+
+  // Exercise the benchmark-only record-once/replay path over the built graph.
+  RepeatedGraphExecutor graph_executor(graph, /*repetitions=*/8);
+  graph_executor.execute();
 }
 
 } // namespace

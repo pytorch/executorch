@@ -608,9 +608,9 @@ class TestCase {
     return shader_filter_;
   }
 
-  // Manual override for the number of times the op is dispatched per
-  // graph.execute() (a.k.a. chained_dispatches). If > 0, the framework uses
-  // this directly and skips the probe phase. 0 (the default) means adaptive
+  // Manual override for the number of chained dispatches per measurement
+  // iteration (a.k.a. chained_dispatches). If > 0, the framework uses this
+  // directly and skips the probe phase. 0 (the default) means adaptive
   // (probe-then-scale).
   void set_op_invocations_per_execute(int n) {
     op_invocations_per_execute_ = n;
@@ -927,9 +927,33 @@ int64_t default_flop_calculator(const TestCase& test_case);
 
 using ReferenceComputeFunc = std::function<void(TestCase&)>;
 
-// Runs a measurement at the given chained_dispatches factor (how many times
-// the op is stacked inside one graph.execute()). This is a primitive; the
-// probe-then-scale orchestration lives in execute_test_cases().
+// Benchmark-only executor that records a graph's execute nodes N times into a
+// single reusable command buffer, then replays it on every execute().
+// Production ComputeGraph::execute() behavior is unchanged.
+//
+// Notes for interpreting benchmark numbers:
+// - Submit granularity differs from stacking N distinct nodes: all N encodings
+//   live in one command buffer with one submit per iteration (the old path
+//   could split across command buffers at the node-count threshold), so
+//   per-dispatch times may shift systematically against older data.
+// - No resize is triggered on the benchmark path in either design; resize
+//   coverage comes from the probe pass via graph.execute().
+// - Repeated encodings share one node/dispatch id, so per-repetition
+//   querypool attribution is unavailable (aggregation keys on kernel name).
+class RepeatedGraphExecutor final {
+ public:
+  RepeatedGraphExecutor(ComputeGraph& graph, int repetitions);
+  void execute();
+
+ private:
+  ComputeGraph& graph_;
+  std::unique_ptr<vkapi::CommandBuffer> command_;
+};
+
+// Runs a measurement at the given chained_dispatches factor. The operator is
+// built once, then its execute nodes are encoded that many times into a
+// benchmark-only reusable command buffer. The probe-then-scale orchestration
+// lives in execute_test_cases().
 //
 // write_outputs controls whether the graph's staging output buffers are copied
 // back into test_case.outputs() at the end of the run. The probe path needs
@@ -1007,10 +1031,9 @@ void compute_weight_sums_4bit_grouped(
 uint16_t float_to_half(float value);
 float half_to_float(uint16_t half_val);
 
-// Setup compute graph based on TestCase and operation name. The op function
-// is invoked op_invocations_per_execute times so that one graph.execute()
-// dispatches the op that many times (Google Benchmark-style stacking). The
-// output set_output_value() calls still happen once at the end.
+// Setup compute graph based on TestCase and operation name. The op function is
+// invoked once. op_invocations_per_execute is used only to reserve enough
+// descriptor capacity for benchmark-only repeated command encoding.
 ComputeGraph setup_compute_graph(
     TestCase& test_case,
     std::string op_name,
