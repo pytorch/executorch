@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "cmake>=3.24,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "cmake>=3.26,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
   "packaging>=24.2", # Lower bound required by setuptools
   "patchelf; sys_platform == 'linux'",  # Writes the runtime search paths that let the shipped libraries find each other.
   "pip>=23",  # For building the pip package.
@@ -67,6 +67,9 @@ vgf = [
   # AoT vgf dependencies
   # Keep this in sync with AoT deps from backends/arm/requirements-arm-vgf.txt and
   # backends/arm/requirements-arm-tosa.txt.
+  # Python 3.12 is the reference/recommended minimum for the ML SDK 0.10 VGF
+  # flow. ExecuTorch supports a broader Python range, so older versions are
+  # surfaced as a VGF preflight warning instead of a package-level restriction.
   "ai_ml_emulation_layer_for_vulkan==0.10.0",
   "ai_ml_sdk_model_converter==0.10.0",
   "ml_dtypes==0.5.1",

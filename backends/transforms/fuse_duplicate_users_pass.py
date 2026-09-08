@@ -28,6 +28,7 @@ class FuseDuplicateUsersPass(ExportPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    _recompile_before_retrace = True
 
     def __init__(self, excluded_targets: frozenset | None = None) -> None:
         super().__init__()
@@ -85,7 +86,8 @@ class FuseDuplicateUsersPass(ExportPass):
                     producers.append(representative)
 
         if modified:
-            graph_module.recompile()
+            if self._recompile_before_retrace:
+                graph_module.recompile()
             graph_module.graph.lint()
             graph_module = super().call(graph_module).graph_module
 

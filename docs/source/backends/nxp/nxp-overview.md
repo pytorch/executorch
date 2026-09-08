@@ -52,6 +52,11 @@ For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.c
 For guideline how to update the eIQ Neutron Runtime on MCUXpresso SDK, follow the instructions from the eIQ Neutron SDK package `docs/NeutronSDKUserGuide.md` available
 here https://www.nxp.com/design/design-center/software/eiq-ai-development-environment/eiq-toolkit-for-end-to-end-model-development-and-deployment:EIQ-TOOLKIT.
 
+## Using the MCUXpresso Example
+
+[This page](nxp-mcuxpresso-example.md) demonstrates how to build and run the ExecuTorch CIFARNet example from MCUXpresso SDK.
+
+
 ## Reference
 
 **→{doc}`nxp-partitioner` — Partitioner options.**

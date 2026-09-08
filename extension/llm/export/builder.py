@@ -471,6 +471,7 @@ class LLMEdgeManager:
                     edge_constant_methods=self.metadata,
                     edge_compile_config=edge_config,
                     verbose=self.verbose,
+                    generate_etrecord=self.generate_etrecord,
                 )
         return self
 
