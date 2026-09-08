@@ -31,6 +31,56 @@ constexpr float kMinProbeTimeUs = 1.0f;
 
 } // namespace
 
+// Benchmark graphs are immutable after input upload, so the operator nodes can
+// be recorded repeatedly. Staging uploads/downloads are encoded once:
+// repeating them would redo host-visible copies on every repetition and bias
+// per-invocation timings.
+RepeatedGraphExecutor::RepeatedGraphExecutor(
+    ComputeGraph& graph,
+    int repetitions,
+    OpNodeRange op_nodes)
+    : graph_(graph) {
+  VK_CHECK_COND(repetitions > 0);
+  VK_CHECK_COND(op_nodes.begin <= op_nodes.end);
+  VK_CHECK_COND(op_nodes.end <= graph_.execute_nodes().size());
+
+  api::Context* const context = graph_.context();
+  context->flush();
+  context->set_cmd(/*reusable=*/true);
+  context->cmd_reset_querypool();
+
+  for (size_t i = 0; i < op_nodes.begin; ++i) {
+    graph_.execute_nodes()[i]->encode(&graph_);
+  }
+  for (int i = 0; i < repetitions; ++i) {
+    for (size_t j = op_nodes.begin; j < op_nodes.end; ++j) {
+      graph_.execute_nodes()[j]->encode(&graph_);
+    }
+  }
+  for (size_t i = op_nodes.end; i < graph_.execute_nodes().size(); ++i) {
+    graph_.execute_nodes()[i]->encode(&graph_);
+  }
+
+  command_ =
+      std::make_unique<vkapi::CommandBuffer>(std::move(context->extract_cmd()));
+}
+
+void RepeatedGraphExecutor::execute() {
+  api::Context* const context = graph_.context();
+  command_->end();
+
+  // Intentionally bypasses Context::submit_cmd_to_gpu(): its submit-count
+  // bookkeeping and threshold-split path only serve submit_compute_job
+  // recording, which benchmarks don't use.
+  vkapi::VulkanFence fence = context->fences().get_fence();
+  context->adapter_ptr()->submit_cmd(
+      context->queue(),
+      command_->get_submit_handle(/*final_use=*/false),
+      fence.get_submit_handle());
+  fence.wait();
+  context->fences().return_fence(fence);
+}
+
 int get_seed() {
   static int seed = 42;
   return seed++;
@@ -1433,15 +1483,21 @@ int64_t default_flop_calculator(const TestCase& test_case) {
   return total_elements;
 }
 
-ComputeGraph setup_compute_graph(
+BenchmarkGraph setup_compute_graph(
     TestCase& test_case,
     std::string op_name,
     int op_invocations_per_execute) {
   GraphConfig config;
   config.enable_querypool = true;
+  // Pool sizing takes max(execute, prepack) * factor, so scaling the factor
+  // also over-reserves the prepack side (encoded once). Accepted: precise
+  // execute-only sizing would need runtime changes.
+  config.descriptor_pool_safety_factor *=
+      std::max(1, op_invocations_per_execute);
   // Default-on (opt-out via TestCase::set_force_resize(false)): force every
-  // DynamicDispatchNode to run its resize function on each execute(),
-  // exercising the op's resize formula even when input shapes are unchanged.
+  // DynamicDispatchNode to run its resize function when execute_test_case
+  // runs propagate_resize() after prepack, exercising the op's resize formula
+  // even when input shapes are unchanged.
   config.force_resize = test_case.get_force_resize();
   ComputeGraph graph(config);
 
@@ -1521,17 +1577,16 @@ ComputeGraph setup_compute_graph(
   std::vector<ValueRef> op_args = input_values;
   op_args.insert(op_args.end(), output_values.begin(), output_values.end());
 
-  // Invoke the op op_invocations_per_execute times to stack dispatches per
-  // graph.execute(). The output set_output_value() calls below still happen
-  // exactly once.
-  for (int i = 0; i < op_invocations_per_execute; ++i) {
-    opFn(graph, op_args);
-  }
+  // Nodes added before the op are staging uploads; nodes added after are
+  // staging downloads. Only the op's own nodes are repeated by benchmarks.
+  const size_t op_begin = graph.execute_nodes().size();
+  opFn(graph, op_args);
+  const size_t op_end = graph.execute_nodes().size();
 
   for (size_t i = 0; i < output_values.size(); ++i) {
     graph.set_output_value(output_values[i]);
   }
-  return graph;
+  return {std::move(graph), {op_begin, op_end}};
 }
 
 // Test execution utilities
@@ -1549,15 +1604,19 @@ BenchmarkResult execute_test_case(
     api::context()->initialize_querypool();
   }
 
-  // Build the measurement graph with the requested chained_dispatches factor.
-  // The caller (typically execute_test_cases) decides what it should be —
-  // this function is a pure "run at the given chained_dispatches" primitive.
-  ComputeGraph graph = setup_compute_graph(
+  // Build the operator once. Benchmark repetition is encoded separately so
+  // persistent graph allocations are not duplicated.
+  BenchmarkGraph benchmark = setup_compute_graph(
       test_case, test_case.operator_name(), chained_dispatches);
+  ComputeGraph& graph = benchmark.graph;
 
   // Prepare the graph
   graph.prepare();
   graph.prepack();
+
+  // Run resize functions once so force_resize exercises resize formulas even
+  // though the record/replay path below never calls propagate_resize().
+  graph.propagate_resize();
 
   // Copy input data into the graph's staging buffers
   size_t graph_input_idx = 0;
@@ -1605,9 +1664,12 @@ BenchmarkResult execute_test_case(
     ++graph_input_idx;
   }
 
+  RepeatedGraphExecutor graph_executor(
+      graph, chained_dispatches, benchmark.op_nodes);
+
   // Warmup runs
   for (int run = 0; run < warmup_runs; ++run) {
-    graph.execute();
+    graph_executor.execute();
   }
 
   // Benchmark runs - collect individual iteration timings
@@ -1619,7 +1681,7 @@ BenchmarkResult execute_test_case(
   for (int run = 0; run < benchmark_runs; ++run) {
     // Measure CPU time for each execute() call
     auto cpu_start = std::chrono::high_resolution_clock::now();
-    graph.execute();
+    graph_executor.execute();
     auto cpu_end = std::chrono::high_resolution_clock::now();
 
     auto cpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(

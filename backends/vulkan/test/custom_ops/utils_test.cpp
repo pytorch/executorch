@@ -11,6 +11,32 @@
 namespace executorch::vulkan::prototyping {
 namespace {
 
+int operator_build_count = 0;
+int encode_count = 0;
+
+class CountingEncodeNode final : public ExecuteNode {
+ public:
+  explicit CountingEncodeNode(int& count) : count_(count) {}
+  void encode(ComputeGraph* graph) override {
+    (void)graph;
+    ++count_;
+  }
+
+ private:
+  int& count_;
+};
+
+void counting_operator(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  (void)args;
+  ++operator_build_count;
+  graph.execute_nodes().emplace_back(
+      std::make_unique<CountingEncodeNode>(encode_count));
+}
+
+REGISTER_OPERATORS {
+  VK_REGISTER_OP(test_etvk.counting_operator.default, counting_operator);
+}
+
 TEST(ValueSpecTest, SetConstant_DoesNotMaterializeTensorData) {
   ValueSpec value(
       {16},
@@ -168,6 +194,33 @@ TEST(ValueSpecTest, ShareReferenceFrom_IgnoresNonTensorSpecs) {
   EXPECT_EQ(tensor.get_ref_float_data().data(), before);
   const std::vector<float> expected({1.0f, 2.0f, 3.0f, 4.0f});
   EXPECT_EQ(tensor.get_ref_float_data(), expected);
+}
+
+TEST(BenchmarkGraphTest, ChainedDispatchesBuildOperatorOnce) {
+  if (!vkcompute::api::available()) {
+    return;
+  }
+
+  TestCase test_case;
+  operator_build_count = 0;
+  encode_count = 0;
+
+  BenchmarkGraph benchmark = setup_compute_graph(
+      test_case,
+      "test_etvk.counting_operator.default",
+      /*op_invocations_per_execute=*/8);
+  ComputeGraph& graph = benchmark.graph;
+
+  EXPECT_EQ(operator_build_count, 1);
+  ASSERT_EQ(graph.execute_nodes().size(), 1u);
+  EXPECT_EQ(benchmark.op_nodes.begin, 0u);
+  EXPECT_EQ(benchmark.op_nodes.end, 1u);
+
+  // The replay path must encode the operator node once per repetition.
+  RepeatedGraphExecutor graph_executor(
+      graph, /*repetitions=*/8, benchmark.op_nodes);
+  EXPECT_EQ(encode_count, 8);
+  graph_executor.execute();
 }
 
 } // namespace
