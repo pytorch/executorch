@@ -577,6 +577,7 @@ def lower_to_executorch(
     backend="xnnpack",
     codesign_identity=None,
     packed_linear_counts=None,
+    vulkan_force_fp16=False,
 ):
     """Lower exported programs to ExecuTorch."""
     transform_passes = None
@@ -609,6 +610,8 @@ def lower_to_executorch(
                     VULKAN_EXTERNAL_CONSTANTS_MAX_DATA_BYTES
                 ),
             }
+            if vulkan_force_fp16:
+                compile_options["force_fp16"] = True
             if key in ("encode_audio_chunk", "text_decoder"):
                 compile_options["alias_buffer_mutations"] = True
             if key == "token_embedding":
@@ -858,6 +861,12 @@ def main():
         help="Model dtype (default: fp32).",
     )
     parser.add_argument(
+        "--vulkan-force-fp16",
+        action="store_true",
+        help="Store and execute Vulkan floating-point tensors as fp16 while "
+        "preserving fp32 model inputs and outputs.",
+    )
+    parser.add_argument(
         "--codesign-identity",
         default=None,
         help="macOS code signing identity for the Metal backend .so. "
@@ -869,6 +878,8 @@ def main():
         "cuda" if args.backend in ("cuda-windows", "rocm") else args.backend
     )
     _validate_export_args(parser, args, backend_for_export)
+    if args.vulkan_force_fp16 and args.backend != "vulkan":
+        parser.error("--vulkan-force-fp16 requires --backend=vulkan")
     validate_vulkan_options(args, parser)
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -932,6 +943,7 @@ def main():
         backend=args.backend,
         codesign_identity=args.codesign_identity,
         packed_linear_counts=packed_linear_counts,
+        vulkan_force_fp16=args.vulkan_force_fp16,
     )
 
     # Save
