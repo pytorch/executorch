@@ -181,21 +181,21 @@ std::optional<std::vector<int>> const_ints(Module& module, const char* name) {
 }
 
 // Fill in the cache geometry the export published: get_n_caches, then one
-// entry per cache in get_kv_heads / get_head_dims / get_windows (0 = flat),
-// plus get_prefill_chunk_size, which the export validates against the sliding
-// window and which becomes max_write -- the largest step the cache may see.
+// entry per cache in get_kv_heads / get_head_dims / get_windows (0 = flat).
 // Capacity and dtype stay with the flags. False means this is not an off-graph
 // model.
-bool read_kv_layout(Module& module, cache::CacheConfig& cfg) {
+bool read_kv_layout(
+    Module& module,
+    int prefill_chunk,
+    cache::CacheConfig& cfg) {
   const auto n_caches = const_int(module, "get_n_caches");
   const auto kv_heads = const_ints(module, "get_kv_heads");
   const auto head_dims = const_ints(module, "get_head_dims");
   const auto windows = const_ints(module, "get_windows");
-  const auto chunk = const_int(module, "get_prefill_chunk_size");
-  if (!n_caches || !kv_heads || !head_dims || !windows || !chunk) {
+  if (!n_caches || !kv_heads || !head_dims || !windows) {
     return false;
   }
-  cfg.max_write = static_cast<int>(*chunk);
+  cfg.max_write = prefill_chunk;
   const size_t n = static_cast<size_t>(*n_caches);
   if (kv_heads->size() != n || head_dims->size() != n || windows->size() != n) {
     return false;
@@ -355,10 +355,6 @@ int main(int argc, char** argv) {
     // a view into it.
     ::executorch::runtime::BackendOptions<1> mlx_opts;
     ::executorch::runtime::LoadBackendOptionsMap options_map;
-    // Tokens per prefill step, from the .pte. 0 means one step: an
-    // in-graph model publishes no chunk and has no ring to bound.
-    int prefill_chunk = 0;
-
     // Load the program but not forward: the cache must exist before forward's
     // backend init reads its key, and the layout it needs is published by
     // constant methods in the same file.
@@ -368,14 +364,23 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to load " << pte << std::endl;
       return 1;
     }
+    const auto published_prefill_chunk =
+        const_int(module, "get_prefill_chunk_size");
+    if (!published_prefill_chunk || *published_prefill_chunk <= 0 ||
+        *published_prefill_chunk > std::numeric_limits<int>::max()) {
+      std::cerr << "Invalid or missing get_prefill_chunk_size in " << pte
+                << std::endl;
+      return 1;
+    }
+    const int prefill_chunk = static_cast<int>(*published_prefill_chunk);
 
     // Everything past load_method is identical for both model kinds; only
     // setup differs. ctl is null for an in-graph model, which owns its cache
     // inside the graph and exposes no control face.
     auto run =
         [&](cache::SequenceControl* ctl,
-            const ::executorch::runtime::LoadBackendOptionsMap* load_opts)
-        -> int {
+            const ::executorch::runtime::LoadBackendOptionsMap* load_opts,
+            int run_prefill_chunk) -> int {
       if (module.load_method(
               "forward",
               /*planned_memory=*/nullptr,
@@ -469,8 +474,7 @@ int main(int argc, char** argv) {
       // kept; the earlier ones exist to place their K/V in the cache.
       auto prefill = [&](const std::vector<int64_t>& ids,
                          const std::vector<int64_t>& pos) {
-        const size_t step_size =
-            prefill_chunk > 0 ? static_cast<size_t>(prefill_chunk) : ids.size();
+        const size_t step_size = static_cast<size_t>(run_prefill_chunk);
         int64_t next = 0;
         for (size_t off = 0; off < ids.size(); off += step_size) {
           const size_t n = std::min(step_size, ids.size() - off);
@@ -671,7 +675,10 @@ int main(int argc, char** argv) {
     // An in-graph model (mlx::kv_cache_update) binds no cache: nothing to
     // build, no key to hand the delegate, and so no registry entry to guard.
     if (kv_capacity <= 0) {
-      return run(/*ctl=*/nullptr, /*load_opts=*/nullptr);
+      return run(
+          /*ctl=*/nullptr,
+          /*load_opts=*/nullptr,
+          /*run_prefill_chunk=*/prefill_chunk);
     }
 
     cache::CacheConfig cfg{};
@@ -682,7 +689,7 @@ int main(int argc, char** argv) {
                 << " (bf16|fp16|fp32)" << std::endl;
       return 1;
     }
-    if (!read_kv_layout(module, cfg)) {
+    if (!read_kv_layout(module, prefill_chunk, cfg)) {
       std::cerr << "No KV cache layout in " << pte
                 << "; re-export with --use-offgraph-cache" << std::endl;
       return 1;
@@ -708,7 +715,6 @@ int main(int argc, char** argv) {
       return 1;
     }
     const std::shared_ptr<cache::Cache> kv = built.get();
-    prefill_chunk = cfg.max_write ? *cfg.max_write : 0;
 
     // Published for the delegate to find by key, and erased when this scope
     // exits. That is after run() returns, so the entry is still there for the
@@ -734,7 +740,7 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    return run(ctl, &options_map);
+    return run(ctl, &options_map, *cfg.max_write);
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << std::endl;
     return 1;

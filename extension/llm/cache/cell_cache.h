@@ -62,10 +62,6 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   // registry-created caches; direct construction must check first.
   explicit CellCache(const CacheConfig& cfg);
 
-  Cache* base() {
-    return this;
-  }
-
   // -- CacheControl ------------------------------------------------------
 
   bool can_extend(int n = 1) const override;
