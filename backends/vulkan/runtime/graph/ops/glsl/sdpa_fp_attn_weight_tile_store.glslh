@@ -181,4 +181,29 @@ void apply_scale_and_mask(
   }
 }
 
+#ifdef SDPA_RING_CACHE
+void apply_scale_and_ring_mask(
+    inout FPOutTile tile,
+    const LINEAR_FP_OUTPUT_TILE_VEC4_T inv_scale_vec,
+    const int logical_input_pos,
+    const int window_size,
+    const int c_idx_start,
+    const int s_idx_start) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      tile.data[s][c4] = tile.data[s][c4] * inv_scale_vec;
+
+      const int c_base = mul_4(c4);
+      [[unroll]] for (int c4i = 0; c4i < 4; ++c4i) {
+        const int c_idx = c_idx_start + c_base + c4i;
+        const int query_idx = logical_input_pos + s_idx_start + s;
+        if (c_idx > query_idx || c_idx <= query_idx - window_size) {
+          tile.data[s][c4][c4i] = negative_infinity_val;
+        }
+      }
+    }
+  }
+}
+#endif
+
 #endif // SDPA_FP_ATTN_WEIGHT_TILE_STORE_GLSLH

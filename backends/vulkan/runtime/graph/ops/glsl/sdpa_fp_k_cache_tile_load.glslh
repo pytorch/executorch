@@ -46,20 +46,25 @@ LINEAR_FP_WEIGHT_TILE_VEC4_T load_k_cache_d4(
     const int D4,
     const int D,
     const int C,
-    const int KV_H) {
+    const int KV_H,
+    const int cache_start) {
   LINEAR_FP_WEIGHT_TILE_VEC4_T val;
+  int cache_c = cache_start + c;
+  if (cache_c >= C) {
+    cache_c -= C;
+  }
 
 #ifdef _SDPA_K_USE_BUFFER
   #if K_LAYOUT == DSHB
-    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(t_k[(kv_h * C * D4) + (c * D4) + d4]);
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(t_k[(kv_h * C * D4) + (cache_c * D4) + d4]);
   #elif K_LAYOUT == DHSB
-    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(t_k[(c * KV_H * D4) + (kv_h * D4) + d4]);
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(t_k[(cache_c * KV_H * D4) + (kv_h * D4) + d4]);
   #endif
 #else // texture
   #if K_LAYOUT == DSHB
-    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(t_k, ivec3(d4, c, kv_h), 0));
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(t_k, ivec3(d4, cache_c, kv_h), 0));
   #elif K_LAYOUT == DHSB
-    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(t_k, ivec3(d4, kv_h, c), 0));
+    val = LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(t_k, ivec3(d4, kv_h, cache_c), 0));
   #endif
 #endif
 
@@ -86,13 +91,22 @@ void load_k_cache_tile_no_checks(
     const int D,
     const int context_len,
     const int C,
-    const int KV_H) {
+    const int KV_H,
+    const int cache_start) {
   [[unroll]] for (int c = 0; c < TILE_N; ++c) {
     const int c4 = div_4(c);
     const int c4i = mod_4(c);
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       LINEAR_FP_WEIGHT_TILE_VEC4_T d4_row =
-          load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, D, C, KV_H);
+          load_k_cache_d4(
+              d4_start + d4,
+              c_start + c,
+              kv_h,
+              D4,
+              D,
+              C,
+              KV_H,
+              cache_start);
 
       // Transpose in-place
       const int d_base = mul_4(d4);
@@ -113,14 +127,23 @@ void load_k_cache_tile_with_checks(
     const int D,
     const int context_len,
     const int C,
-    const int KV_H) {
+    const int KV_H,
+    const int cache_start) {
   [[unroll]] for (int c = 0; c < TILE_N; ++c) {
     const int c4 = div_4(c);
     const int c4i = mod_4(c);
     [[unroll]] for (int d4 = 0; d4 < TILE_K4; ++d4) {
       LINEAR_FP_WEIGHT_TILE_VEC4_T d4_row = LINEAR_FP_WEIGHT_TILE_VEC4_T(0.0);
       if (d4_start + d4 < D4 && c_start + c < context_len) {
-        d4_row = load_k_cache_d4(d4_start + d4, c_start + c, kv_h, D4, D, C, KV_H);
+        d4_row = load_k_cache_d4(
+            d4_start + d4,
+            c_start + c,
+            kv_h,
+            D4,
+            D,
+            C,
+            KV_H,
+            cache_start);
       }
 
       // Transpose in-place

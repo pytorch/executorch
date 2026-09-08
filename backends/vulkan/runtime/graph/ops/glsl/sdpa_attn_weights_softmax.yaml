@@ -23,6 +23,8 @@ sdpa_attn_weights_softmax:
           suffix: half
   shader_variants:
     - NAME: sdpa_attn_weights_softmax
+    - NAME: sdpa_attn_weights_softmax_ring
+      MODE: ring
     - NAME: fused_sdpa_softmax
       MODE: fused
       IN_DTYPE: float

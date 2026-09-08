@@ -24,7 +24,7 @@ $if IO_STORAGE == "buffer":
 $if K_CACHE_STORAGE == "buffer":
   #define K_CACHE_BUFFER
 
-$if MODE == "llm":
+$if MODE != "fused":
   #define HAS_INPUT_POS
   #define Q_LAYOUT DHSB
   #define K_LAYOUT DHSB
@@ -34,6 +34,9 @@ $else:
   #define K_LAYOUT DSHB
 
 #define HAS_GQA
+
+$if MODE == "ring":
+  #define SDPA_RING_CACHE
 
 $if HAS_BIAS:
   #define HAS_BIAS
@@ -47,6 +50,8 @@ $if HAS_BIAS:
 #define TILE_N ${TILE_N4 * 4}
 
 ${define_required_extensions(IO_STORAGE, [IN_DTYPE, OUT_DTYPE])}
+$if K_CACHE_STORAGE != IO_STORAGE:
+  ${define_required_extensions(K_CACHE_STORAGE, IN_DTYPE)}
 
 layout(std430) buffer;
 
@@ -60,7 +65,7 @@ $if HAS_BIAS:
 
 ${layout_declare_ubo(B, "ivec4", "q_sizes")}
 ${layout_declare_ubo(B, "ivec4", "k_sizes")}
-$if MODE == "llm":
+$if MODE != "fused":
   ${layout_declare_ubo(B, "int", "input_pos")}
 $if HAS_BIAS:
   ${layout_declare_ubo(B, "ivec4", "bias_sizes")}
@@ -68,6 +73,8 @@ $if HAS_BIAS:
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
+$if MODE == "ring":
+  ${layout_declare_spec_const(C, "int", "window_size", "1")}
 
 #include "sdpa_fp_q_projected_tile_load.glslh"
 #include "sdpa_fp_k_cache_tile_load.glslh"
@@ -127,13 +134,23 @@ void main() {
   const int S_aligned = align_up_4(S);
 
 #ifdef HAS_INPUT_POS
-  // current context length for LLM decode/prefill
-  const int context_len = input_pos + S;
+  int logical_input_pos = input_pos;
+  #ifdef SDPA_RING_CACHE
+    logical_input_pos = min(input_pos, window_size - 1);
+  #endif
+  const int context_len = logical_input_pos + S;
 #else
   // fused: full key sequence length from k_sizes
   const int context_len = k_sizes.y;
 #endif
   const int context_texel_len = div_up_4(context_len);
+  int cache_start = 0;
+#ifdef SDPA_RING_CACHE
+  cache_start = max(input_pos - window_size + 1, 0);
+  if (cache_start >= C) {
+    cache_start %= C;
+  }
+#endif
 
 #ifdef HAS_GQA
   const int q_batch = q_h / Q_H;
@@ -172,7 +189,7 @@ void main() {
   // If the tile is completely inside the mask region, then there is no need to
   // compute the output tile. All the elements in the output tile can be set to
   // negative infinity.
-  bool tile_in_mask_region = c > (input_pos + s + (TILE_M - 1));
+  bool tile_in_mask_region = c > (logical_input_pos + s + (TILE_M - 1));
   if (tile_in_mask_region) {
     const VEC4_T negative_infinity_vec = VEC4_T(negative_infinity_val);
     set_out_tile_to_vec(out_tile, negative_infinity_vec);
@@ -199,7 +216,8 @@ void main() {
         D,
         context_len,
         C,
-        KV_H);
+        KV_H,
+        cache_start);
 
       fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
     }
@@ -207,12 +225,18 @@ void main() {
 #ifdef HAS_INPUT_POS
     // LLM: combined scale + causal mask
     VEC4_T inv_scale_vec = VEC4_T(inv_scale);
+  #ifdef SDPA_RING_CACHE
+    apply_scale_and_ring_mask(
+        out_tile,
+        inv_scale_vec,
+        logical_input_pos,
+        window_size,
+        c,
+        s);
+  #else
     apply_scale_and_mask(
-      out_tile,
-      inv_scale_vec,
-      input_pos,
-      c,
-      s);
+        out_tile, inv_scale_vec, logical_input_pos, c, s);
+  #endif
 #else
     // Fused: scalar scale, optional bias
     apply_scale(out_tile, inv_scale);

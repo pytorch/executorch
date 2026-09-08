@@ -12,8 +12,11 @@
 
 #define NUM_WORKERS_PER_WG 64
 
-$if MODE == "llm":
+$if MODE != "fused":
   #define HAS_INPUT_POS
+
+$if MODE == "ring":
+  #define SDPA_RING_CACHE
 
 #define IN_DTYPE ${IN_DTYPE}
 #define OUT_DTYPE ${OUT_DTYPE}
@@ -37,10 +40,13 @@ ${layout_declare_tensor(B, "r", "t_attn_weights", IN_DTYPE, STORAGE, is_scalar_a
 
 ${layout_declare_ubo(B, "ivec4", "q_sizes")}
 ${layout_declare_ubo(B, "ivec4", "k_sizes")}
-$if MODE == "llm":
+$if MODE != "fused":
   ${layout_declare_ubo(B, "int", "input_pos")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+$if MODE == "ring":
+  ${layout_declare_spec_const(C, "int", "window_size", "1")}
 
 // Shared memory for cooperative max finding and exp sum reduction.
 // For fused SDPA, reductions happen in fp32 for numerical stability.
@@ -115,7 +121,11 @@ void main() {
   // manually determine size of the context_len dim of the attention weight.
   // The "actual" tensor sizes may have been aligned to a multiple of 4 to allow
   // memory loads to be aligned to texel boundaries.
-  const int context_len = input_pos + S;
+  int logical_input_pos = input_pos;
+  #ifdef SDPA_RING_CACHE
+    logical_input_pos = min(input_pos, window_size - 1);
+  #endif
+  const int context_len = logical_input_pos + S;
 #else
   const int context_len = k_sizes.y;
 #endif

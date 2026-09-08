@@ -1291,6 +1291,60 @@ def register_general_sdpa():
     )
 
 
+def is_ring_sdpa_node_supported(node: torch.fx.Node) -> bool:
+    if len(node.args) < 5:
+        return False
+
+    q, k, v, _, window_size = node.args[:5]
+    if not all(isinstance(arg, torch.fx.Node) for arg in (q, k, v)):
+        return False
+    if not isinstance(window_size, int) or window_size <= 0:
+        return False
+
+    q_meta = q.meta["val"]
+    k_meta = k.meta["val"]
+    v_meta = v.meta["val"]
+    q_shape = q_meta.shape
+    k_shape = k_meta.shape
+    v_shape = v_meta.shape
+    return (
+        q_meta.dtype in utils.FP_T
+        and k_meta.dtype == q_meta.dtype
+        and v_meta.dtype == q_meta.dtype
+        and len(q_shape) == len(k_shape) == len(v_shape) == 4
+        and q_shape[0] == k_shape[0] == v_shape[0] == 1
+        and k_shape == v_shape
+        and q_shape[3] == k_shape[3]
+        and k_shape[2] > 0
+        and q_shape[2] >= k_shape[2]
+        and q_shape[2] % k_shape[2] == 0
+        and q_shape[1] <= window_size
+        and k_shape[1] >= window_size + q_shape[1] - 1
+    )
+
+
+@update_features("et_vk::ring_sdpa")
+def register_ring_sdpa():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,
+            utils.CONTIGUOUS_ANY,
+            utils.CONTIGUOUS_ANY,
+            utils.NO_STORAGE,
+            utils.NO_STORAGE,
+        ],
+        inputs_dtypes=[
+            utils.FP_T,
+            utils.FP_T,
+            utils.FP_T,
+            utils.NONE_T,
+            utils.NONE_T,
+        ],
+        supports_resize=True,
+        are_node_inputs_supported_fn=is_ring_sdpa_node_supported,
+    )
+
+
 # =============================================================================
 # RotaryEmbedding.cpp
 # =============================================================================

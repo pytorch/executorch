@@ -1135,6 +1135,64 @@ lib.define(
 lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
 sdpa_op = getattr(getattr(torch.ops, namespace), name)
 
+#################
+## ring_sdpa ##
+#################
+
+
+def ring_sdpa_impl(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    start_pos: int,
+    window_size: int,
+):
+    seq_len = q.size(1)
+    cache_len = k.size(1)
+    oldest_pos = max(start_pos - window_size + 1, 0)
+    context_len = start_pos + seq_len - oldest_pos
+    cache_indices = (
+        torch.arange(context_len, device=k.device) + oldest_pos
+    ) % cache_len
+    k = k.index_select(1, cache_indices)
+    v = v.index_select(1, cache_indices)
+
+    if q.size(2) != k.size(2):
+        repeats = q.size(2) // k.size(2)
+        k = torch.repeat_interleave(k, repeats, dim=2)
+        v = torch.repeat_interleave(v, repeats, dim=2)
+
+    q = q.transpose(1, 2)
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+    attn = torch.matmul(q, k.transpose(-2, -1)) / (q.size(-1) ** 0.5)
+
+    query_pos = start_pos + torch.arange(seq_len, device=q.device)
+    key_pos = oldest_pos + torch.arange(context_len, device=q.device)
+    distance = query_pos.unsqueeze(1) - key_pos.unsqueeze(0)
+    valid = (distance >= 0) & (distance < window_size)
+    attn = attn.masked_fill(~valid, float("-inf"))
+    return torch.matmul(torch.softmax(attn, dim=-1), v).transpose(1, 2)
+
+
+def ring_sdpa_meta(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    start_pos: int,
+    window_size: int,
+):
+    return torch.empty_like(q)
+
+
+name = "ring_sdpa"
+lib.define(
+    f"{name}(Tensor q, Tensor k, Tensor v, SymInt start_pos, int window_size) -> Tensor"
+)
+lib.impl(name, ring_sdpa_impl, "CompositeExplicitAutograd")
+lib.impl(name, ring_sdpa_meta, "Meta")
+ring_sdpa_op = getattr(getattr(torch.ops, namespace), name)
+
 ################
 ## rms_norm ##
 ################

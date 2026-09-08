@@ -12,11 +12,13 @@ sdpa_compute_out_coop:
     TILE_K4: 1
     TILE_N4: 1
     GQA: False
+    RING: False
   generate_variant_forall:
     combination:
       parameter_names: [IO_STORAGE, V_CACHE_STORAGE]
       combos:
         - parameter_values: [texture3d, texture3d]
+        - parameter_values: [texture3d, buffer]
         - parameter_values: [buffer, texture3d]
         - parameter_values: [buffer, buffer]
     DTYPE:
@@ -24,8 +26,13 @@ sdpa_compute_out_coop:
       - VALUE: half
   shader_variants:
     - NAME: sdpa_compute_out_coop
+    - NAME: sdpa_compute_out_coop_ring
+      RING: True
     - NAME: sdpa_compute_out_gqa_coop
       GQA: True
+    - NAME: sdpa_compute_out_gqa_coop_ring
+      GQA: True
+      RING: True
     # head_dim output-tiled GQA variant: each workgroup owns TILE_N4 head_dim
     # texels, amortizing the attn-weight loads and shared-memory reduction over
     # G x TILE_N4 outputs. A win on Adreno but a regression on Mali at common
@@ -33,4 +40,8 @@ sdpa_compute_out_coop:
     # SDPA.cpp; the partial_n_tile guard handles D4 % TILE_N4 != 0.
     - NAME: sdpa_compute_out_gqa_coop_tile2
       GQA: True
+      TILE_N4: 2
+    - NAME: sdpa_compute_out_gqa_coop_tile2_ring
+      GQA: True
+      RING: True
       TILE_N4: 2
