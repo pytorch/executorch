@@ -816,4 +816,54 @@ cudaError_t sample_from_residual_in_place(
       stream);
 }
 
+cudaError_t sample_token(
+    const float* logits,
+    int64_t row_count,
+    int64_t row_size,
+    double temperature,
+    int32_t top_k,
+    double top_p,
+    uint64_t* sampled_tokens,
+    float* out_probabilities,
+    bool probabilities_only,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream) {
+  if (logits == nullptr || sampled_tokens == nullptr || row_count <= 0 ||
+      row_size <= 0) {
+    return cudaErrorInvalidValue;
+  }
+  if (temperature <= 0.0) {
+    return argmax_index(
+        logits, row_count, row_size, sampled_tokens, stream);
+  }
+  cudaError_t error = workspace.reserve(row_count, row_size, stream);
+  if (error != cudaSuccess) {
+    return error;
+  }
+  float* probabilities = out_probabilities != nullptr
+      ? out_probabilities
+      : workspace.impl_->sort_keys_in;
+  error = fill_sampling_probabilities(
+      logits,
+      row_count,
+      row_size,
+      temperature,
+      top_k,
+      top_p,
+      probabilities,
+      workspace,
+      stream);
+  if (error != cudaSuccess ||
+      (out_probabilities != nullptr && probabilities_only)) {
+    return error;
+  }
+  return categorical_sample(
+      probabilities,
+      row_count,
+      row_size,
+      sampled_tokens,
+      workspace,
+      stream);
+}
+
 } // namespace muse_glimmer::cuda
