@@ -7,47 +7,25 @@ from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass
-from torch._ops import OpOverload
-
-
-Op = OpOverload | EdgeOpOverload
-
-
-def _get_round_decomposition_ops(op) -> tuple[Op, Op, Op, Op, Op, Op, Op]:
-    """Returns the (full_op, ge_op, add_op, sub_op, floor_op, ceil_op, where_op)
-    for the given round operation.
-
-    The ops depend on whether the round op is an aten or edge op.
-
-    """
-    if op == exir_ops.edge.aten.round.default:
-        return (
-            exir_ops.edge.aten.full.default,
-            exir_ops.edge.aten.ge.Tensor,
-            exir_ops.edge.aten.add.Scalar,
-            exir_ops.edge.aten.sub.Scalar,
-            exir_ops.edge.aten.floor.default,
-            exir_ops.edge.aten.ceil.default,
-            exir_ops.edge.aten.where.self,
-        )
-    raise RuntimeError(f"Can't get round decomposition ops for op {op}")
 
 
 class DecomposeRoundPass(ArmOpTargetedPass):
-    """
-    For inputs >= 0, round(x) is equivalent to floor(x + 0.5), and for inputs < 0,
-    round(x) is equivalent to ceil(x - 0.5). This pass decomposes the round operation into
-    a sequence of more primitive operations.
+    """Decomposes round(x) into round-half-to-even, matching the semantics of
+    aten.round / torch.round.
+
+    x lies between floor(x) and ceil(x), and its distance above floor(x) says
+    which one is nearer: less than 0.5 takes floor(x), more takes ceil(x), and
+    exactly 0.5 is a tie that takes whichever of the two is even.
+
     Example:
-        %zero = full((1,), 0.0, dtype=torch.float32)
-        %is_non_negative = ge(x, %zero)
-        %plus_half = add(x, 0.5)
-        %minus_half = sub(x, 0.5)
-        %floor = floor(%plus_half)
-        %ceil = ceil(%minus_half)
-        %result = where(%is_non_negative, %floor, %ceil)
+        %dist_to_floor = sub(x, floor(x))
+        %halved = mul(floor(x), 0.5)
+        %floor_is_odd = eq(sub(%halved, floor(%halved)), 0.5)
+        %tie_to_even = logical_and(eq(%dist_to_floor, 0.5), %floor_is_odd)
+        %take_ceil = logical_or(gt(%dist_to_floor, 0.5), %tie_to_even)
+        %result = where(%take_ceil, ceil(x), floor(x))
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -60,26 +38,30 @@ class DecomposeRoundPass(ArmOpTargetedPass):
         if op not in self.target_ops or self._is_quantized_meta(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
         x = args[0]
-        input_dtype = x.node.meta["val"].dtype
-        full, ge, add, sub, floor, ceil, where = _get_round_decomposition_ops(op)
-        zero = super().call_operator(
-            full,
-            args=((1,), 0.0),
-            kwargs={"dtype": input_dtype},
-            meta=meta,
-            updated=True,
-        )
-        is_non_negative = super().call_operator(
-            ge, (x, zero), kwargs, meta, updated=True
-        )
-        plus_half = super().call_operator(add, (x, 0.5), kwargs, meta, updated=True)
-        minus_half = super().call_operator(sub, (x, 0.5), kwargs, meta, updated=True)
-        floor = super().call_operator(floor, (plus_half,), kwargs, meta, updated=True)
-        ceil = super().call_operator(ceil, (minus_half,), kwargs, meta, updated=True)
-        return super().call_operator(
-            where,
-            (is_non_negative, floor, ceil),
-            kwargs,
-            meta,
-            updated=True,
-        )
+
+        def call(op, *op_args):
+            return super(DecomposeRoundPass, self).call_operator(
+                op, op_args, kwargs, meta, updated=True
+            )
+
+        sub = exir_ops.edge.aten.sub.Tensor
+        mul = exir_ops.edge.aten.mul.Scalar
+        floor = exir_ops.edge.aten.floor.default
+        ceil = exir_ops.edge.aten.ceil.default
+        eq = exir_ops.edge.aten.eq.Scalar
+        gt = exir_ops.edge.aten.gt.Scalar
+        logical_and = exir_ops.edge.aten.logical_and.default
+        logical_or = exir_ops.edge.aten.logical_or.default
+        where = exir_ops.edge.aten.where.self
+
+        floor_x = call(floor, x)
+        dist_to_floor = call(sub, x, floor_x)
+
+        # floor_x is odd iff floor_x / 2 has a .5 fractional part
+        halved = call(mul, floor_x, 0.5)
+        halved_frac = call(sub, halved, call(floor, halved))
+        floor_is_odd = call(eq, halved_frac, 0.5)
+
+        tie_to_even = call(logical_and, call(eq, dist_to_floor, 0.5), floor_is_odd)
+        take_ceil = call(logical_or, call(gt, dist_to_floor, 0.5), tie_to_even)
+        return call(where, take_ceil, call(ceil, x), floor_x)
