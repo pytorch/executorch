@@ -243,6 +243,7 @@ class QnnBackend(BackendDetails):
                             (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
                             and QCOM_TENSOR_NAME in node.meta
                             and len(node.meta[QCOM_TENSOR_NAME]) == 1
+                            and node.op == "call_function"
                         ):
                             debug_handle_builder.insert_delegate_mapping_entry(
                                 handles=handle_id,

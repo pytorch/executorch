@@ -166,7 +166,8 @@ def disable_mkldnn_on_amd() -> None:
 
     import torch
 
-    torch.backends.mkldnn.enabled = False
+    if not torch.backends.flags_frozen():
+        torch.backends.mkldnn.enabled = False
 
 
 def _host_is_amd() -> bool:

@@ -56,12 +56,6 @@ def rewrite_binary_operator(
             target = exir_ops.backend.tosa.ARITHMETIC_RIGHT_SHIFT.default
         case exir_ops.edge.aten.bitwise_xor.Tensor:
             target = exir_ops.backend.tosa.BITWISE_XOR.default
-        case exir_ops.edge.aten.eq.Tensor:
-            target = exir_ops.backend.tosa.EQUAL.default
-        case exir_ops.edge.aten.ge.Tensor:
-            target = exir_ops.backend.tosa.GREATER_EQUAL.default
-        case exir_ops.edge.aten.gt.Tensor:
-            target = exir_ops.backend.tosa.GREATER.default
         case exir_ops.edge.aten.logical_and.default:
             target = exir_ops.backend.tosa.LOGICAL_AND.default
         case exir_ops.edge.aten.logical_or.default:

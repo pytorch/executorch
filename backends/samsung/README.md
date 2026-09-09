@@ -64,7 +64,7 @@ cmake extension/android \
   -DCMAKE_INSTALL_PREFIX=cmake-android-out \
   -Bcmake-android-out/extension/android
 
-cmake --build cmake-android-out/extension/android -j8
+cmake --build cmake-android-out/extension/android -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 ## Examples
