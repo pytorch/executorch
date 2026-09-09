@@ -332,7 +332,14 @@ int main(int argc, char** argv) {
   const std::size_t width = (*executor)->preferred_batch_tokens();
   const std::size_t decode_slots =
       static_cast<std::size_t>(FLAGS_max_decode_sequences);
-  if (width == 0 || decode_slots >= width) {
+  if (width == 0) {
+    std::cerr << "the model's forward token input has no usable width (its "
+                 "traced seq_len dimension is 0); re-export it with a dynamic "
+                 "token dimension"
+              << std::endl;
+    return 1;
+  }
+  if (decode_slots >= width) {
     std::cerr << "--max_decode_sequences " << decode_slots
               << " leaves no room for prefill in a " << width
               << "-token forward" << std::endl;
