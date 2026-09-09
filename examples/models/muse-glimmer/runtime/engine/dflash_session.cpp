@@ -16,7 +16,6 @@
 #include <chrono>
 #include <cinttypes>
 #include <cmath>
-#include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -24,18 +23,26 @@
 #include <numeric>
 #include <optional>
 #include <random>
-#include <thread>
 #include <utility>
 #include <vector>
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/examples/models/muse-glimmer/runtime/engine/sampling_cuda.h>
+#else
+#include <condition_variable>
+#include <thread>
 #endif
 
 namespace executorch::extension::llm {
 namespace {
 
 using ::executorch::extension::from_blob;
+#ifdef EXECUTORCH_BUILD_CUDA
+using ::executorch::extension::clone_tensor_ptr_to;
+using ::executorch::extension::make_tensor_ptr;
+#endif
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::Result;
@@ -68,6 +75,7 @@ double elapsed_ms(Clock::time_point start, Clock::time_point end) {
   return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
+#ifndef EXECUTORCH_BUILD_CUDA
 class ProbabilityWorkers {
  public:
   explicit ProbabilityWorkers(int64_t worker_count) {
@@ -221,6 +229,7 @@ class ProbabilityWorkers {
   std::vector<std::vector<float>>* probabilities_ = nullptr;
   muse_glimmer::SamplingWorkspace caller_workspace_;
 };
+#endif
 
 class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
  public:
@@ -233,11 +242,10 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         hidden_dtype_(
             config_.activation_dtype == "bfloat16"
                 ? executorch::aten::ScalarType::BFloat16
-                : executorch::aten::ScalarType::Half),
-        rng_(std::random_device{}()) {}
+                : executorch::aten::ScalarType::Half) {}
 
   ~DFlashSession() override {
-    probability_workers_.reset();
+    shutdown_backend();
     if (config_.mutable_state != nullptr &&
         config_.session_token != kMuseGlimmerNoMutableSession) {
       config_.mutable_state->destroy_session(config_.session_token);
@@ -283,10 +291,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     sampling_ = sampling;
     sampling_initialized_ = true;
     seed_rng(sampling_);
-    if (effective_temperature() > 0.0 && n_draft_ > 1 &&
-        probability_workers_ == nullptr) {
-      probability_workers_ = std::make_unique<ProbabilityWorkers>(n_draft_);
-    }
+    initialize_backend_sampling();
     stop_.store(false, std::memory_order_relaxed);
 
     const int64_t token_count = static_cast<int64_t>(tokens.size());
@@ -302,56 +307,22 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     ET_CHECK_OK_OR_RETURN_ERROR(discard_unreturned_lookahead());
 
     int64_t offset = 0;
-#ifdef EXECUTORCH_BUILD_CUDA
-    const int64_t retained_hidden_start = config_.draft_sliding_window > 0
-        ? std::max<int64_t>(
-              logical_pos_,
-              logical_pos_ + token_count - config_.draft_sliding_window)
-        : logical_pos_;
-    if (retained_hidden_start > logical_pos_) {
-      hidden_.clear();
-      cached_ctx_len_ = retained_hidden_start;
-    }
-#endif
+    const int64_t retained_hidden_start = prepare_backend_prefill(token_count);
     while (offset < token_count) {
-      int64_t chunk = token_count - offset;
-#ifndef EXECUTORCH_BUILD_CUDA
-      chunk = std::min(
-          chunk,
-          config_.max_prefill_chunk > 0 ? config_.max_prefill_chunk : chunk);
-#endif
-      bool use_target_prefill = false;
-#ifdef EXECUTORCH_BUILD_CUDA
-      if (config_.max_target_prefill_chunk > 0 &&
-          chunk >= config_.min_target_prefill_chunk) {
-        chunk = std::min(chunk, config_.max_target_prefill_chunk);
-        const int64_t tail = token_count - offset - chunk;
-        if (tail > 0 && tail < config_.min_target_prefill_chunk) {
-          chunk -= config_.min_target_prefill_chunk - tail;
-        }
-        use_target_prefill = chunk >= config_.min_target_prefill_chunk;
-      } else {
-        chunk = std::min<int64_t>(chunk, kCudaDFlashHiddenRows);
-      }
-#endif
-      const bool is_final_chunk = offset + chunk == token_count;
-#ifdef EXECUTORCH_BUILD_CUDA
-      const int64_t retain_from_row = std::min<int64_t>(
-          chunk, std::max<int64_t>(0, retained_hidden_start - logical_pos_));
-#else
-      const int64_t retain_from_row = 0;
-#endif
+      const PrefillChunkPlan plan = plan_backend_prefill_chunk(
+          offset, token_count, retained_hidden_start);
+      const bool is_final_chunk = offset + plan.chunk == token_count;
       auto result = run_target_from_embeddings(
           tokens.data() + offset,
-          chunk,
+          plan.chunk,
           target_pos_,
           sampling_,
           /*sample_last=*/is_final_chunk,
           image.has_value() ? &*image : nullptr,
           image.has_value() ? &next_image_row : nullptr,
           /*timing=*/nullptr,
-          use_target_prefill,
-          retain_from_row);
+          plan.use_target_prefill,
+          plan.retain_from_row);
       if (result.error() != Error::Ok) {
         poisoned_ = true;
         return result.error();
@@ -360,9 +331,9 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         pending_token_ = result->sampled_token;
       }
       append_hidden(result->hidden);
-      target_pos_ += chunk;
-      logical_pos_ += chunk;
-      offset += chunk;
+      target_pos_ += plan.chunk;
+      logical_pos_ += plan.chunk;
+      offset += plan.chunk;
     }
 
     ET_CHECK_OR_RETURN_ERROR(
@@ -488,6 +459,12 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     std::vector<uint16_t> hidden;
   };
 
+  struct PrefillChunkPlan {
+    int64_t chunk;
+    bool use_target_prefill;
+    int64_t retain_from_row;
+  };
+
   Error validate_staged_image(
       const std::vector<uint64_t>& tokens,
       const PreparedMuseGlimmerImage& image) const {
@@ -532,19 +509,6 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       return Error::InvalidArgument;
     }
     return Error::Ok;
-  }
-
-  void seed_rng(const SamplingConfig& sampling) {
-    if (sampling.seed == 0) {
-      std::random_device random;
-      std::seed_seq seed{random(), random()};
-      rng_.seed(seed);
-      return;
-    }
-    std::seed_seq seed{
-        static_cast<uint32_t>(sampling.seed),
-        static_cast<uint32_t>(sampling.seed >> 32)};
-    rng_.seed(seed);
   }
 
   int64_t max_context_len() const {
@@ -618,7 +582,84 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   }
 
   Error prime_draft_cache() {
+    auto prime_chunk_result = prepare_backend_draft_cache();
+    ET_CHECK_OK_OR_RETURN_ERROR(prime_chunk_result.error());
+    const int64_t prime_chunk = prime_chunk_result.get();
+    ET_CHECK_OR_RETURN_ERROR(
+        prime_chunk > 0, InvalidProgram, "Invalid DFlash prime chunk");
+    while (hidden_rows() > prime_chunk) {
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          run_draft(/*discard_output=*/true, prime_chunk).error());
+      const int64_t consumed = std::min(hidden_rows(), prime_chunk);
+      hidden_.erase(hidden_.begin(), hidden_.begin() + consumed * hidden_dim_);
+      cached_ctx_len_ += consumed;
+    }
+    return Error::Ok;
+  }
+
+  Error run_decode_cycle() {
+    ET_CHECK_OR_RETURN_ERROR(
+        pending_token_.has_value(),
+        InvalidState,
+        "DFlash cycle requires a pending token");
+    const int64_t room =
+        max_context_len() > 0 ? max_context_len() - target_pos_ : block_length_;
+    ET_CHECK_OR_RETURN_ERROR(
+        room > 0, InvalidArgument, "DFlash context capacity exhausted");
+    return run_backend_decode_cycle(room);
+  }
+
 #ifdef EXECUTORCH_BUILD_CUDA
+  void shutdown_backend() {}
+
+  void initialize_backend_sampling() {}
+
+  void seed_rng(const SamplingConfig& sampling) {
+    if (sampling.seed == 0) {
+      std::random_device random;
+      cuda_sampling_seed_ = (static_cast<uint64_t>(random()) << 32) | random();
+    } else {
+      cuda_sampling_seed_ = sampling.seed;
+    }
+    cuda_sampling_seed_initialized_ = false;
+  }
+
+  int64_t prepare_backend_prefill(int64_t token_count) {
+    const int64_t retained_hidden_start = config_.draft_sliding_window > 0
+        ? std::max<int64_t>(
+              logical_pos_,
+              logical_pos_ + token_count - config_.draft_sliding_window)
+        : logical_pos_;
+    if (retained_hidden_start > logical_pos_) {
+      hidden_.clear();
+      cached_ctx_len_ = retained_hidden_start;
+    }
+    return retained_hidden_start;
+  }
+
+  PrefillChunkPlan plan_backend_prefill_chunk(
+      int64_t offset,
+      int64_t token_count,
+      int64_t retained_hidden_start) const {
+    int64_t chunk = token_count - offset;
+    bool use_target_prefill = false;
+    if (config_.max_target_prefill_chunk > 0 &&
+        chunk >= config_.min_target_prefill_chunk) {
+      chunk = std::min(chunk, config_.max_target_prefill_chunk);
+      const int64_t tail = token_count - offset - chunk;
+      if (tail > 0 && tail < config_.min_target_prefill_chunk) {
+        chunk -= config_.min_target_prefill_chunk - tail;
+      }
+      use_target_prefill = chunk >= config_.min_target_prefill_chunk;
+    } else {
+      chunk = std::min<int64_t>(chunk, kCudaDFlashHiddenRows);
+    }
+    const int64_t retain_from_row = std::min<int64_t>(
+        chunk, std::max<int64_t>(0, retained_hidden_start - logical_pos_));
+    return PrefillChunkPlan{chunk, use_target_prefill, retain_from_row};
+  }
+
+  Result<int64_t> prepare_backend_draft_cache() {
     if (config_.has_draft_prefill) {
       while (hidden_rows() - kCudaDFlashHiddenRows >=
              config_.min_draft_prefill_chunk) {
@@ -631,20 +672,286 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         cached_ctx_len_ += rows_to_feed;
       }
     }
-    constexpr int64_t prime_chunk = kCudaDFlashHiddenRows;
-#else
-    const int64_t prime_chunk = config_.max_prefill_chunk;
-#endif
+    return kCudaDFlashHiddenRows;
+  }
+
+  Error
+  copy_bytes_to_host(void* destination, const void* source, size_t bytes) {
+    cudaPointerAttributes attributes{};
+    const bool on_device =
+        cudaPointerGetAttributes(&attributes, source) == cudaSuccess &&
+        attributes.type == cudaMemoryTypeDevice;
+    if (on_device) {
+      auto stream = executorch::backends::cuda::getCurrentCUDAStream(0);
+      ET_CHECK_OK_OR_RETURN_ERROR(stream.error());
+      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+          destination, source, bytes, cudaMemcpyDeviceToHost, stream.get()));
+      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream.get()));
+      return Error::Ok;
+    }
+    std::memcpy(destination, source, bytes);
+    return Error::Ok;
+  }
+
+  // The CUDA target methods are exported device-in/device-out, so every input
+  // they receive must already live on the device and every output they return
+  // stays there. These buffers back that calling convention: the decode loop
+  // reuses them across cycles, and host callers stage into them instead of
+  // letting the runtime insert a copy.
+  Error ensure_cuda_device_buffers() {
+    const int64_t context_length = max_context_len();
     ET_CHECK_OR_RETURN_ERROR(
-        prime_chunk > 0, InvalidProgram, "Invalid DFlash prime chunk");
-    while (hidden_rows() > prime_chunk) {
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          run_draft(/*discard_output=*/true, prime_chunk).error());
-      const int64_t consumed = std::min(hidden_rows(), prime_chunk);
-      hidden_.erase(hidden_.begin(), hidden_.begin() + consumed * hidden_dim_);
-      cached_ctx_len_ += consumed;
+        context_length > 0,
+        InvalidProgram,
+        "CUDA DFlash requires a positive context size");
+    if (cuda_candidates_ != nullptr) {
+      return Error::Ok;
+    }
+
+    const auto cuda_device =
+        executorch::aten::Device(executorch::aten::DeviceType::CUDA, 0);
+    std::vector<int64_t> zeros(block_length_, 0);
+    cuda_candidates_ = clone_tensor_ptr_to(
+        from_blob(
+            zeros.data(),
+            {1, static_cast<SizesType>(block_length_)},
+            executorch::aten::ScalarType::Long),
+        cuda_device);
+    cuda_target_tokens_ = clone_tensor_ptr_to(
+        from_blob(
+            zeros.data(),
+            {static_cast<SizesType>(block_length_)},
+            executorch::aten::ScalarType::Long),
+        cuda_device);
+    std::vector<int64_t> scalar(1, 0);
+    cuda_accepted_count_ = clone_tensor_ptr_to(
+        from_blob(scalar.data(), {1}, executorch::aten::ScalarType::Long),
+        cuda_device);
+    cuda_correction_token_ = clone_tensor_ptr_to(
+        from_blob(scalar.data(), {1}, executorch::aten::ScalarType::Long),
+        cuda_device);
+    std::vector<int64_t> positions(context_length);
+    std::iota(positions.begin(), positions.end(), 0);
+    cuda_position_table_ = clone_tensor_ptr_to(
+        from_blob(
+            positions.data(),
+            {static_cast<SizesType>(context_length)},
+            executorch::aten::ScalarType::Long),
+        cuda_device);
+    // Prefill feeds far wider token spans than a decode cycle, so this staging
+    // buffer is sized for the widest target call the session can make.
+    cuda_staged_token_capacity_ = std::max<int64_t>(
+        {block_length_,
+         config_.max_target_prefill_chunk,
+         kCudaDFlashHiddenRows});
+    std::vector<int64_t> staging(cuda_staged_token_capacity_, 0);
+    cuda_staged_tokens_ = clone_tensor_ptr_to(
+        from_blob(
+            staging.data(),
+            {1, static_cast<SizesType>(cuda_staged_token_capacity_)},
+            executorch::aten::ScalarType::Long),
+        cuda_device);
+    return Error::Ok;
+  }
+
+  Error ensure_cuda_vocab_buffers(int64_t vocab_size) {
+    ET_CHECK_OR_RETURN_ERROR(
+        vocab_size > 0,
+        InvalidProgram,
+        "CUDA DFlash requires a positive logits vocabulary size");
+    if (cuda_vocab_size_ != 0) {
+      ET_CHECK_OR_RETURN_ERROR(
+          cuda_vocab_size_ == vocab_size,
+          InvalidProgram,
+          "CUDA DFlash logits vocabulary size changed");
+      return Error::Ok;
+    }
+
+    cuda_vocab_size_ = vocab_size;
+    const auto cuda_device =
+        executorch::aten::Device(executorch::aten::DeviceType::CUDA, 0);
+    std::vector<float> storage(block_length_ * cuda_vocab_size_);
+    auto storage_tensor = from_blob(
+        storage.data(),
+        {static_cast<SizesType>(block_length_),
+         static_cast<SizesType>(cuda_vocab_size_)},
+        executorch::aten::ScalarType::Float);
+    cuda_target_probabilities_ =
+        clone_tensor_ptr_to(storage_tensor, cuda_device);
+    cuda_draft_probabilities_ =
+        clone_tensor_ptr_to(storage_tensor, cuda_device);
+    cuda_target_logits_ = clone_tensor_ptr_to(storage_tensor, cuda_device);
+    cuda_draft_logits_ = clone_tensor_ptr_to(storage_tensor, cuda_device);
+    ET_CHECK_OR_RETURN_ERROR(
+        cuda_execution_stream_.has_value(),
+        InvalidState,
+        "CUDA DFlash execution stream is unavailable");
+    return prepare_cuda_sampling_workspaces(*cuda_execution_stream_);
+  }
+
+  TensorPtr device_view(
+      std::vector<SizesType> sizes,
+      void* data,
+      executorch::aten::ScalarType dtype) const {
+    return make_tensor_ptr(
+        std::move(sizes),
+        data,
+        dtype,
+        executorch::aten::Device(executorch::aten::DeviceType::CUDA, 0),
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
+  }
+
+  // TODO(gasoonjia): an odd start_pos leaves this view 8- but not 16-byte
+  // aligned, so AOTI copies it into an aligned temporary on every target call.
+  // Staging positions into a base-aligned buffer would only move that copy
+  // here, but it would stop the backend logging it as an error.
+  TensorPtr cuda_position_view(int64_t start_pos, int64_t count) const {
+    return device_view(
+        {static_cast<SizesType>(count)},
+        static_cast<int64_t*>(cuda_position_table_->mutable_data_ptr()) +
+            start_pos,
+        executorch::aten::ScalarType::Long);
+  }
+
+  Result<TensorPtr> stage_cuda_tokens(const uint64_t* tokens, int64_t count) {
+    static_assert(sizeof(uint64_t) == sizeof(int64_t));
+    ET_CHECK_OR_RETURN_ERROR(
+        count > 0 && count <= cuda_staged_token_capacity_,
+        InvalidArgument,
+        "CUDA target token count %" PRId64 " exceeds staged capacity %" PRId64,
+        count,
+        cuda_staged_token_capacity_);
+    auto* destination =
+        static_cast<int64_t*>(cuda_staged_tokens_->mutable_data_ptr());
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        destination,
+        tokens,
+        count * sizeof(int64_t),
+        cudaMemcpyHostToDevice,
+        *cuda_execution_stream_));
+    // Before the first delegated execution, the backend's shared stream has not
+    // necessarily been installed yet. Complete host staging before handing the
+    // buffer to the method; later decode-only inputs are already on device.
+    ET_CUDA_CHECK_OR_RETURN_ERROR(
+        cudaStreamSynchronize(*cuda_execution_stream_));
+    return device_view(
+        {1, static_cast<SizesType>(count)},
+        destination,
+        executorch::aten::ScalarType::Long);
+  }
+
+  // Only the image-splice path needs this: it rewrites patch rows on the host
+  // and has to hand the result back to the device-input target.
+  Result<TensorPtr> stage_cuda_embeddings(
+      const uint16_t* embeddings,
+      int64_t count,
+      int64_t embed_dim) {
+    ET_CHECK_OR_RETURN_ERROR(
+        count > 0 && embed_dim > 0,
+        InvalidArgument,
+        "CUDA spliced embedding dimensions must be positive");
+    if (cuda_staged_embeddings_ == nullptr) {
+      std::vector<uint16_t> zeros(
+          cuda_staged_token_capacity_ * embed_dim, uint16_t{0});
+      cuda_staged_embeddings_ = clone_tensor_ptr_to(
+          from_blob(
+              zeros.data(),
+              {static_cast<SizesType>(cuda_staged_token_capacity_),
+               static_cast<SizesType>(embed_dim)},
+              hidden_dtype_),
+          executorch::aten::Device(executorch::aten::DeviceType::CUDA, 0));
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        count * embed_dim <= cuda_staged_embeddings_->numel(),
+        InvalidArgument,
+        "CUDA spliced embeddings exceed the staged capacity");
+    auto* destination =
+        static_cast<uint16_t*>(cuda_staged_embeddings_->mutable_data_ptr());
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        destination,
+        embeddings,
+        count * embed_dim * sizeof(uint16_t),
+        cudaMemcpyHostToDevice,
+        *cuda_execution_stream_));
+    ET_CUDA_CHECK_OR_RETURN_ERROR(
+        cudaStreamSynchronize(*cuda_execution_stream_));
+    return device_view(
+        {1, static_cast<SizesType>(count), static_cast<SizesType>(embed_dim)},
+        destination,
+        hidden_dtype_);
+  }
+
+  Error prepare_cuda_sampling_workspaces(cudaStream_t stream) {
+    cudaError_t error = cuda_target_sampling_workspace_.reserve(
+        n_draft_ + 1, cuda_vocab_size_, stream);
+    if (error == cudaSuccess) {
+      error = cuda_draft_sampling_workspace_.reserve(
+          n_draft_, cuda_vocab_size_, stream);
+    }
+    if (error == cudaSuccess) {
+      error =
+          cuda_single_sampling_workspace_.reserve(1, cuda_vocab_size_, stream);
+    }
+    ET_CUDA_CHECK_OR_RETURN_ERROR(error);
+    if (!cuda_sampling_seed_initialized_) {
+      error =
+          cuda_target_sampling_workspace_.set_seed(cuda_sampling_seed_, stream);
+      if (error == cudaSuccess) {
+        error = cuda_draft_sampling_workspace_.set_seed(
+            cuda_sampling_seed_ ^ 0x9e3779b97f4a7c15ULL, stream);
+      }
+      if (error == cudaSuccess) {
+        error = cuda_single_sampling_workspace_.set_seed(
+            cuda_sampling_seed_ ^ 0xd1b54a32d192ed03ULL, stream);
+      }
+      ET_CUDA_CHECK_OR_RETURN_ERROR(error);
+      cuda_sampling_seed_initialized_ = true;
     }
     return Error::Ok;
+  }
+
+  Error refresh_cuda_execution_stream() {
+    ET_CHECK_OK_OR_RETURN_ERROR(ensure_cuda_device_buffers());
+    auto stream = executorch::backends::cuda::getCurrentCUDAStream(0);
+    ET_CHECK_OK_OR_RETURN_ERROR(stream.error());
+    cuda_execution_stream_ = stream.get();
+    return cuda_vocab_size_ > 0
+        ? prepare_cuda_sampling_workspaces(*cuda_execution_stream_)
+        : Error::Ok;
+  }
+
+  Result<TensorPtr> copy_cuda_logits(
+      const executorch::aten::Tensor& source,
+      TensorPtr& destination) {
+    // Module execution installs the backend stream in the shared stream
+    // registry. Refresh here, while the execution lock is still held, before
+    // copying out of the method's planned output buffer.
+    ET_CHECK_OK_OR_RETURN_ERROR(refresh_cuda_execution_stream());
+    ET_CHECK_OR_RETURN_ERROR(
+        source.dim() >= 1 &&
+            source.scalar_type() == executorch::aten::ScalarType::Float,
+        InvalidProgram,
+        "DFlash logits must be a non-scalar float32 tensor");
+    const int64_t vocab_size = source.size(source.dim() - 1);
+    ET_CHECK_OK_OR_RETURN_ERROR(ensure_cuda_vocab_buffers(vocab_size));
+    ET_CHECK_OR_RETURN_ERROR(
+        destination != nullptr && source.numel() <= destination->numel(),
+        InvalidProgram,
+        "DFlash logits exceed the session-owned CUDA buffer");
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        destination->mutable_data_ptr(),
+        source.const_data_ptr(),
+        source.numel() * sizeof(float),
+        cudaMemcpyDeviceToDevice,
+        *cuda_execution_stream_));
+    std::vector<SizesType> sizes(source.dim());
+    for (int32_t i = 0; i < source.dim(); ++i) {
+      sizes[i] = source.size(i);
+    }
+    return device_view(
+        std::move(sizes),
+        destination->mutable_data_ptr(),
+        executorch::aten::ScalarType::Float);
   }
 
   Error run_draft_prefill(int64_t rows_to_feed) {
@@ -682,24 +989,380 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     return Error::Ok;
   }
 
-  Error run_decode_cycle() {
+  Result<TargetResult> run_cuda_target_device(
+      int64_t count,
+      int64_t start_pos,
+      const SamplingConfig& sampling,
+      bool sample_last,
+      DFlashCycleTiming* timing) {
     ET_CHECK_OR_RETURN_ERROR(
-        pending_token_.has_value(),
+        count > 0 && count <= block_length_ && start_pos >= 0 &&
+            start_pos + count <= max_context_len(),
+        InvalidArgument,
+        "Invalid CUDA target token interval");
+    // Candidate tokens and positions are already device-resident. The target
+    // output is copied into session-owned device memory before releasing the
+    // execution lock; hidden state and cycle results are copied to the host.
+    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
+    return run_target_embedded(
+        device_view(
+            {1, static_cast<SizesType>(count)},
+            cuda_candidates_->mutable_data_ptr(),
+            executorch::aten::ScalarType::Long),
+        cuda_position_view(start_pos, count),
+        /*host_tokens=*/nullptr,
+        count,
+        sampling,
+        sample_last,
+        /*image=*/nullptr,
+        /*next_image_row=*/nullptr,
+        timing,
+        /*use_target_prefill=*/false,
+        /*retain_from_row=*/0);
+  }
+
+  Error run_cuda_target_only_cycle() {
+    ET_CHECK_OK_OR_RETURN_ERROR(refresh_cuda_execution_stream());
+    ET_CHECK_OR_RETURN_ERROR(
+        cuda_execution_stream_.has_value(),
         InvalidState,
-        "DFlash cycle requires a pending token");
-    const int64_t room =
-        max_context_len() > 0 ? max_context_len() - target_pos_ : block_length_;
-    ET_CHECK_OR_RETURN_ERROR(
-        room > 0, InvalidArgument, "DFlash context capacity exhausted");
-#ifdef EXECUTORCH_BUILD_CUDA
-    if (room < n_draft_ + 1) {
-      return run_target_only_cycle();
+        "CUDA DFlash execution stream is unavailable");
+    const cudaStream_t stream = *cuda_execution_stream_;
+    DFlashCycleTiming cycle_timing;
+    DFlashCycleTiming* const timing =
+        config_.timing == nullptr ? nullptr : &cycle_timing;
+    const auto cycle_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        cuda_candidates_->mutable_data_ptr(),
+        cuda_correction_token_->const_data_ptr(),
+        sizeof(uint64_t),
+        cudaMemcpyDeviceToDevice,
+        stream));
+    const uint64_t anchor = *pending_token_;
+    auto result = run_cuda_target_device(
+        1, target_pos_, sampling_, /*sample_last=*/true, timing);
+    ET_CHECK_OK_OR_RETURN_ERROR(result.error());
+    const auto commit_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+    append_hidden(result->hidden);
+    ready_tokens_.push_back(anchor);
+    pending_token_ = result->sampled_token;
+    ++target_pos_;
+    if (timing != nullptr) {
+      timing->state_commit_ms += elapsed_ms(commit_start, Clock::now());
+      timing->total_cycle_ms += elapsed_ms(cycle_start, Clock::now());
+      timing->target_only = true;
+      config_.timing->record(*timing);
     }
+    return Error::Ok;
+  }
+
+  Error run_cuda_speculative_cycle() {
+    ET_CHECK_OK_OR_RETURN_ERROR(refresh_cuda_execution_stream());
+    ET_CHECK_OR_RETURN_ERROR(
+        cuda_execution_stream_.has_value(),
+        InvalidState,
+        "CUDA DFlash execution stream is unavailable");
+    const cudaStream_t stream = *cuda_execution_stream_;
+    const int64_t verify_len = n_draft_ + 1;
+    DFlashCycleTiming cycle_timing;
+    DFlashCycleTiming* const timing =
+        config_.timing == nullptr ? nullptr : &cycle_timing;
+    const auto cycle_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+        cuda_candidates_->mutable_data_ptr(),
+        cuda_correction_token_->const_data_ptr(),
+        sizeof(uint64_t),
+        cudaMemcpyDeviceToDevice,
+        stream));
+    auto draft_logits =
+        run_draft(/*discard_output=*/false, hidden_rows(), timing);
+    ET_CHECK_OK_OR_RETURN_ERROR(draft_logits.error());
+    const auto& draft_tensor = *draft_logits.get();
+    ET_CHECK_OR_RETURN_ERROR(
+        draft_tensor.scalar_type() == executorch::aten::ScalarType::Float &&
+            draft_tensor.size(draft_tensor.dim() - 1) == cuda_vocab_size_,
+        InvalidProgram,
+        "CUDA draft logits have an invalid vocabulary dimension");
+
+    const bool stochastic = effective_temperature() > 0.0;
+    const bool draft_argmax = stochastic && config_.draft_argmax;
+    const auto draft_sampling_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+    auto* candidates =
+        static_cast<uint64_t*>(cuda_candidates_->mutable_data_ptr());
+    auto* draft_probabilities =
+        static_cast<float*>(cuda_draft_probabilities_->mutable_data_ptr());
+    cudaError_t error = muse_glimmer::cuda::sample_token(
+        static_cast<const float*>(draft_tensor.const_data_ptr()) +
+            cuda_vocab_size_,
+        n_draft_,
+        cuda_vocab_size_,
+        draft_argmax ? 0.0 : effective_temperature(),
+        sampling_.top_k,
+        sampling_.top_p,
+        candidates + 1,
+        stochastic && !draft_argmax ? draft_probabilities + cuda_vocab_size_
+                                    : nullptr,
+        /*probabilities_only=*/false,
+        cuda_draft_sampling_workspace_,
+        stream);
+    ET_CUDA_CHECK_OR_RETURN_ERROR(error);
+    if (timing != nullptr) {
+      timing->draft_sampling_ms +=
+          elapsed_ms(draft_sampling_start, Clock::now());
+    }
+
+    auto verify = run_cuda_target_device(
+        verify_len,
+        target_pos_,
+        sampling_,
+        /*sample_last=*/false,
+        timing);
+    ET_CHECK_OK_OR_RETURN_ERROR(verify.error());
+    const auto& target_tensor = *last_logits_tensor_;
+    ET_CHECK_OR_RETURN_ERROR(
+        target_tensor.scalar_type() == executorch::aten::ScalarType::Float &&
+            target_tensor.size(target_tensor.dim() - 1) == cuda_vocab_size_,
+        InvalidProgram,
+        "CUDA target logits have an invalid vocabulary dimension");
+
+    const auto accept_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+    auto* accepted_count =
+        static_cast<int64_t*>(cuda_accepted_count_->mutable_data_ptr());
+    auto* correction_token =
+        static_cast<uint64_t*>(cuda_correction_token_->mutable_data_ptr());
+    if (stochastic) {
+      auto* target_probabilities =
+          static_cast<float*>(cuda_target_probabilities_->mutable_data_ptr());
+      error = muse_glimmer::cuda::sample_token(
+          static_cast<const float*>(target_tensor.const_data_ptr()),
+          verify_len,
+          cuda_vocab_size_,
+          effective_temperature(),
+          sampling_.top_k,
+          sampling_.top_p,
+          static_cast<uint64_t*>(cuda_target_tokens_->mutable_data_ptr()),
+          target_probabilities,
+          /*probabilities_only=*/true,
+          cuda_target_sampling_workspace_,
+          stream);
+      if (error == cudaSuccess) {
+        error = muse_glimmer::cuda::stochastic_speculative_sample(
+            target_probabilities,
+            draft_probabilities,
+            candidates,
+            verify_len,
+            cuda_vocab_size_,
+            draft_argmax,
+            accepted_count,
+            correction_token,
+            cuda_target_sampling_workspace_,
+            stream);
+      }
+    } else {
+      error = muse_glimmer::cuda::argmax_index(
+          static_cast<const float*>(target_tensor.const_data_ptr()),
+          verify_len,
+          cuda_vocab_size_,
+          static_cast<uint64_t*>(cuda_target_tokens_->mutable_data_ptr()),
+          stream);
+      if (error == cudaSuccess) {
+        error = muse_glimmer::cuda::greedy_speculative_sample(
+            static_cast<const uint64_t*>(cuda_target_tokens_->const_data_ptr()),
+            candidates,
+            verify_len,
+            accepted_count,
+            correction_token,
+            stream);
+      }
+    }
+    ET_CUDA_CHECK_OR_RETURN_ERROR(error);
+
+    int64_t committed = 0;
+    uint64_t correction = 0;
+    std::vector<uint64_t> host_candidates(verify_len);
+    cudaError_t copy_error = cudaMemcpyAsync(
+        &committed,
+        accepted_count,
+        sizeof(committed),
+        cudaMemcpyDeviceToHost,
+        stream);
+    if (copy_error == cudaSuccess) {
+      copy_error = cudaMemcpyAsync(
+          &correction,
+          correction_token,
+          sizeof(correction),
+          cudaMemcpyDeviceToHost,
+          stream);
+    }
+    if (copy_error == cudaSuccess) {
+      copy_error = cudaMemcpyAsync(
+          host_candidates.data(),
+          candidates,
+          host_candidates.size() * sizeof(uint64_t),
+          cudaMemcpyDeviceToHost,
+          stream);
+    }
+    const cudaError_t sync_error = cudaStreamSynchronize(stream);
+    ET_CUDA_CHECK_OR_RETURN_ERROR(copy_error);
+    ET_CUDA_CHECK_OR_RETURN_ERROR(sync_error);
+    ET_CHECK_OR_RETURN_ERROR(
+        committed > 0 && committed <= verify_len,
+        InvalidState,
+        "CUDA speculative verification returned an invalid commit count");
+    if (timing != nullptr) {
+      timing->accept_correction_ms += elapsed_ms(accept_start, Clock::now());
+      const int64_t attempts =
+          committed == verify_len ? verify_len - 1 : committed;
+      const int64_t accepts =
+          committed == verify_len ? verify_len - 1 : committed - 1;
+      timing->draft_attempts_by_row.resize(attempts);
+      timing->draft_accepts_by_row.resize(attempts);
+      for (int64_t row = 0; row < attempts; ++row) {
+        ++timing->draft_attempts_by_row[row];
+        if (row < accepts) {
+          ++timing->draft_accepts_by_row[row];
+        }
+      }
+    }
+
+    const auto commit_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+    cached_ctx_len_ += hidden_rows();
+    hidden_ = std::move(verify->hidden);
+    hidden_.resize(committed * hidden_dim_);
+    int64_t nonterminal_committed = committed;
+    std::optional<uint64_t> terminal;
+    for (int64_t row = 0; row < committed; ++row) {
+      if (is_eos(host_candidates[row])) {
+        nonterminal_committed = row;
+        terminal = host_candidates[row];
+        break;
+      }
+      ready_tokens_.push_back(host_candidates[row]);
+    }
+    if (nonterminal_committed != committed) {
+      hidden_.resize(nonterminal_committed * hidden_dim_);
+      correction = *terminal;
+    }
+    target_pos_ += nonterminal_committed;
+    pending_token_ = correction;
+    if (timing != nullptr) {
+      timing->state_commit_ms += elapsed_ms(commit_start, Clock::now());
+      timing->total_cycle_ms += elapsed_ms(cycle_start, Clock::now());
+      config_.timing->record(*timing);
+    }
+    return Error::Ok;
+  }
+
+  Error run_backend_decode_cycle(int64_t room) {
+    if (room < n_draft_ + 1) {
+      return run_cuda_target_only_cycle();
+    }
+    return run_cuda_speculative_cycle();
+  }
 #else
+  void shutdown_backend() {
+    probability_workers_.reset();
+  }
+
+  void initialize_backend_sampling() {
+    if (effective_temperature() > 0.0 && n_draft_ > 1 &&
+        probability_workers_ == nullptr) {
+      probability_workers_ = std::make_unique<ProbabilityWorkers>(n_draft_);
+    }
+  }
+
+  void seed_rng(const SamplingConfig& sampling) {
+    if (sampling.seed == 0) {
+      std::random_device random;
+      std::seed_seq seed{random(), random()};
+      rng_.seed(seed);
+      return;
+    }
+    std::seed_seq seed{
+        static_cast<uint32_t>(sampling.seed),
+        static_cast<uint32_t>(sampling.seed >> 32)};
+    rng_.seed(seed);
+  }
+
+  int64_t prepare_backend_prefill(int64_t /*token_count*/) const {
+    return logical_pos_;
+  }
+
+  PrefillChunkPlan plan_backend_prefill_chunk(
+      int64_t offset,
+      int64_t token_count,
+      int64_t /*retained_hidden_start*/) const {
+    int64_t chunk = token_count - offset;
+    chunk = std::min(
+        chunk,
+        config_.max_prefill_chunk > 0 ? config_.max_prefill_chunk : chunk);
+    return PrefillChunkPlan{
+        chunk, /*use_target_prefill=*/false, /*retain_from_row=*/0};
+  }
+
+  Result<int64_t> prepare_backend_draft_cache() const {
+    return config_.max_prefill_chunk;
+  }
+
+  Result<TargetResult> run_target(
+      const uint64_t* tokens,
+      int64_t count,
+      int64_t start_pos,
+      const SamplingConfig& sampling,
+      bool sample_last,
+      DFlashCycleTiming* timing = nullptr,
+      bool use_target_prefill = false,
+      int64_t retain_from_row = 0) {
+    return run_target_from_embeddings(
+        tokens,
+        count,
+        start_pos,
+        sampling,
+        sample_last,
+        /*image=*/nullptr,
+        /*next_image_row=*/nullptr,
+        timing,
+        use_target_prefill,
+        retain_from_row);
+  }
+
+  Result<TensorPtr> copy_float_tensor_to_host(
+      const executorch::aten::Tensor& source,
+      std::vector<float>& storage) {
+    ET_CHECK_OR_RETURN_ERROR(
+        source.scalar_type() == executorch::aten::ScalarType::Float,
+        InvalidProgram,
+        "DFlash logits must be float32");
+    storage.resize(source.numel());
+    ET_CHECK_OK_OR_RETURN_ERROR(copy_bytes_to_host(
+        storage.data(),
+        source.const_data_ptr(),
+        storage.size() * sizeof(float)));
+    std::vector<SizesType> sizes(source.dim());
+    for (int32_t i = 0; i < source.dim(); ++i) {
+      sizes[i] = source.size(i);
+    }
+    return from_blob(
+        storage.data(), sizes, executorch::aten::ScalarType::Float);
+  }
+
+  Error
+  copy_bytes_to_host(void* destination, const void* source, size_t bytes) {
+    std::memcpy(destination, source, bytes);
+    return Error::Ok;
+  }
+
+  Error run_backend_decode_cycle(int64_t room) {
     if (room == 1) {
       return run_target_only_cycle();
     }
-#endif
 
     DFlashCycleTiming cycle_timing;
     DFlashCycleTiming* const timing =
@@ -931,31 +1594,10 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
     return Error::Ok;
   }
+#endif
 
   double effective_temperature() const {
     return sampling_.temperature < 0.0f ? 0.0 : sampling_.temperature;
-  }
-
-  Result<TargetResult> run_target(
-      const uint64_t* tokens,
-      int64_t count,
-      int64_t start_pos,
-      const SamplingConfig& sampling,
-      bool sample_last,
-      DFlashCycleTiming* timing = nullptr,
-      bool use_target_prefill = false,
-      int64_t retain_from_row = 0) {
-    return run_target_from_embeddings(
-        tokens,
-        count,
-        start_pos,
-        sampling,
-        sample_last,
-        /*image=*/nullptr,
-        /*next_image_row=*/nullptr,
-        timing,
-        use_target_prefill,
-        retain_from_row);
   }
 
   Result<TargetResult> run_target_from_embeddings(
@@ -969,21 +1611,74 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       DFlashCycleTiming* timing = nullptr,
       bool use_target_prefill = false,
       int64_t retain_from_row = 0) {
+#ifdef EXECUTORCH_BUILD_CUDA
+    // The CUDA target methods take device inputs, so this host entry point
+    // stages its tokens itself rather than letting the runtime copy them.
+    ET_CHECK_OR_RETURN_ERROR(
+        start_pos >= 0 && start_pos + count <= max_context_len(),
+        InvalidArgument,
+        "CUDA target position window exceeds the context length");
+    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
+    ET_CHECK_OK_OR_RETURN_ERROR(refresh_cuda_execution_stream());
+    auto staged_tokens = stage_cuda_tokens(tokens, count);
+    ET_CHECK_OK_OR_RETURN_ERROR(staged_tokens.error());
+    return run_target_embedded(
+        staged_tokens.get(),
+        cuda_position_view(start_pos, count),
+        tokens,
+        count,
+        sampling,
+        sample_last,
+        image,
+        next_image_row,
+        timing,
+        use_target_prefill,
+        retain_from_row);
+#else
     std::vector<int64_t> token_data(tokens, tokens + count);
     std::vector<int64_t> positions(count);
     std::iota(positions.begin(), positions.end(), start_pos);
-    auto token_tensor = from_blob(
-        token_data.data(),
-        {1, static_cast<SizesType>(count)},
-        executorch::aten::ScalarType::Long);
-    auto position_tensor = from_blob(
-        positions.data(),
-        {static_cast<SizesType>(count)},
-        executorch::aten::ScalarType::Long);
+    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
+    return run_target_embedded(
+        from_blob(
+            token_data.data(),
+            {1, static_cast<SizesType>(count)},
+            executorch::aten::ScalarType::Long),
+        from_blob(
+            positions.data(),
+            {static_cast<SizesType>(count)},
+            executorch::aten::ScalarType::Long),
+        tokens,
+        count,
+        sampling,
+        sample_last,
+        image,
+        next_image_row,
+        timing,
+        use_target_prefill,
+        retain_from_row);
+#endif
+  }
 
+  // Runs embed_text and feeds its embeddings to the target. Both input tensors
+  // are already staged for the active backend, so the decode loop can hand over
+  // device-resident candidates and pay no copy at all. ``host_tokens`` is read
+  // only to locate the image patch rows that the splice path rewrites. Callers
+  // must hold ``config_.exec_mutex``.
+  Result<TargetResult> run_target_embedded(
+      TensorPtr token_tensor,
+      TensorPtr position_tensor,
+      const uint64_t* host_tokens,
+      int64_t count,
+      const SamplingConfig& sampling,
+      bool sample_last,
+      const PreparedMuseGlimmerImage* image,
+      int64_t* next_image_row,
+      DFlashCycleTiming* timing,
+      bool use_target_prefill,
+      int64_t retain_from_row) {
     const auto execute_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
-    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
     auto embed_outputs = execute_active(kEmbedText, {EValue(token_tensor)});
     ET_CHECK_OK_OR_RETURN_ERROR(embed_outputs.error());
     ET_CHECK_OR_RETURN_ERROR(
@@ -1008,16 +1703,16 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     std::vector<EValue> target_inputs;
     if (image != nullptr) {
       ET_CHECK_OR_RETURN_ERROR(
-          next_image_row != nullptr,
+          next_image_row != nullptr && host_tokens != nullptr,
           InvalidState,
-          "DFlash image splice requires an image row cursor");
+          "DFlash image splice requires host tokens and an image row cursor");
       embeddings.resize(count * embed_dim);
       ET_CHECK_OK_OR_RETURN_ERROR(copy_bytes_to_host(
           embeddings.data(),
           embed_tensor.const_data_ptr(),
           embeddings.size() * sizeof(uint16_t)));
       for (int64_t row = 0; row < count; ++row) {
-        if (tokens[row] != kMuseGlimmerImagePatchTokenId) {
+        if (host_tokens[row] != kMuseGlimmerImagePatchTokenId) {
           continue;
         }
         ET_CHECK_OR_RETURN_ERROR(
@@ -1030,12 +1725,20 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
             embed_dim * sizeof(uint16_t));
         ++*next_image_row;
       }
+#ifdef EXECUTORCH_BUILD_CUDA
+      auto staged = stage_cuda_embeddings(embeddings.data(), count, embed_dim);
+      ET_CHECK_OK_OR_RETURN_ERROR(staged.error());
+      embeddings_tensor = staged.get();
+#else
       embeddings_tensor = from_blob(
           embeddings.data(),
           {1, static_cast<SizesType>(count), static_cast<SizesType>(embed_dim)},
           hidden_dtype_);
+#endif
       target_inputs = {EValue(embeddings_tensor), EValue(position_tensor)};
     } else {
+      // embed_text already returned device memory under CUDA, so the target
+      // consumes its embeddings in place.
       target_inputs = {(*embed_outputs)[0], EValue(position_tensor)};
     }
 
@@ -1072,10 +1775,21 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
 
     const auto logits_copy_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
+#ifdef EXECUTORCH_BUILD_CUDA
+    const auto& output_logits = outputs[0].toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        output_logits.scalar_type() == executorch::aten::ScalarType::Float,
+        InvalidProgram,
+        "DFlash logits must be float32");
+    auto logits = copy_cuda_logits(output_logits, cuda_target_logits_);
+    ET_CHECK_OK_OR_RETURN_ERROR(logits.error());
+    last_logits_tensor_ = std::move(logits.get());
+#else
     auto logits =
         copy_float_tensor_to_host(outputs[0].toTensor(), last_logits_storage_);
     ET_CHECK_OK_OR_RETURN_ERROR(logits.error());
     last_logits_tensor_ = std::move(logits.get());
+#endif
     if (timing != nullptr) {
       timing->target_logits_copy_ms +=
           elapsed_ms(logits_copy_start, Clock::now());
@@ -1084,6 +1798,38 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     if (sample_last) {
       const auto sampling_start =
           timing == nullptr ? Clock::time_point{} : Clock::now();
+#ifdef EXECUTORCH_BUILD_CUDA
+      const int64_t vocab_size = output_logits.size(output_logits.dim() - 1);
+      ET_CHECK_OR_RETURN_ERROR(
+          vocab_size == cuda_vocab_size_,
+          InvalidProgram,
+          "DFlash target vocabulary size changed");
+      const int64_t logits_row = use_target_prefill ? 0 : count - 1;
+      const auto error = muse_glimmer::cuda::sample_token(
+          static_cast<const float*>(last_logits_tensor_->const_data_ptr()) +
+              logits_row * vocab_size,
+          1,
+          vocab_size,
+          sampling.temperature < 0.0f ? 0.0 : sampling.temperature,
+          sampling.top_k,
+          sampling.top_p,
+          static_cast<uint64_t*>(cuda_correction_token_->mutable_data_ptr()),
+          nullptr,
+          false,
+          cuda_single_sampling_workspace_,
+          *cuda_execution_stream_);
+      ET_CUDA_CHECK_OR_RETURN_ERROR(error);
+      const cudaError_t copy_error = cudaMemcpyAsync(
+          &sampled,
+          cuda_correction_token_->const_data_ptr(),
+          sizeof(sampled),
+          cudaMemcpyDeviceToHost,
+          *cuda_execution_stream_);
+      const cudaError_t sync_error =
+          cudaStreamSynchronize(*cuda_execution_stream_);
+      ET_CUDA_CHECK_OR_RETURN_ERROR(copy_error);
+      ET_CUDA_CHECK_OR_RETURN_ERROR(sync_error);
+#else
       sampled = muse_glimmer::sample_token(
           rng_,
           *last_logits_tensor_,
@@ -1094,6 +1840,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
           /*out_probs=*/nullptr,
           /*probs_only=*/false,
           &sampling_workspace_);
+#endif
       if (timing != nullptr) {
         timing->accept_correction_ms +=
             elapsed_ms(sampling_start, Clock::now());
@@ -1119,6 +1866,9 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         InvalidArgument,
         "Invalid retained target hidden row offset");
     const int64_t retained_rows = count - retain_from_row;
+    // TODO: Keep target hidden on CUDA and feed it directly to the next draft
+    // call. The on-device sampling bring-up intentionally retains this D2H/H2D
+    // path so sampler validation is independent of device-buffer ownership.
     std::vector<uint16_t> hidden(retained_rows * hidden_dim_);
     const auto hidden_copy_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
@@ -1132,44 +1882,6 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
           elapsed_ms(hidden_copy_start, Clock::now());
     }
     return TargetResult{sampled, std::move(hidden)};
-  }
-
-  Result<TensorPtr> copy_float_tensor_to_host(
-      const executorch::aten::Tensor& source,
-      std::vector<float>& storage) {
-    ET_CHECK_OR_RETURN_ERROR(
-        source.scalar_type() == executorch::aten::ScalarType::Float,
-        InvalidProgram,
-        "DFlash logits must be float32");
-    storage.resize(source.numel());
-    ET_CHECK_OK_OR_RETURN_ERROR(copy_bytes_to_host(
-        storage.data(),
-        source.const_data_ptr(),
-        storage.size() * sizeof(float)));
-    std::vector<SizesType> sizes(source.dim());
-    for (int32_t i = 0; i < source.dim(); ++i) {
-      sizes[i] = source.size(i);
-    }
-    return from_blob(
-        storage.data(), sizes, executorch::aten::ScalarType::Float);
-  }
-
-  Error
-  copy_bytes_to_host(void* destination, const void* source, size_t bytes) {
-#ifdef EXECUTORCH_BUILD_CUDA
-    cudaPointerAttributes attributes{};
-    const bool on_device =
-        cudaPointerGetAttributes(&attributes, source) == cudaSuccess &&
-        attributes.type == cudaMemoryTypeDevice;
-    if (on_device) {
-      return cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost) ==
-              cudaSuccess
-          ? Error::Ok
-          : Error::Internal;
-    }
-#endif
-    std::memcpy(destination, source, bytes);
-    return Error::Ok;
   }
 
   Result<TensorPtr> run_draft(
@@ -1239,10 +1951,17 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
     const auto logits_copy_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
+#ifdef EXECUTORCH_BUILD_CUDA
+    auto logits =
+        copy_cuda_logits((*outputs)[0].toTensor(), cuda_draft_logits_);
+    ET_CHECK_OK_OR_RETURN_ERROR(logits.error());
+    draft_logits_tensor_ = std::move(logits.get());
+#else
     auto host_logits = copy_float_tensor_to_host(
         (*outputs)[0].toTensor(), draft_logits_storage_);
     ET_CHECK_OK_OR_RETURN_ERROR(host_logits.error());
     draft_logits_tensor_ = std::move(host_logits.get());
+#endif
     if (timing != nullptr) {
       timing->draft_logits_copy_ms +=
           elapsed_ms(logits_copy_start, Clock::now());
@@ -1264,7 +1983,6 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   int64_t block_length_;
   int64_t n_draft_;
   executorch::aten::ScalarType hidden_dtype_;
-  std::mt19937 rng_;
   SamplingConfig sampling_;
   bool sampling_initialized_ = false;
   bool poisoned_ = false;
@@ -1281,6 +1999,30 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   std::optional<uint64_t> pending_token_;
   std::optional<uint64_t> prev_decode_token_;
 
+#ifdef EXECUTORCH_BUILD_CUDA
+  TensorPtr last_logits_tensor_;
+  TensorPtr draft_logits_tensor_;
+  int64_t cuda_vocab_size_ = 0;
+  uint64_t cuda_sampling_seed_ = 0;
+  bool cuda_sampling_seed_initialized_ = false;
+  std::optional<cudaStream_t> cuda_execution_stream_;
+  TensorPtr cuda_candidates_;
+  TensorPtr cuda_target_tokens_;
+  TensorPtr cuda_accepted_count_;
+  TensorPtr cuda_correction_token_;
+  TensorPtr cuda_target_probabilities_;
+  TensorPtr cuda_draft_probabilities_;
+  TensorPtr cuda_target_logits_;
+  TensorPtr cuda_draft_logits_;
+  TensorPtr cuda_position_table_;
+  TensorPtr cuda_staged_tokens_;
+  TensorPtr cuda_staged_embeddings_;
+  int64_t cuda_staged_token_capacity_ = 0;
+  muse_glimmer::cuda::SamplingWorkspace cuda_target_sampling_workspace_;
+  muse_glimmer::cuda::SamplingWorkspace cuda_draft_sampling_workspace_;
+  muse_glimmer::cuda::SamplingWorkspace cuda_single_sampling_workspace_;
+#else
+  std::mt19937 rng_;
   std::vector<float> last_logits_storage_;
   TensorPtr last_logits_tensor_;
   std::vector<float> draft_logits_storage_;
@@ -1289,6 +2031,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   std::vector<std::vector<float>> target_probs_;
   muse_glimmer::SamplingWorkspace sampling_workspace_;
   std::unique_ptr<ProbabilityWorkers> probability_workers_;
+#endif
 };
 
 } // namespace
