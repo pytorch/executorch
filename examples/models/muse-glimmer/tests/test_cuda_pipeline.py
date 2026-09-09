@@ -20,6 +20,7 @@ import os
 import tempfile
 import unittest
 from dataclasses import replace
+from unittest.mock import patch
 
 import executorch.backends.cuda.quantize_op_dispatch as _quantize_op_dispatch  # noqa: F401
 import torch
@@ -43,6 +44,9 @@ from executorch.examples.models.muse_glimmer.source_transformations.cuda import 
     add_on_device_sampler,
     cuda_source_transformations,
 )
+from executorch.examples.models.muse_glimmer.source_transformations.sampler import (
+    sample,
+)
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
     build_random_tiny_model,
     DEFAULT_RECIPE,
@@ -56,6 +60,25 @@ from executorch.extension.llm.export.quant import quantize_model
 def _require_cuda(testcase: unittest.TestCase) -> None:
     if not torch.cuda.is_available():
         testcase.skipTest("CUDA required")
+
+
+class TestCudaSamplerTest(unittest.TestCase):
+    def test_zero_temperature_is_exact_argmax_for_tied_logits(self):
+        logits = torch.tensor([[3.0, 3.0, 1.0]])
+        temperature = torch.tensor([0.0])
+        for seed in range(20):
+            torch.manual_seed(seed)
+            self.assertEqual(sample(logits, temperature).item(), 0)
+
+    def test_positive_temperature_retains_gumbel_noise(self):
+        logits = torch.tensor([[1.0, 0.0]])
+        noise = torch.tensor([[0.01, 0.99]])
+        with patch(
+            "executorch.examples.models.muse_glimmer.source_transformations."
+            "sampler.torch.rand_like",
+            return_value=noise,
+        ):
+            self.assertEqual(sample(logits, torch.tensor([1.0])).item(), 1)
 
 
 class TestMutableBufferMetadataTest(unittest.TestCase):
@@ -110,7 +133,7 @@ class TestCudaInferenceTest(unittest.TestCase):
         self.assertGreater(len(out), 0)
 
     def test_generate_greedy(self):
-        """Near-greedy generation (temperature=0) produces valid output."""
+        """Exact-greedy generation (temperature=0) produces valid output."""
         with tempfile.TemporaryDirectory() as tmpdir:
             save_checkpoint(tmpdir)
             model, config = load_prequantized_model(

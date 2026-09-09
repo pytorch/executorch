@@ -911,7 +911,7 @@ class MuseGlimmerSession : public LLMSession,
     if (!valid_temperature(temperature)) {
       return Error::InvalidArgument;
     }
-    temp_val_ = (temperature <= 0.0f) ? 1e-6f : temperature;
+    temp_val_ = temperature;
     if (cudaMemcpy(
             temp_tensor_dev_->mutable_data_ptr(),
             &temp_val_,
