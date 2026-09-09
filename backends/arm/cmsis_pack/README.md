@@ -64,7 +64,7 @@ cmake \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
   -DEXECUTORCH_BUILD_FLATC=ON \
   -Bcmake-out-arm .
-cmake --build cmake-out-arm --config Release -j$(nproc)
+cmake --build cmake-out-arm --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 
 # 2. Build the pack. --output-dir is where the .pack archive lands
 #    (created if absent); each invocation rewrites this directory.

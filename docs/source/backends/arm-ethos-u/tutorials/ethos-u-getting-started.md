@@ -164,7 +164,7 @@ cmake -S examples/arm/executor_runner/standalone \
       -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128 \
       -DMEMORY_MODE=Shared_Sram \
       -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded
-cmake --build ethos_u_minimal_example -j$(nproc) -- arm_executor_runner
+cmake --build ethos_u_minimal_example -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) -- arm_executor_runner
 ```
 
 ```{tip}

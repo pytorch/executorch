@@ -19,7 +19,7 @@ Build and install the Arm bare-metal ExecuTorch libraries from
 cmake --preset arm-baremetal \
   -DCMAKE_BUILD_TYPE=Release \
   -B../../cmake-out-arm ../..
-cmake --build ../../cmake-out-arm --target install -j$(nproc)
+cmake --build ../../cmake-out-arm --target install -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 The Arm bare-metal preset installs into the build directory. If you use a
@@ -67,7 +67,7 @@ can inspect and retune post-processing without re-exporting the graph.
 ## Compile
 
 ```bash
-cmake --build mobilesam_point_runtime -j$(nproc) -- mobilesam_prompt_segmentation_example
+cmake --build mobilesam_point_runtime -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) -- mobilesam_prompt_segmentation_example
 ```
 
 ## Run on Corstone-320 FVP
