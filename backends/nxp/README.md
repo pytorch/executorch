@@ -33,9 +33,9 @@ The eIQ Neutron NPU Backend should be considered as prototype quality at this mo
 improvements. NXP and the ExecuTorch community is actively developing this codebase.
 
 ## Neutron Backend implementation and SW architecture
-Neutron Backend uses the eIQ Neutron Converter as ML compiler to compile the delegated subgraph to Neutron microcode. 
-The Neutron Converter accepts the ML model in LiteRT format, for the **eIQ Neutron N3** class  therefore the Neutron Backend
-uses the LiteRT flatbuffers format as IR between the ExecuTorch and Neutron Converter ML compiler.
+Neutron Backend uses the eIQ Neutron Compiler as ML compiler to compile the delegated subgraph to Neutron microcode. 
+The Neutron Compiler accepts the ML model in LiteRT format, for the **eIQ Neutron N3** class  therefore the Neutron Backend
+uses the LiteRT flatbuffers format as IR between the ExecuTorch and Neutron Compiler ML compiler.
 
 ## Layout
 * `backend/ir/` - TFLite/LiteRT based IR to represent the Edge Subgraph, taken from onnx2tflite code base and extended to

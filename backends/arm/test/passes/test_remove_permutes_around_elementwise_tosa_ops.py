@@ -26,6 +26,8 @@ PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
 RESCALE_TARGET = exir_ops.backend.tosa.RESCALE.default
 MUL_TARGET = exir_ops.edge.aten.mul.Tensor
 ADD_TARGET = exir_ops.edge.aten.add.Tensor
+SUB_TARGET = exir_ops.edge.aten.sub.Tensor
+VIEW_TARGET = exir_ops.edge.aten.view_copy.default
 ERF_TARGET = exir_ops.edge.aten.erf.default
 
 
@@ -148,6 +150,40 @@ def test_remove_permutes_around_rescale_tosa_INT() -> None:
     assert result.modified
     assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
     assert _count_nodes(result.graph_module, RESCALE_TARGET) == 1
+
+
+def test_sink_view_preserves_layout_through_rescale_to_broadcast_tosa_INT() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.randn(1, 4, 1, 1)
+    direct = graph.placeholder("direct")
+    direct.meta["val"] = torch.randn(1, 8, 4)
+
+    permute = graph.create_node("call_function", PERMUTE_TARGET, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.randn(1, 1, 1, 4)
+    mul = graph.create_node("call_function", MUL_TARGET, args=(permute, permute))
+    mul.meta["val"] = torch.randn(1, 1, 1, 4)
+    sink = graph.create_node("call_function", VIEW_TARGET, args=(mul, [1, 1, 4]))
+    sink.meta["val"] = torch.randn(1, 1, 4)
+    rescale = graph.create_node(
+        "call_function",
+        RESCALE_TARGET,
+        args=(sink, torch.int8, [1.0], 0, 0),
+    )
+    rescale.meta["val"] = torch.randn(1, 1, 4)
+    sub = graph.create_node("call_function", SUB_TARGET, args=(direct, rescale))
+    sub.meta["val"] = torch.randn(1, 8, 4)
+    graph.output(sub)
+
+    graph_module = torch.fx.GraphModule({}, graph)
+    with TosaLoweringContext(TOSA_INT_SPEC):
+        result = RemovePermutesAroundElementwiseTosaOps(_fake_exported_program()).call(
+            graph_module
+        )
+
+    assert not result.modified
+    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 1
+    assert sub.args == (direct, rescale)
 
 
 def test_remove_permutes_around_gelu_with_folded_scalar_constants_tosa_FP() -> None:

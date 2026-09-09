@@ -331,9 +331,11 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
 ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
-    const ValueRef qmat2_data) {
+    const ValueRef qmat2_data,
+    const bool use_unsigned_dot) {
   VK_CHECK_COND(
       weight_quant_config.nbits == 8 || weight_quant_config.nbits == 4);
+  VK_CHECK_COND(!use_unsigned_dot || weight_quant_config.nbits == 8);
 
   std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
   const int64_t ndim = graph.dim_of(qmat2_data);
@@ -410,10 +412,13 @@ ValueRef prepack_quantized_linear_weight(
   if (output_width > max_extent * 4 || output_height > max_extent) {
     storage_type = utils::kBuffer;
   }
-
-  std::string kernel_name = weight_quant_config.nbits == 4
-      ? "pack_q4_linear_weight"
-      : "pack_q8_linear_weight";
+  std::string kernel_name;
+  if (weight_quant_config.nbits == 4) {
+    kernel_name = "pack_q4_linear_weight";
+  } else {
+    kernel_name = use_unsigned_dot ? "pack_q8_linear_weight_unsigned"
+                                   : "pack_q8_linear_weight";
+  }
   add_storage_type_suffix(kernel_name, storage_type);
 
   // Check prepack cache before creating a new prepack node. This avoids

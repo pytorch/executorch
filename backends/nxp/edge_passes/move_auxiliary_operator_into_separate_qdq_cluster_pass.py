@@ -6,10 +6,10 @@
 import operator
 
 import torch
+from executorch.backends.nxp.backend.ops_aliases import PermuteCopy
 
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
-from executorch.backends.nxp.tests.ops_aliases import PermuteCopy
 
 # noinspection PyProtectedMember
 from executorch.exir.dialects._ops import ops as exir_ops
