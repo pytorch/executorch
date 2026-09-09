@@ -165,6 +165,14 @@ std::optional<int64_t> const_int(Module& module, const char* name) {
   return r->at(0).toInt();
 }
 
+// The sampler (sample_from_logits) fatally aborts on any other dtype, so an
+// unsupported logits type must be rejected at startup rather than at inference.
+bool is_supported_logits_type(::executorch::aten::ScalarType type) {
+  using ScalarType = ::executorch::aten::ScalarType;
+  return type == ScalarType::Float || type == ScalarType::Half ||
+      type == ScalarType::BFloat16 || type == ScalarType::UInt16;
+}
+
 bool validate_forward_abi(
     Module& module,
     LogitsToKeepMode logits_to_keep_mode,
@@ -185,15 +193,19 @@ bool validate_forward_abi(
     return false;
   }
   // The logits output's last dim is the observed vocab width, cross-checked
-  // against the published get_vocab_size by the caller.
+  // against the published get_vocab_size by the caller; its dtype must be one
+  // the sampler supports.
   if (meta->num_outputs() == 0) {
     std::cerr << "Forward publishes no logits output" << std::endl;
     return false;
   }
   const auto logits = meta->output_tensor_meta(0);
   if (!logits.ok() || logits->sizes().size() < 2 ||
-      logits->sizes()[logits->sizes().size() - 1] <= 0) {
-    std::cerr << "Forward logits must have shape [..., vocab]" << std::endl;
+      logits->sizes()[logits->sizes().size() - 1] <= 0 ||
+      !is_supported_logits_type(logits->scalar_type())) {
+    std::cerr << "Forward logits must have a sampler-supported dtype and shape "
+                 "[..., vocab]"
+              << std::endl;
     return false;
   }
   vocab_size = logits->sizes()[logits->sizes().size() - 1];
