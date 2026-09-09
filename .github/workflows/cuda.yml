@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 13.0) using the command:
+# across different CUDA versions (13.0, 13.4) using the command:
 #   ./install_executorch.sh
 # 
 # Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
@@ -64,7 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "13.0"]
+        cuda-version: ["13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -112,7 +112,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 13.0) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds (13.0, 13.4) completed successfully!"
           fi
 
   test-models-cuda:

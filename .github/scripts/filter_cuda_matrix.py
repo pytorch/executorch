@@ -48,7 +48,8 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 #
 #   cu126   the floor, and what Jetson devices are limited to
 #   cu130   the generator's stable choice, and the default for accelerator consumers
-#   cu132   the newest, which consumers building against a current TensorRT need
+#   cu132   a current TensorRT build target
+#   cu134   the newest, which consumers building against the latest CUDA need
 #
 # A version listed here is published only when the shared generator still offers it. When
 # PyTorch stops shipping a CUDA train, its rows simply do not appear and the release skips it,
@@ -60,7 +61,7 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
 # minor versions are compatible, so a cu132 wheel has been run end to end on a CUDA 13.0
 # device. The packaging properties are checked on every row regardless.
-SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132"]
+SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132", "cu134"]
 
 # Python versions to publish, stated rather than derived for the same reason the CUDA
 # versions are. Deriving them from the rows that survived the filter made the release

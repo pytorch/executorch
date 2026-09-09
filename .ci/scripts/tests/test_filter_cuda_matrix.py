@@ -272,7 +272,9 @@ class TestPublishedSets(unittest.TestCase):
     """
 
     def test_published_cuda_versions(self):
-        self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu126", "cu130", "cu132"])
+        self.assertEqual(
+            FILTER.SUPPORTED_CUDA_VERSIONS, ["cu126", "cu130", "cu132", "cu134"]
+        )
 
     def test_published_python_versions(self):
         self.assertEqual(
