@@ -7,9 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.vulkan.serialization.vulkan_graph_builder import (
-    VkGraphBuilder,
-)
+from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.vulkan_preprocess import apply_passes
 from executorch.exir import to_edge
 from executorch.exir.backend.utils import DelegateMappingBuilder
