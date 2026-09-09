@@ -8,8 +8,8 @@
 from enum import Enum
 
 import torch
-from executorch.backends.nxp.backend.neutron_converter_manager import (
-    NeutronConverterManager,
+from executorch.backends.nxp.backend.neutron_compiler_manager import (
+    NeutronCompilerManager,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
@@ -98,10 +98,10 @@ class NeutronTargetSpec:
 
     def __init__(self, target: str):
 
-        converter_manager = NeutronConverterManager()
-        converter_manager.verify_target(target)
-        neutron_converter = converter_manager.get_converter()
-        self.neutron_target = neutron_converter.getNeutronTarget(target)
+        compiler_manager = NeutronCompilerManager()
+        compiler_manager.verify_target(target)
+        neutron_compiler = compiler_manager.get_compiler()
+        self.neutron_target = neutron_compiler.getNeutronTarget(target)
 
         if self.is_subsystem():
             raise ValueError(

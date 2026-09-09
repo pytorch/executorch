@@ -5,8 +5,8 @@
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
+from executorch.backends.nxp.backend.ops_aliases import AddMM, Convolution
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
-from executorch.backends.nxp.tests.ops_aliases import AddMM, Convolution
 from executorch.backends.nxp.tests.use_qat import *  # noqa F401
 
 from executorch.backends.nxp.tests.executorch_pipeline import (

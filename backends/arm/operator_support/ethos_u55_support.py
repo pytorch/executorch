@@ -208,9 +208,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.scatter_add.default,
         exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
-        exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad3d.default,  # REVERSE
         exir_ops.edge.aten.where.self,  # SELECT
     ]
 
@@ -352,6 +349,35 @@ class EthosU55ReverseCheck(OperatorSupportBase):
             self.reporter.report_reject(
                 node,
                 "U55 flip support is limited to rank-4 channel or height reversal.",
+            )
+            return False
+
+        reflection_pad_constraints = {
+            exir_ops.edge.aten.reflection_pad1d.default: ((2, 3), (2,)),
+            exir_ops.edge.aten.reflection_pad2d.default: ((3, 4), (2, 4)),
+            exir_ops.edge.aten.reflection_pad3d.default: ((4, 5), (6,)),
+        }
+        if node.target in reflection_pad_constraints:
+            input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+            padding = typing.cast(typing.Sequence[int], node.args[1])
+            supported_ranks, supported_padding_lengths = reflection_pad_constraints[
+                node.target
+            ]
+            if (
+                len(input_shape) in supported_ranks
+                and len(padding) in supported_padding_lengths
+            ):
+                spatial_sizes = tuple(reversed(input_shape[-(len(padding) // 2) :]))
+                pad_pairs = tuple(zip(padding[::2], padding[1::2]))
+                if all(
+                    isinstance(size, int) and 0 <= before < size and 0 <= after < size
+                    for (before, after), size in zip(pad_pairs, spatial_sizes)
+                ):
+                    return True
+            self.reporter.report_reject(
+                node,
+                "U55 reflection padding requires a supported static input rank "
+                "and nonnegative padding smaller than its spatial dimension.",
             )
             return False
 
