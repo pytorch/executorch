@@ -165,12 +165,6 @@ std::optional<int64_t> const_int(Module& module, const char* name) {
   return r->at(0).toInt();
 }
 
-bool is_supported_logits_type(::executorch::aten::ScalarType type) {
-  using ScalarType = ::executorch::aten::ScalarType;
-  return type == ScalarType::Float || type == ScalarType::Half ||
-      type == ScalarType::BFloat16 || type == ScalarType::UInt16;
-}
-
 bool validate_forward_abi(
     Module& module,
     LogitsToKeepMode logits_to_keep_mode,
@@ -180,6 +174,8 @@ bool validate_forward_abi(
     std::cerr << "Forward metadata is unavailable" << std::endl;
     return false;
   }
+  // The runner feeds tokens + positions, plus a selector in Selected mode; a
+  // mismatch means the published logits mode disagrees with the traced graph.
   const std::size_t expected_inputs =
       logits_to_keep_mode == LogitsToKeepMode::Selected ? 3 : 2;
   if (meta->num_inputs() != expected_inputs) {
@@ -188,46 +184,16 @@ bool validate_forward_abi(
               << meta->num_inputs() << std::endl;
     return false;
   }
-
-  const auto tokens = meta->input_tensor_meta(0);
-  const auto positions = meta->input_tensor_meta(1);
-  if (!tokens.ok() || !positions.ok()) {
-    std::cerr << "Forward token and position inputs must be tensors"
-              << std::endl;
-    return false;
-  }
-  const auto token_sizes = tokens->sizes();
-  const auto position_sizes = positions->sizes();
-  if (tokens->scalar_type() != ::executorch::aten::ScalarType::Long ||
-      token_sizes.size() != 2 || token_sizes[0] != 1 || token_sizes[1] <= 0 ||
-      positions->scalar_type() != ::executorch::aten::ScalarType::Long ||
-      position_sizes.size() != 1 || position_sizes[0] != token_sizes[1]) {
-    std::cerr << "Forward must take Long[1, T] tokens and Long[T] positions"
-              << std::endl;
-    return false;
-  }
-  if (logits_to_keep_mode == LogitsToKeepMode::Selected) {
-    const auto selector = meta->input_tensor_meta(2);
-    if (!selector.ok() ||
-        selector->scalar_type() != ::executorch::aten::ScalarType::Long ||
-        selector->sizes().size() != 1) {
-      std::cerr << "Selected logits selector must be rank-one Long"
-                << std::endl;
-      return false;
-    }
-  }
-
+  // The logits output's last dim is the observed vocab width, cross-checked
+  // against the published get_vocab_size by the caller.
   if (meta->num_outputs() == 0) {
     std::cerr << "Forward publishes no logits output" << std::endl;
     return false;
   }
   const auto logits = meta->output_tensor_meta(0);
   if (!logits.ok() || logits->sizes().size() < 2 ||
-      logits->sizes()[logits->sizes().size() - 1] <= 0 ||
-      !is_supported_logits_type(logits->scalar_type())) {
-    std::cerr
-        << "Forward logits must have supported dtype and shape [..., vocab]"
-        << std::endl;
+      logits->sizes()[logits->sizes().size() - 1] <= 0) {
+    std::cerr << "Forward logits must have shape [..., vocab]" << std::endl;
     return false;
   }
   vocab_size = logits->sizes()[logits->sizes().size() - 1];

@@ -142,7 +142,18 @@ inline runtime::Result<LogitsToKeepMode> read_logits_to_keep_mode(
 }
 
 inline runtime::Result<std::int64_t> read_max_seq_len(Module& module) {
-  return detail::read_required_positive_int(module, kMaxSeqLen);
+  const auto value =
+      ET_UNWRAP(detail::read_required_positive_int(module, kMaxSeqLen));
+  // Consumers narrow this to int for chunked prefill, so reject a value that
+  // would truncate rather than letting the cast overflow.
+  ET_CHECK_OR_RETURN_ERROR(
+      value <= std::numeric_limits<int>::max(),
+      InvalidProgram,
+      "metadata %s %" PRId64 " exceeds the maximum forward step %d",
+      kMaxSeqLen,
+      value,
+      std::numeric_limits<int>::max());
+  return value;
 }
 
 // Check the published vocab size against the model's actual forward output
