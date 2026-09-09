@@ -328,6 +328,113 @@ __global__ void normalize_residual_rows_kernel(
   }
 }
 
+__global__ void greedy_speculative_sample_kernel(
+    const uint64_t* target_tokens,
+    const uint64_t* candidates,
+    int64_t verify_length,
+    int64_t* accepted_count,
+    uint64_t* correction_token) {
+  if (blockIdx.x != 0 || threadIdx.x != 0) {
+    return;
+  }
+  *accepted_count = verify_length;
+  *correction_token = target_tokens[verify_length - 1];
+  for (int64_t row = 0; row < verify_length - 1; ++row) {
+    if (target_tokens[row] != candidates[row + 1]) {
+      *accepted_count = row + 1;
+      *correction_token = target_tokens[row];
+      return;
+    }
+  }
+}
+
+enum CorrectionMode : int32_t {
+  kTargetDistribution = 0,
+  kResidualDistribution = 1,
+  kExcludeDraftToken = 2,
+};
+
+__global__ void select_speculative_correction_kernel(
+    const float* target_probabilities,
+    const float* draft_probabilities,
+    const uint64_t* candidates,
+    int64_t verify_length,
+    int64_t row_size,
+    bool draft_argmax,
+    DeviceRngState* rng,
+    int32_t* selection,
+    int64_t* accepted_count) {
+  if (blockIdx.x != 0 || threadIdx.x != 0) {
+    return;
+  }
+  *accepted_count = verify_length;
+  selection[0] = static_cast<int32_t>(verify_length - 1);
+  selection[1] = kTargetDistribution;
+  for (int64_t row = 0; row < verify_length - 1; ++row) {
+    const uint64_t token = candidates[row + 1];
+    const float p = target_probabilities[row * row_size + token];
+    const float q = draft_argmax
+        ? 1.0f
+        : draft_probabilities[(row + 1) * row_size + token];
+    const float acceptance = q > 0.0f ? fminf(1.0f, p / q) : 1.0f;
+    curandStatePhilox4_32_10_t local_rng;
+    curand_init(rng->seed, 0, rng->base + row, &local_rng);
+    if (uniform_from_uint32(curand(&local_rng)) >= acceptance) {
+      *accepted_count = row + 1;
+      selection[0] = static_cast<int32_t>(row);
+      selection[1] = draft_argmax ? kExcludeDraftToken : kResidualDistribution;
+      return;
+    }
+  }
+}
+
+__global__ void build_correction_distribution_kernel(
+    const float* target_probabilities,
+    const float* draft_probabilities,
+    const uint64_t* candidates,
+    const int32_t* selection,
+    int64_t row_size,
+    float* correction,
+    double* correction_double) {
+  const int64_t token = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (token >= row_size) {
+    return;
+  }
+  const int64_t row = selection[0];
+  const int32_t mode = selection[1];
+  const float p = target_probabilities[row * row_size + token];
+  float value = p;
+  if (mode == kResidualDistribution) {
+    value = fmaxf(0.0f, p - draft_probabilities[(row + 1) * row_size + token]);
+  } else if (mode == kExcludeDraftToken &&
+             token == static_cast<int64_t>(candidates[row + 1])) {
+    value = 0.0f;
+  }
+  correction[token] = value;
+  correction_double[token] = static_cast<double>(value);
+}
+
+__global__ void normalize_correction_distribution_kernel(
+    const float* target_probabilities,
+    const int32_t* selection,
+    const double* cumulative,
+    int64_t row_size,
+    float* correction) {
+  const int64_t token = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (token >= row_size) {
+    return;
+  }
+  const float denominator = static_cast<float>(cumulative[row_size - 1]);
+  if (denominator > 0.0f) {
+    correction[token] /= denominator;
+  } else {
+    correction[token] =
+        target_probabilities[static_cast<int64_t>(selection[0]) * row_size + token];
+  }
+}
+
 } // namespace
 
 struct SamplingWorkspace::Impl {
@@ -864,6 +971,123 @@ cudaError_t sample_token(
       sampled_tokens,
       workspace,
       stream);
+}
+
+cudaError_t greedy_speculative_sample(
+    const uint64_t* target_tokens,
+    const uint64_t* candidates,
+    int64_t verify_length,
+    int64_t* accepted_count,
+    uint64_t* correction_token,
+    cudaStream_t stream) {
+  if (target_tokens == nullptr || candidates == nullptr ||
+      accepted_count == nullptr || correction_token == nullptr ||
+      verify_length < 1) {
+    return cudaErrorInvalidValue;
+  }
+  greedy_speculative_sample_kernel<<<1, 1, 0, stream>>>(
+      target_tokens,
+      candidates,
+      verify_length,
+      accepted_count,
+      correction_token);
+  return cudaGetLastError();
+}
+
+cudaError_t stochastic_speculative_sample(
+    const float* target_probabilities,
+    const float* draft_probabilities,
+    const uint64_t* candidates,
+    int64_t verify_length,
+    int64_t row_size,
+    bool draft_argmax,
+    int64_t* accepted_count,
+    uint64_t* correction_token,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream) {
+  if (target_probabilities == nullptr || draft_probabilities == nullptr ||
+      candidates == nullptr || accepted_count == nullptr ||
+      correction_token == nullptr || verify_length < 2 || row_size <= 0) {
+    return cudaErrorInvalidValue;
+  }
+  cudaError_t error = workspace.reserve(verify_length, row_size, stream);
+  if (error != cudaSuccess) {
+    return error;
+  }
+  auto& state = *workspace.impl_;
+  if (verify_length > 1) {
+    advance_rng_kernel<<<1, 1, 0, stream>>>(state.rng, verify_length - 1);
+    error = cudaGetLastError();
+    if (error != cudaSuccess) {
+      return error;
+    }
+  }
+  select_speculative_correction_kernel<<<1, 1, 0, stream>>>(
+      target_probabilities,
+      draft_probabilities,
+      candidates,
+      verify_length,
+      row_size,
+      draft_argmax,
+      state.rng,
+      state.cutoffs,
+      accepted_count);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+
+  const int blocks =
+      static_cast<int>((row_size + kSamplingThreads - 1) / kSamplingThreads);
+  build_correction_distribution_kernel<<<blocks, kSamplingThreads, 0, stream>>>(
+      target_probabilities,
+      draft_probabilities,
+      candidates,
+      state.cutoffs,
+      row_size,
+      state.sort_keys_in,
+      state.weights);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  error = cub::DeviceScan::InclusiveSum(
+      state.temporary_storage,
+      state.temporary_storage_bytes,
+      state.weights,
+      state.cumulative,
+      static_cast<int>(row_size),
+      stream);
+  if (error != cudaSuccess) {
+    return error;
+  }
+  normalize_correction_distribution_kernel<<<
+      blocks, kSamplingThreads, 0, stream>>>(
+      target_probabilities,
+      state.cutoffs,
+      state.cumulative,
+      row_size,
+      state.sort_keys_in);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  probabilities_to_double_kernel<<<blocks, kSamplingThreads, 0, stream>>>(
+      state.sort_keys_in, row_size, state.weights);
+  error = cub::DeviceScan::InclusiveSum(
+      state.temporary_storage,
+      state.temporary_storage_bytes,
+      state.weights,
+      state.cumulative,
+      static_cast<int>(row_size),
+      stream);
+  if (error != cudaSuccess) {
+    return error;
+  }
+  advance_rng_kernel<<<1, 1, 0, stream>>>(state.rng, 1);
+  categorical_sample_kernel<<<1, 1, 0, stream>>>(
+      state.cumulative, 1, row_size, state.rng, correction_token);
+  return cudaGetLastError();
 }
 
 } // namespace muse_glimmer::cuda
