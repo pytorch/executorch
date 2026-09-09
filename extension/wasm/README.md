@@ -30,7 +30,7 @@ emcmake cmake . -DEXECUTORCH_BUILD_WASM=ON \
     -Bcmake-out-wasm
 
 # Build the Wasm extension
-cmake --build cmake-out-wasm --target executorch_wasm -j32
+cmake --build cmake-out-wasm --target executorch_wasm -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 To reduce the binary size, you may also use the selective build options found in the [Kernel Library Selective Build guide](../../docs/source/kernel-library-selective-build.md). You may also use optimized kernels with the `EXECUTORCH_BUILD_KERNELS_OPTIMIZED` option. Portable kernels are used by default.

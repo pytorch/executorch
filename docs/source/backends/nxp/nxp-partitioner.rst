@@ -27,9 +27,9 @@ Following fields can be set:
 * `extra_flags` - Extra flags for the Neutron compiler.
 * `operators_not_to_delegate` - List of operators that will not be delegated.
 * `use_neutron_for_format_conversion` - If True, let the eIQ Neutron NPU to handle conversion between channel-first (NCHW) and channel-last (NHWC) data formats. That is the Neutron backend will insert `Transpose` ops to ensure that the IO matches the executorch partition, which will be delegated to Neutron.
-* `fetch_constants_to_sram` - If True, the Neutron Converter will insert microinstructions to prefetch weights from FLASH to SRAM. This should be used when the whole model does not fit into SRAM on Neutron-C devices, like i.MX RT700.
-* `dump_kernel_selection_code` - Whether Neutron converter dumps kernel selection code, which is used by the selective kernel registration, see :doc:`Neutron Firmware Kernel Selection support <nxp-kernel-selection.md>`.
-* `use_profiling` - If true Neutron Converter will enable profiling for neutron delegated model.
+* `fetch_constants_to_sram` - If True, the Neutron Compiler will insert microinstructions to prefetch weights from FLASH to SRAM. This should be used when the whole model does not fit into SRAM on Neutron-C devices, like i.MX RT700.
+* `dump_kernel_selection_code` - Whether Neutron Compiler dumps kernel selection code, which is used by the selective kernel registration, see :doc:`Neutron Firmware Kernel Selection support <nxp-kernel-selection.md>`.
+* `use_profiling` - If true Neutron Compiler will enable profiling for neutron delegated model.
 
 -------------------------
 Custom Delegation Options

@@ -24,6 +24,7 @@ LocalWorkGroup quantized_linear_lwg(
 ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
-    const ValueRef qmat2_data);
+    const ValueRef qmat2_data,
+    const bool use_unsigned_dot = false);
 
 } // namespace vkcompute

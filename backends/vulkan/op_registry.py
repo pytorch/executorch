@@ -1435,58 +1435,56 @@ def register_where():
 # =============================================================================
 
 
+def _index_tensor_shapes(node: torch.fx.Node):
+    """Return self, index, and axis for the supported form, else None."""
+    self_arg = node.args[0]
+    indices = node.args[1]
+
+    if not isinstance(self_arg, torch.fx.Node):
+        return None
+    self_val = self_arg.meta.get("val", None)
+    if self_val is None or not isinstance(indices, (list, tuple)):
+        return None
+
+    non_none = [(dim, index) for dim, index in enumerate(indices) if index is not None]
+    if len(non_none) != 1:
+        return None
+    index_dim, index_arg = non_none[0]
+    if index_dim >= len(self_val.size()) or not isinstance(index_arg, torch.fx.Node):
+        return None
+    index_val = index_arg.meta.get("val", None)
+    if index_val is None:
+        return None
+
+    return self_val, index_val, index_dim
+
+
+def _check_index_tensor_node(node: torch.fx.Node) -> bool:
+    shapes = _index_tensor_shapes(node)
+    if shapes is None:
+        return False
+    _, index_val, _ = shapes
+    # The gather is expressed as "one index position per output slice", so
+    # the index must be 1-D. `self` may be any rank.
+    return len(index_val.size()) == 1
+
+
+def _pick_index_tensor_storage(node: torch.fx.Node):
+    shapes = _index_tensor_shapes(node)
+    # Only the buffer shader handles a higher-rank `self`.
+    if shapes is not None and len(shapes[0].size()) > 1:
+        return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
+    return utils.ANY_STORAGE, utils.ANY_STORAGE
+
+
 @update_features(exir_ops.edge.aten.index.Tensor)
 def register_index_tensor():
-    def _index_tensor_shapes(node: torch.fx.Node):
-        """(self_val, index_val) for the supported single-index form, else None."""
-        self_arg = node.args[0]
-        indices = node.args[1]
-
-        if not isinstance(self_arg, torch.fx.Node):
-            return None
-        self_val = self_arg.meta.get("val", None)
-        if self_val is None:
-            return None
-
-        # Only support exactly one non-None index tensor, applied to dim 0.
-        if not isinstance(indices, (list, tuple)):
-            return None
-        non_none = [idx for idx in indices if idx is not None]
-        if len(non_none) != 1 or indices[0] is None:
-            return None
-        index_arg = non_none[0]
-        if not isinstance(index_arg, torch.fx.Node):
-            return None
-        index_val = index_arg.meta.get("val", None)
-        if index_val is None:
-            return None
-
-        return self_val, index_val
-
-    def check_index_tensor_node(node: torch.fx.Node) -> bool:
-        shapes = _index_tensor_shapes(node)
-        if shapes is None:
-            return False
-        _, index_val = shapes
-        # The gather is expressed as "one index position per output slice", so
-        # the index must be 1-D. `self` may be any rank: the buffer shader
-        # copies self's trailing dims through unchanged.
-        return len(index_val.size()) == 1
-
-    def pick_index_tensor_storage(node: torch.fx.Node):
-        shapes = _index_tensor_shapes(node)
-        # Only the buffer shader handles a higher-rank `self`; the texture
-        # variant still assumes the 1-D form (it reads self[idx, 0, 0, 0]).
-        if shapes is not None and len(shapes[0].size()) > 1:
-            return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
-        return utils.ANY_STORAGE, utils.ANY_STORAGE
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_index_tensor_node,
-        pick_io_storage_fn=pick_index_tensor_storage,
+        are_node_inputs_supported_fn=_check_index_tensor_node,
+        pick_io_storage_fn=_pick_index_tensor_storage,
     )
 
 
@@ -1500,6 +1498,7 @@ def register_arange():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
     )
 
 
