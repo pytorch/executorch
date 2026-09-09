@@ -1,6 +1,6 @@
 # Pip packages needed to build from source. Mainly for development of ExecuTorch.
 
-cmake>=3.24, <4.0.0  # For building binary targets in the wheel.
+cmake>=3.26, <4.0.0  # For building binary targets in the wheel.
 packaging>=24.2 # Lower bound required by setuptools
 patchelf; sys_platform == 'linux'  # Writes the runtime search paths that let the shipped libraries find each other.
 pip>=23  # For building the pip package.

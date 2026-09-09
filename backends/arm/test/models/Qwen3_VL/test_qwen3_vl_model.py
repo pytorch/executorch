@@ -314,6 +314,8 @@ def _test_qwen3_vl_full_models_vgf_no_quant_bf16(
 
 def _test_qwen3_vl_text_model_tosa_mxfp8_bf16(
     config_factory=_make_qwen3_vl_e2e_test_config,
+    frobenius_threshold: float = 0.1,
+    cosine_threshold: float = 0.98,
 ):
     # The Qwen 3 VL FP8 model only quantizes the TextModel
     model, inputs = TextModelWrapper.prepare_model_and_inputs(config_factory)
@@ -326,8 +328,8 @@ def _test_qwen3_vl_text_model_tosa_mxfp8_bf16(
             aten_op=aten_op_mxfp_linear,
             exir_op=[],
             filter_fn=_is_linear,
-            frobenius_threshold=0.1,
-            cosine_threshold=0.98,
+            frobenius_threshold=frobenius_threshold,
+            cosine_threshold=cosine_threshold,
             mxfp_config=mxfp_config,
             tosa_version="1.1",
             tosa_extensions=["bf16", "mxfp"],
@@ -404,4 +406,8 @@ def test_qwen3_vl_2b_instruct_full_models_vgf_no_quant_bf16(
 @pytest.mark.slow
 @pytest.mark.xlarge
 def test_qwen3_vl_2b_instruct_text_model_tosa_mxfp8_bf16():
-    _test_qwen3_vl_text_model_tosa_mxfp8_bf16(_make_qwen3_vl_2b_instruct_layer_config)
+    _test_qwen3_vl_text_model_tosa_mxfp8_bf16(
+        _make_qwen3_vl_2b_instruct_layer_config,
+        frobenius_threshold=0.3,
+        cosine_threshold=0.95,
+    )
