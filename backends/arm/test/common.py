@@ -56,7 +56,12 @@ def maybe_get_tosa_artifact_path() -> str | None:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
         if current_test is None:
             raise RuntimeError("Could not determine the current pytest test name")
-        test_name = current_test.split(" (")[0].rsplit("::", 1)[-1]
+        test_name = (
+            current_test.split(" (")[0]
+            .rsplit("::", 1)[-1]
+            .replace(",", "_")
+            .replace(" ", "")
+        )
         return os.path.join(artifact_base_path, test_name)
 
     return maybe_get_tosa_collate_path()

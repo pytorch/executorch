@@ -32,14 +32,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     GIT_REPOSITORY
       https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
     GIT_TAG ${ethos_u_base_tag}
-    SOURCE_DIR
-    ${ETHOS_SDK_PATH}
-    BINARY_DIR
-    ${ETHOS_SDK_PATH}
-    SUBBUILD_DIR
-    ${ETHOS_SDK_PATH}/../ethos_u-subbuild
-    SOURCE_SUBDIR
-    none
+    SOURCE_DIR ${ETHOS_SDK_PATH} BINARY_DIR ${ETHOS_SDK_PATH}
+    # Keep the generator-specific population project local to this build.
+    SOURCE_SUBDIR none
   )
   FetchContent_MakeAvailable(ethos_u)
   # Patch manifest to remove unused projects.
@@ -109,7 +104,24 @@ function(set_ethosu_dedicated_sram_fast_scratch_size OUT_VAR MEMORY_MODE)
   )
 endfunction()
 
-function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
+#[[
+Return the linker script used by the Corstone FVP for SYSTEM_CONFIG.
+]]
+function(get_corstone_linker_script OUT_VAR SYSTEM_CONFIG)
+  if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
+    set(_linker_script "Corstone-300.ld")
+  elseif(SYSTEM_CONFIG MATCHES "Ethos_U85")
+    set(_linker_script "Corstone-320.ld")
+  else()
+    message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
+  endif()
+  set(${OUT_VAR}
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../cmake/linker_scripts/${_linker_script}"
+      PARENT_SCOPE
+  )
+endfunction()
+
+function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH MEMORY_MODE)
   if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
     # Both model and scratch in DRAM.
     set(MEMORY_MODEL dram)

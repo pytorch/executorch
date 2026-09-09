@@ -34,6 +34,7 @@ class _Worker:
     def __init__(self):
         self.opened, self.reset_ids, self.closed_ids = [], [], []
         self.proc_closed = False
+        self.healthy = True
 
     def open_session(self, sid):
         self.opened.append(sid)
@@ -271,6 +272,254 @@ def test_cancellation_drops_late_worker_tokens(monkeypatch):
     stopped, put_count = asyncio.run(scenario())
     assert stopped
     assert put_count < 10
+
+
+def test_reserves_request_before_executor_submission():
+    class _Reserved(_Worker):
+        def __init__(self):
+            super().__init__()
+            self.reserved = False
+            self.request_id = None
+
+        def reserve_request(self):
+            self.reserved = True
+            return 17
+
+        def release_request(self, request_id):
+            self.reserved = False
+            return request_id == 17
+
+        def generate(
+            self,
+            prompt,
+            config,
+            token_callback=None,
+            stats_callback=None,
+            request_id=None,
+        ):
+            assert self.reserved
+            self.request_id = request_id
+
+    async def scenario():
+        worker = _Reserved()
+        runtime = SessionRuntime(worker)
+        async for _ in runtime.generate_stream(None, _text(), _OPTS):
+            pass
+        return worker
+
+    worker = asyncio.run(scenario())
+    assert worker.request_id == 17
+
+
+def test_cooperative_cancellation_keeps_runtime_healthy():
+    class _Cooperative(_Worker):
+        def __init__(self):
+            super().__init__()
+            self._gate = threading.Event()
+            self._next_id = 1
+            self.abort_count = 0
+
+        def reserve_request(self):
+            request_id = self._next_id
+            self._next_id += 1
+            return request_id
+
+        def release_request(self, request_id):
+            return True
+
+        def stop(self):
+            self._gate.set()
+            return True
+
+        def abort(self):
+            self.abort_count += 1
+            self.healthy = False
+
+        def generate(
+            self,
+            prompt,
+            config,
+            token_callback=None,
+            stats_callback=None,
+            request_id=None,
+        ):
+            token_callback("TOKEN")
+            self._gate.wait(timeout=5)
+            self._gate.clear()
+
+    async def scenario():
+        worker = _Cooperative()
+        runtime = SessionRuntime(worker, cancel_grace_seconds=0.5)
+        generator = runtime.generate_stream(None, _text(), _OPTS)
+        assert await generator.__anext__() == "TOKEN"
+        await generator.aclose()
+        assert runtime.healthy
+        assert worker.abort_count == 0
+        second = runtime.generate_stream(None, _text(), _OPTS)
+        assert await second.__anext__() == "TOKEN"
+        await second.aclose()
+        return worker.abort_count
+
+    assert asyncio.run(scenario()) == 0
+
+
+def test_repeated_cancellation_does_not_interrupt_cleanup():
+    class _SlowAbort(_Worker):
+        def __init__(self):
+            super().__init__()
+            self.started = threading.Event()
+            self.finished = threading.Event()
+            self.abort_started = threading.Event()
+            self.abort_count = 0
+
+        def reserve_request(self):
+            return 1
+
+        def release_request(self, request_id):
+            return True
+
+        def stop(self):
+            return True
+
+        def abort(self):
+            self.abort_count += 1
+            self.abort_started.set()
+            time.sleep(0.03)
+            self.healthy = False
+            self.finished.set()
+
+        def generate(
+            self,
+            prompt,
+            config,
+            token_callback=None,
+            stats_callback=None,
+            request_id=None,
+        ):
+            self.started.set()
+            self.finished.wait(timeout=5)
+
+    async def scenario():
+        worker = _SlowAbort()
+        runtime = SessionRuntime(
+            worker, cancel_grace_seconds=0.01, abort_timeout_seconds=0.5
+        )
+        generator = runtime.generate_stream(None, _text(), _OPTS)
+        pending = asyncio.create_task(generator.__anext__())
+        await asyncio.to_thread(worker.started.wait, 1)
+        pending.cancel()
+        await asyncio.to_thread(worker.abort_started.wait, 1)
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        return runtime.healthy, worker.abort_count, worker.finished.is_set()
+
+    import time
+
+    import pytest
+
+    assert asyncio.run(scenario()) == (False, 1, True)
+
+
+def test_stop_false_completion_race_keeps_runtime_healthy():
+    class _AlreadyCompleted(_Worker):
+        def __init__(self):
+            super().__init__()
+            self.finished = threading.Event()
+            self.abort_count = 0
+
+        def reserve_request(self):
+            return 1
+
+        def release_request(self, request_id):
+            return True
+
+        def stop(self):
+            self.finished.set()
+            return False
+
+        def abort(self):
+            self.abort_count += 1
+            self.healthy = False
+
+        def generate(
+            self,
+            prompt,
+            config,
+            token_callback=None,
+            stats_callback=None,
+            request_id=None,
+        ):
+            token_callback("TOKEN")
+            self.finished.wait(timeout=5)
+
+    async def scenario():
+        worker = _AlreadyCompleted()
+        runtime = SessionRuntime(worker, cancel_grace_seconds=0.5)
+        generator = runtime.generate_stream(None, _text(), _OPTS)
+        assert await generator.__anext__() == "TOKEN"
+        await generator.aclose()
+        return runtime.healthy, worker.abort_count
+
+    assert asyncio.run(scenario()) == (True, 0)
+
+
+def test_noncooperative_cancellation_aborts_and_fails_fast():
+    class _Noncooperative(_Worker):
+        def __init__(self):
+            super().__init__()
+            self.started = threading.Event()
+            self.finished = threading.Event()
+            self.abort_count = 0
+            self._next_id = 1
+
+        def reserve_request(self):
+            request_id = self._next_id
+            self._next_id += 1
+            return request_id
+
+        def release_request(self, request_id):
+            return True
+
+        def stop(self):
+            return True
+
+        def abort(self):
+            self.abort_count += 1
+            self.healthy = False
+            self.finished.set()
+
+        def generate(
+            self,
+            prompt,
+            config,
+            token_callback=None,
+            stats_callback=None,
+            request_id=None,
+        ):
+            self.started.set()
+            self.finished.wait(timeout=5)
+
+    async def scenario():
+        worker = _Noncooperative()
+        runtime = SessionRuntime(
+            worker, cancel_grace_seconds=0.02, abort_timeout_seconds=0.5
+        )
+        generator = runtime.generate_stream(None, _text(), _OPTS)
+        pending = asyncio.create_task(generator.__anext__())
+        await asyncio.to_thread(worker.started.wait, 1)
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        assert worker.abort_count == 1
+        assert not runtime.healthy
+        with pytest.raises(WorkerError, match="restart the server"):
+            await anext(runtime.generate_stream(None, _text(), _OPTS))
+
+    import pytest
+    from executorch.examples.llm_server.python.worker_client import WorkerError
+
+    asyncio.run(scenario())
 
 
 def test_close_worker_shuts_down_worker():

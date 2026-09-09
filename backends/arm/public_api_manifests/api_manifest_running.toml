@@ -60,6 +60,10 @@ signature = "EthosUPartitioner.partition(self, exported_program: torch.export.ex
 kind = "function"
 signature = "EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
+[python.EthosUPartitioner.transform_for_pre_decomposition]
+kind = "function"
+signature = "EthosUPartitioner.transform_for_pre_decomposition(self, exported_program: torch.export.exported_program.ExportedProgram) -> torch.export.exported_program.ExportedProgram"
+
 [python.EthosUQuantizer]
 kind = "class"
 signature = "EthosUQuantizer(compile_spec: 'EthosUCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'"
@@ -180,6 +184,10 @@ signature = "VgfPartitioner.partition(self, exported_program: torch.export.expor
 kind = "function"
 signature = "VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
+[python.VgfPartitioner.transform_for_pre_decomposition]
+kind = "function"
+signature = "VgfPartitioner.transform_for_pre_decomposition(self, exported_program: torch.export.exported_program.ExportedProgram) -> torch.export.exported_program.ExportedProgram"
+
 [python.VgfQuantizer]
 kind = "class"
 signature = "VgfQuantizer(compile_spec: 'VgfCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'"
@@ -219,3 +227,61 @@ signature = "get_symmetric_a16w8_quantization_config(is_per_channel: 'bool' = Tr
 [python.get_symmetric_quantization_config]
 kind = "function"
 signature = "get_symmetric_quantization_config(is_per_channel: 'bool' = True, is_qat: 'bool' = False, is_dynamic: 'bool' = False, act_qmin: 'int' = -128, act_qmax: 'int' = 127, weight_qmin: 'int' = -127, weight_qmax: 'int' = 127, eps: 'float' = 1.52587890625e-05) -> 'QuantizationConfig'"
+
+[cmake]
+
+[cmake.arm_runner_add_minimal_executable]
+kind = "function"
+signature = "arm_runner_add_minimal_executable(*, TARGET, SOURCE, OPS_PREFIX, COMPILE_DEFINITIONS=())"
+
+[cmake.arm_runner_add_standalone_executorch]
+kind = "macro"
+signature = "arm_runner_add_standalone_executorch()"
+
+[cmake.arm_runner_configure_ethos_u_platform]
+kind = "function"
+signature = "arm_runner_configure_ethos_u_platform(*, SDK_PATH, SYSTEM_CONFIG, MEMORY_MODE)"
+
+[cmake.arm_runner_configure_linker_script]
+kind = "function"
+signature = "arm_runner_configure_linker_script(*, TARGET, SYSTEM_CONFIG, OUTPUT_NAME=None)"
+
+[cmake.arm_runner_configure_model]
+kind = "function"
+signature = "arm_runner_configure_model(*, TARGET, PTE_FILE=None, MODEL_PTE_ADDR=None, MODEL_PTE_SIZE=None, PUBLIC=False)"
+
+[cmake.arm_runner_configure_runtime_output]
+kind = "function"
+signature = "arm_runner_configure_runtime_output(TARGET_NAME, FALLBACK_DIR)"
+
+[cmake.arm_runner_create_default_selected_ops_libs]
+kind = "function"
+signature = "arm_runner_create_default_selected_ops_libs(*, PREFIX, SUFFIX=None, OP_LIST=None, OPS_FROM_MODEL=None, DTYPE_SELECTIVE_BUILD=None, OUT_LIBS=None, DEPS=())"
+
+[cmake.arm_runner_create_selected_ops_lib]
+kind = "function"
+signature = "arm_runner_create_selected_ops_lib(*, LIB_NAME, FUNCTIONS_YAML=None, CUSTOM_OPS_YAML=None, OP_LIST=None, OPS_FROM_MODEL=None, DTYPE_SELECTIVE_BUILD=None, KERNEL_LIBS=(), DEPS=(), INCLUDE_ALL_OPS=False, PRIM_OPS=False)"
+
+[cmake.arm_runner_define_cache_options]
+kind = "function"
+signature = "arm_runner_define_cache_options(*, METHOD_ALLOCATOR_SIZE=None)"
+
+[cmake.arm_runner_link_minimal_specs]
+kind = "function"
+signature = "arm_runner_link_minimal_specs(TARGET_NAME)"
+
+[cmake.arm_runner_link_registration_libraries]
+kind = "function"
+signature = "arm_runner_link_registration_libraries(*, TARGET, SCOPE=None, BASE_LIBS=(), REGISTRATION_LIBS=(), NORMAL_LIBS=(), SUPPRESS_LIBS=())"
+
+[cmake.arm_runner_require_baremetal_targets]
+kind = "function"
+signature = "arm_runner_require_baremetal_targets()"
+
+[cmake.arm_runner_require_python]
+kind = "macro"
+signature = "arm_runner_require_python()"
+
+[cmake.arm_runner_validate_model_source]
+kind = "function"
+signature = "arm_runner_validate_model_source(*, ALLOW_SEMIHOSTING=False)"

@@ -2,7 +2,7 @@
 
 The Arm&reg; Ethos&trade;-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on
 [Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55), [Arm&reg; Ethos&trade;-U65 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65), and
-[Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://www.mlplatform.org/tosa/) and the
+[Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://github.com/arm/tosa-specification) and the
 [ethos-u-vela](https://pypi.org/project/ethos-u-vela/) graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
 please refer to the [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md). <!-- @lint-ignore -->
 
@@ -24,7 +24,7 @@ All requirements can be downloaded using `examples/arm/setup.sh --i-agree-to-the
 ```
 
 For the AOT flow, compilation of a model to `.pte` format using the Ethos-U backend, the requirements are:
-- [TOSA Serialization Library](https://www.mlplatform.org/tosa/software.html) for serializing the Exir IR graph into TOSA IR.
+- [TOSA Serialization Library](https://gitlab.arm.com/tosa/tosa-tools) for serializing the Exir IR graph into TOSA IR.
 - [Ethos-U Vela graph compiler](https://pypi.org/project/ethos-u-vela/) for compiling TOSA flatbuffers into an Ethos-U command stream.
 
 And for building and running the example application available in `examples/arm/executor_runner/` through the standalone CMake entry point:

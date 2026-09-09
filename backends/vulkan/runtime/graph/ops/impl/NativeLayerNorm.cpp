@@ -50,7 +50,7 @@ void resize_native_layer_norm_node(
   graph->virtual_resize(rstd, mean_size);
 }
 
-utils::uvec3 layer_norm_buffer_global_wg_size(
+GlobalWorkGrid layer_norm_buffer_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -60,21 +60,8 @@ utils::uvec3 layer_norm_buffer_global_wg_size(
   const ValueRef mean_tensor = args.at(0).refs.at(1);
   const uint32_t num_rows =
       utils::safe_downcast<uint32_t>(graph->numel_of(mean_tensor));
-  return {1u, num_rows, 1u};
-}
-
-utils::uvec3 layer_norm_buffer_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {64u, 1u, 1u};
+  return GlobalWorkGrid(
+      {1u, num_rows, 1u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
 }
 
 void add_native_layer_norm_node(
@@ -131,9 +118,8 @@ void add_native_layer_norm_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      is_buffer ? layer_norm_buffer_global_wg_size
-                : default_pick_global_wg_size,
-      is_buffer ? layer_norm_buffer_local_wg_size : default_pick_local_wg_size,
+      is_buffer ? layer_norm_buffer_gwg : default_pick_gwg,
+      is_buffer ? pick_required_lwg : default_pick_lwg,
       // Inputs and Outputs
       {{{out_tensor, mean_tensor, rstd_tensor}, vkapi::kWrite},
        {{in, arg_weight, arg_bias}, vkapi::kRead}},

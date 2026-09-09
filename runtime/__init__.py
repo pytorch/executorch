@@ -183,6 +183,27 @@ class Program:
     def load_method(self, name: str) -> Optional[Method]:
         """Loads a method from the program.
 
+        Memory-planned buffers are allocated differently depending on where the
+        program placed them. A method whose buffers are all on the host shares
+        one set of arenas with every other host-only method of this program,
+        sized to the largest of them, so two such methods overwrite each
+        other's intermediate values. Outputs are copied out on every call, so
+        that sharing does not change what execute returns. A method with any
+        buffer placed on an accelerator gets its own arenas instead, claimed
+        when that method is first loaded and owned by that method until the
+        method itself is released. This program caches every method it loads,
+        so in normal use those arenas live as long as the program does. A
+        missing or exhausted accelerator therefore fails that one load rather
+        than the whole program, but whatever it does claim stays claimed for
+        every method loaded after it.
+
+        A program exported with ``share_mutable_buffers=True`` relies on every
+        method reading its shared mutable state from one allocation. A method
+        with accelerator-placed buffers gets its own arenas instead, so it also
+        gets its own copy of that state and will not observe writes made through
+        another method. Export without ``share_mutable_buffers`` if a method
+        needs both accelerator memory and shared state.
+
         Args:
             name: The name of the method to load.
 

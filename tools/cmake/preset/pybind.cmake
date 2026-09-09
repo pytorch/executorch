@@ -59,9 +59,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
-  # MLX requires Apple Silicon (ARM64) and the Metal compiler (xcrun -sdk macosx
-  # metal) which is only available with Xcode, not Command Line Tools
+  # Both of these are Apple Silicon only. The TorchAO kernels build only for
+  # aarch64, which is what TORCHAO_BUILD_CPU_AARCH64 selects; the Apple
+  # framework build already ships them and this brings the wheel in line. MLX
+  # additionally needs the Metal compiler (xcrun -sdk macosx metal), which comes
+  # with Xcode and not with the Command Line Tools.
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set_overridable_option(EXECUTORCH_BUILD_KERNELS_TORCHAO ON)
     execute_process(
       COMMAND xcrun -sdk macosx --find metal
       RESULT_VARIABLE _metal_compiler_result

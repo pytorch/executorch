@@ -24,7 +24,8 @@ bool validate_transpose_conv2d_arguments(
     const std::optional<Tensor>& bias,
     const Tensor& output,
     const Tensor& requantize_multipliers,
-    const Tensor& requantize_shifts) {
+    const Tensor& requantize_shifts,
+    ActivationLayout layout) {
   if (input.dim() != kConvTransposeDim || weight.dim() != kConvTransposeDim ||
       output.dim() != kConvTransposeDim) {
     ET_LOG(Error, "quantized_transpose_conv2d_out: tensors must be 4-D");
@@ -32,16 +33,22 @@ bool validate_transpose_conv2d_arguments(
     return false;
   }
 
-  if (!is_channels_last_tensor(input)) {
+  if (layout == ActivationLayout::NHWCLogical) {
+    if (!executorch::runtime::is_contiguous_dim_order(
+            input.dim_order().data(), input.dim_order().size()) ||
+        !executorch::runtime::is_contiguous_dim_order(
+            output.dim_order().data(), output.dim_order().size())) {
+      ET_LOG(
+          Error,
+          "quantized_transpose_conv2d_nhwc_out: input and output must have contiguous dim_order");
+      context.fail(Error::InvalidArgument);
+      return false;
+    }
+  } else if (
+      !is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
     ET_LOG(
-        Error, "quantized_transpose_conv2d_out: input must be channels_last");
-    context.fail(Error::InvalidArgument);
-    return false;
-  }
-
-  if (!is_channels_last_tensor(output)) {
-    ET_LOG(
-        Error, "quantized_transpose_conv2d_out: output must be channels_last");
+        Error,
+        "quantized_transpose_conv2d_out: input and output must be channels_last");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -68,7 +75,8 @@ bool validate_transpose_conv2d_arguments(
     return false;
   }
 
-  const int64_t out_channels = output.size(1);
+  const int64_t out_channels =
+      output.size(layout == ActivationLayout::NHWCLogical ? 3 : 1);
   if (requantize_multipliers.size(0) != out_channels ||
       requantize_shifts.size(0) != out_channels) {
     ET_LOG(
@@ -84,7 +92,7 @@ bool validate_transpose_conv2d_arguments(
 } // namespace
 
 // cppcheck-suppress unusedFunction
-Tensor& quantized_transpose_conv2d_out(
+static Tensor& quantized_transpose_conv2d_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
@@ -101,6 +109,7 @@ Tensor& quantized_transpose_conv2d_out(
     const int64_t activation_max,
     const Tensor& scratch,
     const Tensor& output_scratch,
+    ActivationLayout layout,
     Tensor& out) {
   if (!validate_transpose_conv2d_arguments(
           context,
@@ -109,23 +118,30 @@ Tensor& quantized_transpose_conv2d_out(
           bias,
           out,
           requantize_multipliers,
-          requantize_shifts)) {
+          requantize_shifts,
+          layout)) {
     return out;
   }
 
   const int32_t batch = static_cast<int32_t>(input.size(0));
-  const int32_t input_channels = static_cast<int32_t>(input.size(1));
-  const int32_t input_height = static_cast<int32_t>(input.size(2));
-  const int32_t input_width = static_cast<int32_t>(input.size(3));
+  const int32_t input_channels = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 3 : 1));
+  const int32_t input_height = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 1 : 2));
+  const int32_t input_width = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 2 : 3));
 
   const int32_t kernel_output_channels = static_cast<int32_t>(weight.size(0));
   const int32_t kernel_height = static_cast<int32_t>(weight.size(1));
   const int32_t kernel_width = static_cast<int32_t>(weight.size(2));
   const int32_t kernel_input_channels = static_cast<int32_t>(weight.size(3));
 
-  const int32_t output_channels = static_cast<int32_t>(out.size(1));
-  const int32_t output_height = static_cast<int32_t>(out.size(2));
-  const int32_t output_width = static_cast<int32_t>(out.size(3));
+  const int32_t output_channels = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 3 : 1));
+  const int32_t output_height = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 1 : 2));
+  const int32_t output_width = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 2 : 3));
 
   if (kernel_output_channels != output_channels) {
     ET_LOG(
@@ -244,6 +260,86 @@ Tensor& quantized_transpose_conv2d_out(
   }
 
   return out;
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_transpose_conv2d_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef output_padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    const Tensor& output_scratch,
+    Tensor& out) {
+  return quantized_transpose_conv2d_out_impl(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      output_padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      output_scratch,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_transpose_conv2d_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef output_padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    const Tensor& output_scratch,
+    Tensor& out) {
+  return quantized_transpose_conv2d_out_impl(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      output_padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      output_scratch,
+      ActivationLayout::NHWCLogical,
+      out);
 }
 
 } // namespace native

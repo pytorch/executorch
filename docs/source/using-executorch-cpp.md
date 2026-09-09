@@ -178,26 +178,41 @@ These are the components the package provides:
 | `threadpool` | Multi-threaded execution. | Linux, macOS |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS |
+| `kernels_torchao` | The TorchAO low-bit quantized kernels | macOS, Apple Silicon |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
+| `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
+| `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
 
 To see what your own install offers, ask CMake:
 
 ```cmake
 find_package(executorch REQUIRED)
 foreach(_component
-        runtime kernels_optimized kernels_quantized backend_xnnpack
-        backend_cuda extension_cuda backend_openvino threadpool etdump)
+        runtime kernels_optimized kernels_quantized kernels_torchao
+        backend_xnnpack backend_coreml backend_mlx backend_cuda extension_cuda
+        backend_openvino threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
 endforeach()
 ```
 
-On macOS the Core ML and MLX delegates are registered inside the Python extension rather than
-shipped as separate C++ libraries, so a C++ application there cannot link them as components; use
-them from Python, or build from source if you need them in C++.
+On macOS the Core ML and MLX delegates link the same way, by naming their
+component. Registration is handled for you: each backend registers itself through
+a static initializer, and the imported target carries the link options that keep
+that initializer from being dropped, so you do not need `-force_load` or any
+whole-archive flag of your own.
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_coreml backend_mlx)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_coreml
+                                  executorch::backend_mlx)
+```
 
 Profiling a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in
 total. It does not record the individual operators inside the delegate, because that detail comes
@@ -231,6 +246,17 @@ export OPENVINO_LIB_PATH="$(python -c 'import glob, openvino, os; print(sorted(g
 
 Without it the delegate still registers and the program still links, and the failure arrives later,
 when the model is loaded.
+
+The MLX delegate has a similar requirement. Its Metal kernels live in a separate `mlx.metallib`
+file, which MLX looks for next to whichever library holds MLX code. The wheel ships it beside the
+delegate, so a program that links the delegate where it sits needs nothing extra. A program that
+copies the delegate next to its own binary has to copy that file too, and `find_package` reports
+where it is:
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS backend_mlx)
+message(STATUS "Metal kernels: ${MLX_METALLIB_PATH}")
+```
 
 #### When something does not work
 

@@ -56,6 +56,7 @@ def _core_aten_to_edge(
     edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=None,
     verbose=True,
+    generate_etrecord: bool = False,
 ) -> EdgeProgramManager:
     if not edge_compile_config:
         edge_compile_config = exir.EdgeCompileConfig(
@@ -65,6 +66,7 @@ def _core_aten_to_edge(
         core_aten_exir_ep,
         constant_methods=edge_constant_methods,
         compile_config=edge_compile_config,
+        generate_etrecord=generate_etrecord,
     )
     if verbose:
         logging.info(f"Exported graph:\n{edge_manager.exported_program()}")
@@ -81,6 +83,7 @@ def export_to_edge(
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     strict=True,
     verbose=True,
+    generate_etrecord: bool = False,
 ) -> EdgeProgramManager:
     core_aten_ep = _to_core_aten(
         model,
@@ -91,7 +94,11 @@ def export_to_edge(
         verbose=verbose,
     )
     return _core_aten_to_edge(
-        core_aten_ep, edge_constant_methods, edge_compile_config, verbose=verbose
+        core_aten_ep,
+        edge_constant_methods,
+        edge_compile_config,
+        verbose=verbose,
+        generate_etrecord=generate_etrecord,
     )
 
 

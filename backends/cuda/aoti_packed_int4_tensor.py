@@ -18,8 +18,8 @@ from torchao.utils import TorchAOBaseTensor
 class AotiPackedInt4Tensor(TorchAOBaseTensor):
     """Symmetric groupwise INT4 weight consumed by AOTI Triton kernels.
 
-    Linears use ``triton::int4_matmul`` by default; the opt-in fixed-shape path
-    uses ``triton::int4_matvec_bf16``.
+    Linears use ``triton::int4_matmul`` by default; a fixed-shape caller can
+    select ``triton::int4_matvec_bf16``.
     """
 
     tensor_data_names = ["qdata", "scale"]

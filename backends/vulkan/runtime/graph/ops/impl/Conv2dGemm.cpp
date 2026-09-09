@@ -98,10 +98,11 @@ ValueRef prepack_conv2d_gemm_weight(
       weight_storage,
       utils::kWidthPacked);
 
-  const utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(N4),
-      utils::safe_downcast<uint32_t>(K4),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(N4),
+       utils::safe_downcast<uint32_t>(K4),
+       1u},
+      kTiledWorkGrid);
 
   // Push constants must be uploaded in <= 16-byte (one ivec4) chunks; the
   // shader's Block reads them back as dims0 / dims1. Layout must match
@@ -125,8 +126,8 @@ ValueRef prepack_conv2d_gemm_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       weight_data,
       packed_weight,
       {},
@@ -164,7 +165,7 @@ vkapi::ShaderInfo pick_conv2d_gemm_shader(
 // handles): both are build-time constants, so packing the ints directly into
 // the slots avoids materializing graph Values for them. Read with static_cast,
 // never get_int.
-utils::uvec3 pick_conv2d_gemm_global_wg_size(
+GlobalWorkGrid pick_conv2d_gemm_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -185,14 +186,14 @@ utils::uvec3 pick_conv2d_gemm_global_wg_size(
   // skip tracks the dynamic shape. (The num_tiles count is still fixed at build
   // time; this only zeroes the work of tiles that fall off the live region.)
   if (oh_offset >= static_cast<int32_t>(H_out)) {
-    return {0u, 0u, 0u};
+    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
   }
   // Every live tile dispatches oh_tile output-height rows (oh_tile * W per-tile
   // M); trailing threads past the real H_out no-op in the shader.
   const uint32_t M_tile = static_cast<uint32_t>(oh_tile) * W;
   const uint32_t N4 = utils::div_up_4(C_out);
   // TILE_N4=1, TILE_M=4
-  return {N4, utils::div_up(M_tile, 4u), 1};
+  return GlobalWorkGrid({N4, utils::div_up(M_tile, 4u), 1u}, kTiledWorkGrid);
 }
 
 // Recompute the conv output sizes from the current input shape and resize the
@@ -292,8 +293,8 @@ void add_conv2d_gemm_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_gemm_shader,
-      pick_conv2d_gemm_global_wg_size,
-      pick_hw_square_wg_size,
+      pick_conv2d_gemm_gwg,
+      pick_xy_square_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite},
        {{im2col_in, packed_weight, packed_bias}, vkapi::kRead}},

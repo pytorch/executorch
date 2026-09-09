@@ -18,7 +18,10 @@ from executorch.backends.native.partitioner import (
     NativeSupportedOperators,
     PTN_SERIALIZATION_KEY,
 )
-from executorch.backends.native.passes import get_default_passes
+from executorch.backends.native.passes import (
+    backend_inplace_aten_variants,
+    get_default_passes,
+)
 from executorch.backends.native.serialization import deserialize_graph
 from executorch.backends.native.serialization.schema import GraphArg
 from executorch.exir import to_edge_transform_and_lower
@@ -64,6 +67,18 @@ class NativeSupportedOperatorsTest(unittest.TestCase):
         # Every op in the explicit opt-in set is claimed.
         for op in _SUPPORTED_NON_CORE_OPS:
             with self.subTest(op=str(op)):
+                self.assertTrue(
+                    self.sup.is_node_supported({}, _make_node("call_function", op))
+                )
+
+    def test_accepts_inplace_aten_variants(self):
+        # reinplace rewrites e.g. relu -> relu_; the mutating variants are not
+        # core-tagged, so the partitioner must claim them explicitly.
+        variants = backend_inplace_aten_variants()
+        self.assertTrue(variants)
+        for op in variants:
+            with self.subTest(op=str(op)):
+                self.assertNotIn(torch.Tag.core, op.tags)
                 self.assertTrue(
                     self.sup.is_node_supported({}, _make_node("call_function", op))
                 )

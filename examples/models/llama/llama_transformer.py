@@ -267,17 +267,22 @@ class TransformerBlock(nn.Module):
         attention = cls(args, layer_id, rope, **args.attention_kwargs)
         return TransformerBlock(args, attention, mlp_type=mlp_type, layer_id=layer_id)
 
+    def _apply_attention_residual(self, x, attention_output):
+        if isinstance(self.attention, AttentionSkip):
+            if not self.use_residual_gate:
+                return x
+            attention_output = torch.zeros_like(x)
+        if self.use_residual_gate:
+            if hasattr(self, "post_attn_norm"):
+                attention_output = self.post_attn_norm(attention_output)
+            return self.add_attn(stream=x, branch=attention_output)
+        return x + attention_output
+
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
-        h, attn_options_update = self.attention(
+        attention_output, attn_options_update = self.attention(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
-        if not isinstance(self.attention, AttentionSkip):
-            if self.use_residual_gate:
-                if hasattr(self, "post_attn_norm"):
-                    h = self.post_attn_norm(h)
-                h = self.add_attn(stream=x, branch=h)
-            else:
-                h = x + h
+        h = self._apply_attention_residual(x, attention_output)
 
         if self.mlp_type == "skip":
             out = h

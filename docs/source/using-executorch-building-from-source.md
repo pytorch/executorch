@@ -79,15 +79,36 @@ portability details.
   * `--clean`: Removes build artifacts.
   * `--editable`: Install the ExecuTorch python package in editable mode (see [Editable Install](#editable-install)).
   * `--minimal`: Install only the minimal set of dependencies required to run ExecuTorch. Do not install dependencies for examples.
+  * `--optional-dependency <name>`: Install an optional Python dependency set.
+    Repeat the flag to select more than one. Supported names are `ethos_u`,
+    `vgf`, and `openvino`.
   * `--use-pt-pinned-commit`: Install the pinned PyTorch commit or release version. When not specified, the latest PyTorch nightly build is installed.
+
+  For example, install the current checkout with the dependencies needed for
+  Ethos-U ahead-of-time (AOT) export:
+
+  ```bash
+  ./install_executorch.sh --optional-dependency ethos_u
+  ```
+
+  After the base dependencies have already been installed, the equivalent
+  editable package command is:
+
+  ```bash
+  pip install -e '.[ethos_u]' --no-build-isolation
+  ```
+
+  The `ethos_u` optional dependencies are host-side Python tools used during
+  AOT export. Embedded toolchains, simulators, and target runtimes are
+  configured separately by the backend setup and build instructions.
 
   For Intel-based macOS systems, use `--use-pt-pinned-commit --minimal`. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in [PyTorch Installation](https://github.com/pytorch/pytorch#installation).
 
   Note that only the XNNPACK and CoreML backends are built by default. Additional backends can be enabled or disabled by setting the corresponding CMake flags:
 
   ```bash
-  # Enable the MPS backend
-  CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
+  # Enable the Vulkan backend
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
   ```
 
   ### Verify the Build
@@ -213,7 +234,6 @@ Typically, each hardware backend exposes a CMake option to control whether the b
  * `EXECUTORCH_BUILD_CADENCE` - Build the Cadence DSP backend.
  * `EXECUTORCH_BUILD_COREML` - Build the Apple CoreML backend.
  * `EXECUTORCH_BUILD_CORTEX_M` - Build the ARM Cortex-M backend.
- * `EXECUTORCH_BUILD_MPS` - Build the Apple Metal Performance Shader backend.
  * `EXECUTORCH_BUILD_NEURON` - Build the MediaTek Neuron backend.
  * `EXECUTORCH_BUILD_OPENVINO` - Build the Intel OpenVINO backend.
  * `EXECUTORCH_BUILD_QNN` - Build the Qualcomm AI Engine backend.
@@ -388,7 +408,7 @@ xcode-select --install
 ```
 
 Run the above command with `--help` flag to learn more on how to build additional backends
-(like [Core ML](backends/coreml/coreml-overview.md), [MPS](backends/mps/mps-overview.md) or XNNPACK), etc.
+(like [Core ML](backends/coreml/coreml-overview.md) or XNNPACK), etc.
 Note that some backends may require additional dependencies and certain versions of Xcode and iOS.
 See backend-specific documentation for more details.
 

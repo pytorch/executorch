@@ -116,7 +116,16 @@ fi
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
-docker build \
+# OSDC runners have no docker daemon, so the build runs on the in-cluster
+# BuildKit pool via a remote buildx builder. That builder has nowhere to load
+# an image into, so the result has to go straight to the registry.
+if [[ -n "${REMOTE_BUILDKIT:-}" ]]; then
+  BUILD_CMD=(docker buildx build --push)
+else
+  BUILD_CMD=(docker build)
+fi
+
+"${BUILD_CMD[@]}" \
   --no-cache \
   --progress=plain \
   --build-arg "OS_VERSION=${OS_VERSION}" \
