@@ -13,10 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docker-image:
-    name: Resolve CI docker image
-    uses: ./.github/workflows/_docker-image.yml
-
   # Emits the list of changed files for the current PR or push commit.
   # On PR: PR diff. On push: diff against `github.event.before`.
   # On events without a diff base (workflow_dispatch, tag creation,
@@ -37,9 +33,8 @@ jobs:
     uses: ./.github/workflows/_ci-run-decision.yml
 
   test-qnn-wheel-packages-linux:
-    needs: docker-image
     name: test-qnn-wheel-packages-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -48,8 +43,8 @@ jobs:
       matrix:
         python-version: [ "3.10", "3.11", "3.12", "3.13" ]
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -82,7 +77,7 @@ jobs:
       contents: read
 
   test-minimal-wheel-linux:
-    needs: [docker-image, changed-files]
+    needs: changed-files
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_minimal_wheel.sh') ||
@@ -95,13 +90,13 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
     name: test-minimal-wheel-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -112,17 +107,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_minimal_wheel.sh
 
   test-setup-linux-gcc:
-    needs: docker-image
     name: test-setup-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -138,9 +132,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
 
   test-models-linux-basic:
-    needs: docker-image
     name: test-models-linux-basic
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -149,23 +142,23 @@ jobs:
         model: [mv3, vit]
         backend: [portable, xnnpack-quantization-delegation]
         build-tool: [cmake, buck2]
-        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g4-16-62]
+        runner: [linux.2xlarge, linux.arm64.2xlarge]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner
-        #   - Excluding the x86 clang image on the ARM64 runner
+        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
+        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
         exclude:
-          - runner: mt-l-x86iavx512-8-64
+          - runner: linux.2xlarge
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: mt-l-arm64g4-16-62
+          - runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
           # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
-          - runner: mt-l-arm64g4-16-62
+          - runner: linux.arm64.2xlarge
             build-tool: buck2
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -183,9 +176,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-models-linux:
-    needs: docker-image
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -193,33 +185,33 @@ jobs:
       matrix:
         model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
         backend: [portable, xnnpack-quantization-delegation]
-        runner: [mt-l-x86iavx512-8-64]
+        runner: [linux.2xlarge]
         include:
           - model: ic4
             backend: portable
-            runner: mt-l-x86iavx512-16-128
+            runner: linux.4xlarge.memory
           - model: ic4
             backend: xnnpack-quantization-delegation
-            runner: mt-l-x86iavx512-16-128
+            runner: linux.4xlarge.memory
           - model: emformer_join
             backend: portable
-            runner: mt-l-x86iavx512-16-128
+            runner: linux.4xlarge.memory
           - model: emformer_join
             backend: xnnpack-quantization-delegation
-            runner: mt-l-x86iavx512-16-128
+            runner: linux.4xlarge.memory
           - model: phi_4_mini
             backend: portable
-            runner: mt-l-x86iavx512-16-128
+            runner: linux.4xlarge.memory
           - model: llama3_2_vision_encoder
             backend: portable
-            runner: mt-l-x86iavx512-16-128
+            runner: linux.4xlarge.memory
           - model: w2l
             backend: portable
-            runner: mt-l-x86iavx512-16-128
+            runner: linux.4xlarge.memory
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -237,17 +229,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-parakeet-xnnpack-linux:
-    needs: docker-image
     name: test-parakeet-xnnpack-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-16-128
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -271,17 +262,16 @@ jobs:
         echo "::endgroup::"
 
   test-voxtral-realtime-xnnpack-linux:
-    needs: docker-image
     name: test-voxtral-realtime-xnnpack-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-16-128
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -308,10 +298,9 @@ jobs:
         echo "::endgroup::"
 
   test-llama-runner-linux:
-    needs: docker-image
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -319,25 +308,25 @@ jobs:
       matrix:
         dtype: [fp32]
         mode: [xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
-        runner: [mt-l-x86iavx512-8-64, mt-l-arm64g4-16-62]
+        runner: [linux.2xlarge, linux.arm64.2xlarge]
         docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
         include:
           - dtype: bf16
             mode: custom
-            runner: mt-l-x86iavx512-8-64
+            runner: linux.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
         # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner
-        #   - Excluding the x86 clang image on the ARM64 runner
+        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
+        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
         exclude:
-          - runner: mt-l-x86iavx512-8-64
+          - runner: linux.2xlarge
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: mt-l-arm64g4-16-62
+          - runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:${{ matrix.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -360,17 +349,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
   test-llama-runner-linux-android:
-    needs: docker-image
     name: test-llama-runner-linux-android
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -386,17 +374,16 @@ jobs:
         bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
 
   test-custom-ops-linux:
-    needs: docker-image
     name: test-custom-ops-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -411,17 +398,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
 
   test-selective-build-linux:
-    needs: docker-image
     name: test-selective-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -436,10 +422,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
   test-multimodal-linux:
-    needs: docker-image
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-multimodal-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -450,8 +435,8 @@ jobs:
         model: ["gemma3-4b"]  # llava gives segfault so not covering.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: mt-l-x86iavx512-94-768
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.24xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -476,17 +461,16 @@ jobs:
         echo "::endgroup::"
 
   test-moshi-linux:
-    needs: docker-image
     name: test-moshi-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -509,17 +493,16 @@ jobs:
         python -m unittest examples.models.moshi.mimi.test_mimi
 
   test-quantized-aot-lib-linux:
-    needs: docker-image
     name: test-quantized-aot-lib-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -533,17 +516,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
 
   test-binary-size-linux-gcc:
-    needs: docker-image
     name: test-binary-size-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc9-nopytorch-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc9-nopytorch
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -577,17 +559,16 @@ jobs:
         fi
 
   test-binary-size-linux:
-    needs: docker-image
     name: test-binary-size-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -622,9 +603,8 @@ jobs:
         fi
 
   test-arm-cortex-m-size-test:
-    needs: docker-image
     name: test-arm-cortex-m-size-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -633,8 +613,8 @@ jobs:
         os: [bare_metal, zephyr-preset]
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -716,15 +696,14 @@ jobs:
         fi
 
   test-mcu-cortex-m-backend:
-    needs: docker-image
     name: test-mcu-cortex-m-backend
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -784,17 +763,16 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   test-qnn-buck-build-linux:
-    needs: docker-image
     name: test-qnn-buck-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -819,9 +797,8 @@ jobs:
         buck2 build //backends/qualcomm/...
 
   test-arm-backend-no-driver:
-    needs: docker-image
     name: test-arm-backend-no-driver
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -834,8 +811,8 @@ jobs:
           - test_arm_backend: test_run_tosa
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -855,15 +832,14 @@ jobs:
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-public-api-backward-compatibility:
-    needs: docker-image
     name: test-arm-backend-public-api-backward-compatibility
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-24.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -883,9 +859,8 @@ jobs:
         python backends/arm/test/public_api_bc/run_public_api_bc_scenarios.py
 
   test-llama-runner-qnn-linux:
-    needs: docker-image
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -896,8 +871,8 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -923,9 +898,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
   test-static-llama-qnn-linux:
-    needs: docker-image
     name: test-static-llama-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -934,8 +908,8 @@ jobs:
         task: [stories_110m, stories_260k_bc]
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -958,9 +932,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
 
   test-sqnr-static-llm-qnn-linux:
-    needs: docker-image
     name: test-sqnr-static-llm-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -969,8 +942,8 @@ jobs:
         task: [smollm2_135m]
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -993,9 +966,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }} sqnr
 
   test-qnn-models-linux:
-    needs: docker-image
     name: test-qnn-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -1004,8 +976,8 @@ jobs:
         model: [mv2, mv3, dl3]
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -1019,15 +991,14 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
   test-qnn-direct-build-linux:
-    needs: docker-image
     name: test-qnn-direct-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 30
@@ -1050,23 +1021,22 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      # No runner-linux, so this takes _test_backend.yml's default. The suite
-      # runs one export worker per core, so what matters is memory per core:
-      # the instance this used to run on gave each worker about 4 GiB and the
-      # job was killed. The default label is a little under 8 GiB per core.
+      # No runner-linux, so this takes the memory-optimized default. The suite
+      # runs one export worker per core, so what matters is memory per core, not
+      # core count: the previous instance gave each worker about 4 GiB and the
+      # job was killed. The memory-optimized default gives each worker more.
 
   test-qnn-passes-linux:
-    needs: docker-image
     name: test-qnn-passes-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 30
@@ -1095,21 +1065,16 @@ jobs:
         pytest -xvs backends/qualcomm/tests/test_import_side_effects.py
 
   test-qnn-delegate-linux:
-    needs: docker-image
     name: test-qnn-delegate-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      # Intel, unlike the avx512 labels: those are r7a, i.e. AMD EPYC, and the
-      # QNN backend disables MKLDNN on an AMD host through a non-bracketed
-      # torch.backends mutation that raises once the tests have frozen the
-      # flags. Same 8 vCPU / 64Gi, on r7i.
-      runner: mt-l-x86iamx-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1138,17 +1103,16 @@ jobs:
             -k "TestQNNFloatingPointOperator or TestQNNQuantizedOperator"
 
   test-phi-3-mini-runner-linux:
-    needs: docker-image
     name: test-phi-3-mini-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1169,17 +1133,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
 
   test-qnn-python-imports-linux:
-    needs: docker-image
     name: test-qnn-python-imports-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 15
@@ -1218,17 +1181,16 @@ jobs:
           --module-prefix executorch.examples.qualcomm
 
   test-eval_llama-wikitext-linux:
-    needs: docker-image
     name: test-eval_llama-wikitext-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1248,7 +1210,7 @@ jobs:
   # TODO(larryliu0820): Fix this issue before reenabling it: https://gist.github.com/larryliu0820/7377ecd0d79dbc06076cec8d9f2b85d2
   # test-eval_llama-mmlu-linux:
   #   name: test-eval_llama-mmlu-linux
-  #   uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
   #   permissions:
   #     id-token: write
   #     contents: read
@@ -1274,17 +1236,16 @@ jobs:
   #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_mmlu.sh
 
   test-llama_runner_eager-linux:
-    needs: docker-image
     name: test-llama_runner_eager-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1302,17 +1263,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
 
   test-lora-linux:
-    needs: docker-image
     name: test-lora-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1330,17 +1290,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora.sh
 
   test-lora-multimethod-linux:
-    needs: docker-image
     name: test-lora-multimethod-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1358,17 +1317,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_lora_multimethod.sh
 
   test-mediatek-models-linux:
-    needs: docker-image
     name: test-mediatek-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-94-192
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-mediatek-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-mediatek-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1386,17 +1344,16 @@ jobs:
         # placeholder for mediatek to add more tests
 
   test-openvino-linux:
-    needs: docker-image
     name: test-openvino-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-gcc11-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1409,17 +1366,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
 
   test-build-wasm-linux:
-    needs: docker-image
     name: test-build-wasm-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1438,9 +1394,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/wasm/test_build_wasm.sh
 
   unittest-wasm-bindings:
-    needs: docker-image
     name: unittest-wasm-bindings
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
@@ -1449,8 +1404,8 @@ jobs:
         enable-etdump: ['', '--enable-etdump']
       fail-fast: false
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1485,14 +1440,13 @@ jobs:
         pnpm test
 
   unittest-nxp-neutron:
-    needs: docker-image
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 150
@@ -1530,19 +1484,18 @@ jobs:
         bash backends/nxp/run_unittests.sh
 
   test-samsung-quantmodels-linux:
-    needs: docker-image
     name: test-samsung-quantmodels-linux
     # Skip this job if the pull request is from a fork (secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     secrets: inherit
     with:
       secrets-env: SAMSUNG_AI_LITECORE_KEY
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
@@ -1569,19 +1522,18 @@ jobs:
         done
 
   test-samsung-models-linux:
-    needs: docker-image
     name: test-samsung-models-linux
     # Skip this job if the pull request is from a fork (secrets are not available)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     secrets: inherit
     with:
       secrets-env: SAMSUNG_AI_LITECORE_KEY
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 360
@@ -1612,15 +1564,14 @@ jobs:
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
 
   test-vulkan-models-linux:
-    needs: docker-image
     name: test-vulkan-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1654,15 +1605,14 @@ jobs:
         done
 
   test-vulkan-operators-linux:
-    needs: docker-image
     name: test-vulkan-operators-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -1747,15 +1697,14 @@ jobs:
         echo "::endgroup::"
 
   nxp-build-test:
-    needs: docker-image
     name: nxp-build-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: mt-l-x86iavx512-8-64
-      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
