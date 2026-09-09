@@ -78,7 +78,7 @@ vkapi::ShaderInfo pick_matmul_tiled_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-utils::uvec3 pick_matmul_tiled_global_wg_size(
+GlobalWorkGrid pick_matmul_tiled_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -90,7 +90,8 @@ utils::uvec3 pick_matmul_tiled_global_wg_size(
   uint32_t M = graph->size_at<uint32_t>(-2, out);
   uint32_t B = graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1;
   uint32_t tile_m = pick_matmul_tile_m(graph, out);
-  return {utils::div_up_4(N), utils::div_up(M, tile_m), B};
+  return GlobalWorkGrid(
+      {utils::div_up_4(N), utils::div_up(M, tile_m), B}, kTiledWorkGrid);
 }
 
 void add_matmul_tiled_node(
@@ -106,8 +107,8 @@ void add_matmul_tiled_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_matmul_tiled_shader,
-      pick_matmul_tiled_global_wg_size,
-      pick_hw_square_wg_size,
+      pick_matmul_tiled_gwg,
+      pick_xy_square_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
@@ -147,8 +148,8 @@ void add_addmm_tiled_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_matmul_tiled_shader,
-      pick_matmul_tiled_global_wg_size,
-      pick_hw_square_wg_size,
+      pick_matmul_tiled_gwg,
+      pick_xy_square_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2, bias}, vkapi::kRead}},
       // Shader params buffers

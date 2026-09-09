@@ -64,61 +64,55 @@ class StaticKVCache(nn.Module, ABC):
         """
         After inference, update the cache state for next iteration. The runtime needs to
         implement the same operation.
+
+        `pos` is the absolute position of the first token in the update. Caches smaller
+        than the sequence (sliding-window layers) wrap it into a ring index.
         """
         seq_dim = -1 if transpose else -2
         cache_len = cache.size(seq_dim)
         if cache_len == 0:
             return
-        if cache_len < update.size(seq_dim):
-            update = torch.narrow(
-                update,
-                seq_dim,
-                update.size(seq_dim) - cache_len,
-                cache_len,
-            )
-            assert update.size(seq_dim) == cache_len
+        if update_len is None:
+            update_len = update.size(seq_dim)
+
+        # Only the newest cache_len tokens fit. Drop from the front of the real-token
+        # window instead of narrowing the update tensor, which may be padded past
+        # update_len and would otherwise push padding into the cache.
+        dropped = max(0, update_len - cache_len)
+        update_pos += dropped
+        update_len -= dropped
+        pos = (pos + dropped) % cache_len
 
         if style == "shift_pointer":
+            updated = torch.roll(cache, -update_len, seq_dim)
             if transpose:
-                update_len = update_len or update.size(-1)
-                updated = torch.roll(cache, -update_len, -1)
                 updated[..., -update_len:] = update[
                     ..., update_pos : update_pos + update_len
                 ]
             else:
-                update_len = update_len or update.size(-2)
-                updated = torch.roll(cache, -update_len, -2)
                 updated[..., -update_len:, :] = update[
                     ..., update_pos : update_pos + update_len, :
                 ]
 
         if style == "smart_mask":
-            available = cache.size(-2) - pos
-            update_len = update_len or update.size(-1 if transpose else -2)
-            if update_len > available:
-                wrap = update_len - available
-                update_len = available
-            else:
-                wrap = 0
+            # Ring buffer: fill to the end of the cache, then wrap to the front.
+            contiguous_len = min(update_len, cache_len - pos)
+            wrap = update_len - contiguous_len
+            wrap_pos = update_pos + contiguous_len
 
             updated = torch.clone(cache)
             if transpose:
-                updated[..., pos : pos + update_len] = update[
-                    ..., update_pos : update_pos + update_len
+                updated[..., pos : pos + contiguous_len] = update[
+                    ..., update_pos : update_pos + contiguous_len
                 ]
                 if wrap > 0:
-                    update_pos += update_len
-                    updated[..., :wrap] = update[..., update_pos : update_pos + wrap]
-
+                    updated[..., :wrap] = update[..., wrap_pos : wrap_pos + wrap]
             else:
-                updated[..., pos : pos + update_len, :] = update[
-                    ..., update_pos : update_pos + update_len, :
+                updated[..., pos : pos + contiguous_len, :] = update[
+                    ..., update_pos : update_pos + contiguous_len, :
                 ]
                 if wrap > 0:
-                    update_pos += update_len
-                    updated[..., :wrap, :] = update[
-                        ..., update_pos : update_pos + wrap, :
-                    ]
+                    updated[..., :wrap, :] = update[..., wrap_pos : wrap_pos + wrap, :]
 
         return updated
 
@@ -198,6 +192,10 @@ class StaticAttentionMask:
         self.tensor[:, :, self.cache_len :] = input_mask
 
     def unmask(self, new_unmasked_len):
+        # Clamp to what is left of the cache region, mirroring the runtime
+        # (static_attention_io_manager.h). Without this the smart_mask branch walks
+        # past cache_len and zeroes part of the in-chunk causal mask.
+        new_unmasked_len = min(new_unmasked_len, self.cache_len - self.unmasked_len)
         if new_unmasked_len <= 0:
             return
 
@@ -205,9 +203,10 @@ class StaticAttentionMask:
             self.tensor[
                 :,
                 :,
-                max(0, self.cache_len - self.unmasked_len - new_unmasked_len) : max(
-                    0, self.cache_len - self.unmasked_len
-                ),
+                self.cache_len
+                - self.unmasked_len
+                - new_unmasked_len : self.cache_len
+                - self.unmasked_len,
             ] = 0
 
         if self.style == "smart_mask":
@@ -440,24 +439,34 @@ class StaticAttentionIOManager:
         its own window. `unmask` fills the cache region identically for all rows,
         which lets query row k attend to cache_len + k + 1 keys instead of cache_len.
 
-        With shift_pointer the valid cache entries are right aligned and ordered
-        oldest to newest, so with W = cache_len and v = min(pos, W) valid entries,
-        cache column c is visible to query row k iff c >= max(W - v, k + 1). This
-        holds for both prefill chunks and decode steps, and composes with the
-        in-chunk causal/window mask set by the caller.
+        Express both layouts through the age of the token held in a slot -- how many
+        tokens are newer than it. With W = cache_len and v = min(pos, W) valid entries,
+        slot c is visible to query row k iff age(c) < min(v, W - 1 - k): the first term
+        is validity, the second is the window. Once k >= W - 1 the whole window lives
+        inside the chunk and nothing in the cache is visible.
+
+        Only the age mapping differs by layout. shift_pointer keeps valid entries right
+        aligned oldest to newest, so age is W - 1 - c. smart_mask is a ring indexed by
+        absolute position, so the same pattern is rotated by pos.
+
+        Composes with the in-chunk causal/window mask set by the caller, and holds for
+        both prefill chunks and decode steps.
         """
         for mask in self._masks.values():
             if not self._is_windowed_mask(mask):
                 continue
             w = mask.cache_len
-            first_valid = w - min(self.pos, w)
             rows = torch.arange(self.input_len).unsqueeze(1)
             cols = torch.arange(w).unsqueeze(0)
-            visible = cols >= torch.clamp(rows + 1, min=first_valid)
+            if mask.style == "smart_mask":
+                age = (self.pos - 1 - cols) % w
+            else:
+                age = w - 1 - cols
+            limit = torch.clamp(w - 1 - rows, max=min(self.pos, w))
             cache_mask = torch.full(
                 (self.input_len, w), mask.mask_val, dtype=mask.tensor.dtype
             )
-            cache_mask[visible] = 0
+            cache_mask[age < limit] = 0
             mask.tensor[:, :, :w] = cache_mask
 
     def prefill(

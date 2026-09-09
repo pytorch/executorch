@@ -21,7 +21,7 @@ This tutorial demonstrates how to deploy **Llama models on Raspberry Pi 4/5 devi
 
 - **Python 3.10-3.14** (ExecuTorch requirement)
 - **conda** or **venv** for environment management
-- **CMake 3.29.6+**
+- **CMake 3.26+**
 - **Git** for repository cloning
 
 ### Target Device Requirements
@@ -47,7 +47,7 @@ python3 --version  # Should be 3.10-3.14
 # Check required tools
 hash cmake git md5sum 2>/dev/null || echo "Missing required tools"
 
-cmake --version  # Should be 3.29.6+ at minimum
+cmake --version  # Should be 3.26+ at minimum
 
 ## Development Environment Setup
 

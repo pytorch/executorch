@@ -492,7 +492,10 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   # Gate peak GPU memory so we keep the export viable on consumer GPUs
   # (e.g. RTX 4090 with 24 GB). The export script prints a machine-
   # parseable marker line "EXPORT_GPU_PEAK_MEMORY_MB: <float>".
-  EXPORT_GPU_PEAK_MB_LIMIT="${EXPORT_GPU_PEAK_MB_LIMIT:-20480}"
+  # Max autotune makes the peak vary by about 160 MB between runs of the same
+  # commit, so the budget needs headroom above the highest value we see or the
+  # gate rejects an export that did not actually grow.
+  EXPORT_GPU_PEAK_MB_LIMIT="${EXPORT_GPU_PEAK_MB_LIMIT:-21504}"
   PEAK_LINE=$(grep -E '^EXPORT_GPU_PEAK_MEMORY_MB:' "$EXPORT_LOG" | tail -1)
   rm -f "$EXPORT_LOG"
   if [ -z "$PEAK_LINE" ]; then

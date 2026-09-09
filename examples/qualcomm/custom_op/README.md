@@ -292,9 +292,9 @@ Registers `torch.ops.my_ops.mul3.default` (multiply by 3) and delegates it via `
 ```bash
 python3 examples/qualcomm/custom_op/custom_ops_1.py \
   --build_folder build-android \
-  -s <device_serial> \
-  -H <host> \
-  -m SM8650 \
+  --device <device_serial> \
+  --host <host> \
+  --soc_model SM8650 \
   --op_package_dir examples/qualcomm/custom_op/example_op_package_htp/ExampleOpPackage \
   --build_op_package
 ```
@@ -303,7 +303,7 @@ python3 examples/qualcomm/custom_op/custom_ops_1.py \
 ```bash
 python3 examples/qualcomm/custom_op/custom_ops_1.py \
   --build_folder build-x86 \
-  -m SM8650 \
+  --soc_model SM8650 \
   --op_package_dir examples/qualcomm/custom_op/example_op_package_htp/ExampleOpPackage \
   --build_op_package \
   --enable_x86_64
@@ -317,9 +317,9 @@ Registers `torch.ops.my_ops.split_custom.default` (splits a tensor into two halv
 ```bash
 python3 examples/qualcomm/custom_op/custom_ops_2.py \
   --build_folder build-android \
-  -s <device_serial> \
-  -H <host> \
-  -m SM8650 \
+  --device <device_serial> \
+  --host <host> \
+  --soc_model SM8650 \
   --op_package_dir examples/qualcomm/custom_op/example_op_package_htp_multi_output/SplitCustomOpPackage \
   --build_op_package
 ```
@@ -328,7 +328,7 @@ python3 examples/qualcomm/custom_op/custom_ops_2.py \
 ```bash
 python3 examples/qualcomm/custom_op/custom_ops_2.py \
   --build_folder build-x86 \
-  -m SM8650 \
+  --soc_model SM8650 \
   --op_package_dir examples/qualcomm/custom_op/example_op_package_htp_multi_output/SplitCustomOpPackage \
   --build_op_package \
   --enable_x86_64

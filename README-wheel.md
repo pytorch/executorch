@@ -8,6 +8,16 @@ The `executorch` pip package is in beta.
 * Supported python versions: 3.10, 3.11, 3.12, 3.13, 3.14
 * Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64
 
+Backend export tools can require optional Python dependencies. For example,
+install the dependencies needed for Ethos-U ahead-of-time (AOT) export with:
+
+```bash
+pip install 'executorch[ethos_u]'
+```
+
+The `ethos_u` extra does not install components needed to build or run a target
+runtime.
+
 To build a minimal wheel from source, set
 `EXECUTORCH_BUILD_MINIMAL=1` when running `pip wheel` or `pip install`.
 That wheel contains the Python EXIR export path and `flatc` for `.pte`
@@ -22,8 +32,8 @@ The prebuilt `executorch.runtime` module included in this package provides a way
 to run ExecuTorch `.pte` files, with some restrictions:
 * Only [core ATen operators](docs/source/ir-ops-set-definition.md) are linked into the prebuilt module
 * Only the [XNNPACK backend delegate](docs/source/backends/xnnpack/xnnpack-overview.md) is linked into the prebuilt module.
-* \[macOS only] [Core ML](docs/source/backends/coreml/coreml-overview.md) and [MPS](docs/source/backends/mps/mps-overview.md) backend
-  are also linked into the prebuilt module.
+* \[macOS only] [Core ML](docs/source/backends/coreml/coreml-overview.md) and MLX backends are
+  also linked into the prebuilt module.
 * \[Linux x86_64] [QNN](docs/source/backends-qualcomm.md) backend is linked into the prebuilt module.
 * \[Linux] [OpenVINO](docs/source/build-run-openvino.md) backend is also linked into the
   prebuilt module. OpenVINO requires the runtime to be installed separately:

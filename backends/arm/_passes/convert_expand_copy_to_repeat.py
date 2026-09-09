@@ -71,7 +71,7 @@ class ConvertExpandCopyToRepeatPass(ArmOpTargetedPass):
         if all((x == 1 for x in multiples)) and not changes_rank:
             # All dimensions/repetitions occur only once. Remove node
             # altogether since it's in practice just a copy.
-            logger.warning("Found redundant expand node (no-op). Removing it.")
+            logger.info("Found redundant expand node (no-op). Removing it.")
 
             return args[0]
 

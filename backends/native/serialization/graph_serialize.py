@@ -27,11 +27,21 @@ import os
 import tempfile
 from dataclasses import fields, is_dataclass
 from enum import IntEnum
-from typing import Any, cast, get_args, get_origin, get_type_hints, Union
+from typing import (
+    Any,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+    Iterator,
+    Optional,
+    Union,
+)
 
 import torch
 
 from executorch.backends.native.serialization.schema import (
+    AffineGroup,
     Argument,
     ArgumentValue,
     BoolArg,
@@ -1164,6 +1174,81 @@ def deserialize_graph(data: bytes) -> Graph:
     if not program.methods:
         raise ValueError("program has no methods")
     return program.methods[0].graph
+
+
+def merge_programs(method_blobs: dict[str, bytes]) -> bytes:
+    """Combine per-method native Program blobs into one multi-method Program.
+
+    Each input blob (e.g. a delegate's processed_bytes) carries a single method;
+    it is renamed to its key so the merged Program exposes every method by name.
+
+    TODO: revisit this, and if we need to create a full PTG in the preprocess.
+    """
+    methods: list[Method] = []
+    for name, blob in method_blobs.items():
+        program = deserialize_program(blob)
+        if len(program.methods) != 1:
+            raise ValueError(
+                f"merge_programs: blob for {name!r} has {len(program.methods)} "
+                f"methods; expected exactly one."
+            )
+        method = program.methods[0]
+        method.name = name
+        methods.append(method)
+    return _compile_to_bytes(Program(version=SCHEMA_VERSION, methods=methods))
+
+
+def _iter_graph_args(value: object) -> Iterator[GraphArg]:
+    """Yield GraphArgs from any nested schema field without entering their graphs."""
+    if isinstance(value, GraphArg):
+        yield value
+        return
+    if is_dataclass(value):
+        for field in fields(value):
+            yield from _iter_graph_args(getattr(value, field.name))
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _iter_graph_args(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _iter_graph_args(item)
+
+
+def collect_data_keys(program: Program) -> set[str]:
+    """Return every out-of-line data key the program references.
+
+    Covers constant references (NamedTensorRef.data_key) plus the quant keys
+    (AffineGroup scale and zero-point) carried on any TensorMeta.quant, whether
+    it is attached to a constant or to a graph value (intermediates and I/O),
+    recursing into HOP subgraphs wherever a schema field carries a ``GraphArg``.
+    PackedQuant carries no external keys.
+    """
+    keys: set[str] = set()
+
+    def add_meta(meta: Optional[TensorMeta]) -> None:
+        if meta is None or meta.quant is None:
+            return
+        scheme = meta.quant.scheme
+        if isinstance(scheme, AffineGroup):
+            keys.add(scheme.scale_data_key)
+            if scheme.zero_point_data_key:
+                keys.add(scheme.zero_point_data_key)
+
+    def visit_graph(graph: Graph) -> None:
+        for value in graph.tensor_values or []:
+            add_meta(value.meta)
+        for node in graph.nodes:
+            for graph_arg in _iter_graph_args(node):
+                visit_graph(graph_arg.graph)
+
+    for method in program.methods:
+        for constant in method.constants or []:
+            keys.add(constant.data_key)
+            add_meta(constant.meta)
+        visit_graph(method.graph)
+
+    return keys
 
 
 def _check_optional_tensor_list_refs(

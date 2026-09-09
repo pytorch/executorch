@@ -12,6 +12,7 @@ expanded KV heads in float32.
 
 import importlib
 import itertools
+import math
 import unittest
 from unittest import mock
 
@@ -40,6 +41,12 @@ def _import_small_query_splitk():
 
 def _import_sdpa_module():
     return importlib.import_module("executorch.backends.cuda.triton.kernels.sdpa")
+
+
+def _import_splitk_config():
+    from executorch.backends.cuda.triton.kernels.sdpa import _decode_splitk_config
+
+    return _decode_splitk_config
 
 
 def _reference_sdpa(q, k, v, attn_mask=None, scale=None):
@@ -71,6 +78,9 @@ def _max_abs_error(out, ref):
 # bf16 kernel vs fp32 reference tolerance.
 # Matches benchmark cross-validation and test_triton_sdpa.py.
 MAX_ABS_TOL = 1e-2
+LEGACY_SPLITK_PHI = 5.0
+FLOAT32_LOG_MAX = math.log(torch.finfo(torch.float32).max)
+FLOAT32_LOG_MIN_SUBNORMAL = math.log(2**-149)
 
 
 HEAD_DIMS_POW2 = [64, 128, 256]
@@ -95,6 +105,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
         cls.small_query_splitk = _import_small_query_splitk()
         cls.sdpa_module = _import_sdpa_module()
         cls.sdpa = cls.sdpa_module.sdpa
+        cls.splitk_config = staticmethod(_import_splitk_config())
 
     # ------------------------------------------------------------------
     # Correctness
@@ -300,6 +311,105 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 self.assertFalse(torch.isnan(out).any())
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
+    def test_large_positive_logits_stable(self):
+        """Large logits stay finite in both split-K kernel families."""
+        B, H_q, H_kv, Lk, D = 1, 32, 8, 512, 128
+        num_splits, chunk_size = self.splitk_config(Lk)
+        self.assertGreater(num_splits, 1)
+        self.assertNotEqual(0 // chunk_size, 300 // chunk_size)
+
+        k = torch.zeros(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+
+        # Put nearly equal high scores in separate 256-token splits. The old
+        # fixed-phi path overflowed both partial softmaxes, and their proximity
+        # makes the result sensitive to correct cross-split rescaling.
+        k[:, :, 0, :] = 3.0
+        k[:, :, 300, :] = 2.96875
+        torch.manual_seed(42)
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+
+        for Lq, splitk in [
+            (1, self.legacy_splitk),
+            (2, self.small_query_splitk),
+            (4, self.small_query_splitk),
+        ]:
+            with self.subTest(Lq=Lq):
+                q = torch.full(
+                    (B, H_q, Lq, D), 3.0, dtype=torch.bfloat16, device="cuda"
+                )
+
+                # Guard against weakening the inputs below the old kernel's
+                # overflow boundary after subtracting its fixed phi.
+                high_scores = torch.stack(
+                    [
+                        (q[0, 0, 0].float() * k[0, 0, pos].float()).sum() / D**0.5
+                        for pos in (0, 300)
+                    ]
+                )
+                self.assertTrue(
+                    ((high_scores - LEGACY_SPLITK_PHI) > FLOAT32_LOG_MAX).all()
+                )
+
+                out = splitk(q, k, v)
+                ref = _reference_sdpa(q, k, v)
+
+                self.assertTrue(torch.isfinite(out).all())
+                # The tolerance includes BF16 output rounding for this
+                # concentrated two-key distribution.
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_large_negative_logits_do_not_underflow_to_zero(self):
+        """Large negative logits retain their normalized weighted values."""
+        B, H_q, H_kv, Lk, D = 1, 32, 8, 512, 128
+        k = torch.full((B, H_kv, Lk, D), -3.0, dtype=torch.bfloat16, device="cuda")
+        v = torch.ones(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+
+        for Lq, splitk in [
+            (1, self.legacy_splitk),
+            (2, self.small_query_splitk),
+            (4, self.small_query_splitk),
+        ]:
+            with self.subTest(Lq=Lq):
+                q = torch.full(
+                    (B, H_q, Lq, D), 3.0, dtype=torch.bfloat16, device="cuda"
+                )
+
+                # The old fixed-phi exponent was below float32's smallest
+                # subnormal, so every weight became zero.
+                max_score = (q[0, 0, 0].float() * k[0, 0, 0].float()).sum() / D**0.5
+                self.assertLess(
+                    max_score.item() - LEGACY_SPLITK_PHI,
+                    FLOAT32_LOG_MIN_SUBNORMAL,
+                )
+
+                out = splitk(q, k, v)
+                ref = _reference_sdpa(q, k, v)
+
+                self.assertTrue(torch.isfinite(out).all())
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_non_power_of_two_split_count(self):
+        """Reduction masks lanes beyond the runtime split count."""
+        B, H_q, H_kv, Lk, D = 1, 8, 2, 768, 128
+        num_splits, _ = self.splitk_config(Lk)
+        self.assertEqual(num_splits, 3)
+
+        torch.manual_seed(42)
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+
+        for Lq, splitk in [
+            (1, self.legacy_splitk),
+            (4, self.small_query_splitk),
+        ]:
+            with self.subTest(Lq=Lq):
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                out = splitk(q, k, v)
+                ref = _reference_sdpa(q, k, v)
+
+                self.assertTrue(torch.isfinite(out).all())
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
     def test_custom_scale(self):
         """Non-default attention scale."""
         B, H_q, H_kv, Lq, Lk, D = 1, 8, 2, 1, 256, 128
@@ -353,6 +463,42 @@ class TestTritonSdpaSplitK(unittest.TestCase):
 
         self.assertFalse(torch.isnan(out).any(), "All-masked should not NaN")
         self.assertFalse(torch.isinf(out).any(), "All-masked should not Inf")
+
+    def test_kv_len_overwrites_poisoned_partial_buffers(self):
+        """Every valid partial slot is written, including for empty splits."""
+        B, H_q, H_kv, Lk, D = 1, 8, 2, 512, 128
+        valid_kv_len = 200
+        torch.manual_seed(42)
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        kv_len = torch.tensor([valid_kv_len], dtype=torch.int32, device="cuda")
+
+        real_empty = torch.empty
+
+        for Lq, splitk in [
+            (1, self.legacy_splitk),
+            (4, self.small_query_splitk),
+        ]:
+            with self.subTest(Lq=Lq):
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                poisoned_allocations = 0
+
+                def poisoned_empty(*args, **kwargs):
+                    nonlocal poisoned_allocations
+                    result = real_empty(*args, **kwargs)
+                    if result.device.type == "cuda" and result.dtype == torch.float32:
+                        result.fill_(float("nan"))
+                        poisoned_allocations += 1
+                    return result
+
+                with mock.patch.object(torch, "empty", side_effect=poisoned_empty):
+                    out = splitk(q, k, v, kv_len=kv_len)
+
+                ref = _reference_sdpa(q, k[:, :, :valid_kv_len], v[:, :, :valid_kv_len])
+
+                self.assertGreaterEqual(poisoned_allocations, 3)
+                self.assertTrue(torch.isfinite(out).all())
+                self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_lk_1(self):
         """Degenerate single KV position (num_splits=1)."""

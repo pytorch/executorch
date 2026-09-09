@@ -291,7 +291,7 @@ def custom_sdpa(
         scale,
     )
 
-    return torch.empty_like(query)
+    return torch.empty(query.shape, dtype=query.dtype, device=query.device)
 
 
 def _validate_update_cache_params(

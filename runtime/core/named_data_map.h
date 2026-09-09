@@ -65,8 +65,9 @@ class NamedDataMap {
    * Get the key at the given index.
    *
    * @param index The index of the key to retrieve.
-   * @return Result containing the key at the given index. Note: the returned
-   * pointer is only valid for the lifetime of the DataMap.
+   * @return Result containing the key at the given index. The returned pointer
+   * is owned by the DataMap, remains stable across calls, and is only valid for
+   * the lifetime of the DataMap.
    */
   ET_NODISCARD virtual Result<const char*> get_key(uint32_t index) const = 0;
 };

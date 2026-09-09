@@ -186,7 +186,6 @@ Error invoke_linux_driver(
     ET_LOG(Error, "Ethos-U backend missing output metadata");
     return Error::InvalidProgram;
   }
-
   try {
     EthosU::Device& device = get_linux_device_cache().get(options.device_path);
     auto network = std::make_shared<EthosU::Network>(
@@ -323,6 +322,8 @@ Error invoke_linux_driver(
 }
 } // namespace
 
+// Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
+// cppcheck-suppress unusedFunction
 PlatformState* platform_init(
     ArrayRef<CompileSpec> specs,
     MemoryAllocator* allocator) {
@@ -335,8 +336,14 @@ PlatformState* platform_init(
   return state;
 }
 
+// Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
+// cppcheck-suppress unusedFunction
 void platform_destroy(PlatformState* state) {
   delete state;
+}
+
+bool needs_scratch_allocation() {
+  return false;
 }
 
 Error platform_execute(
@@ -388,7 +395,6 @@ Error platform_execute(
     ET_LOG(Error, "Ethos-U Linux backend missing platform state");
     return Error::InvalidState;
   }
-
   Error status = invoke_linux_driver(
       handles,
       linux_input_ptrs,

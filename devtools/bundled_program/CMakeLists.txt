@@ -40,7 +40,14 @@ add_library(
   bundled_program ${_schema_outputs}
                   ${CMAKE_CURRENT_SOURCE_DIR}/bundled_program.cpp
 )
-target_link_libraries(bundled_program PUBLIC executorch)
+# The `executorch` target forces whole-archive of itself, which would duplicate
+# the primitive operator registrations already inside libexecutorch.so and abort
+# at load. Resolve them from the shared runtime instead when it is built.
+if(EXECUTORCH_BUILD_SHARED)
+  target_link_libraries(bundled_program PUBLIC executorch_shared)
+else()
+  target_link_libraries(bundled_program PUBLIC executorch)
+endif()
 target_include_directories(
   bundled_program
   PUBLIC

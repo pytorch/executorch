@@ -50,3 +50,19 @@ Returns:
 def VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
 ```
 Register a custom op to be considered supported.
+
+```python
+def VgfPartitioner.transform_for_pre_decomposition(self, exported_program: torch.export.exported_program.ExportedProgram) -> torch.export.exported_program.ExportedProgram:
+```
+Apply required Arm passes before default ATen decompositions.
+
+EXIR invokes this backend extension hook automatically through
+``to_edge_transform_and_lower``. Model export users should not call it
+directly.
+
+Args:
+- **exported_program (ExportedProgram)**: The ATen-dialect program to
+        transform.
+
+Returns:
+- **ExportedProgram**: The transformed ATen-dialect program.

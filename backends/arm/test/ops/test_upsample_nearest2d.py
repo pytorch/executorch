@@ -41,7 +41,6 @@ test_data_suite = {
     "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
     "rand_one_double_scale": lambda: (torch.rand(2, 4, 1, 1), None, 2.0, True),
     "rand_one_double_size": lambda: (torch.rand(2, 4, 1, 1), (2, 2), None, True),
-    "rand_one_same_scale": lambda: (torch.rand(2, 4, 1, 1), None, 1.0, True),
     "rand_one_same_size": lambda: (torch.rand(2, 4, 1, 1), (1, 1), None, True),
     # Can't compare outputs as the rounding when selecting the nearest pixel is
     # different between PyTorch and TOSA. Just check the legalization went well.
@@ -210,6 +209,19 @@ def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+def test_upsample_nearest2d_vec_tosa_FP_explicit_fractional_scale():
+    # The rounded output size implies a 6 / 4 ratio, but PyTorch samples using
+    # the explicitly supplied 1.6 scale factor.
+    pipeline = TosaPipelineFP[input_t1](
+        Interpolate(size=None, scale_factor=1.6),
+        (torch.rand(1, 2, 4, 4),),
+        aten_op,
+        exir_op=[],
+    )
+
     pipeline.run()
 
 
