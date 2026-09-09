@@ -1,5 +1,7 @@
 /*
- * Copyright 2026 Arm Limited and/or its affiliates.
+ * Copyright 2026 Arm Limited
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -11,7 +13,7 @@ namespace cortex_m {
 namespace native {
 
 // cppcheck-suppress unusedFunction
-Tensor& quantized_max_pool2d_out(
+static Tensor& quantized_max_pool2d_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Int64ArrayRef kernel_size,
@@ -23,6 +25,7 @@ Tensor& quantized_max_pool2d_out(
     const int64_t output_zero_point,
     const int64_t activation_min,
     const int64_t activation_max,
+    ActivationLayout layout,
     Tensor& out) {
   CmsisPool2DConfig pool_config;
   if (!prepare_cmsis_pool2d_config(
@@ -37,7 +40,8 @@ Tensor& quantized_max_pool2d_out(
           ceil_mode,
           activation_min,
           activation_max,
-          pool_config)) {
+          pool_config,
+          layout)) {
     return out;
   }
 
@@ -93,6 +97,66 @@ Tensor& quantized_max_pool2d_out(
   }
 
   return out;
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_max_pool2d_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef kernel_size,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const bool ceil_mode,
+    const int64_t input_zero_point,
+    const int64_t output_zero_point,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    Tensor& out) {
+  return quantized_max_pool2d_out_impl(
+      context,
+      input,
+      kernel_size,
+      stride,
+      padding,
+      dilation,
+      ceil_mode,
+      input_zero_point,
+      output_zero_point,
+      activation_min,
+      activation_max,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_max_pool2d_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef kernel_size,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const bool ceil_mode,
+    const int64_t input_zero_point,
+    const int64_t output_zero_point,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    Tensor& out) {
+  return quantized_max_pool2d_out_impl(
+      context,
+      input,
+      kernel_size,
+      stride,
+      padding,
+      dilation,
+      ceil_mode,
+      input_zero_point,
+      output_zero_point,
+      activation_min,
+      activation_max,
+      ActivationLayout::NHWCLogical,
+      out);
 }
 
 } // namespace native
