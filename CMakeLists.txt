@@ -997,7 +997,9 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
   list(APPEND _executorch_extensions extension_llm_cache)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/batching)
-  list(APPEND _executorch_extensions extension_llm_batching)
+  list(APPEND _executorch_extensions extension_llm_batching
+       extension_llm_batching_module
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
