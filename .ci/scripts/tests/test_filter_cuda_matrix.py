@@ -191,18 +191,14 @@ class TestGates(unittest.TestCase):
                 FILTER.main(argv)
         self.assertNotEqual(raised.exception.code, 0)
 
-    def test_absent_train_exits_nonzero(self):
-        # A supported train the generator offers nothing for would publish no wheel at all.
+    def test_absent_train_is_skipped_not_fatal(self):
+        # A supported train the generator offers nothing for is one PyTorch stopped shipping. The
+        # release skips it and publishes the rest, so one dropped train cannot take the others down.
         #
-        # Patching the supported list rather than deleting rows, because deleting every row for one
-        # train also creates missing combinations, so both gates fire and the test cannot tell which
-        # one it exercised. Adding an extra supported train makes it absent while every offered
-        # combination stays complete.
-        # These two gates cannot be separated by input: any matrix leaving a train absent also
-        # leaves every combination for that train missing, so the later gate always catches what the
-        # earlier one would. Measured. So each gate gets its own case, and the case asserts on the
-        # message rather than only on a nonzero exit, which is the only way to tell them apart.
+        # Offering every train but the last leaves that train absent while every offered combination
+        # stays complete, which is exactly the shape of an upstream drop.
         offered = FILTER.SUPPORTED_CUDA_VERSIONS[:-1]
+        dropped = FILTER.SUPPORTED_CUDA_VERSIONS[-1]
         matrix = {
             "include": [
                 {"python_version": python, "desired_cuda": cuda}
@@ -210,14 +206,43 @@ class TestGates(unittest.TestCase):
                 for cuda in offered
             ]
         }
-        message = self._exit_message(matrix)
-        self.assertIn("publish no wheel for that CUDA version", message)
+        emitted = _emitted(_run(matrix))
+        published = sorted({row["desired_cuda"] for row in emitted["include"]})
+        self.assertEqual(published, sorted(offered))
+        self.assertNotIn(dropped, published)
+
+    def test_dropped_train_still_publishes_the_others(self):
+        # The exact upstream drop this resilience is for: PyTorch stops shipping cu126, the generator
+        # offers only cu130 and cu132, and the release must still publish those two rather than fail
+        # because cu126 is gone. Skips the case cleanly if the policy no longer lists cu126.
+        if "cu126" not in FILTER.SUPPORTED_CUDA_VERSIONS:
+            self.skipTest("cu126 is not a published train")
+        survivors = [c for c in FILTER.SUPPORTED_CUDA_VERSIONS if c != "cu126"]
+        matrix = {
+            "include": [
+                {"python_version": python, "desired_cuda": cuda}
+                for python in FILTER.SUPPORTED_PYTHON_VERSIONS
+                for cuda in survivors
+            ]
+        }
+        emitted = _emitted(_run(matrix))
+        published = sorted({row["desired_cuda"] for row in emitted["include"]})
+        self.assertEqual(published, sorted(survivors))
+        self.assertNotIn("cu126", published)
+        # Every survivor keeps all its pythons, so what publishes is complete, just narrower.
+        self.assertEqual(
+            len(emitted["include"]),
+            len(survivors) * len(FILTER.SUPPORTED_PYTHON_VERSIONS),
+        )
 
     def test_missing_combination_exits_nonzero(self):
+        # A train that IS offered but missing one python is a real break, not an upstream drop: the
+        # release would ship that train incomplete. Deleting one row from a full matrix leaves its
+        # train present, so this exercises the incomplete-train gate rather than the skip above.
         matrix = _full_matrix()
         del matrix["include"][0]
         message = self._exit_message(matrix)
-        self.assertIn("combination(s) produced no row", message)
+        self.assertIn("incomplete train", message)
 
     def test_jetpack_not_published_exits_nonzero(self):
         # Refused explicitly rather than allowed to fall through to an empty result, so the reason a
