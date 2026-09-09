@@ -87,7 +87,7 @@ DEFINE_bool(
     tokens_have_bos,
     false,
     "If true the file already includes BOS; else BOS is prepended.");
-DEFINE_double(temperature, 0.8, "Sampling temperature (0 = near-greedy).");
+DEFINE_double(temperature, 0.8, "Sampling temperature (0 = exact greedy).");
 DEFINE_double(
     top_p,
     1.0,
@@ -1697,11 +1697,10 @@ int main(int argc, char** argv) {
 
   stats.inference_start_ms = llm::time_in_ms();
 
-  // On-device Gumbel sampling: temperature input (0 -> ~greedy via clamp).
+  // On-device sampling: exact argmax at temperature 0, Gumbel-max otherwise.
   // Methods return one sampled token; read_token() copies the 4-byte scalar.
   // Unused on the MLX build (kSingleMethod), which samples on the host.
-  [[maybe_unused]] float temp_val =
-      FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
+  [[maybe_unused]] float temp_val = static_cast<float>(FLAGS_temperature);
   [[maybe_unused]] auto temp_tensor =
       from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
 
