@@ -12,7 +12,9 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
+#include <random>
 #include <tuple>
 #include <vector>
 
@@ -178,6 +180,87 @@ TEST(CudaSamplingTest, SamplingProbabilitiesMatchHost) {
       EXPECT_NEAR(sum, 1.0, 2e-5);
     }
   }
+}
+
+TEST(CudaSamplingTest, CategoricalSampleMatchesHostDistribution) {
+  constexpr int64_t kRows = 20000;
+  constexpr int64_t kRowSize = 4;
+  constexpr std::array<float, kRowSize> kDistribution = {
+      0.15f, 0.5f, 0.05f, 0.3f};
+  std::vector<float> probabilities(kRows * kRowSize);
+  for (int64_t row = 0; row < kRows; ++row) {
+    std::copy(
+        kDistribution.begin(),
+        kDistribution.end(),
+        probabilities.begin() + row * kRowSize);
+  }
+
+  float* device_probabilities = nullptr;
+  uint64_t* device_tokens = nullptr;
+  const size_t probability_bytes = probabilities.size() * sizeof(float);
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_probabilities, probability_bytes));
+  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_tokens, kRows * sizeof(uint64_t)));
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      device_probabilities,
+      probabilities.data(),
+      probability_bytes,
+      cudaMemcpyHostToDevice));
+
+  muse_glimmer::cuda::SamplingWorkspace workspace;
+  ASSERT_CUDA_SUCCESS(workspace.reserve(kRows, kRowSize, nullptr));
+  ASSERT_CUDA_SUCCESS(workspace.set_seed(1234, nullptr));
+  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::categorical_sample(
+      device_probabilities,
+      kRows,
+      kRowSize,
+      device_tokens,
+      workspace,
+      nullptr));
+  std::vector<uint64_t> first(kRows);
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      first.data(),
+      device_tokens,
+      first.size() * sizeof(uint64_t),
+      cudaMemcpyDeviceToHost));
+
+  ASSERT_CUDA_SUCCESS(workspace.set_seed(1234, nullptr));
+  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::categorical_sample(
+      device_probabilities,
+      kRows,
+      kRowSize,
+      device_tokens,
+      workspace,
+      nullptr));
+  std::vector<uint64_t> repeated(kRows);
+  ASSERT_CUDA_SUCCESS(cudaMemcpy(
+      repeated.data(),
+      device_tokens,
+      repeated.size() * sizeof(uint64_t),
+      cudaMemcpyDeviceToHost));
+  EXPECT_EQ(first, repeated);
+
+  std::array<int64_t, kRowSize> cuda_counts{};
+  for (const uint64_t token : first) {
+    ASSERT_LT(token, kRowSize);
+    ++cuda_counts[token];
+  }
+  std::mt19937 host_rng(1234);
+  std::array<int64_t, kRowSize> host_counts{};
+  for (int64_t sample = 0; sample < kRows; ++sample) {
+    ++host_counts[muse_glimmer::categorical_sample(
+        host_rng, kDistribution.data(), kRowSize)];
+  }
+  for (int64_t token = 0; token < kRowSize; ++token) {
+    const double cuda_frequency =
+        static_cast<double>(cuda_counts[token]) / kRows;
+    const double host_frequency =
+        static_cast<double>(host_counts[token]) / kRows;
+    EXPECT_NEAR(cuda_frequency, kDistribution[token], 0.015);
+    EXPECT_NEAR(cuda_frequency, host_frequency, 0.02);
+  }
+
+  ASSERT_CUDA_SUCCESS(cudaFree(device_tokens));
+  ASSERT_CUDA_SUCCESS(cudaFree(device_probabilities));
 }
 
 } // namespace
