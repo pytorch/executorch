@@ -4,6 +4,16 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 oncall("executorch")
 
 fbcode_target(_kind = python_unittest,
+    name = "test_eager_eval",
+    srcs = [
+        "test_eager_eval.py",
+    ],
+    deps = [
+        "//executorch/examples/models/llama:eval_library",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
     name = "test_simple_sdpa",
     srcs = [
         "test_simple_sdpa.py",
