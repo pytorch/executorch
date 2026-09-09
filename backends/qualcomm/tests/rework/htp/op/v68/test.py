@@ -15,7 +15,6 @@ from executorch.backends.qualcomm.tests.rework.conftest import (
     CosineSimilarity,
     EXCEPTION_EXIR_PROGRAM,
     EXCEPTION_FROM_PASSES,
-    EXPECT_NOT_ANNOTATED,
     EXPECT_NOT_FULLY_DELEGATED,
     SkipOutputCheck,
     Tolerance,
@@ -151,25 +150,13 @@ def test_amin(request, kwargs):
     AMin.test(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype(
-    [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        Tolerance(rtol=1e-1),
-    ]
-)
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_any(request, kwargs):
     Any.test(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype(
-    [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        Tolerance(rtol=1e-1),
-    ]
-)
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_arange_dtype_int(request, kwargs):
     Arange.test_dtype_int(request, kwargs)  # noqa: F405
@@ -255,8 +242,8 @@ def test_batchnorm_2d(request, kwargs):
 
 @enumerate_activation_dtype(
     [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
+        pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
+        pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
         pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
     ]
 )
@@ -265,13 +252,7 @@ def test_bitwise_and_numeric(request, kwargs):
     BitwiseOp.test_and_numeric(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype(
-    [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        Tolerance(rtol=1e-1),
-    ]
-)
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_bitwise_and_bool(request, kwargs):
     BitwiseOp.test_and_bool(request, kwargs)  # noqa: F405
@@ -279,8 +260,8 @@ def test_bitwise_and_bool(request, kwargs):
 
 @enumerate_activation_dtype(
     [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
+        pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
+        pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
         pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
     ]
 )
@@ -289,13 +270,7 @@ def test_bitwise_or_numeric(request, kwargs):
     BitwiseOp.test_or_numeric(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype(
-    [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        Tolerance(rtol=1e-1),
-    ]
-)
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_bitwise_or_bool(request, kwargs):
     BitwiseOp.test_or_bool(request, kwargs)  # noqa: F405
@@ -303,8 +278,8 @@ def test_bitwise_or_bool(request, kwargs):
 
 @enumerate_activation_dtype(
     [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
+        pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
+        pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
         pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
     ]
 )
@@ -313,13 +288,7 @@ def test_bitwise_xor_numeric(request, kwargs):
     BitwiseOp.test_xor_numeric(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype(
-    [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        Tolerance(rtol=1e-1),
-    ]
-)
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_bitwise_xor_bool(request, kwargs):
     BitwiseOp.test_xor_bool(request, kwargs)  # noqa: F405
@@ -818,25 +787,13 @@ def test_interpolate_nearest(request, kwargs):
     Interpolate.test_nearest(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype(
-    [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        Tolerance(rtol=1e-1),
-    ]
-)
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_is_inf(request, kwargs):
     IsInf.test(request, kwargs)  # noqa: F405
 
 
-@enumerate_activation_dtype(
-    [
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        pytest.raises(AssertionError, match=EXPECT_NOT_ANNOTATED),
-        Tolerance(),
-    ]
-)
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance()])
 @with_htp_context
 def test_is_nan(request, kwargs):
     IsNan.test(request, kwargs)  # noqa: F405

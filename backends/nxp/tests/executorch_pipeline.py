@@ -33,6 +33,7 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import (
     core_aten_ops_exception_list,
+    default_preserve_ops,
     generate_neutron_compile_spec,
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -92,7 +93,7 @@ def get_random_calibration_inputs(
     ]
 
 
-def _get_default_quantizer(target_spec: NeutronTargetSpec, use_qat: bool) -> Quantizer:
+def get_default_quantizer(target_spec: NeutronTargetSpec, use_qat: bool) -> Quantizer:
     return NeutronQuantizer(target_spec, is_qat=use_qat)
 
 
@@ -195,9 +196,7 @@ def to_quantized_edge_program(
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target)
     if get_quantizer_fn is None:
-        get_quantizer_fn = partial(
-            _get_default_quantizer, _neutron_target_spec, use_qat
-        )
+        get_quantizer_fn = partial(get_default_quantizer, _neutron_target_spec, use_qat)
     input_spec = to_model_input_spec(input_spec)
     calibration_inputs = get_calibration_inputs_fn(input_spec)
     example_input = _get_example_input(input_spec)
@@ -215,12 +214,6 @@ def to_quantized_edge_program(
         train_fn=train_fn,
     )
 
-    # List of operators to not decompose during the lowering.
-    preserve_ops = [
-        torch.ops.aten.prelu.default,
-        torch.ops.aten.pad.default,
-        torch.ops.aten.hardswish.default,
-    ]
     compile_spec = generate_neutron_compile_spec(
         target,
         intermediates_dir=intermediates_dir,
@@ -240,7 +233,7 @@ def to_quantized_edge_program(
                 _neutron_target_spec,
                 custom_delegation_options,
                 post_quant_state_dict,
-                preserve_ops=preserve_ops,
+                preserve_ops=default_preserve_ops,
             )
         ]
     else:

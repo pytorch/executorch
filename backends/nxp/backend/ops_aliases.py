@@ -3,8 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# This file defines ops aliases for shorter and more readable test description. List is sorted alphabetically.
-# When finding a missing alias, add it at the correct place.
+# This file defines ops aliases for shorter and more readable descriptions of edge operators.
+# List is sorted alphabetically. When finding a missing alias, add it at the correct place.
 
 import operator
 
