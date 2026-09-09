@@ -32,6 +32,7 @@
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/runtime/backend/backend_options_map.h>
@@ -42,14 +43,14 @@
 #include <gflags/gflags.h>
 #include <mlx/memory.h>
 
-#include <chrono>
+#include <executorch/backends/mlx/examples/llm/runner_utils.h>
+
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <map>
 #include <optional>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 DEFINE_string(pte, "", "Model .pte file.");
@@ -100,11 +101,14 @@ DEFINE_bool(
     false,
     "Run once before measuring, to absorb JIT and pool growth.");
 
+using ::executorch::backends::mlx::examples::llm::resolve_stop_tokens;
+using ::executorch::backends::mlx::examples::llm::StopTokens;
+using ::executorch::backends::mlx::examples::llm::storage_dtype;
+using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
-using ::executorch::extension::TensorPtr;
+using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
-using ::executorch::runtime::EValue;
 
 namespace cache = ::executorch::extension::llm::cache;
 
@@ -140,20 +144,6 @@ bool parse_int_list(
     }
   }
   return true;
-}
-
-int storage_dtype(const std::string& name) {
-  using S = ::executorch::runtime::etensor::ScalarType;
-  if (name == "bf16") {
-    return static_cast<int>(S::BFloat16);
-  }
-  if (name == "fp16") {
-    return static_cast<int>(S::Half);
-  }
-  if (name == "fp32") {
-    return static_cast<int>(S::Float);
-  }
-  return -1;
 }
 
 // Constant methods the export publishes (get_n_caches and friends). They carry
@@ -292,33 +282,6 @@ void print_cache_summary(const cache::CacheConfig& cfg) {
   std::cout << std::endl;
 }
 
-// One user turn wrapped in the model's instruct template. Returns false for an
-// unknown template name. The leading BOS belongs to the first turn only, so a
-// continuing conversation passes with_bos=false.
-bool wrap_turn(
-    const std::string& chat,
-    const std::string& prompt,
-    bool with_bos,
-    std::string& out) {
-  if (chat == "0") {
-    out = prompt;
-  } else if (chat == "llama3") {
-    out = std::string(with_bos ? "<|begin_of_text|>" : "") +
-        "<|start_header_id|>user<|end_header_id|>\n\n" + prompt +
-        "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
-  } else if (chat == "gemma") {
-    out = std::string(with_bos ? "<bos>" : "") + "<start_of_turn>user\n" +
-        prompt + "<end_of_turn>\n<start_of_turn>model\n";
-  } else if (chat == "gemma4") {
-    // Gemma 4 renamed the turn markers; its own <turn|> is also the eos.
-    out = std::string(with_bos ? "<bos>" : "") + "<|turn>user\n" + prompt +
-        "<turn|>\n<|turn>model\n";
-  } else {
-    return false;
-  }
-  return true;
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -339,6 +302,12 @@ int main(int argc, char** argv) {
   if (pte.empty() || tok_path.empty()) {
     std::cerr << "Required: --pte <file> --tokenizer <file>  "
                  "[--kv-max-capacity N for off-graph models]\n";
+    return 1;
+  }
+  if (warmup && kv_capacity <= 0) {
+    std::cerr << "--warmup requires an off-graph cache selected with "
+                 "--kv_max_capacity"
+              << std::endl;
     return 1;
   }
 
@@ -373,6 +342,15 @@ int main(int argc, char** argv) {
       return 1;
     }
     const int prefill_chunk = static_cast<int>(*published_prefill_chunk);
+    StopTokens stop_tokens;
+    if (!resolve_stop_tokens(*tokenizer, module, chat, stop_tokens)) {
+      std::cerr << "Could not resolve stop tokens for --chat=" << chat
+                << std::endl;
+      return 1;
+    }
+    auto write_text = [](const std::string& text) {
+      std::cout << text << std::flush;
+    };
 
     // Everything past load_method is identical for both model kinds; only
     // setup differs. ctl is null for an in-graph model, which owns its cache
@@ -399,47 +377,8 @@ int main(int argc, char** argv) {
       std::cout << "[mem]   after load  : " << mem_at_load << " MiB"
                 << std::endl;
 
-      // Encode. HFTokenizer maps special-token markers in the string to their
-      // ids, so the template's <|...|> tokens encode correctly; it already
-      // carries <|begin_of_text|>, so pass bos=0 to avoid a doubled BOS.
-      std::string enc_input;
-      if (!wrap_turn(chat, prompt, /*with_bos=*/true, enc_input)) {
-        std::cerr << "Unknown --chat template: " << chat
-                  << " (expected llama3, gemma, gemma4, or 0)" << std::endl;
-        return 1;
-      }
-      // The template carries its own BOS, so only a raw prompt asks for one.
-      const int8_t bos = chat == "0" ? 1 : 0;
-      auto enc = tokenizer->encode(enc_input, bos, /*eos=*/0);
-      if (!enc.ok()) {
-        std::cerr << "Encode failed" << std::endl;
-        return 1;
-      }
-      std::vector<uint64_t> tokens = std::move(*enc);
-      const int prompt_len = static_cast<int>(tokens.size());
-
-      // End-of-text from the model's metadata when it publishes any, else the
-      // tokenizer's. The turn-end token is ours: it depends on --chat, which
-      // the .pte knows nothing about.
-      std::unordered_set<uint64_t> stop_ids =
-          ::executorch::extension::llm::get_eos_ids(tokenizer.get(), &module);
-      std::optional<int64_t> turn_end_id;
-      if (chat != "0") {
-        const char* turn_end = chat == "llama3" ? "<|eot_id|>"
-            : chat == "gemma4"                  ? "<turn|>"
-                                                : "<end_of_turn>";
-        if (auto eot = tokenizer->piece_to_id(turn_end); eot.ok()) {
-          turn_end_id = static_cast<int64_t>(*eot);
-          stop_ids.insert(*eot);
-        }
-      }
-      auto is_stop = [&](int64_t t) {
-        for (uint64_t s : stop_ids) {
-          if (t == static_cast<int64_t>(s)) {
-            return true;
-          }
-        }
-        return false;
+      auto is_stop = [&](int64_t token) {
+        return stop_tokens.ids.count(static_cast<uint64_t>(token)) != 0;
       };
 
       // One Sampler for the whole run, as the shared runner does: constructing
@@ -494,7 +433,6 @@ int main(int argc, char** argv) {
           std::cerr << "--interactive requires --kv-max-capacity\n";
           return 1;
         }
-        auto* control = ctl;
         std::cout
             << "Multi-turn chat. /reset clears, /undo drops the last turn, "
                "/undo N drops N tokens, /quit exits.\n";
@@ -506,7 +444,7 @@ int main(int argc, char** argv) {
             break;
           }
           if (line == "/reset") {
-            control->clear();
+            ctl->clear();
             position = turn_start = 0;
             std::cout << "[cleared]\n";
             continue;
@@ -523,7 +461,7 @@ int main(int argc, char** argv) {
                 continue;
               }
             }
-            if (control->rewind(static_cast<int>(target))) {
+            if (ctl->rewind(static_cast<int>(target))) {
               position = target;
               turn_start = std::min(turn_start, position);
               std::cout << "[rewound to " << position << "]\n";
@@ -540,8 +478,8 @@ int main(int argc, char** argv) {
           std::string turn;
           wrap_turn(chat, line, /*with_bos=*/position == 0, turn);
           auto te = tokenizer->encode(turn, /*bos=*/chat == "0" ? 1 : 0, 0);
-          if (!te.ok()) {
-            std::cerr << "Encode failed\n";
+          if (!te.ok() || te->empty()) {
+            std::cerr << "Encode failed or produced no tokens\n";
             continue;
           }
           const int n = static_cast<int>(te->size());
@@ -549,15 +487,15 @@ int main(int argc, char** argv) {
           // whole max_new budget up front would report "full" with most of the
           // cache still free. Generation is then clamped to the room that
           // remains.
-          if (!control->can_extend(n + 1)) {
-            std::cout << "[cache full: " << position << "/"
-                      << control->capacity() << ", turn " << n << " tokens"
-                      << (control->can_extend(1) ? "" : ", length at capacity")
+          if (!ctl->can_extend(n + 1)) {
+            std::cout << "[cache full: " << position << "/" << ctl->capacity()
+                      << ", turn " << n << " tokens"
+                      << (ctl->can_extend(1) ? "" : ", length at capacity")
                       << ", use /reset]\n";
             continue;
           }
           const int budget = std::min(
-              max_new, control->capacity() - static_cast<int>(position) - n);
+              max_new, ctl->capacity() - static_cast<int>(position) - n);
 
           turn_start = position;
           std::vector<int64_t> tin(te->begin(), te->end()), tpos;
@@ -567,27 +505,28 @@ int main(int argc, char** argv) {
           int64_t next = prefill(tin, tpos);
           position += n;
 
-          uint64_t prev = te->back();
+          TextStream text_stream(*tokenizer, write_text, te->back());
           for (int i = 0; i < budget && !is_stop(next); ++i) {
-            if (auto piece =
-                    tokenizer->decode(prev, static_cast<uint64_t>(next));
-                piece.ok()) {
-              std::cout << *piece << std::flush;
+            if (text_stream.append(static_cast<uint64_t>(next)) != Error::Ok) {
+              text_stream.flush();
+              std::cerr << "Failed to decode generated token" << std::endl;
+              return 1;
             }
-            prev = static_cast<uint64_t>(next);
             next = step({next}, {position});
             ++position;
           }
+          text_stream.flush();
           // The turn-end token stops generation, so it is neither printed nor
           // fed back -- but the next turn opens without closing this one, and
           // an unterminated assistant turn compounds over a session. Commit it,
           // at the cost of one extra step per turn.
-          if (turn_end_id && next == *turn_end_id && control->can_extend(1)) {
+          if (stop_tokens.turn_end_id &&
+              static_cast<uint64_t>(next) == *stop_tokens.turn_end_id &&
+              ctl->can_extend(1)) {
             step({next}, {position});
             ++position;
           }
-          std::cout << "\n[" << position << "/" << control->capacity()
-                    << " tokens"
+          std::cout << "\n[" << position << "/" << ctl->capacity() << " tokens"
                     << (budget < max_new ? ", generation capped by capacity"
                                          : "")
                     << "]\n";
@@ -595,13 +534,24 @@ int main(int argc, char** argv) {
         return 0;
       }
 
+      std::string enc_input;
+      if (!wrap_turn(chat, prompt, /*with_bos=*/true, enc_input)) {
+        std::cerr << "Unknown --chat template: " << chat
+                  << " (expected llama3, gemma, gemma4, or 0)" << std::endl;
+        return 1;
+      }
+      const int8_t bos = chat == "0" ? 1 : 0;
+      auto enc = tokenizer->encode(enc_input, bos, /*eos=*/0);
+      if (!enc.ok() || enc->empty()) {
+        std::cerr << "Encode failed or produced no tokens" << std::endl;
+        return 1;
+      }
+      std::vector<uint64_t> tokens = std::move(*enc);
+      const int prompt_len = static_cast<int>(tokens.size());
       std::vector<int64_t> ids(tokens.begin(), tokens.end()), prefill_pos;
       for (int i = 0; i < prompt_len; ++i) {
         prefill_pos.push_back(i);
       }
-      auto ms = [](auto a, auto b) {
-        return std::chrono::duration<double, std::milli>(b - a).count();
-      };
       // Sequence length against the configured ceiling, with what MLX actually
       // holds for it. Pools start at initial_capacity and grow by doubling, so
       // the bytes lag the token count in steps; bf16 storage (kv_dtype 15)
@@ -640,24 +590,25 @@ int main(int argc, char** argv) {
           std::cout << "\n"; // blank line before the streamed generation
         }
 
-        uint64_t prev = tokens.back();
+        TextStream::Sink sink;
+        if (measured) {
+          sink = write_text;
+        }
+        TextStream text_stream(*tokenizer, std::move(sink), tokens.back());
         int generated = 0;
         for (int i = 0; i < max_new; ++i) {
           if (is_stop(next)) {
             break;
           }
-          if (measured) {
-            if (auto piece =
-                    tokenizer->decode(prev, static_cast<uint64_t>(next));
-                piece.ok()) {
-              ::executorch::extension::llm::safe_printf(piece->c_str());
-              fflush(stdout);
-            }
+          if (text_stream.append(static_cast<uint64_t>(next)) != Error::Ok) {
+            text_stream.flush();
+            std::cerr << "Failed to decode generated token" << std::endl;
+            return 1;
           }
-          prev = static_cast<uint64_t>(next);
           ++generated;
           next = step({next}, {prompt_len + i});
         }
+        text_stream.flush();
         stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
         if (measured) {
           std::cout << "\n\n"; // close the generation line + blank separator

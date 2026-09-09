@@ -7,36 +7,34 @@
  */
 
 // Sample application demonstrating continuous batching and streaming output
-// for independent prompts submitted by a bounded set of worker threads.
+// for independent prompts submitted from one thread.
 //
 // Required flags are --pte and --tokenizer. Each remaining positional argument
-// is a prompt. --n_workers controls concurrent submission, and generated text is
-// streamed to <out_prefix>_<prompt-index>.txt.
+// is a prompt, and generated text is streamed to
+// <out_prefix>_<prompt-index>.txt.
 
-#include <algorithm>
-#include <atomic>
 #include <cstdint>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 
+#include <executorch/backends/mlx/examples/llm/runner_utils.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/module_executor.h>
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 DEFINE_string(pte, "", "Path to the .pte exported with --use-offgraph-cache");
 DEFINE_string(tokenizer, "", "Path to a supported tokenizer file");
@@ -51,7 +49,6 @@ DEFINE_int32(
     -1,
     "Initial cache pool capacity; -1 keeps the cache default");
 DEFINE_int32(max_new_tokens, 128, "Maximum generated tokens per prompt");
-DEFINE_int32(n_workers, 4, "Number of prompt workers");
 DEFINE_int32(flush_every, 8, "Flush each output file every N generated tokens");
 DEFINE_int32(
     max_decode_sequences,
@@ -68,6 +65,10 @@ DEFINE_string(
     "Chat template: llama3, gemma, gemma4, or 0 for raw text");
 
 namespace batching = ::executorch::extension::llm::batching;
+using ::executorch::backends::mlx::examples::llm::resolve_stop_tokens;
+using ::executorch::backends::mlx::examples::llm::StopTokens;
+using ::executorch::backends::mlx::examples::llm::storage_dtype;
+using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::Module;
 using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
@@ -118,7 +119,7 @@ struct Emitter {
   TextStream stream;
 };
 
-struct WorkerResult {
+struct JobResult {
   std::optional<batching::Session> session;
   batching::GenerationHandle handle;
   std::optional<batching::FinishReason> reason;
@@ -149,40 +150,6 @@ const char* reason_name(const std::optional<batching::FinishReason>& reason) {
   return "unknown";
 }
 
-int storage_dtype(const std::string& name) {
-  using ScalarType = ::executorch::runtime::etensor::ScalarType;
-  if (name == "bf16") {
-    return static_cast<int>(ScalarType::BFloat16);
-  }
-  if (name == "fp16") {
-    return static_cast<int>(ScalarType::Half);
-  }
-  if (name == "fp32") {
-    return static_cast<int>(ScalarType::Float);
-  }
-  return -1;
-}
-
-bool wrap_turn(
-    const std::string& chat,
-    const std::string& prompt,
-    std::string& out) {
-  if (chat == "0") {
-    out = prompt;
-  } else if (chat == "llama3") {
-    out = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n" +
-        prompt + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
-  } else if (chat == "gemma") {
-    out = "<bos><start_of_turn>user\n" + prompt +
-        "<end_of_turn>\n<start_of_turn>model\n";
-  } else if (chat == "gemma4") {
-    out = "<bos><|turn>user\n" + prompt + "<turn|>\n<|turn>model\n";
-  } else {
-    return false;
-  }
-  return true;
-}
-
 Result<std::optional<int64_t>> optional_const_int(
     Module& module,
     const char* name) {
@@ -203,35 +170,14 @@ Result<std::optional<int64_t>> optional_const_int(
   return std::optional<int64_t>{result->at(0).toInt()};
 }
 
-bool get_stop_tokens(
-    tokenizers::Tokenizer& tokenizer,
-    Module& module,
-    const std::string& chat,
-    std::vector<batching::Token>& out) {
-  auto ids = ::executorch::extension::llm::get_eos_ids(&tokenizer, &module);
-  if (chat != "0") {
-    const char* turn_end = chat == "llama3" ? "<|eot_id|>"
-        : chat == "gemma4"                  ? "<turn|>"
-                                            : "<end_of_turn>";
-    auto id = tokenizer.piece_to_id(turn_end);
-    if (!id.ok()) {
-      return false;
-    }
-    ids.insert(*id);
-  }
-  out.assign(ids.begin(), ids.end());
-  return true;
-}
-
 void submit_prompt(
-    batching::Runner& runner,
     const tokenizers::Tokenizer& tokenizer,
     const std::string& prompt,
     const std::vector<batching::Token>& stop_tokens,
-    WorkerResult& result) {
+    JobResult& result) {
   try {
     std::string wrapped;
-    if (!wrap_turn(FLAGS_chat, prompt, wrapped)) {
+    if (!wrap_turn(FLAGS_chat, prompt, true, wrapped)) {
       result.message = "unknown --chat template: " + FLAGS_chat;
       return;
     }
@@ -248,7 +194,6 @@ void submit_prompt(
       return;
     }
 
-    result.session = runner.open_session_async().get();
     if (!result.session) {
       result.message = "could not open session";
       return;
@@ -306,11 +251,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (FLAGS_max_session_tokens <= 0 || FLAGS_max_new_tokens <= 0 ||
-      FLAGS_max_decode_sequences <= 0 || FLAGS_n_workers <= 0 ||
-      FLAGS_flush_every <= 0) {
+      FLAGS_max_decode_sequences <= 0 || FLAGS_flush_every <= 0) {
     std::cerr
-        << "session, generation, decode, worker, and flush limits must be "
-           "positive"
+        << "session, generation, decode, and flush limits must be positive"
         << std::endl;
     return 1;
   }
@@ -366,15 +309,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::vector<batching::Token> stop_tokens;
-  if (!get_stop_tokens(*tokenizer, *module, FLAGS_chat, stop_tokens)) {
-    std::cerr << "tokenizer has no turn-end token for --chat=" << FLAGS_chat
+  StopTokens resolved_stop_tokens;
+  if (!resolve_stop_tokens(
+          *tokenizer, *module, FLAGS_chat, resolved_stop_tokens)) {
+    std::cerr << "could not resolve stop tokens for --chat=" << FLAGS_chat
               << std::endl;
     return 1;
   }
+  const std::vector<batching::Token> stop_tokens(
+      resolved_stop_tokens.ids.begin(), resolved_stop_tokens.ids.end());
 
-  const std::size_t worker_count =
-      std::min(prompts.size(), static_cast<std::size_t>(FLAGS_n_workers));
   auto executor = batching::ModuleExecutor::create(
       std::move(module),
       static_cast<int>(prompts.size()),
@@ -412,7 +356,7 @@ int main(int argc, char** argv) {
   }
 
   batching::Runner runner(**executor, std::move(scheduler));
-  std::vector<WorkerResult> results(prompts.size());
+  std::vector<JobResult> results(prompts.size());
   for (std::size_t i = 0; i < results.size(); ++i) {
     results[i].output_path =
         FLAGS_out_prefix + "_" + std::to_string(i) + ".txt";
@@ -425,39 +369,18 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::atomic<std::size_t> next_prompt{0};
-  std::vector<std::thread> workers;
-  workers.reserve(worker_count);
-  try {
-    for (std::size_t i = 0; i < worker_count; ++i) {
-      workers.emplace_back([&] {
-        while (true) {
-          const std::size_t prompt_index =
-              next_prompt.fetch_add(1, std::memory_order_relaxed);
-          if (prompt_index >= prompts.size()) {
-            return;
-          }
-          submit_prompt(
-              runner,
-              *tokenizer,
-              prompts[prompt_index],
-              stop_tokens,
-              results[prompt_index]);
-        }
-      });
-    }
-  } catch (const std::exception& error) {
-    for (auto& worker : workers) {
-      worker.join();
-    }
-    runner.shutdown();
-    std::cerr << "could not start worker: " << error.what() << std::endl;
-    return 1;
+  std::vector<std::future<std::optional<batching::Session>>> session_futures;
+  session_futures.reserve(prompts.size());
+  for (std::size_t i = 0; i < prompts.size(); ++i) {
+    session_futures.push_back(runner.open_session_async());
   }
-  for (auto& worker : workers) {
-    worker.join();
+  for (std::size_t i = 0; i < prompts.size(); ++i) {
+    results[i].session = session_futures[i].get();
   }
-  for (WorkerResult& result : results) {
+  for (std::size_t i = 0; i < prompts.size(); ++i) {
+    submit_prompt(*tokenizer, prompts[i], stop_tokens, results[i]);
+  }
+  for (JobResult& result : results) {
     if (!result.handle.valid()) {
       continue;
     }
@@ -482,7 +405,7 @@ int main(int argc, char** argv) {
   }
 
   std::size_t failures = 0;
-  for (const WorkerResult& result : results) {
+  for (const JobResult& result : results) {
     failures += result.failed() ? 1 : 0;
   }
   if (failures > 0) {
