@@ -1499,7 +1499,7 @@ BenchmarkGraph setup_compute_graph(
   // runs propagate_resize() after prepack, exercising the op's resize formula
   // even when input shapes are unchanged.
   config.force_resize = test_case.get_force_resize();
-  ComputeGraph graph(config);
+  auto graph = std::make_unique<ComputeGraph>(config);
 
   std::vector<ValueRef> input_values;
 
@@ -1508,17 +1508,17 @@ BenchmarkGraph setup_compute_graph(
     const ValueSpec& input_spec = test_case.inputs()[i];
 
     if (input_spec.is_none()) {
-      input_values.push_back(graph.add_none());
+      input_values.push_back(graph->add_none());
     } else if (input_spec.is_float()) {
       ValueRef input_value =
-          graph.add_scalar(static_cast<double>(input_spec.get_float_value()));
+          graph->add_scalar(static_cast<double>(input_spec.get_float_value()));
       input_values.push_back(input_value);
     } else if (input_spec.is_int()) {
       ValueRef input_value =
-          graph.add_scalar(static_cast<int64_t>(input_spec.get_int_value()));
+          graph->add_scalar(static_cast<int64_t>(input_spec.get_int_value()));
       input_values.push_back(input_value);
     } else if (input_spec.is_bool()) {
-      ValueRef input_value = graph.add_scalar(input_spec.get_bool_value());
+      ValueRef input_value = graph->add_scalar(input_spec.get_bool_value());
       input_values.push_back(input_value);
     } else if (input_spec.is_int_list()) {
       // Convert int32_t list to int64_t list for ComputeGraph
@@ -1528,20 +1528,20 @@ BenchmarkGraph setup_compute_graph(
       for (int32_t val : int32_list) {
         int64_list.push_back(static_cast<int64_t>(val));
       }
-      ValueRef input_value = graph.add_scalar_list(std::move(int64_list));
+      ValueRef input_value = graph->add_scalar_list(std::move(int64_list));
       input_values.push_back(input_value);
     } else if (input_spec.is_string()) {
       std::string str_copy = input_spec.get_string_value();
-      ValueRef input_value = graph.add_string(std::move(str_copy));
+      ValueRef input_value = graph->add_string(std::move(str_copy));
       input_values.push_back(input_value);
     } else if (input_spec.is_constant()) {
-      ValueRef input_value = graph.add_tensorref(
+      ValueRef input_value = graph->add_tensorref(
           input_spec.get_tensor_sizes(),
           input_spec.dtype,
           input_spec.get_data_ptr());
       input_values.push_back(input_value);
     } else {
-      IOValueRef input_io = graph.add_input_tensor(
+      IOValueRef input_io = graph->add_input_tensor(
           input_spec.get_tensor_sizes(),
           input_spec.dtype,
           input_spec.storage_type,
@@ -1561,7 +1561,7 @@ BenchmarkGraph setup_compute_graph(
     }
 
     // Create output tensor
-    ValueRef output_value = graph.add_tensor(
+    ValueRef output_value = graph->add_tensor(
         output_spec.get_tensor_sizes(),
         output_spec.dtype,
         output_spec.storage_type,
@@ -1579,12 +1579,12 @@ BenchmarkGraph setup_compute_graph(
 
   // Nodes added before the op are staging uploads; nodes added after are
   // staging downloads. Only the op's own nodes are repeated by benchmarks.
-  const size_t op_begin = graph.execute_nodes().size();
-  opFn(graph, op_args);
-  const size_t op_end = graph.execute_nodes().size();
+  const size_t op_begin = graph->execute_nodes().size();
+  opFn(*graph, op_args);
+  const size_t op_end = graph->execute_nodes().size();
 
   for (size_t i = 0; i < output_values.size(); ++i) {
-    graph.set_output_value(output_values[i]);
+    graph->set_output_value(output_values[i]);
   }
   return {std::move(graph), {op_begin, op_end}};
 }
@@ -1608,7 +1608,7 @@ BenchmarkResult execute_test_case(
   // persistent graph allocations are not duplicated.
   BenchmarkGraph benchmark = setup_compute_graph(
       test_case, test_case.operator_name(), chained_dispatches);
-  ComputeGraph& graph = benchmark.graph;
+  ComputeGraph& graph = *benchmark.graph;
 
   // Prepare the graph
   graph.prepare();

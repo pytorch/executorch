@@ -196,7 +196,7 @@ TEST(ValueSpecTest, ShareReferenceFrom_IgnoresNonTensorSpecs) {
   EXPECT_EQ(tensor.get_ref_float_data(), expected);
 }
 
-TEST(BenchmarkGraphTest, ChainedDispatchesBuildOperatorOnce) {
+TEST(BenchmarkGraphTest, ChainedDispatches_BuildOperatorOnce) {
   if (!vkcompute::api::available()) {
     return;
   }
@@ -209,7 +209,7 @@ TEST(BenchmarkGraphTest, ChainedDispatchesBuildOperatorOnce) {
       test_case,
       "test_etvk.counting_operator.default",
       /*op_invocations_per_execute=*/8);
-  ComputeGraph& graph = benchmark.graph;
+  ComputeGraph& graph = *benchmark.graph;
 
   EXPECT_EQ(operator_build_count, 1);
   ASSERT_EQ(graph.execute_nodes().size(), 1u);

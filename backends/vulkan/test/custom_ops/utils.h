@@ -950,9 +950,11 @@ struct OpNodeRange {
   size_t end = 0;
 };
 
-// A benchmark graph plus the location of its repeatable operator nodes.
+// A benchmark graph plus the location of its repeatable operator nodes. The
+// graph is heap-held: ComputeGraph owns its Context and must never be moved
+// (a moved-from graph's destructor dereferences a null context).
 struct BenchmarkGraph {
-  ComputeGraph graph;
+  std::unique_ptr<ComputeGraph> graph;
   OpNodeRange op_nodes;
 };
 
