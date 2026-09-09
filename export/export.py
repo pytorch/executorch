@@ -283,13 +283,17 @@ class ExportSession:
         if self._input_model_type != "ExportedProgram":
             stages.append(StageType.TORCH_EXPORT)
 
-        # Always include edge and executorch stages
-        stages.extend(
-            [
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
-                StageType.TO_EXECUTORCH,
-            ]
-        )
+        stages.append(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+
+        # This is the only stage that runs edge_manager_transform_passes, so a
+        # recipe declaring them would otherwise have them silently dropped.
+        if (
+            self._lowering_recipe
+            and self._lowering_recipe.edge_manager_transform_passes
+        ):
+            stages.append(StageType.EDGE_PROGRAM_MANAGER_TRANSFORM)
+
+        stages.append(StageType.TO_EXECUTORCH)
 
         return stages
 

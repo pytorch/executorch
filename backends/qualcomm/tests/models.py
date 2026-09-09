@@ -2943,6 +2943,16 @@ class Threshold(torch.nn.Module):
         )
 
 
+class ConvRelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.conv(x))
+
+
 class TopKandIndex(torch.nn.Module):
     def __init__(self):
         super().__init__()
