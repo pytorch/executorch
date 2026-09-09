@@ -126,7 +126,7 @@ function(get_corstone_linker_script OUT_VAR SYSTEM_CONFIG)
   )
 endfunction()
 
-function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
+function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH MEMORY_MODE)
   if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
     # Both model and scratch in DRAM.
     set(MEMORY_MODEL dram)

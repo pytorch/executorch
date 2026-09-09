@@ -21,6 +21,9 @@ concurrency:
 jobs:
   test-openvino:
     uses: ./.github/workflows/_test_backend.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       backend: openvino
       flows: '["openvino"]'

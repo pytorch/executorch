@@ -60,6 +60,10 @@ signature = "EthosUPartitioner.partition(self, exported_program: torch.export.ex
 kind = "function"
 signature = "EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
+[python.EthosUPartitioner.transform_for_pre_decomposition]
+kind = "function"
+signature = "EthosUPartitioner.transform_for_pre_decomposition(self, exported_program: torch.export.exported_program.ExportedProgram) -> torch.export.exported_program.ExportedProgram"
+
 [python.EthosUQuantizer]
 kind = "class"
 signature = "EthosUQuantizer(compile_spec: 'EthosUCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'"
@@ -179,6 +183,10 @@ signature = "VgfPartitioner.partition(self, exported_program: torch.export.expor
 [python.VgfPartitioner.register_custom_partition_op]
 kind = "function"
 signature = "VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
+
+[python.VgfPartitioner.transform_for_pre_decomposition]
+kind = "function"
+signature = "VgfPartitioner.transform_for_pre_decomposition(self, exported_program: torch.export.exported_program.ExportedProgram) -> torch.export.exported_program.ExportedProgram"
 
 [python.VgfQuantizer]
 kind = "class"
