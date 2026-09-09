@@ -187,7 +187,7 @@ class NeutronMap:
         # _remap_locations_from_microcode. Excludes injected helper slots (MemCpy, etc.)
         # that have no TFLite counterpart and can never be covered by the mapping.
         self._coverable_slot_count: int = 0
-        self._split_profiling_log(neutron_converter_log)
+        self._split_profiling_log(neutron_compiler_log)
 
     # ------------------------------------------------------------------
     # Log parsing
@@ -300,7 +300,7 @@ class NeutronMap:
                     ),
                     kernels=0,
                     nodes=parse_nodes(section),
-            )
+                )
             )
         return subgraphs
 
@@ -553,7 +553,7 @@ class NeutronMap:
             out not in self._tflite_tensor_names
             and inp not in self._tflite_tensor_names
             for out, inp in connecting_pairs
-                    )
+        )
 
     def _get_neutron_subgraph_chains(self) -> list[list[SubgraphInfo]]:
         """Group active Neutron subgraphs into linearly-connected execution chains.
@@ -645,7 +645,7 @@ class NeutronMap:
             bool(tf_node.inputs)
             and bool(sg_inputs)
             and count_tensor_matches(tf_node.inputs, sg_inputs) == len(tf_node.inputs)
-                    )
+        )
 
     def _outputs_match(self, sg_outputs: list[str], chain_outputs: list[str]) -> bool:
         """Return True if all chain_outputs are covered by sg_outputs."""
@@ -653,7 +653,7 @@ class NeutronMap:
             bool(chain_outputs)
             and bool(sg_outputs)
             and count_tensor_matches(chain_outputs, sg_outputs) == len(chain_outputs)
-                )
+        )
 
     def _find_matching_tflite_chain(
         self, sg_inputs: list[str], sg_outputs: list[str]
@@ -700,9 +700,9 @@ class NeutronMap:
             for _ in range(len(self.tflite_nodes)):
                 next_loc = self._find_next_chain_node(
                     chain_locs, chain_outs, self._node_by_loc, self._input_to_locs
-                            )
+                )
                 if next_loc is None:
-                        break
+                    break
                 next_node = self._node_by_loc[next_loc]
                 chain_locs.append(next_loc)
                 consumed = set(next_node.inputs)
@@ -799,7 +799,7 @@ class NeutronMap:
                 logging.debug(
                     f"No TFLite match for Neutron chain {[sg.num for sg in chain]} "
                     f"(inputs={chain_inputs}, outputs={chain_outputs})"
-            )
+                )
                 continue
 
             for loc in tflite_locs:
@@ -869,5 +869,5 @@ class NeutronMap:
         result = {
             i: tuple(inverse.get(i, ())) for i in range(self.neutron_kernels_num + 1)
         }
-            logging.info(f"Neutron to Edge map was created: {result}")
-            return result
+        logging.info(f"Neutron to Edge map was created: {result}")
+        return result
