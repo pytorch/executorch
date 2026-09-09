@@ -194,6 +194,9 @@ endif()
 
 # Use ExecuTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 find_package_torch()
 
 # Platform utilities (load_library, close_library, etc.)
@@ -203,7 +206,7 @@ add_library(cuda_platform STATIC ${_cuda_platform_sources})
 target_include_directories(
   cuda_platform
   PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
-         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+         $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
 )
 
 target_compile_options(

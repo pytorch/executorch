@@ -12,6 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   set(CMAKE_TOOLCHAIN_IOS ON)
@@ -20,7 +23,7 @@ else()
 endif()
 
 # Let files say "include <executorch/path/to/header.h>"
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 
 # Need this for gflags for some reason
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)

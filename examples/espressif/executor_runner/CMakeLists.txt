@@ -42,6 +42,10 @@ if(ESP_PLATFORM)
       "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
       CACHE PATH "Path to ExecuTorch source dir"
   )
+  include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
+  executorch_get_build_include_dir(
+    "${ET_DIR_PATH}" EXECUTORCH_SOURCE_INCLUDE_DIR
+  )
   set(ET_BUILD_DIR_PATH
       "${ET_DIR_PATH}/cmake-out-esp"
       CACHE PATH "Path to ExecuTorch build/install dir for ESP target"
@@ -133,7 +137,8 @@ if(ESP_PLATFORM)
   # Include directories
   target_include_directories(
     ${COMPONENT_LIB}
-    PRIVATE ${ET_DIR_PATH}/.. ${ET_DIR_PATH}/runtime/core/portable_type/c10
+    PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+            ${ET_DIR_PATH}/runtime/core/portable_type/c10
             ${CMAKE_CURRENT_BINARY_DIR} ${ET_MODEL_HEADER_DIR}
   )
 
@@ -236,12 +241,15 @@ else()
       CACHE PATH "Path to ExecuTorch dir"
   )
   include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
+  executorch_get_build_include_dir(
+    "${ET_DIR_PATH}" EXECUTORCH_SOURCE_INCLUDE_DIR
+  )
   set(ET_BUILD_DIR_PATH
       "${ET_DIR_PATH}/cmake-out"
       CACHE PATH "Path to ExecuTorch build/install dir"
   )
   set(ET_INCLUDE_PATH
-      "${ET_DIR_PATH}/.."
+      "${EXECUTORCH_SOURCE_INCLUDE_DIR}"
       CACHE PATH "Path to ExecuTorch headers"
   )
   set(ET_PTE_FILE_PATH

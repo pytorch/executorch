@@ -18,6 +18,9 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 include(FetchContent)
 
@@ -138,7 +141,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   )
 
   target_include_directories(
-    cortex_m_kernels PRIVATE ${EXECUTORCH_ROOT}/..
+    cortex_m_kernels PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR}
                              ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
   )
 

@@ -27,15 +27,6 @@ set(ET_DIR_PATH
     "${EXECUTORCH_ROOT}"
     CACHE PATH "Kept for backward compatibility; synonym for EXECUTORCH_ROOT"
 )
-if(NOT DEFINED ET_INCLUDE_PATH)
-  set(ET_INCLUDE_PATH
-      "${EXECUTORCH_ROOT}"
-      CACHE
-        PATH
-        "Kept for backward compatibility; include root for ExecuTorch headers"
-  )
-endif()
-
 if(NOT EXISTS "${EXECUTORCH_ROOT}/CMakeLists.txt")
   message(
     FATAL_ERROR
@@ -45,6 +36,15 @@ endif()
 
 if(NOT COMMAND executorch_target_link_options_shared_lib)
   include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+endif()
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
+if(NOT DEFINED ET_INCLUDE_PATH)
+  set(ET_INCLUDE_PATH
+      "${EXECUTORCH_SOURCE_INCLUDE_DIR}"
+      CACHE PATH "Include root for ExecuTorch source headers"
+  )
 endif()
 
 set(ET_NUM_INFERENCES
@@ -320,7 +320,7 @@ endif()
 # ET headers and generated headers includes
 target_include_directories(
   arm_executor_runner
-  PRIVATE ${ET_INCLUDE_PATH} ${ET_INCLUDE_PATH}/runtime/core/portable_type/c10
+  PRIVATE ${ET_INCLUDE_PATH} ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
           ${EXECUTORCH_ROOT}/examples/arm/common ${CMAKE_CURRENT_BINARY_DIR}
 )
 target_compile_definitions(

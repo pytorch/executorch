@@ -44,8 +44,7 @@ if "%args%" == "" (
 set work_dir=%CD%
 if exist setup.py (
     echo "Creating symlink..."
-    REM Setup a symlink to shorten the path length.
-    REM Note that the ET directory has to be named "executorch".
+    REM Use a stable, short path to avoid Windows path-length failures.
     cd %GITHUB_WORKSPACE%
     if not exist et\ (
         mkdir et

@@ -31,6 +31,10 @@ FetchContent_MakeAvailable(googletest)
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 endif()
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 # Find installed ExecuTorch
 find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
@@ -60,7 +64,7 @@ foreach(test_name ${CUDA_SHIM_TESTS})
   add_executable(${test_name} ${test_name}.cpp)
 
   target_include_directories(
-    ${test_name} PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
+    ${test_name} PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${EXECUTORCH_ROOT}
                          ${CUDAToolkit_INCLUDE_DIRS}
   )
 
@@ -76,8 +80,9 @@ endforeach()
 
 add_executable(benchmark_int4_plain_mm benchmark_int4_plain_mm.cu)
 target_include_directories(
-  benchmark_int4_plain_mm PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
-                                  ${CUDAToolkit_INCLUDE_DIRS}
+  benchmark_int4_plain_mm
+  PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${EXECUTORCH_ROOT}
+          ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_compile_definitions(benchmark_int4_plain_mm PRIVATE CUDA_AVAILABLE=1)
 set_property(TARGET benchmark_int4_plain_mm PROPERTY CUDA_ARCHITECTURES 80)
@@ -106,8 +111,9 @@ add_test(NAME benchmark_int4_plain_mm_m4
 
 add_executable(benchmark_int6_plain_mm benchmark_int6_plain_mm.cu)
 target_include_directories(
-  benchmark_int6_plain_mm PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
-                                  ${CUDAToolkit_INCLUDE_DIRS}
+  benchmark_int6_plain_mm
+  PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${EXECUTORCH_ROOT}
+          ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_compile_definitions(benchmark_int6_plain_mm PRIVATE CUDA_AVAILABLE=1)
 set_property(TARGET benchmark_int6_plain_mm PROPERTY CUDA_ARCHITECTURES 80)
@@ -136,8 +142,9 @@ add_test(NAME benchmark_int6_plain_mm_m4
 
 add_executable(benchmark_int5_plain_mm benchmark_int5_plain_mm.cu)
 target_include_directories(
-  benchmark_int5_plain_mm PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
-                                  ${CUDAToolkit_INCLUDE_DIRS}
+  benchmark_int5_plain_mm
+  PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${EXECUTORCH_ROOT}
+          ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_compile_definitions(benchmark_int5_plain_mm PRIVATE CUDA_AVAILABLE=1)
 set_property(TARGET benchmark_int5_plain_mm PROPERTY CUDA_ARCHITECTURES 80)
@@ -168,7 +175,7 @@ foreach(test_name ${CUDA_KERNEL_TESTS})
   add_executable(${test_name} ${test_name}.cpp)
 
   target_include_directories(
-    ${test_name} PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
+    ${test_name} PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${EXECUTORCH_ROOT}
                          ${CUDAToolkit_INCLUDE_DIRS}
   )
 

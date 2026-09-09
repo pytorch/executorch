@@ -11,6 +11,9 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 # Ensure vulkan_schema is available even when EXECUTORCH_BUILD_VULKAN is OFF.
 # The WebGPU backend reuses the Vulkan FlatBuffer serialization format.
@@ -59,7 +62,7 @@ add_custom_target(
 add_dependencies(webgpu_backend webgpu_wgsl_headers_check)
 
 target_include_directories(
-  webgpu_backend PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+  webgpu_backend PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
 )
 
 target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
@@ -116,7 +119,7 @@ install(
 function(add_webgpu_native_test test_name test_src)
   add_executable(${test_name} ${test_src})
   target_include_directories(
-    ${test_name} PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+    ${test_name} PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
   )
   target_link_libraries(
     ${test_name}
@@ -174,7 +177,7 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
     target_include_directories(
       webgpu_op_test_util_test
-      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
               "${EXECUTORCH_ROOT}/third-party/json/single_include"
     )
     target_link_libraries(
@@ -219,7 +222,7 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
     target_include_directories(
       webgpu_execution_options_test
-      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
     )
     target_link_libraries(
       webgpu_execution_options_test PRIVATE GTest::gtest GTest::gtest_main

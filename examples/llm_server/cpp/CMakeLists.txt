@@ -16,8 +16,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 # Vendored single-include nlohmann/json for the worker protocol (no new dep).
 set(_json_include
     ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include

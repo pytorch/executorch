@@ -41,6 +41,9 @@ if(TARGET vulkan_backend)
   # required for libraries that perform dynamic registration via static
   # initialization.
   include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+  executorch_get_build_include_dir(
+    "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+  )
 
   include(../cmake/ShaderLibrary.cmake)
 
@@ -55,8 +58,9 @@ if(TARGET vulkan_backend)
   set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
   set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
-  set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
-                      ${VMA_PATH} ${GTEST_INCLUDE_PATH} ${PYTORCH_PATH}
+  set(COMMON_INCLUDES
+      ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
+      ${VMA_PATH} ${GTEST_INCLUDE_PATH} ${PYTORCH_PATH}
   )
 
   # Test Utility files

@@ -29,6 +29,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTORCH_SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_SOURCE_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_SOURCE_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 set(_json_include
     ${EXECUTORCH_SOURCE_ROOT}/extension/llm/tokenizers/third-party/json/single_include
@@ -83,7 +86,7 @@ endforeach()
 add_executable(supertonic_runner runtime/main.cpp ${_helper_sources})
 target_compile_definitions(supertonic_runner PRIVATE EXECUTORCH_BUILD_MLX)
 target_include_directories(
-  supertonic_runner PRIVATE ${EXECUTORCH_SOURCE_ROOT}/.. runtime
+  supertonic_runner PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR} runtime
                             ${_json_include}
 )
 target_link_libraries(

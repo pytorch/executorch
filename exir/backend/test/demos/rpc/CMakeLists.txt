@@ -22,8 +22,11 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 add_library(

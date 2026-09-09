@@ -22,6 +22,9 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 # The buck-based executorch_srcs.cmake setup was crossing package boundaries and
 # trying to build stuff from executorch/extension/llm/runner and tokenizers.
@@ -57,6 +60,6 @@ target_link_libraries(llama_runner PUBLIC tokenizers::tokenizers)
 
 target_include_directories(
   llama_runner PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-                      ${EXECUTORCH_ROOT}/..
+                      ${EXECUTORCH_SOURCE_INCLUDE_DIR}
 )
 target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})

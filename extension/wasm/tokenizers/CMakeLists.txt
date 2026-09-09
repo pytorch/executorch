@@ -25,8 +25,11 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC -Wall -Werror)
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 
 set(link_libraries)
 list(APPEND link_libraries embind tokenizers::tokenizers)

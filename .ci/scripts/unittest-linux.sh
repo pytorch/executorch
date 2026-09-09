@@ -31,6 +31,9 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     .ci/scripts/setup-linux.sh "$@"
 
     .ci/scripts/unittest-linux-cmake.sh
+    if [[ "$BUILD_MODE" == "Debug" && "$EDITABLE" == "false" ]]; then
+        bash test/test_worktree_build.sh
+    fi
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     # Removing this breaks sccache in the Buck build, apparently
     # because TMPDIR gets messed up? Please feel free to fix this and

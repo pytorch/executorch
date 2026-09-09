@@ -21,7 +21,7 @@ target_compile_definitions(
 
 # Include directories
 target_include_directories(
-  selective_build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../..
+  selective_build PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR}
 )
 
 # Compile options

@@ -20,13 +20,16 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 
 # Find prebuilt executorch lib
 find_package(executorch CONFIG REQUIRED)
@@ -113,8 +116,9 @@ add_dependencies(cadence_executorch_example gen_model_header)
 
 # lint_cmake: -linelength
 target_include_directories(
-  cadence_executorch_example PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
-                                    ${_common_include_directories}
+  cadence_executorch_example
+  PUBLIC ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${CMAKE_BINARY_DIR}
+         ${_common_include_directories}
 )
 
 target_link_options(

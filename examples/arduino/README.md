@@ -236,9 +236,7 @@ python -c "import executorch.backends.cortex_m.ops.operators as o; print(o.__fil
 ```
 
 If that prints a `site-packages` path rather than your checkout, run
-`./install_executorch.sh` first. Note that ExecuTorch refuses to build from a
-directory not named exactly `executorch` (pytorch/executorch#6475), which is
-a common reason people end up on a stale wheel without realising.
+`./install_executorch.sh` first.
 
 To check a model against a library without a board, decode the `.pte` and
 compare each `KernelCall`'s argument count against the `stack.size() == N`

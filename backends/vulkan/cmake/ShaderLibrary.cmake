@@ -110,7 +110,7 @@ function(vulkan_shader_lib library_name generated_spv_cpp)
   target_include_directories(
     ${library_name}
     PRIVATE
-      ${EXECUTORCH_ROOT}/..
+      ${EXECUTORCH_SOURCE_INCLUDE_DIR}
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers/include
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk
   )
@@ -134,7 +134,7 @@ macro(vulkan_shader_library shaders_path library_name)
   target_include_directories(
     ${library_name}
     PRIVATE
-      ${EXECUTORCH_ROOT}/..
+      ${EXECUTORCH_SOURCE_INCLUDE_DIR}
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers/include
       ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk
   )

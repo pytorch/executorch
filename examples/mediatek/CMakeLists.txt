@@ -21,6 +21,9 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -30,7 +33,8 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories
-    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+    ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
     ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
     ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
 )

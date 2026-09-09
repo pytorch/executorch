@@ -13,6 +13,9 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -73,12 +76,14 @@ target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories
-    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+    ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+    ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
 
 target_include_directories(
   aten_ops_cadence
-  PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR} ${_common_include_directories}
+  PUBLIC ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${CMAKE_BINARY_DIR}
+         ${_common_include_directories}
          ${CMAKE_CURRENT_SOURCE_DIR}/../third-party
 )
 
@@ -97,7 +102,7 @@ add_library(
   "op_im2row_out.cpp"
 )
 target_include_directories(
-  custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
+  custom_ops PUBLIC ${EXECUTORCH_SOURCE_INCLUDE_DIR} ${CMAKE_BINARY_DIR}
                     ${_common_include_directories}
 )
 

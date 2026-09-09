@@ -22,11 +22,14 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-# Define common include directories
-set(COMMON_INCLUDE_DIRS ${EXECUTORCH_ROOT}/..)
-
 # Include utility CMake scripts from ExecuteTorch
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
+
+# Define common include directories
+set(COMMON_INCLUDE_DIRS ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 
 # The backend resolves OpenVINO C API symbols via dlopen/dlsym at runtime, so
 # there is no build-time dependency on the OpenVINO SDK.

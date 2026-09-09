@@ -113,6 +113,10 @@ include(CMakeDependentOption)
 include(ExternalProject)
 include(GNUInstallDirs)
 
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
+
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
@@ -523,22 +527,8 @@ if(NOT DEFINED CMAKE_POSITION_INDEPENDENT_CODE
   list(APPEND _common_compile_options $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fPIC>)
 endif()
 
-# Let files say "include <executorch/path/to/header.h>".
-# TODO(#6475): This requires/assumes that the repo lives in a directory named
-# exactly `executorch`. Check the assumption first. Remove this check once we
-# stop relying on the assumption.
-cmake_path(GET CMAKE_CURRENT_SOURCE_DIR FILENAME _repo_dir_name)
-if(NOT "${_repo_dir_name}" STREQUAL "executorch")
-  message(
-    FATAL_ERROR
-      "The ExecuTorch repo must be cloned into a directory named exactly "
-      "`executorch`; found `${_repo_dir_name}`. See "
-      "https://github.com/pytorch/executorch/issues/6475 for progress on a "
-      "fix for this restriction."
-  )
-endif()
 set(_common_include_directories
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+    $<BUILD_INTERFACE:${EXECUTORCH_SOURCE_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>

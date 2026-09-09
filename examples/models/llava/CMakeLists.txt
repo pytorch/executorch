@@ -44,6 +44,9 @@ endif()
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+executorch_get_build_include_dir(
+  "${EXECUTORCH_ROOT}" EXECUTORCH_SOURCE_INCLUDE_DIR
+)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -67,7 +70,7 @@ else()
 endif()
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_SOURCE_INCLUDE_DIR})
 
 # For some reason android build is not able to find where gflags is and hence
 # cannot find corresponding .cmake file

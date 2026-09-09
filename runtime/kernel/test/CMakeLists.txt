@@ -23,7 +23,9 @@ target_link_libraries(
   operator_registry_test GTest::gtest GTest::gtest_main GTest::gmock
   executorch_core
 )
-target_include_directories(operator_registry_test PRIVATE ${EXECUTORCH_ROOT}/..)
+target_include_directories(
+  operator_registry_test PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR}
+)
 add_test(operator_registry_test operator_registry_test)
 
 add_executable(kernel_runtime_context_test kernel_runtime_context_test.cpp)
@@ -32,7 +34,7 @@ target_link_libraries(
   executorch_core
 )
 target_include_directories(
-  kernel_runtime_context_test PRIVATE ${EXECUTORCH_ROOT}/..
+  kernel_runtime_context_test PRIVATE ${EXECUTORCH_SOURCE_INCLUDE_DIR}
 )
 add_test(kernel_runtime_context_test kernel_runtime_context_test)
 
