@@ -1,0 +1,43 @@
+load("@fbcode//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# GPU-side counterparts of the host sampling primitives in
+# runtime/engine/sampling.h, used by the CUDA DFlash decode loop.
+fbcode_target(_kind = runtime.cxx_library,
+    name = "sampling_cuda",
+    srcs = ["runtime/engine/sampling_cuda.cu"],
+    headers = [
+        "runtime/engine/sampling.h",
+        "runtime/engine/sampling_cuda.h",
+    ],
+    nvcc_flags = get_nvcc_arch_args() + [
+        "-_NVCC_HOST_COMPILER_FLAG_",
+        "gcc",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.cxx_test,
+    name = "sampling_cuda_test",
+    srcs = ["tests/sampling_cuda_test.cpp"],
+    keep_gpu_sections = True,
+    remote_execution = re_test_utils.remote_execution(
+        platform = "gpu-remote-execution",
+        subplatform = "A100-exclusive",
+    ),
+    deps = [
+        ":sampling_cuda",
+        "//executorch/extension/tensor:tensor",
+    ],
+    external_deps = [
+        "gtest",
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
