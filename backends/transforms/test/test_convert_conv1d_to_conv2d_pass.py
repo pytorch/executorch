@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -106,6 +107,22 @@ class WeightUsedAsConvInput(torch.nn.Module):
         )
 
 
+class CondConv1d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.true_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+        self.false_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+
+    def forward(self, x):
+        def true_branch(arg):
+            return self.true_conv(arg)
+
+        def false_branch(arg):
+            return self.false_conv(arg)
+
+        return torch.cond(x.sum() > 0, true_branch, false_branch, [x])
+
+
 def _edge(model: torch.nn.Module, inputs: tuple[torch.Tensor, ...]):
     return to_edge(torch.export.export(model.eval(), inputs)).exported_program()
 
@@ -146,6 +163,41 @@ def test_convert_stride_and_dilation():
     ]
 
     assert conv.args[3:6] == ([1, 3], [0, 2], [1, 2])
+
+
+def test_convert_dynamic_activation_shapes():
+    model = Conv1d().eval()
+    example_input = torch.randn(2, 2, 8)
+    batch = torch.export.Dim("batch", min=1, max=4)
+    length = torch.export.Dim("length", min=4, max=32)
+    edge = to_edge(
+        torch.export.export(
+            model,
+            (example_input,),
+            dynamic_shapes={"x": {0: batch, 2: length}},
+        )
+    ).exported_program()
+
+    converted = _transform(edge, ConvertConv1dToConv2dPass(edge))
+    runtime_input = torch.randn(3, 2, 17)
+
+    torch.testing.assert_close(converted.module()(runtime_input), model(runtime_input))
+
+
+def test_convert_control_flow_subgraphs():
+    model = CondConv1d().eval()
+    example_input = torch.randn(1, 2, 8)
+    edge = _edge(model, (example_input,))
+
+    converted = _transform(edge, ConvertConv1dToConv2dPass(edge))
+
+    for runtime_input in (example_input.abs(), -example_input.abs()):
+        torch.testing.assert_close(
+            converted.module()(runtime_input), model(runtime_input)
+        )
+
+    assert edge.state_dict["true_conv.weight"].dim() == 3
+    assert edge.state_dict["false_conv.weight"].dim() == 3
 
 
 def test_convert_transposed_conv1d():
@@ -252,6 +304,38 @@ def test_skip_unfolded_qdq_weight():
     result = ConvertConv1dToConv2dPass(edge).call(edge.graph_module)
 
     assert not result.modified
+
+
+@pytest.mark.parametrize("allow_slice_weight", [False, True])
+def test_graph_local_weight_target_opt_in(allow_slice_weight: bool):
+    model = Conv1d().eval()
+    x = torch.randn(1, 2, 8)
+    edge = _edge(model, (x,))
+    [conv] = [
+        node
+        for node in edge.graph.nodes
+        if node.target == exir_ops.edge.aten.convolution.default
+    ]
+    weight = conv.args[1]
+    with edge.graph.inserting_before(conv):
+        sliced_weight = edge.graph.call_function(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(weight, 0, 0, weight.meta["val"].shape[0]),
+        )
+    sliced_weight.meta["val"] = weight.meta["val"]
+    conv.replace_input_with(weight, sliced_weight)
+
+    allowed_targets = (
+        {exir_ops.edge.aten.slice_copy.Tensor} if allow_slice_weight else set()
+    )
+    result = ConvertConv1dToConv2dPass(
+        edge, graph_local_weight_targets=allowed_targets
+    ).call(edge.graph_module)
+
+    assert result.modified is allow_slice_weight
+    if allow_slice_weight:
+        assert conv.args[1].target == exir_ops.edge.aten.unsqueeze_copy.default
+        torch.testing.assert_close(edge.module()(x), model(x))
 
 
 def test_preserve_convolution_metadata():

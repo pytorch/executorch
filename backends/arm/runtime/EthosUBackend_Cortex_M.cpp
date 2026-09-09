@@ -64,6 +64,10 @@ void platform_destroy(PlatformState* state) {
   delete state;
 }
 
+bool needs_scratch_allocation() {
+  return true;
+}
+
 Error platform_execute(
     BackendExecutionContext& /*context*/,
     const ExecutionHandle* /*execution_handle*/,
@@ -72,6 +76,11 @@ Error platform_execute(
     int output_count,
     Span<executorch::runtime::EValue*> args,
     char* ethosu_scratch) {
+  if (handles.scratch_data_size > 0 && ethosu_scratch == nullptr) {
+    ET_LOG(Error, "Ethos-U scratch buffer is missing");
+    return Error::InvalidState;
+  }
+
   // Parse product config from command stream to reserve the correct driver
   uint32_t product, log2_macs;
   // The weak fallback below always returns 0, but some builds replace it

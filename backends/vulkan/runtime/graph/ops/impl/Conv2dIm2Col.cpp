@@ -49,7 +49,7 @@ Im2colExtents im2col_extents_of(ComputeGraph* graph, const ValueRef im2col) {
   return {m, k_total / 4u};
 }
 
-utils::uvec3 pick_conv2d_im2col_global_wg_size(
+GlobalWorkGrid pick_conv2d_im2col_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -59,23 +59,23 @@ utils::uvec3 pick_conv2d_im2col_global_wg_size(
   const ValueRef im2col_out = args.at(0).refs.at(0);
   const Im2colExtents ext = im2col_extents_of(graph, im2col_out);
   // Global wg: one thread per (k4, m) vec4 in the output.
-  return {ext.k4_total, ext.m, 1u};
+  return GlobalWorkGrid({ext.k4_total, ext.m, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_conv2d_im2col_local_wg_size(
+LocalWorkGroup pick_conv2d_im2col_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
   // Fixed {16, 4, 1} mirrors the original static dispatch — one thread per
   // (k4, m) vec4 with 16 K-tiles × 4 M positions per workgroup.
-  return {16u, 4u, 1u};
+  return LocalWorkGroup(16u, 4u, 1u);
 }
 
 // Recompute the im2col scratch extents from the current input shape and
@@ -197,8 +197,8 @@ void add_conv2d_im2col_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      pick_conv2d_im2col_global_wg_size,
-      pick_conv2d_im2col_local_wg_size,
+      pick_conv2d_im2col_gwg,
+      pick_conv2d_im2col_lwg,
       // Inputs and Outputs
       {{im2col_out, vkapi::kWrite}, {in, vkapi::kRead}},
       // UBOs

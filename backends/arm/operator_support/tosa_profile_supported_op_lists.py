@@ -218,6 +218,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.minimum.default,
     exir_ops.edge.aten.maximum.default,
+    exir_ops.edge.aten.prod.dim_int,
     exir_ops.edge.aten.repeat.default,
     exir_ops.edge.aten.reciprocal.default,
     exir_ops.edge.aten.relu.default,

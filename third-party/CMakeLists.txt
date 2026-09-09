@@ -46,6 +46,20 @@ else()
   set(_flatbuffers_ep_additional_args)
 endif()
 
+# The flatc and flatcc host tools are built for the build machine. On a non-MAC
+# Apple build the parent's CMAKE_OSX_DEPLOYMENT_TARGET is an iOS floor the host
+# compiler rejects, so the host sub-builds get this macOS floor instead, to
+# match the package's macOS minimum. _executorch_apple_cross is true only for a
+# non-MAC Apple build, where the host tool must not take the app's SDK or floor.
+set(_executorch_host_macos_floor 14.0)
+set(_executorch_apple_cross
+    "$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>"
+)
+set(_executorch_host_osx_args
+    "$<${_executorch_apple_cross}:-DCMAKE_OSX_SYSROOT=>"
+    "-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=$<IF:${_executorch_apple_cross},${_executorch_host_macos_floor},${CMAKE_OSX_DEPLOYMENT_TARGET}>"
+)
+
 # Allow reusing a prebuilt host flatc instead of building it from source. This is
 # required when cross-compiling with the Ninja generator on Windows: the WIN32
 # branch above only supports the Visual Studio generator (it passes the VS-only
@@ -73,10 +87,9 @@ ExternalProject_Add(
     # Unset the toolchain to build for the host instead of the toolchain set for
     # the project.
     -DCMAKE_TOOLCHAIN_FILE=
-    # If building for iOS, "unset" these variables to rely on the host (macOS)
-    # defaults.
-    $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
-    -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
+    # flatc runs on the build machine, so it must target the host, not the app's
+    # iOS platform. See _executorch_host_osx_args above.
+    ${_executorch_host_osx_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
@@ -140,8 +153,7 @@ ExternalProject_Add(
     -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DCMAKE_TOOLCHAIN_FILE=
-    $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
-    -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
+    ${_executorch_host_osx_args}
     ${_flatcc_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
                    ${_executorch_external_project_additional_args}

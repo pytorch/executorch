@@ -12,7 +12,18 @@
 #include <type_traits>
 
 #include <executorch/extension/cuda/export.h>
+
+#if defined(EXECUTORCH_USE_HIP)
 #include <executorch/extension/cuda/runtime_api.h>
+#else
+// Declared here rather than including <cuda_runtime.h>, so this header compiles
+// against a distribution that ships it without a CUDA toolkit. A stream is only
+// ever stored and handed back below, never dereferenced, so the handle is all
+// this interface needs. Repeating the declaration CUDA itself makes is
+// well-formed, so a consumer that also includes <cuda_runtime.h> is unaffected,
+// in either include order.
+typedef struct CUstream_st* cudaStream_t;
+#endif
 
 namespace executorch::extension::cuda {
 

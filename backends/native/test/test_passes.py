@@ -8,8 +8,9 @@ import unittest
 
 import torch
 import torch.nn as nn
-
 from executorch.backends.native import get_default_compile_config
+
+from executorch.backends.native.passes.reinplace import NativeReinplacePass
 from executorch.exir import to_edge
 from executorch.exir.passes.cse_pass import CSEPass
 
@@ -37,3 +38,23 @@ class CSEPassTest(unittest.TestCase):
             if n.op == "call_function" and "add" in str(n.target)
         ]
         self.assertEqual(len(adds), 1, f"expected CSE to leave one add, got {adds}")
+
+
+class NativeReinplacePassTest(unittest.TestCase):
+    def test_rewrites_relu_in_place(self):
+        class ReluModel(nn.Module):
+            def forward(self, x):
+                # relu on an intermediate (x + 1) can be rewritten in place;
+                # relu directly on the immutable user input x cannot.
+                return torch.relu(x + 1)
+
+        ep = _transformed(ReluModel(), (torch.randn(4, 4),), [NativeReinplacePass()])
+        targets = [
+            str(n.target)
+            for n in ep.graph_module.graph.nodes
+            if n.op == "call_function"
+        ]
+        self.assertTrue(
+            any("relu_" in t for t in targets),
+            f"expected in-place relu_, got {targets}",
+        )

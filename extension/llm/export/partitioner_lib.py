@@ -56,26 +56,6 @@ def get_vulkan_partitioner(
     )
 
 
-def get_mps_partitioner(use_kv_cache: bool = False):
-    from executorch.exir.backend.backend_details import CompileSpec
-
-    assert (
-        use_kv_cache is True
-    ), "MPS backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
-    try:
-        # pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.mps.partition.mps_partitioner`.
-        from executorch.backends.apple.mps.partition.mps_partitioner import (
-            MPSPartitioner,
-        )
-    except ImportError:
-        raise ImportError(
-            "Please install the MPS backend following https://docs.pytorch.org/executorch/main/backends/mps/mps-overview.html"
-        )
-
-    compile_specs = [CompileSpec("use_fp16", bytes([True]))]
-    return MPSPartitioner(compile_specs)  # pyre-fixme[16]
-
-
 def get_openvino_partitioner(device: str):
     try:
         from executorch.backends.openvino.partitioner import OpenvinoPartitioner

@@ -1,16 +1,17 @@
 name: docker-builds
 
+# No pull_request trigger: a fork PR gets no OIDC token, so the build could not
+# assume role/arc to push and every run would fail. A PR that needs fresh images
+# gets the ciflow/docker label instead, which tags the PR head and fires the push
+# trigger below with the PR's own SHA. Matches pytorch/pytorch.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - .ci/docker/**
-      - .github/workflows/docker-builds.yml
-      - requirements-lintrunner.txt
   push:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/docker/*
     paths:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
@@ -19,11 +20,17 @@ on:
     - cron: 1 3 * * 3
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 env:
   AWS_DEFAULT_REGION: us-east-1
+  ECR_REGISTRY: 308535385114.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY: executorch/ci-image
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   docker-build:
@@ -31,62 +38,109 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [linux.4xlarge]
+        # BuildKit runs out of cluster on the OSDC BuildKit pool; this runner is
+        # only an orchestrator that streams the (tiny) .ci/docker context and
+        # waits, so it can be small. The architecture still has to match, because
+        # the helper picks the per-architecture buildkitd address off `uname -m`,
+        # and on arm64 this is the smallest label that actually schedules.
+        runner: [mt-l-x86iavx512-8-64]
         docker-image-name: [
           executorch-ubuntu-22.04-gcc11,
           executorch-ubuntu-22.04-gcc9-nopytorch,
           executorch-ubuntu-22.04-clang12,
           executorch-ubuntu-22.04-linter,
           executorch-ubuntu-22.04-arm-sdk,
+          executorch-ubuntu-24.04-arm-sdk,
           executorch-ubuntu-22.04-zephyr-sdk,
           executorch-ubuntu-22.04-qnn-sdk,
           executorch-ubuntu-22.04-mediatek-sdk,
           executorch-ubuntu-22.04-clang12-android,
           executorch-ubuntu-24.04-gcc14,
           executorch-ubuntu-26.04-gcc14,
+          # Built on x86: this image only cross-compiles for CUDA on Windows,
+          # so building it never needed the GPU runner it used to run on.
+          executorch-ubuntu-22.04-cuda-windows,
         ]
         include:
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64-android
-            runner: linux.arm64.2xlarge
+            runner: mt-l-arm64g4-16-62
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk
-            runner: linux.arm64.2xlarge
-          - docker-image-name: executorch-ubuntu-22.04-cuda-windows
-            runner: linux.g5.4xlarge.nvidia.gpu
+            runner: mt-l-arm64g4-16-62
 
-    runs-on: [self-hosted, "${{ matrix.runner }}"]
-    env:
-      DOCKER_IMAGE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ matrix.docker-image-name }}
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/actions/actions-runner:latest
     steps:
-      - name: Clean workspace
+      - name: Checkout ExecuTorch
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/arc
+          aws-region: us-east-1
+          role-duration-seconds: 18000
+
+      # buildx forwards the client's registry auth to the remote builder, so the
+      # push at the end of build.sh authenticates with what this step writes.
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registries: "308535385114"
+
+      # sccache cannot source S3 credentials from instance metadata inside a
+      # BuildKit pod, so hand the assumed-role ones to the build as a secret. An
+      # empty file is a valid outcome: install_pytorch.sh then caches locally.
+      - name: Stage sccache credentials
+        id: sccache-credentials
         shell: bash
         run: |
-          echo "${GITHUB_WORKSPACE}"
-          sudo rm -rf "${GITHUB_WORKSPACE}"
-          mkdir "${GITHUB_WORKSPACE}"
+          set -euo pipefail
+          creds="${RUNNER_TEMP}/aws-credentials"
+          install -m 600 /dev/null "${creds}"
+          if [[ -n "${AWS_ACCESS_KEY_ID:-}" ]]; then
+            {
+              echo "[default]"
+              echo "aws_access_key_id=${AWS_ACCESS_KEY_ID}"
+              echo "aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}"
+              echo "aws_session_token=${AWS_SESSION_TOKEN}"
+            } > "${creds}"
+          else
+            echo "::warning::No AWS credentials; the image build will not use the sccache S3 cache"
+          fi
+          echo "path=${creds}" >> "${GITHUB_OUTPUT}"
 
-      - name: Setup SSH (Click me for login details)
-        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+      - name: Compute the image tag
+        id: tag
+        shell: bash
+        run: |
+          set -eux
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          # Same tag that calculate-docker-image derives for consumers of
+          # `ci-image:<name>`, so jobs still on linux_job_v2 keep resolving.
+          DOCKER_TAG=$(git rev-parse HEAD:.ci/docker)
+          echo "docker-image=${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ matrix.docker-image-name }}-${DOCKER_TAG}" >> "${GITHUB_OUTPUT}"
+
+      # No step timeout: the action retries a cold BuildKit pool for at least two
+      # hours, and the job's timeout-minutes is what bounds that.
+      - name: Build and push to ECR
+        uses: pytorch/test-infra/.github/actions/docker-build-remote-buildkit@main
         with:
-          github-secret: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout Executorch
-        uses: actions/checkout@v3
-
-      - name: Setup Linux
-        uses: pytorch/test-infra/.github/actions/setup-linux@main
-
-      - name: Build docker image
-        id: build-docker-image
-        timeout-minutes: 145
-        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
-        with:
-          docker-image-name: ci-image:${{ matrix.docker-image-name }}
-          always-rebuild: true
-          push: true
-          force-push: true
-
-      - name: Teardown Linux
-        uses: pytorch/test-infra/.github/actions/teardown-linux@main
-        if: always()
+          # calculate-docker-image wrapped the build in three retries because it
+          # "frequently fails with network error downloading various stuffs".
+          # The action only retries failures from before BuildKit starts, so keep
+          # a retry of our own around the SDK downloads.
+          command: |
+            cd .ci/docker
+            for attempt in 1 2 3; do
+              if REMOTE_BUILDKIT=1 ./build.sh ${{ matrix.docker-image-name }} \
+                  -t ${{ steps.tag.outputs.docker-image }} \
+                  --secret id=aws-credentials,src=${{ steps.sccache-credentials.outputs.path }}; then
+                exit 0
+              fi
+              echo "::warning::docker build attempt ${attempt} of 3 failed"
+              if [ "${attempt}" -lt 3 ]; then sleep 90; fi
+            done
+            exit 1

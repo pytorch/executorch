@@ -14,16 +14,17 @@
 
 namespace vkcompute {
 
-utils::uvec3 quantized_linear_local_wg_size(
+LocalWorkGroup quantized_linear_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
 ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
-    const ValueRef qmat2_data);
+    const ValueRef qmat2_data,
+    const bool use_unsigned_dot = false);
 
 } // namespace vkcompute

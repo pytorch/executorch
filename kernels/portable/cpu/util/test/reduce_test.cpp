@@ -15,6 +15,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+
 using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
@@ -443,8 +445,9 @@ TEST(ReduceUtilTest, ApplyOverDimListChannelsLast) {
   // here rather than written through, so an out-of-bounds index is reported
   // instead of corrupting memory.
   Tensor in = tf.zeros_channels_last({2, 2, 3, 3});
-  int64_t dim_array_023[3] = {0, 2, 3};
-  dim_list = optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_023, 3});
+  const std::array<int64_t, 3> dim_array_023{0, 2, 3};
+  dim_list = optional<ArrayRef<int64_t>>(
+      ArrayRef<int64_t>{dim_array_023.data(), dim_array_023.size()});
 
   const size_t numel = static_cast<size_t>(in.numel());
   std::vector<size_t> visits(numel, 0);

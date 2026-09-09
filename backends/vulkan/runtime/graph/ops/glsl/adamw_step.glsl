@@ -36,8 +36,10 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 void main() {
-  const int i = int(gl_GlobalInvocationID.x);
+  const int i = int(linear_idx_from_gid());
   if (i >= numel) {
     return;
   }

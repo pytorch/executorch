@@ -68,6 +68,17 @@ fbcode_target(_kind = python_unittest,
 )
 
 fbcode_target(_kind = python_unittest,
+    name = "test_transformer_block",
+    srcs = [
+        "test_transformer_block.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
     name = "test_ring_attention",
     srcs = [
         "test_ring_attention.py",

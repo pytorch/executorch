@@ -12,6 +12,9 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm._passes.decompose_grouped_conv_pass import (
+    DecomposeGroupedConvPass,
+)
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -27,11 +30,13 @@ from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
 class FuseBatchNorm2dPass(ArmPass):
-    """Fuses the pattern convolution -> batchnorm by updating the weights and
-    bias of the convolution and removing the batchnorm.
+    """Fuse convolution followed by BatchNorm.
+
+    Update the convolution weights and bias and remove the BatchNorm operation.
+
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {DecomposeGroupedConvPass}
 
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -44,6 +49,79 @@ class FuseBatchNorm2dPass(ArmPass):
             return weight_node.name.replace("weight", "bias") + "_fused_bn"
         else:
             return weight_node.name + "_bias_fused_bn"
+
+    @staticmethod
+    def _fuse_grouped_transposed_conv_bn_weights(
+        conv_weight: torch.Tensor,
+        conv_bias: torch.Tensor | None,
+        bn_mean: torch.Tensor,
+        bn_var: torch.Tensor,
+        bn_epsilon: float,
+        bn_weight: torch.Tensor | None,
+        bn_bias: torch.Tensor | None,
+        groups: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Fuse BatchNorm into grouped transposed-convolution parameters.
+
+        This helper runs before ``DecomposeGroupedConvPass`` and transforms::
+
+            grouped ConvTranspose -> BatchNorm
+
+        into a grouped ConvTranspose with fused weights and bias. A transposed
+        convolution weight has layout ``[Cin, Cout/groups, ...]``. The weight
+        is split on its input-channel dimension, while the bias and BatchNorm
+        parameters are split on their output-channel dimension. Each group is
+        fused independently before the original grouped layout is restored.
+
+        Args:
+            conv_weight (torch.Tensor): Grouped transposed-convolution weight.
+            conv_bias (torch.Tensor | None): Convolution bias.
+            bn_mean (torch.Tensor): BatchNorm running mean.
+            bn_var (torch.Tensor): BatchNorm running variance.
+            bn_epsilon (float): BatchNorm numerical-stability constant.
+            bn_weight (torch.Tensor | None): BatchNorm weight.
+            bn_bias (torch.Tensor | None): BatchNorm bias.
+            groups (int): Number of convolution groups.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Fused weight and bias in the
+                original grouped layout.
+
+        Raises:
+            RuntimeError: If the grouped channel dimensions are inconsistent.
+
+        """
+        if conv_weight.size(0) % groups != 0 or bn_mean.numel() % groups != 0:
+            raise RuntimeError("Grouped transposed convolution has invalid channels")
+
+        input_channels_per_group = conv_weight.size(0) // groups
+        output_channels_per_group = bn_mean.numel() // groups
+        if conv_weight.size(1) != output_channels_per_group:
+            raise RuntimeError("BatchNorm channels do not match convolution output")
+
+        fused_weights: list[torch.Tensor] = []
+        fused_biases: list[torch.Tensor] = []
+        for group in range(groups):
+            input_start = group * input_channels_per_group
+            input_end = input_start + input_channels_per_group
+            output_start = group * output_channels_per_group
+            output_end = output_start + output_channels_per_group
+            output_slice = slice(output_start, output_end)
+
+            fused_weight, fused_bias = fuse_conv_bn_weights(
+                conv_weight[input_start:input_end],
+                conv_bias[output_slice] if conv_bias is not None else None,
+                bn_mean[output_slice],
+                bn_var[output_slice],
+                bn_epsilon,
+                bn_weight[output_slice] if bn_weight is not None else None,
+                bn_bias[output_slice] if bn_bias is not None else None,
+                transpose=True,
+            )
+            fused_weights.append(fused_weight)
+            fused_biases.append(fused_bias)
+
+        return torch.cat(fused_weights, dim=0), torch.cat(fused_biases, dim=0)
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
@@ -176,15 +254,32 @@ class FuseBatchNorm2dPass(ArmPass):
                 )
 
             # Fuse bn weights/bias with input weights/bias
-            fused_weight, fused_bias = fuse_conv_bn_weights(
-                input_weight_tensor,
-                input_bias_tensor,
-                bn_mean_tensor,
-                bn_var_tensor,
-                epsilon,
-                bn_weight_tensor,
-                bn_bias_tensor,
-            )
+            transposed = bool(input_node.args[6])
+            groups = int(input_node.args[8])
+            if transposed and groups > 1:
+                fused_weight, fused_bias = (
+                    self._fuse_grouped_transposed_conv_bn_weights(
+                        input_weight_tensor,
+                        input_bias_tensor,
+                        bn_mean_tensor,
+                        bn_var_tensor,
+                        epsilon,
+                        bn_weight_tensor,
+                        bn_bias_tensor,
+                        groups,
+                    )
+                )
+            else:
+                fused_weight, fused_bias = fuse_conv_bn_weights(
+                    input_weight_tensor,
+                    input_bias_tensor,
+                    bn_mean_tensor,
+                    bn_var_tensor,
+                    epsilon,
+                    bn_weight_tensor,
+                    bn_bias_tensor,
+                    transpose=transposed,
+                )
 
             # Create fused weights and bias to conv and replace conv args
             with graph_module.graph.inserting_before(input_weight_node):

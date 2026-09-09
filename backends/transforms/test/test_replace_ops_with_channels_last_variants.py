@@ -132,6 +132,26 @@ class UpsampleNearestModule(torch.nn.Module):
 
 
 class TestReplaceOpsWithChannelsLastVariants:
+    def test_preserves_metadata_and_recomputes_shape(self):
+        ep = _export_to_edge(Conv2dModule(), (torch.randn(1, 4, 8, 8),))
+        conv = _find_nodes(ep.graph_module, exir_ops.edge.aten.convolution.default)[0]
+        metadata = {
+            "debug_handle": 1234,
+            "from_node": [("source", "convolution")],
+            "input_qparams": {0: "input"},
+            "output_qparams": {0: "output"},
+        }
+        conv.meta.update(metadata)
+
+        result = ReplaceOpsWithChannelsLastVariants(ep)(ep.graph_module)
+        replaced = _find_nodes(
+            result.graph_module, exir_ops.edge.channels_last.convolution.default
+        )[0]
+
+        for key, value in metadata.items():
+            assert replaced.meta[key] == value
+        assert tuple(replaced.meta["val"].shape) == (1, 8, 8, 4)
+
     def test_conv2d(self):
         ep = _export_to_edge(Conv2dModule(bias=True), (torch.randn(1, 4, 8, 8),))
         assert _count(ep.graph_module, exir_ops.edge.aten.convolution.default) == 1

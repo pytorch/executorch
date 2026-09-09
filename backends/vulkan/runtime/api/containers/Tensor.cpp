@@ -732,6 +732,23 @@ vTensorStorage::vTensorStorage(
           allocate_memory)),
       last_access_{} {}
 
+namespace {
+
+std::shared_ptr<vTensorStorage> acquire_external_storage(
+    Context* const context,
+    const vkapi::VulkanImage* image,
+    const vkapi::VulkanBuffer* buffer,
+    const vkapi::ScalarType dtype) {
+  VK_CHECK_COND(
+      image == nullptr || buffer == nullptr,
+      "a tensor can wrap an image or a buffer, not both");
+  return image != nullptr
+      ? std::make_shared<vTensorStorage>(context, *image)
+      : std::make_shared<vTensorStorage>(context, *buffer, dtype);
+}
+
+} // namespace
+
 vTensorStorage::vTensorStorage(
     Context* const context,
     const vkapi::VulkanImage& image)
@@ -745,6 +762,20 @@ vTensorStorage::vTensorStorage(
       buffer_offset_{0},
       image_(image),
       buffer_(vkapi::VulkanBuffer()),
+      last_access_{} {}
+
+vTensorStorage::vTensorStorage(
+    Context* const context,
+    const vkapi::VulkanBuffer& buffer,
+    const vkapi::ScalarType dtype)
+    : context_(context),
+      storage_type_{utils::kBuffer},
+      image_extents_({0, 0, 0}),
+      buffer_length_{
+          static_cast<int64_t>(buffer.mem_size() / vkapi::element_size(dtype))},
+      buffer_offset_{0},
+      image_(vkapi::VulkanImage()),
+      buffer_(buffer),
       last_access_{} {}
 
 vTensorStorage::~vTensorStorage() {
@@ -852,7 +883,8 @@ vTensor::vTensor(
     const utils::GPUMemoryLayout memory_layout,
     const bool allocate_memory,
     const utils::AxisMapLayout axis_map_layout,
-    const vkapi::VulkanImage* external_image)
+    const vkapi::VulkanImage* external_image,
+    const vkapi::VulkanBuffer* external_buffer)
     : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
@@ -881,8 +913,12 @@ vTensor::vTensor(
       buffer_meta_(),
       // Construct Tensor storage
       storage_(
-          external_image != nullptr
-              ? std::make_shared<vTensorStorage>(context, *external_image)
+          (external_image != nullptr || external_buffer != nullptr)
+              ? acquire_external_storage(
+                    context,
+                    external_image,
+                    external_buffer,
+                    dtype_)
               : std::make_shared<vTensorStorage>(
                     context,
                     storage_type,
@@ -892,15 +928,18 @@ vTensor::vTensor(
                     dtype_,
                     physical_numel_,
                     allocate_memory)) {
-  // An external image was sized by its creator, so nothing guarantees it
-  // matches the metadata derived from `sizes`. The extents feed the
-  // shader-visible logical limits below, so they have to agree.
+  // External storage was sized by its creator, so nothing guarantees it fits
+  // the metadata derived from `sizes`. An image must match exactly, since its
+  // extents feed the shader-visible logical limits below; a buffer need only
+  // be large enough.
   if (external_image != nullptr) {
     VK_CHECK_COND(
         storage_->image_extents_ ==
             calculate_image_extents(
                 dtype_, packed_dim_info_, padded_sizes_, axis_map_),
         "external image extents do not match the requested tensor sizes");
+  } else if (external_buffer != nullptr) {
+    check_sizes(sizes_);
   }
   // uniform_data_ only valid for low dim tensors
   if (sizes.size() <= 4) {

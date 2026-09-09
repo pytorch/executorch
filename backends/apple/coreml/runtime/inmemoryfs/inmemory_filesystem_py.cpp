@@ -6,6 +6,7 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <mutex>

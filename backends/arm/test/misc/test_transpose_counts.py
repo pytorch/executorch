@@ -543,7 +543,7 @@ cases_channels_last = {
     "groupnorm_channels_last": TransposeCountCase(
         GroupNormModule(),
         (torch.randn(1, 4, 4, 4).to(memory_format=torch.channels_last),),
-        2,
+        1,
     ),
     "cumsum_rank4_dim3_channels_last": TransposeCountCase(
         CumsumModule(),

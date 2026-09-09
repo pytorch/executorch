@@ -73,6 +73,8 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
 
 ### Application examples
 
+- [minimal_classic_ml](minimal_classic_ml/) - Minimal single-shot runtime
+  integration, intended for models such as MobileNetV2 and YOLO.
 - [image_classification_example_ethos_u](image_classification_example_ethos_u/)
   - End-to-end DEiT-Tiny image classification flow for Ethos-U, including
   model fine-tuning, export, bare-metal runtime build, and Corstone-320 FVP
@@ -90,6 +92,8 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
 
 ### Utility examples and guides
 
+- [executor_runner](executor_runner/) - Advanced test and diagnostic runner for
+  BundleIO, ETDump, profiling, semihosted files, and backend regression tests.
 - [ethos-u-porting-guide.md](ethos-u-porting-guide.md) - Notes for adapting
   the example Ethos-U runtime integration to another target.
 - [export_standalone_tosa_graph.py](export_standalone_tosa_graph.py) -

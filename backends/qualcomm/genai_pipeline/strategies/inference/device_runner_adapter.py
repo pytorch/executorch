@@ -16,7 +16,12 @@ class InferenceResult:
     """Result of an on-device inference run.
 
     Attributes:
-        output_data: Raw output data from the model execution.
+        output_data: Decoded output from the model execution -- generated text,
+            not raw token ids. The adapter owns decoding, for the same reason it
+            owns encoding, so callers may forward this to
+            ``InferenceOutputConfig.inference_results`` unchanged. ``None`` when
+            the adapter writes results to files instead, to be collected by
+            ``pull_results``.
         performance_metrics: Performance data (e.g., TTFT, tokens/sec).
         etdump: Optional ETDump for debugging.
     """
@@ -44,7 +49,11 @@ class DeviceRunnerAdapter(Protocol):
 
         Args:
             artifact_paths: Paths to compiled .pte artifacts.
-            input_data: Optional input data to push to device.
+            input_data: Optional pre-encoded input data to push to device. For
+                adapters that prepare inputs themselves -- turning a prompt into
+                model inputs needs the tokenizer's chat template, BOS handling,
+                AR-length padding and KV-cache seeding -- this stays ``None``
+                and the adapter sources its own inputs.
             extra_files: Optional additional files to push.
         """
         ...

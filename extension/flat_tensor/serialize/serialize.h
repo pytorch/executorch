@@ -19,6 +19,9 @@ namespace flat_tensor {
 
 /**
  * Schema version of the .ptd format. Should be kept in sync with serialize.py
+ * and with FlatTensorDataMap::kMaxSupportedSchemaVersion in
+ * //executorch/extension/flat_tensor/flat_tensor_data_map.h, which is the
+ * highest version the runtime agrees to load.
  */
 constexpr uint32_t kSchemaVersion = 0;
 

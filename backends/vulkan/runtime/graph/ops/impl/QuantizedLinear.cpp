@@ -83,7 +83,7 @@ static CoopmatTileDims coopmat_tile_dims(const std::string& kernel_name) {
   return {kCoopmatTileM, kCoopmatTileN, kCoopmatTileK, kCoopmatInvocations};
 }
 
-utils::uvec3 quantized_linear_global_wg_size(
+GlobalWorkGrid quantized_linear_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -97,14 +97,17 @@ utils::uvec3 quantized_linear_global_wg_size(
   const uint32_t M = utils::val_at(-2, out_sizes);
 
   // Coopmat variants dispatch a 256-thread WG per 64x64 output tile.  Mirrors
-  // GemmCoopmat.cpp's pick_linear_coopmat_global_wg_size — the multiplication
+  // GemmCoopmat.cpp's pick_linear_coopmat_gwg — the multiplication
   // by kCoopmatInvocations cancels the framework's div_up, since
-  // local_wg = {256, 1, 1}.
+  // lwg = {256, 1, 1}.
   if (shader.kernel_name.find("_coopmat") != std::string::npos) {
     const CoopmatTileDims dims = coopmat_tile_dims(shader.kernel_name);
     const uint32_t num_tiles_n = utils::div_up(N, dims.n);
     const uint32_t num_tiles_m = utils::div_up(M, dims.m);
-    return {num_tiles_n * dims.wg_size, num_tiles_m, 1};
+    return GlobalWorkGrid(
+        {num_tiles_n * dims.wg_size, num_tiles_m, 1u},
+        kTiledWorkGrid,
+        LocalWorkGroup(dims.wg_size, 1u, 1u));
   }
 
   uint32_t N_per_tile = 4;
@@ -126,30 +129,25 @@ utils::uvec3 quantized_linear_global_wg_size(
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
   // Otherwise, each output tile contains 4 columns and 4 rows
-  return {num_N_tiles, num_M_tiles, 1};
+  if (shader.kernel_name.find("_coop") != std::string::npos) {
+    return GlobalWorkGrid(
+        {num_N_tiles, num_M_tiles, 1u},
+        kTiledWorkGrid,
+        LocalWorkGroup(1u, 1u, 64u));
+  }
+  return GlobalWorkGrid({num_N_tiles, num_M_tiles, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 quantized_linear_local_wg_size(
+LocalWorkGroup quantized_linear_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  // Coopmat variants use a per-shader workgroup size (q4gsw/q8csw = 128,
-  // dq8ca = 256) — must match the WG_SIZE the shader yaml resolves to.
-  if (shader.kernel_name.find("_coopmat") != std::string::npos) {
-    return {coopmat_tile_dims(shader.kernel_name).wg_size, 1, 1};
+  if (gwg.required_lwg_size().is_valid()) {
+    return pick_required_lwg(graph, shader, gwg, args, resize_args);
   }
-
-  const bool use_coop_algorithm =
-      shader.kernel_name.find("_coop") != std::string::npos;
-
-  if (use_coop_algorithm) {
-    return {1, 1, 64};
-  } else {
-    return pick_hw_square_wg_size(
-        graph, shader, global_workgroup_size, args, resize_args);
-  }
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
 // Returns true when the q4gsw coopmat shader can be dispatched for this
@@ -333,9 +331,11 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
 ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
-    const ValueRef qmat2_data) {
+    const ValueRef qmat2_data,
+    const bool use_unsigned_dot) {
   VK_CHECK_COND(
       weight_quant_config.nbits == 8 || weight_quant_config.nbits == 4);
+  VK_CHECK_COND(!use_unsigned_dot || weight_quant_config.nbits == 8);
 
   std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
   const int64_t ndim = graph.dim_of(qmat2_data);
@@ -412,10 +412,13 @@ ValueRef prepack_quantized_linear_weight(
   if (output_width > max_extent * 4 || output_height > max_extent) {
     storage_type = utils::kBuffer;
   }
-
-  std::string kernel_name = weight_quant_config.nbits == 4
-      ? "pack_q4_linear_weight"
-      : "pack_q8_linear_weight";
+  std::string kernel_name;
+  if (weight_quant_config.nbits == 4) {
+    kernel_name = "pack_q4_linear_weight";
+  } else {
+    kernel_name = use_unsigned_dot ? "pack_q8_linear_weight_unsigned"
+                                   : "pack_q8_linear_weight";
+  }
   add_storage_type_suffix(kernel_name, storage_type);
 
   // Check prepack cache before creating a new prepack node. This avoids
@@ -429,25 +432,26 @@ ValueRef prepack_quantized_linear_weight(
   ValueRef qmat2 = graph.add_tensor(
       qmat2_sizes, vkcompute::vkapi::kInt, storage_type, utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size;
+  utils::uvec3 global_extents;
   if (weight_quant_config.nbits == 4) {
     // For 4-bit quantization, each thread writes out two adjacent blocks
-    global_wg_size = {
+    global_extents = {
         utils::safe_downcast<uint32_t>(utils::div_up(num_blocks_K, int64_t(2))),
         utils::safe_downcast<uint32_t>(num_blocks_N),
         1u};
   } else {
-    global_wg_size = {
+    global_extents = {
         utils::safe_downcast<uint32_t>(num_blocks_N),
         utils::safe_downcast<uint32_t>(num_blocks_K),
         1u};
   }
+  const GlobalWorkGrid gwg(global_extents, kTiledWorkGrid);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       // Inputs and Outputs
       qmat2_data,
       qmat2,
@@ -514,8 +518,8 @@ void add_linear_qw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_linear_qw_shader,
-      quantized_linear_global_wg_size,
-      quantized_linear_local_wg_size,
+      quantized_linear_gwg,
+      quantized_linear_lwg,
       // Inputs and Outputs
       {{output, vkapi::kWrite},
        {{fp_input, packed_weight, packed_weight_scales, packed_bias},
@@ -589,8 +593,8 @@ void add_linear_qa_qw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      quantized_linear_global_wg_size,
-      quantized_linear_local_wg_size,
+      quantized_linear_gwg,
+      quantized_linear_lwg,
       // Inputs and Outputs
       {{output, vkapi::kWrite},
        {{packed_int_input,
@@ -661,8 +665,8 @@ void add_linear_dqa_qw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_linear_dqa_qw_shader,
-      quantized_linear_global_wg_size,
-      quantized_linear_local_wg_size,
+      quantized_linear_gwg,
+      quantized_linear_lwg,
       // Inputs and Outputs
       {{output, vkapi::kWrite},
        {{fp_input,

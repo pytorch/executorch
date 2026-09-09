@@ -55,7 +55,7 @@ struct Conv1dDWClampParams final {
   float output_max;
 };
 
-utils::uvec3 pick_conv1d_dw_global_wg_size(
+GlobalWorkGrid pick_conv1d_dw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -70,7 +70,7 @@ utils::uvec3 pick_conv1d_dw_global_wg_size(
   const uint32_t N =
       graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1;
 
-  return {utils::div_up_4(C), L_out, N};
+  return GlobalWorkGrid({utils::div_up_4(C), L_out, N}, kTiledWorkGrid);
 }
 
 void add_conv1d_dw_node(
@@ -130,8 +130,8 @@ void add_conv1d_dw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_conv1d_dw_global_wg_size,
-      default_pick_local_wg_size,
+      pick_conv1d_dw_gwg,
+      pick_120shape_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
       // Shader params buffers

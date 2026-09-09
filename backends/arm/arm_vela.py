@@ -1,13 +1,18 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 # Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
+import hashlib
 import os
 import struct
 import tempfile
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import List
 
 import numpy as np
@@ -18,6 +23,33 @@ try:
     has_vela = True
 except ImportError:
     has_vela = False
+
+
+_BLOCK_NAME_LENGTH = 16
+_BLOCK_HEADER = struct.Struct(f"<{_BLOCK_NAME_LENGTH}sIB11s")
+_BLOCK_ALIGNMENT = 16
+_STREAM_HEADER = "vela_bin_stream"
+_STREAM_FOOTER = "vela_end_stream"
+_EXTERNAL_REFERENCE = 1
+_RESERVED_BYTES = b"\x00" * 11
+
+
+@dataclass(frozen=True)
+class VelaExternalBlock:
+    """Named-data payload emitted by Vela compilation."""
+
+    key: str
+    payload: bytes
+    alignment: int
+    placement: str
+
+
+@dataclass(frozen=True)
+class VelaCompileResult:
+    """Binary stream and external payloads produced by Vela."""
+
+    processed_bytes: bytes
+    external_blocks: tuple[VelaExternalBlock, ...] = ()
 
 
 def _as_int32(value, name: str) -> int:
@@ -65,7 +97,8 @@ def vela_compile(
     args: List[str],
     verbose: bool = False,
     intermediate_path: str | None = None,
-):
+    block_placements: Mapping[str, str] | None = None,
+) -> VelaCompileResult:
     """Compile a TOSA graph to a binary stream for ArmBackendEthosU using
     Vela.
     """
@@ -73,8 +106,9 @@ def vela_compile(
         raise RuntimeError(
             "ethos-u-vela pip package couldn't be imported. Make sure it's installed!"
         )
+    resolved_block_placements: Mapping[str, str] = block_placements or {}
 
-    def run(dir: str) -> bytes:
+    def run(dir: str) -> VelaCompileResult:
         tosaname = "out.tosa"
         tosa_path = os.path.join(dir, tosaname)
         with open(tosa_path, "wb") as f:
@@ -90,11 +124,10 @@ def vela_compile(
 
         np_path = os.path.join(dir, "output", "out_vela.npz")
 
-        blocks = b""
         with np.load(np_path, allow_pickle=False) as data:
             # Construct our modified output_blocks with data in a form easily
             # digested on the device side
-            bin_blocks = {"vela_bin_stream": b""}
+            bin_blocks = {_STREAM_HEADER: b""}
 
             # copy command data through unmodified
             bin_blocks["cmd_data"] = data["cmd_data"].tobytes()
@@ -114,28 +147,58 @@ def vela_compile(
             bin_blocks["inputs"] = vela_bin_pack_io("input", data)
             bin_blocks["outputs"] = vela_bin_pack_io("output", data)
 
-            bin_blocks["vela_end_stream"] = b""
+            bin_blocks[_STREAM_FOOTER] = b""
+
+            unknown_blocks = resolved_block_placements.keys() - bin_blocks.keys()
+            if unknown_blocks:
+                raise ValueError(
+                    "External Vela block placements reference blocks that were not "
+                    f"emitted: {sorted(unknown_blocks)}"
+                )
 
             # Emit the NPZ regions as:
             #  - 16 byte block name null terminated string (padded to 16 if name shorter)
-            #  - 4 bytes of int32 block length and 12 bytes of 0's
+            #  - 4 bytes of int32 block length, 1 byte external flag, and 11 reserved bytes
             #  - block data (padded to 16 byte alignment at end)
             # Repeat for all blocks
+            blocks = b""
+            external_blocks: list[VelaExternalBlock] = []
             for key in bin_blocks.keys():
                 block_name = bytes(key, "utf8")[:15]
                 block_name = block_name + b"\x00" * (16 - len(block_name))
+                block_data = bin_blocks[key]
+                placement = resolved_block_placements.get(key)
+                external_reference = 0
+                if placement is not None:
+                    digest = hashlib.sha256(
+                        placement.encode("ascii") + b"\0" + block_data
+                    ).hexdigest()
+                    external_blocks.append(
+                        VelaExternalBlock(
+                            key=digest,
+                            payload=block_data,
+                            alignment=_BLOCK_ALIGNMENT,
+                            placement=placement,
+                        )
+                    )
+                    block_data = digest.encode("ascii")
+                    external_reference = _EXTERNAL_REFERENCE
 
                 # We need the acual unpadded block lengths for hw setup
-                block_length_bytes = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0)
+                block_header = _BLOCK_HEADER.pack(
+                    block_name,
+                    len(block_data),
+                    external_reference,
+                    _RESERVED_BYTES,
+                )
 
                 # Pad block data to multiple of 16 bytes
-                block_data = bin_blocks[key]
                 block_data = block_data + b"\x00" * (15 - (len(block_data) - 1) % 16)
 
-                block = block_name + block_length_bytes + block_data
+                block = block_header + block_data
                 blocks = blocks + block
 
-        return blocks
+            return VelaCompileResult(blocks, tuple(external_blocks))
 
     if intermediate_path is not None:
         return run(intermediate_path)

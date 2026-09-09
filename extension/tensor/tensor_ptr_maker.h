@@ -121,9 +121,9 @@ class TensorPtrMaker final {
         std::move(dim_order_),
         std::move(strides_),
         type_,
+        device_,
         dynamism_,
-        std::move(deleter_),
-        device_);
+        std::move(deleter_));
   }
 
   /**
@@ -195,6 +195,7 @@ inline TensorPtrMaker for_blob(
  * outlive the TensorPtr created by this function.
  * @param sizes A vector specifying the size of each dimension.
  * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides (default CPU).
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
  * @return A TensorPtr instance managing the newly created Tensor.
  */
@@ -202,9 +203,12 @@ inline TensorPtr from_blob(
     void* data,
     std::vector<executorch::aten::SizesType> sizes,
     executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::Device device =
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
+      .device(device)
       .dynamism(dynamism)
       .make_tensor_ptr();
 }
@@ -222,6 +226,7 @@ inline TensorPtr from_blob(
  * @param sizes A vector specifying the size of each dimension.
  * @param strides A vector specifying the stride for each dimension.
  * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides (default CPU).
  * @param dynamism Specifies whether the tensor's shape is static, dynamic, or
  * bounded.
  * @return A TensorPtr instance managing the newly created Tensor.
@@ -231,10 +236,13 @@ inline TensorPtr from_blob(
     std::vector<executorch::aten::SizesType> sizes,
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::Device device =
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .strides(std::move(strides))
+      .device(device)
       .dynamism(dynamism)
       .make_tensor_ptr();
 }
@@ -251,6 +259,7 @@ inline TensorPtr from_blob(
  * outlive the TensorPtr created by this function.
  * @param sizes A vector specifying the size of each dimension.
  * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides.
  * @param deleter A function to delete the data when it's no longer needed.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
  * @return A TensorPtr instance that manages the newly created Tensor.
@@ -259,10 +268,12 @@ inline TensorPtr from_blob(
     void* data,
     std::vector<executorch::aten::SizesType> sizes,
     executorch::aten::ScalarType type,
+    executorch::aten::Device device,
     std::function<void(void*)>&& deleter,
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
+      .device(device)
       .deleter(std::move(deleter))
       .dynamism(dynamism)
       .make_tensor_ptr();
@@ -281,6 +292,7 @@ inline TensorPtr from_blob(
  * @param sizes A vector specifying the size of each dimension.
  * @param strides A vector specifying the stride for each dimension.
  * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides.
  * @param deleter A function to delete the data when it's no longer needed.
  * @param dynamism Specifies whether the tensor's shape is static or dynamic.
  * @return A TensorPtr instance that manages the newly created Tensor.
@@ -290,11 +302,13 @@ inline TensorPtr from_blob(
     std::vector<executorch::aten::SizesType> sizes,
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
+    executorch::aten::Device device,
     std::function<void(void*)>&& deleter,
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .strides(std::move(strides))
+      .device(device)
       .deleter(std::move(deleter))
       .dynamism(dynamism)
       .make_tensor_ptr();

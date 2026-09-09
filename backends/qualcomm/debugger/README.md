@@ -13,7 +13,7 @@ pip install qairt-visualizer
 ## Quick start
 This command launches an interactive GUI interface to visualize the `optrace` and `QHAS` results.
 ```
-python -m examples.qualcomm.util_scripts.qairt_visualizer_demo -H ${host} -s {device} -m ${SOC_MODEL} -b build-android -a ${path_to_output_folder} --online_prepare
+python -m examples.qualcomm.util_scripts.qairt_visualizer_demo --host ${host} --device {device} --soc_model ${SOC_MODEL} --build_folder build-android -a ${path_to_output_folder} --online_prepare
 ```
 - If online prepare mode is `enabled`, the following artifacts will be generated:
     - `model`.dlc
@@ -259,7 +259,7 @@ An Inception_V3 demo script is provided at [qnn_intermediate_debugger_demo.py](.
 Before running, ensure the dataset is downloaded. An example dataset can be retrieved [here](https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000).
 
 ```bash
-python -m examples.qualcomm.util_scripts.qnn_intermediate_debugger_demo -b build-android -s $DEVICE_SERIAL -m $SOC_MODEL -d path/to/imagenet/val --dump_intermediate_outputs
+python -m examples.qualcomm.util_scripts.qnn_intermediate_debugger_demo --build_folder build-android --device $DEVICE_SERIAL --soc_model $SOC_MODEL -d path/to/imagenet/val --dump_intermediate_outputs
 ```
 
 ## Limitations
@@ -290,7 +290,7 @@ The difference between the two values represents heap consumed during context ex
 ```bash
 python backends/qualcomm/tests/test_qnn_delegate.py \
     TestQNNQuantizedUtils.test_qnn_backend_runtime_option_heap_profile \
-    -b build-android -H ${HOST} -s ${SN} -m ${SOC_MODEL}
+    --build_folder build-android --host ${HOST} --device ${SN} --soc_model ${SOC_MODEL}
 ```
 
 See [test_qnn_delegate.py](../tests/test_qnn_delegate.py) for the full test implementation.
