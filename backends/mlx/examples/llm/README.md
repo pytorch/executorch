@@ -231,7 +231,7 @@ default.
 | `--temperature` | `0` | Sampling temperature; 0 is greedy argmax, which is what makes two `.pte` files comparable |
 | `--chat` | `llama3` | Chat template: `llama3`, `gemma`, `gemma4`, or `0` to disable |
 | `--kv-max-capacity` | `0` | Off-graph: history the cache may hold. Setting it selects the off-graph path |
-| `--kv-storage-dtype` | PTE activation dtype | Off-graph: optional KV storage override (`bf16`, `fp16`, `fp32`); legacy PTEs without dtype metadata default to `bf16` |
+| `--kv-storage-dtype` | PTE activation dtype | Off-graph: optional KV storage override (`bf16`, `fp16`, `fp32`); defaults to the PTE's `get_activation_dtype`, which is required, so a `.pte` exported before this metadata must be re-exported |
 | `--kv-initial-capacity` | `-1` | Off-graph: starting pool size; grows by doubling up to capacity |
 | `--kv-windows` | *(model's own)* | Off-graph: attention pattern override, e.g. `512` |
 | `--interactive` | `false` | Multi-turn chat on stdin; off-graph only |

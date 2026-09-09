@@ -43,13 +43,40 @@ from typing import Optional
 
 import torch
 from executorch.extension.llm.export.model_metadata import (
-    model_constant_methods,
     model_vocab_size,
+    write_activation_dtype,
+    write_logits_to_keep_mode,
+    write_max_context_len,
+    write_max_seq_len,
+    write_vocab_size,
 )
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
+
+
+def model_constant_methods(
+    *,
+    max_context_len: int,
+    logits_to_keep: str,
+    activation_dtype: str,
+    vocab_size: int,
+    max_seq_len: Optional[int] = None,
+) -> dict[str, int]:
+    """Build the full metadata set an MLX HF export publishes.
+
+    ``max_seq_len`` is the largest single forward step this export traces
+    (serialized as ``get_max_seq_len``); ``max_context_len`` is the KV-cache
+    capacity (``get_max_context_len``). Composes the shared per-constant writers.
+    """
+    return {
+        **write_max_context_len(max_context_len),
+        **write_vocab_size(vocab_size),
+        **write_activation_dtype(activation_dtype),
+        **write_logits_to_keep_mode(logits_to_keep),
+        **write_max_seq_len(max_seq_len),
+    }
 
 
 def resolve_prefill_chunk_size(

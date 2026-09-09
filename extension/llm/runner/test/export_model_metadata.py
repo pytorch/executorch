@@ -11,7 +11,13 @@ from pathlib import Path
 import torch
 
 from executorch.exir import to_edge
-from executorch.extension.llm.export.model_metadata import model_constant_methods
+from executorch.extension.llm.export.model_metadata import (
+    write_activation_dtype,
+    write_logits_to_keep_mode,
+    write_max_context_len,
+    write_max_seq_len,
+    write_vocab_size,
+)
 
 
 class Identity(torch.nn.Module):
@@ -20,6 +26,17 @@ class Identity(torch.nn.Module):
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         """Return the input unchanged."""
         return value
+
+
+def all_methods(logits_to_keep: str, activation_dtype: str) -> dict[str, int]:
+    """Compose the full metadata set from the individual per-constant writers."""
+    return {
+        **write_max_context_len(4096),
+        **write_vocab_size(128256),
+        **write_activation_dtype(activation_dtype),
+        **write_logits_to_keep_mode(logits_to_keep),
+        **write_max_seq_len(512),
+    }
 
 
 def main() -> None:
@@ -38,13 +55,7 @@ def main() -> None:
     ):
         program = to_edge(
             exported,
-            constant_methods=model_constant_methods(
-                max_context_len=4096,
-                logits_to_keep=mode,
-                activation_dtype=dtype,
-                vocab_size=128256,
-                max_seq_len=512,
-            ),
+            constant_methods=all_methods(mode, dtype),
         ).to_executorch()
         (output_dir / f"ModelMetadata_{mode}.pte").write_bytes(program.buffer)
 
@@ -53,13 +64,7 @@ def main() -> None:
         ("invalid_prefill", "get_max_seq_len"),
         ("invalid_vocab", "get_vocab_size"),
     ):
-        methods = model_constant_methods(
-            max_context_len=4096,
-            logits_to_keep="full",
-            activation_dtype="fp32",
-            vocab_size=128256,
-            max_seq_len=512,
-        )
+        methods = all_methods("full", "fp32")
         methods[invalid_field] = 0
         program = to_edge(exported, constant_methods=methods).to_executorch()
         (output_dir / f"ModelMetadata_{name}.pte").write_bytes(program.buffer)

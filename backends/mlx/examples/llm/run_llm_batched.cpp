@@ -268,22 +268,28 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto metadata =
-      ::executorch::extension::llm::read_model_metadata(*module);
-  if (!metadata.ok()) {
+  const auto activation_dtype =
+      ::executorch::extension::llm::read_activation_dtype(*module);
+  if (!activation_dtype.ok()) {
     std::cerr << "could not read model metadata" << std::endl;
     return 1;
   }
-  const int kv_dtype = resolve_kv_storage_dtype(
-      FLAGS_kv_storage_dtype, metadata->activation_dtype);
+  const int kv_dtype =
+      resolve_kv_storage_dtype(FLAGS_kv_storage_dtype, *activation_dtype);
   if (kv_dtype < 0) {
     std::cerr << "--kv_storage_dtype must be bf16, fp16, or fp32" << std::endl;
     return 1;
   }
-  if (FLAGS_max_session_tokens > metadata->max_context_length) {
+  const auto max_context_length =
+      ::executorch::extension::llm::read_max_context_length(*module);
+  if (!max_context_length.ok()) {
+    std::cerr << "could not read model metadata" << std::endl;
+    return 1;
+  }
+  if (FLAGS_max_session_tokens > *max_context_length) {
     std::cerr << "--max_session_tokens " << FLAGS_max_session_tokens
-              << " exceeds the model context limit "
-              << metadata->max_context_length << std::endl;
+              << " exceeds the model context limit " << *max_context_length
+              << std::endl;
     return 1;
   }
 

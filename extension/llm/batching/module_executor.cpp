@@ -254,26 +254,31 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return load_error;
   }
 
-  const auto metadata = read_model_metadata(*module);
-  if (!metadata.ok()) {
+  const auto max_context_length = read_max_context_length(*module);
+  if (!max_context_length.ok()) {
     ET_LOG(Error, "ModuleExecutor: the program's metadata is malformed");
-    return metadata.error();
+    return max_context_length.error();
   }
-  if (max_session_tokens > metadata->max_context_length) {
+  if (max_session_tokens > *max_context_length) {
     ET_LOG(
         Error,
         "ModuleExecutor: max session tokens %d exceeds model context length %" PRId64,
         max_session_tokens,
-        metadata->max_context_length);
+        *max_context_length);
     return Error::InvalidArgument;
   }
-  if (metadata->logits_to_keep_mode == LogitsToKeepMode::Last) {
+  const auto logits_mode_result = read_logits_to_keep_mode(*module);
+  if (!logits_mode_result.ok()) {
+    ET_LOG(Error, "ModuleExecutor: the program's metadata is malformed");
+    return logits_mode_result.error();
+  }
+  const LogitsToKeepMode logits_mode = *logits_mode_result;
+  if (logits_mode == LogitsToKeepMode::Last) {
     ET_LOG(
         Error,
         "ModuleExecutor: logits-to-keep mode last is incompatible with batched execution");
     return Error::NotSupported;
   }
-  const LogitsToKeepMode logits_mode = metadata->logits_to_keep_mode;
 
   auto cfg = config_from_program(*module);
   if (!cfg.ok()) {
@@ -360,8 +365,14 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
         method.c_str());
     return Error::InvalidProgram;
   }
-  const auto vocab_size =
-      resolve_vocab_size(*metadata, logits_sizes[logits_sizes.size() - 1]);
+  const auto published_vocab_size = read_vocab_size(*module);
+  if (!published_vocab_size.ok()) {
+    ET_LOG(
+        Error, "ModuleExecutor: invalid get_vocab_size for %s", method.c_str());
+    return published_vocab_size.error();
+  }
+  const auto vocab_size = check_vocab_size(
+      *published_vocab_size, logits_sizes[logits_sizes.size() - 1]);
   if (!vocab_size.ok()) {
     ET_LOG(
         Error,

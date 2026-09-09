@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <cinttypes>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -17,6 +18,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace executorch {
 namespace extension {
@@ -28,134 +30,142 @@ enum class LogitsToKeepMode : std::int64_t {
   Selected = 2,
 };
 
-// Typed view of the metadata a program publishes as constant methods.
-//
-// Fields are grouped by how read_model_metadata() treats a missing constant
-// method:
-//   - Required core: read_model_metadata() returns Error::InvalidProgram if the
-//     method is absent, so on success these are always populated.
-//   - Optional: absent method leaves the field at its default (nullopt here).
-//     Add new fields as optional so old programs stay readable; promote to
-//     required only as a deliberate, breaking change.
-// A present-but-malformed value (non-positive size, out-of-range vocab, unknown
-// enum) is always rejected, whether the field is required or optional.
-struct ModelMetadata {
-  // Required core.
-  std::int64_t max_context_length;
-  std::int32_t vocab_size;
-  aten::ScalarType activation_dtype;
-  LogitsToKeepMode logits_to_keep_mode;
-  // Optional (defaults to nullopt when the method is absent).
-  std::optional<std::int64_t> max_seq_len;
-};
+// Readers for the metadata a program publishes as constant methods. Each
+// required field's reader returns Error::InvalidProgram (and logs which method)
+// if it is absent or malformed (non-positive size, unknown enum). A genuinely
+// optional field added later should read through detail::read_int_method
+// (nullopt when absent) so old programs stay readable; there are none today.
+// vocab_size is returned as published (int64); check_vocab_size() narrows it to
+// int32 after cross-checking the forward output.
 
-inline runtime::Result<ModelMetadata> read_model_metadata(Module& module) {
-  const auto names = module.method_names();
-  if (!names.ok()) {
-    return names.error();
-  }
+namespace detail {
 
-  const auto read_int =
-      [&module, &names](
-          const char* name) -> runtime::Result<std::optional<std::int64_t>> {
-    if (names->count(name) == 0) {
-      return std::optional<std::int64_t>{};
-    }
-    const auto result = module.execute(name);
-    if (!result.ok()) {
-      return result.error();
-    }
-    if (result->size() != 1 || !result->at(0).isInt()) {
-      return runtime::Error::InvalidProgram;
-    }
-    return std::optional<std::int64_t>{result->at(0).toInt()};
-  };
-
-  ModelMetadata metadata;
-  auto max_context_length = read_int(kMaxContextLen);
-  if (!max_context_length.ok()) {
-    return max_context_length.error();
+// Read a named int constant method: nullopt if absent, the value if present,
+// Error::InvalidProgram if it does not evaluate to a single int.
+inline runtime::Result<std::optional<std::int64_t>> read_int_method(
+    Module& module,
+    const char* name) {
+  const auto names = ET_UNWRAP(module.method_names());
+  if (names.count(name) == 0) {
+    return std::optional<std::int64_t>{};
   }
-  if (!*max_context_length || **max_context_length <= 0) {
-    return runtime::Error::InvalidProgram;
+  const auto result = module.execute(name);
+  if (!result.ok()) {
+    return result.error();
   }
-  metadata.max_context_length = **max_context_length;
-
-  auto vocab_size = read_int(kVocabSize);
-  if (!vocab_size.ok()) {
-    return vocab_size.error();
-  }
-  if (!*vocab_size || **vocab_size <= 0 ||
-      **vocab_size > std::numeric_limits<std::int32_t>::max()) {
-    return runtime::Error::InvalidProgram;
-  }
-  metadata.vocab_size = static_cast<std::int32_t>(**vocab_size);
-
-  auto activation_dtype = read_int(kActivationDtype);
-  if (!activation_dtype.ok()) {
-    return activation_dtype.error();
-  }
-  if (!*activation_dtype) {
-    return runtime::Error::InvalidProgram;
-  }
-  switch (**activation_dtype) {
-    case static_cast<std::int64_t>(aten::ScalarType::Half):
-      metadata.activation_dtype = aten::ScalarType::Half;
-      break;
-    case static_cast<std::int64_t>(aten::ScalarType::Float):
-      metadata.activation_dtype = aten::ScalarType::Float;
-      break;
-    case static_cast<std::int64_t>(aten::ScalarType::BFloat16):
-      metadata.activation_dtype = aten::ScalarType::BFloat16;
-      break;
-    default:
-      return runtime::Error::InvalidProgram;
-  }
-
-  auto logits_to_keep_mode = read_int(kLogitsToKeepMode);
-  if (!logits_to_keep_mode.ok()) {
-    return logits_to_keep_mode.error();
-  }
-  if (!*logits_to_keep_mode) {
-    return runtime::Error::InvalidProgram;
-  }
-  switch (**logits_to_keep_mode) {
-    case static_cast<std::int64_t>(LogitsToKeepMode::Full):
-      metadata.logits_to_keep_mode = LogitsToKeepMode::Full;
-      break;
-    case static_cast<std::int64_t>(LogitsToKeepMode::Last):
-      metadata.logits_to_keep_mode = LogitsToKeepMode::Last;
-      break;
-    case static_cast<std::int64_t>(LogitsToKeepMode::Selected):
-      metadata.logits_to_keep_mode = LogitsToKeepMode::Selected;
-      break;
-    default:
-      return runtime::Error::InvalidProgram;
-  }
-
-  auto max_seq_len = read_int(kMaxSeqLen);
-  if (!max_seq_len.ok()) {
-    return max_seq_len.error();
-  }
-  if (*max_seq_len && **max_seq_len <= 0) {
-    return runtime::Error::InvalidProgram;
-  }
-  metadata.max_seq_len = *max_seq_len;
-
-  return metadata;
+  ET_CHECK_OR_RETURN_ERROR(
+      result->size() == 1 && result->at(0).isInt(),
+      InvalidProgram,
+      "metadata %s must evaluate to a single int",
+      name);
+  return std::optional<std::int64_t>{result->at(0).toInt()};
 }
 
-inline runtime::Result<std::int32_t> resolve_vocab_size(
-    const ModelMetadata& metadata,
+// A required int constant that must be present and positive.
+inline runtime::Result<std::int64_t> read_required_positive_int(
+    Module& module,
+    const char* name) {
+  const auto value = ET_UNWRAP(read_int_method(module, name));
+  ET_CHECK_OR_RETURN_ERROR(
+      value.has_value(), InvalidProgram, "metadata %s is required", name);
+  ET_CHECK_OR_RETURN_ERROR(
+      *value > 0,
+      InvalidProgram,
+      "metadata %s must be positive, got %" PRId64,
+      name,
+      *value);
+  return *value;
+}
+
+} // namespace detail
+
+// One reader per constant: the name, its encoding, and its validation together.
+// Each rejection logs which constant method was at fault.
+
+inline runtime::Result<std::int64_t> read_max_context_length(Module& module) {
+  return detail::read_required_positive_int(module, kMaxContextLen);
+}
+
+inline runtime::Result<std::int64_t> read_vocab_size(Module& module) {
+  return detail::read_required_positive_int(module, kVocabSize);
+}
+
+inline runtime::Result<aten::ScalarType> read_activation_dtype(Module& module) {
+  const auto value =
+      ET_UNWRAP(detail::read_int_method(module, kActivationDtype));
+  ET_CHECK_OR_RETURN_ERROR(
+      value.has_value(),
+      InvalidProgram,
+      "metadata %s is required",
+      kActivationDtype);
+  switch (*value) {
+    case static_cast<std::int64_t>(aten::ScalarType::Half):
+      return aten::ScalarType::Half;
+    case static_cast<std::int64_t>(aten::ScalarType::Float):
+      return aten::ScalarType::Float;
+    case static_cast<std::int64_t>(aten::ScalarType::BFloat16):
+      return aten::ScalarType::BFloat16;
+    default:
+      ET_LOG(
+          Error,
+          "metadata %s has unsupported value %" PRId64,
+          kActivationDtype,
+          *value);
+      return runtime::Error::InvalidProgram;
+  }
+}
+
+inline runtime::Result<LogitsToKeepMode> read_logits_to_keep_mode(
+    Module& module) {
+  const auto value =
+      ET_UNWRAP(detail::read_int_method(module, kLogitsToKeepMode));
+  ET_CHECK_OR_RETURN_ERROR(
+      value.has_value(),
+      InvalidProgram,
+      "metadata %s is required",
+      kLogitsToKeepMode);
+  switch (*value) {
+    case static_cast<std::int64_t>(LogitsToKeepMode::Full):
+      return LogitsToKeepMode::Full;
+    case static_cast<std::int64_t>(LogitsToKeepMode::Last):
+      return LogitsToKeepMode::Last;
+    case static_cast<std::int64_t>(LogitsToKeepMode::Selected):
+      return LogitsToKeepMode::Selected;
+    default:
+      ET_LOG(
+          Error,
+          "metadata %s has unsupported value %" PRId64,
+          kLogitsToKeepMode,
+          *value);
+      return runtime::Error::InvalidProgram;
+  }
+}
+
+inline runtime::Result<std::int64_t> read_max_seq_len(Module& module) {
+  return detail::read_required_positive_int(module, kMaxSeqLen);
+}
+
+// Check the published vocab size against the model's actual forward output
+// width: reject a disagreement or an out-of-int32 width, and hand back the
+// (now int32) value the sampler takes.
+inline runtime::Result<std::int32_t> check_vocab_size(
+    std::int64_t published_vocab_size,
     std::int64_t output_vocab_size) {
-  if (output_vocab_size <= 0 ||
-      output_vocab_size > std::numeric_limits<std::int32_t>::max()) {
-    return runtime::Error::InvalidProgram;
-  }
-  if (metadata.vocab_size != output_vocab_size) {
-    return runtime::Error::InvalidProgram;
-  }
-  return metadata.vocab_size;
+  ET_CHECK_OR_RETURN_ERROR(
+      output_vocab_size > 0 &&
+          output_vocab_size <= std::numeric_limits<std::int32_t>::max(),
+      InvalidProgram,
+      "forward output vocab width %" PRId64 " is out of range",
+      output_vocab_size);
+  ET_CHECK_OR_RETURN_ERROR(
+      published_vocab_size == output_vocab_size,
+      InvalidProgram,
+      "published %s %" PRId64 " disagrees with forward output width %" PRId64,
+      kVocabSize,
+      published_vocab_size,
+      output_vocab_size);
+  // Equal to output_vocab_size, already checked to fit int32.
+  return static_cast<std::int32_t>(published_vocab_size);
 }
 
 } // namespace llm

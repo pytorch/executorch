@@ -193,6 +193,7 @@ def main():
 
     from executorch.backends.mlx.examples.llm.export_llm_hf import (
         build_hf_exported_program,
+        model_constant_methods,
     )
 
     print(
@@ -224,9 +225,13 @@ def main():
     from executorch.exir.passes import MemoryPlanningPass
 
     constant_methods = {
-        "get_max_context_len": max_ctx_len,
-        "get_max_seq_len": prefill_chunk_size,
-        "get_vocab_size": vocab_size,
+        **model_constant_methods(
+            max_context_len=max_ctx_len,
+            logits_to_keep="full",
+            activation_dtype=args.dtype,
+            vocab_size=vocab_size,
+            max_seq_len=prefill_chunk_size,
+        ),
         "get_max_block_len": block_size,
         "get_mask_token_id": draft_config.mask_token_id,
     }

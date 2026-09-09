@@ -109,9 +109,12 @@ using ::executorch::backends::mlx::examples::llm::StopTokens;
 using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
+using ::executorch::extension::llm::check_vocab_size;
 using ::executorch::extension::llm::LogitsToKeepMode;
-using ::executorch::extension::llm::read_model_metadata;
-using ::executorch::extension::llm::resolve_vocab_size;
+using ::executorch::extension::llm::read_activation_dtype;
+using ::executorch::extension::llm::read_logits_to_keep_mode;
+using ::executorch::extension::llm::read_max_seq_len;
+using ::executorch::extension::llm::read_vocab_size;
 using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
 
@@ -407,30 +410,35 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to load " << pte << std::endl;
       return 1;
     }
-    const auto metadata = read_model_metadata(module);
-    if (!metadata.ok()) {
+    const auto logits_to_keep_mode_result = read_logits_to_keep_mode(module);
+    if (!logits_to_keep_mode_result.ok()) {
       std::cerr << "Invalid model metadata in " << pte << std::endl;
       return 1;
     }
-    const LogitsToKeepMode logits_to_keep_mode = metadata->logits_to_keep_mode;
+    const LogitsToKeepMode logits_to_keep_mode = *logits_to_keep_mode_result;
     std::int64_t output_vocab_size = 0;
     if (!validate_forward_abi(module, logits_to_keep_mode, output_vocab_size)) {
       return 1;
     }
+    const auto published_vocab_size = read_vocab_size(module);
+    if (!published_vocab_size.ok()) {
+      std::cerr << "Invalid get_vocab_size in " << pte << std::endl;
+      return 1;
+    }
     const auto vocab_size_result =
-        resolve_vocab_size(*metadata, output_vocab_size);
+        check_vocab_size(*published_vocab_size, output_vocab_size);
     if (!vocab_size_result.ok()) {
       std::cerr << "Invalid get_vocab_size for the forward output in " << pte
                 << std::endl;
       return 1;
     }
     const std::int32_t vocab_size = *vocab_size_result;
-    if (!metadata->max_seq_len || *metadata->max_seq_len <= 0 ||
-        *metadata->max_seq_len > std::numeric_limits<int>::max()) {
+    const auto max_seq_len = read_max_seq_len(module);
+    if (!max_seq_len.ok()) {
       std::cerr << "Invalid or missing get_max_seq_len in " << pte << std::endl;
       return 1;
     }
-    const int prefill_chunk = static_cast<int>(*metadata->max_seq_len);
+    const int prefill_chunk = static_cast<int>(*max_seq_len);
     StopTokens stop_tokens;
     if (!resolve_stop_tokens(*tokenizer, module, chat, stop_tokens)) {
       std::cerr << "Could not resolve stop tokens for --chat=" << chat
@@ -744,10 +752,14 @@ int main(int argc, char** argv) {
           /*run_prefill_chunk=*/prefill_chunk);
     }
 
+    const auto activation_dtype = read_activation_dtype(module);
+    if (!activation_dtype.ok()) {
+      std::cerr << "Invalid get_activation_dtype in " << pte << std::endl;
+      return 1;
+    }
     cache::CacheConfig cfg{};
     cfg.capacity = kv_capacity;
-    cfg.kv_dtype =
-        resolve_kv_storage_dtype(kv_dtype, metadata->activation_dtype);
+    cfg.kv_dtype = resolve_kv_storage_dtype(kv_dtype, *activation_dtype);
     if (cfg.kv_dtype < 0) {
       std::cerr << "Invalid --kv-storage-dtype override: " << kv_dtype
                 << " (bf16|fp16|fp32)" << std::endl;

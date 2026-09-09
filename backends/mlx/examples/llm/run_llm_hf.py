@@ -30,7 +30,12 @@ from executorch.backends.mlx.examples.llm.runtime_meta import (
     chunked_prefill,
     get_eos_token_ids,
     load_text_processor,
+    read_const_int,
     read_model_limits,
+)
+from executorch.extension.llm.export.model_metadata import (
+    LOGITS_TO_KEEP_MODE_METHOD,
+    LOGITS_TO_KEEP_MODES,
 )
 from executorch.runtime import Runtime, Verification
 
@@ -65,6 +70,20 @@ def run_inference(
     logger.info(f"Loading model from {pte_path}...")
     et_runtime = Runtime.get()
     program = et_runtime.load_program(pte_path, verification=Verification.Minimal)
+
+    # This pybindings runner only feeds tokens and positions. A model exported
+    # with --logits-to-keep selected takes a third runtime selector input, so
+    # its forward cannot be invoked here; use the C++ runner (mlx_run_llm_hf).
+    if (
+        read_const_int(program, LOGITS_TO_KEEP_MODE_METHOD)
+        == LOGITS_TO_KEEP_MODES["selected"]
+    ):
+        raise ValueError(
+            "This .pte was exported with --logits-to-keep selected, which needs "
+            "a runtime-supplied logits selector input that run_llm_hf.py does "
+            "not provide. Run it with the C++ runner mlx_run_llm_hf, or "
+            "re-export with --logits-to-keep full or last."
+        )
 
     max_ctx_len, prefill_chunk_size = read_model_limits(program)
     if prefill_chunk_size is None:
