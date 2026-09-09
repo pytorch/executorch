@@ -89,13 +89,14 @@ class TestReplaceKVCache(unittest.TestCase):
 
         # Replace KVCache with RingKVCache
         layer_sizes = [8]  # Sliding window size for each layer
-        replace_kv_cache_with_ring_kv_cache(model, layer_sizes)
+        replace_kv_cache_with_ring_kv_cache(model, layer_sizes, max_seq_len=4)
 
         # Verify that KVCache has been replaced with RingKVCache
         self.assertIsInstance(model.layers[0].attention.kv_cache, RingKVCache)
 
         # Verify that the sliding window size is set correctly
         self.assertEqual(model.layers[0].attention.kv_cache.window_size, layer_sizes[0])
+        self.assertEqual(model.layers[0].attention.kv_cache.k_cache.size(2), 12)
 
     def test_replace_custom_kv_cache_with_custom_ring_kv_cache(self):
         """Test replacing CustomKVCache with CustomRingKVCache."""
@@ -112,10 +113,11 @@ class TestReplaceKVCache(unittest.TestCase):
 
         # Replace CustomKVCache with CustomRingKVCache
         layer_sizes = [8]  # Sliding window size for each layer
-        replace_kv_cache_with_ring_kv_cache(model, layer_sizes)
+        replace_kv_cache_with_ring_kv_cache(model, layer_sizes, max_seq_len=4)
 
         # Verify that CustomKVCache has been replaced with CustomRingKVCache
         self.assertIsInstance(model.layers[0].attention.kv_cache, CustomRingKVCache)
+        self.assertEqual(model.layers[0].attention.kv_cache.k_cache.size(1), 12)
 
     def test_replace_quantized_kv_cache_with_quantized_ring_kv_cache(self):
         """Test replacing QuantizedKVCache with QuantizedRingKVCache."""
@@ -134,10 +136,11 @@ class TestReplaceKVCache(unittest.TestCase):
 
         # Replace QuantizedKVCache with QuantizedRingKVCache
         layer_sizes = [8]  # Sliding window size for each layer
-        replace_kv_cache_with_ring_kv_cache(model, layer_sizes)
+        replace_kv_cache_with_ring_kv_cache(model, layer_sizes, max_seq_len=4)
 
         # Verify that QuantizedKVCache has been replaced with QuantizedRingKVCache
         self.assertIsInstance(model.layers[0].attention.kv_cache, QuantizedRingKVCache)
+        self.assertEqual(model.layers[0].attention.kv_cache.k_cache.size(1), 12)
 
     def test_replace_static_quantized_kv_cache(self):
         """Test replacing KVCache with static-qparams int8 KV storage."""
@@ -287,6 +290,7 @@ class TestReplaceKVCache(unittest.TestCase):
             self.n_kv_heads,
             self.head_dim,
             self.enable_dynamic_shape,
+            window_size=self.max_context_len,
         )
         model = self._create_mock_model([attention])
 
@@ -305,7 +309,9 @@ class TestReplaceKVCache(unittest.TestCase):
 
         # Replace KVCache with RingKVCache with different window sizes
         layer_sizes = [4, 8, 16]  # Different sliding window sizes for each layer
-        replace_kv_cache_with_ring_kv_cache(model, layer_sizes)
+        replace_kv_cache_with_ring_kv_cache(
+            model, layer_sizes, max_seq_len=self.max_context_len
+        )
 
         # Verify that each layer has the correct window size
         self.assertIsInstance(model.layers[0].attention.kv_cache, RingKVCache)
