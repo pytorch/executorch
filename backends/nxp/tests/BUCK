@@ -148,7 +148,7 @@ fbcode_target(_kind = python_pytest,
 fbcode_target(_kind = python_pytest,
     name = "test_neutron_converter_manager",
     srcs = [
-        "generic_tests/test_neutron_converter_manager.py",
+        "generic_tests/test_neutron_compiler_manager.py",
     ],
     deps = [
         "//executorch/backends/nxp:neutron_sdk",
