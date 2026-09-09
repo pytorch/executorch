@@ -54,6 +54,22 @@ class XNNWeightsCacheManager {
    * expired weak_ptrs. */
   runtime::Error save_all();
 
+  /**
+   * Worst outcome across live caches, for host telemetry. A HeapFallback
+   * anywhere wins over a FileBacked elsewhere: if any cache on this process
+   * went to heap, the process is carrying that memory. `file_bytes` sums
+   * across live instances.
+   */
+  delegate::PackedCacheStats aggregate_stats() const;
+
+  /**
+   * Aggregate plus the per-instance breakdown, from a single pass so the two
+   * always agree. Callers that need to attribute a fallback to a specific
+   * model use the breakdown; the aggregate answers "is this process carrying
+   * heap memory at all".
+   */
+  xnnpack::PackedCacheReport report() const;
+
   /** Test-only: count of live (non-expired) entries. */
   size_t live_count() const;
 

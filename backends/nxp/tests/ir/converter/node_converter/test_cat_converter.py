@@ -136,7 +136,7 @@ class TestCat:
         lower_run_compare(model, input_shapes, graph_verifier, request)
 
     def test__single_input__alone_in_partition__not_delegated(self):
-        # The operator is a noop, and there is no other op in the model. The Neutron Converter would produce an empty
+        # The operator is a noop, and there is no other op in the model. The Neutron Compiler would produce an empty
         #  graph, so the `cat` is not delegated.
         input_shape = [ModelInputSpec((2, 3, 5))]
         model = CatModule(1)

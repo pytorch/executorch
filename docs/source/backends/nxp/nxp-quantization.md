@@ -248,7 +248,7 @@ Moving from PTQ to QAT check-list:
 #### Known limitations of QAT
 
 In the current ExecuTorch/TorchAO implementation, there is an issue when quantizing biasless convolutions during QAT.
-The pipeline produces a non‑quantized empty bias, which causes the Neutron Converter to fail.
+The pipeline produces a non‑quantized empty bias, which causes the Neutron Compiler to fail.
 To mitigate this issue, use the `QuantizeFusedConvBnBiasAtenPass` post‑quantization:
 
 ```python
