@@ -114,7 +114,6 @@ def define_common_targets():
                 "util/bit_cast.h",
                 "util/complex.h",
                 "util/complex_math.h",
-                "util/complex_utils.h",
                 "util/floating_point_utils.h",
                 "util/irange.h",
                 "util/llvmMathExtras.h",
