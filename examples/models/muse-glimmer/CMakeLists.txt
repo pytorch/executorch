@@ -53,6 +53,28 @@ list(
 # Backend: CUDA or MLX (exactly one required)
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  if(NOT CMAKE_CUDA_COMPILER)
+    include(CheckLanguage)
+    check_language(CUDA)
+  endif()
+  if(NOT CMAKE_CUDA_COMPILER)
+    message(FATAL_ERROR "A CUDA compiler is required for Muse Glimmer CUDA")
+  endif()
+  if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
+    set(CMAKE_CUDA_ARCHITECTURES native)
+  endif()
+  enable_language(CUDA)
+  add_library(muse_glimmer_sampling_cuda STATIC runtime/engine/sampling_cuda.cu)
+  set_target_properties(
+    muse_glimmer_sampling_cuda
+    PROPERTIES CUDA_STANDARD 17
+               CUDA_STANDARD_REQUIRED ON
+  )
+  target_include_directories(
+    muse_glimmer_sampling_cuda PUBLIC ${_common_include_directories}
+  )
+  target_link_libraries(muse_glimmer_sampling_cuda PUBLIC CUDA::cudart)
+  list(APPEND link_libraries muse_glimmer_sampling_cuda)
   list(APPEND link_libraries aoti_cuda_backend)
   executorch_target_link_options_shared_lib(aoti_cuda_backend)
   add_compile_definitions(EXECUTORCH_BUILD_CUDA)
