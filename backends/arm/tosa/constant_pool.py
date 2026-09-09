@@ -29,7 +29,9 @@ class TosaSerializerWithConstantPool(ts.TosaSerializer):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._block_pools: dict[Any, dict[_ConstantKey, Any]] = {}
+        # Native tensor wrappers retain their serializer. Cache names to avoid
+        # an ownership cycle that Python's garbage collector cannot release.
+        self._block_pools: dict[Any, dict[_ConstantKey, str]] = {}
 
     def addConst(self, shape, dtype, vals=None, name=""):
         """Return a matching constant in the current block or add a new one."""
@@ -37,8 +39,18 @@ class TosaSerializerWithConstantPool(ts.TosaSerializer):
         pool = self._block_pools.setdefault(block, {})
         key = _constant_key(shape, dtype, vals)
         if key not in pool:
-            pool[key] = super().addConst(shape, dtype, vals, name)
-        return pool[key]
+            constant = super().addConst(shape, dtype, vals, name)
+            pool[key] = constant.name
+            return constant
+
+        # Resolve the cached name to the object expected by callers. TOSA stores
+        # shape constants separately from tensor constants.
+        cached_name = pool[key]
+        if dtype == ts.DType.SHAPE:
+            constant = block.getShapeByName(cached_name)
+        else:
+            constant = block.getTensorByName(cached_name)
+        return constant
 
     def addUnpooledConst(self, shape, dtype, vals=None, name=""):
         """Add a constant without pooling so its requested name remains

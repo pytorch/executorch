@@ -3,6 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import gc
+import weakref
+
 import numpy as np
 import pytest
 import tosa_serializer as ts
@@ -19,17 +22,34 @@ def _serializer(path_prefix=""):
     )
 
 
-def test_identical_constants_are_reused():
+@pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])
+def test_identical_constants_are_reused(dtype):
     serializer = _serializer()
 
-    first = serializer.addConst([1], ts.DType.INT8, [0], name="first")
-    second = serializer.addConst([1], ts.DType.INT8, [0], name="second")
+    first = serializer.addConst([1], dtype, [0], name="first")
+    second = serializer.addConst([1], dtype, [0], name="second")
 
     assert isinstance(serializer, ts.TosaSerializer)
     assert second is first
     assert first.name == "first"
-    assert len(serializer.currRegion.currBasicBlock.operators) == 1
-    assert list(serializer.currRegion.currBasicBlock.tensors.keys()) == ["first"]
+    block = serializer.currRegion.currBasicBlock
+    assert len(block.operators) == 1
+    constants = block.shapes if dtype == ts.DType.SHAPE else block.tensors
+    assert list(constants.keys()) == ["first"]
+
+
+@pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])
+def test_constant_pool_does_not_keep_serializer_alive(dtype):
+    serializer = _serializer()
+    serializer.addConst([1], dtype, [0], name="first")
+    serializer.addConst([1], dtype, [0], name="duplicate")
+    serializer.serialize()
+    serializer_ref = weakref.ref(serializer)
+
+    del serializer
+    gc.collect()
+
+    assert serializer_ref() is None
 
 
 def test_unpooled_constants_are_not_reused():
