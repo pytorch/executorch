@@ -7,6 +7,9 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
+
 SUITE=$1
 FLOW=$2
 ARTIFACT_DIR=$3
@@ -104,6 +107,23 @@ if [[ "$FLOW" == *cortex_m* ]]; then
     backends/cortex_m/test/build_test_runner.sh
 fi
 
+if [[ "$FLOW" == *nxp* ]]; then
+    # Install the eIQ Toolkit Python packages (NSYS simulator and Neutron converter).
+    pip install -r backends/nxp/requirements-eiq.txt
+
+    # Enable the Neutron delegate, portable kernels, pybindings and extensions
+    # required by the operator test suite.
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_NXP_NEUTRON=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_PYBIND=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON"
+fi
+
 if [[ "$FLOW" == *openvino* ]]; then
     # Setup OpenVINO environment
     source .ci/scripts/setup-openvino.sh --nightly
@@ -117,11 +137,33 @@ else
 fi
 CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
+if [[ "$FLOW" == *nxp* ]]; then
+    # Install test-time Python requirements (neutron-test helpers, etc.).
+    pip install -r backends/nxp/requirements-tests-pypi.txt
+    PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
+
+    # Build nxp_executor_runner as a standalone binary. The cmake-out subproject
+    # build may produce a differently-linked binary; the standalone build is known
+    # to work correctly with the NSYS simulator firmware.
+    mkdir -p examples/nxp/executor_runner/build
+    pushd examples/nxp/executor_runner/build
+    cmake -DCMAKE_BUILD_TYPE=Release ..
+    make -j"$(nproc)" nxp_executor_runner
+    popd
+
+    export NXP_RUNNER_PATH="$(pwd)/examples/nxp/executor_runner/build/nxp_executor_runner"
+fi
+
 GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
 
 EXIT_CODE=0
-PYTEST_ARGS=(-c /dev/null -n auto)
+# An Ethos-U failure captures a few hundred thousand lines of Vela operator
+# listings, and the runner agent throws System.OutOfMemoryException processing
+# a step that size, taking the whole job down before pytest can report. The
+# reason for each failure is in its exception message and traceback, which are
+# unaffected.
+PYTEST_ARGS=(-c /dev/null -n auto --show-capture=no)
 if [[ ${#PYTEST_RETRY_ARGS[@]} -gt 0 ]]; then
     PYTEST_ARGS+=("${PYTEST_RETRY_ARGS[@]}")
 fi

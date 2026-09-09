@@ -31,7 +31,7 @@ def _compute_multiplier_and_shift(
     precision. The RESCALE operator is defined using an integer multiply, add,
     and shift. This utility function is for calculating the multiplier and shift
     given a scale.
-    Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_precision_scaling
+    Ref: https://github.com/arm/tosa-specification/blob/main/chapters/introduction.adoc#precision-scaling
 
     Args:
         scales (list[float]): Scale factors to decompose into multiplier and

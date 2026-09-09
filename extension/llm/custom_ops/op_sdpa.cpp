@@ -46,6 +46,7 @@ bool validate_flash_attention_args(
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
+    const Tensor& output,
     const optional<Tensor>& attn_mask) {
   ET_CHECK_OR_RETURN_FALSE(query.dim() == 4, "query must be a 4D tensor");
   ET_CHECK_OR_RETURN_FALSE(key.dim() == 4, "key must be a 4D tensor");
@@ -67,6 +68,11 @@ bool validate_flash_attention_args(
       (query.scalar_type() == key.scalar_type()) &&
           (query.scalar_type() == value.scalar_type()),
       "Key and Value must have the same data type as Query");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      value.scalar_type() == ScalarType::Char ||
+          output.scalar_type() == value.scalar_type(),
+      "Output must have the same data type as Value for non-quantized SDPA");
 
   ET_CHECK_OR_RETURN_FALSE(
       !attn_mask.has_value() || attn_mask.value().dim() == 2,
@@ -193,7 +199,7 @@ bool validate_cache_params(
   return true;
 }
 
-bool validate_channelwise_gated_delta_rule_args(
+bool validate_gated_delta_rule_args(
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
@@ -348,7 +354,7 @@ Tensor& flash_attention_kernel_out(
   (void)ctx;
   ET_KERNEL_CHECK(
       ctx,
-      validate_flash_attention_args(query, key, value, attn_mask),
+      validate_flash_attention_args(query, key, value, output, attn_mask),
       InvalidArgument,
       output);
 
@@ -449,7 +455,7 @@ Tensor& custom_sdpa_out_impl(
 
   ET_KERNEL_CHECK_MSG(
       ctx,
-      validate_flash_attention_args(q, k, v, attn_mask),
+      validate_flash_attention_args(q, k, v, output, attn_mask),
       InvalidArgument,
       output,
       "Invalid arguments");
@@ -1531,7 +1537,7 @@ void run_gated_delta_rule_chunked(
   }
 }
 
-std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
+std::tuple<Tensor&, Tensor&> gated_delta_rule_out(
     RuntimeContext& ctx,
     const Tensor& query,
     const Tensor& key,
@@ -1546,7 +1552,7 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
   // caller's out/final_state_out tensors untouched.
   ET_KERNEL_CHECK(
       ctx,
-      validate_channelwise_gated_delta_rule_args(
+      validate_gated_delta_rule_args(
           query, key, value, decay, beta, initial_state),
       InvalidArgument,
       ret);
@@ -1555,7 +1561,7 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
       !tensor_memory_ranges_overlap(initial_state, final_state_out),
       InvalidArgument,
       ret,
-      "channelwise_gated_delta_rule final_state_out must not alias initial_state.");
+      "gated_delta_rule final_state_out must not alias initial_state.");
   ET_KERNEL_CHECK(
       ctx, out.scalar_type() == ScalarType::Float, InvalidArgument, ret);
   ET_KERNEL_CHECK(
@@ -1587,13 +1593,13 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
               output_sizes, 4)) == Error::Ok,
       InvalidArgument,
       ret,
-      "Failed to resize channelwise_gated_delta_rule output tensor.");
+      "Failed to resize gated_delta_rule output tensor.");
   ET_KERNEL_CHECK_MSG(
       ctx,
       resize_tensor(final_state_out, initial_state.sizes()) == Error::Ok,
       InvalidArgument,
       ret,
-      "Failed to resize channelwise_gated_delta_rule final_state tensor.");
+      "Failed to resize gated_delta_rule final_state tensor.");
 
   // Route on sequence length: T == 1 is autoregressive decode (token-by-token
   // recurrence), T != 1 is prefill (chunkwise WY kernel). Prefill falls back to
@@ -1651,13 +1657,13 @@ EXECUTORCH_LIBRARY(
 
 namespace {
 
-void channelwise_gated_delta_rule_out_boxed(
+void gated_delta_rule_out_boxed(
     executorch::runtime::KernelRuntimeContext& ctx,
     executorch::runtime::Span<executorch::runtime::EValue*> stack) {
   executorch::runtime::internal::EventTracerProfileOpScope
       event_tracer_op_scope(
           ctx.internal_event_tracer(),
-          "native_call_llama::channelwise_gated_delta_rule.out");
+          "native_call_llama::gated_delta_rule.out");
   // Multi-output out variants get a trailing TensorList aggregating the two
   // outputs appended by the emitter, so the boxed stack has 9 entries: 6 inputs
   // + out + final_state_out + [out, final_state_out]. The aggregate (stack[8])
@@ -1680,13 +1686,22 @@ void channelwise_gated_delta_rule_out_boxed(
   auto& out = stack[6]->toTensor();
   auto& final_state_out = stack[7]->toTensor();
 
-  (void)torch::executor::native::channelwise_gated_delta_rule_out(
+  (void)torch::executor::native::gated_delta_rule_out(
       ctx, query, key, value, decay, beta, initial_state, out, final_state_out);
 }
 
+const auto gated_delta_rule_out_registration =
+    executorch::runtime::register_kernel(executorch::runtime::Kernel(
+        "llama::gated_delta_rule.out",
+        gated_delta_rule_out_boxed));
+
+// Deprecated alias: the op was named channelwise_gated_delta_rule before it
+// learned the scalar decay layout. Kept so .pte files emitted against the old
+// name still resolve a kernel; remove once those have been re-exported. Traces
+// report the new name for both, since the boxed function is shared.
 const auto channelwise_gated_delta_rule_out_registration =
     executorch::runtime::register_kernel(executorch::runtime::Kernel(
         "llama::channelwise_gated_delta_rule.out",
-        channelwise_gated_delta_rule_out_boxed));
+        gated_delta_rule_out_boxed));
 
 } // namespace

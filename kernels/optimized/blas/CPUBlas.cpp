@@ -47,6 +47,27 @@ inline CBLAS_TRANSPOSE to_cblas_transpose(TransposeType trans) {
 #endif // ET_BUILD_FOR_APPLE
 #endif // ET_BUILD_WITH_BLAS
 
+bool gemm_uses_blas() {
+#ifdef ET_BUILD_WITH_BLAS
+  return true;
+#else
+  return false;
+#endif
+}
+
+void gemv(
+    int64_t m,
+    int64_t k,
+    const float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const float* b,
+    const float beta,
+    float* c) {
+  internal::bf16_fp32_gemv_notrans_with_fp32_arith(
+      m, k, alpha, a, lda, b, beta, c);
+}
+
 // clang-format off
 void normalize_last_dims(
     TransposeType transa, TransposeType transb,

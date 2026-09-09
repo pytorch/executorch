@@ -331,6 +331,55 @@ class TestQNNFloatingPointOperator(TestQNN):
                     case[QCOM_MODULE], case[QCOM_SAMPLE_INPUTS]
                 )
 
+    def test_qnn_backend_as_strided(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2], stride=[4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 3], stride=[6, 2], storage_offset=1
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[3, 4], stride=[1, 3], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(3, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(size=[4], stride=[2], storage_offset=0),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(8),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2, 2], stride=[8, 4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(16),)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_asinh(self):
         module = Asinh()  # noqa: F405
         sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
@@ -2274,6 +2323,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    # NOTE: only scatter.src (reduction=NONE) is delegatable in fp16. QNN HTP
+    # ScatterElements rejects reduction != NONE in the fp backend validator, so
+    # scatter_add / scatter_reduce have no fp tests here. See
+    # backends/qualcomm/tests/rework/htp/op/v68/test.py, which asserts the
+    # expected fp failure explicitly.
     def test_qnn_backend_scatter_src(self):
         test_comb = [
             {
@@ -3401,6 +3455,56 @@ class TestQNNQuantizedOperator(TestQNN):
                     case[QCOM_MODULE], case[QCOM_SAMPLE_INPUTS]
                 )
                 self.lower_module_and_test_output(module, case[QCOM_SAMPLE_INPUTS])
+
+    def test_qnn_backend_as_strided(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2], stride=[4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 3], stride=[6, 2], storage_offset=1
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[3, 4], stride=[1, 3], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(3, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(size=[4], stride=[2], storage_offset=0),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(8),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AsStrided(  # noqa: F405
+                        size=[2, 2, 2], stride=[8, 4, 1], storage_offset=0
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(16),)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_asin(self):
         module = Asin()  # noqa: F405
@@ -5872,6 +5976,36 @@ class TestQNNQuantizedOperator(TestQNN):
                         qdq_module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(qdq_module, sample_input)
 
+    def test_qnn_backend_scatter_add(self):
+        index_dim1 = torch.tensor(
+            [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+        )
+        module = ScatterAdd(dim=1)  # noqa: F405
+        sample_input = (torch.ones(3, 5), index_dim1, torch.rand(3, 5))
+        qdq_module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_scatter_reduce_sum(self):
+        index_dim1 = torch.tensor(
+            [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+        )
+        module = ScatterReduce(dim=1, reduce="sum")  # noqa: F405
+        sample_input = (torch.ones(3, 5), index_dim1, torch.rand(3, 5))
+        qdq_module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_scatter_reduce_prod(self):
+        index_dim1 = torch.tensor(
+            [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+        )
+        # "prod" multiplies up to 3 values per output element, so in 8a8w the
+        # relative error compounds multiplicatively; loosen the bound.
+        self.atol, self.rtol = 3e-1, 1
+        module = ScatterReduce(dim=1, reduce="prod")  # noqa: F405
+        sample_input = (torch.ones(3, 5), index_dim1, torch.rand(3, 5) + 0.5)
+        qdq_module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_scatter_value(self):
         test_comb = [
             {
@@ -7651,6 +7785,32 @@ class TestQNNQuantizedUtils(TestQNN):
             sample_input,
             expected_partitions=1,
             expected_compared_events=expected_compared_events,
+        )
+
+    def test_qnn_backend_dump_intermediate_outputs_conv_relu(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=self.get_lpai_target_env()
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        sample_input = (torch.randn(1, 3, 8, 8),)
+        module = ConvRelu()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_compared_events=2,
         )
 
     def test_qnn_backend_dump_intermediate_outputs_topk(self):

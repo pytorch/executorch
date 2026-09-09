@@ -1,0 +1,109 @@
+# From https://github.com/pytorch/test-infra/wiki/Using-Nova-Reusable-Build-Workflows
+name: Build Linux CUDA Wheels
+
+on:
+  pull_request:
+    paths:
+      - .ci/**/*
+      - .github/scripts/filter_cuda_matrix.py
+      - .github/workflows/build-wheels-cuda-linux.yml
+      - '**/CMakeLists.txt'
+      - backends/cuda/**/*
+      - examples/**/*
+      - extension/cuda/**/*
+      - install_requirements.py
+      - install_utils.py
+      - pyproject.toml
+      - setup.py
+      - docs/source/using-executorch-cpp.md
+      - tools/cmake/**/*
+      # The wheel ships these as its C++ SDK. Whole trees rather than the exact directories
+      # setup.py copies from, so adding one there cannot silently drop it from this list.
+      - devtools/etdump/**.h
+      - extension/**.h
+      - runtime/**.h
+  push:
+    branches:
+      - nightly
+      - release/*
+    tags:
+      # NOTE: Binary build pipelines should only get triggered on release candidate builds
+      # Release candidate tags look like: v1.11.0-rc1
+      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
+      - ciflow/binaries/*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  generate-matrix:
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
+    with:
+      package-type: wheel
+      os: linux
+      test-infra-repository: pytorch/test-infra
+      test-infra-ref: main
+      with-cuda: enable
+      with-cpu: disable
+      with-rocm: disable
+      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+
+  # The generator emits every CUDA version it knows about. Publishing all of them would ship
+  # wheels for combinations nothing can verify, so this keeps only the rows with a GPU to run
+  # them on. The script fails rather than emitting an empty matrix, because a workflow with no
+  # build job reads as a pass.
+  filter-matrix:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.filter.outputs.matrix }}
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+      - name: Filter the matrix
+        id: filter
+        run: |
+          set -eou pipefail
+          MATRIX_BLOB=${{ toJSON(needs.generate-matrix.outputs.matrix) }}
+          # Mirrors the shared generator, which drops its own row limit when this label is
+          # present. Clamping here regardless meant the label was accepted as a trigger and
+          # then ignored, so the full matrix could never be exercised before a release.
+          LIMIT_PR=${{ (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ciflow/binaries/all')) && 'true' || 'false' }}
+          MATRIX_BLOB="$(python3 .github/scripts/filter_cuda_matrix.py \
+            --matrix "${MATRIX_BLOB}" --limit-pr-builds "${LIMIT_PR}")"
+          echo "${MATRIX_BLOB}"
+          echo "matrix=${MATRIX_BLOB}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: filter-matrix
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repository: pytorch/executorch
+            pre-script: .ci/scripts/wheel/pre_build_script.sh
+            post-script: .ci/scripts/wheel/post_build_script.sh
+            smoke-test-script: .ci/scripts/wheel/test_cuda_linux.py
+            package-name: executorch
+    name: ${{ matrix.repository }}
+    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@main
+    with:
+      repository: ${{ matrix.repository }}
+      ref: ""
+      test-infra-repository: pytorch/test-infra
+      test-infra-ref: main
+      build-matrix: ${{ needs.filter-matrix.outputs.matrix }}
+      submodules: recursive
+      env-var-script: .ci/scripts/wheel/envvar_cuda_linux.sh
+      pre-script: ${{ matrix.pre-script }}
+      post-script: ${{ matrix.post-script }}
+      package-name: ${{ matrix.package-name }}
+      smoke-test-script: ${{ matrix.smoke-test-script }}
+      trigger-event: ${{ github.event_name }}

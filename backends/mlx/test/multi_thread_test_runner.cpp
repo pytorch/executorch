@@ -42,6 +42,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <future>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -164,6 +165,71 @@ void run_predict(
 
     result.success_count++;
   }
+}
+
+TEST(MLXMultiThreadTest, LoadOnOneThreadRunOnAnother) {
+  ASSERT_FALSE(kTestPTEPath.empty()) << "ET_TESTING_MODEL_PATH must be set";
+
+  Module module(kTestPTEPath);
+  std::promise<Error> loaded;
+  auto load_result = loaded.get_future();
+  std::promise<void> release_loader;
+  auto loader_released = release_loader.get_future();
+  std::thread load_thread(
+      [&module,
+       loaded = std::move(loaded),
+       loader_released = std::move(loader_released)]() mutable {
+        loaded.set_value(module.load_method("forward"));
+        loader_released.wait();
+      });
+
+  const Error load_error = load_result.get();
+  if (load_error != Error::Ok) {
+    release_loader.set_value();
+    load_thread.join();
+  }
+  ASSERT_EQ(load_error, Error::Ok);
+
+  ThreadResult result;
+  std::thread execute_thread([&]() {
+    auto inputs = get_ones_inputs(module);
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      if (module.set_input(inputs[i], i) != Error::Ok) {
+        result.error_message = "set_input(" + std::to_string(i) + ") failed";
+        return;
+      }
+    }
+
+    const auto forward_result = module.forward();
+    if (!forward_result.ok()) {
+      result.error_message = "forward() failed with error " +
+          std::to_string(static_cast<int>(forward_result.error()));
+      return;
+    }
+
+    const auto outputs = forward_result.get();
+    if (outputs.empty() || !outputs[0].isTensor()) {
+      result.error_message = "forward() returned no tensor output";
+      return;
+    }
+
+    const auto& output = outputs[0].toTensor();
+    const float* data = output.const_data_ptr<float>();
+    for (ssize_t i = 0; i < output.numel(); ++i) {
+      if (std::fabs(data[i] - 6.0f) > 1e-4f) {
+        result.correctness_failures++;
+        return;
+      }
+    }
+    result.success_count++;
+  });
+  execute_thread.join();
+  release_loader.set_value();
+  load_thread.join();
+
+  ASSERT_TRUE(result.error_message.empty()) << result.error_message;
+  ASSERT_EQ(result.success_count, 1);
+  ASSERT_EQ(result.correctness_failures, 0);
 }
 
 TEST(MLXMultiThreadTest, LoadAndRunParallel) {

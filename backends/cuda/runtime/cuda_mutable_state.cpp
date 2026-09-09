@@ -134,7 +134,7 @@ struct CudaDeviceGuard {
 
   ~CudaDeviceGuard() {
     if (restore) {
-      cudaSetDevice(prev_device);
+      (void)cudaSetDevice(prev_device);
     }
   }
 };
@@ -152,7 +152,7 @@ Result<int> tensor_cuda_device_index(const SlimTensor& t) {
   cudaPointerAttributes attr{};
   const cudaError_t err = cudaPointerGetAttributes(&attr, t.data_ptr());
   if (err != cudaSuccess) {
-    cudaGetLastError();
+    (void)cudaGetLastError();
     ET_LOG(
         Error,
         "mutable_state: cudaPointerGetAttributes failed for template pointer");
@@ -171,7 +171,7 @@ void cuda_free_on_pointer_device(void* ptr, bool synchronize) {
   if (attr_err == cudaSuccess) {
     device = attr.device;
   } else {
-    cudaGetLastError();
+    (void)cudaGetLastError();
   }
 
   CudaDeviceGuard guard;

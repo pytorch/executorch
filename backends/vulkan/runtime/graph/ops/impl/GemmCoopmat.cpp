@@ -31,7 +31,7 @@ static vkapi::ShaderInfo pick_linear_coopmat_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-static utils::uvec3 pick_linear_coopmat_global_wg_size(
+static GlobalWorkGrid pick_linear_coopmat_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -49,25 +49,14 @@ static utils::uvec3 pick_linear_coopmat_global_wg_size(
   // to launch exactly num_tiles_n x num_tiles_m workgroups.
   //
   // The framework computes the group count as
-  //   group_count = div_up(global_wg_size, local_wg_size)
-  // (see Context.cpp + Command.cpp). With local_wg = (kCoopmatInvocations,
+  //   group_count = div_up(gwg, lwg)
+  // (see Context.cpp + Command.cpp). With lwg = (kCoopmatInvocations,
   // 1, 1), multiplying num_tiles_n by kCoopmatInvocations cancels the
   // div, yielding group_count.x = num_tiles_n.
-  return {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1};
-}
-
-static utils::uvec3 pick_linear_coopmat_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {kCoopmatInvocations, 1, 1};
+  return GlobalWorkGrid(
+      {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1u},
+      kTiledWorkGrid,
+      LocalWorkGroup(kCoopmatInvocations, 1u, 1u));
 }
 
 void add_linear_coopmat_node(
@@ -104,8 +93,8 @@ void add_linear_coopmat_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_linear_coopmat_shader,
-      pick_linear_coopmat_global_wg_size,
-      pick_linear_coopmat_local_wg_size,
+      pick_linear_coopmat_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
       // Shader params buffers
@@ -134,7 +123,7 @@ static vkapi::ShaderInfo pick_matmul_coopmat_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-static utils::uvec3 pick_matmul_coopmat_global_wg_size(
+static GlobalWorkGrid pick_matmul_coopmat_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -152,25 +141,14 @@ static utils::uvec3 pick_matmul_coopmat_global_wg_size(
   // to launch exactly num_tiles_n x num_tiles_m workgroups.
   //
   // The framework computes the group count as
-  //   group_count = div_up(global_wg_size, local_wg_size)
-  // (see Context.cpp + Command.cpp). With local_wg = (kCoopmatInvocations,
+  //   group_count = div_up(gwg, lwg)
+  // (see Context.cpp + Command.cpp). With lwg = (kCoopmatInvocations,
   // 1, 1), multiplying num_tiles_n by kCoopmatInvocations cancels the
   // div, yielding group_count.x = num_tiles_n.
-  return {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1};
-}
-
-static utils::uvec3 pick_matmul_coopmat_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {kCoopmatInvocations, 1, 1};
+  return GlobalWorkGrid(
+      {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1u},
+      kTiledWorkGrid,
+      LocalWorkGroup(kCoopmatInvocations, 1u, 1u));
 }
 
 void add_matmul_coopmat_node(
@@ -190,8 +168,8 @@ void add_matmul_coopmat_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_matmul_coopmat_shader,
-      pick_matmul_coopmat_global_wg_size,
-      pick_matmul_coopmat_local_wg_size,
+      pick_matmul_coopmat_gwg,
+      pick_required_lwg,
       // Inputs and Outputs — same binding order as matmul_vec
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers — same UBOs as matmul_vec

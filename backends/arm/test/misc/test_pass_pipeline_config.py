@@ -11,10 +11,14 @@ from executorch.backends.arm._passes import (
     FuseDuplicateUsersPass,
 )
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
-from executorch.backends.arm.common.pipeline_config import (
+from executorch.backends.arm._passes.remove_safe_softmax_guard_pass import (
+    RemoveSafeSoftmaxGuardPass,
+)
+from executorch.backends.arm.common.pipeline_config import (  # type: ignore[attr-defined]
     ArmPassPipelineConfig,
     LeakyReLULoweringConfig,
     QuantizeInfConfig,
+    SDPASafeSoftmaxGuardPolicy,
     SoftmaxDecompositionConfig,
 )
 from executorch.backends.arm.quantizer import (
@@ -104,6 +108,26 @@ def test_softmax_config_stable_no_target():
     assert DecomposeSoftmaxPass not in skip_passes
     # STABLE: masked fill decomposition is disabled (skipped)
     assert DecomposeMaskedFillPass in skip_passes
+
+
+def test_sdpa_safe_softmax_guard_config_controls_guard_removal_pass():
+    compile_spec = TosaCompileSpec(
+        TosaSpecification.create_from_string("TOSA-1.00+INT")
+    )
+    manager = ArmPassManager(compile_spec)
+
+    assert RemoveSafeSoftmaxGuardPass in manager._skip_pass_types
+
+    stable_compile_spec = TosaCompileSpec(
+        TosaSpecification.create_from_string("TOSA-1.00+INT")
+    )
+    remove_config = ArmPassPipelineConfig(
+        sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.REMOVE
+    )
+    stable_compile_spec.set_pass_pipeline_config(remove_config)
+    remove_manager = ArmPassManager(stable_compile_spec)
+
+    assert RemoveSafeSoftmaxGuardPass not in remove_manager._skip_pass_types
 
 
 def test_quant_inf_config_reaches_annotation_pipeline():
@@ -232,3 +256,24 @@ def test_leaky_relu_decompose_config_reaches_backend_pipeline():
     assert "torch.ops.aten.clamp.default" in graph_code
     assert "torch.ops.aten.mul.Tensor" in graph_code
     assert "torch.ops.aten.add.Tensor" in graph_code
+
+
+def test_sdpa_safe_softmax_guard_config_serializes():
+    config = ArmPassPipelineConfig(
+        sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.REMOVE
+    )
+    roundtripped = ArmPassPipelineConfig.from_dict(config.to_dict())
+
+    assert roundtripped.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.REMOVE
+
+
+def test_sdpa_safe_softmax_guard_preserves_positional_config_arguments():
+    quantize_inf = QuantizeInfConfig(neg_inf=-321.0, pos_inf=123.0)
+    config = ArmPassPipelineConfig(
+        SoftmaxDecompositionConfig.STABLE,
+        LeakyReLULoweringConfig.TABLE,
+        quantize_inf,
+    )
+
+    assert config.quantize_inf is quantize_inf
+    assert config.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.PRESERVE

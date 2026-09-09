@@ -47,8 +47,8 @@ ValueRef prepack_dw_weights(ComputeGraph& graph, const ValueRef vref) {
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(v),
-      graph.create_local_wg_size(v),
+      graph.create_gwg(v),
+      graph.create_lwg(v),
       vref,
       v,
       {},
@@ -102,7 +102,7 @@ std::string pick_conv2d_dw_shader(
 // Workgroup size
 //
 
-utils::uvec3 conv2d_dw_global_wg_size(
+GlobalWorkGrid conv2d_dw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -116,11 +116,13 @@ utils::uvec3 conv2d_dw_global_wg_size(
   if (uses_output_tile) {
     const bool is_sned = shader.kernel_name.find("_sned") != std::string::npos;
 
-    const utils::uvec3 image_extents = graph->create_global_wg_size(out);
+    const utils::uvec3 image_extents = graph->create_gwg(out).extents();
 
     if (is_sned) {
       // sned output_tile shaders: no batch division, just flatten W*H
-      return {image_extents[0] * image_extents[1], image_extents[2], 1};
+      return GlobalWorkGrid(
+          {image_extents[0] * image_extents[1], image_extents[2], 1u},
+          kTiledWorkGrid);
     }
 
     // stride==dilation output_tile shaders: apply batch division
@@ -133,26 +135,28 @@ utils::uvec3 conv2d_dw_global_wg_size(
 
     uint32_t scaled_x = utils::div_up(image_extents[0], batch_x);
     uint32_t scaled_y = utils::div_up(image_extents[1], batch_y);
-    return {scaled_x * scaled_y, image_extents[2], 1};
+    return GlobalWorkGrid(
+        {scaled_x * scaled_y, image_extents[2], 1u}, kTiledWorkGrid);
   }
 
   // Base conv2d_dw shader: fully linearized dispatch
-  const utils::uvec3 base_extents = graph->create_global_wg_size(out);
-  return {base_extents[0] * base_extents[1] * base_extents[2], 1, 1};
+  const utils::uvec3 base_extents = graph->create_gwg(out).extents();
+  return graph->create_linear_gwg(
+      base_extents[0] * base_extents[1] * base_extents[2]);
 }
 
-utils::uvec3 conv2d_dw_local_wg_size(
+LocalWorkGroup conv2d_dw_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {64, 1, 1};
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 //
@@ -232,8 +236,8 @@ void add_conv2d_dw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      conv2d_dw_global_wg_size,
-      conv2d_dw_local_wg_size,
+      conv2d_dw_gwg,
+      conv2d_dw_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers

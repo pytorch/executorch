@@ -262,7 +262,7 @@ std::vector<int64_t> calculate_output_im2col_sizes(
 // Shader dispatch utilities
 //
 
-utils::uvec3 im2col_global_wg_size(
+GlobalWorkGrid im2col_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -281,10 +281,10 @@ utils::uvec3 im2col_global_wg_size(
   const uint32_t K4 = utils::div_up(K, 4u);
   const uint32_t M4 = utils::div_up(M, 4u);
 
-  return {K4, M4, 1};
+  return GlobalWorkGrid({K4, M4, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 im2col_packed_int8_global_wg_size(
+GlobalWorkGrid im2col_packed_int8_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -299,19 +299,24 @@ utils::uvec3 im2col_packed_int8_global_wg_size(
   const uint32_t K4 = utils::div_up(K, 4u);
   const uint32_t W4 = utils::div_up(W, 4u);
 
-  return {K4 * W4 * H, 1, 1};
+  return graph->create_linear_gwg(K4 * W4 * H);
 }
 
-utils::uvec3 im2col_packed_int8_local_wg_size(
+LocalWorkGroup im2col_packed_int8_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return {64, 1, 1};
+  (void)graph;
+  (void)shader;
+  (void)gwg;
+  (void)args;
+  (void)resize_args;
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
-utils::uvec3 col2im_global_wg_size(
+GlobalWorkGrid col2im_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -327,10 +332,10 @@ utils::uvec3 col2im_global_wg_size(
   const uint32_t N4 = utils::div_up(N, 4u);
   const uint32_t M4 = utils::div_up(M, 4u);
 
-  return {N4, M4, 1};
+  return GlobalWorkGrid({N4, M4, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_static_quantized_conv2d_global_wg_size(
+GlobalWorkGrid pick_static_quantized_conv2d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -351,17 +356,16 @@ utils::uvec3 pick_static_quantized_conv2d_global_wg_size(
   const uint32_t num_W_tiles = utils::div_up(W, W_per_tile);
   const uint32_t num_C_tiles = utils::div_up(C, C_per_tile);
 
-  return {num_C_tiles, num_W_tiles, H};
+  return GlobalWorkGrid({num_C_tiles, num_W_tiles, H}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_static_quantized_conv2d_local_wg_size(
+LocalWorkGroup pick_static_quantized_conv2d_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return pick_hw_square_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
 //
@@ -447,8 +451,8 @@ void add_input_im2col_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      im2col_global_wg_size,
-      default_pick_local_wg_size,
+      im2col_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{input_im2col, vkapi::kWrite}, {input_image, vkapi::kRead}},
       // Shader params buffers
@@ -500,8 +504,8 @@ void add_input_im2col_packed_int8_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      im2col_packed_int8_global_wg_size,
-      im2col_packed_int8_local_wg_size,
+      im2col_packed_int8_gwg,
+      im2col_packed_int8_lwg,
       // Inputs and Outputs
       {{input_im2col, vkapi::kWrite}, {input, vkapi::kRead}},
       // Shader params buffers
@@ -565,8 +569,8 @@ void add_quantize_and_pack_im2col_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      im2col_global_wg_size,
-      default_pick_local_wg_size,
+      im2col_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{input_int_im2col, vkapi::kWrite}, {input_image, vkapi::kRead}},
       // Shader params buffers
@@ -633,8 +637,8 @@ void add_conv2d_q8csw_linear_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      col2im_global_wg_size,
-      quantized_linear_local_wg_size,
+      col2im_gwg,
+      quantized_linear_lwg,
       // Inputs and Outputs
       {{output_image, vkapi::kWrite},
        {{input_im2col, packed_weight, packed_weight_scales, packed_bias},
@@ -715,8 +719,8 @@ void add_conv2d_q8ta_q8csw_linear_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      col2im_global_wg_size,
-      quantized_linear_local_wg_size,
+      col2im_gwg,
+      quantized_linear_lwg,
       // Inputs and Outputs
       {{output_image, vkapi::kWrite},
        {{input_int_im2col,
@@ -804,8 +808,8 @@ void add_conv2d_q8ta_q8csw_q8to_4w4c_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_static_quantized_conv2d_global_wg_size,
-      pick_static_quantized_conv2d_local_wg_size,
+      pick_static_quantized_conv2d_gwg,
+      pick_static_quantized_conv2d_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input_im2col,

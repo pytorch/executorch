@@ -52,8 +52,9 @@ class SoftmaxConverter(NodeConverter):
         """Get the number of channels from the node's input shape."""
         return node.meta["val"].shape[SoftmaxConverter._get_channels_dim(node)]
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],

@@ -13,6 +13,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -62,6 +63,22 @@ class Sum(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
         return x.sum(dim=dim, keepdim=keepdim)
+
+
+class ScalarSum(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x.sum(dim=0, keepdim=True)
+
+
+def test_sum_dim_intlist_scalar_input_tosa_FP_not_delegated():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        ScalarSum(),
+        (torch.tensor(1.0),),
+        {
+            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+        },
+    )
+    pipeline.run()
 
 
 @common.parametrize(

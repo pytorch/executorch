@@ -15,7 +15,7 @@ import torch
 from executorch.extension.llm.custom_ops import custom_ops  # noqa
 
 
-class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
+class GatedDeltaRuleTest(unittest.TestCase):
     def _make_inputs(
         self,
         batch_size: int = 2,
@@ -41,7 +41,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         initial_state = torch.randn(batch_size, num_state_heads, k_head_dim, v_head_dim)
         return query, key, value, decay, beta, initial_state
 
-    def _reference_channelwise_gated_delta_rule(
+    def _reference_gated_delta_rule(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
@@ -77,7 +77,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
 
         return output, state
 
-    def test_channelwise_gated_delta_rule_grouped_matches_reference(self):
+    def test_gated_delta_rule_grouped_matches_reference(self):
         torch.manual_seed(0)
 
         for seq_len in (1, 35):
@@ -88,12 +88,10 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                     num_state_heads=2,
                     seq_len=seq_len,
                 )
-                expected_output, expected_state = (
-                    self._reference_channelwise_gated_delta_rule(*inputs)
+                expected_output, expected_state = self._reference_gated_delta_rule(
+                    *inputs
                 )
-                actual_output, actual_state = (
-                    torch.ops.llama.channelwise_gated_delta_rule(*inputs)
-                )
+                actual_output, actual_state = torch.ops.llama.gated_delta_rule(*inputs)
 
                 self.assertTrue(
                     torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
@@ -122,12 +120,10 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 )
                 self.assertEqual(inputs[3].dim(), 3)
 
-                expected_output, expected_state = (
-                    self._reference_channelwise_gated_delta_rule(*inputs)
+                expected_output, expected_state = self._reference_gated_delta_rule(
+                    *inputs
                 )
-                actual_output, actual_state = (
-                    torch.ops.llama.channelwise_gated_delta_rule(*inputs)
-                )
+                actual_output, actual_state = torch.ops.llama.gated_delta_rule(*inputs)
 
                 self.assertTrue(
                     torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
@@ -141,16 +137,41 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         short_decay = torch.rand(query.size(0), key.size(1), 3)
 
         with self.assertRaises(RuntimeError):
-            torch.ops.llama.channelwise_gated_delta_rule(
+            torch.ops.llama.gated_delta_rule(
                 query, key, value, short_decay, beta, initial_state
             )
 
-    def test_channelwise_gated_delta_rule_rejects_uneven_groups(self):
+    def test_deprecated_channelwise_alias_matches_new_name(self):
+        # channelwise_gated_delta_rule is the pre-scalar-decay name, kept as an
+        # alias so graphs and .pte files built against it still resolve.
+        torch.manual_seed(0)
+
+        inputs = self._make_inputs(seq_len=35)
+        expected_output, expected_state = torch.ops.llama.gated_delta_rule(*inputs)
+        alias_output, alias_state = torch.ops.llama.channelwise_gated_delta_rule(
+            *inputs
+        )
+
+        self.assertTrue(torch.equal(alias_output, expected_output))
+        self.assertTrue(torch.equal(alias_state, expected_state))
+
+    def test_deprecated_channelwise_alias_exports(self):
+        class Module(torch.nn.Module):
+            def forward(self, query, key, value, decay, beta, initial_state):
+                return torch.ops.llama.channelwise_gated_delta_rule(
+                    query, key, value, decay, beta, initial_state
+                )
+
+        ep = torch.export.export(Module(), self._make_inputs())
+        targets = [str(n.target) for n in ep.graph.nodes if n.op == "call_function"]
+        self.assertIn("llama.channelwise_gated_delta_rule.default", targets)
+
+    def test_gated_delta_rule_rejects_uneven_groups(self):
         inputs = self._make_inputs(num_heads=3, num_state_heads=2)
         with self.assertRaises(RuntimeError):
-            torch.ops.llama.channelwise_gated_delta_rule(*inputs)
+            torch.ops.llama.gated_delta_rule(*inputs)
 
-    def test_channelwise_gated_delta_rule_matches_reference(self):
+    def test_gated_delta_rule_matches_reference(self):
         torch.manual_seed(0)
 
         test_cases = (
@@ -169,28 +190,24 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                     initial_state,
                 ) = self._make_inputs(*case)
 
-                expected_output, expected_state = (
-                    self._reference_channelwise_gated_delta_rule(
-                        query,
-                        key,
-                        value,
-                        decay,
-                        beta,
-                        initial_state,
-                    )
+                expected_output, expected_state = self._reference_gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    decay,
+                    beta,
+                    initial_state,
                 )
 
                 # Functional op: initial_state must not be mutated.
                 initial_state_before = initial_state.clone()
-                actual_output, actual_state = (
-                    torch.ops.llama.channelwise_gated_delta_rule(
-                        query,
-                        key,
-                        value,
-                        decay,
-                        beta,
-                        initial_state,
-                    )
+                actual_output, actual_state = torch.ops.llama.gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    decay,
+                    beta,
+                    initial_state,
                 )
 
                 self.assertTrue(
@@ -199,11 +216,11 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 self.assertTrue(torch.allclose(actual_state, expected_state, atol=1e-5))
                 self.assertTrue(torch.equal(initial_state, initial_state_before))
 
-    def test_channelwise_gated_delta_rule_out_matches_reference(self):
+    def test_gated_delta_rule_out_matches_reference(self):
         torch.manual_seed(0)
 
         query, key, value, decay, beta, initial_state = self._make_inputs()
-        expected_output, expected_state = self._reference_channelwise_gated_delta_rule(
+        expected_output, expected_state = self._reference_gated_delta_rule(
             query,
             key,
             value,
@@ -214,17 +231,15 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
 
         actual_output = torch.empty_like(value)
         actual_final_state = torch.empty_like(initial_state)
-        returned_output, returned_state = (
-            torch.ops.llama.channelwise_gated_delta_rule.out(
-                query,
-                key,
-                value,
-                decay,
-                beta,
-                initial_state,
-                out=actual_output,
-                final_state_out=actual_final_state,
-            )
+        returned_output, returned_state = torch.ops.llama.gated_delta_rule.out(
+            query,
+            key,
+            value,
+            decay,
+            beta,
+            initial_state,
+            out=actual_output,
+            final_state_out=actual_final_state,
         )
 
         self.assertEqual(returned_output.data_ptr(), actual_output.data_ptr())
@@ -232,7 +247,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         self.assertTrue(torch.allclose(actual_output, expected_output, atol=1e-5))
         self.assertTrue(torch.allclose(actual_final_state, expected_state, atol=1e-5))
 
-    def test_channelwise_gated_delta_rule_out_invalid_args_raise(
+    def test_gated_delta_rule_out_invalid_args_raise(
         self,
     ):
         torch.manual_seed(0)
@@ -243,7 +258,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         actual_final_state = torch.empty(1)
 
         with self.assertRaises(RuntimeError):
-            torch.ops.llama.channelwise_gated_delta_rule.out(
+            torch.ops.llama.gated_delta_rule.out(
                 query,
                 invalid_key,
                 value,
@@ -257,7 +272,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         self.assertEqual(tuple(actual_output.shape), (1,))
         self.assertEqual(tuple(actual_final_state.shape), (1,))
 
-    def test_channelwise_gated_delta_rule_out_rejects_initial_state_alias(
+    def test_gated_delta_rule_out_rejects_initial_state_alias(
         self,
     ):
         torch.manual_seed(0)
@@ -269,7 +284,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             RuntimeError,
             "final_state_out must not alias initial_state",
         ):
-            torch.ops.llama.channelwise_gated_delta_rule.out(
+            torch.ops.llama.gated_delta_rule.out(
                 query,
                 key,
                 value,
@@ -280,7 +295,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 final_state_out=initial_state,
             )
 
-    def test_channelwise_gated_delta_rule_out_rejects_initial_state_overlap(
+    def test_gated_delta_rule_out_rejects_initial_state_overlap(
         self,
     ):
         torch.manual_seed(0)
@@ -302,7 +317,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             RuntimeError,
             "final_state_out must not alias initial_state",
         ):
-            torch.ops.llama.channelwise_gated_delta_rule.out(
+            torch.ops.llama.gated_delta_rule.out(
                 query,
                 key,
                 value,
@@ -313,7 +328,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 final_state_out=final_state_out,
             )
 
-    def test_channelwise_gated_delta_rule_chunked_matches_full_sequence(self):
+    def test_gated_delta_rule_chunked_matches_full_sequence(self):
         torch.manual_seed(0)
 
         # seq_len > CHUNK_SIZE (32 in the C++ kernel): the single full call runs
@@ -330,7 +345,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             seq_len=seq_len
         )
 
-        full_output, full_state = torch.ops.llama.channelwise_gated_delta_rule(
+        full_output, full_state = torch.ops.llama.gated_delta_rule(
             query,
             key,
             value,
@@ -342,7 +357,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         chunk_state = initial_state
         chunk_outputs = []
         for start, end in ((0, 64), (64, 192), (192, 200)):
-            chunk_output, chunk_state = torch.ops.llama.channelwise_gated_delta_rule(
+            chunk_output, chunk_state = torch.ops.llama.gated_delta_rule(
                 query[:, :, start:end, :],
                 key[:, :, start:end, :],
                 value[:, :, start:end, :],
@@ -358,7 +373,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(chunk_state, full_state, atol=1e-3, rtol=1e-3))
 
-    def test_channelwise_gated_delta_rule_multichunk_matches_reference(self):
+    def test_gated_delta_rule_multichunk_matches_reference(self):
         torch.manual_seed(0)
 
         # Drive the prefill route past a single CHUNK_SIZE (32) so the kernel's
@@ -369,13 +384,11 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         for seq_len in (130, 256):
             with self.subTest(seq_len=seq_len):
                 inputs = self._make_inputs(seq_len=seq_len)
-                expected_output, expected_state = (
-                    self._reference_channelwise_gated_delta_rule(*inputs)
+                expected_output, expected_state = self._reference_gated_delta_rule(
+                    *inputs
                 )
 
-                actual_output, actual_state = (
-                    torch.ops.llama.channelwise_gated_delta_rule(*inputs)
-                )
+                actual_output, actual_state = torch.ops.llama.gated_delta_rule(*inputs)
 
                 self.assertTrue(
                     torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
@@ -384,14 +397,14 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                     torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
                 )
 
-    def test_channelwise_gated_delta_rule_prefill_tiny_decay_is_finite(self):
+    def test_gated_delta_rule_prefill_tiny_decay_is_finite(self):
         # Regression test for the chunked-prefill overflow NaN in op_sdpa.cpp.
         # The prefill kernel forms eg_inv = exp(-cumsum(log decay)) per
         # CHUNK_SIZE (32) tokens; for tiny positive decay the within-chunk
         # cumulative -log(decay) exceeds the float expf overflow limit (~88.7),
         # so eg_inv overflows to +inf and eg * eg_inv becomes 0 * inf = NaN,
         # poisoning the whole head's output. The
-        # channelwise_gated_delta_rule_chunked_is_safe guard must route such
+        # gated_delta_rule_chunked_is_safe guard must route such
         # inputs to the exact recurrence, which stays finite (and correct) for
         # tiny decay; without it the isfinite assertions below fail.
         torch.manual_seed(0)
@@ -404,10 +417,10 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         # bound and exp(-gc) would overflow to +inf -> NaN.
         decay = torch.full_like(decay, 1e-12)
 
-        expected_output, expected_state = self._reference_channelwise_gated_delta_rule(
+        expected_output, expected_state = self._reference_gated_delta_rule(
             query, key, value, decay, beta, initial_state
         )
-        actual_output, actual_state = torch.ops.llama.channelwise_gated_delta_rule(
+        actual_output, actual_state = torch.ops.llama.gated_delta_rule(
             query, key, value, decay, beta, initial_state
         )
 
@@ -426,10 +439,10 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
         )
 
-    def test_channelwise_gated_delta_rule_exports(self):
+    def test_gated_delta_rule_exports(self):
         class Module(torch.nn.Module):
             def forward(self, query, key, value, decay, beta, initial_state):
-                return torch.ops.llama.channelwise_gated_delta_rule(
+                return torch.ops.llama.gated_delta_rule(
                     query, key, value, decay, beta, initial_state
                 )
 
@@ -443,7 +456,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 targets = [
                     str(n.target) for n in ep.graph.nodes if n.op == "call_function"
                 ]
-                self.assertIn("llama.channelwise_gated_delta_rule.default", targets)
+                self.assertIn("llama.gated_delta_rule.default", targets)
 
                 # Dynamic sequence length: one graph shared across
                 # prefill/decode. T is dim 2 for both decay layouts.
@@ -461,7 +474,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 )
                 self.assertTrue(
                     any(
-                        "channelwise_gated_delta_rule" in str(n.target)
+                        "gated_delta_rule" in str(n.target)
                         for n in ep_dyn.graph.nodes
                         if n.op == "call_function"
                     )
@@ -470,12 +483,12 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
     @unittest.skipUnless(
         sys.platform == "linux",
         "Custom-kernel .pte execution via the Python Runtime is Linux-only: the "
-        "channelwise_gated_delta_rule kernel is not registered in the ExecuTorch "
+        "gated_delta_rule kernel is not registered in the ExecuTorch "
         "pybindings runtime on Windows (custom-op static registration does not "
         "cross the DLL boundary). Eager + export paths are covered on all "
         "platforms by the other tests.",
     )
-    def test_channelwise_gated_delta_rule_pte_execution(self):
+    def test_gated_delta_rule_pte_execution(self):
         # Exports, lowers, and *executes* the op through the ExecuTorch runtime.
         # This is the only test that hits the boxed kernel and its stack
         # arg-count contract: the emitter appends a trailing TensorList to a
@@ -488,11 +501,11 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         from executorch.exir import EdgeCompileConfig, to_edge
         from executorch.runtime import Runtime
 
-        op_event_name = "native_call_llama::channelwise_gated_delta_rule.out"
+        op_event_name = "native_call_llama::gated_delta_rule.out"
 
         class Module(torch.nn.Module):
             def forward(self, query, key, value, decay, beta, initial_state):
-                return torch.ops.llama.channelwise_gated_delta_rule(
+                return torch.ops.llama.gated_delta_rule(
                     query, key, value, decay, beta, initial_state
                 )
 
@@ -502,8 +515,8 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             with self.subTest(seq_len=seq_len, scalar_decay=scalar_decay):
                 torch.manual_seed(seq_len)
                 inputs = self._make_inputs(seq_len=seq_len, scalar_decay=scalar_decay)
-                expected_output, expected_state = (
-                    self._reference_channelwise_gated_delta_rule(*inputs)
+                expected_output, expected_state = self._reference_gated_delta_rule(
+                    *inputs
                 )
 
                 ep = torch.export.export(Module(), inputs)

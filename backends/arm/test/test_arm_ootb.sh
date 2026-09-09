@@ -28,7 +28,15 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_ootb_tests_vgf run_deit_e2e_ethos_u run_mobilesam_e2e_ethos_u run_swin2sr_e2e_vgf)
+    TEST_SUITES=(
+        run_ootb_tests_ethos_u
+        run_ootb_tests_tosa
+        run_ootb_tests_vgf
+        run_deit_e2e_ethos_u
+        run_mobilesam_e2e_ethos_u
+        run_swin2sr_e2e_vgf
+        run_silero_vad_e2e_ethos_u
+    )
 else
     TEST_SUITES=("$1")
 fi
@@ -426,6 +434,174 @@ run_swin2sr_e2e_vgf() {
         # quantized VKML runtime validation on Darwin.
         echo "${FUNCNAME}: Skipping INT8 runtime on $(uname -s); quantized VKML runtime validation is Linux-only"
     fi
+
+    echo "${FUNCNAME}: PASS"
+}
+
+run_silero_vad_e2e_ethos_u() {
+    echo "$FUNCNAME: Export, build, run, and validate the Silero VAD e2e test"
+
+    local example_dir="${et_root_dir}/examples/arm/silero_vad_example_ethos_u"
+    local work_root="${et_root_dir}/arm_test/silero_vad_ootb_smoke"
+    local model_dir="${work_root}/silero-vad"
+    local model_revision="dbacf536adadf42210f37ae50fbaf75f6235b3cf"
+    local jit_path="${model_dir}/src/silero_vad/data/silero_vad.jit"
+    local calibration_audio_path="${work_root}/silero_vad_calibration.wav"
+    local validation_audio_path="${work_root}/silero_vad_validation.wav"
+    local source_audio_path="${model_dir}/tests/data/test.wav"
+    local export_dir="${work_root}/export"
+    local build_dir="${work_root}/silero_vad_app"
+    local fvp_out_dir="${work_root}/fvp"
+    local et_build_dir="${et_root_dir}/cmake-out-arm"
+    local quantized_aot_build_dir="${work_root}/quantized_ops_aot"
+    local python_package_dir="${work_root}/python_package"
+    local pte_path="${export_dir}/silero_vad_ethos_u.pte"
+    local expected_path="${export_dir}/expected_probs.bin"
+    local fvp_log_path="${fvp_out_dir}/fvp.log"
+    local validation_threshold="0.55"
+    local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+    local export_pythonpath="${et_root_dir}/third-party/ao:${python_package_dir}:${PYTHONPATH:-}"
+    local codegen_pythonpath="${et_root_dir}:${PYTHONPATH:-}"
+    local platform_cmake_args=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        # FVPs-on-Mac exposes the application console at the MPS3 UART address.
+        platform_cmake_args+=("-DUART0_BASE=0x49303000")
+    fi
+    mkdir -p "${export_dir}" "${build_dir}" "${fvp_out_dir}"
+
+    setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
+    source ${setup_path_script}
+
+    source ${et_root_dir}/backends/arm/scripts/utils.sh
+    local n_proc="$(get_parallel_jobs)"
+
+    echo "${FUNCNAME}: Building ExecuTorch (if needed)"
+    cmake --preset arm-baremetal -B "${et_build_dir}"
+    cmake --build "${et_build_dir}" --target install -j"$n_proc"
+
+    echo "${FUNCNAME}: Building host quantized AOT library"
+    local python_executable
+    python_executable="$(python3 -c 'import sys; print(sys.executable)')"
+    cmake \
+        -S "${et_root_dir}" \
+        -B "${quantized_aot_build_dir}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_CPUINFO=OFF \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=OFF \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
+        -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
+        -DEXECUTORCH_BUILD_XNNPACK=OFF \
+        -DPYTHON_EXECUTABLE="${python_executable}"
+    cmake --build "${quantized_aot_build_dir}" --target quantized_ops_aot_lib -j"$n_proc"
+
+    local quantized_ops_library
+    quantized_ops_library="$(
+        find "${quantized_aot_build_dir}/kernels/quantized" \
+            -name 'libquantized_ops_aot_lib.*' \
+            -type f \
+            -print \
+            -quit
+    )"
+    [[ -n "${quantized_ops_library}" ]] || {
+        echo "${FUNCNAME}: Missing quantized AOT library under ${quantized_aot_build_dir}"
+        return 1
+    }
+
+    if [[ ! -f "${jit_path}" || "$(git -C "${model_dir}" rev-parse HEAD 2>/dev/null)" != "${model_revision}" ]]; then
+        echo "${FUNCNAME}: Cloning Silero VAD repository"
+        rm -rf "${model_dir}"
+        git init "${model_dir}"
+        git -C "${model_dir}" remote add origin https://github.com/snakers4/silero-vad.git
+        git -C "${model_dir}" fetch --depth 1 origin "${model_revision}"
+        git -C "${model_dir}" checkout --detach FETCH_HEAD
+    else
+        echo "${FUNCNAME}: Reusing JIT model at ${jit_path}"
+    fi
+
+    echo "${FUNCNAME}: Preparing separate calibration and validation WAVs"
+    python3 "${example_dir}/model_export/generate_smoke_audio.py" \
+        --source-wav "${source_audio_path}" \
+        --start-seconds 0.0 \
+        --duration-seconds 2.5 \
+        --output "${calibration_audio_path}"
+    python3 "${example_dir}/model_export/generate_smoke_audio.py" \
+        --source-wav "${source_audio_path}" \
+        --start-seconds 2.5 \
+        --duration-seconds 2.5 \
+        --output "${validation_audio_path}"
+
+    echo "${FUNCNAME}: Preparing ExecuTorch Python package"
+    rm -rf "${python_package_dir}"
+    (
+        cd "${et_root_dir}"
+        EXECUTORCH_BUILD_PYBIND=OFF python3 setup.py build_py \
+            --build-lib="${python_package_dir}"
+    )
+
+    echo "${FUNCNAME}: Exporting quantized Silero VAD PTE"
+    env EXECUTORCH_QUANTIZED_OPS_AOT_LIBRARY="${quantized_ops_library}" \
+        PYTHONPATH="${export_pythonpath}" \
+        python3 "${example_dir}/model_export/export_silero_vad_ethos_u.py" \
+        --jit-model "${jit_path}" \
+        --calibration-audio "${calibration_audio_path}" \
+        --validation-audio "${validation_audio_path}" \
+        --output-path "${pte_path}" \
+        --expected-output-path "${expected_path}" \
+        --num-calibration-frames 32 \
+        --num-validation-frames 0
+
+    [[ -f "${pte_path}" ]] || {
+        echo "${FUNCNAME}: Missing PTE at ${pte_path}"
+        return 1
+    }
+    [[ -f "${expected_path}" ]] || {
+        echo "${FUNCNAME}: Missing expected probability dump at ${expected_path}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Configuring the Silero VAD application"
+    cmake \
+        -S "${example_dir}/runtime" \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+        -DTARGET_CPU=cortex-m85 \
+        -DET_PTE_FILE_PATH="${pte_path}" \
+        -DAUDIO_PATH="${validation_audio_path}" \
+        -DET_BUILD_DIR_PATH="${et_build_dir}" \
+        -DMAX_AUDIO_SAMPLES=40000 \
+        -DVAD_THRESHOLD="${validation_threshold}" \
+        -DPYTHON_EXECUTABLE="$(command -v python3)" \
+        "${platform_cmake_args[@]}"
+
+    echo "${FUNCNAME}: Building silero_vad_ethos_u"
+    PYTHONPATH="${codegen_pythonpath}" cmake --build "${build_dir}" -j"$n_proc" --target silero_vad_ethos_u
+
+    rm -f "${fvp_log_path}"
+    local elf="${build_dir}/silero_vad_ethos_u"
+
+    echo "${FUNCNAME}: Running on FVP_Corstone_SSE-320"
+    bash "${et_root_dir}/backends/arm/scripts/run_fvp.sh" \
+        --elf="${elf}" \
+        --target=ethos-u85-256 \
+        --timeout=300 2>&1 | tee "${fvp_log_path}"
+
+    [[ -s "${fvp_log_path}" ]] || {
+        echo "${FUNCNAME}: Missing FVP serial log at ${fvp_log_path}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Comparing FVP probabilities with export-time reference"
+    python3 "${example_dir}/runtime/compare_vad_probs.py" \
+        --expected "${expected_path}" \
+        --actual-log "${fvp_log_path}" \
+        --threshold "${validation_threshold}" \
+        --atol 0.25 \
+        --mean-atol 0.02
 
     echo "${FUNCNAME}: PASS"
 }

@@ -66,7 +66,7 @@ vkapi::ShaderInfo pick_conv2d_pw_tiled_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-utils::uvec3 pick_conv2d_pw_tiled_global_wg_size(
+GlobalWorkGrid pick_conv2d_pw_tiled_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -80,7 +80,7 @@ utils::uvec3 pick_conv2d_pw_tiled_global_wg_size(
   uint32_t M = H * W;
   uint32_t N4 = utils::div_up_4(C_out);
   // TILE_N4=1, TILE_M=4
-  return {N4, utils::div_up(M, 4u), 1};
+  return GlobalWorkGrid({N4, utils::div_up(M, 4u), 1u}, kTiledWorkGrid);
 }
 
 //
@@ -119,10 +119,11 @@ ValueRef prepack_conv2d_pw_weight(
       weight_storage,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(N4),
-      utils::safe_downcast<uint32_t>(K4),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(N4),
+       utils::safe_downcast<uint32_t>(K4),
+       1u},
+      kTiledWorkGrid);
 
   PackParams pack_params{
       utils::safe_downcast<int32_t>(N), utils::safe_downcast<int32_t>(K), 1, 1};
@@ -135,8 +136,8 @@ ValueRef prepack_conv2d_pw_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(pack_kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       weight_data,
       packed_weight,
       {},
@@ -188,8 +189,8 @@ void add_conv2d_pw_tiled_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_pw_tiled_shader,
-      pick_conv2d_pw_tiled_global_wg_size,
-      pick_hw_square_wg_size,
+      pick_conv2d_pw_tiled_gwg,
+      pick_xy_square_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, packed_weight, packed_bias}, vkapi::kRead}},
       // Shader params buffers

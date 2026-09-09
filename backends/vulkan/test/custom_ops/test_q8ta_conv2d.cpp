@@ -4,10 +4,14 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include <algorithm>
+#include <array>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -22,6 +26,17 @@ using namespace executorch::vulkan::prototyping;
 using namespace vkcompute;
 
 static constexpr int64_t kRefDimSizeLimit = 100;
+static constexpr int64_t kRefOperationLimit = 2 * 1024 * 1024;
+
+struct Im2colUnsignedTestOptions {
+  int32_t input_zero_point = 2;
+  int32_t output_zero_point = -1;
+  bool use_extreme_values = false;
+  bool use_accumulator_limit_values = false;
+  bool has_bias = true;
+  const char* activation = "none";
+  float weight_scale = 1.0f / 256.0f;
+};
 
 // Utility function to create a test case from a Conv2dConfig
 static TestCase create_test_case_from_config(
@@ -29,16 +44,20 @@ static TestCase create_test_case_from_config(
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
     utils::GPUMemoryLayout int8_memory_layout,
-    const std::string& impl_selector = "") {
+    const std::string& impl_selector = "",
+    const Im2colUnsignedTestOptions* im2col_options = nullptr) {
   TestCase test_case;
 
   // Calculate output dimensions
   int64_t H_out = config.get_output_height();
   int64_t W_out = config.get_output_width();
 
-  // Input tensor (float/half) - [1, C_in, H_in, W_in] (batch size always 1)
+  // Input tensor (float/half) - [N, C_in, H_in, W_in]
   std::vector<int64_t> input_size = {
-      1, config.channels.in, config.input_size.h, config.input_size.w};
+      config.batch,
+      config.channels.in,
+      config.input_size.h,
+      config.input_size.w};
 
   utils::GPUMemoryLayout fp_memory_layout = fp_storage_type == utils::kBuffer
       ? utils::kWidthPacked
@@ -47,7 +66,8 @@ static TestCase create_test_case_from_config(
   // Create test case name
   std::string prefix = config.test_case_name.substr(0, 4); // "ACCU" or "PERF"
   std::string dtype_str = dtype_short(input_dtype);
-  std::string in_shape = "[1," + std::to_string(config.channels.in) + "," +
+  std::string in_shape = "[" + std::to_string(config.batch) + "," +
+      std::to_string(config.channels.in) + "," +
       std::to_string(config.input_size.h) + "," +
       std::to_string(config.input_size.w) + "]";
   std::string weight_shape = "[" + std::to_string(config.channels.out) + "," +
@@ -87,8 +107,27 @@ static TestCase create_test_case_from_config(
   float input_scale_val = 0.008123;
   ValueSpec input_scale(input_scale_val);
 
-  int32_t input_zero_point_val = 2;
+  const int32_t input_zero_point_val =
+      im2col_options == nullptr ? 2 : im2col_options->input_zero_point;
   ValueSpec input_zero_point(input_zero_point_val);
+
+  if (im2col_options != nullptr &&
+      im2col_options->use_accumulator_limit_values) {
+    input_tensor.ensure_data_generated(2401);
+    std::fill(
+        input_tensor.get_float_data().begin(),
+        input_tensor.get_float_data().end(),
+        (127.0f - input_zero_point_val) * input_scale_val);
+  } else if (im2col_options != nullptr && im2col_options->use_extreme_values) {
+    input_tensor.ensure_data_generated(2401);
+    constexpr std::array<int8_t, 5> values = {-128, -1, 0, 1, 127};
+    std::vector<float>& input_data = input_tensor.get_float_data();
+    for (size_t i = 0; i < input_data.size(); ++i) {
+      input_data.at(i) = (static_cast<float>(values.at(i % values.size())) -
+                          input_zero_point_val) *
+          input_scale_val;
+    }
+  }
 
   // Quantized weight tensor (int8) - [C_out, C_in_per_group * K_h * K_w]
   // Memory layout: height, width, then channels - in_c is innermost (stride 1)
@@ -105,6 +144,22 @@ static TestCase create_test_case_from_config(
       DataGenType::RANDINT8);
   quantized_weight.set_constant(true);
 
+  if (im2col_options != nullptr &&
+      im2col_options->use_accumulator_limit_values) {
+    quantized_weight.ensure_data_generated(2402);
+    std::fill(
+        quantized_weight.get_int8_data().begin(),
+        quantized_weight.get_int8_data().end(),
+        127);
+  } else if (im2col_options != nullptr && im2col_options->use_extreme_values) {
+    quantized_weight.ensure_data_generated(2402);
+    constexpr std::array<int8_t, 5> values = {-128, -1, 0, 1, 127};
+    std::vector<int8_t>& weight_data = quantized_weight.get_int8_data();
+    for (size_t i = 0; i < weight_data.size(); ++i) {
+      weight_data.at(i) = values.at((i * 3 + 1) % values.size());
+    }
+  }
+
   if (debugging()) {
     print_valuespec_data(quantized_weight, "weight_tensor");
   }
@@ -119,6 +174,13 @@ static TestCase create_test_case_from_config(
       utils::kWidthPacked,
       DataGenType::RANDOM_SCALES);
   weight_scales.set_constant(true);
+  if (im2col_options != nullptr) {
+    weight_scales.ensure_data_generated(2403);
+    std::fill(
+        weight_scales.get_float_data().begin(),
+        weight_scales.get_float_data().end(),
+        im2col_options->weight_scale);
+  }
 
   ValueSpec weight_sums(
       {aligned_out_channels}, // Per output channel
@@ -140,12 +202,16 @@ static TestCase create_test_case_from_config(
       utils::kWidthPacked,
       DataGenType::ZEROS);
   bias.set_constant(true);
+  if (im2col_options != nullptr && !im2col_options->has_bias) {
+    bias.set_none(true);
+  }
 
   // Output quantization parameters
   float output_scale_val = 0.05314;
   ValueSpec output_scale(output_scale_val);
 
-  int32_t output_zero_point_val = -1;
+  const int32_t output_zero_point_val =
+      im2col_options == nullptr ? -1 : im2col_options->output_zero_point;
   ValueSpec output_zero_point(output_zero_point_val);
 
   // Stride and padding parameters
@@ -159,9 +225,9 @@ static TestCase create_test_case_from_config(
   // Kernel size parameters
   ValueSpec kernel_size({config.kernel.h, config.kernel.w});
 
-  // Output tensor (float/half) - [1, C_out, H_out, W_out] (batch size always 1)
+  // Output tensor (float/half) - [N, C_out, H_out, W_out]
   ValueSpec output(
-      {1, config.channels.out, H_out, W_out},
+      {config.batch, config.channels.out, H_out, W_out},
       input_dtype,
       fp_storage_type,
       fp_memory_layout,
@@ -184,7 +250,8 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(groups);
 
   // Activation (none = no activation)
-  ValueSpec activation = ValueSpec::make_string("none");
+  ValueSpec activation = ValueSpec::make_string(
+      im2col_options == nullptr ? "none" : im2col_options->activation);
   test_case.add_input_spec(activation);
 
   // Add memory layout parameter for the quantized tensors
@@ -197,7 +264,9 @@ static TestCase create_test_case_from_config(
 
   test_case.add_output_spec(output);
 
-  test_case.set_abs_tolerance(output_scale_val + 1e-4f);
+  test_case.set_abs_tolerance(
+      im2col_options == nullptr ? output_scale_val + 1e-4f
+                                : output_scale_val * 0.25f);
 
   // Filter out quantize/dequantize shaders from timing measurements
   test_case.set_shader_filter({
@@ -267,10 +336,21 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
   return test_cases;
 }
 
+static std::vector<TestCase> generate_im2col_unsigned_test_cases(
+    const std::string& impl_selector);
+
 // Generate test cases for quantized conv2d operation
 static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
   std::vector<TestCase> test_cases;
-  if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
+  api::Context* const context = vkcompute::api::context();
+  if (!context->adapter_ptr()->supports_int8_dot_product()) {
+    for (const std::string& impl_selector : {"im2col", "im2col_auto"}) {
+      std::vector<TestCase> im2col_cases =
+          generate_im2col_unsigned_test_cases(impl_selector);
+      for (TestCase& test_case : im2col_cases) {
+        test_cases.push_back(std::move(test_case));
+      }
+    }
     return test_cases;
   }
 
@@ -475,6 +555,234 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
     }
   }
 
+  std::vector<Conv2dConfig> batch_configs = {
+      {OutInChannels(16, 32),
+       InputSize2D(7, 7),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1,
+       2},
+      {OutInChannels(32, 3),
+       InputSize2D(256, 256),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1,
+       1},
+      {OutInChannels(32, 3),
+       InputSize2D(256, 256),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1,
+       60},
+      {OutInChannels(512, 256),
+       InputSize2D(10, 13),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1,
+       60}};
+
+  for (auto& config : batch_configs) {
+    const bool is_performance = config.batch > kRefDimSizeLimit ||
+        config.channels.out > kRefDimSizeLimit ||
+        config.channels.in > kRefDimSizeLimit ||
+        config.input_size.h > kRefDimSizeLimit ||
+        config.input_size.w > kRefDimSizeLimit;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name = make_test_case_name(
+        config, is_performance, utils::kTexture3D, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4C1W));
+    if (config.batch == 2) {
+      test_cases.push_back(create_test_case_from_config(
+          config,
+          vkapi::kFloat,
+          utils::kTexture3D,
+          utils::kPackedInt8_4C1W,
+          /*impl_selector=*/"im2col"));
+      test_cases.push_back(create_test_case_from_config(
+          config, vkapi::kFloat, utils::kTexture3D, utils::kPackedInt8_4W4C));
+      test_cases.push_back(create_test_case_from_config(
+          config,
+          vkapi::kFloat,
+          utils::kTexture3D,
+          utils::kPackedInt8_4W4C,
+          /*impl_selector=*/"im2col"));
+    }
+  }
+
+  for (const std::string& impl_selector :
+       {"im2col", "im2col_unsigned", "im2col_auto"}) {
+    std::vector<TestCase> im2col_cases =
+        generate_im2col_unsigned_test_cases(impl_selector);
+    for (TestCase& test_case : im2col_cases) {
+      test_cases.push_back(std::move(test_case));
+    }
+  }
+
+  return test_cases;
+}
+
+static std::vector<TestCase> generate_im2col_unsigned_test_cases(
+    const std::string& impl_selector) {
+  api::Context* const context = vkcompute::api::context();
+  if (impl_selector == "im2col_unsigned" &&
+      !context->adapter_ptr()->supports_int8_dot_product()) {
+    return {};
+  }
+
+  std::vector<std::pair<Conv2dConfig, Im2colUnsignedTestOptions>> configs = {
+      {{OutInChannels(5, 4),
+        InputSize2D(5, 5),
+        KernelSize(3, 3),
+        Stride(1, 1),
+        Padding(0, 0),
+        Dilation(1, 1),
+        1},
+       {.input_zero_point = 2,
+        .output_zero_point = -1,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = true,
+        .activation = "none"}},
+      {{OutInChannels(8, 8),
+        InputSize2D(5, 5),
+        KernelSize(3, 3),
+        Stride(1, 1),
+        Padding(1, 1),
+        Dilation(1, 1),
+        1},
+       {.input_zero_point = -7,
+        .output_zero_point = 3,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = false,
+        .activation = "none"}},
+      {{OutInChannels(12, 8),
+        InputSize2D(7, 7),
+        KernelSize(3, 3),
+        Stride(2, 2),
+        Padding(1, 1),
+        Dilation(1, 1),
+        1},
+       {.input_zero_point = 127,
+        .output_zero_point = -5,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = true,
+        .activation = "relu"}},
+      {{OutInChannels(12, 8),
+        InputSize2D(9, 9),
+        KernelSize(3, 3),
+        Stride(1, 1),
+        Padding(2, 2),
+        Dilation(2, 2),
+        1},
+       {.input_zero_point = -128,
+        .output_zero_point = 5,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = false,
+        .activation = "none"}},
+      {{OutInChannels(8, 8),
+        InputSize2D(6, 7),
+        KernelSize(3, 3),
+        Stride(1, 1),
+        Padding(1, 1),
+        Dilation(1, 1),
+        2},
+       {.input_zero_point = 11,
+        .output_zero_point = -3,
+        .use_extreme_values = true,
+        .use_accumulator_limit_values = false,
+        .has_bias = true,
+        .activation = "relu"}},
+      {{OutInChannels(1, 4),
+        InputSize2D(90, 91),
+        KernelSize(90, 91),
+        Stride(1, 1),
+        Padding(0, 0),
+        Dilation(1, 1),
+        1},
+       {.input_zero_point = 0,
+        .output_zero_point = -1,
+        .use_extreme_values = false,
+        .use_accumulator_limit_values = true,
+        .has_bias = true,
+        .activation = "none",
+        .weight_scale = 1.0f / 1000000.0f}},
+  };
+
+  std::vector<TestCase> test_cases;
+  test_cases.reserve(configs.size());
+  for (auto& [config, options] : configs) {
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name =
+        make_test_case_name(config, false, utils::kTexture3D, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kPackedInt8_4W4C,
+        impl_selector,
+        &options));
+  }
+
+  if (impl_selector == "im2col_auto") {
+    Conv2dConfig config{
+        OutInChannels(1, 4),
+        InputSize2D(91, 91),
+        KernelSize(91, 91),
+        Stride(1, 1),
+        Padding(0, 0),
+        Dilation(1, 1),
+        1};
+    Im2colUnsignedTestOptions options;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name =
+        make_test_case_name(config, false, utils::kTexture3D, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kPackedInt8_4W4C,
+        impl_selector,
+        &options));
+  }
+
+  const vkapi::Adapter& adapter = *context->adapter_ptr();
+  if (impl_selector == "im2col_unsigned" ||
+      (impl_selector == "im2col_auto" && can_use_unsigned_pw_dot(adapter, 4))) {
+    const int32_t buffer_output_channels = utils::safe_downcast<int32_t>(
+        static_cast<int64_t>(adapter.max_texture2d_dim()) * 4 + 1);
+    Conv2dConfig config{
+        OutInChannels(buffer_output_channels, 4),
+        InputSize2D(1, 1),
+        KernelSize(1, 1),
+        Stride(1, 1),
+        Padding(0, 0),
+        Dilation(1, 1),
+        1};
+    Im2colUnsignedTestOptions options;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name =
+        make_test_case_name(config, false, utils::kBuffer, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        vkapi::kFloat,
+        utils::kBuffer,
+        utils::kPackedInt8_4W4C,
+        impl_selector,
+        &options));
+  }
+
   return test_cases;
 }
 
@@ -498,7 +806,6 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& dilation_spec = test_case.inputs()[idx++];
   const ValueSpec& groups_spec = test_case.inputs()[idx++];
   const ValueSpec& activation_spec = test_case.inputs()[idx++];
-  (void)activation_spec; // Not used in reference implementation
   const ValueSpec& layout_spec = test_case.inputs()[idx++];
   (void)layout_spec; // Not used in reference implementation
   const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
@@ -539,10 +846,12 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   int64_t dilation_w = dilation_data[1];
   int64_t groups = groups_spec.get_int_value();
 
-  // Skip for large tensors since computation time will be extremely slow
-  if (N > kRefDimSizeLimit || C_in > kRefDimSizeLimit ||
-      H_in > kRefDimSizeLimit || W_in > kRefDimSizeLimit ||
-      C_out > kRefDimSizeLimit) {
+  const int64_t reference_operations =
+      N * C_out * H_out * W_out * (C_in / groups) * K_h * K_w;
+  const bool has_large_dimension = N > kRefDimSizeLimit ||
+      C_in > kRefDimSizeLimit || H_in > kRefDimSizeLimit ||
+      W_in > kRefDimSizeLimit || C_out > kRefDimSizeLimit;
+  if (has_large_dimension && reference_operations > kRefOperationLimit) {
     throw std::invalid_argument(
         "One or more dimensions exceed the allowed limit for reference implementation.");
     std::cout
@@ -576,7 +885,7 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   auto& ref_data = output_spec.get_ref_float_data();
   ref_data.resize(num_output_elements);
 
-  const int in_features = utils::align_up_4(C_in_per_group * K_h * K_w);
+  const int64_t in_features = utils::align_up_4(C_in_per_group * K_h * K_w);
 
   // Perform activation, weight, and output quantized conv2d operation
   for (int64_t n = 0; n < N; ++n) {
@@ -655,8 +964,12 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
           float float_result =
               accum_adjusted * input_scale * weight_scales_data[out_c];
 
-          // Add bias and store result
-          float_result += bias_data[out_c];
+          if (!bias_spec.is_none()) {
+            float_result += bias_data[out_c];
+          }
+          if (activation_spec.get_string_value() == "relu") {
+            float_result = std::max(float_result, 0.0f);
+          }
 
           // Quantize the output to int8
           float quant_output_f =
@@ -713,6 +1026,30 @@ static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
 }
 
 int main(int argc, char* argv[]) {
+  const vkapi::Adapter& adapter = *vkcompute::api::context()->adapter_ptr();
+  const bool prefers_unsigned_dot =
+      adapter.accelerates_unsigned_packed4x8_dot() &&
+      !adapter.accelerates_signed_packed4x8_dot();
+  VK_CHECK_COND(
+      can_use_unsigned_pw_dot(adapter, kMaxUnsignedDotAccumulatorBytes) ==
+      prefers_unsigned_dot);
+  VK_CHECK_COND(
+      !can_use_unsigned_pw_dot(adapter, kMaxUnsignedDotAccumulatorBytes + 1));
+
+  std::string im2col_impl_selector;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg(argv[i]);
+    if (arg == "--im2col-path=signed") {
+      im2col_impl_selector = "im2col";
+    } else if (arg == "--im2col-path=unsigned") {
+      im2col_impl_selector = "im2col_unsigned";
+    } else if (arg == "--im2col-path=auto") {
+      im2col_impl_selector = "im2col_auto";
+    } else {
+      std::cerr << "Unknown argument: " << arg << std::endl;
+      return 2;
+    }
+  }
   set_debugging(false);
   set_print_output(false);
 #ifdef DEBUG_MODE
@@ -731,11 +1068,16 @@ int main(int argc, char* argv[]) {
   ReferenceComputeFunc ref_fn = reference_impl;
 
   // Execute test cases using the new framework with custom FLOP calculator
+  const auto test_case_generator = [im2col_impl_selector]() {
+    return im2col_impl_selector.empty()
+        ? generate_quantized_conv2d_test_cases()
+        : generate_im2col_unsigned_test_cases(im2col_impl_selector);
+  };
   auto results = execute_test_cases(
 #ifdef DEBUG_MODE
       generate_quantized_conv2d_easy_cases,
 #else
-      generate_quantized_conv2d_test_cases,
+      test_case_generator,
 #endif
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",

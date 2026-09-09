@@ -77,20 +77,20 @@ utils::ivec2 create_broadcast_params(
 // Work group size calculation functions
 //
 
-utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group) {
-  utils::uvec3 local_group_size = {4, 4, 4};
-  if (global_work_group[2u] == 1) {
-    if (global_work_group[1u] < 8) {
-      local_group_size[0u] = 16;
-      local_group_size[1u] = 4;
-      local_group_size[2u] = 1;
+LocalWorkGroup adaptive_lwg(const GlobalWorkGrid& gwg) {
+  utils::uvec3 extents = {4u, 4u, 4u};
+  if (gwg[2u] == 1) {
+    if (gwg[1u] < 8) {
+      extents[0u] = 16u;
+      extents[1u] = 4u;
+      extents[2u] = 1u;
     } else {
-      local_group_size[0u] = 8;
-      local_group_size[1u] = 8;
-      local_group_size[2u] = 1;
+      extents[0u] = 8u;
+      extents[1u] = 8u;
+      extents[2u] = 1u;
     }
   }
-  return local_group_size;
+  return LocalWorkGroup(extents);
 }
 
 } // namespace vkcompute

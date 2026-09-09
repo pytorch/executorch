@@ -32,6 +32,8 @@ class RemoveNoopPass(ArmOpTargetedPass):
         exir_ops.edge.aten.copy.default,
         exir_ops.edge.aten.detach_copy.default,
         *_single_input_concat_ops,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
         exir_ops.backend.tosa.PAD.default,
         exir_ops.backend.tosa.SLICE.default,
     )
@@ -70,6 +72,24 @@ class RemoveNoopPass(ArmOpTargetedPass):
             # Concatenating one tensor returns that tensor unchanged.
             if isinstance(inputs, (list, tuple)) and len(inputs) == 1:
                 return inputs[0]
+            return super().call_operator(op, args, kwargs, meta, updated)
+
+        if op in (
+            exir_ops.edge.aten.upsample_bilinear2d.vec,
+            exir_ops.edge.aten.upsample_nearest2d.vec,
+        ):
+            scale_factors = (
+                args[3] if op == exir_ops.edge.aten.upsample_bilinear2d.vec else args[2]
+            )
+            if (
+                isinstance(scale_factors, (list, tuple))
+                and len(scale_factors) == 2
+                and all(
+                    type(scale) in (int, float) and scale == 1.0
+                    for scale in scale_factors
+                )
+            ):
+                return args[0]
             return super().call_operator(op, args, kwargs, meta, updated)
 
         if op == exir_ops.backend.tosa.PAD.default:

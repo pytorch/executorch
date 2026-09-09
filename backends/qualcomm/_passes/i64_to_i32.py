@@ -42,6 +42,8 @@ class I64toI32(ExportPass):
         exir_ops.edge.aten.gather.default: [2],
         exir_ops.edge.aten.scatter.src: [2],
         exir_ops.edge.aten.scatter.value: [2],
+        exir_ops.edge.aten.scatter_add.default: [2],
+        exir_ops.edge.aten.scatter_reduce.two: [2],
     }
     copy_op = exir_ops.edge.aten._to_copy.default
 
@@ -170,7 +172,14 @@ class I64toI32(ExportPass):
                             (input_node,),
                             {"dtype": torch.int64},
                         )
-                        cast_i64_node.meta["val"] = node.meta["val"].to(torch.int64)
+                        # This cast produces the *index* tensor, so its
+                        # FakeTensor must be derived from the argument being
+                        # cast, not from the op output: index.shape ==
+                        # output.shape for gather, but for scatter* the output
+                        # takes the shape of 'self', which may differ.
+                        cast_i64_node.meta["val"] = input_node.meta["val"].to(
+                            torch.int64
+                        )
                         args_list = list(node.args)
                         args_list[arg_index] = cast_i64_node
                         node.args = tuple(args_list)

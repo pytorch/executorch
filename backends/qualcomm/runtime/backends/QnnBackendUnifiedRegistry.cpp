@@ -167,7 +167,11 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
   bundle->qnn_logger_ptr = std::move(logger);
   bundle->qnn_backend_ptr = std::move(backend);
   bundle->qnn_device_ptr = std::move(device);
-  qnn_backend_bundles_map_.emplace(
+  // insert_or_assign rather than emplace: an expired bundle leaves a dead
+  // weak_ptr under this key, and emplace will not replace it, so every later
+  // request would miss the cache and build another backend for the same type.
+  // CleanupExpired() cannot be used from here -- it takes mutex_, already held.
+  qnn_backend_bundles_map_.insert_or_assign(
       backend_type, bundle); // Store weak_ptr to the bundle
 
   return Error::Ok;

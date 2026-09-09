@@ -83,12 +83,12 @@ LD_LIBRARY_PATH=/path/to/executorch/build-x86/lib:/path/to/qnn_sdk/lib/x86_64-li
 PYTHONPATH=$(dirname $EXECUTORCH_ROOT) \
 python backends/qualcomm/tests/test_qnn_delegate.py \
     TestQNNFloatingPointOperator.test_qnn_backend_abs \
-    -H $HOST -s $DEVICE_SERIAL -m SM8850 -b build-android -a /path/to/artifacts
+    --host $HOST --device $DEVICE_SERIAL --soc_model SM8850 --build_folder build-android -a /path/to/artifacts
 ```
 
 > **Note (build from source):** Set `PYTHONPATH` to the parent directory of the executorch repo root. Required because `executorch.examples.qualcomm` lives in the source tree and is not installed into site-packages.
 
-Required flags: `-m` (SoC model), `-b` (Android build dir). Optional: `-s` (device serial), `-H` (host), `-a` (artifact dir), `-c` (compile only), `-x` (run on x86_64).
+Required flags: `--soc_model` (SoC model), `--build_folder` (Android build dir). Optional: `--device` (device serial), `--host` (host), `-a` (artifact dir), `--compile_only`, `--enable_x86_64`.
 
 **Test classes:**
 

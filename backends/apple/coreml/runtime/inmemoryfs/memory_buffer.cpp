@@ -8,6 +8,7 @@
 #include "memory_buffer.hpp"
 
 #include <assert.h>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <iostream>

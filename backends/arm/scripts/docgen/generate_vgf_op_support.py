@@ -2,7 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""Generate VGF PyTorch operator-support documentation.
+"""Generate backend PyTorch operator-support documentation.
 
 The default output is a customer-facing Markdown page listing public PyTorch
 APIs, supported profiles, tested dtypes, and quantization modes. Run the script
@@ -43,8 +43,51 @@ from typing import cast, Iterable, Mapping, Protocol, Sequence
 import torch
 
 
+# ---------------------------------------------------------------------------
+# Backend-specific configuration.
+#
+# Keep backend-specific names, paths, pipeline signatures, profiles and
+# exceptional coverage here. A future Ethos-U variant should be expressible by
+# changing this configuration instead of editing the implementation below.
+# ---------------------------------------------------------------------------
+BACKEND_NAME = "VGF"
+BACKEND_PIPELINE_CLASS_NAMES = frozenset({"VgfPipeline"})
+BACKEND_PIPELINE_LABEL = "VgfPipeline"
+BACKEND_TOSA_SPEC = "TOSA-1.0+FP+INT+int4+int16"
+
+GENERATOR_PATH = Path("backends/arm/scripts/docgen/generate_vgf_op_support.py")
+GENERATOR_COMMAND = f"python {GENERATOR_PATH}"
 DEFAULT_OUTPUT = Path("docs/source/backends/arm-vgf/VGF_op_support.md")
 TEST_ROOT = Path("backends/arm/test")
+
+# Pipeline constructor/static-analysis configuration.
+PIPELINE_QUANTIZE_KEYWORD: str | None = "quantize"
+PIPELINE_QUANTIZE_DEFAULT = True
+PIPELINE_DEFAULT_PROFILE = "INT"
+PIPELINE_ATEN_OP_POSITION = 2
+PIPELINE_ATEN_OP_KEYWORDS = ("aten_op", "aten_ops")
+PIPELINE_EXIR_OP_POSITION = 3
+PIPELINE_EXIR_OP_KEYWORDS = ("exir_op", "exir_ops")
+
+PAGE_TITLE = f"PyTorch operator support for the {BACKEND_NAME} backend"
+PAGE_DESCRIPTION = (
+    f"This page lists {BACKEND_NAME}-supported PyTorch APIs and the dtype and "
+    f"quantization modes covered by the {BACKEND_NAME} backend test pipeline."
+)
+MARKDOWN_DEBUG_NOTE = (
+    f"Debug mode adds the exact exported ATen operator and the {BACKEND_NAME} "
+    "test functions that contributed each row. Do not publish this version as "
+    "the customer-facing page."
+)
+HTML_DEBUG_NOTE = (
+    "Debug mode. This page includes the exact exported ATen operator and the "
+    f"{BACKEND_NAME} test functions that contributed each row. Do not publish "
+    "it as the customer-facing page."
+)
+CLI_DESCRIPTION = (
+    f"Generate {BACKEND_NAME} PyTorch operator-support documentation from "
+    f"{BACKEND_PIPELINE_LABEL} tests."
+)
 
 SUPPORT_PROFILE_ORDER = ["FP", "INT"]
 DTYPE_ORDER = [
@@ -169,7 +212,7 @@ PROFILE_STAGE_EQUIVALENT_OPS: dict[tuple[str, str], set[str]] = {
 }
 
 # These operators are accepted by partitioning but removed or rewritten before
-# backend lowering. They require transformation-path coverage, not a direct VGF
+# backend lowering. They require transformation-path coverage, not a direct backend
 # lowering test for every support profile.
 TRANSFORM_ONLY_OPS = {
     "torch.ops.aten.alias_copy.default",
@@ -190,7 +233,7 @@ DECOMPOSED_OPS = {
 
 # Tests that intentionally suppress ATen/Edge distribution assertions still
 # provide runtime coverage. The key is (relative path, test function).
-EXPLICIT_VGF_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
+EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     (
         "backends/arm/test/ops/test_div_tensor_mode.py",
         "test_div_tensor_mode_vgf_quant",
@@ -234,6 +277,10 @@ EXPLICIT_VGF_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
         "INT": {"torch.ops.aten.embedding.default"},
     },
 }
+
+# ---------------------------------------------------------------------------
+# Backend-agnostic implementation and shared normalization data.
+# ---------------------------------------------------------------------------
 
 # Friendly aliases for exported ATen operators that are commonly produced from
 # higher-level PyTorch APIs. These are what should appear in the published page.
@@ -539,8 +586,8 @@ class StaticBinding:
 
 
 @dataclass
-class VgfPipelineCoverage:
-    """Coverage inferred from one or more ``VgfPipeline`` tests."""
+class PipelineCoverage:
+    """Coverage inferred from one or more configured backend pipeline tests."""
 
     exported_op: str
     pytorch_apis: tuple[str, ...]
@@ -565,7 +612,7 @@ class PublicCoverage:
 
 @dataclass
 class SupportedOperatorEvidence:
-    """Backend evidence that an exported ATen operator should have VGF tests."""
+    """Backend evidence that an exported ATen operator should have tests."""
 
     exported_op: str
     pytorch_apis: tuple[str, ...]
@@ -716,8 +763,8 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
-def _is_vgf_pipeline_call(node: ast.Call) -> bool:
-    return _call_name(node.func) == "VgfPipeline"
+def _is_backend_pipeline_call(node: ast.Call) -> bool:
+    return _call_name(node.func) in BACKEND_PIPELINE_CLASS_NAMES
 
 
 def _literal_bool(node: ast.AST | None, default: bool) -> bool:
@@ -737,6 +784,32 @@ def _positional_or_keyword(call: ast.Call, index: int, name: str) -> ast.AST | N
     if len(call.args) > index:
         return call.args[index]
     return _keyword(call, name)
+
+
+def _pipeline_profile(call: ast.Call) -> str:
+    if PIPELINE_QUANTIZE_KEYWORD is None:
+        return PIPELINE_DEFAULT_PROFILE
+    quantize = _literal_bool(
+        _keyword(call, PIPELINE_QUANTIZE_KEYWORD),
+        default=PIPELINE_QUANTIZE_DEFAULT,
+    )
+    return "INT" if quantize else "FP"
+
+
+def _pipeline_operator_expr(
+    call: ast.Call, position: int, keyword_names: tuple[str, ...]
+) -> ast.AST | None:
+    if not keyword_names:
+        return call.args[position] if len(call.args) > position else None
+
+    value = _positional_or_keyword(call, position, keyword_names[0])
+    if value is not None:
+        return value
+    for keyword_name in keyword_names[1:]:
+        value = _keyword(call, keyword_name)
+        if value is not None:
+            return value
+    return None
 
 
 def _edge_generated_name_to_aten(text: str) -> str:
@@ -1390,7 +1463,7 @@ def _resolve_helper_method_call(
         @common.parametrize("test_case", test_suite)
         def test_foo(test_case):
             test_case = test_case()
-            VgfPipeline(..., aten_op=test_case.aten_op())
+            BackendPipeline(..., aten_op=test_case.aten_op())
 
     where each suite entry is ``lambda: FooTestCase(Model(), inputs)`` and
     ``FooTestCase.aten_op()`` returns ``getattr(self.model, "aten_op")``.
@@ -1593,17 +1666,17 @@ def _is_empty_op_expr(node: ast.AST | None) -> bool:
     return isinstance(node, (ast.List, ast.Tuple, ast.Set)) and not node.elts
 
 
-def _fallback_exported_ops_for_unattributed_vgf_call(
+def _fallback_exported_ops_for_unattributed_pipeline_call(
     context: ModuleContext,
     scope: ResolutionScope,
 ) -> list[str]:
-    """Infer coverage for op-level tests that pass ``aten_op=[]``.
+    """Infer coverage for op-level tests that pass an empty ATen op list.
 
     Several op tests intentionally disable operator-distribution assertions in
-    ``VgfPipeline`` by passing empty operator lists even though the module still
-    defines a single module-level ``aten_op``/``aten_ops`` constant. Treat those
-    as VGF coverage for --check/debug. Multi-op and model tests stay
-    unattributed.
+    the configured backend pipeline by passing empty operator lists even though
+    the module still defines a single module-level ``aten_op``/``aten_ops``
+    constant. Treat those as backend coverage for --check/debug. Multi-op and
+    model tests stay unattributed.
 
     """
 
@@ -1859,7 +1932,7 @@ def _find_enclosing_function(
 
 
 def _add_coverage(
-    rows: dict[str, VgfPipelineCoverage],
+    rows: dict[str, PipelineCoverage],
     op: str,
     profile: str,
     stage: str,
@@ -1873,7 +1946,7 @@ def _add_coverage(
 ) -> None:
     row = rows.setdefault(
         op,
-        VgfPipelineCoverage(
+        PipelineCoverage(
             exported_op=op,
             pytorch_apis=_pytorch_api_aliases(op),
         ),
@@ -1940,15 +2013,17 @@ def _assigned_pipeline_name(call: ast.Call, context: ModuleContext) -> str | Non
     return None
 
 
-def _scan_vgf_pipeline_tests(  # noqa: C901
+def _scan_backend_pipeline_tests(  # noqa: C901
     repo_root: Path,
-) -> tuple[dict[str, VgfPipelineCoverage], list[UnresolvedPipelineEvidence], list[str]]:
-    rows: dict[str, VgfPipelineCoverage] = {}
+) -> tuple[dict[str, PipelineCoverage], list[UnresolvedPipelineEvidence], list[str]]:
+    rows: dict[str, PipelineCoverage] = {}
     unresolved: list[UnresolvedPipelineEvidence] = []
     normalisation_diagnostics: list[str] = []
     test_dir = repo_root / TEST_ROOT
     if not test_dir.is_dir():
-        raise RuntimeError(f"Could not locate VGF test directory: {test_dir}")
+        raise RuntimeError(
+            f"Could not locate {BACKEND_NAME} test directory: {test_dir}"
+        )
 
     for path in sorted(test_dir.rglob("*.py")):
         context = _build_module_context(path, repo_root)
@@ -1956,25 +2031,21 @@ def _scan_vgf_pipeline_tests(  # noqa: C901
             continue
 
         for node in ast.walk(context.tree):
-            if not isinstance(node, ast.Call) or not _is_vgf_pipeline_call(node):
+            if not isinstance(node, ast.Call) or not _is_backend_pipeline_call(node):
                 continue
             function = _find_enclosing_function(node, context)
             if function is None or _function_is_skipped_or_xfailed(function):
                 continue
 
-            profile = (
-                "INT"
-                if _literal_bool(_keyword(node, "quantize"), default=True)
-                else "FP"
-            )
+            profile = _pipeline_profile(node)
             test_label = f"{context.path}::{function.name}"
             scope = _scope_for_call(function, node, context)
-            aten_expr = _positional_or_keyword(node, 2, "aten_op")
-            if aten_expr is None:
-                aten_expr = _keyword(node, "aten_ops")
-            exir_expr = _positional_or_keyword(node, 3, "exir_op")
-            if exir_expr is None:
-                exir_expr = _keyword(node, "exir_ops")
+            aten_expr = _pipeline_operator_expr(
+                node, PIPELINE_ATEN_OP_POSITION, PIPELINE_ATEN_OP_KEYWORDS
+            )
+            exir_expr = _pipeline_operator_expr(
+                node, PIPELINE_EXIR_OP_POSITION, PIPELINE_EXIR_OP_KEYWORDS
+            )
 
             diagnostics: list[str] = []
             aten_ops = _resolve_exported_ops(aten_expr, context, scope, diagnostics)
@@ -2016,7 +2087,9 @@ def _scan_vgf_pipeline_tests(  # noqa: C901
                         asserted_op=op,
                     )
 
-            explicit = EXPLICIT_VGF_COVERAGE.get((str(context.path), function.name), {})
+            explicit = EXPLICIT_BACKEND_COVERAGE.get(
+                (str(context.path), function.name), {}
+            )
             for explicit_op in explicit.get(profile, set()):
                 _add_coverage(
                     rows,
@@ -2033,7 +2106,7 @@ def _scan_vgf_pipeline_tests(  # noqa: C901
             if not aten_ops and not exir_ops and not explicit.get(profile):
                 fallback: list[str] = []
                 if _is_empty_op_expr(aten_expr):
-                    fallback = _fallback_exported_ops_for_unattributed_vgf_call(
+                    fallback = _fallback_exported_ops_for_unattributed_pipeline_call(
                         context, scope
                     )
                 for op in fallback:
@@ -2064,7 +2137,7 @@ def _scan_vgf_pipeline_tests(  # noqa: C901
 
 
 def _public_rows_from_exact_rows(
-    exact_rows: Mapping[str, VgfPipelineCoverage],
+    exact_rows: Mapping[str, PipelineCoverage],
 ) -> list[PublicCoverage]:
     public_rows: dict[str, PublicCoverage] = {}
     for exact in exact_rows.values():
@@ -2084,7 +2157,7 @@ def _public_rows_from_exact_rows(
 
 
 def _profiles_for_checker(
-    checker: type, vgf_tosa_spec: TosaSpecificationLike
+    checker: type, backend_tosa_spec: TosaSpecificationLike
 ) -> set[str]:
     """Best-effort profile extraction for registered support checks.
 
@@ -2099,9 +2172,9 @@ def _profiles_for_checker(
     tosa_specs = getattr(checker, "tosa_specs", None)
 
     if tosa_specs is None:
-        if vgf_tosa_spec.support_float():
+        if backend_tosa_spec.support_float():
             profiles.add("FP")
-        if vgf_tosa_spec.support_integer():
+        if backend_tosa_spec.support_integer():
             profiles.add("INT")
         return profiles
 
@@ -2113,9 +2186,9 @@ def _profiles_for_checker(
     for raw_spec in specs:
         spec = cast(TosaSpecificationLike, raw_spec)
         try:
-            if spec.support_float() and vgf_tosa_spec.support_float():
+            if spec.support_float() and backend_tosa_spec.support_float():
                 profiles.add("FP")
-            if spec.support_integer() and vgf_tosa_spec.support_integer():
+            if spec.support_integer() and backend_tosa_spec.support_integer():
                 profiles.add("INT")
         except Exception as error:
             logger.debug("Skipping unsupported TOSA spec %r: %s", spec, error)
@@ -2127,8 +2200,8 @@ def _profiles_for_checker(
 def _collect_backend_supported_ops(  # noqa: C901
     repo_root: Path,
 ) -> dict[str, SupportedOperatorEvidence]:
-    """Collect exported ATen ops that backend registries say VGF should
-    support.
+    """Collect exported ATen ops that backend registries say should be
+    supported.
     """
 
     _ensure_repo_importable(repo_root)
@@ -2140,9 +2213,9 @@ def _collect_backend_supported_ops(  # noqa: C901
         tosa_profile_supported_op_lists as profile_op_lists,
         tosa_supported_operators,
     )
-    from executorch.backends.arm.vgf import VgfCompileSpec
+    from executorch.backends.arm.tosa import TosaSpecification
 
-    tosa_spec = VgfCompileSpec().tosa_spec
+    tosa_spec = TosaSpecification.create_from_string(BACKEND_TOSA_SPEC)
     expected: dict[str, SupportedOperatorEvidence] = {}
 
     def add(target: object, profile: str, evidence: str) -> None:
@@ -2206,18 +2279,17 @@ def _format_markdown_table_row(cells: Sequence[str]) -> str:
 
 
 def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
-    exact_rows, _unresolved, _diagnostics = _scan_vgf_pipeline_tests(repo_root)
-    command = "python backends/arm/scripts/docgen/generate_vgf_op_support.py"
+    exact_rows, _unresolved, _diagnostics = _scan_backend_pipeline_tests(repo_root)
+    command = GENERATOR_COMMAND
     if debug:
         command += " --debug"
 
     lines = [
-        "# PyTorch operator support for the VGF backend",
+        f"# {PAGE_TITLE}",
         "",
         f"<!-- DO NOT EDIT: generated by `{command}`. -->",
         "",
-        "This page lists VGF-supported PyTorch APIs and the dtype and "
-        "quantization modes covered by the VGF backend test pipeline.",
+        PAGE_DESCRIPTION,
         "",
         "`8x8` means 8-bit activations and 8-bit weights. `16x8` means "
         "16-bit activations and 8-bit weights. `8x4` means "
@@ -2235,9 +2307,7 @@ def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
                 f"Total tested exported operators: **{len(sorted_rows)}**.",
                 "",
                 "```{note}",
-                "Debug mode adds the exact exported ATen operator and the VGF "
-                "test functions that contributed each row. Do not publish this "
-                "version as the customer-facing page.",
+                MARKDOWN_DEBUG_NOTE,
                 "```",
                 "",
                 "| PyTorch API | Exported operator | Support profile | DType | Quantization mode | Test |",
@@ -2278,8 +2348,8 @@ def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
 def generate_html(repo_root: Path, *, debug: bool = False) -> str:
     """Generate a standalone HTML version of the operator-support page."""
 
-    exact_rows, _unresolved, _diagnostics = _scan_vgf_pipeline_tests(repo_root)
-    command = "python backends/arm/scripts/docgen/generate_vgf_op_support.py"
+    exact_rows, _unresolved, _diagnostics = _scan_backend_pipeline_tests(repo_root)
+    command = GENERATOR_COMMAND
     if debug:
         command += " --debug"
     command += " --html"
@@ -2290,7 +2360,7 @@ def generate_html(repo_root: Path, *, debug: bool = False) -> str:
         "<head>",
         '  <meta charset="utf-8" />',
         '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
-        "  <title>PyTorch operator support for the VGF backend</title>",
+        f"  <title>{html.escape(PAGE_TITLE)}</title>",
         "  <style>",
         "    :root { color-scheme: light dark; }",
         "    body {",
@@ -2317,9 +2387,9 @@ def generate_html(repo_root: Path, *, debug: bool = False) -> str:
         "</head>",
         "<body>",
         "  <main>",
-        "    <h1>PyTorch operator support for the VGF backend</h1>",
+        f"    <h1>{html.escape(PAGE_TITLE)}</h1>",
         f'    <p class="generated">Generated by {_html_code(command)}.</p>',
-        "    <p>This page lists VGF-supported PyTorch APIs and the dtype and quantization modes covered by the VGF backend test pipeline.</p>",
+        f"    <p>{html.escape(PAGE_DESCRIPTION)}</p>",
         "    <p><code>8x8</code> means 8-bit activations and 8-bit weights. <code>16x8</code> means 16-bit activations and 8-bit weights.</p>",
     ]
 
@@ -2331,7 +2401,7 @@ def generate_html(repo_root: Path, *, debug: bool = False) -> str:
         lines.extend(
             [
                 f"    <p>Total tested exported operators: <strong>{len(sorted_rows)}</strong>.</p>",
-                '    <div class="note"><strong>Debug mode.</strong> This page includes the exact exported ATen operator and the VGF test functions that contributed each row. Do not publish it as the customer-facing page.</div>',
+                f'    <div class="note">{html.escape(HTML_DEBUG_NOTE)}</div>',
                 '    <div class="table-container">',
                 "      <table>",
                 "        <thead>",
@@ -2418,7 +2488,7 @@ def _coverage_aliases(expected_op: str, profile: str) -> set[str]:
 
 
 def _matching_evidence(
-    tested: Mapping[str, VgfPipelineCoverage],
+    tested: Mapping[str, PipelineCoverage],
     expected_op: str,
     profile: str,
 ) -> list[CoverageEvidence]:
@@ -2460,7 +2530,7 @@ def _validate_configuration(repo_root: Path) -> list[str]:
         errors.append(
             f"operators configured as both transform-only and decomposed: {sorted(overlap)}"
         )
-    for (path, function), profiles in EXPLICIT_VGF_COVERAGE.items():
+    for (path, function), profiles in EXPLICIT_BACKEND_COVERAGE.items():
         full_path = repo_root / path
         if not full_path.is_file():
             errors.append(f"explicit coverage path does not exist: {path}")
@@ -2481,7 +2551,7 @@ def _validate_configuration(repo_root: Path) -> list[str]:
 def _print_unresolved(unresolved: Sequence[UnresolvedPipelineEvidence]) -> None:
     if not unresolved:
         return
-    print("Unresolved VgfPipeline attribution:")
+    print(f"Unresolved {BACKEND_PIPELINE_LABEL} attribution:")
     print()
     print("| Test | Profile | ATen expression | Edge expression | Reason |")
     print("| --- | --- | --- | --- | --- |")
@@ -2495,12 +2565,12 @@ def _print_unresolved(unresolved: Sequence[UnresolvedPipelineEvidence]) -> None:
 
 
 def explain_operator(repo_root: Path, requested_op: str) -> int:
-    tested, unresolved, diagnostics = _scan_vgf_pipeline_tests(repo_root)
+    tested, unresolved, diagnostics = _scan_backend_pipeline_tests(repo_root)
     expected = _collect_backend_supported_ops(repo_root)
     op = _normalize_pytorch_op_name(requested_op) or requested_op
     row = expected.get(op)
     if row is None:
-        print(f"Operator is not present in the VGF support registry: {op}")
+        print(f"Operator is not present in the {BACKEND_NAME} support registry: {op}")
         return 1
     print(f"Operator: {op}")
     print(
@@ -2543,12 +2613,12 @@ def explain_operator(repo_root: Path, requested_op: str) -> int:
 def run_check(repo_root: Path, *, strict_ast: bool = False) -> int:  # noqa: C901
     config_errors = _validate_configuration(repo_root)
     if config_errors:
-        print("Invalid VGF support-check configuration:")
+        print(f"Invalid {BACKEND_NAME} support-check configuration:")
         for error in config_errors:
             print(f"- {error}")
         return 2
 
-    tested, unresolved, diagnostics = _scan_vgf_pipeline_tests(repo_root)
+    tested, unresolved, diagnostics = _scan_backend_pipeline_tests(repo_root)
     expected = _collect_backend_supported_ops(repo_root)
 
     missing_cells: list[tuple[SupportedOperatorEvidence, str]] = []
@@ -2609,12 +2679,12 @@ def run_check(repo_root: Path, *, strict_ast: bool = False) -> int:  # noqa: C90
 
     if not missing_cells:
         print(
-            "All backend-supported exported ATen operator/profile pairs have VgfPipeline coverage."
+            f"All backend-supported exported ATen operator/profile pairs have {BACKEND_PIPELINE_LABEL} coverage."
         )
         return 1 if strict_ast and unresolved else 0
 
     print(
-        "The following backend-supported exported ATen operator/profile pairs are missing VgfPipeline coverage:"
+        f"The following backend-supported exported ATen operator/profile pairs are missing {BACKEND_PIPELINE_LABEL} coverage:"
     )
     print()
     print(
@@ -2648,7 +2718,8 @@ def run_check(repo_root: Path, *, strict_ast: bool = False) -> int:  # noqa: C90
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=CLI_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--repo-root",
@@ -2679,15 +2750,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--check",
         action="store_true",
         help=(
-            "Do not write the page. Compare exact VgfPipeline exported ATen "
-            "coverage against backend support registries and print supported "
-            "ops missing VGF tests."
+            f"Do not write the page. Compare exact {BACKEND_PIPELINE_LABEL} "
+            "exported ATen coverage against backend support registries and "
+            f"print supported ops missing {BACKEND_NAME} tests."
         ),
     )
     parser.add_argument(
         "--strict-ast",
         action="store_true",
-        help="Fail --check when any VgfPipeline call cannot be statically attributed.",
+        help=(
+            f"Fail --check when any {BACKEND_PIPELINE_LABEL} call cannot be "
+            "statically attributed."
+        ),
     )
     parser.add_argument(
         "--explain",

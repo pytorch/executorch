@@ -27,7 +27,7 @@ void resize_linear_dW_node(
   graph->virtual_resize(dW, {N, K});
 }
 
-utils::uvec3 linear_dW_global_wg_size(
+GlobalWorkGrid linear_dW_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -38,21 +38,21 @@ utils::uvec3 linear_dW_global_wg_size(
   const uint32_t N = graph->size_at<uint32_t>(-2, dW);
   const uint32_t K = graph->size_at<uint32_t>(-1, dW);
   const uint32_t tiles = utils::div_up_4(N) * utils::div_up_4(K);
-  return {tiles, 1u, 1u};
+  return graph->create_linear_gwg(tiles);
 }
 
-utils::uvec3 linear_dW_local_wg_size(
+LocalWorkGroup linear_dW_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {64u, 1u, 1u};
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 void linear_dW(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -89,8 +89,8 @@ void linear_dW(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      linear_dW_global_wg_size,
-      linear_dW_local_wg_size,
+      linear_dW_gwg,
+      linear_dW_lwg,
       // Inputs and Outputs
       {{dW, vkapi::kWrite}, {{d_out, x}, vkapi::kRead}},
       // Shader params buffers

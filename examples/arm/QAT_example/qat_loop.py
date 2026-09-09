@@ -35,7 +35,7 @@ from typing import Any, cast, Iterable, Sequence
 import numpy as np
 import torch
 import torch.nn.functional as F
-from PIL import Image
+from PIL import Image  # type: ignore[import-untyped]
 from torch.export import export
 from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
@@ -50,6 +50,10 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
 
+from examples.arm.QAT_example.rife_vgf import (  # noqa: E402
+    configure_rife_vgf,
+    configure_rife_vgf_quantizer,
+)
 from executorch.backends.arm.quantizer import (  # noqa: E402
     get_uint8_io_quantization_config,
     get_vgf_snorm_quantization_config,
@@ -665,6 +669,7 @@ def make_quantizer(
     quantizer = VgfQuantizer(compile_spec, use_composable_quantizer=True)
     global_config = get_vgf_snorm_quantization_config(is_qat=is_qat)
     quantizer.set_global(global_config)
+    configure_rife_vgf_quantizer(quantizer)
 
     if io_quantization == "int8":
         quantizer.set_io(global_config)
@@ -801,6 +806,7 @@ def export_vgf_artifact(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     compile_spec = make_vgf_compile_spec(artifact_dir)
     partitioner = VgfPartitioner(compile_spec)
+    configure_rife_vgf(partitioner)
     cast(Any, model).to(memory_format=torch.channels_last)
     inputs = (
         inputs[0].contiguous(memory_format=torch.channels_last),
@@ -1791,6 +1797,7 @@ def main() -> int:
     print(f"Data source: {source}")
 
     model = load_rife_model(args.model_root, args.checkpoint)
+    configure_rife_vgf()
     eager_channels_last_model = clone_model(model, channels_last=True)
     ptq_model, qat_model, quantization_reports = build_requested_quantized_models(
         args,

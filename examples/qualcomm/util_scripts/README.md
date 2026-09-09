@@ -84,7 +84,7 @@ This section describes how to generate an ET record for a .pte program using the
     ```bash
     # Example usage to generate ET record and inspect execution statistics
     PYTHONPATH=.. python -m examples.qualcomm.util_scripts.gen_etrecord \
-      -b build-android \
+      --build_folder build-android \
       --device $DEVICE_SERIAL \
       --soc_model SM8750 \
     ```

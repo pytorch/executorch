@@ -49,17 +49,31 @@ target_link_libraries(
 target_compile_options(train_xor PUBLIC ${_common_compile_options})
 
 if(EXECUTORCH_BUILD_PYBIND)
-  # Pybind library.
-  set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch util
-                                torch extension_training
-  )
+  # Pybind library. When the consolidated shared runtime is built, the runtime
+  # is resolved from it rather than from the whole-archive-forcing static
+  # `executorch` target, so this module shares the one backend registry.
+  if(EXECUTORCH_BUILD_SHARED)
+    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump util torch
+                                  extension_training
+    )
+  else()
+    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch
+                                  util torch extension_training
+    )
+  endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
-    # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
-    list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK
-         xnnpack-microkernels-prod
-    )
+    if(EXECUTORCH_BUILD_SHARED)
+      # The delegate bundles XNNPACK and its microkernels, so naming them again
+      # here would ask for a second copy of what that library already provides.
+      list(APPEND _pybind_training_dep_libs xnnpack_backend)
+    else()
+      # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
+      # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+      list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK
+           xnnpack-microkernels-prod
+      )
+    endif()
   endif()
 
   pybind11_add_module(
@@ -81,6 +95,36 @@ if(EXECUTORCH_BUILD_PYBIND)
            -fexceptions>
   )
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
+
+  if(EXECUTORCH_BUILD_SHARED
+     AND EXECUTORCH_BUILD_XNNPACK
+     AND TARGET xnnpack_backend
+  )
+    # The delegate registers itself from a static initializer, so nothing in
+    # this extension references a symbol from it and a normal link can drop it.
+    # Keeping it named on the link line is what makes an XNNPACK-delegated
+    # program usable from here.
+    executorch_target_retain_shared_library(_training_lib xnnpack_backend)
+  endif()
+  executorch_target_link_shared_runtime(_training_lib)
+
+  if(EXECUTORCH_BUILD_SHARED)
+    # This module links Torch directly, and the only other entry reaching it is
+    # the absolute build directory CMake adds, which does not exist anywhere
+    # else, so the Torch path is recorded here rather than left implicit.
+    if(APPLE)
+      set(_training_torch_path "@loader_path/../../../../torch/lib")
+    else()
+      set(_training_torch_path "$ORIGIN/../../../../torch/lib")
+    endif()
+    set_target_properties(
+      _training_lib PROPERTIES INSTALL_RPATH "${_training_torch_path}"
+    )
+    executorch_target_shared_runtime_path(
+      _training_lib "extension/training/pybindings"
+      "executorch/extension/training/pybindings"
+    )
+  endif()
 
   install(TARGETS _training_lib
           LIBRARY DESTINATION executorch/extension/training/pybindings

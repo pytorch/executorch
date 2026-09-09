@@ -190,7 +190,7 @@ std::unique_ptr<slim::SlimTensor> make_device_tensor(
       cudaMemcpyHostToDevice);
   if (err != cudaSuccess) {
     ADD_FAILURE() << "cudaMemcpy failed: " << cudaGetErrorString(err);
-    cudaFree(*device_ptr);
+    (void)cudaFree(*device_ptr);
     *device_ptr = nullptr;
     return nullptr;
   }
@@ -352,7 +352,7 @@ TEST(CudaMutableStateTest, RebindRejectsCudaGraphHandle) {
       Error::NotSupported);
 
   c.destroy_session(token.get());
-  cudaFree(source_ptr);
+  EXPECT_EQ(cudaFree(source_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
@@ -428,7 +428,7 @@ TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
       Error::Ok);
 
   c.destroy_session(token.get());
-  cudaFree(source_ptr);
+  EXPECT_EQ(cudaFree(source_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, SharedFqnAcrossHandlesUsesSameSessionBuffer) {
@@ -495,8 +495,8 @@ TEST(CudaMutableStateTest, SharedFqnAcrossHandlesUsesSameSessionBuffer) {
   EXPECT_NE(decode_container.last_bound_data, decode_ptr);
 
   c.destroy_session(token.get());
-  cudaFree(prefill_ptr);
-  cudaFree(decode_ptr);
+  EXPECT_EQ(cudaFree(prefill_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(decode_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, SessionsStayIsolatedForSameHandleAndFqn) {
@@ -599,7 +599,7 @@ TEST(CudaMutableStateTest, SessionsStayIsolatedForSameHandleAndFqn) {
 
   c.destroy_session(session_a.get());
   c.destroy_session(session_b.get());
-  cudaFree(source_ptr);
+  EXPECT_EQ(cudaFree(source_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, EmptyInternalNameIsSkipped) {
@@ -663,8 +663,8 @@ TEST(CudaMutableStateTest, EmptyInternalNameIsSkipped) {
   EXPECT_NE(valid_container.last_bound_data, skipped_ptr);
 
   c.destroy_session(token.get());
-  cudaFree(skipped_ptr);
-  cudaFree(valid_ptr);
+  EXPECT_EQ(cudaFree(skipped_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(valid_ptr), cudaSuccess);
 }
 
 TEST(
@@ -710,8 +710,8 @@ TEST(
   EXPECT_EQ(c.create_session().error(), Error::InvalidProgram);
   EXPECT_EQ(large_container.update_calls, 0u);
 
-  cudaFree(small_ptr);
-  cudaFree(large_ptr);
+  EXPECT_EQ(cudaFree(small_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(large_ptr), cudaSuccess);
 }
 
 TEST(
@@ -785,8 +785,8 @@ TEST(
       current_device);
 
   c.destroy_session(token.get());
-  cudaFree(unspecified_ptr);
-  cudaFree(explicit_ptr);
+  EXPECT_EQ(cudaFree(unspecified_ptr), cudaSuccess);
+  EXPECT_EQ(cudaFree(explicit_ptr), cudaSuccess);
 }
 
 TEST(CudaMutableStateTest, BuildRejectsNonCudaDescriptorForSharedFqn) {
@@ -830,5 +830,5 @@ TEST(CudaMutableStateTest, BuildRejectsNonCudaDescriptorForSharedFqn) {
   EXPECT_EQ(c.create_session().error(), Error::InvalidArgument);
   EXPECT_EQ(cpu_container.update_calls, 0u);
 
-  cudaFree(cuda_ptr);
+  EXPECT_EQ(cudaFree(cuda_ptr), cudaSuccess);
 }

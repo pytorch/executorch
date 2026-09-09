@@ -32,6 +32,8 @@ from torch.fx.passes.utils.source_matcher_utils import (
 )
 
 from torchao.quantization.pt2e import (
+    HistogramObserver,
+    MinMaxObserver,
     move_exported_model_to_eval,
     move_exported_model_to_train,
     ObserverOrFakeQuantize,
@@ -203,6 +205,42 @@ def find_sequential_partitions_aten(
     return fused_partitions
 
 
+def _replace_histogram_observers_for_integer_inputs(
+    m: torch.fx.GraphModule,
+) -> None:
+    """Replace HistogramObserver with MinMaxObserver for observer nodes whose
+    input tensor has a non-floating-point dtype.
+
+    HistogramObserver calls torch.histc internally, which raises
+    NotImplementedError for integer and bool dtypes.  MinMaxObserver only
+    tracks min/max and handles all dtypes, producing equally valid
+    quantization ranges for non-float inputs (e.g. embedding indices, bool
+    masks).
+    """
+    for node in m.graph.nodes:
+        if node.op != "call_module":
+            continue
+        obs = getattr(m, node.target, None)
+        if not isinstance(obs, HistogramObserver):
+            continue
+        input_node = node.args[0] if node.args else None
+        if input_node is None:
+            continue
+        val = input_node.meta.get("val", None)
+        if val is not None and not val.is_floating_point():
+            setattr(
+                m,
+                node.target,
+                MinMaxObserver(
+                    dtype=obs.dtype,
+                    qscheme=obs.qscheme,
+                    quant_min=obs.quant_min,
+                    quant_max=obs.quant_max,
+                    eps=obs.eps,
+                ),
+            )
+
+
 def calibrate_and_quantize(
     model: ExportedProgram | fx.GraphModule,
     calibration_inputs: Iterable[tuple[torch.Tensor, ...]],
@@ -228,7 +266,17 @@ def calibrate_and_quantize(
     if is_qat:
         m = prepare_qat_pt2e(model, quantizer)
         m = AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+    else:
+        m = prepare_pt2e(model, quantizer)
 
+    # Swap HistogramObserver -> MinMaxObserver for any observer whose input has
+    # a non-floating-point dtype.  Safe for both PTQ and QAT: in QAT the graph
+    # contains FakeQuantize nodes which are not HistogramObserver instances, so
+    # the helper is effectively a no-op there, but it protects against the edge
+    # case where a QAT graph does contain a HistogramObserver.
+    _replace_histogram_observers_for_integer_inputs(m)
+
+    if is_qat:
         if train_fn:
             m = move_exported_model_to_train(m)
             train_fn(m)
@@ -236,8 +284,6 @@ def calibrate_and_quantize(
         m = move_exported_model_to_eval(m)
         m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
         m = FuseBatchNormWithLinearPass()(m).graph_module
-    else:
-        m = prepare_pt2e(model, quantizer)
 
     if not is_qat or (is_qat and not train_fn):
         for data in calibration_inputs:

@@ -23,6 +23,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeAcos,
     DecomposeAddmm,
     DecomposeAny,
+    DecomposeAsStrided,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
@@ -170,6 +171,7 @@ class QnnPassManager(PassManager):
             ReplaceArangeArgs,
             DecomposeAcos,
             DecomposeAddmm,
+            DecomposeAsStrided,
             DecomposeAtan2,
             DecomposeBinaryAlpha,
             DecomposeCDist,
@@ -204,6 +206,7 @@ class QnnPassManager(PassManager):
     def get_export_passes(cls):
         """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
+            DecomposeAsStrided,
             DecomposeBinaryAlpha,
             DecomposeCDist,
             DecomposePDist,
@@ -320,9 +323,7 @@ class QnnPassManager(PassManager):
             RecomposePixelUnshuffle: [RemoveRedundancy],
             RecomposeRmsNorm: [RemoveRedundancy],
             TagQuantIO: [LayoutTransform],
-            ResolveDebugHandle: [
-                TagQuantIO
-            ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
+            ResolveDebugHandle: [TagQuantIO],
         }
 
     @classmethod

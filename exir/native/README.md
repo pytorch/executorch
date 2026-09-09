@@ -79,6 +79,11 @@ deliberately, so the two pipelines read alike.
 | `methods` | Names of the methods in the program. |
 | `save(path)` | Write the program and its constants to `path` as a `.ptn`. |
 
+The constructor takes the graph blob and the constants, and nothing else. Method
+names and the package's mutable-buffer set are read back out of the blob on demand
+rather than passed alongside it, so a manager cannot describe a package it does not
+hold.
+
 The surface is intentionally small. TODO: add `buffer`, `exported_program`,
 `write_to_file`, and debug-map access only when concrete callers establish the
 required contracts; these additions can remain additive.
