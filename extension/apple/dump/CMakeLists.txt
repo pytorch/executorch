@@ -25,15 +25,13 @@ target_sources(extension_etdump_apple PRIVATE ${OBJC_SOURCES})
 # The public header exposes ExecuTorchModule and so imports it as
 # <ExecuTorch/ExecuTorchModule.h>, the path a consumer of the assembled
 # framework uses. That layout does not exist during this build, so stage the
-# core Exported and Internal headers under one ExecuTorch directory and put it
-# on the include path, mirroring what the framework packaging produces. Staging
-# them together in one directory is what lets the Internal header's own quoted
-# import of "ExecuTorchModule.h" find its sibling, and keeps the module header
-# reachable by a single path so it is not seen as two conflicting definitions.
+# core Exported headers under one ExecuTorch directory and put it on the include
+# path, mirroring what the framework packaging produces. Staging them together
+# in one directory keeps the module header reachable by a single path so it is
+# not seen as two conflicting definitions.
 set(_etdump_core_headers_dir ${CMAKE_CURRENT_BINARY_DIR}/include)
 file(GLOB _etdump_core_headers
      ${EXECUTORCH_ROOT}/extension/apple/ExecuTorch/Exported/*.h
-     ${EXECUTORCH_ROOT}/extension/apple/ExecuTorch/Internal/*.h
 )
 # configure_file(... COPYONLY) rather than file(COPY): it registers each source
 # header as a reconfigure dependency, so editing a core header re-stages it. A

@@ -39,9 +39,11 @@ from executorch.backends.arm.operator_support.control_flow_support import (
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
+    EthosU55IndexSelectCheck,
     EthosU55NotSupported,
     EthosU55ResizeCheck,
     EthosU55ReverseCheck,
+    EthosU55UnfoldCopyCheck,
 )
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_PRO_FP_SupportList,
@@ -221,7 +223,7 @@ def _floating_profile_negative_checks(
 ) -> list[OperatorSupportBase]:
     checks: list[OperatorSupportBase] = [CheckMixedFloatingInputs(reporter)]
     if not tosa_spec.support_integer():
-        checks.append(CheckInt32ComparisonInputs(reporter))
+        checks.append(CheckFPComparisonInputs(reporter))
     return checks
 
 
@@ -351,7 +353,7 @@ def _positive_checks(
 
 
 def _disallowed_dtypes(tosa_spec: TosaSpecification) -> list[torch.dtype]:
-    dtypes = [torch.float64]
+    dtypes = [torch.float64, torch.complex32, torch.complex64, torch.complex128]
     if not tosa_spec.support_extension("bf16"):
         dtypes.append(torch.bfloat16)
     if not (
@@ -411,6 +413,8 @@ def _negative_checks(
         checks.append(EthosU55NotSupported(reporter))
         checks.append(EthosU55ResizeCheck(reporter))
         checks.append(EthosU55ReverseCheck(reporter))
+        checks.append(EthosU55UnfoldCopyCheck(reporter))
+        checks.append(EthosU55IndexSelectCheck(exported_program, reporter))
         checks.append(EthosU55DtypeSupport(reporter))
         checks.append(EthosU55CastCheck(reporter))
 
@@ -759,6 +763,15 @@ class CheckProperQuantization(OperatorSupportBase):
         elif FuseQuantizedActivationPass._is_fuseable_quantized_activation(node):
             input_node = node.all_input_nodes[0]
             input_quantized = FuseQuantizedActivationPass._is_fuseable_input(input_node)
+
+        if any(
+            isinstance(input_node.meta["val"], torch.SymInt)
+            for input_node in node.all_input_nodes
+        ):
+            self.reporter.report_reject(
+                node, "Symbolic scalar inputs cannot be delegated."
+            )
+            return False
 
         input_quantized = input_quantized or all(
             (input_node.target in DQ_OPS)
@@ -1135,12 +1148,14 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
         return True
 
 
-class CheckInt32ComparisonInputs(OperatorSupportBase):
-    """Reject int32 comparisons under the FP profile."""
+class CheckFPComparisonInputs(OperatorSupportBase):
+    """Reject unsupported comparison inputs under the FP profile."""
 
     target_ops = {
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.ne.Tensor,
+        exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.ge.Scalar,
         exir_ops.edge.aten.gt.Tensor,
@@ -1150,6 +1165,8 @@ class CheckInt32ComparisonInputs(OperatorSupportBase):
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.lt.Scalar,
     }
+    supported_dtypes = {torch.float16, torch.float32, torch.bfloat16}
+    castable_comparison_dtypes = {torch.int8, torch.int16}
 
     def __init__(self, reporter: WhyNoPartitionReporter) -> None:
         self.reporter = reporter
@@ -1161,19 +1178,25 @@ class CheckInt32ComparisonInputs(OperatorSupportBase):
         if node.target not in self.target_ops:
             return True
 
-        for input_node in (
-            input_node
+        input_dtypes = [
+            get_first_fake_tensor(input_node).dtype
             for input_node in node.all_input_nodes
             if input_node.op != "get_attr"
-        ):
-            if get_first_fake_tensor(input_node).dtype == torch.int32:
-                self.reporter.report_reject(
-                    node,
-                    "FP profile does not support int32 comparison inputs.",
-                )
-                return False
+        ]
+        if all(dtype in self.supported_dtypes for dtype in input_dtypes):
+            return True
 
-        return True
+        if all(dtype in self.castable_comparison_dtypes for dtype in input_dtypes):
+            return True
+
+        unsupported_dtype = next(
+            dtype for dtype in input_dtypes if dtype not in self.supported_dtypes
+        )
+        self.reporter.report_reject(
+            node,
+            f"FP profile does not support {unsupported_dtype} comparison inputs.",
+        )
+        return False
 
 
 class CheckScalarReductionInputs(OperatorSupportBase):

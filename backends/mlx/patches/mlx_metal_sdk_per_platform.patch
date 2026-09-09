@@ -1,45 +1,56 @@
-Select the Metal SDK per target platform.
+Select the Metal SDK from the CMake target platform.
 
-MLX compiles and links its Metal shader library with a hardcoded
-`xcrun -sdk macosx metal` and a hardcoded `-mmacosx-version-min` flag. ExecuTorch
-builds MLX for iOS device, iOS simulator, and macOS from one source tree, so the
-hardcoded macOS SDK produces a metallib built for the wrong platform on the iOS
-and simulator slices.
+MLX supports both macOS and iOS CMake targets, but its Metal compile and link
+commands use the macOS SDK and deployment flag unconditionally. That produces a
+metallib for the wrong platform when cross-compiling for an iOS device or
+simulator.
 
-Derive the Metal SDK and the deployment-version flag from PLATFORM (which
-ExecuTorch already passes to this build): iphoneos for OS64, iphonesimulator for
-SIMULATORARM64, macosx otherwise. This mirrors how the rest of the Apple build
-selects its SDK.
+Use CMAKE_SYSTEM_NAME to distinguish macOS from iOS and CMAKE_OSX_SYSROOT to
+distinguish iOS device and simulator SDKs. CMAKE_OSX_SYSROOT may be either a
+short SDK name or an absolute, versioned SDK path, so match it case-insensitively.
+Fail ambiguous or unsupported configurations instead of silently producing a
+metallib for the wrong platform.
 
-Upstream candidate; carried locally until MLX selects the Metal SDK by platform.
+Upstream candidate; carried locally until MLX selects the Metal SDK from its
+CMake target platform.
 
 diff --git a/mlx/backend/metal/kernels/CMakeLists.txt b/mlx/backend/metal/kernels/CMakeLists.txt
-index edc169ee..94154f80 100644
+index ecabbda5..d0b86d3b 100644
 --- a/mlx/backend/metal/kernels/CMakeLists.txt
 +++ b/mlx/backend/metal/kernels/CMakeLists.txt
-@@ -9,6 +9,21 @@ set(BASE_HEADERS
+@@ -9,6 +9,31 @@ set(BASE_HEADERS
      logging.h
      utils.h)
  
-+# The Metal SDK and deployment flag must follow the target platform. ExecuTorch
-+# builds this for iOS device, iOS simulator, and macOS from one source tree and
-+# passes PLATFORM in for each. Without this the shaders are always built against
-+# the macOS SDK, so the iOS and simulator metallibs are wrong for their slice.
-+if(PLATFORM STREQUAL "OS64")
-+  set(MLX_METAL_SDK iphoneos)
-+  set(MLX_METAL_VERSION_MIN_FLAG "-mios-version-min")
-+elseif(PLATFORM STREQUAL "SIMULATORARM64")
-+  set(MLX_METAL_SDK iphonesimulator)
-+  set(MLX_METAL_VERSION_MIN_FLAG "-mios-simulator-version-min")
-+else()
++# Match the Metal SDK and deployment flag to the CMake target platform.
++if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 +  set(MLX_METAL_SDK macosx)
 +  set(MLX_METAL_VERSION_MIN_FLAG "-mmacosx-version-min")
++elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
++  string(TOLOWER "${CMAKE_OSX_SYSROOT}" _mlx_osx_sysroot)
++  if(_mlx_osx_sysroot MATCHES "iphonesimulator")
++    set(MLX_METAL_SDK iphonesimulator)
++    set(MLX_METAL_VERSION_MIN_FLAG "-mios-simulator-version-min")
++  elseif(_mlx_osx_sysroot MATCHES "iphoneos")
++    set(MLX_METAL_SDK iphoneos)
++    set(MLX_METAL_VERSION_MIN_FLAG "-mios-version-min")
++  else()
++    message(
++      FATAL_ERROR
++        "Unable to select the Metal SDK for iOS from CMAKE_OSX_SYSROOT='${CMAKE_OSX_SYSROOT}'"
++    )
++  endif()
++else()
++  message(
++    FATAL_ERROR
++      "MLX Metal supports only macOS and iOS, got CMAKE_SYSTEM_NAME='${CMAKE_SYSTEM_NAME}'"
++  )
 +endif()
 +
  function(build_kernel_base TARGET SRCFILE DEPS)
    set(METAL_FLAGS
        -x
-@@ -26,10 +41,10 @@ function(build_kernel_base TARGET SRCFILE DEPS)
+@@ -27,10 +52,10 @@ function(build_kernel_base TARGET SRCFILE DEPS)
    endif()
    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
      set(METAL_FLAGS ${METAL_FLAGS}
@@ -52,7 +63,7 @@ index edc169ee..94154f80 100644
              -I${PROJECT_SOURCE_DIR} -o ${TARGET}.air
      DEPENDS ${SRCFILE} ${DEPS} ${BASE_HEADERS}
      OUTPUT ${TARGET}.air
-@@ -180,12 +195,12 @@ endif()
+@@ -188,12 +213,12 @@ endif()
  
  set(METAL_LINK_FLAGS)
  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")

@@ -212,6 +212,19 @@ def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
     pipeline.run()
 
 
+def test_upsample_nearest2d_vec_tosa_FP_explicit_fractional_scale():
+    # The rounded output size implies a 6 / 4 ratio, but PyTorch samples using
+    # the explicitly supplied 1.6 scale factor.
+    pipeline = TosaPipelineFP[input_t1](
+        Interpolate(size=None, scale_factor=1.6),
+        (torch.rand(1, 2, 4, 4),),
+        aten_op,
+        exir_op=[],
+    )
+
+    pipeline.run()
+
+
 def test_upsample_nearest2d_vec_tosa_does_not_delegate_exact_one_sixteenth_downscale():
     pipeline = OpNotSupportedPipeline[input_t1](
         Interpolate(size=None, scale_factor=1.0 / 16.0),

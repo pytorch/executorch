@@ -43,7 +43,7 @@ Total supported PyTorch APIs: **154**.
 | `torch.conv1d` | FP, INT | `FP32`, `INT8`, `INT4` | 8x8, 8x4 |
 | `torch.conv2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
 | `torch.conv3d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
-| `torch.conv_transpose2d` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
+| `torch.conv_transpose2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
 | `torch.cos` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.cosh` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.cumsum` | FP, INT | `FP32`, `INT8` | 8x8 |
@@ -63,8 +63,8 @@ Total supported PyTorch APIs: **154**.
 | `torch.full_like` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.gather` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
 | `torch.ge` / `>=` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
-| `torch.grid_sampler` | FP | `FP32` | - |
-| `torch.grid_sampler_2d` | FP | `FP32` | - |
+| `torch.grid_sampler` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.grid_sampler_2d` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.group_norm` | FP | `FP32` | - |
 | `torch.gt` / `>` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.index_put_` | INT | `INT8` | 8x8 |

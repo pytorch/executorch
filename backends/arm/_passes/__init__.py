@@ -17,9 +17,9 @@ from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
 from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
+from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
-from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
@@ -97,6 +97,9 @@ from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
+from .decompose_sdpa_with_regular_softmax_pass import (  # noqa
+    DecomposeSDPAWithRegularSoftmaxPass,
+)
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
@@ -168,6 +171,9 @@ from .normalize_index_put_bool_index_tensor_pass import (  # noqa
 )
 from .normalize_index_put_none_indices_pass import (  # noqa
     NormalizeIndexPutNoneIndicesPass,
+)
+from .normalize_max_pool2d_input_rank_pass import (  # noqa
+    NormalizeMaxPool2dInputRankPass,
 )
 from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa

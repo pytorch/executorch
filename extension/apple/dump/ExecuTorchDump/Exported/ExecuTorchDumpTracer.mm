@@ -11,8 +11,6 @@
 #import "ExecuTorchDumpError.h"
 #import "ExecuTorchDumpTracer+Internal.h"
 
-#import <ExecuTorch/ExecuTorchEventTracer+Internal.h>
-
 #import <flatcc/flatcc_builder.h>
 
 using namespace executorch::etdump;
@@ -39,24 +37,20 @@ static NSError *DumpError(ExecuTorchDumpErrorCode code, NSString *message) {
   NSLock *_lock;
 }
 
-// init chains to the base class's real designated initializer, initWithCppTracer:,
-// which takes a C++ type and so lives in an Objective-C++ category rather than the
-// public interface. Clang cannot see a category initializer as designated, so it
-// wrongly flags this chain; the pattern is deliberate and correct.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wobjc-designated-initializers"
-
 - (instancetype)init {
   auto generator = std::make_unique<ETDumpGen>();
   _generator = generator.get();
-  self = [super initWithCppTracer:std::move(generator)];
+  // The base moves out of the pointee as a std::unique_ptr<EventTracer>, so the
+  // local must be that type, not unique_ptr<ETDumpGen>. _generator keeps the
+  // concrete pointer for readback.
+  std::unique_ptr<executorch::runtime::EventTracer> tracer =
+      std::move(generator);
+  self = [super initWithNativeInstance:&tracer];
   if (self) {
     _lock = [NSLock new];
   }
   return self;
 }
-
-#pragma clang diagnostic pop
 
 - (ETDumpGen *)generator {
   return _generator;

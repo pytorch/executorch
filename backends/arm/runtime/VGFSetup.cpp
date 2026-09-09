@@ -2668,9 +2668,44 @@ bool VgfRepr::process_vgf(
     }
   }
 
+  // Keep the pipeline cache local to this VgfRepr. This preserves reuse across
+  // the many segment pipelines in one VGF without sharing mutable cache state
+  // or cache lifetime across independently initialized delegate handles.
+  if (vk_pipeline_cache == VK_NULL_HANDLE) {
+    VkPipelineCacheCreateInfo pipeline_cache_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+        .pNext = nullptr,
+        // Default mode: Vulkan internally synchronizes concurrent
+        // pipeline-cache access. The cache is per-VgfRepr anyway, so
+        // independent delegates do not contend on it.
+        .flags = 0,
+        .initialDataSize = 0,
+        .pInitialData = nullptr,
+    };
+
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_PIPELINE_CACHE");
+      result = vkCreatePipelineCache(
+          vk_device, &pipeline_cache_info, nullptr, &vk_pipeline_cache);
+    }
+
+    if (result != VK_SUCCESS) {
+      ET_LOG(
+          Info,
+          "Failed to create optional per-VgfRepr Vulkan pipeline cache, "
+          "error 0x%08X; continuing without pipeline caching",
+          result);
+      vk_pipeline_cache = VK_NULL_HANDLE;
+    } else {
+      ET_LOG(Info, "VGF per-VgfRepr Vulkan pipeline cache enabled");
+    }
+  }
+
   // Build per-segment pipelines and descriptor sets.
   segments.clear();
   segments.reserve(segment_count);
+  size_t graph_segment_count = 0;
+  size_t compute_segment_count = 0;
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_BUILD_SEGMENTS");
 
@@ -2681,6 +2716,12 @@ bool VgfRepr::process_vgf(
           segment_type != vgflib::ModuleType::COMPUTE) {
         ET_LOG(Error, "Unsupported segment type");
         return false;
+      }
+
+      if (segment_type == vgflib::ModuleType::GRAPH) {
+        ++graph_segment_count;
+      } else {
+        ++compute_segment_count;
       }
 
       SegmentState segment;
@@ -3137,7 +3178,7 @@ bool VgfRepr::process_vgf(
           result = vkCreateDataGraphPipelinesARM(
               vk_device,
               VK_NULL_HANDLE,
-              VK_NULL_HANDLE,
+              vk_pipeline_cache,
               1,
               &graph_pipeline_info,
               nullptr,
@@ -3429,7 +3470,7 @@ bool VgfRepr::process_vgf(
           VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_COMPUTE_PIPELINE");
           result = vkCreateComputePipelines(
               vk_device,
-              VK_NULL_HANDLE,
+              vk_pipeline_cache,
               1,
               &compute_info,
               nullptr,
@@ -3444,6 +3485,14 @@ bool VgfRepr::process_vgf(
       segments.push_back(std::move(segment));
     }
   }
+
+  ET_LOG(
+      Info,
+      "VGF segment counts: total=%d graph=%zu compute=%zu pipeline_cache=%s",
+      segment_count,
+      graph_segment_count,
+      compute_segment_count,
+      vk_pipeline_cache != VK_NULL_HANDLE ? "enabled" : "disabled");
 
   // Map model sequence inputs/outputs to IO indices
   auto input_handle =

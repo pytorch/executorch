@@ -8,6 +8,9 @@ from executorch.backends.arm._passes.insert_dynamic_padding import (
     InsertDynamicPaddingPass,
 )
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
+from executorch.backends.arm._passes.symbolic_to_tosa_shape_pass import (
+    SymbolicToTosaShapesPass,
+)
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -24,6 +27,7 @@ def _assert_inserted_padding(
     target_op,
     zero_spatial_padding: list[int],
     expected_full_padding_len: int,
+    expected_spatial_padding: list,
 ) -> None:
     nodes = graph_module.graph.nodes
     conv_node = next(n for n in nodes if n.target == target_op)
@@ -47,37 +51,14 @@ def _assert_inserted_padding(
     padding_shape_node = padding_node.args[1]
     assert padding_shape_node.target == exir_ops.backend.tosa.CONCAT_SHAPE.default
 
-    n_padding, spatial_padding, c_padding = padding_shape_node.args[0]
-    assert n_padding.meta["val"] == [0, 0]
-    assert c_padding.meta["val"] == [0, 0]
-
     pad_list = padding_shape_node.meta["val"]
     pad_list_vals = [
         p.meta["val"] if isinstance(p, torch.fx.Node) else p for p in pad_list
     ]
     assert len(pad_list_vals) == expected_full_padding_len
     assert pad_list_vals[:2] == [0, 0]
+    assert pad_list_vals[2:-2] == expected_spatial_padding
     assert pad_list_vals[-2:] == [0, 0]
-    # For static graphs spatial_padding is a CONST_SHAPE node; for dynamic
-    # graphs (RewriteConvPass materialized) it is an immutable_list of Nodes/ints.
-    if hasattr(spatial_padding, "target"):
-        assert spatial_padding.target == exir_ops.backend.tosa.CONST_SHAPE.default
-        spatial_padding_value = spatial_padding.meta["val"]
-        if isinstance(spatial_padding_value, (list, tuple)):
-            spatial_vals = [
-                p.meta["val"] if isinstance(p, torch.fx.Node) else p
-                for p in spatial_padding_value
-            ]
-            assert pad_list_vals[2:-2] == spatial_vals
-        else:
-            assert pad_list_vals[2:-2] == spatial_padding_value
-    else:
-        # Dynamic case: spatial_padding is the original pad list (possibly Nodes)
-        spatial_vals = [
-            p.meta["val"] if isinstance(p, torch.fx.Node) else p
-            for p in spatial_padding
-        ]
-        assert pad_list_vals[2:-2] == spatial_vals
 
 
 class ConvModule(torch.nn.Module):
@@ -133,6 +114,7 @@ def test_insert_dynamic_padding():
         ]
 
         edge_model = edge_model.transform([InsertDynamicPaddingPass()])
+        edge_model = edge_model.transform([SymbolicToTosaShapesPass()])
         graph_module = edge_model.exported_program().graph_module
 
         conv_node = next(
@@ -159,6 +141,7 @@ def test_insert_dynamic_padding():
             exir_ops.backend.tosa.CONV2D.default,
             zero_spatial_padding=[0, 0, 0, 0],
             expected_full_padding_len=8,
+            expected_spatial_padding=initial_padding_vals,
         )
 
 
@@ -192,6 +175,7 @@ def test_insert_dynamic_padding_conv3d():
         ]
 
         edge_model = edge_model.transform([InsertDynamicPaddingPass()])
+        edge_model = edge_model.transform([SymbolicToTosaShapesPass()])
         graph_module = edge_model.exported_program().graph_module
 
         conv_node = next(
@@ -217,4 +201,5 @@ def test_insert_dynamic_padding_conv3d():
             exir_ops.backend.tosa.CONV3D.default,
             zero_spatial_padding=[0, 0, 0, 0, 0, 0],
             expected_full_padding_len=10,
+            expected_spatial_padding=initial_padding_vals,
         )

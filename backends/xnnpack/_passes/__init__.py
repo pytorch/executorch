@@ -39,6 +39,7 @@ from executorch.backends.xnnpack._passes.propagate_custom_meta_pass import (
 from executorch.backends.xnnpack._passes.remove_redundant_copy_pass import (
     RemoveRedundantCopyPass,
 )
+from executorch.backends.xnnpack._passes.rewrite_fp16_silu import RewriteFp16SiluPass
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
 from executorch.exir.pass_base import ExportPass
@@ -73,6 +74,7 @@ class XNNPACKPassManager:
         if not passes:
             # All the XNNPACK passes
             self.passes = [
+                RewriteFp16SiluPass,
                 XNNPACKRemoveCloneOpsTransform,
                 # TODO - remove this pass once we have a better support for dim_order ops lowering
                 DimOrderOpsRevertPass,

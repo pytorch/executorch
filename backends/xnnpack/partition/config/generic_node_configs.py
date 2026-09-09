@@ -410,6 +410,29 @@ class SigmoidConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class SiluConfig(GenericNodePartitionerConfig):
+    target_name = "silu.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.silu.default
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        input_value = node.args[0].meta.get("val")
+        output_value = node.meta.get("val")
+        return (
+            isinstance(input_value, torch.Tensor)
+            and input_value.dtype == torch.float16
+            and isinstance(output_value, torch.Tensor)
+            and output_value.dtype == torch.float16
+        )
+
+
 class MulConfig(GenericNodePartitionerConfig):
     target_name = "mul.Tensor"
 

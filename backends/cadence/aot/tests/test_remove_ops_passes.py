@@ -477,11 +477,21 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([permute])
         original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
         p = RemovePermutesAroundElementwiseOps()
         graph_after_passes = cast(PassResult, p(original)).graph_module
-        # Ensure no permutes were removed, since the dimensions don't fit the expected pattern
+        # The end permute is not the inverse of the start one, so it cannot be
+        # dropped. It absorbs the start permute instead, leaving one behind.
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 2
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 1
+        )
+
+        sample_inputs = [torch.randn(1, 8, 4, 4, dtype=torch.float32)]
+        validate(
+            gm_before,
+            graph_after_passes,
+            sample_inputs,
+            "RemovePermutesAroundElementwiseOps",
         )
 
     def test_remove_permutes_around_elemwise_ops_add_mean(self) -> None:
