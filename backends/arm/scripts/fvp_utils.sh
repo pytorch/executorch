@@ -58,6 +58,11 @@ else
 fi
 
 function install_fvp() {
+    if [[ "${OS}" == "Darwin" ]]; then
+        log_step "fvp" "Skipping Linux FVP installation because host OS is Darwin"
+        return 0
+    fi
+
     # Download and install Corstone FVP simulator platforms.
     fvps=("corstone300" "corstone320" "corstone1000")
 
@@ -98,6 +103,10 @@ function install_fvp() {
 }
 
 function check_fvp_eula () {
+    if [[ "${OS}" == "Darwin" ]]; then
+        return 0
+    fi
+
     # Mandatory user arg --i-agree-to-the-contained-eula
     eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
 
@@ -127,6 +136,10 @@ function setup_fvp() {
 }
 
 function setup_path_fvp() {
+    if [[ "${OS}" == "Darwin" ]]; then
+        return 0
+    fi
+
     fvps=("corstone300" "corstone320" "corstone1000")
     for fvp in "${fvps[@]}"; do
         model_dir_variable=${fvp}_model_dir
