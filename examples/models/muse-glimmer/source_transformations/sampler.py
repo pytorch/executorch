@@ -23,8 +23,9 @@ def sample(
 
     Args:
         logits: ``[B, V]`` float32 logits (already soft-capped).
-        temperature: 0-D or 1-D float tensor; clamped to >= 1e-6.
-            When ``None``, returns ``logits`` unchanged.
+        temperature: 0-D or 1-D float tensor. Values <= 0 select exact
+            deterministic argmax; positive values use Gumbel-max. When
+            ``None``, returns ``logits`` unchanged.
 
     Returns:
         ``[B, 1]`` float32 token IDs, or unmodified logits when
@@ -36,4 +37,9 @@ def sample(
     logits = logits / temperature.clamp(min=1e-6)
     noise = torch.rand_like(logits)
     gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
+    # Keep a single argmax consumer of logits. Besides avoiding needless
+    # Gumbel perturbation in greedy mode, this preserves the original CUDA
+    # compilation dataflow instead of materializing logits for a second
+    # reduction branch.
+    gumbel = torch.where(temperature <= 0, torch.zeros_like(gumbel), gumbel)
     return (logits + gumbel).argmax(dim=-1, keepdim=True).float()
