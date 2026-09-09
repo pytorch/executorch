@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <new>
 
 #include <ethosu_driver.h>
 
@@ -60,9 +59,7 @@ PlatformState* platform_init(
   return nullptr;
 }
 
-void platform_destroy(PlatformState* state) {
-  delete state;
-}
+void platform_destroy(PlatformState* /*state*/) {}
 
 bool needs_scratch_allocation() {
   return true;
