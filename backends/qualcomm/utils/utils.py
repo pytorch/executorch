@@ -34,6 +34,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
     QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPerformanceMode,
     QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
@@ -1018,6 +1019,7 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule, format=DrawForma
 
 
 def generate_gpu_compiler_spec(
+    performance_mode: QnnExecuTorchGpuPerformanceMode = QnnExecuTorchGpuPerformanceMode.kGpuPerfHintHigh,
     precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
     use_memory_optimizations: bool = True,
     use_node_optimizations: bool = True,
@@ -1028,6 +1030,8 @@ def generate_gpu_compiler_spec(
     Helper function generating backend options for QNN HTP
 
     Args:
+        performance_mode:
+            kGpuPerfHintHigh / kGpuPerfHintNormal / kGpuPerfHintLow
         precision:
             kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
             kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
@@ -1046,6 +1050,7 @@ def generate_gpu_compiler_spec(
     """
     # TODO: enable performance hint mechanism in runtime and make this as an option
     gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.performance_mode = performance_mode
     gpu_options.precision = precision
     gpu_options.use_memory_optimizations = use_memory_optimizations
     gpu_options.use_node_optimizations = use_node_optimizations
@@ -1194,9 +1199,11 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     Args:
         soc_model: The SoC you plan to run the compiled model. Please check
             QcomChipset for supported SoC.
+            SM7675(Snapdragon 7+ Gen 3)
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SM8635(Snapdragon 8s Gen 3)
             SM8650(Snapdragon 8 Gen 3)
             SM8750(Snapdragon 8 Elite)
             SM8850(Snapdragon 8 Elite Gen 5)
@@ -1327,7 +1334,9 @@ def get_soc_to_htp_arch_map():
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
+        "SM7675": HtpArch.V73,
         "SA8255": HtpArch.V73,
+        "SM8635": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
         "SM8850": HtpArch.V81,
@@ -1357,11 +1366,13 @@ def get_soc_to_chipset_map():
         "SA8295": QcomChipset.SA8295,
         "SA8797": QcomChipset.SA8797,
         "SC8380XP": QcomChipset.SC8380XP,
+        "SM7675": QcomChipset.SM7675,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
         "SA8255": QcomChipset.SA8255,
+        "SM8635": QcomChipset.SM8635,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
         "SM8850": QcomChipset.SM8850,
