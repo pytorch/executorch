@@ -204,8 +204,8 @@ class ComputeGraph final {
   // List of command buffers deferred for submission
   std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
 
-  // Set to track which ValueRefs were updated during inference
-  std::unordered_set<ValueRef> updated_values_;
+  std::vector<uint32_t> value_update_generations_;
+  uint32_t current_update_generation_ = 1;
 
   // Cache to prevent duplicate prepacking of the same weight tensor with the
   // same kernel. Key is (inputValueRef, kernel_name).
@@ -712,6 +712,7 @@ class ComputeGraph final {
 
  private:
   void check_no_active_value_ptrs();
+  bool was_value_list_updated(const ValueRef idx) const noexcept;
 
  public:
   /*
@@ -1174,7 +1175,22 @@ class ComputeGraph final {
 
   // Check if a specific ValueRef (or ValueList) was updated, with recursive
   // handling
-  bool was_value_updated(const ValueRef idx) const noexcept;
+  inline bool was_value_updated(const ValueRef idx) const noexcept {
+    if (idx < 0) {
+      return false;
+    }
+
+    const size_t value_idx = static_cast<size_t>(idx);
+    if (value_idx >= values_.size()) {
+      return false;
+    }
+    if (value_idx < value_update_generations_.size() &&
+        value_update_generations_[value_idx] == current_update_generation_) {
+      return true;
+    }
+
+    return values_[value_idx].isValueList() && was_value_list_updated(idx);
+  }
 
   // Set the flag to indicate that re-encoding is required
   inline void set_requires_reencode() noexcept {
@@ -1221,6 +1237,10 @@ class ComputeGraph final {
   //
 
   void print_readable();
+
+ private:
+  void mark_value_updated(const ValueRef idx);
+  void advance_update_generation() noexcept;
 
   //
   // Friend classes
