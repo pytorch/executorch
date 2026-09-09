@@ -22,7 +22,9 @@ class TestEagerEvalWrapperTokenIds(unittest.TestCase):
     def test_token_id_fallbacks(self):
         cases = (
             ({"bos_id": 1, "eot_id": 2, "eos_id": 3}, 2, 1),
+            ({"bos_id": 0, "eot_id": 2, "eos_id": 3}, 2, 0),
             ({"bos_id": None, "eot_id": 2, "eos_id": 3}, 2, 2),
+            ({"bos_id": None, "eot_id": 0, "eos_id": 3}, 0, 0),
             ({"bos_id": None, "eot_id": None, "eos_id": 0}, 0, 0),
             ({"eos_id": 0}, 0, 0),
         )
