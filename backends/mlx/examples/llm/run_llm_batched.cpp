@@ -33,6 +33,7 @@
 #include <executorch/extension/llm/batching/module_executor.h>
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/module/module.h>
 
@@ -42,8 +43,9 @@ DEFINE_string(out_prefix, "gen", "Output files are <prefix>_<n>.txt");
 DEFINE_int32(max_session_tokens, 2048, "Maximum tokens retained per session");
 DEFINE_string(
     kv_storage_dtype,
-    "bf16",
-    "KV storage dtype: bf16, fp16, or fp32");
+    "",
+    "Override KV storage dtype with bf16, fp16, or fp32. Defaults to the PTE "
+    "activation dtype, or bf16 when metadata is absent.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -65,14 +67,13 @@ DEFINE_string(
     "Chat template: llama3, gemma, gemma4, or 0 for raw text");
 
 namespace batching = ::executorch::extension::llm::batching;
+using ::executorch::backends::mlx::examples::llm::resolve_kv_storage_dtype;
 using ::executorch::backends::mlx::examples::llm::resolve_stop_tokens;
 using ::executorch::backends::mlx::examples::llm::StopTokens;
-using ::executorch::backends::mlx::examples::llm::storage_dtype;
 using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::Module;
 using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
-using ::executorch::runtime::Result;
 
 namespace {
 
@@ -148,26 +149,6 @@ const char* reason_name(const std::optional<batching::FinishReason>& reason) {
       return "failed";
   }
   return "unknown";
-}
-
-Result<std::optional<int64_t>> optional_const_int(
-    Module& module,
-    const char* name) {
-  const auto methods = module.method_names();
-  if (!methods.ok()) {
-    return methods.error();
-  }
-  if (methods->count(name) == 0) {
-    return std::optional<int64_t>{};
-  }
-  const auto result = module.execute(name);
-  if (!result.ok()) {
-    return result.error();
-  }
-  if (result->size() != 1 || !result->at(0).isInt()) {
-    return Error::InvalidProgram;
-  }
-  return std::optional<int64_t>{result->at(0).toInt()};
 }
 
 void submit_prompt(
@@ -269,11 +250,6 @@ int main(int argc, char** argv) {
     std::cerr << "too many prompts" << std::endl;
     return 1;
   }
-  const int kv_dtype = storage_dtype(FLAGS_kv_storage_dtype);
-  if (kv_dtype < 0) {
-    std::cerr << "--kv_storage_dtype must be bf16, fp16, or fp32" << std::endl;
-    return 1;
-  }
   if (FLAGS_max_new_tokens > FLAGS_max_session_tokens) {
     std::cerr << "--max_new_tokens exceeds --max_session_tokens" << std::endl;
     return 1;
@@ -292,17 +268,22 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto model_max_context = optional_const_int(*module, "get_max_ctx_len");
-  if (!model_max_context.ok()) {
-    std::cerr << "could not read get_max_ctx_len" << std::endl;
+  const auto metadata =
+      ::executorch::extension::llm::read_model_metadata(*module);
+  if (!metadata.ok()) {
+    std::cerr << "could not read model metadata" << std::endl;
     return 1;
   }
-  if (*model_max_context &&
-      (**model_max_context <= 0 ||
-       FLAGS_max_session_tokens > **model_max_context)) {
+  const int kv_dtype = resolve_kv_storage_dtype(
+      FLAGS_kv_storage_dtype, metadata->activation_dtype);
+  if (kv_dtype < 0) {
+    std::cerr << "--kv_storage_dtype must be bf16, fp16, or fp32" << std::endl;
+    return 1;
+  }
+  if (FLAGS_max_session_tokens > metadata->max_context_length) {
     std::cerr << "--max_session_tokens " << FLAGS_max_session_tokens
-              << " exceeds the model context limit " << **model_max_context
-              << std::endl;
+              << " exceeds the model context limit "
+              << metadata->max_context_length << std::endl;
     return 1;
   }
 

@@ -31,6 +31,7 @@
 #include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/llm/runner/util.h>
@@ -80,8 +81,9 @@ DEFINE_int32(
     "only choose policy.");
 DEFINE_string(
     kv_storage_dtype,
-    "bf16",
-    "Off-graph: KV storage dtype, bf16|fp16|fp32.");
+    "",
+    "Off-graph: override KV storage dtype with bf16|fp16|fp32. Defaults to "
+    "the PTE activation dtype, or bf16 when metadata is absent.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -101,12 +103,15 @@ DEFINE_bool(
     false,
     "Run once before measuring, to absorb JIT and pool growth.");
 
+using ::executorch::backends::mlx::examples::llm::resolve_kv_storage_dtype;
 using ::executorch::backends::mlx::examples::llm::resolve_stop_tokens;
 using ::executorch::backends::mlx::examples::llm::StopTokens;
-using ::executorch::backends::mlx::examples::llm::storage_dtype;
 using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
+using ::executorch::extension::llm::LogitsToKeepMode;
+using ::executorch::extension::llm::read_model_metadata;
+using ::executorch::extension::llm::resolve_vocab_size;
 using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
 
@@ -155,6 +160,75 @@ std::optional<int64_t> const_int(Module& module, const char* name) {
     return std::nullopt;
   }
   return r->at(0).toInt();
+}
+
+bool is_supported_logits_type(::executorch::aten::ScalarType type) {
+  using ScalarType = ::executorch::aten::ScalarType;
+  return type == ScalarType::Float || type == ScalarType::Half ||
+      type == ScalarType::BFloat16 || type == ScalarType::UInt16;
+}
+
+bool validate_forward_abi(
+    Module& module,
+    LogitsToKeepMode logits_to_keep_mode,
+    std::int64_t& vocab_size) {
+  const auto meta = module.method_meta("forward");
+  if (!meta.ok()) {
+    std::cerr << "Forward metadata is unavailable" << std::endl;
+    return false;
+  }
+  const std::size_t expected_inputs =
+      logits_to_keep_mode == LogitsToKeepMode::Selected ? 3 : 2;
+  if (meta->num_inputs() != expected_inputs) {
+    std::cerr << "Forward must take " << expected_inputs
+              << " inputs for its logits-to-keep mode, got "
+              << meta->num_inputs() << std::endl;
+    return false;
+  }
+
+  const auto tokens = meta->input_tensor_meta(0);
+  const auto positions = meta->input_tensor_meta(1);
+  if (!tokens.ok() || !positions.ok()) {
+    std::cerr << "Forward token and position inputs must be tensors"
+              << std::endl;
+    return false;
+  }
+  const auto token_sizes = tokens->sizes();
+  const auto position_sizes = positions->sizes();
+  if (tokens->scalar_type() != ::executorch::aten::ScalarType::Long ||
+      token_sizes.size() != 2 || token_sizes[0] != 1 || token_sizes[1] <= 0 ||
+      positions->scalar_type() != ::executorch::aten::ScalarType::Long ||
+      position_sizes.size() != 1 || position_sizes[0] != token_sizes[1]) {
+    std::cerr << "Forward must take Long[1, T] tokens and Long[T] positions"
+              << std::endl;
+    return false;
+  }
+  if (logits_to_keep_mode == LogitsToKeepMode::Selected) {
+    const auto selector = meta->input_tensor_meta(2);
+    if (!selector.ok() ||
+        selector->scalar_type() != ::executorch::aten::ScalarType::Long ||
+        selector->sizes().size() != 1) {
+      std::cerr << "Selected logits selector must be rank-one Long"
+                << std::endl;
+      return false;
+    }
+  }
+
+  if (meta->num_outputs() == 0) {
+    std::cerr << "Forward publishes no logits output" << std::endl;
+    return false;
+  }
+  const auto logits = meta->output_tensor_meta(0);
+  if (!logits.ok() || logits->sizes().size() < 2 ||
+      logits->sizes()[logits->sizes().size() - 1] <= 0 ||
+      !is_supported_logits_type(logits->scalar_type())) {
+    std::cerr
+        << "Forward logits must have supported dtype and shape [..., vocab]"
+        << std::endl;
+    return false;
+  }
+  vocab_size = logits->sizes()[logits->sizes().size() - 1];
+  return true;
 }
 
 std::optional<std::vector<int>> const_ints(Module& module, const char* name) {
@@ -333,15 +407,30 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to load " << pte << std::endl;
       return 1;
     }
-    const auto published_prefill_chunk =
-        const_int(module, "get_prefill_chunk_size");
-    if (!published_prefill_chunk || *published_prefill_chunk <= 0 ||
-        *published_prefill_chunk > std::numeric_limits<int>::max()) {
-      std::cerr << "Invalid or missing get_prefill_chunk_size in " << pte
+    const auto metadata = read_model_metadata(module);
+    if (!metadata.ok()) {
+      std::cerr << "Invalid model metadata in " << pte << std::endl;
+      return 1;
+    }
+    const LogitsToKeepMode logits_to_keep_mode = metadata->logits_to_keep_mode;
+    std::int64_t output_vocab_size = 0;
+    if (!validate_forward_abi(module, logits_to_keep_mode, output_vocab_size)) {
+      return 1;
+    }
+    const auto vocab_size_result =
+        resolve_vocab_size(*metadata, output_vocab_size);
+    if (!vocab_size_result.ok()) {
+      std::cerr << "Invalid get_vocab_size for the forward output in " << pte
                 << std::endl;
       return 1;
     }
-    const int prefill_chunk = static_cast<int>(*published_prefill_chunk);
+    const std::int32_t vocab_size = *vocab_size_result;
+    if (!metadata->max_seq_len || *metadata->max_seq_len <= 0 ||
+        *metadata->max_seq_len > std::numeric_limits<int>::max()) {
+      std::cerr << "Invalid or missing get_max_seq_len in " << pte << std::endl;
+      return 1;
+    }
+    const int prefill_chunk = static_cast<int>(*metadata->max_seq_len);
     StopTokens stop_tokens;
     if (!resolve_stop_tokens(*tokenizer, module, chat, stop_tokens)) {
       std::cerr << "Could not resolve stop tokens for --chat=" << chat
@@ -392,14 +481,37 @@ int main(int argc, char** argv) {
         auto in =
             make_tensor_ptr({1, (int)ids.size()}, std::vector<int64_t>(ids));
         auto cp = make_tensor_ptr({(int)pos.size()}, std::vector<int64_t>(pos));
-        auto out = module.execute("forward", {in, cp});
+        auto out = [&]() -> ::executorch::runtime::Result<
+                             std::vector<::executorch::runtime::EValue>> {
+          if (logits_to_keep_mode == LogitsToKeepMode::Selected) {
+            auto selector = make_tensor_ptr(
+                {1},
+                std::vector<int64_t>{static_cast<int64_t>(ids.size() - 1)});
+            return module.execute("forward", {in, cp, selector});
+          }
+          return module.execute("forward", {in, cp});
+        }();
         if (!out.ok()) {
           throw std::runtime_error("execute failed");
         }
+        if (out->empty() || !out->at(0).isTensor()) {
+          throw std::runtime_error("forward returned no logits");
+        }
         const auto& logits = out->at(0).toTensor();
+        const int64_t actual_vocab_size = logits.dim() == 0
+            ? 0
+            : static_cast<int64_t>(logits.size(logits.dim() - 1));
+        const int64_t expected_rows =
+            logits_to_keep_mode == LogitsToKeepMode::Full
+            ? static_cast<int64_t>(ids.size())
+            : 1;
+        if (logits.dim() != 3 || logits.size(0) != 1 ||
+            logits.size(1) != expected_rows ||
+            actual_vocab_size != vocab_size) {
+          throw std::runtime_error("forward returned an invalid logits shape");
+        }
         if (!sampler) {
-          sampler.emplace(
-              static_cast<int32_t>(logits.size(logits.dim() - 1)), temperature);
+          sampler.emplace(vocab_size, temperature);
         }
         stats.on_sampling_begin();
         const int32_t tok =
@@ -634,9 +746,10 @@ int main(int argc, char** argv) {
 
     cache::CacheConfig cfg{};
     cfg.capacity = kv_capacity;
-    cfg.kv_dtype = storage_dtype(kv_dtype);
+    cfg.kv_dtype =
+        resolve_kv_storage_dtype(kv_dtype, metadata->activation_dtype);
     if (cfg.kv_dtype < 0) {
-      std::cerr << "Invalid --kv-storage-dtype: " << kv_dtype
+      std::cerr << "Invalid --kv-storage-dtype override: " << kv_dtype
                 << " (bf16|fp16|fp32)" << std::endl;
       return 1;
     }

@@ -25,7 +25,6 @@ import logging
 import time
 
 import torch
-
 from executorch.backends.mlx.examples.llm.runtime_meta import (
     apply_chat_template,
     chunked_prefill,
@@ -43,7 +42,7 @@ logger = logging.getLogger(__name__)
 def _get_max_input_seq_len(program) -> int:
     """Inspect the .pte program metadata to determine the max input_ids seq len.
 
-    Fallback for .pte files exported before get_prefill_chunk_size existed.
+    Fallback for .pte files exported before get_max_seq_len existed.
     Returns the static seq-len dimension of the first input tensor (input_ids).
     """
     meta = program.metadata("forward")

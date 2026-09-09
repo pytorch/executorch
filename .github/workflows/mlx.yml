@@ -1064,6 +1064,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}_offgraph.pte \
           --use-offgraph-cache \
+          --logits-to-keep selected \
           --max-ctx-len 1024 \
           --dtype bf16 \
           --qlinear 4w
