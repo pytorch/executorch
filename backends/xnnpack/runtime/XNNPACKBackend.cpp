@@ -255,6 +255,12 @@ class XnnpackBackend final
     return first_err;
   }
 
+ public:
+  /** See xnnpack::get_packed_cache_report(). */
+  xnnpack::PackedCacheReport packed_cache_report() const {
+    return options_.weights_cache_manager().report();
+  }
+
  private:
   mutable xnnpack::XnnpackBackendOptions options_;
 
@@ -271,6 +277,12 @@ auto backend_instance = XnnpackBackend();
 Backend backend{xnnpack::xnnpack_backend_key, &backend_instance};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
+
+namespace xnnpack {
+PackedCacheReport get_packed_cache_report() {
+  return backend_instance.packed_cache_report();
+}
+} // namespace xnnpack
 
 } // namespace backends
 } // namespace executorch
