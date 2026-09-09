@@ -295,6 +295,39 @@ __global__ void normalize_probability_rows_kernel(
   }
 }
 
+__global__ void compute_residual_kernel(
+    const float* target,
+    const float* draft,
+    int64_t total_size,
+    float* residual,
+    double* residual_double) {
+  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (offset < total_size) {
+    const float value = fmaxf(0.0f, target[offset] - draft[offset]);
+    residual[offset] = value;
+    residual_double[offset] = static_cast<double>(value);
+  }
+}
+
+__global__ void normalize_residual_rows_kernel(
+    float* target,
+    const float* residual,
+    const double* cumulative,
+    int64_t total_size,
+    int64_t row_size) {
+  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
+      threadIdx.x;
+  if (offset < total_size) {
+    const int64_t row = offset / row_size;
+    const float denominator = static_cast<float>(
+        cumulative[row * row_size + row_size - 1]);
+    if (denominator > 0.0f) {
+      target[offset] = residual[offset] / denominator;
+    }
+  }
+}
+
 } // namespace
 
 struct SamplingWorkspace::Impl {
@@ -712,6 +745,70 @@ cudaError_t sample_excluding_token_in_place(
   }
   return categorical_sample(
       probabilities,
+      row_count,
+      row_size,
+      sampled_tokens,
+      workspace,
+      stream);
+}
+
+cudaError_t sample_from_residual_in_place(
+    float* target_probabilities,
+    const float* draft_probabilities,
+    int64_t row_count,
+    int64_t row_size,
+    uint64_t* sampled_tokens,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream) {
+  if (target_probabilities == nullptr || draft_probabilities == nullptr ||
+      sampled_tokens == nullptr || row_count <= 0 || row_size <= 0 ||
+      row_count > std::numeric_limits<int>::max() ||
+      row_size > std::numeric_limits<int>::max() / row_count) {
+    return cudaErrorInvalidValue;
+  }
+  cudaError_t error = workspace.reserve(row_count, row_size, stream);
+  if (error != cudaSuccess) {
+    return error;
+  }
+  auto& state = *workspace.impl_;
+  const int64_t total_size = state.total_size;
+  const int item_blocks = static_cast<int>(
+      (total_size + kSamplingThreads - 1) / kSamplingThreads);
+  compute_residual_kernel<<<item_blocks, kSamplingThreads, 0, stream>>>(
+      target_probabilities,
+      draft_probabilities,
+      total_size,
+      state.sort_keys_in,
+      state.weights);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  for (int64_t row = 0; row < row_count; ++row) {
+    error = cub::DeviceScan::InclusiveSum(
+        state.temporary_storage,
+        state.temporary_storage_bytes,
+        state.weights + row * row_size,
+        state.cumulative + row * row_size,
+        static_cast<int>(row_size),
+        stream);
+    if (error != cudaSuccess) {
+      return error;
+    }
+  }
+  normalize_residual_rows_kernel<<<
+      item_blocks, kSamplingThreads, 0, stream>>>(
+      target_probabilities,
+      state.sort_keys_in,
+      state.cumulative,
+      total_size,
+      row_size);
+  error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    return error;
+  }
+  return categorical_sample(
+      target_probabilities,
       row_count,
       row_size,
       sampled_tokens,
