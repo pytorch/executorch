@@ -171,6 +171,7 @@ Result<std::optional<int64_t>> optional_const_int(
 }
 
 void submit_prompt(
+    batching::Session& session,
     const tokenizers::Tokenizer& tokenizer,
     const std::string& prompt,
     const std::vector<batching::Token>& stop_tokens,
@@ -186,16 +187,12 @@ void submit_prompt(
       result.message = "could not encode prompt";
       return;
     }
+    // Reserve the full generation budget so an admitted job is never shortened.
     if (encoded->size() >
         static_cast<std::size_t>(
             FLAGS_max_session_tokens - FLAGS_max_new_tokens)) {
       result.message =
           "prompt plus --max_new_tokens exceeds --max_session_tokens";
-      return;
-    }
-
-    if (!result.session) {
-      result.message = "could not open session";
       return;
     }
 
@@ -217,7 +214,7 @@ void submit_prompt(
     config.stop_tokens = stop_tokens;
     config.seed = FLAGS_seed;
 
-    result.handle = result.session->generate_async(
+    result.handle = session.generate_async(
         std::move(*encoded),
         std::move(config),
         [emitter](const batching::GenerationUpdate& update) {
@@ -357,6 +354,7 @@ int main(int argc, char** argv) {
 
   batching::Runner runner(**executor, std::move(scheduler));
   std::vector<JobResult> results(prompts.size());
+  // Fail before opening sessions if any output path cannot be created.
   for (std::size_t i = 0; i < results.size(); ++i) {
     results[i].output_path =
         FLAGS_out_prefix + "_" + std::to_string(i) + ".txt";
@@ -378,7 +376,12 @@ int main(int argc, char** argv) {
     results[i].session = session_futures[i].get();
   }
   for (std::size_t i = 0; i < prompts.size(); ++i) {
-    submit_prompt(*tokenizer, prompts[i], stop_tokens, results[i]);
+    if (!results[i].session) {
+      results[i].message = "could not open session";
+      continue;
+    }
+    submit_prompt(
+        *results[i].session, *tokenizer, prompts[i], stop_tokens, results[i]);
   }
   for (JobResult& result : results) {
     if (!result.handle.valid()) {

@@ -1099,12 +1099,15 @@ jobs:
           --max-decode-sequences 2 \
           --out-prefix /tmp/${MODEL_NAME}_batched \
           "What is the capital of France?" \
-          "What is the capital of France?"
-        for output in /tmp/${MODEL_NAME}_batched_0.txt /tmp/${MODEL_NAME}_batched_1.txt; do
-          if grep -iq "Paris" "${output}"; then
-            echo "Success: 'Paris' found in ${output}"
+          "What color is grass?"
+        for check in "0:Paris" "1:green"; do
+          index="${check%%:*}"
+          expected="${check#*:}"
+          output="/tmp/${MODEL_NAME}_batched_${index}.txt"
+          if grep -iq "${expected}" "${output}"; then
+            echo "Success: '${expected}' found in ${output}"
           else
-            echo "Failed: Expected 'Paris' not found in ${output}"
+            echo "Failed: Expected '${expected}' not found in ${output}"
             cat "${output}"
             exit 1
           fi
