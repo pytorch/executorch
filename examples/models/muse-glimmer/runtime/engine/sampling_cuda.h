@@ -61,6 +61,14 @@ class SamplingWorkspace {
       uint8_t*,
       SamplingWorkspace&,
       cudaStream_t);
+  friend cudaError_t sample_excluding_token_in_place(
+      float*,
+      int64_t,
+      int64_t,
+      const uint64_t*,
+      uint64_t*,
+      SamplingWorkspace&,
+      cudaStream_t);
 };
 
 // Computes one argmax per contiguous row of `values`.
@@ -106,6 +114,17 @@ cudaError_t accept_with_probability(
     const float* probabilities,
     int64_t count,
     uint8_t* accepted,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream);
+
+// CUDA counterpart of muse_glimmer::sample_excluding_token_in_place for batched rows.
+// Mutates each probability row by excluding and renormalizing before sampling.
+cudaError_t sample_excluding_token_in_place(
+    float* probabilities,
+    int64_t row_count,
+    int64_t row_size,
+    const uint64_t* excluded_tokens,
+    uint64_t* sampled_tokens,
     SamplingWorkspace& workspace,
     cudaStream_t stream);
 
