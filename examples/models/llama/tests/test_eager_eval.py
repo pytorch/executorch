@@ -8,7 +8,13 @@ import unittest
 from types import SimpleNamespace
 from typing import Optional
 
-from executorch.examples.models.llama.evaluate import EagerEvalWrapper
+import pytest
+
+pytest.importorskip("lm_eval", reason="requires lm-evaluation-harness")
+
+from executorch.examples.models.llama.evaluate.eager_eval import (  # noqa: E402
+    EagerEvalWrapper,
+)
 
 
 class TestEagerEvalWrapperTokenIds(unittest.TestCase):
