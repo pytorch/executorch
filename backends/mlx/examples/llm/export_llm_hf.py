@@ -444,7 +444,6 @@ def _export_with_offgraph_cache(
         "bf16": torch.bfloat16,
     }
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
-    logits_to_keep_mode = {"full": 0, "last": 1, "selected": 2}[logits_to_keep]
 
     register_mlx_offgraph_attention()
     logger.info("Registered MLX off-graph attention (update_and_attend)")
@@ -473,7 +472,7 @@ def _export_with_offgraph_cache(
         and not no_tie_word_embeddings,
     )
 
-    exportable = OffGraphExportWrapper(model, logits_to_keep_mode)
+    exportable = OffGraphExportWrapper(model, logits_to_keep)
 
     from executorch.backends.mlx.llm.cache import resolve_hf_cache_layout
 

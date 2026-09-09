@@ -65,7 +65,8 @@ TEST(ModelMetadataTest, RejectsNonPositiveSizes) {
 TEST(ModelMetadataTest, ResolvesAndValidatesVocabSize) {
   ::executorch::extension::llm::ModelMetadata metadata;
   metadata.vocab_size = 128256;
-  auto matched = ::executorch::extension::llm::resolve_vocab_size(metadata, 128256);
+  auto matched =
+      ::executorch::extension::llm::resolve_vocab_size(metadata, 128256);
   ASSERT_TRUE(matched.ok());
   EXPECT_EQ(*matched, 128256);
 
