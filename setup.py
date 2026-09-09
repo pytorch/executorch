@@ -346,6 +346,7 @@ _CI_ENTRY_POINTS = (
     "executorch.examples.models.muse_glimmer.tests.test_mlx_pipeline",
     "executorch.examples.models.muse_glimmer.tests.test_prompt_tokens",
     "executorch.extension.pybindings.test.test_pybindings",
+    "executorch.backends.nxp.tests.generic_tests.test_cifarnet",
 )
 
 # Directories whose test modules are reached without any import statement naming them, so no scan
