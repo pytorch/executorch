@@ -33,6 +33,8 @@ done
 TC="${XTENSA_TOOLCHAIN}/${TOOLCHAIN_VER}/XtensaTools"
 echo "toolchain lic dir:  $(find "${TC}/Tools/lic" -type f -print0 2>/dev/null | sort -z | xargs -0 md5sum 2>/dev/null | md5sum)"
 echo "xt-clang binary:    $(md5sum "${TC}/bin/xt-clang" 2>/dev/null)"
+echo "--- cpu"
+grep -m1 vendor_id /proc/cpuinfo; grep -m1 "model name" /proc/cpuinfo
 echo "--- core resolution"
 echo "XTENSA_CORE=${XTENSA_CORE:-unset}"
 echo "XTENSA_SYSTEM=${XTENSA_SYSTEM:-unset}"
