@@ -94,6 +94,7 @@ TEST(ZipReaderTest, ReadsStoredMemberRanges) {
   EXPECT_EQ(
       zip.read("program.ptg"),
       (std::vector<uint8_t>{'p', 'r', 'o', 'g', 'r', 'a', 'm'}));
+  EXPECT_NO_THROW(zip.verify("program.safetensors"));
 }
 
 TEST(ZipReaderTest, RejectsInvalidRanges) {
