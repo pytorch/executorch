@@ -652,6 +652,8 @@ def _forward_from_embeddings_sampling(
     x = self._run_blocks(inputs_embeds, input_pos)
     x = self.output_norm(x)
     last = self._soft_cap(self.lm_head(x[:, -1, :]))
+    if self._greedy_sampling:
+        return last.argmax(dim=-1, keepdim=True).float()
     return sample(last, temperature)
 
 
@@ -665,10 +667,12 @@ def _decode_from_embedding_sampling(
     x = self._run_blocks(input_embedding, input_pos)
     x = self.output_norm(x)
     last = self._soft_cap(self.lm_head(x[:, -1, :]))
+    if self._greedy_sampling:
+        return last.argmax(dim=-1, keepdim=True).float()
     return sample(last, temperature)
 
 
-def add_on_device_sampler(model: nn.Module) -> None:
+def add_on_device_sampler(model: nn.Module, *, greedy: bool = False) -> None:
     """Bind the three on-device-sampling entry points to a Muse Glimmer model in place.
 
     Exposes bound methods used by ``export.py`` via a per-method
@@ -685,6 +689,10 @@ def add_on_device_sampler(model: nn.Module) -> None:
     Args:
         model: ``MuseGlimmerModel`` instance to transform.
     """
+    # This is a Python bool fixed at export time, so the greedy artifact omits
+    # RNG and Gumbel kernels entirely while retaining the same method schema.
+    # The general sampling artifact keeps the existing runtime temperature.
+    model._greedy_sampling = greedy
     model.embed_text_forward = types.MethodType(_embed_text_forward, model)
     model.forward_from_embeddings = types.MethodType(
         _forward_from_embeddings_sampling, model
