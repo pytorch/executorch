@@ -56,7 +56,7 @@ jobs:
   test-static-hf-llm-qnn-linux:
     needs: docker-image
     name: test-static-hf-llm-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue2
     permissions:
       id-token: write
       contents: read
