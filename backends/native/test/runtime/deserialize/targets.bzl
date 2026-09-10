@@ -16,3 +16,12 @@ def define_common_targets():
             "//executorch/backends/native/runtime/deserialize:safetensors_reader",
         ],
     )
+
+    runtime.cxx_test(
+        name = "zip_reader_test",
+        srcs = ["test_zip_reader.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:zip_reader",
+            "fbsource//third-party/libzip:zip",
+        ],
+    )

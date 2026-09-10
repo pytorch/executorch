@@ -28,6 +28,15 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    runtime.cxx_library(
+        name = "zip_reader",
+        srcs = ["ZipReader.cpp"],
+        exported_headers = ["ZipReader.h"],
+        exported_deps = [":byte_span"],
+        deps = ["fbsource//third-party/libzip:zip"],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
     # safetensors index reader.
     runtime.cxx_library(
         name = "safetensors_reader",
@@ -39,4 +48,17 @@ def define_common_targets():
         ],
         deps = [":json"],
         visibility = ["//executorch/backends/native/..."],
+    )
+    runtime.cxx_library(
+        name = "package",
+        srcs = ["Package.cpp"],
+        exported_headers = ["Package.h"],
+        exported_deps = [
+            ":byte_span",
+            ":safetensors_reader",
+            ":zip_reader",
+            "//executorch/backends/native/runtime/graph:scalar_type",
+        ],
+        deps = [":json"],
+        visibility = ["PUBLIC"],
     )
