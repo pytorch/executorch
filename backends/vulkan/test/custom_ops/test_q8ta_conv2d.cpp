@@ -40,11 +40,12 @@ struct Im2colUnsignedTestOptions {
 };
 
 // Utility function to create a test case from a Conv2dConfig
-static TestCase create_test_case_from_config(
+static TestCase create_test_case_from_config_with_layouts(
     const Conv2dConfig& config,
     vkapi::ScalarType input_dtype,
     utils::StorageType fp_storage_type,
-    utils::GPUMemoryLayout int8_memory_layout,
+    utils::GPUMemoryLayout input_int8_memory_layout,
+    utils::GPUMemoryLayout output_int8_memory_layout,
     const std::string& impl_selector = "",
     const Im2colUnsignedTestOptions* im2col_options = nullptr,
     const float input_scale_val = 0.008123f,
@@ -81,7 +82,10 @@ static TestCase create_test_case_from_config(
       std::to_string(config.stride.h) + " p" +
       std::to_string(config.padding.h) + " d" +
       std::to_string(config.dilation.h) + " g" + std::to_string(config.groups);
-  std::string storage_str = repr_str(utils::kBuffer, int8_memory_layout);
+  std::string storage_str = repr_str(utils::kBuffer, input_int8_memory_layout);
+  if (input_int8_memory_layout != output_int8_memory_layout) {
+    storage_str += "->" + repr_str(utils::kBuffer, output_int8_memory_layout);
+  }
   std::string suffix = impl_selector.empty() ? "" : "[" + impl_selector + "]";
   std::string test_name = make_test_label(
       prefix, dtype_str, dtype_str, shape_str, storage_str, suffix);
@@ -252,8 +256,11 @@ static TestCase create_test_case_from_config(
   test_case.add_input_spec(activation);
 
   // Add memory layout parameter for the quantized tensors
-  ValueSpec layout_int(static_cast<int32_t>(int8_memory_layout));
-  test_case.add_input_spec(layout_int);
+  ValueSpec input_layout_int(static_cast<int32_t>(input_int8_memory_layout));
+  test_case.add_input_spec(input_layout_int);
+
+  ValueSpec output_layout_int(static_cast<int32_t>(output_int8_memory_layout));
+  test_case.add_input_spec(output_layout_int);
 
   // Add impl_selector string
   ValueSpec impl_selector_spec = ValueSpec::make_string(impl_selector);
@@ -274,6 +281,27 @@ static TestCase create_test_case_from_config(
   });
 
   return test_case;
+}
+
+static TestCase create_test_case_from_config(
+    const Conv2dConfig& config,
+    vkapi::ScalarType input_dtype,
+    utils::StorageType fp_storage_type,
+    utils::GPUMemoryLayout int8_memory_layout,
+    const std::string& impl_selector = "",
+    const Im2colUnsignedTestOptions* im2col_options = nullptr,
+    const float input_scale_val = 0.008123f,
+    const DataGenType input_data_gen = DataGenType::RANDOM) {
+  return create_test_case_from_config_with_layouts(
+      config,
+      input_dtype,
+      fp_storage_type,
+      int8_memory_layout,
+      int8_memory_layout,
+      impl_selector,
+      im2col_options,
+      input_scale_val,
+      input_data_gen);
 }
 
 static std::vector<TestCase> generate_narrow_workgroup_test_cases() {
@@ -485,6 +513,94 @@ static std::vector<TestCase> generate_streaming_im2col_test_cases() {
       /*input_scale_val=*/1.0f,
       /*input_data_gen=*/DataGenType::RANDINT));
   return test_cases;
+}
+
+// SceneX route tests. The kPackedInt8_4C input + kPackedInt8_4W4C output
+// layout combination is only exercised here (default generators never pair
+// them); run via --scenex-regular <auto|direct|im2col> <case>. Zero
+// tolerances are exact by construction: both pipelines accumulate in int32
+// with identical requantize, so any mismatch is a real regression, not noise.
+static TestCase create_scenex_test_case(
+    const Conv2dConfig& source_config,
+    const std::string& route) {
+  Conv2dConfig config = source_config;
+  config.op_name = "conv2d_q8ta_q8csw_q8to";
+  config.test_case_name =
+      make_test_case_name(config, false, utils::kTexture3D, utils::kBuffer);
+
+  const std::string impl_selector = route == "auto" ? ""
+      : route == "direct"                           ? "general"
+                                                    : "im2col";
+  TestCase test_case = create_test_case_from_config_with_layouts(
+      config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4C,
+      utils::kPackedInt8_4W4C,
+      impl_selector,
+      /*im2col_options=*/nullptr,
+      /*input_scale_val=*/1.0f,
+      /*input_data_gen=*/DataGenType::RANDINT);
+  test_case.set_abs_tolerance(0.0f);
+  test_case.set_rel_tolerance(0.0f);
+  return test_case;
+}
+
+static TestCase generate_scenex_regular_test_case(
+    const std::string& route,
+    const int case_index) {
+  const std::vector<Conv2dConfig> configs = {
+      {OutInChannels(128, 64),
+       InputSize2D(40, 51),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1,
+       60},
+      {OutInChannels(256, 128),
+       InputSize2D(20, 26),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1,
+       60},
+  };
+  return create_scenex_test_case(configs.at(case_index), route);
+}
+
+static TestCase generate_scenex_grouped_test_case(
+    const std::string& route,
+    const int case_index) {
+  const std::vector<Conv2dConfig> configs = {
+      {OutInChannels(64, 64),
+       InputSize2D(128, 128),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       2,
+       60},
+      {OutInChannels(128, 128),
+       InputSize2D(128, 128),
+       KernelSize(5, 5),
+       Stride(2, 2),
+       Padding(2, 2),
+       Dilation(1, 1),
+       4,
+       60},
+      {OutInChannels(64, 64),
+       InputSize2D(64, 64),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       2,
+       60},
+  };
+
+  return create_scenex_test_case(configs.at(case_index), route);
 }
 
 // Generate test cases for quantized conv2d operation
@@ -966,6 +1082,8 @@ static void conv2d_q8ta_q8csw_q8to_reference_impl(TestCase& test_case) {
   const ValueSpec& activation_spec = test_case.inputs()[idx++];
   const ValueSpec& layout_spec = test_case.inputs()[idx++];
   (void)layout_spec; // Not used in reference implementation
+  const ValueSpec& output_layout_spec = test_case.inputs()[idx++];
+  (void)output_layout_spec; // Not used in reference implementation
   const ValueSpec& impl_selector_spec = test_case.inputs()[idx++];
   (void)impl_selector_spec; // Not used in reference implementation
 
@@ -1153,6 +1271,41 @@ static void reference_impl(TestCase& test_case) {
   conv2d_q8ta_q8csw_q8to_reference_impl(test_case);
 }
 
+// The impl selector holds one of "", "general", or "im2col"; activation and
+// other string inputs use disjoint values. Overwrite it by value so a
+// reordered input list fails loudly instead of mutating the wrong spec.
+// Note: for route == "direct" the measured run already forces "general", so
+// this reference re-executes the identical implementation and only checks
+// determinism; genuine cross-implementation correctness comes from the
+// auto/im2col legs.
+static void scenex_direct_reference(TestCase& test_case) {
+  TestCase direct_case = test_case;
+  bool found_selector = false;
+  for (auto it = direct_case.inputs().rbegin();
+       it != direct_case.inputs().rend();
+       ++it) {
+    if (it->is_string() &&
+        (it->get_string_value().empty() ||
+         it->get_string_value() == "general" ||
+         it->get_string_value() == "im2col")) {
+      it->string_data = "general";
+      found_selector = true;
+      break;
+    }
+  }
+  if (!found_selector) {
+    throw std::runtime_error("scenex reference: impl selector input not found");
+  }
+  execute_test_case(
+      direct_case,
+      /*warmup_runs=*/1,
+      /*benchmark_runs=*/1,
+      /*chained_dispatches=*/1,
+      /*write_outputs=*/true);
+  test_case.outputs().at(0).get_ref_float_data() =
+      direct_case.outputs().at(0).get_float_data();
+}
+
 // Custom FLOP calculator for quantized conv2d operation
 static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
   int kernel_idx = 9; // kernel_size is at index 9 for q8ta_q8csw_q8to
@@ -1276,6 +1429,14 @@ static void execute_streaming_dynamic_shrink_test() {
   std::cout << "Streaming im2col dynamic shrink PASSED" << std::endl;
 }
 
+// Single usage string for the scenex route-test modes; argument errors
+// return 2 like the other CLI errors in main.
+static int print_scenex_usage(const char* mode, const char* cases) {
+  std::cerr << "Usage: " << mode << " <auto|direct|im2col> <" << cases << ">"
+            << std::endl;
+  return 2;
+}
+
 int main(int argc, char* argv[]) {
   const vkapi::Adapter& adapter = *vkcompute::api::context()->adapter_ptr();
   const bool prefers_unsigned_dot =
@@ -1291,29 +1452,44 @@ int main(int argc, char* argv[]) {
   bool narrow_workgroups_only = false;
   bool streaming_im2col_only = false;
   bool streaming_dynamic_shrink_only = false;
-  for (int i = 1; i < argc; ++i) {
-    const std::string arg(argv[i]);
-    if (arg == "--im2col-path=signed") {
-      im2col_impl_selector = "im2col";
-    } else if (arg == "--im2col-path=unsigned") {
-      im2col_impl_selector = "im2col_unsigned";
-    } else if (arg == "--im2col-path=auto") {
-      im2col_impl_selector = "im2col_auto";
-    } else if (arg == "--narrow-workgroups-only") {
-      narrow_workgroups_only = true;
-    } else if (arg == "--streaming-im2col-only") {
-      streaming_im2col_only = true;
-    } else if (arg == "--streaming-dynamic-shrink-only") {
-      streaming_dynamic_shrink_only = true;
-    } else {
-      std::cerr << "Unknown argument: " << arg << std::endl;
-      return 2;
+  const bool scenex_regular =
+      argc == 4 && std::string(argv[1]) == "--scenex-regular";
+  const bool scenex_grouped =
+      argc == 4 && std::string(argv[1]) == "--scenex-grouped";
+  if (argc >= 2 && std::string(argv[1]) == "--scenex-regular" &&
+      !scenex_regular) {
+    return print_scenex_usage("--scenex-regular", "0|1");
+  }
+  if (argc >= 2 && std::string(argv[1]) == "--scenex-grouped" &&
+      !scenex_grouped) {
+    return print_scenex_usage("--scenex-grouped", "0|1|2");
+  }
+  if (!scenex_regular && !scenex_grouped) {
+    for (int i = 1; i < argc; ++i) {
+      const std::string arg(argv[i]);
+      if (arg == "--im2col-path=signed") {
+        im2col_impl_selector = "im2col";
+      } else if (arg == "--im2col-path=unsigned") {
+        im2col_impl_selector = "im2col_unsigned";
+      } else if (arg == "--im2col-path=auto") {
+        im2col_impl_selector = "im2col_auto";
+      } else if (arg == "--narrow-workgroups-only") {
+        narrow_workgroups_only = true;
+      } else if (arg == "--streaming-im2col-only") {
+        streaming_im2col_only = true;
+      } else if (arg == "--streaming-dynamic-shrink-only") {
+        streaming_dynamic_shrink_only = true;
+      } else {
+        std::cerr << "Unknown argument: " << arg << std::endl;
+        return 2;
+      }
     }
   }
   const int selected_modes = static_cast<int>(!im2col_impl_selector.empty()) +
       static_cast<int>(narrow_workgroups_only) +
       static_cast<int>(streaming_im2col_only) +
-      static_cast<int>(streaming_dynamic_shrink_only);
+      static_cast<int>(streaming_dynamic_shrink_only) +
+      static_cast<int>(scenex_regular) + static_cast<int>(scenex_grouped);
   if (selected_modes > 1) {
     std::cerr << "Test mode selectors are mutually exclusive" << std::endl;
     return 2;
@@ -1334,6 +1510,8 @@ int main(int argc, char* argv[]) {
   print_separator();
 
   ReferenceComputeFunc ref_fn = reference_impl;
+  int warmup_runs = 1;
+  int benchmark_runs = 1;
 
   if (streaming_dynamic_shrink_only) {
     execute_streaming_dynamic_shrink_test();
@@ -1365,14 +1543,44 @@ int main(int argc, char* argv[]) {
       return cases;
     };
 #endif
+  } else if (scenex_regular) {
+    const std::string route = argv[2];
+    const std::string case_arg = argv[3];
+    if ((route != "auto" && route != "direct" && route != "im2col") ||
+        (case_arg != "0" && case_arg != "1")) {
+      return print_scenex_usage("--scenex-regular", "0|1");
+    }
+    const int case_index = case_arg == "0" ? 0 : 1;
+    test_case_generator = [route, case_index]() {
+      return std::vector<TestCase>{
+          generate_scenex_regular_test_case(route, case_index)};
+    };
+    ref_fn = scenex_direct_reference;
+    warmup_runs = 3;
+    benchmark_runs = 10;
+  } else if (scenex_grouped) {
+    const std::string route = argv[2];
+    const std::string case_arg = argv[3];
+    if ((route != "auto" && route != "direct" && route != "im2col") ||
+        (case_arg != "0" && case_arg != "1" && case_arg != "2")) {
+      return print_scenex_usage("--scenex-grouped", "0|1|2");
+    }
+    const int case_index = case_arg == "0" ? 0 : case_arg == "1" ? 1 : 2;
+    test_case_generator = [route, case_index]() {
+      return std::vector<TestCase>{
+          generate_scenex_grouped_test_case(route, case_index)};
+    };
+    ref_fn = scenex_direct_reference;
+    warmup_runs = 3;
+    benchmark_runs = 10;
   }
 
   auto results = execute_test_cases(
       test_case_generator,
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",
-      /*warmup_runs = */ 1,
-      /*benchmark_runs = */ 1,
+      warmup_runs,
+      benchmark_runs,
       ref_fn);
 
 #ifndef DEBUG_MODE
