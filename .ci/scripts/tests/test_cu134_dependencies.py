@@ -13,6 +13,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from packaging.requirements import Requirement
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -141,7 +143,7 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.installer.install_requirements(True)
         self.assertEqual(run.call_count, 1)
 
-    def test_wheel_torchao_bound_matches_selected_train(self):
+    def torchao_requirement(self):
         path = ROOT / "setup.py"
         tree = ast.parse(path.read_text())
         function = next(
@@ -160,6 +162,50 @@ class TestCu134Dependencies(unittest.TestCase):
             compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"),
             namespace,
         )
+        return namespace["_torchao_requirement"]()
+
+    def test_package_install_preserves_source_pinned_torchao(self):
+        with patch.dict(sys.modules, {"install_requirements": self.installer}):
+            package_installer = load_module("install_executorch")
+        for machine in ("x86_64", "aarch64"):
+            with self.subTest(machine=machine):
+                self.utils.determine_torch_url.cache_clear()
+                with (
+                    patch.dict(os.environ, {}, clear=True),
+                    patch.object(self.utils, "_get_cuda_version", return_value=(13, 4)),
+                    patch.object(
+                        self.installer.platform, "machine", return_value=machine
+                    ),
+                    patch.object(
+                        self.installer.platform, "system", return_value="Linux"
+                    ),
+                    patch.object(self.installer.sys, "platform", "linux"),
+                    patch.object(
+                        sys,
+                        "argv",
+                        ["install_executorch", "--use-pt-pinned-commit", "--minimal"],
+                    ),
+                    patch.object(
+                        package_installer, "python_is_compatible", return_value=True
+                    ),
+                    patch.object(package_installer, "check_and_update_submodules"),
+                    patch.object(self.installer.subprocess, "run") as run,
+                ):
+                    package_installer.main([])
+                    commands = [call.args[0] for call in run.call_args_list]
+                    metadata = Requirement(self.torchao_requirement())
+                self.assertEqual(len(commands), 3)
+                self.assertIn(".", commands[-1])
+                core = commands[0]
+                torchao = Requirement(
+                    next(arg for arg in core if arg.startswith("torchao=="))
+                )
+                version = next(iter(torchao.specifier)).version
+                self.assertIn(version, metadata.specifier)
+                self.assertIn("torch", core)
+                self.assertFalse(any(arg.startswith("torch==") for arg in core))
+
+    def test_wheel_torchao_bound_matches_selected_train(self):
         for cuda, expected in (
             ((13, 4), "torchao>=0.19.0.dev20260811,<0.20"),
             ((13, 2), "torchao>=0.18.0.dev20260729,<0.19"),
@@ -175,7 +221,7 @@ class TestCu134Dependencies(unittest.TestCase):
                 ),
                 patch.object(self.installer.platform, "system", return_value="Linux"),
             ):
-                self.assertEqual(namespace["_torchao_requirement"](), expected)
+                self.assertEqual(self.torchao_requirement(), expected)
 
 
 if __name__ == "__main__":

@@ -66,9 +66,11 @@ def install_requirements(use_pytorch_nightly):
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
     torch_url = determine_torch_url(TORCH_URL_BASE)
-    cu134_packages = cu134_requirements(torch_url) if use_pytorch_nightly else []
+    cu134_packages = cu134_requirements(torch_url)
     if cu134_packages:
         torch_url = determine_torch_url(TORCHAO_URL_BASE)
+        if not use_pytorch_nightly:
+            cu134_packages[0] = "torch"
     # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
     # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
     # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
