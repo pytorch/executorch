@@ -58,11 +58,46 @@ class CudaWorkflowTest(unittest.TestCase):
             "NVIDIA-Linux-x86_64-615.71.09.run' || '' }}",
         )
 
-    def test_cuda_probe_rejects_a_different_torch_train(self):
+    def test_cuda134_runtime_update_precedes_build_and_propagates_failure(self):
+        script = WORKFLOW["jobs"]["test-cuda-builds"]["with"]["script"]
+        stubs = """
+conda() { printf 'CONDA %s\n' "$*"; return "$CONDA_STATUS"; }
+source() { printf 'BUILD %s\n' "$*"; }
+"""
+        for version, conda_status in (
+            ("12.6", 0),
+            ("13.0", 0),
+            ("13.4", 0),
+            ("13.4", 1),
+        ):
+            with self.subTest(version=version, conda_status=conda_status):
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        stubs + script.replace("${{ matrix.cuda-version }}", version),
+                    ],
+                    env={**os.environ, "CONDA_STATUS": str(conda_status)},
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, conda_status, result.stderr)
+                expected = []
+                if version == "13.4":
+                    expected.append(
+                        "CONDA install -y -n base -c conda-forge "
+                        "libstdcxx-ng=16.2.0 libgcc-ng=16.2.0"
+                    )
+                if conda_status == 0:
+                    expected.append(f"BUILD .ci/scripts/test-cuda-build.sh {version}")
+                self.assertEqual(result.stdout.splitlines(), expected)
+
+    def test_cuda_probe_checks_the_result_and_torch_train(self):
         script = (ROOT / ".ci/scripts/test-cuda-build.sh").read_text()
         probes = [block.split('\n"', 1)[0] for block in script.split('python -c "')[1:]]
         probe = next(block for block in probes if "import torch" in block)
         fake_torch = """
+import os
 import sys
 from types import SimpleNamespace
 class Tensor:
@@ -70,6 +105,13 @@ class Tensor:
     shape = (10, 10)
     def to(self, device):
         return self
+    def cpu(self):
+        return self
+    def __matmul__(self, other):
+        return self
+def assert_close(actual, expected):
+    print('RESULT CHECKED')
+    assert os.environ['INVALID_CUDA_RESULT'] == '0', 'CUDA result mismatch'
 sys.modules['torch'] = SimpleNamespace(
     __version__='test', version=SimpleNamespace(cuda='13.4'),
     cuda=SimpleNamespace(
@@ -78,17 +120,28 @@ sys.modules['torch'] = SimpleNamespace(
     ),
     device=lambda name: name, randn=lambda *args: Tensor(),
     mm=lambda x, y: Tensor(),
+    testing=SimpleNamespace(assert_close=assert_close),
 )
 """
-        for expected, succeeds in (("13.4", True), ("13.0", False)):
-            with self.subTest(expected=expected):
+        for expected, invalid_result, succeeds in (
+            ("13.4", "0", True),
+            ("13.0", "0", False),
+            ("13.4", "1", False),
+        ):
+            with self.subTest(expected=expected, invalid_result=invalid_result):
                 result = subprocess.run(
                     [sys.executable, "-c", fake_torch + probe],
-                    env={**os.environ, "EXPECTED_CUDA_VERSION": expected},
+                    env={
+                        **os.environ,
+                        "EXPECTED_CUDA_VERSION": expected,
+                        "INVALID_CUDA_RESULT": invalid_result,
+                    },
                     capture_output=True,
                     text=True,
                 )
                 self.assertEqual(result.returncode == 0, succeeds, result.stdout)
+                if succeeds:
+                    self.assertIn("RESULT CHECKED", result.stdout)
 
     def test_pybind_runs_inline_for_the_expected_matrix_cells(self):
         job = WORKFLOW["jobs"]["test-model-cuda-e2e"]

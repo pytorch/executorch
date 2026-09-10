@@ -85,8 +85,10 @@ jobs:
       script: |
         set -eux
 
-        # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
-        # and install the appropriate PyTorch wheel
+        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
+          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
+          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        fi
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail

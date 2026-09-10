@@ -74,7 +74,8 @@ try:
         x = torch.randn(10, 10).to(device)
         y = torch.randn(10, 10).to(device)
         z = torch.mm(x, y)
-        print('SUCCESS: CUDA tensor operation completed on device:', z.device)
+        torch.testing.assert_close(z.cpu(), x.cpu() @ y.cpu())
+        print('SUCCESS: CUDA tensor operation matched CPU on device:', z.device)
         print('INFO: Result tensor shape:', z.shape)
 
         print('SUCCESS: ExecuTorch CUDA integration verified')
