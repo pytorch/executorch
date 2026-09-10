@@ -24,10 +24,10 @@ Among currently supported machine learning models are:
 
 - [MCUXpresso IDE](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE) or [MCUXpresso Visual Studio Code extension](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC)
 - [MCUXpresso SDK 26.06](https://mcuxpresso.nxp.com/mcuxsdk/26.06.00/html/index.html)
-- eIQ Neutron SDK version 3.2.0, what you can download from eIQ PyPI:
+- eIQ Neutron SDK version 3.2.1, what you can download from eIQ PyPI:
 
 ```commandline
-$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.2.0
+$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.2.1
 ```
 
 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: 
@@ -46,11 +46,16 @@ For a quick overview how to convert a custom PyTorch model, take a look at our [
 
 An example runtime application using the eIQ NSYS (eIQ Neutron Simulator) is available [examples/nxp/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/nxp/executor_runner/), described in the tutorial [Getting started with eIQ Neutron NPU ExecuTorch backend](tutorials/nxp-basic-tutorial.md)
 
-To learn how to run the converted model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list.
+To learn how to run the delegated model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list.
 For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/example_applications.html).
 
 For guideline how to update the eIQ Neutron Runtime on MCUXpresso SDK, follow the instructions from the eIQ Neutron SDK package `docs/NeutronSDKUserGuide.md` available
 here https://www.nxp.com/design/design-center/software/eiq-ai-development-environment/eiq-toolkit-for-end-to-end-model-development-and-deployment:EIQ-TOOLKIT.
+
+## Using the MCUXpresso Example
+
+[This page](nxp-mcuxpresso-example.md) demonstrates how to build and run the ExecuTorch CIFARNet example from MCUXpresso SDK.
+
 
 ## Reference
 

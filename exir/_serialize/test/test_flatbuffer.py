@@ -6,6 +6,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import os
 import tempfile
 import unittest
@@ -13,7 +14,11 @@ from typing import Dict, Optional, Sequence
 from unittest.mock import patch
 
 from executorch.exir._serialize import _flatbuffer
-from executorch.exir._serialize._flatbuffer import _ResourceFiles, _SchemaInfo
+from executorch.exir._serialize._flatbuffer import (
+    _replace_non_finite_in_json,
+    _ResourceFiles,
+    _SchemaInfo,
+)
 
 
 def read_file(dir: str, filename: str) -> bytes:
@@ -271,3 +276,36 @@ class TestPrepareSchema(unittest.TestCase):
                             out_dir,
                             delegate_alignment=bad_alignment,
                         )
+
+
+class TestReplaceNonFiniteInJson(unittest.TestCase):
+    def test_non_finite_floats_are_quoted(self) -> None:
+        content = json.dumps(
+            {
+                "neg_inf": float("-inf"),
+                "pos_inf": float("inf"),
+                "nan": float("nan"),
+                "nested": [1.0, float("-inf")],
+            }
+        ).encode("ascii")
+        # Confirm the premise: json.dumps emits literals flatc cannot parse.
+        self.assertIn(b"-Infinity", content)
+
+        result = json.loads(_replace_non_finite_in_json(content))
+        self.assertEqual(result["neg_inf"], "-inf")
+        self.assertEqual(result["pos_inf"], "inf")
+        self.assertEqual(result["nan"], "nan")
+        self.assertEqual(result["nested"], [1.0, "-inf"])
+
+    def test_finite_content_is_unchanged(self) -> None:
+        content = json.dumps({"a": 1.5, "b": [2, 3], "c": "text"}).encode("ascii")
+        self.assertIs(_replace_non_finite_in_json(content), content)
+
+    def test_string_values_are_not_rewritten(self) -> None:
+        # A string that would trip a regex over the raw JSON text.
+        content = json.dumps({"name": "a:Infinity,b", "v": float("inf")}).encode(
+            "ascii"
+        )
+        result = json.loads(_replace_non_finite_in_json(content))
+        self.assertEqual(result["name"], "a:Infinity,b")
+        self.assertEqual(result["v"], "inf")

@@ -46,6 +46,7 @@ bool validate_flash_attention_args(
     const Tensor& query,
     const Tensor& key,
     const Tensor& value,
+    const Tensor& output,
     const optional<Tensor>& attn_mask) {
   ET_CHECK_OR_RETURN_FALSE(query.dim() == 4, "query must be a 4D tensor");
   ET_CHECK_OR_RETURN_FALSE(key.dim() == 4, "key must be a 4D tensor");
@@ -67,6 +68,11 @@ bool validate_flash_attention_args(
       (query.scalar_type() == key.scalar_type()) &&
           (query.scalar_type() == value.scalar_type()),
       "Key and Value must have the same data type as Query");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      value.scalar_type() == ScalarType::Char ||
+          output.scalar_type() == value.scalar_type(),
+      "Output must have the same data type as Value for non-quantized SDPA");
 
   ET_CHECK_OR_RETURN_FALSE(
       !attn_mask.has_value() || attn_mask.value().dim() == 2,
@@ -348,7 +354,7 @@ Tensor& flash_attention_kernel_out(
   (void)ctx;
   ET_KERNEL_CHECK(
       ctx,
-      validate_flash_attention_args(query, key, value, attn_mask),
+      validate_flash_attention_args(query, key, value, output, attn_mask),
       InvalidArgument,
       output);
 
@@ -449,7 +455,7 @@ Tensor& custom_sdpa_out_impl(
 
   ET_KERNEL_CHECK_MSG(
       ctx,
-      validate_flash_attention_args(q, k, v, attn_mask),
+      validate_flash_attention_args(q, k, v, output, attn_mask),
       InvalidArgument,
       output,
       "Invalid arguments");

@@ -48,8 +48,8 @@ void add_unary_op_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -69,6 +69,46 @@ void add_unary_op_node(
       resize_unary_op_node));
 }
 
+void add_dynamic_clamp_node(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef min,
+    const ValueRef max,
+    const ValueRef out) {
+  std::string kernel_name("clamp_dynamic");
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+
+  const bool output_is_int = graph.dtype_of(out) == vkapi::kInt;
+  const utils::ivec2 bounds_are_int = {
+      output_is_int || graph.val_is_symint(min) ? 1 : 0,
+      output_is_int || graph.val_is_symint(max) ? 1 : 0};
+  const vkapi::BufferBindInfo min_param = bounds_are_int[0]
+      ? graph.get_or_create_int_param_buffer(
+            min, std::numeric_limits<int32_t>::min())
+      : graph.create_params_buffer(graph.extract_scalar_or<float>(
+            min, -std::numeric_limits<float>::infinity()));
+  const vkapi::BufferBindInfo max_param = bounds_are_int[1]
+      ? graph.get_or_create_int_param_buffer(
+            max, std::numeric_limits<int32_t>::max())
+      : graph.create_params_buffer(graph.extract_scalar_or<float>(
+            max, std::numeric_limits<float>::infinity()));
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_gwg,
+      default_pick_lwg,
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      {min_param, max_param},
+      {graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
+                                    : graph.logical_limits_pc_of(out),
+       PushConstantDataInfo(&bounds_are_int, sizeof(bounds_are_int))},
+      {},
+      {},
+      resize_unary_op_node));
+}
+
 float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
   if (!graph.val_is_none(val)) {
     return graph.extract_scalar<float>(val);
@@ -85,6 +125,10 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
 
 #define DEFINE_CLAMP_FN(op_name)                                         \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    if (graph.val_is_symint(args[1]) || graph.val_is_symint(args[2])) {  \
+      return add_dynamic_clamp_node(                                     \
+          graph, args[0], args[1], args[2], args[3]);                    \
+    }                                                                    \
     return add_unary_op_node(                                            \
         graph,                                                           \
         args[0],                                                         \

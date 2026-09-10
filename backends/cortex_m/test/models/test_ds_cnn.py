@@ -15,7 +15,6 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
     "executorch_exir_dialects_edge__ops_aten_relu_default": 9,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 2,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 18,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 17,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 15,
@@ -23,14 +22,13 @@ ops_before_transforms: dict[str, int] = {
 
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 3,
     "executorch_exir_dialects_edge__ops_cortex_m_pad_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 3,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 4,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 5,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
-    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 2,
 }
 
 test_cases = {
@@ -43,11 +41,21 @@ test_cases = {
 }
 
 
+ops_absent_after_transforms: list[str] = [
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
+]
+
+
 @parametrize("test_case", test_cases)
 def test_dialect_ds_cnn(test_case):
     inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
-    tester.test_dialect(ops_before_transforms, ops_after_transforms, qtol=1)
+    tester.test_dialect(
+        ops_before_transforms,
+        ops_after_transforms,
+        qtol=1,
+        ops_absent_after_transforms=ops_absent_after_transforms,
+    )
 
 
 @parametrize("test_case", test_cases)

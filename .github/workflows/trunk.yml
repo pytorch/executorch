@@ -261,6 +261,7 @@ jobs:
           - test_arm_backend: test_pytest_ops_ethos_u55
           - test_arm_backend: test_pytest_models_ethos_u55
           - test_arm_backend: test_run_ethos_u55
+          - test_arm_backend: test_minimal_classic_ml_ethos_u55
           - test_arm_backend: test_pytest_ops_ethos_u85
           - test_arm_backend: test_pytest_models_ethos_u85
           - test_arm_backend: test_run_ethos_u85
@@ -492,10 +493,9 @@ jobs:
   test-llama-runner-macos:
     needs: [changed-files, run-decision]
     # Whole-job gate (matrix cells can't be individually if'd):
-    # mps / coreml / xnnpack+custom+quantize_kv.
+    # coreml / xnnpack+custom+quantize_kv.
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
-      contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
@@ -512,7 +512,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        mode: [mps, coreml, xnnpack+custom+quantize_kv]
+        mode: [coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
       default-packages: ""
@@ -738,44 +738,6 @@ jobs:
         echo "Finishing installing coreml."
 
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
-
-  test-models-macos-mps:
-    needs: [changed-files, run-decision]
-    if: |
-      contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
-      contains(needs.changed-files.outputs.changed-files, 'examples/apple/mps') ||
-      contains(needs.changed-files.outputs.changed-files, 'examples/models') ||
-      contains(needs.changed-files.outputs.changed-files, 'devtools/bundled_program') ||
-      contains(needs.changed-files.outputs.changed-files, 'devtools/etrecord') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
-      needs.run-decision.outputs.is-full-run == 'true'
-    name: test-models-macos-mps
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      fail-fast: false
-    with:
-      default-packages: ""
-      runner: macos-m1-stable
-      python-version: '3.11'
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        BUILD_TOOL=cmake
-        bash .ci/scripts/setup-conda.sh
-
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-
-        # Build and test mps model
-        for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
-          echo "::group::Exporting mps model: $MODEL_NAME"
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
-          echo "::endgroup::"
-        done
 
   test-huggingface-transformers-xnnpack:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway

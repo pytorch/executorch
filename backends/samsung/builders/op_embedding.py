@@ -26,7 +26,7 @@ class EmbeddingVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         weight_node = node.args[0]
         weight_id = self.define_tensor(weight_node, enn_graph, vals_to_ids)
 
@@ -35,7 +35,10 @@ class EmbeddingVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        params = {"axis": 0, "input_type": "indices"}
+        params = {"axis": 0}
+        self._update_params_qdtype(node, params)
         enn_graph.define_op(
-            node.name, "GATHER", [input_id, weight_id], [output_id], params
+            node.name, "GATHER", [weight_id, input_id], [output_id], params
         )
+
+        return True

@@ -48,7 +48,7 @@ utils::ivec2 create_broadcast_params(
 // Work group size calculation functions
 //
 
-utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group);
+LocalWorkGroup adaptive_lwg(const GlobalWorkGrid& gwg);
 
 //
 // Tensor dim utilities

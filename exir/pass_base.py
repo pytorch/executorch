@@ -121,6 +121,8 @@ def _leaf_symbolic_snapshot(value: Argument) -> Any:
         return scalar_snapshot
 
     if isinstance(value, FakeTensor):
+        if value.constant is not None:
+            return None
         dims = []
         has_symbolic_dim = False
         for dim in value.shape:

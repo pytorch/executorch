@@ -15,13 +15,12 @@
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
 #endif
 
-#include <cstddef>
-#include <cstdint>
-
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <cstddef>
+#include <cstdint>
 
 #if defined(__GNUC__) && defined(__ZEPHYR__)
 #pragma GCC diagnostic pop
@@ -75,6 +74,14 @@ struct ExecutionHandle {
 extern "C" {
 void EthosUBackend_execute_begin();
 void EthosUBackend_execute_end();
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+void EthosUBackend_delegate_begin(const void* handle);
+void EthosUBackend_delegate_end();
+#endif
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void EthosUBackend_input_memcpy(size_t size);
+void EthosUBackend_output_memcpy(size_t size);
+#endif
 extern unsigned char* ethosu_fast_scratch;
 extern size_t ethosu_fast_scratch_size;
 }
@@ -82,7 +89,11 @@ extern size_t ethosu_fast_scratch_size;
 PlatformState* platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> specs,
     executorch::runtime::MemoryAllocator* allocator);
+
 void platform_destroy(PlatformState* state);
+
+bool needs_scratch_allocation();
+
 executorch::runtime::Error platform_execute(
     executorch::runtime::BackendExecutionContext& context,
     const ExecutionHandle* execution_handle,

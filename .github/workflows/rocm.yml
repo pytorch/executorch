@@ -158,11 +158,18 @@ jobs:
   unittest-rocm-gfx950:
     name: unittest-rocm-gfx950-rocm${{ matrix.rocm-version }}
     needs: [aoti-run-decision]
-    if: needs.aoti-run-decision.outputs.run-aoti == 'true'
+    # Skipped on pull requests from a fork: the job requests an OIDC token to
+    # reach the ROCm runners, which a fork cannot be issued, so it fails while
+    # starting rather than running anything. The ROCm jobs below already carry
+    # this condition.
+    if: |
+      needs.aoti-run-decision.outputs.run-aoti == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.1"]
+        rocm-version: ["7.2"]
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -199,7 +206,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.1"]
+        rocm-version: ["7.2"]
     with:
       timeout: 180
       no-sudo: true
@@ -222,11 +229,12 @@ jobs:
 
   # This scarce RDNA runner is limited to manual runs and direct changes to the
   # Voxtral ROCm execution path; it does not participate in broad sampling.
+  # Temporarily disabled while the self-hosted runner teardown is unstable.
   test-voxtral-realtime-rocm-gfx1100:
     name: test-voxtral-realtime-rocm-gfx1100-rocm${{ matrix.rocm-version }}
     needs: [voxtral-run-decision]
     if: |
-      needs.voxtral-run-decision.outputs.run-gfx1100 == 'true' &&
+      false && needs.voxtral-run-decision.outputs.run-gfx1100 == 'true' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     concurrency:
@@ -240,7 +248,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ["7.1"]
+        rocm-version: ["7.2"]
     with:
       timeout: 180
       no-sudo: true

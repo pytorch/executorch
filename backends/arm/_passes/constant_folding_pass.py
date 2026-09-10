@@ -8,7 +8,7 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch._export.passes.constant_folding import constant_fold
+from torchao.quantization.pt2e.constant_fold import constant_fold
 
 
 class ConstantFoldingPass(ArmPass):
@@ -52,18 +52,7 @@ class ConstantFoldingPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         before_graph = str(graph_module.graph)
-
-        # The ConstantFolder checks for this attribute which does not always exist
-        faked_dequantize_affine = False
-        if not hasattr(torch.ops.pt2e_quant, "dequantize_affine"):
-            torch.ops.pt2e_quant.dequantize_affine = None  # type: ignore[attr-defined]
-            faked_dequantize_affine = True
-
         constant_fold(graph_module)
-
-        # Remove attribute again if added to not affect global scope
-        if faked_dequantize_affine:
-            del torch.ops.pt2e_quant.dequantize_affine  # type: ignore[attr-defined]
 
         modified = before_graph != str(graph_module.graph)
 

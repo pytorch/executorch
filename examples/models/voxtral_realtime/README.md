@@ -206,32 +206,10 @@ before model loading.
 The packed path performs dequantization inside the GPU kernel and does not
 materialize a full BF16 weight for each invocation.
 
-The default packed path retains the existing dynamic decoder export and uses
-the packed INT4 matmul kernel. CUDA and other non-ROCm exports are unchanged.
-Encoder linears also use packed INT4 matmul.
-
-An experimental ROCm-only matvec export is available for performance testing:
-
-```bash
-python export_voxtral_rt.py \
-    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
-    --backend rocm \
-    --dtype bf16 \
-    --streaming \
-    --sliding-window 2048 \
-    --rocm-packed-matvec \
-    --output-dir ./voxtral_rt_rocm_w4_bf16_matvec \
-    --qlinear-encoder 4w \
-    --qlinear 4w \
-    --qembedding 8w
-```
-
-This specializes the decoder to its actual one-token runner input and uses a
-BF16-rounded packed matvec. On MI300X it roughly doubled decode throughput for
-the 30-second test clip, but greedy output differed from the dynamic matmul
-baseline. It is off by default; verify transcript quality and performance on
-the target GPU before enabling it. Kernel and export-graph tests cover this
-option, but CI does not run a full-model transcript check with it.
+The ROCm W4 decoder is specialized to the runner's one-token input and uses
+the packed INT4 matvec kernel. Encoder linears use packed INT4 matmul. ROCm
+uses the standard SDPA kernel because split-K decode produced non-finite logits
+for this fixed-shape workload. CUDA and other non-ROCm exports are unchanged.
 
 #### Metal export examples
 
@@ -377,8 +355,6 @@ python export_voxtral_rt.py \
 | `--streaming` | off | Export streaming model with ring buffer KV caches (unlimited duration) |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
 | `--sliding-window` | from `params.json` | Decoder sliding window size (streaming only; ignored in offline mode). Smaller values reduce memory and improve decode speed but limit context |
-| `--rocm-packed-matvec` | off | Experimental fixed-shape packed INT4 decoder matvec; requires ROCm and decoder `4w` |
-
 **Notes:**
 - `fpa4w` quantization requires `--backend metal`.
 - The model was trained with `--delay-tokens 6`. Other values may degrade accuracy.
@@ -435,9 +411,8 @@ examples/models/voxtral_realtime/run_rocm_e2e.sh \
 ```
 
 The third argument selects `bf16`, `w4-bf16`, or both precision modes. The
-fourth selects `streaming`, `offline`, or both execution modes. Set
-`ROCM_PACKED_MATVEC=1` to opt into the experimental fixed-shape decoder matvec.
-Set `ROCM_PATH` if ROCm is installed outside `/opt/rocm`.
+fourth selects `streaming`, `offline`, or both execution modes. Set `ROCM_PATH`
+if ROCm is installed outside `/opt/rocm`.
 The script reports model export time, PTE/PTD sizes, and RTF computed as runner
 inference time divided by WAV duration.
 

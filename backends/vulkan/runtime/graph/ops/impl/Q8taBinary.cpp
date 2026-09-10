@@ -113,15 +113,15 @@ void add_q8ta_binary_node(
   const BlockConfig block_config =
       create_block_config_for_tensor(graph, packed_int8_output);
 
-  // Cast block config to ValueRef for pick_linear_global_wg_with_block_config
+  // Cast block config to ValueRef for pick_linear_gwg_with_block_config
   const ValueRef block_config_ref =
       static_cast<ValueRef>(block_config.as_packed_int());
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_linear_global_wg_with_block_config,
-      pick_square_local_wg_with_block_config,
+      pick_linear_gwg_with_block_config,
+      pick_square_lwg_with_block_config,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input_a, packed_int8_input_b}, vkapi::kRead}},

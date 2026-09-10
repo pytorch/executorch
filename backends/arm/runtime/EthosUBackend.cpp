@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
 #include <new>
 #include <string>
 #include <vector>
@@ -57,16 +56,34 @@ namespace arm {
 extern "C" {
 void __attribute__((weak)) EthosUBackend_execute_begin() {}
 void __attribute__((weak)) EthosUBackend_execute_end() {}
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+void __attribute__((weak)) EthosUBackend_delegate_begin(const void*) {}
+void __attribute__((weak)) EthosUBackend_delegate_end() {}
+#endif
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void __attribute__((weak)) EthosUBackend_input_memcpy(size_t) {}
+void __attribute__((weak)) EthosUBackend_output_memcpy(size_t) {}
+#endif
 __attribute__((weak)) unsigned char* ethosu_fast_scratch = nullptr;
 __attribute__((weak)) size_t ethosu_fast_scratch_size = 0;
 }
 
 class EthosUBackendExecuteCallbacks {
  public:
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  explicit EthosUBackendExecuteCallbacks(const void* handle) {
+    EthosUBackend_execute_begin();
+    EthosUBackend_delegate_begin(handle);
+  }
+#else
   EthosUBackendExecuteCallbacks() {
     EthosUBackend_execute_begin();
   }
+#endif
   ~EthosUBackendExecuteCallbacks() {
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+    EthosUBackend_delegate_end();
+#endif
     EthosUBackend_execute_end();
   }
 };
@@ -153,7 +170,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // and EthosUBackend_execute_end() is called while CollectArm_CPU_Cycles is
     // in scope. e.g. We meassure from now until we exit this metod (in any way
     // we might do it).
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+    EthosUBackendExecuteCallbacks CollectArm_CPU_Cycles(input_handle);
+#else
     EthosUBackendExecuteCallbacks CollectArm_CPU_Cycles;
+#endif
 
     ExecutionHandle* execution_handle =
         static_cast<ExecutionHandle*>(input_handle);
@@ -162,20 +183,24 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     const int input_count = handles.inputs ? handles.inputs->count : 0;
     const int output_count = handles.outputs ? handles.outputs->count : 0;
 
-    MemoryAllocator* temp_allocator = context.get_temp_allocator();
-    // Use a temporary allocator for the intermediate tensors of the
-    // computation. The allocator is released in runtime/executor/method.cpp at
-    // the end of the execution of the Ethos-U custom delegate
-    // Ethos-U driver requires 16 bit alignment.
-    char* ethosu_scratch = static_cast<char*>(
-        temp_allocator->allocate(handles.scratch_data_size, 16UL));
-    if (ethosu_scratch == nullptr) {
-      ET_LOG(
-          Error,
-          "Failed to allocate scratch buffer of %zu bytes from temp_allocator",
-          handles.scratch_data_size);
-      return Error::MemoryAllocationFailed;
+    char* ethosu_scratch = nullptr;
+    if (needs_scratch_allocation()) {
+      MemoryAllocator* temp_allocator = context.get_temp_allocator();
+      // Use a temporary allocator for the intermediate tensors of the
+      // computation. The allocator is released in runtime/executor/method.cpp
+      // at the end of the execution of the Ethos-U custom delegate. Ethos-U
+      // driver requires 16 bit alignment.
+      ethosu_scratch = static_cast<char*>(
+          temp_allocator->allocate(handles.scratch_data_size, 16UL));
+      if (ethosu_scratch == nullptr) {
+        ET_LOG(
+            Error,
+            "Failed to allocate scratch buffer of %zu bytes from temp_allocator",
+            handles.scratch_data_size);
+        return Error::MemoryAllocationFailed;
+      }
     }
+
     ET_LOG(
         Debug,
         "Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n  fast scratch %p %zu\n",
@@ -194,7 +219,6 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     for (int i = 0; i < input_count; i++) {
       auto tensor_count = 1, io_count = 1;
       auto tensor_in = args[i]->toTensor();
-      char* scratch_addr = ethosu_scratch + handles.inputs->io[i].offset;
 
       // We accept:
       bool supported = 0;
@@ -228,30 +252,37 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         return Error::InvalidProgram;
       }
 
-      // Select a compatible copy routine including checking for input layouts
-      // which require permutation.
-      bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
-          handles.inputs->io[i].elem_size == 4;
-      bool both_char = (tensor_in.scalar_type() == ScalarType::Char ||
-                        tensor_in.scalar_type() == ScalarType::Byte) &&
-          handles.inputs->io[i].elem_size == 1;
-      bool both_short = tensor_in.scalar_type() == ScalarType::Short &&
-          handles.inputs->io[i].elem_size == 2;
-      bool both_bool = tensor_in.scalar_type() == ScalarType::Bool &&
-          (handles.inputs->io[i].elem_size == 1);
+      if (needs_scratch_allocation()) {
+        char* scratch_addr = ethosu_scratch + handles.inputs->io[i].offset;
 
-      if (both_char || both_int || both_short || both_bool) {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
-        // Sizes match and elt size matches so memcpy.
-        // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
-        arm_ethos_io_memcpy(
-            scratch_addr,
-            tensor_in.mutable_data_ptr<char>(),
-            tensor_in.nbytes());
-      } else {
-        ET_LOG(Error, "No matching input copy routine");
-        return Error::InvalidProgram;
+        // Select a compatible copy routine including checking for input layouts
+        // which require permutation.
+        bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
+            handles.inputs->io[i].elem_size == 4;
+        bool both_char = (tensor_in.scalar_type() == ScalarType::Char ||
+                          tensor_in.scalar_type() == ScalarType::Byte) &&
+            handles.inputs->io[i].elem_size == 1;
+        bool both_short = tensor_in.scalar_type() == ScalarType::Short &&
+            handles.inputs->io[i].elem_size == 2;
+        bool both_bool = tensor_in.scalar_type() == ScalarType::Bool &&
+            (handles.inputs->io[i].elem_size == 1);
+
+        if (both_char || both_int || both_short || both_bool) {
+          EXECUTORCH_PROF_SCOPE(
+              event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
+          // Sizes match and elt size matches so memcpy.
+          // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+          EthosUBackend_input_memcpy(tensor_in.nbytes());
+#endif
+          arm_ethos_io_memcpy(
+              scratch_addr,
+              tensor_in.mutable_data_ptr<char>(),
+              tensor_in.nbytes());
+        } else {
+          ET_LOG(Error, "No matching input copy routine");
+          return Error::InvalidProgram;
+        }
       }
       calculate_dimensions(
           tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
@@ -398,6 +429,9 @@ Error copy_with_layout_adjustment(
   const char* src_bytes = src;
   for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
     // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+    EthosUBackend_output_memcpy(chunk_size);
+#endif
     arm_ethos_io_memcpy(dest, src_bytes, chunk_size);
     src_bytes += vela_chunk_size;
     dest += chunk_size;

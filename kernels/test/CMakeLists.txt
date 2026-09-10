@@ -307,6 +307,7 @@ set(all_test_sources
     "op_tril_test.cpp"
     "op_trunc_test.cpp"
     "op_unbind_copy_test.cpp"
+    "op_unfold_copy_test.cpp"
     "op_unsqueeze_copy_test.cpp"
     "op_upsample_bilinear2d_test.cpp"
     "op_upsample_bilinear2d_aa_test.cpp"
