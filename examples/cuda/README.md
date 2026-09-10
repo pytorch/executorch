@@ -63,6 +63,10 @@ for the current SM. The output PTD reuses one validated copy of the weights.
 After merging, the tool prints every native SM and PTX fallback together with
 its source PTE.
 
+A merged PTE can be used as an input to a later merge. Its native variants are
+combined with the new inputs and its fallback is preserved. Do not pass a new
+`--fallback-pte` when a regular input already contains one.
+
 Export every regular input with PTX disabled:
 
 ```python

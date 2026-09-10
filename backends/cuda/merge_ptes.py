@@ -50,7 +50,7 @@ CUDA_BACKEND_ID = "CudaBackend"
 
 @dataclass(frozen=True)
 class CudaPteInput:
-    """One native CUDA export and its optional external tensor data."""
+    """One CUDA PTE input and its optional external tensor data."""
 
     pte_path: Path
     ptd_path: Optional[Path]
@@ -377,6 +377,40 @@ def _compact_delegate_data(program: Program) -> None:
     program.backend_delegate_data = payloads
 
 
+def _select_merge_fallback(
+    inherited_fallback: Optional[Tuple[_Artifact, CudaAotiVariant]],
+    fallback_artifact: Optional[_Artifact],
+    fallback_delegates: Optional[Dict[Tuple[str, int], CudaAotiMetadata]],
+    reference: _Artifact,
+    reference_metadata: CudaAotiMetadata,
+    identity: Tuple[str, int],
+) -> Optional[Tuple[_Artifact, CudaAotiVariant]]:
+    if inherited_fallback is not None:
+        if fallback_artifact is not None:
+            raise ValueError(
+                "CUDA PTE inputs already contain a fallback variant for delegate "
+                f"{identity}; an additional fallback PTE cannot be provided"
+            )
+        return inherited_fallback
+    if fallback_artifact is None:
+        return None
+
+    assert fallback_delegates is not None
+    metadata = fallback_delegates[identity]
+    _validate_shared_weights(
+        reference, reference_metadata, fallback_artifact, metadata, identity
+    )
+    fallback_variants = [
+        variant for variant in metadata.variants if variant.ptx_compute
+    ]
+    if len(fallback_variants) != 1:
+        raise ValueError(
+            f"Fallback PTE {fallback_artifact.source.pte_path} must contain "
+            f"exactly one PTX-capable variant for delegate {identity}"
+        )
+    return fallback_artifact, replace(fallback_variants[0], fallback_only=True)
+
+
 def _merge_delegate_variants(
     regular_artifacts: Sequence[_Artifact],
     regular_delegates: Sequence[Dict[Tuple[str, int], CudaAotiMetadata]],
@@ -389,6 +423,7 @@ def _merge_delegate_variants(
 ) -> List[CudaAotiVariant]:
     variants = []
     target_sms = set()
+    inherited_fallback: Optional[Tuple[_Artifact, CudaAotiVariant]] = None
     reference = regular_artifacts[0]
     for artifact, delegates in zip(regular_artifacts, regular_delegates):
         metadata = delegates[identity]
@@ -396,6 +431,14 @@ def _merge_delegate_variants(
             reference, reference_metadata, artifact, metadata, identity
         )
         for variant in metadata.variants:
+            if variant.fallback_only:
+                if inherited_fallback is not None:
+                    raise ValueError(
+                        "CUDA PTE inputs contain multiple fallback variants for "
+                        f"delegate {identity}"
+                    )
+                inherited_fallback = (artifact, variant)
+                continue
             if variant.target_sm in target_sms:
                 raise ValueError(f"Duplicate CUDA target sm{variant.target_sm}")
             target_sms.add(variant.target_sm)
@@ -419,39 +462,36 @@ def _merge_delegate_variants(
             )
 
     variants.sort(key=lambda variant: variant.target_sm)
-    if fallback_artifact is not None:
-        assert fallback_delegates is not None
-        metadata = fallback_delegates[identity]
-        _validate_shared_weights(
-            reference, reference_metadata, fallback_artifact, metadata, identity
+    fallback_selection = _select_merge_fallback(
+        inherited_fallback,
+        fallback_artifact,
+        fallback_delegates,
+        reference,
+        reference_metadata,
+        identity,
+    )
+    if fallback_selection is None:
+        return variants
+    fallback_source, fallback = fallback_selection
+
+    try:
+        so_data = fallback_source.pte_named_data[fallback.so_blob_key]
+    except KeyError as error:
+        raise ValueError(
+            f"{fallback_source.source.pte_path} does not contain CUDA SO "
+            f"{fallback.so_blob_key!r}"
+        ) from error
+    merged_store.add_named_data(fallback.so_blob_key, so_data)
+    variants.append(fallback)
+    provenance.append(
+        CudaPteProvenance(
+            delegate=identity,
+            kind="ptx-fallback",
+            target_sm=fallback.target_sm,
+            ptx_compute=fallback.ptx_compute,
+            source_pte=fallback_source.source.pte_path,
         )
-        fallback_variants = [
-            variant for variant in metadata.variants if variant.ptx_compute
-        ]
-        if len(fallback_variants) != 1:
-            raise ValueError(
-                f"Fallback PTE {fallback_artifact.source.pte_path} must contain "
-                f"exactly one PTX-capable variant for delegate {identity}"
-            )
-        fallback = replace(fallback_variants[0], fallback_only=True)
-        try:
-            so_data = fallback_artifact.pte_named_data[fallback.so_blob_key]
-        except KeyError as error:
-            raise ValueError(
-                f"{fallback_artifact.source.pte_path} does not contain CUDA SO "
-                f"{fallback.so_blob_key!r}"
-            ) from error
-        merged_store.add_named_data(fallback.so_blob_key, so_data)
-        variants.append(fallback)
-        provenance.append(
-            CudaPteProvenance(
-                delegate=identity,
-                kind="ptx-fallback",
-                target_sm=fallback.target_sm,
-                ptx_compute=fallback.ptx_compute,
-                source_pte=fallback_artifact.source.pte_path,
-            )
-        )
+    )
     return variants
 
 
@@ -497,7 +537,7 @@ def _prepare_merged_output(reference: _Artifact) -> Tuple[Program, NamedDataStor
 def merge_cuda_pte_files_with_provenance(
     inputs: Sequence[CudaPteInput], fallback: Optional[CudaPteInput] = None
 ) -> CudaPteMergeResult:
-    """Merge exact-SM CUDA exports and an optional PTX-only fallback source."""
+    """Merge CUDA variants and an optional PTX-capable fallback source."""
     if torch.version.hip is not None:
         raise RuntimeError(
             "CUDA PTE merging supports only NVIDIA CUDA and is not supported on ROCm"
@@ -584,7 +624,7 @@ def merge_cuda_pte_files(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=("Merge exact-SM CUDA PTEs with an optional explicit PTX fallback")
+        description=("Merge CUDA PTE variants with an optional explicit PTX fallback")
     )
     parser.add_argument(
         "--input-pte",
@@ -592,7 +632,7 @@ def _parse_args() -> argparse.Namespace:
         required=True,
         type=Path,
         help=(
-            "Regular CUDA PTE contributing exact-SM native cubins; the first "
+            "CUDA PTE contributing one or more exact-SM native variants; the first "
             "input supplies common data"
         ),
     )
@@ -606,7 +646,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fallback-pte",
         type=Path,
-        help="Single CUDA PTE contributing only the PTX runtime fallback",
+        help="Single CUDA PTE contributing a PTX-capable runtime fallback",
     )
     parser.add_argument(
         "--fallback-ptd",
