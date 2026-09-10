@@ -89,6 +89,17 @@ class SamplingWorkspace {
       bool,
       SamplingWorkspace&,
       cudaStream_t);
+  friend cudaError_t stochastic_speculative_sample(
+      const float*,
+      const float*,
+      const uint64_t*,
+      int64_t,
+      int64_t,
+      bool,
+      int64_t*,
+      uint64_t*,
+      SamplingWorkspace&,
+      cudaStream_t);
 };
 
 // Computes one argmax per contiguous row of `values`.
@@ -174,6 +185,28 @@ cudaError_t sample_token(
     float* out_probabilities,
     bool probabilities_only,
     SamplingWorkspace& workspace,
+    cudaStream_t stream);
+
+// Device-side DFlash verification using already normalized target/draft
+// probabilities. Returns the committed candidate count and correction token.
+cudaError_t stochastic_speculative_sample(
+    const float* target_probabilities,
+    const float* draft_probabilities,
+    const uint64_t* candidates,
+    int64_t verify_length,
+    int64_t row_size,
+    bool draft_argmax,
+    int64_t* accepted_count,
+    uint64_t* correction_token,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream);
+
+cudaError_t greedy_speculative_sample(
+    const uint64_t* target_tokens,
+    const uint64_t* candidates,
+    int64_t verify_length,
+    int64_t* accepted_count,
+    uint64_t* correction_token,
     cudaStream_t stream);
 
 } // namespace muse_glimmer::cuda
