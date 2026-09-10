@@ -45,8 +45,11 @@ set(_metadata_pte_files
 )
 add_custom_command(
   OUTPUT ${_metadata_pte_files}
+  # Run against the installed executorch (which stages exir/_serialize/*.fbs at
+  # install time). Do NOT prepend the source tree to PYTHONPATH: it shadows the
+  # installed package with a source copy that lacks the staged .fbs, breaking
+  # to_executorch() under a non-editable install.
   COMMAND
-    ${CMAKE_COMMAND} -E env PYTHONPATH=${EXECUTORCH_ROOT}/..
     ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/export_model_metadata.py
     --outdir ${CMAKE_CURRENT_BINARY_DIR}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
