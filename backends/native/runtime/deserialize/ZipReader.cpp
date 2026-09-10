@@ -6,6 +6,8 @@
 
 #include <executorch/backends/native/runtime/deserialize/ZipReader.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
 #include <limits>
 #include <stdexcept>
@@ -207,6 +209,44 @@ void ZipReader::read_entry_into(
           "zip: unexpected end of member " + std::string(name));
     }
     written += static_cast<size_t>(count);
+  }
+}
+
+void ZipReader::verify(std::string_view name) const {
+  const Entry* entry = find_entry(name);
+  if (entry == nullptr) {
+    throw std::runtime_error("zip: no member named " + std::string(name));
+  }
+
+  ZipFileHandle file(
+      zip_fopen_index(impl_->archive.get(), entry->index, ZIP_FL_UNCHANGED));
+  if (file == nullptr) {
+    throw_zip(impl_->archive.get(), "cannot open member " + std::string(name));
+  }
+
+  std::array<uint8_t, 64 * 1024> buffer{};
+  size_t read = 0;
+  while (read < entry->size) {
+    const size_t request = std::min(buffer.size(), entry->size - read);
+    const zip_int64_t count = zip_fread(file.get(), buffer.data(), request);
+    if (count < 0) {
+      throw_zip_file(file.get(), "cannot verify member " + std::string(name));
+    }
+    if (count == 0) {
+      throw std::runtime_error(
+          "zip: unexpected end of member " + std::string(name));
+    }
+    read += static_cast<size_t>(count);
+  }
+
+  uint8_t extra = 0;
+  const zip_int64_t count = zip_fread(file.get(), &extra, 1);
+  if (count < 0) {
+    throw_zip_file(file.get(), "cannot verify member " + std::string(name));
+  }
+  if (count != 0) {
+    throw std::runtime_error(
+        "zip: member is larger than its metadata: " + std::string(name));
   }
 }
 
