@@ -275,6 +275,20 @@ def is_tensor_arg_node(node: Any) -> bool:
     return False
 
 
+def tensor_nodes_in_arg(arg: Any) -> List[torch.fx.Node]:
+    """
+    The tensor nodes contained in an operator argument, skipping `None` entries
+    (e.g. the unspecified indices of `aten.index.Tensor`). A single node argument
+    yields a single-element list when it is a tensor node, and an empty list
+    otherwise.
+    """
+    if isinstance(arg, torch.fx.Node):
+        return [arg] if is_tensor_node(arg) else []
+    if isinstance(arg, (list, tuple)):
+        return [n for n in arg if is_tensor_node(n)]
+    return []
+
+
 def num_tensor_arg_nodes(node: torch.fx.Node) -> int:
     """
     For a given node, return the number of argument nodes that are associated with
