@@ -20,6 +20,7 @@ from executorch.backends.vulkan.serialization import (
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     Double,
+    DoubleList,
     IntList,
     OperatorCall,
     String,
@@ -271,58 +272,76 @@ class TestSerialization(unittest.TestCase):
 
         self.assertEqual(in_vk_graph, out_vk_graph)
 
-    def test_serialize_deserialize_non_finite_floats(self) -> None:
-        # flatc's JSON dialect spells the infinities "inf" / "-inf" while
-        # Python's json module spells them "Infinity" / "-Infinity" and rejects
-        # flatc's spelling, so both directions need translating. A graph picks
-        # up a non-finite scalar whenever the model has one -- the -inf fill
-        # value of a transformer attention mask being the usual source.
+    def _round_trip(self, values, chain=None) -> VkGraph:
         in_vk_graph = VkGraph(
             version="1",
-            chain=[],
-            values=[
+            chain=chain if chain is not None else [],
+            values=values,
+            input_ids=[],
+            output_ids=[],
+            constants=[],
+            shaders=[],
+        )
+        out_vk_graph = flatbuffer_to_vk_graph(convert_to_flatbuffer(in_vk_graph))
+        self.assertEqual(in_vk_graph, out_vk_graph)
+        return out_vk_graph
+
+    def test_serialize_deserialize_non_finite_scalars(self) -> None:
+        # Python's json module spells the infinities "Infinity" / "-Infinity"
+        # while flatc spells them "inf" / "-inf" and rejects Python's spelling,
+        # so both directions need translating. A graph picks up a non-finite
+        # scalar whenever the model has one -- the -inf fill value of a
+        # transformer attention mask being the usual source.
+        self._round_trip(
+            [
                 VkValue(value=Double(double_val=float("-inf"))),
                 VkValue(value=Double(double_val=float("inf"))),
                 VkValue(value=Double(double_val=1.5)),
-            ],
-            input_ids=[],
-            output_ids=[],
-            constants=[],
-            shaders=[],
+            ]
         )
 
-        out_vk_graph = flatbuffer_to_vk_graph(convert_to_flatbuffer(in_vk_graph))
-
-        self.assertEqual(in_vk_graph, out_vk_graph)
+    def test_serialize_deserialize_non_finite_floats_in_list(self) -> None:
+        # json only emits a float as a chunk of its own inside an object; in a
+        # list the chunk carries the delimiter with it, so a rewrite that works
+        # on the scalar above can still miss every element of a DoubleList.
+        self._round_trip(
+            [
+                VkValue(value=DoubleList(items=[float("-inf")])),
+                VkValue(
+                    value=DoubleList(items=[1.5, float("inf"), 2.5, float("-inf")])
+                ),
+                VkValue(value=DoubleList(items=[])),
+            ]
+        )
 
     def test_serialize_nan_float_raises(self) -> None:
-        # FlatBuffers JSON has no spelling for NaN at all, so report it rather
-        # than emitting JSON that flatc cannot parse.
-        vk_graph = VkGraph(
-            version="1",
-            chain=[],
-            values=[VkValue(value=Double(double_val=float("nan")))],
-            input_ids=[],
-            output_ids=[],
-            constants=[],
-            shaders=[],
-        )
+        # flatc rejects nan, NaN and Nan alike for a value inside a union, and
+        # every float in the Vulkan schema is a member of the VkValue union, so
+        # report it here rather than emitting JSON that flatc cannot read.
+        for value in (
+            Double(double_val=float("nan")),
+            DoubleList(items=[1.0, float("nan")]),
+        ):
+            vk_graph = VkGraph(
+                version="1",
+                chain=[],
+                values=[VkValue(value=value)],
+                input_ids=[],
+                output_ids=[],
+                constants=[],
+                shaders=[],
+            )
+            with self.assertRaisesRegex(ValueError, "NaN"):
+                convert_to_flatbuffer(vk_graph)
 
-        with self.assertRaisesRegex(ValueError, "NaN"):
-            convert_to_flatbuffer(vk_graph)
-
-    def test_deserialize_leaves_inf_inside_strings_alone(self) -> None:
-        # The inf-token rewrite must not reach into string literals.
-        in_vk_graph = VkGraph(
-            version="1",
+    def test_serialize_deserialize_leaves_strings_alone(self) -> None:
+        # The token rewrites run over the serialized JSON, so they must not
+        # reach into string literals in either direction.
+        self._round_trip(
+            [
+                VkValue(value=String(string_val="value: inf, -inf")),
+                VkValue(value=String(string_val="Infinity NaN nan")),
+                VkValue(value=String(string_val='quoted "inf" and \\ inf')),
+            ],
             chain=[OperatorCall(node_id=1, name="inf_shader", args=[])],
-            values=[VkValue(value=String(string_val="value: inf, -inf"))],
-            input_ids=[],
-            output_ids=[],
-            constants=[],
-            shaders=[],
         )
-
-        out_vk_graph = flatbuffer_to_vk_graph(convert_to_flatbuffer(in_vk_graph))
-
-        self.assertEqual(in_vk_graph, out_vk_graph)
