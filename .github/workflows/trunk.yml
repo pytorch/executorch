@@ -87,7 +87,7 @@ jobs:
   test-arm-backend-zephyr:
     needs: docker-image
     name: test-arm-backend-zephyr
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -129,7 +129,7 @@ jobs:
   test-models-linux-aarch64:
     needs: docker-image
     name: test-models-linux-aarch64
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -234,7 +234,7 @@ jobs:
   test-demo-backend-delegation:
     needs: docker-image
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -262,7 +262,7 @@ jobs:
   test-arm-backend-ethos-u:
     needs: docker-image
     name: test-arm-backend-ethos-u
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -317,7 +317,7 @@ jobs:
   test-arm-backend-vkml:
     needs: docker-image
     name: test-arm-backend-vkml
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -449,7 +449,7 @@ jobs:
     needs: docker-image
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -560,7 +560,7 @@ jobs:
   test-torchao-huggingface-checkpoints:
     needs: docker-image
     name: test-torchao-huggingface-checkpoints
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -655,7 +655,7 @@ jobs:
   test-qnn-model:
     needs: docker-image
     name: test-qnn-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -682,7 +682,7 @@ jobs:
   test-qnn-optimum-model:
     needs: docker-image
     name: test-qnn-optimum-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -762,7 +762,7 @@ jobs:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers-xnnpack
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
@@ -926,7 +926,7 @@ jobs:
   test-llama-runner-qnn-linux:
     needs: docker-image
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/pin-ue1
     permissions:
       id-token: write
       contents: read
