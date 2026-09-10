@@ -10,6 +10,15 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    # Owning byte buffer backed by heap storage or a read-only file mapping.
+    runtime.cxx_library(
+        name = "owned_bytes",
+        srcs = ["OwnedBytes.cpp"],
+        exported_headers = ["OwnedBytes.h"],
+        exported_deps = [":byte_span"],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
     # JSON representation used by package metadata readers.
     runtime.cxx_library(
         name = "json",
