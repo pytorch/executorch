@@ -16,34 +16,6 @@
 
 namespace vkcompute {
 
-// Custom global workgroup size function for linear_qcs8w
-GlobalWorkGrid linear_qcs8w_gwg(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  return graph->create_linear_gwg(
-      utils::safe_downcast<uint64_t>(graph->numel_of(out)));
-}
-
-// Custom local workgroup size function for linear_qcs8w
-LocalWorkGroup linear_qcs8w_lwg(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const GlobalWorkGrid& gwg,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)gwg;
-  (void)args;
-  (void)resize_args;
-  return LocalWorkGroup(64u, 1u, 1u);
-}
-
 // Custom global workgroup size function for linear_qcsnw_tiled
 GlobalWorkGrid linear_qcsnw_tiled_gwg(
     ComputeGraph* graph,
@@ -178,81 +150,6 @@ void resize_linear_qcsnw_node(
   graph->virtual_resize(out, new_out_sizes);
 }
 
-void add_linear_qcs8w_node(
-    ComputeGraph& graph,
-    const ValueRef mat1,
-    const ValueRef q_mat2_data,
-    const ValueRef scales_data,
-    const ValueRef out) {
-  auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
-  ValueRef mat1_W_packed = mat1;
-  ValueRef out_W_packed = out;
-  // Create temporary tensors to store the width packed versions of mat1 and out
-  TmpTensor mat1_tmp(
-      &graph, graph.sizes_of(mat1), graph.dtype_of(mat1), utils::kWidthPacked);
-  TmpTensor out_tmp(
-      &graph, graph.sizes_of(out), graph.dtype_of(out), utils::kWidthPacked);
-  if (!graph.is_buffer_storage(out) &&
-      graph.packed_dim_of(mat1) != WHCN::kWidthDim) {
-    // Ensure mat1 is width packed
-    mat1_W_packed = mat1_tmp;
-    viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
-    // Ensure out is packed correctly
-    out_W_packed = out_tmp;
-  }
-  ValueRef q_mat2 = prepack_standard_hw_transposed(
-      graph, q_mat2_data, graph.storage_type_of(out), utils::kWidthPacked);
-  ValueRef scales = prepack_standard(
-      graph, scales_data, graph.storage_type_of(out), utils::kWidthPacked);
-
-  std::string kernel_name = "linear_qcs8w";
-  kernel_name.reserve(kShaderNameReserve);
-  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(mat1_W_packed));
-  add_packed_dim_suffix(kernel_name, graph.packed_dim_of(q_mat2));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out_W_packed));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out_W_packed));
-
-  std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_buffer_storage(out_W_packed)) {
-    pcs = {
-        graph.sizes_pc_of(out_W_packed),
-        graph.strides_pc_of(out_W_packed),
-        graph.sizes_pc_of(mat1_W_packed),
-        graph.strides_pc_of(mat1),
-        graph.strides_pc_of(q_mat2),
-        graph.strides_pc_of(scales),
-        graph.numel_pc_of(out_W_packed)};
-  } else {
-    pcs = {
-        graph.logical_limits_pc_of(out_W_packed),
-        graph.sizes_pc_of(mat1_W_packed),
-        graph.sizes_pc_of(q_mat2)};
-  }
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      linear_qcs8w_gwg,
-      linear_qcs8w_lwg,
-      // Inputs and Outputs
-      {{out_W_packed, vkapi::MemoryAccessType::WRITE},
-       {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
-      // Shader params buffers
-      {},
-      // Push Constants
-      pcs,
-      // Specialization Constants
-      {},
-      // Resize Args
-      {},
-      // Resizing Logic
-      resize_linear_qcsnw_node));
-  if (!graph.is_buffer_storage(out) &&
-      graph.packed_dim_of(out) != WHCN::kWidthDim) {
-    viewFn(graph, {out_W_packed, graph.add_none(), out});
-  }
-}
-
 void add_linear_qcsnw_tiled_node(
     ComputeGraph& graph,
     const bool use_coop_algorithm,
@@ -293,6 +190,8 @@ void add_linear_qcsnw_tiled_node(
     kernel_name =
         use_coop_algorithm ? "linear_qcs4w_coop" : "linear_qcs4w_tiled";
   } else {
+    // Unreachable: linear_qcs4w is the only caller of this function and it
+    // always passes quant_nbits == 4. Kept so the 4-bit path is not disturbed.
     kernel_name =
         use_coop_algorithm ? "linear_qcs8w_coop" : "linear_qcs8w_tiled";
   }
@@ -389,18 +288,6 @@ bool can_use_coop_impl(ComputeGraph& graph, const ValueRef mat1) {
   return (graph.size_at<int>(-2, mat1) == 1);
 }
 
-void weight_int8pack_mm(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
-  check_linear_qcsnw_args(graph, 8, args[0], args[1], args[2], args[3]);
-  if (can_use_tiled_impl(graph, args[0], args[1], args[2], args[3])) {
-    bool use_coop_algorithm = can_use_coop_impl(graph, args[0]);
-    return add_linear_qcsnw_tiled_node(
-        graph, use_coop_algorithm, 8, args[0], args[1], args[2], args[3]);
-  }
-  return add_linear_qcs8w_node(graph, args[0], args[1], args[2], args[3]);
-}
-
 void linear_qcs4w(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   check_linear_qcsnw_args(graph, 4, args[0], args[1], args[2], args[3]);
 
@@ -411,7 +298,9 @@ void linear_qcs4w(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten._weight_int8pack_mm.default, weight_int8pack_mm);
+  // aten._weight_int8pack_mm is registered in QuantizedLinear.cpp, on the
+  // maintained weight-only quantized linear implementation. The 8-bit path
+  // here dispatched to linear_qcs8w_* shaders that no longer exist.
   VK_REGISTER_OP(et_vk.linear_qcs4w.default, linear_qcs4w);
 }
 

@@ -207,32 +207,9 @@ def _is_aten_target(kwargs):
             return True
     return False
 
-def _patch_test_compiler_flags(kwargs, aten_mode = False):
+def _patch_test_compiler_flags(kwargs):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
-
-    # A test that compiles against ATen needs C++20, which PyTorch's headers
-    # require. Other tests stay at C++17 for embedded builds, but Apple plugin
-    # generation also requires C++20.
-    name = kwargs.get("name", "")
-    is_aten_test = (
-        aten_mode or
-        "_aten" in name or
-        "aten_" in name
-    )
-    if is_aten_test:
-        kwargs["compiler_flags"] += [
-            "-std=c++20",
-        ]
-    else:
-        kwargs["compiler_flags"] += [
-            "-std=c++17",
-        ]
-        if env.is_xplat():
-            kwargs["fbobjc_compiler_flags"] = kwargs.get(
-                "fbobjc_compiler_flags",
-                [],
-            ) + ["-std=c++20"]
 
     # Relaxing some constraints for tests
     kwargs["compiler_flags"] += [
@@ -391,12 +368,10 @@ def _cxx_test(*args, **kwargs):
         kwargs["deps"] = []
     kwargs["deps"].append("//executorch/test/utils:utils")
 
-    # Before _patch_kwargs_cxx, which consumes external_deps.
-    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     env.patch_headers(kwargs)
     _patch_build_mode_flags(kwargs)
-    _patch_test_compiler_flags(kwargs, aten_mode)
+    _patch_test_compiler_flags(kwargs)
 
     env.patch_platform_build_mode_flags(kwargs)
     env.cxx_test(*args, **kwargs)

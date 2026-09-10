@@ -19,8 +19,7 @@ namespace cache {
 CellCache::CellCache(const CacheConfig& cfg)
     : capacity_(cfg.capacity),
       pos_(cfg.capacity, -1),
-      owners_(cfg.capacity, 0),
-      served_(cfg.n_layers, false) {
+      owners_(cfg.capacity, 0) {
   assert(valid(cfg));
   // One window per layer, from the same per-layer config the sequence cache
   // reads. Layers agreeing on a window share a step.
@@ -53,7 +52,6 @@ void CellCache::clear() {
   declared_ = false;
   step_seq_ids_.clear();
   step_pos_.clear();
-  std::fill(served_.begin(), served_.end(), false);
   invalidate_steps();
 }
 
@@ -71,7 +69,6 @@ bool CellCache::declare_step(const std::vector<int32_t>& seq_ids) {
   step_seq_ids_ = seq_ids;
   declared_ = true;
   invalidate_steps();
-  std::fill(served_.begin(), served_.end(), false);
   return true;
 }
 
@@ -155,25 +152,32 @@ int CellCache::used_end() const {
 
 const CellStep*
 CellCache::place_step(int layer, const int32_t* positions, int length) {
-  if (layer < 0 || layer >= static_cast<int>(windows_.size()) ||
-      served_[layer]) {
-    return nullptr; // out of range, or a forward that skipped declare_step
+  if (layer < 0 || layer >= static_cast<int>(windows_.size())) {
+    return nullptr; // layer out of range
   }
-  if (!placed_) {
-    if (!declared_ || length != static_cast<int>(step_seq_ids_.size())) {
-      return nullptr; // no declaration, or a token count disagreeing with it
-    }
-    if (!extends(positions, length)) {
-      return nullptr; // nothing mutated yet, so the step can be re-placed
-    }
-    step_pos_.assign(positions, positions + length);
-    if (!place()) {
+  if (placed_) {
+    // Re-serve within the placed forward. Every layer of a forward places the
+    // same tokens, and a KV-shared layer re-serves its donor's id, so a repeat
+    // with the same positions returns the same step and claims no new cells.
+    // Different positions mean a new step that never declared, still refused.
+    if (length != static_cast<int>(step_pos_.size()) ||
+        !std::equal(positions, positions + length, step_pos_.begin())) {
       return nullptr;
     }
-    declared_ = false; // one declaration, one placement
-    placed_ = true;
+    return &step_for(windows_[layer]);
   }
-  served_[layer] = true;
+  if (!declared_ || length != static_cast<int>(step_seq_ids_.size())) {
+    return nullptr; // no declaration, or a token count disagreeing with it
+  }
+  if (!extends(positions, length)) {
+    return nullptr; // a position a sequence already holds
+  }
+  step_pos_.assign(positions, positions + length);
+  if (!place()) {
+    return nullptr; // out of cells
+  }
+  declared_ = false; // one declaration, one placement
+  placed_ = true;
   return &step_for(windows_[layer]);
 }
 

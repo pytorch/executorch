@@ -32,14 +32,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     GIT_REPOSITORY
       https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
     GIT_TAG ${ethos_u_base_tag}
-    SOURCE_DIR
-    ${ETHOS_SDK_PATH}
-    BINARY_DIR
-    ${ETHOS_SDK_PATH}
-    SUBBUILD_DIR
-    ${ETHOS_SDK_PATH}/../ethos_u-subbuild
-    SOURCE_SUBDIR
-    none
+    SOURCE_DIR ${ETHOS_SDK_PATH} BINARY_DIR ${ETHOS_SDK_PATH}
+    # Keep the generator-specific population project local to this build.
+    SOURCE_SUBDIR none
   )
   FetchContent_MakeAvailable(ethos_u)
   # Patch manifest to remove unused projects.
