@@ -14,6 +14,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <algorithm>
+
 namespace vkcompute {
 
 using namespace utils;
@@ -73,8 +75,7 @@ void resize_reduce_per_row_node(
 }
 
 // Number of threads that co-operate on one reduction output, and how many
-// outputs one work group covers. kReduceNGroups * the returned value must stay
-// within MAX_NTHREADS (256) in the shaders, which sizes the shared array.
+// outputs one work group covers.
 //
 // The worker count used to be a flat 4 regardless of how much there was to
 // reduce. A global average pool collapses a whole HxW plane, so four threads
@@ -82,31 +83,57 @@ void resize_reduce_per_row_node(
 constexpr uint32_t kReduceMaxNThreads = 256u;
 constexpr uint32_t kReduceNGroups = 4u;
 
+// The largest worker count this dispatch may ask for. Three ceilings apply and
+// the smallest of them wins:
+//
+//  - the shaders size shared_vecs at MAX_NTHREADS and every thread in the work
+//    group writes its own slot, so kReduceNGroups workers must fit;
+//  - the device bounds the invocations in one work group, and
+//    maxComputeWorkGroupInvocations is only guaranteed to be 128;
+//  - the device bounds each work group axis on its own, and the workers all sit
+//    on the reduction axis.
+//
+// Overrunning any of them aborts the dispatch in LocalWorkGroup::validate, so
+// the shader capacity alone is not enough to go by.
+uint32_t reduce_nworkers_cap(
+    ComputeGraph* graph,
+    const int32_t reduce_dim_whcn) {
+  const vkapi::Adapter* const adapter = graph->context()->adapter_ptr();
+  uint32_t cap = kReduceMaxNThreads / kReduceNGroups;
+  cap = std::min(
+      cap, adapter->max_compute_workgroup_invocations() / kReduceNGroups);
+  cap = std::min(cap, adapter->max_compute_workgroup_size()[reduce_dim_whcn]);
+  return std::max(cap, 1u);
+}
+
 uint32_t reduce_nworkers(
     ComputeGraph* graph,
     const ValueRef in,
     const int32_t reduce_dim_whcn) {
-  const uint32_t cap = kReduceMaxNThreads / kReduceNGroups;
+  const uint32_t cap = reduce_nworkers_cap(graph, reduce_dim_whcn);
   const uint32_t extent = utils::safe_downcast<uint32_t>(
       graph->logical_limits_of(in)[reduce_dim_whcn]);
-  uint32_t nworkers = 4u;
-  while (nworkers < cap && nworkers < extent) {
+  // 4 is what this used to be unconditionally; keep it as the floor so short
+  // reductions dispatch exactly as they did before.
+  uint32_t nworkers = std::min(4u, cap);
+  while (nworkers * 2u <= cap && nworkers < extent) {
     nworkers *= 2u;
   }
   return nworkers;
 }
 
-GlobalWorkGrid reduce_gwg(
+GlobalWorkGrid reduce_gwg_impl(
     ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
+    const std::vector<ValueRef>& resize_args,
+    const size_t reduce_dim_idx,
+    const size_t group_dim_idx,
+    const size_t nworkers_idx) {
   const ValueRef out = args.at(0).refs.at(0);
   const int32_t reduce_dim_whcn =
-      graph->extract_scalar<int32_t>(resize_args.at(1));
+      graph->extract_scalar<int32_t>(resize_args.at(reduce_dim_idx));
   const int64_t group_dim_whcn =
-      graph->extract_scalar<int64_t>(resize_args.at(2));
+      graph->extract_scalar<int64_t>(resize_args.at(group_dim_idx));
 
   utils::uvec3 extents = graph->logical_limits_of(out);
   extents[reduce_dim_whcn] = 1;
@@ -121,11 +148,35 @@ GlobalWorkGrid reduce_gwg(
   // loop body never runs contributes INIT_ACCUM, which is the identity for sum
   // and mean and idempotent for amax and amin.
   const uint32_t nworkers_per_group = utils::safe_downcast<uint32_t>(
-      graph->extract_scalar<int32_t>(resize_args.at(resize_args.size() - 1)));
+      graph->extract_scalar<int32_t>(resize_args.at(nworkers_idx)));
   utils::uvec3 lwg_extents{1u, 1u, 1u};
   lwg_extents[reduce_dim_whcn] = nworkers_per_group;
   lwg_extents[group_dim_whcn] = kReduceNGroups;
   return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(lwg_extents));
+}
+
+// Resize args are {dim, reduce_dim_whcn, group_dim_whcn, nworkers}.
+GlobalWorkGrid reduce_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  return reduce_gwg_impl(graph, args, resize_args, 1, 2, 3);
+}
+
+// Resize args are {dims, reduce_dim1_whcn, reduce_dim2_whcn, group_dim_whcn,
+// nworkers}, so the group dim sits one slot further along than in the 1d case.
+// Sharing the 1d picker put the groups on reduce_dim2 and left the group axis
+// one thread wide, so every group read tid.y == 0 and raced over the same
+// shared memory slots.
+GlobalWorkGrid reduce2d_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  return reduce_gwg_impl(graph, args, resize_args, 1, 3, 4);
 }
 
 void add_reduce_node(
@@ -258,7 +309,7 @@ void add_reduce2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      reduce_gwg,
+      reduce2d_gwg,
       pick_required_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
