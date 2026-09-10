@@ -83,6 +83,30 @@ jobs:
             backends/cadence/install_requirements.sh
           fi
           source .ci/scripts/setup-xtensa-tools.sh "${BACKEND}"
+
+          # TEMPORARY DIAGNOSTIC: why XTENSA_XCC_TIE fails to check out on OSDC.
+          echo "::group::flexnet diagnostic"
+          echo "--- host identity"
+          hostname; echo "hostname length: $(hostname | wc -c)"; hostname -f || true
+          id; cat /etc/hostname 2>/dev/null || true
+          echo "--- interfaces / hostids"
+          for n in /sys/class/net/*/address; do echo "$n = $(cat "$n")"; done
+          echo "--- license files on the search path"
+          for f in $(echo "${XTENSAD_LICENSE_FILE}:${XTENSA_TOOLCHAIN}/${TOOLCHAIN_VER}/XtensaTools/Tools/lic/license.dat" | tr ':' ' '); do
+            echo "== ${f}"; ls -l "${f}" 2>&1 || true
+            # feature name / vendor / version / expiry only -- never the SIGN= key
+            awk '/^(FEATURE|INCREMENT)/ {print "   ", $1, $2, $3, $4, $5}' "${f}" 2>/dev/null | sort -u || true
+            grep -o 'HOSTID=[^ ]*' "${f}" 2>/dev/null | sort -u || true
+          done
+          echo "--- lmutil hostid"
+          find "${XTENSA_TOOLCHAIN}" -name 'lmutil' -o -name 'xtensad' 2>/dev/null | head -5
+          LMUTIL=$(find "${XTENSA_TOOLCHAIN}" -name 'lmutil' 2>/dev/null | head -1)
+          [ -n "${LMUTIL}" ] && "${LMUTIL}" lmhostid 2>&1 | head -5 || echo "no lmutil"
+          echo "--- direct compile attempt"
+          echo 'int main(void){return 0;}' > /tmp/t.c
+          xt-clang -c /tmp/t.c -o /tmp/t.o 2>&1 | head -20 || true
+          echo "::endgroup::"
+
           .ci/scripts/build-cadence-xtensa.sh --no-run
           chmod -R a+rX cmake-out
 
