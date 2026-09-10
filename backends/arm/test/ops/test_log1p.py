@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,6 +8,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -48,6 +49,17 @@ def test_log1p_tosa_INT(test_data: input_t1):
         test_data(),
         aten_op,
         exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_log1p_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Log1p(),
+        test_data(),
+        aten_op,
     )
     pipeline.run()
 
