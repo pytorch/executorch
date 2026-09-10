@@ -29,4 +29,7 @@ echo "--- direct compile attempt"
 echo 'int main(void){return 0;}' > /tmp/_lic_t.c
 xt-clang -c /tmp/_lic_t.c -o /tmp/_lic_t.o 2>&1 | head -20
 echo "compile rc=$?"
+echo "--- same compile with FLEXLM_DIAGNOSTICS=3"
+FLEXLM_DIAGNOSTICS=3 LM_BORROW="" xt-clang -c /tmp/_lic_t.c -o /tmp/_lic_t.o 2>&1 | head -60
+echo "diag compile rc=$?"
 echo "=== end flexnet diagnostic ==="
