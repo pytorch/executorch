@@ -72,12 +72,25 @@ class Conv1dAsConv2dPass(ExportPass):
         # The weight has to be a constant so it can be reshaped in place.
         if not is_param_node(self._exported_program, weight_node):
             return False
+        # ...and it has to belong to this convolution alone. The reshape is a
+        # mutation of shared state: a second consumer would keep reading the
+        # weight it was built against and find it rank 4, whether that consumer
+        # is another conv1d this pass then declines to rewrite, or an op that
+        # has nothing to do with convolution.
+        if len(weight_node.users) != 1:
+            return False
         transposed, groups = node.args[6], node.args[8]
         if transposed or groups != 1:
             return False
         # conv2d does not support batched input at all, so a rewrite there
         # would turn a working conv1d into a throw.
-        if in_shape[0] != 1:
+        #
+        # A symbolic batch is rejected rather than compared. Comparing it would
+        # read the value it happened to be traced with, so a dimension free to
+        # be 4 at runtime would pass a test for 1 and reach a conv2d that
+        # cannot serve it. Only a batch that is already a plain 1 is provably 1
+        # for every input the graph accepts.
+        if not isinstance(in_shape[0], int) or in_shape[0] != 1:
             return False
         # Depthwise and pointwise 1-D convs keep their own shaders.
         if w_shape[0] < _IM2COL_MIN_C_OUT or w_shape[2] == 1:
@@ -98,8 +111,9 @@ class Conv1dAsConv2dPass(ExportPass):
         out_4d_shape = [out_shape[0], out_shape[1], 1, out_shape[2]]
 
         # The weight tensor is contiguous, so inserting a singleton dim is a
-        # pure metadata change. A weight shared by several convs is only
-        # reshaped once; the rank check in _eligible() skips it afterwards.
+        # pure metadata change. It is safe to do in place only because
+        # _eligible() has established this convolution is the weight's sole
+        # consumer.
         weight = get_param_tensor(self._exported_program, weight_node)
         assert weight is not None
         set_param_tensor(
