@@ -1106,6 +1106,11 @@ def _torchao_requirement() -> str:
     spec.loader.exec_module(module)
 
     version = module.TORCHAO_NIGHTLY_VERSION
+    if (
+        install_utils.determine_torch_url(module.TORCH_URL_BASE).endswith("/cu134")
+        and not module.torchao_from_source()
+    ):
+        version = module.CU134_TORCHAO_NIGHTLY_VERSION
     major, minor = (int(part) for part in version.split(".")[:2])
     return f"torchao>={version},<{major}.{minor + 1}"
 
