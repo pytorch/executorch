@@ -25,6 +25,7 @@ timeout="600"
 etrecord_file=""
 trace_file=""
 semihosting_cwd=""
+semihosting_cmd_line=""
 ethosu_fast=0
 
 help() {
@@ -38,6 +39,7 @@ help() {
     echo "  --etrecord=<FILE>        If ETDump is used you can supply a ETRecord file matching the PTE"
     echo "  --trace_file=<FILE>      File to write PMU trace output to"
     echo "  --semihosting-cwd=<DIR>  Enable target semihosting with this host working directory"
+    echo "  --semihosting-cmd-line=<COMMAND>  Command line passed to a semihosting runner"
     echo "  --fast                   Use fast Ethos-U model simulation for Ethos-U targets"
     exit 0
 }
@@ -53,6 +55,7 @@ for arg in "$@"; do
       --etrecord=*) etrecord_file="${arg#*=}";;
       --trace_file=*) trace_file="${arg#*=}";;
       --semihosting-cwd=*) semihosting_cwd="${arg#*=}";;
+      --semihosting-cmd-line=*) semihosting_cmd_line="${arg#*=}";;
       --fast) ethosu_fast=1;;
       *)
       ;;
@@ -137,6 +140,16 @@ if [[ -n "${semihosting_cwd}" ]]; then
         -C mps4_board.subsystem.cpu0.semihosting-stack_base=0
         -C mps4_board.subsystem.cpu0.semihosting-heap_limit=0
         -C "mps4_board.subsystem.cpu0.semihosting-cwd=${semihosting_cwd}"
+    )
+fi
+if [[ -n "${semihosting_cmd_line}" ]]; then
+    [[ -n "${semihosting_cwd}" ]] \
+        || { echo "--semihosting-cmd-line requires --semihosting-cwd"; exit 1; }
+    semihosting_args_u55+=(
+        -C "cpu0.semihosting-cmd_line=${semihosting_cmd_line}"
+    )
+    semihosting_args_u85+=(
+        -C "mps4_board.subsystem.cpu0.semihosting-cmd_line=${semihosting_cmd_line}"
     )
 fi
 

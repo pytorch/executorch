@@ -26,7 +26,7 @@ class LogSoftmaxVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ):
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
@@ -37,3 +37,5 @@ class LogSoftmaxVisitor(NodeVisitor):
         meta_data = {"axis": axis}
 
         enn_graph.define_op(node.name, "LOGSOFTMAX", [input_id], [output_id], meta_data)
+
+        return True

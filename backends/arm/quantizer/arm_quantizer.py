@@ -14,7 +14,7 @@ from __future__ import annotations
 import functools
 import logging
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import torch
 from executorch.backends.arm._passes import ArmPassManager
@@ -959,7 +959,7 @@ class TOSAQuantizer(Quantizer):
     def _quantize_with_submodules(
         self,
         model: GraphModule,
-        calibration_samples: list[tuple],
+        calibration_samples: Iterable[tuple],
         is_qat: bool = False,
         fold_quantize: bool = True,
     ):
@@ -971,7 +971,7 @@ class TOSAQuantizer(Quantizer):
 
         Args:
             model (GraphModule): The model to quantize.
-            calibration_samples (list[tuple]): A list of inputs to used to
+            calibration_samples (Iterable[tuple]): Inputs used to
                 calibrate the model during quantization. To properly calibrate a
                 model with submodules, at least one sample per code path is
                 needed.
