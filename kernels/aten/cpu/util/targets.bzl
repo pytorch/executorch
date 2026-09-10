@@ -15,11 +15,13 @@ def define_common_targets():
             "copy_ops_util.h",
         ],
         compiler_flags = select({
-                "DEFAULT": ["-Wno-missing-prototypes"],
+                "DEFAULT": select({
+                    "DEFAULT": ["-Wno-missing-prototypes"],
+                    # GCC's C++ frontend rejects this C-only flag under -Werror.
+                    # Nested under DEFAULT so windows and gcc can't both match.
+                    "ovr_config//compiler:gcc": [],
+                }),
                 "ovr_config//os:windows": [],
-                # ovr_config//os:zephyr is fbsource-internal; OSS bypasses
-                # this branch via runtime.is_oss.
-                "ovr_config//os:zephyr": [],
             }) if not runtime.is_oss else select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
                 "ovr_config//os:windows": [],

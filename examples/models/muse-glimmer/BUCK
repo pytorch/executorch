@@ -1,6 +1,7 @@
 load("@fbcode//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -28,6 +29,10 @@ fbcode_target(_kind = runtime.cxx_test,
     name = "sampling_cuda_test",
     srcs = ["tests/sampling_cuda_test.cpp"],
     keep_gpu_sections = True,
+    labels = ci.labels(
+        [ci.linux(ci.mode("fbcode//mode/dev-nosan"))],
+        overwrite = True,
+    ),
     remote_execution = re_test_utils.remote_execution(
         platform = "gpu-remote-execution",
         subplatform = "A100-exclusive",
