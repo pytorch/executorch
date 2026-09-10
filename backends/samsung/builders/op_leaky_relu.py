@@ -27,7 +27,7 @@ class LeakyReluVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         all_input_tensors = []
         input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
         all_input_tensors.append(input_id)
@@ -56,3 +56,5 @@ class LeakyReluVisitor(NodeVisitor):
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         enn_graph.define_op(node.name, "PRELU", all_input_tensors, [output_id])
+
+        return True
