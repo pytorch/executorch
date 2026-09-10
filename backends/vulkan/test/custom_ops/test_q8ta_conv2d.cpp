@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -45,7 +46,9 @@ static TestCase create_test_case_from_config(
     utils::StorageType fp_storage_type,
     utils::GPUMemoryLayout int8_memory_layout,
     const std::string& impl_selector = "",
-    const Im2colUnsignedTestOptions* im2col_options = nullptr) {
+    const Im2colUnsignedTestOptions* im2col_options = nullptr,
+    const float input_scale_val = 0.008123f,
+    const DataGenType input_data_gen = DataGenType::RANDOM) {
   TestCase test_case;
 
   // Calculate output dimensions
@@ -93,18 +96,12 @@ static TestCase create_test_case_from_config(
       input_dtype,
       fp_storage_type,
       fp_memory_layout,
-#ifdef DEBUG_MODE
-      DataGenType::RANDOM
-#else
-      DataGenType::RANDOM
-#endif
-  );
+      input_data_gen);
 
   if (debugging()) {
     print_valuespec_data(input_tensor, "input_tensor");
   }
 
-  float input_scale_val = 0.008123;
   ValueSpec input_scale(input_scale_val);
 
   const int32_t input_zero_point_val =
@@ -279,6 +276,40 @@ static TestCase create_test_case_from_config(
   return test_case;
 }
 
+static std::vector<TestCase> generate_narrow_workgroup_test_cases() {
+  std::vector<TestCase> test_cases;
+  std::vector<Conv2dConfig> configs = {
+      {OutInChannels(64, 32),
+       InputSize2D(9, 9),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(128, 32),
+       InputSize2D(7, 7),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+  };
+
+  for (auto& config : configs) {
+    const bool is_performance = config.channels.out > kRefDimSizeLimit;
+    config.op_name = "conv2d_q8ta_q8csw_q8to";
+    config.test_case_name = make_test_case_name(
+        config, is_performance, utils::kTexture3D, utils::kBuffer);
+    test_cases.push_back(create_test_case_from_config(
+        config,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kPackedInt8_4C,
+        /*impl_selector=*/"general"));
+  }
+  return test_cases;
+}
+
 // Generate easy test cases for quantized conv2d operation (for debugging)
 std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
   std::vector<TestCase> test_cases;
@@ -338,6 +369,123 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
 
 static std::vector<TestCase> generate_im2col_unsigned_test_cases(
     const std::string& impl_selector);
+
+static std::vector<TestCase> generate_streaming_im2col_test_cases() {
+  std::vector<TestCase> test_cases;
+
+  Conv2dConfig full_fit_config = {
+      OutInChannels(4, 32),
+      InputSize2D(30, 99),
+      KernelSize(3, 3),
+      Stride(1, 1),
+      Padding(1, 1),
+      Dilation(1, 1),
+      1,
+      10};
+  full_fit_config.op_name = "conv2d_q8ta_q8csw_q8to";
+  full_fit_config.test_case_name = make_test_case_name(
+      full_fit_config, false, utils::kTexture3D, utils::kBuffer);
+
+  Conv2dConfig streaming_fallback_config = full_fit_config;
+  streaming_fallback_config.channels.in = 64;
+  streaming_fallback_config.test_case_name = make_test_case_name(
+      streaming_fallback_config, false, utils::kTexture3D, utils::kBuffer);
+
+  // Forced-fallback cases need no int8 dot-product support, so they run on
+  // all devices; the kAuto cases below stay gated.
+  test_cases.push_back(create_test_case_from_config(
+      full_fit_config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4W4C,
+      /*impl_selector=*/"im2col_fallback",
+      /*im2col_options=*/nullptr,
+      /*input_scale_val=*/1.0f,
+      /*input_data_gen=*/DataGenType::RANDINT));
+  test_cases.push_back(create_test_case_from_config(
+      streaming_fallback_config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4W4C,
+      /*impl_selector=*/"im2col_fallback",
+      /*im2col_options=*/nullptr,
+      /*input_scale_val=*/1.0f,
+      /*input_data_gen=*/DataGenType::RANDINT));
+
+  if (!vkcompute::api::context()->adapter_ptr()->supports_int8_dot_product()) {
+    return test_cases;
+  }
+
+  for (const utils::GPUMemoryLayout layout :
+       {utils::kPackedInt8_4C1W, utils::kPackedInt8_4W4C}) {
+    test_cases.push_back(create_test_case_from_config(
+        full_fit_config,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        layout,
+        /*impl_selector=*/"im2col_auto",
+        /*im2col_options=*/nullptr,
+        /*input_scale_val=*/1.0f,
+        /*input_data_gen=*/DataGenType::RANDINT));
+  }
+  Conv2dConfig streaming_config = full_fit_config;
+  streaming_config.channels.in = 64;
+  streaming_config.test_case_name = make_test_case_name(
+      streaming_config, false, utils::kTexture3D, utils::kBuffer);
+  test_cases.push_back(create_test_case_from_config(
+      streaming_config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4C1W,
+      /*impl_selector=*/"im2col_auto",
+      /*im2col_options=*/nullptr,
+      /*input_scale_val=*/1.0f,
+      /*input_data_gen=*/DataGenType::RANDINT));
+  Conv2dConfig grouped_config = {
+      OutInChannels(16, 32),
+      InputSize2D(30, 99),
+      KernelSize(3, 3),
+      Stride(1, 1),
+      Padding(1, 1),
+      Dilation(1, 1),
+      2,
+      20};
+  grouped_config.op_name = "conv2d_q8ta_q8csw_q8to";
+  grouped_config.test_case_name = make_test_case_name(
+      grouped_config, false, utils::kTexture3D, utils::kBuffer);
+  test_cases.push_back(create_test_case_from_config(
+      grouped_config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4W4C,
+      /*impl_selector=*/"im2col_auto",
+      /*im2col_options=*/nullptr,
+      /*input_scale_val=*/1.0f,
+      /*input_data_gen=*/DataGenType::RANDINT));
+
+  Conv2dConfig output_channel_tail_config = {
+      OutInChannels(10, 32),
+      InputSize2D(30, 99),
+      KernelSize(3, 3),
+      Stride(1, 1),
+      Padding(1, 1),
+      Dilation(1, 1),
+      1,
+      20};
+  output_channel_tail_config.op_name = "conv2d_q8ta_q8csw_q8to";
+  output_channel_tail_config.test_case_name = make_test_case_name(
+      output_channel_tail_config, false, utils::kTexture3D, utils::kBuffer);
+  test_cases.push_back(create_test_case_from_config(
+      output_channel_tail_config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4W4C,
+      /*impl_selector=*/"im2col_auto",
+      /*im2col_options=*/nullptr,
+      /*input_scale_val=*/1.0f,
+      /*input_data_gen=*/DataGenType::RANDINT));
+  return test_cases;
+}
 
 // Generate test cases for quantized conv2d operation
 static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
@@ -626,6 +774,16 @@ static std::vector<TestCase> generate_quantized_conv2d_test_cases() {
       test_cases.push_back(std::move(test_case));
     }
   }
+
+  auto narrow_workgroup_cases = generate_narrow_workgroup_test_cases();
+  test_cases.insert(
+      test_cases.end(),
+      narrow_workgroup_cases.begin(),
+      narrow_workgroup_cases.end());
+
+  auto streaming_cases = generate_streaming_im2col_test_cases();
+  test_cases.insert(
+      test_cases.end(), streaming_cases.begin(), streaming_cases.end());
 
   return test_cases;
 }
@@ -1025,6 +1183,99 @@ static int64_t quantized_conv2d_flop_calculator(const TestCase& test_case) {
   return flop;
 }
 
+static void execute_streaming_dynamic_shrink_test() {
+  Conv2dConfig config = {
+      OutInChannels(4, 64),
+      InputSize2D(30, 99),
+      KernelSize(3, 3),
+      Stride(1, 1),
+      Padding(1, 1),
+      Dilation(1, 1),
+      1,
+      10};
+  config.op_name = "conv2d_q8ta_q8csw_q8to";
+  config.test_case_name =
+      make_test_case_name(config, false, utils::kTexture3D, utils::kBuffer);
+  TestCase test_case = create_test_case_from_config(
+      config,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kPackedInt8_4W4C,
+      /*impl_selector=*/"im2col_auto",
+      /*im2col_options=*/nullptr,
+      /*input_scale_val=*/1.0f,
+      /*input_data_gen=*/DataGenType::RANDINT);
+  for (ValueSpec& input : test_case.inputs()) {
+    input.ensure_data_generated(/*seed=*/0);
+  }
+
+  BenchmarkGraph benchmark_graph = setup_compute_graph(
+      test_case, test_case.operator_name(), /*op_invocations_per_execute=*/1);
+  ComputeGraph& graph = *benchmark_graph.graph;
+  graph.prepare();
+  graph.prepack();
+
+  const std::vector<int64_t> upper_input_sizes = test_case.inputs().at(0).sizes;
+  const std::vector<int64_t> shrunk_input_sizes = {1, 64, 20, 51};
+  const std::vector<int64_t> shrunk_output_sizes = {1, 4, 20, 51};
+  TestCase shrunk_case = test_case;
+  shrunk_case.inputs().at(0).sizes = shrunk_input_sizes;
+  shrunk_case.inputs().at(0).resize_data(1 * 64 * 20 * 51);
+  shrunk_case.outputs().at(0).sizes = shrunk_output_sizes;
+  shrunk_case.outputs().at(0).resize_data(1 * 4 * 20 * 51);
+  reference_impl(shrunk_case);
+
+  constexpr int kRepetitions = 4;
+  for (int repetition = 0; repetition < kRepetitions; ++repetition) {
+    graph.resize_input(0, upper_input_sizes);
+    graph.propagate_resize();
+    graph.maybe_cast_and_copy_into_staging(
+        graph.inputs().at(0).staging,
+        test_case.inputs().at(0).get_data_ptr(),
+        test_case.inputs().at(0).numel(),
+        vkapi::kFloat);
+    graph.execute();
+
+    graph.resize_input(0, shrunk_input_sizes);
+    graph.propagate_resize();
+    if (graph.sizes_of(graph.outputs().at(0).value) != shrunk_output_sizes) {
+      throw std::runtime_error("streaming im2col output did not shrink");
+    }
+    graph.maybe_cast_and_copy_into_staging(
+        graph.inputs().at(0).staging,
+        shrunk_case.inputs().at(0).get_data_ptr(),
+        shrunk_case.inputs().at(0).numel(),
+        vkapi::kFloat);
+    graph.execute();
+    graph.maybe_cast_and_copy_from_staging(
+        graph.outputs().at(0).staging,
+        shrunk_case.outputs().at(0).get_mutable_data_ptr(),
+        shrunk_case.outputs().at(0).numel(),
+        vkapi::kFloat);
+    if (!shrunk_case.outputs().at(0).validate_against_reference(
+            shrunk_case.get_abs_tolerance(), shrunk_case.get_rel_tolerance())) {
+      throw std::runtime_error("streaming im2col shrink output was stale");
+    }
+  }
+
+  const Q8taConv2dStreamPlan upper_plan = make_q8ta_conv2d_stream_plan(
+      /*batch=*/10,
+      /*flattened_kernel_size=*/576,
+      /*out_height=*/30,
+      /*out_width=*/99,
+      kQ8taConv2dIm2ColScratchBudgetBytes);
+  if (!upper_plan.feasible || upper_plan.num_tiles != 2 ||
+      upper_plan.rows_per_tile <= 20) {
+    throw std::runtime_error("dynamic shrink test did not create dead tiles");
+  }
+  const int64_t resized_scratch_bytes =
+      576 * upper_plan.rows_per_tile * utils::align_up_4(51);
+  if (resized_scratch_bytes > kQ8taConv2dIm2ColScratchBudgetBytes) {
+    throw std::runtime_error("streaming im2col scratch exceeded its cap");
+  }
+  std::cout << "Streaming im2col dynamic shrink PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
   const vkapi::Adapter& adapter = *vkcompute::api::context()->adapter_ptr();
   const bool prefers_unsigned_dot =
@@ -1037,6 +1288,9 @@ int main(int argc, char* argv[]) {
       !can_use_unsigned_pw_dot(adapter, kMaxUnsignedDotAccumulatorBytes + 1));
 
   std::string im2col_impl_selector;
+  bool narrow_workgroups_only = false;
+  bool streaming_im2col_only = false;
+  bool streaming_dynamic_shrink_only = false;
   for (int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
     if (arg == "--im2col-path=signed") {
@@ -1045,10 +1299,24 @@ int main(int argc, char* argv[]) {
       im2col_impl_selector = "im2col_unsigned";
     } else if (arg == "--im2col-path=auto") {
       im2col_impl_selector = "im2col_auto";
+    } else if (arg == "--narrow-workgroups-only") {
+      narrow_workgroups_only = true;
+    } else if (arg == "--streaming-im2col-only") {
+      streaming_im2col_only = true;
+    } else if (arg == "--streaming-dynamic-shrink-only") {
+      streaming_dynamic_shrink_only = true;
     } else {
       std::cerr << "Unknown argument: " << arg << std::endl;
       return 2;
     }
+  }
+  const int selected_modes = static_cast<int>(!im2col_impl_selector.empty()) +
+      static_cast<int>(narrow_workgroups_only) +
+      static_cast<int>(streaming_im2col_only) +
+      static_cast<int>(streaming_dynamic_shrink_only);
+  if (selected_modes > 1) {
+    std::cerr << "Test mode selectors are mutually exclusive" << std::endl;
+    return 2;
   }
   set_debugging(false);
   set_print_output(false);
@@ -1067,23 +1335,51 @@ int main(int argc, char* argv[]) {
 
   ReferenceComputeFunc ref_fn = reference_impl;
 
-  // Execute test cases using the new framework with custom FLOP calculator
-  const auto test_case_generator = [im2col_impl_selector]() {
-    return im2col_impl_selector.empty()
-        ? generate_quantized_conv2d_test_cases()
-        : generate_im2col_unsigned_test_cases(im2col_impl_selector);
-  };
-  auto results = execute_test_cases(
+  if (streaming_dynamic_shrink_only) {
+    execute_streaming_dynamic_shrink_test();
+    return 0;
+  }
 #ifdef DEBUG_MODE
-      generate_quantized_conv2d_easy_cases,
+  std::function<std::vector<TestCase>()> test_case_generator =
+      generate_quantized_conv2d_easy_cases;
 #else
-      test_case_generator,
+  std::function<std::vector<TestCase>()> test_case_generator =
+      [im2col_impl_selector]() {
+        return im2col_impl_selector.empty()
+            ? generate_quantized_conv2d_test_cases()
+            : generate_im2col_unsigned_test_cases(im2col_impl_selector);
+      };
 #endif
+  if (narrow_workgroups_only) {
+    test_case_generator = generate_narrow_workgroup_test_cases;
+  } else if (streaming_im2col_only) {
+    test_case_generator = generate_streaming_im2col_test_cases;
+#ifndef DEBUG_MODE
+  } else if (selected_modes == 0) {
+    // The default run also covers the unified tile path: multi-tile
+    // dispatches, grouped/streaming shapes, and the fallback kernel.
+    test_case_generator = [base_generator = test_case_generator]() {
+      auto cases = base_generator();
+      const auto streaming_cases = generate_streaming_im2col_test_cases();
+      cases.insert(cases.end(), streaming_cases.begin(), streaming_cases.end());
+      return cases;
+    };
+#endif
+  }
+
+  auto results = execute_test_cases(
+      test_case_generator,
       quantized_conv2d_flop_calculator,
       "QuantizedConv2dQ8ToQ8To",
       /*warmup_runs = */ 1,
       /*benchmark_runs = */ 1,
       ref_fn);
+
+#ifndef DEBUG_MODE
+  if (selected_modes == 0) {
+    execute_streaming_dynamic_shrink_test();
+  }
+#endif
 
   return 0;
 }

@@ -20,7 +20,8 @@ namespace {
 void assert_im2col_kernel_selection(
     ComputeGraph& graph,
     const bool expect_unsigned,
-    const bool expect_buffer_weights) {
+    const bool expect_buffer_weights,
+    const bool expect_fallback_kernel = false) {
   const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
   std::string expected_execute;
   std::string expected_prepack;
@@ -33,9 +34,13 @@ void assert_im2col_kernel_selection(
         : "pack_q8_linear_weight_unsigned_texture2d";
   } else {
     VK_CHECK_COND(!expect_buffer_weights);
-    expected_execute = adapter->supports_int8_dot_product()
-        ? "q8ta_conv2d_pw_float"
-        : "q8ta_conv2d_pw_fallback_float";
+    if (expect_fallback_kernel) {
+      expected_execute = "q8ta_conv2d_pw_fallback_float";
+    } else {
+      expected_execute = adapter->supports_int8_dot_product()
+          ? "q8ta_conv2d_pw_float"
+          : "q8ta_conv2d_pw_fallback_float";
+    }
     expected_prepack = "pack_q8_linear_weight_texture2d";
   }
 
@@ -311,7 +316,20 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
         groups,
         activation,
         packed_int8_output};
-    if (impl_selector == "im2col" || impl_selector == "im2col_unsigned" ||
+    if (impl_selector == "im2col_fallback") {
+      // Simulate a device without dot-product support so the fallback
+      // kernel is selected on any hardware.
+      vkapi::ScopedAdapterCapabilityOverride no_dot_support(
+          graph.context()->adapter_ptr(),
+          vkapi::AdapterCapabilityOverrides::without_dot_product_support());
+      q8ta_conv2d_im2col_impl(graph, /*use_unsigned_dot=*/false, conv_args);
+      assert_im2col_kernel_selection(
+          graph,
+          /*expect_unsigned=*/false,
+          /*expect_buffer_weights=*/false,
+          /*expect_fallback_kernel=*/true);
+    } else if (
+        impl_selector == "im2col" || impl_selector == "im2col_unsigned" ||
         impl_selector == "im2col_auto") {
       const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
       bool expect_unsigned = impl_selector == "im2col_unsigned";
