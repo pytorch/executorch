@@ -69,6 +69,14 @@ class SamplingWorkspace {
       uint64_t*,
       SamplingWorkspace&,
       cudaStream_t);
+  friend cudaError_t sample_from_residual_in_place(
+      float*,
+      const float*,
+      int64_t,
+      int64_t,
+      uint64_t*,
+      SamplingWorkspace&,
+      cudaStream_t);
 };
 
 // Computes one argmax per contiguous row of `values`.
@@ -124,6 +132,18 @@ cudaError_t sample_excluding_token_in_place(
     int64_t row_count,
     int64_t row_size,
     const uint64_t* excluded_tokens,
+    uint64_t* sampled_tokens,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream);
+
+// CUDA counterpart of muse_glimmer::sample_from_residual_in_place for batched rows.
+// Mutates target probabilities to normalized max(p-q, 0) when residual mass
+// exists, otherwise preserves p, then samples one token per row.
+cudaError_t sample_from_residual_in_place(
+    float* target_probabilities,
+    const float* draft_probabilities,
+    int64_t row_count,
+    int64_t row_size,
     uint64_t* sampled_tokens,
     SamplingWorkspace& workspace,
     cudaStream_t stream);
