@@ -346,6 +346,15 @@ def _fuse_state_dict(
         try:
             for layer in range(n_layers):
                 fused_fqn = fused_tmpl.format(layer)
+                if (
+                    backend == "cuda"
+                    and fused_tmpl == "layers.{}.self_attn.qko_proj.weight"
+                    and f"layers.{layer}.self_attn.qkv_proj.weight" in atomic_sd
+                ):
+                    # This layer already fused Q/K/V/OG because all shards use
+                    # the same quantization type. Other layers may still need
+                    # qko_proj + v_proj for mixed Q4/Q6 weights.
+                    continue
                 shard_fqns = [t.format(layer) for t in shard_tmpls]
                 if fused_fqn in atomic_sd:
                     group_sd[fused_fqn] = atomic_sd[fused_fqn]
@@ -360,11 +369,50 @@ def _fuse_state_dict(
             continue
         fused_sd.update(group_sd)
         consumed.update(group_consumed)
-        fused_groups.add(fused_tmpl)
+        if group_sd:
+            fused_groups.add(fused_tmpl)
     for fqn, value in atomic_sd.items():
         if fqn not in consumed:
             fused_sd[fqn] = value
     return fused_sd, fused_groups
+
+
+def _fuse_compatible_cuda_qkv(atomic_sd: dict, config) -> set[int]:
+    """Fuse Q/K/V/OG per layer when their portable quantization matches.
+
+    Muse Glimmer GGUFs may store V as Q4_K on some layers and Q6_K on others.
+    A global QKV decision therefore leaves avoidable duplicate activation
+    quantization on the Q4-only layers. Fuse those compatible layers exactly;
+    mixed layers fall back to the existing QKO + standalone-V layout.
+    """
+    from executorch.extension.llm.export.quant import fuse_along_output
+
+    fused_layers: set[int] = set()
+    for layer in range(config.n_layers):
+        prefix = f"layers.{layer}.self_attn."
+        qkv_fqn = f"{prefix}qkv_proj.weight"
+        if qkv_fqn in atomic_sd:
+            fused_layers.add(layer)
+            continue
+
+        shard_fqns = [
+            f"{prefix}q_proj.weight",
+            f"{prefix}k_proj.weight",
+            f"{prefix}v_proj.weight",
+        ]
+        if config.use_attn_o_gate:
+            shard_fqns.append(f"{prefix}og_proj.weight")
+        if not all(fqn in atomic_sd for fqn in shard_fqns):
+            continue
+        try:
+            fused = fuse_along_output([atomic_sd[fqn] for fqn in shard_fqns])
+        except (TypeError, ValueError):
+            continue
+        for fqn in shard_fqns:
+            del atomic_sd[fqn]
+        atomic_sd[qkv_fqn] = fused
+        fused_layers.add(layer)
+    return fused_layers
 
 
 # Source heads: produce an atomic (unfused) quantized state dict.
@@ -427,50 +475,14 @@ def _finalize(atomic_sd: dict, backend: str, config, activation_dtype: torch.dty
     from executorch.extension.llm.export.load import assign_state_dict
     from executorch.extension.llm.export.quant import identity
 
-    if backend == "cuda" and any(
-        fqn.endswith(".self_attn.qkv_proj.weight") for fqn in atomic_sd
-    ):
-        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
-
-        q_dim = config.n_heads * config.head_dim
-        kv_dim = config.n_kv_heads * config.head_dim
-        split_sd = {}
-        for fqn, value in atomic_sd.items():
-            if not fqn.endswith(".self_attn.qkv_proj.weight"):
-                split_sd[fqn] = value
-                continue
-            prefix = fqn[: -len("qkv_proj.weight")]
-            if isinstance(value, ExportableInt4Tensor):
-
-                def rows(start, end, value=value):
-                    return ExportableInt4Tensor(
-                        value.qdata[start:end],
-                        value.scale[:, start:end],
-                        value.zero_point[:, start:end],
-                        value.group_size,
-                        value.orig_dtype,
-                    )
-
-                q = rows(0, q_dim)
-                k = rows(q_dim, q_dim + kv_dim)
-                v = rows(q_dim + kv_dim, q_dim + 2 * kv_dim)
-                og = rows(q_dim + 2 * kv_dim, value.shape[0])
-                from executorch.extension.llm.export.quant import fuse_along_output
-
-                split_sd[f"{prefix}qko_proj.weight"] = fuse_along_output([q, k, og])
-                split_sd[f"{prefix}v_proj.weight"] = v
-            else:
-                from executorch.examples.models.muse_glimmer.model.model import (
-                    _split_fused_qkv_to_qko,
-                )
-
-                split_sd.update(_split_fused_qkv_to_qko({fqn: value}, config))
-        atomic_sd = split_sd
-
+    fused_qkv_layers = (
+        _fuse_compatible_cuda_qkv(atomic_sd, config) if backend == "cuda" else set()
+    )
     fused_sd, fused_groups = _fuse_state_dict(atomic_sd, backend, config.n_layers)
 
     # Fused runtime layout for the target backend.
     config.fuse_qkv = False
+    config.fuse_qkv_layers = tuple(sorted(fused_qkv_layers))
     config.fuse_qko = "layers.{}.self_attn.qko_proj.weight" in fused_groups
     config.fuse_gate_up = "layers.{}.mlp.gate_up_proj.weight" in fused_groups
     print("Building fused model on meta device...")
