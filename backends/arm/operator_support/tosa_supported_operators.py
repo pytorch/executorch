@@ -158,6 +158,10 @@ def _is_integer_dtype(dtype: torch.dtype) -> bool:
 class ProductSupported(SupportedTOSAOperatorCheck):
     """Provide TOSA support check for product reductions."""
 
+    # TOSA REDUCE_PRODUCT is only available to the floating-point path used by
+    # this checker. Do not register prod.dim_int as positive support for an
+    # INT-only specification such as Ethos-U55.
+    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
     targets = [exir_ops.edge.aten.prod.dim_int]
 
     @staticmethod
