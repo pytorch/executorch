@@ -49,3 +49,34 @@ class DFlashExportOptionsTest(TestCase):
     def test_callable_rejects_unknown_backend(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unsupported DFlash backend: cpu"):
             export_dflash.validate_dflash_export_options("cpu")
+
+    def test_cuda_device_config_has_exact_method_set(self) -> None:
+        configs = export_dflash._cuda_propagate_device_config()
+        self.assertEqual(
+            set(configs),
+            {
+                "embed_text",
+                "target_forward_from_embeddings",
+                "target_prefill_from_embeddings",
+                "draft_forward",
+                "draft_prefill",
+            },
+        )
+
+    def test_cuda_target_methods_are_device_in_and_out(self) -> None:
+        configs = export_dflash._cuda_propagate_device_config()
+        for method in (
+            "embed_text",
+            "target_forward_from_embeddings",
+            "target_prefill_from_embeddings",
+        ):
+            with self.subTest(method=method):
+                self.assertTrue(configs[method].skip_h2d_for_method_inputs)
+                self.assertTrue(configs[method].skip_d2h_for_method_outputs)
+
+    def test_cuda_draft_methods_are_host_in_and_device_out(self) -> None:
+        configs = export_dflash._cuda_propagate_device_config()
+        for method in ("draft_forward", "draft_prefill"):
+            with self.subTest(method=method):
+                self.assertFalse(configs[method].skip_h2d_for_method_inputs)
+                self.assertTrue(configs[method].skip_d2h_for_method_outputs)
