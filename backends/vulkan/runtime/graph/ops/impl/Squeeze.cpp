@@ -23,21 +23,27 @@ void add_squeeze_copy_dims_node(
     const ValueRef out) {
   const int64_t in_dim = graph.dim_of(in);
   const std::vector<int64_t> in_sizes = graph.sizes_of(in);
-  const std::vector<int64_t> out_sizes = graph.sizes_of(in);
 
   const std::vector<int64_t> dims = graph.extract_int_or_symint_list(dims_ref);
   std::vector<int64_t> squeeze_dims;
-  // Filter out edge cases that we don't need squeeze:
-  // 1. The size of squeeze dim is larger than 1.
-  // 2. Squeeze outter most dim
-  // For these cases, just pass input to output via clone.
+  // Filter out the edge case that we don't need to squeeze: the size of the
+  // squeeze dim is larger than 1. For that case, just pass input to output via
+  // clone.
+  //
+  // Note that the outermost dim must NOT be excluded here. Routing it to
+  // add_clone_node() leaves the output unresized at runtime, because
+  // resize_clone_node() only propagates sizes when input and output have the
+  // same dim count -- which is never true for a squeeze. Under dynamic shapes
+  // the output then keeps its upper-bound extents while consumers read it at
+  // the real size, silently producing wrong values. add_permute_node()'s
+  // resize function handles the rank-reducing case explicitly.
   for (int i = 0; i < dims.size(); ++i) {
     // adjust negative dims
     int64_t dim_val = dims.at(i);
     if (dim_val < 0) {
       dim_val += in_dim;
     }
-    if (dims.at(i) != 0 && in_sizes.at(dim_val) == 1) {
+    if (in_sizes.at(dim_val) == 1) {
       squeeze_dims.push_back(dim_val);
     }
   }

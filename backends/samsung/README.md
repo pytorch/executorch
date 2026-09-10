@@ -49,13 +49,16 @@ Generates python artifacts that allow user call `Compile` interface to lower a m
 ./backends/samsung/build.sh -b x86_64
 ```
 
-### Build ENN Executor Runner
+### Build Backend Delegate
 ```bash
 ./backends/samsung/build.sh -b android --ndk ${ANDROID_NDK}
 ```
-ANDROID_ABI=arm64-v8a is default, necessary runtime executable generated in `build_exynos_android` directory.
+ANDROID_ABI=arm64-v8a is default, necessary runtime backend library generated in `build_samsung_android` directory.
 
-### Build Anroid Extension
+### Build Executable
+Please see the [README.md](../../examples/samsung/README.md).
+
+### Build Android Extension
 This is later exposed Java app. Please turn on CMake option `EXECUTORCH_BUILD_ENN`, and ENN runtime will be added.
 ```bash
 cmake extension/android \

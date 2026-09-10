@@ -18,20 +18,24 @@ from executorch.backends.arm.test.tester.arm_tester import (
     _get_tosa_operator_distribution,
     ArmTester,
 )
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.test.harness.stages import StageType
-from executorch.exir import to_edge
+from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
 from torch.fx import GraphModule, Node
 
 
 class SDPA(torch.nn.Module):
-    def __init__(self, attn_mask: torch.Tensor | None = None) -> None:
+    def __init__(
+        self, attn_mask: torch.Tensor | None = None, is_causal: bool = False
+    ) -> None:
         super().__init__()
         if attn_mask is not None:
             self.register_buffer("attn_mask", attn_mask)
         else:
             self.attn_mask = None
+        self.is_causal = is_causal
 
     def forward(
         self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
@@ -41,6 +45,35 @@ class SDPA(torch.nn.Module):
             key,
             value,
             attn_mask=self.attn_mask,
+            is_causal=self.is_causal,
+        )
+
+
+class DynamicMaskSDPA(torch.nn.Module):
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attn_mask,
+        )
+
+
+class DropoutSDPA(torch.nn.Module):
+    def forward(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            dropout_p=0.1,
         )
 
 
@@ -217,14 +250,35 @@ def test_sdpa_safe_softmax_guard_preserve_keeps_guard_before_tosa_lowering():
     assert counts["SELECT"] == 1
 
 
-def test_sdpa_safe_softmax_guard_remove_when_proven_keeps_guard():
+def test_auto_removal_runs_through_partitioner_hook():
     compile_spec = common.get_tosa_compile_spec("TOSA-1.0+FP")
     compile_spec.set_pass_pipeline_config(
-        ArmPassPipelineConfig(
-            sdpa_safe_softmax_guard=(SDPASafeSoftmaxGuardPolicy.REMOVE_WHEN_PROVEN)
-        )
+        ArmPassPipelineConfig(sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.AUTO)
     )
-    tester = ArmTester(SDPA(), _sdpa_inputs(), compile_spec)
+    edge_program = to_edge_transform_and_lower(
+        export(SDPA(), _sdpa_inputs(), strict=True),
+        partitioner=[TOSAPartitioner(compile_spec)],
+    )
+    graph_module = edge_program.exported_program().graph_module
+    counts = dict(_get_tosa_operator_distribution(graph_module))
+
+    assert counts.get("EQUAL", 0) == 0
+    assert counts.get("LOGICAL_NOT", 0) == 0
+    assert counts.get("REDUCE_ANY", 0) == 0
+    assert counts.get("SELECT", 0) == 0
+    assert counts["REDUCE_MAX"] == 1
+    assert counts["EXP"] == 1
+    assert counts["REDUCE_SUM"] == 1
+    assert counts["RECIPROCAL"] == 1
+
+
+def test_sdpa_safe_softmax_guard_auto_keeps_dynamic_mask_guard():
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+FP")
+    compile_spec.set_pass_pipeline_config(
+        ArmPassPipelineConfig(sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.AUTO)
+    )
+    attn_mask = torch.zeros(1, 1, 4, 4)
+    tester = ArmTester(DynamicMaskSDPA(), (*_sdpa_inputs(), attn_mask), compile_spec)
 
     tester.export().to_edge_transform_and_lower()
     graph_module = (
@@ -237,7 +291,49 @@ def test_sdpa_safe_softmax_guard_remove_when_proven_keeps_guard():
     assert counts["EQUAL"] == 1
     assert counts["LOGICAL_NOT"] == 2
     assert counts["REDUCE_ANY"] == 1
-    assert counts["SELECT"] == 1
+    assert counts["SELECT"] >= 1
+
+
+def test_sdpa_safe_softmax_guard_auto_keeps_causal_guard():
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+FP")
+    compile_spec.set_pass_pipeline_config(
+        ArmPassPipelineConfig(sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.AUTO)
+    )
+    tester = ArmTester(SDPA(is_causal=True), _sdpa_inputs(), compile_spec)
+
+    tester.export().to_edge_transform_and_lower()
+    graph_module = (
+        tester.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+        .exported_program()
+        .graph_module
+    )
+    counts = dict(_get_tosa_operator_distribution(graph_module))
+
+    assert counts["EQUAL"] == 1
+    assert counts["LOGICAL_NOT"] == 2
+    assert counts["REDUCE_ANY"] == 1
+    assert counts["SELECT"] >= 1
+
+
+def test_sdpa_safe_softmax_guard_auto_keeps_dropout_guard():
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+FP")
+    compile_spec.set_pass_pipeline_config(
+        ArmPassPipelineConfig(sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.AUTO)
+    )
+    tester = ArmTester(DropoutSDPA(), _sdpa_inputs(), compile_spec)
+
+    tester.export().to_edge_transform_and_lower()
+    graph_module = (
+        tester.get_artifact(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+        .exported_program()
+        .graph_module
+    )
+    counts = dict(_get_tosa_operator_distribution(graph_module))
+
+    assert counts["EQUAL"] == 1
+    assert counts["LOGICAL_NOT"] == 2
+    assert counts["REDUCE_ANY"] == 1
+    assert counts["SELECT"] >= 1
 
 
 def test_remove_safe_softmax_guard_pass_does_not_rewrite_regular_softmax():
