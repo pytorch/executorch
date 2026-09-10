@@ -95,6 +95,7 @@ from .decompose_prod_pass import DecomposeProdPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
+from .decompose_roll_pass import DecomposeRollPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
 from .decompose_sdpa_with_regular_softmax_pass import (  # noqa
