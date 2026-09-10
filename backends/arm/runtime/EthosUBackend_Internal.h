@@ -78,6 +78,10 @@ void EthosUBackend_execute_end();
 void EthosUBackend_delegate_begin(const void* handle);
 void EthosUBackend_delegate_end();
 #endif
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void EthosUBackend_input_memcpy(size_t size);
+void EthosUBackend_output_memcpy(size_t size);
+#endif
 extern unsigned char* ethosu_fast_scratch;
 extern size_t ethosu_fast_scratch_size;
 }
