@@ -14,18 +14,28 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <random>
 #include <tuple>
 #include <vector>
 
 namespace {
 
-#define ASSERT_CUDA_SUCCESS(expression)               \
-  do {                                                \
-    const cudaError_t error = (expression);           \
-    ASSERT_EQ(error, cudaSuccess)                     \
-        << cudaGetErrorString(error);                 \
+#define ASSERT_CUDA_SUCCESS(expression)                         \
+  do {                                                          \
+    const cudaError_t error = (expression);                     \
+    ASSERT_EQ(error, cudaSuccess) << cudaGetErrorString(error); \
   } while (false)
+
+struct CudaDeleter {
+  template <typename T>
+  void operator()(T* pointer) const {
+    cudaFree(pointer);
+  }
+};
+
+template <typename T>
+using CudaPtr = std::unique_ptr<T, CudaDeleter>;
 
 bool expect_cuda_success(cudaError_t error) {
   if (error == cudaSuccess) {
@@ -43,41 +53,44 @@ std::vector<float> cuda_sampling_probabilities(
     int32_t top_k,
     double top_p,
     muse_glimmer::cuda::SamplingWorkspace& workspace) {
-  float* device_logits = nullptr;
-  float* device_probabilities = nullptr;
   const size_t bytes = logits.size() * sizeof(float);
-  if (!expect_cuda_success(cudaMalloc(&device_logits, bytes)) ||
-      !expect_cuda_success(cudaMalloc(&device_probabilities, bytes)) ||
-      !expect_cuda_success(cudaMemcpy(
-          device_logits,
-          logits.data(),
-          bytes,
-          cudaMemcpyHostToDevice)) ||
-      !expect_cuda_success(muse_glimmer::cuda::fill_sampling_probabilities(
-          device_logits,
-          row_count,
-          row_size,
-          temperature,
-          top_k,
-          top_p,
-          device_probabilities,
-          workspace,
-          nullptr))) {
-    cudaFree(device_probabilities);
-    cudaFree(device_logits);
+
+  float* raw_device_logits = nullptr;
+  if (!expect_cuda_success(cudaMalloc(&raw_device_logits, bytes))) {
+    return {};
+  }
+  CudaPtr<float> device_logits(raw_device_logits);
+
+  float* raw_device_probabilities = nullptr;
+  if (!expect_cuda_success(cudaMalloc(&raw_device_probabilities, bytes))) {
+    return {};
+  }
+  CudaPtr<float> device_probabilities(raw_device_probabilities);
+
+  if (!expect_cuda_success(cudaMemcpy(
+          device_logits.get(), logits.data(), bytes, cudaMemcpyHostToDevice)) ||
+      !expect_cuda_success(
+          muse_glimmer::cuda::fill_sampling_probabilities(
+              device_logits.get(),
+              row_count,
+              row_size,
+              temperature,
+              top_k,
+              top_p,
+              device_probabilities.get(),
+              workspace,
+              nullptr))) {
     return {};
   }
 
   std::vector<float> probabilities(logits.size());
   if (!expect_cuda_success(cudaMemcpy(
           probabilities.data(),
-          device_probabilities,
+          device_probabilities.get(),
           bytes,
           cudaMemcpyDeviceToHost))) {
     probabilities.clear();
   }
-  expect_cuda_success(cudaFree(device_probabilities));
-  expect_cuda_success(cudaFree(device_logits));
   return probabilities;
 }
 
@@ -93,23 +106,29 @@ TEST(CudaSamplingTest, ArgmaxMatchesHostForBatchedRowsAndTies) {
   host_values[2 * kRowSize + 256] = 4.0f;
   host_values[2 * kRowSize + 511] = 4.0f;
 
-  float* device_values = nullptr;
-  uint64_t* device_indices = nullptr;
+  float* raw_device_values = nullptr;
   ASSERT_CUDA_SUCCESS(
-      cudaMalloc(&device_values, host_values.size() * sizeof(float)));
-  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_indices, kRows * sizeof(uint64_t)));
+      cudaMalloc(&raw_device_values, host_values.size() * sizeof(float)));
+  CudaPtr<float> device_values(raw_device_values);
+
+  uint64_t* raw_device_indices = nullptr;
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&raw_device_indices, kRows * sizeof(uint64_t)));
+  CudaPtr<uint64_t> device_indices(raw_device_indices);
+
   ASSERT_CUDA_SUCCESS(cudaMemcpy(
-      device_values,
+      device_values.get(),
       host_values.data(),
       host_values.size() * sizeof(float),
       cudaMemcpyHostToDevice));
 
-  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::argmax_index(
-      device_values, kRows, kRowSize, device_indices, nullptr));
+  ASSERT_CUDA_SUCCESS(
+      muse_glimmer::cuda::argmax_index(
+          device_values.get(), kRows, kRowSize, device_indices.get(), nullptr));
   std::vector<uint64_t> actual(kRows);
   ASSERT_CUDA_SUCCESS(cudaMemcpy(
       actual.data(),
-      device_indices,
+      device_indices.get(),
       actual.size() * sizeof(uint64_t),
       cudaMemcpyDeviceToHost));
 
@@ -118,9 +137,6 @@ TEST(CudaSamplingTest, ArgmaxMatchesHostForBatchedRowsAndTies) {
         host_values.data() + row * kRowSize, kRowSize);
     EXPECT_EQ(actual[row], expected) << "row " << row;
   }
-
-  ASSERT_CUDA_SUCCESS(cudaFree(device_indices));
-  ASSERT_CUDA_SUCCESS(cudaFree(device_values));
 }
 
 TEST(CudaSamplingTest, ArgmaxRejectsInvalidArguments) {
@@ -153,28 +169,17 @@ TEST(CudaSamplingTest, SamplingProbabilitiesMatchHost) {
   muse_glimmer::cuda::SamplingWorkspace workspace;
   for (const auto& [temperature, top_k, top_p] : configurations) {
     const auto actual = cuda_sampling_probabilities(
-        logits,
-        kRows,
-        kRowSize,
-        temperature,
-        top_k,
-        top_p,
-        workspace);
+        logits, kRows, kRowSize, temperature, top_k, top_p, workspace);
     ASSERT_EQ(actual.size(), logits.size());
     for (int64_t row = 0; row < kRows; ++row) {
       const auto expected = muse_glimmer::sampling_probabilities(
-          logits.data() + row * kRowSize,
-          kRowSize,
-          temperature,
-          top_k,
-          top_p);
+          logits.data() + row * kRowSize, kRowSize, temperature, top_k, top_p);
       double sum = 0.0;
       for (int64_t token = 0; token < kRowSize; ++token) {
         const float probability = actual[row * kRowSize + token];
         EXPECT_EQ(probability == 0.0f, expected[token] == 0.0f)
             << "token " << token;
-        EXPECT_NEAR(probability, expected[token], 2e-5f)
-            << "token " << token;
+        EXPECT_NEAR(probability, expected[token], 2e-5f) << "token " << token;
         sum += probability;
       }
       EXPECT_NEAR(sum, 1.0, 2e-5);
@@ -209,13 +214,14 @@ TEST(CudaSamplingTest, CategoricalSampleMatchesHostDistribution) {
   muse_glimmer::cuda::SamplingWorkspace workspace;
   ASSERT_CUDA_SUCCESS(workspace.reserve(kRows, kRowSize, nullptr));
   ASSERT_CUDA_SUCCESS(workspace.set_seed(1234, nullptr));
-  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::categorical_sample(
-      device_probabilities,
-      kRows,
-      kRowSize,
-      device_tokens,
-      workspace,
-      nullptr));
+  ASSERT_CUDA_SUCCESS(
+      muse_glimmer::cuda::categorical_sample(
+          device_probabilities,
+          kRows,
+          kRowSize,
+          device_tokens,
+          workspace,
+          nullptr));
   std::vector<uint64_t> first(kRows);
   ASSERT_CUDA_SUCCESS(cudaMemcpy(
       first.data(),
@@ -224,13 +230,14 @@ TEST(CudaSamplingTest, CategoricalSampleMatchesHostDistribution) {
       cudaMemcpyDeviceToHost));
 
   ASSERT_CUDA_SUCCESS(workspace.set_seed(1234, nullptr));
-  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::categorical_sample(
-      device_probabilities,
-      kRows,
-      kRowSize,
-      device_tokens,
-      workspace,
-      nullptr));
+  ASSERT_CUDA_SUCCESS(
+      muse_glimmer::cuda::categorical_sample(
+          device_probabilities,
+          kRows,
+          kRowSize,
+          device_tokens,
+          workspace,
+          nullptr));
   std::vector<uint64_t> repeated(kRows);
   ASSERT_CUDA_SUCCESS(cudaMemcpy(
       repeated.data(),
