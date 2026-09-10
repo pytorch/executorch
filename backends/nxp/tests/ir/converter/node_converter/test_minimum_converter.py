@@ -25,8 +25,11 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import MaxPoolMinimumModule, MinimumModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
+    MaxPoolMinimumModule,
+    MinimumModule,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 

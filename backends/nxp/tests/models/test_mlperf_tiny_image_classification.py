@@ -6,7 +6,11 @@
 from functools import partial
 
 import numpy as np
+
+# noinspection PyUnusedImports
+import pytest
 import torch
+
 from executorch.backends.nxp.tests.dataset_creator import (
     FromCalibrationDataDatasetCreator,
 )
@@ -23,7 +27,6 @@ from executorch.backends.nxp.tests.nsys_testing import (
     ReferenceModel,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
-import pytest
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
     MLPerfTinyImageClassification,
 )
