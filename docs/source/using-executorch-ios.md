@@ -19,9 +19,9 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
-**Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#Linkage) section for more details.
+**Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#linkage) section for more details.
 
-**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details.
+**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#logging) section for more details.
 
 **Note:** The MLX backend links and registers on the iOS simulator, so an app builds for both destinations, but it reports itself unavailable there because the simulator has no Metal device it can use. A model delegated to MLX will not load on the simulator. Use a real device or a Mac to run one.
 
@@ -31,7 +31,14 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-1.0.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-1.1.0-20251101") for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the
+[ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and
+select it. For Dependency Rule, select **Branch** and enter
+`swiftpm-<version>` for a stable release (for example, `swiftpm-1.4.1`), or
+`swiftpm-<version>.<YYYYMMDD>` for a
+[nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date
+(for example, `swiftpm-1.5.0.20260909`). Match this version to the one used to
+export the model.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -53,6 +60,8 @@ Add a package and target dependencies on ExecuTorch to your package file like th
 // swift-tools-version:5.9
 import PackageDescription
 
+let executorchVersion = "1.4.1" // Match the release used to export the model.
+
 let package = Package(
   name: "YourPackageName",
   platforms: [
@@ -63,8 +72,11 @@ let package = Package(
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
   ],
   dependencies: [
-    // Use "swiftpm-<version>.<year_month_day>" branch name for a nightly build.
-    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-1.0.0")
+    // Append ".<YYYYMMDD>" to the version for a nightly branch.
+    .package(
+      url: "https://github.com/pytorch/executorch.git",
+      branch: "swiftpm-\(executorchVersion)"
+    )
   ],
   targets: [
     .target(
@@ -74,11 +86,12 @@ let package = Package(
         .product(name: "backend_xnnpack", package: "executorch"),
         .product(name: "kernels_optimized", package: "executorch"),
         // Add other backends and kernels as needed.
-      ]),
+      ],
       linkerSettings: [
-         // Force load all symbols from static libraries to trigger backends and kernels registration
-         .unsafeFlags(["-Wl,-all_load"])
+        // Force-load static initializers that register backends and kernels.
+        .unsafeFlags(["-Xlinker", "-all_load"])
       ]
+    )
   ]
 )
 ```
@@ -257,7 +270,7 @@ try module.load("forward")
 let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 
 // Create an input tensor referencing the buffer and assuming the given shape and data type.
-let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
+let inputTensor = Tensor<Float>(bytesNoCopy: imageBuffer, shape: [1, 3, 224, 224])
 
 // Execute the 'forward' method with the given input tensor and get an output tensor back.
 let outputTensor = try Tensor<Float>(module.forward(inputTensor))
@@ -278,7 +291,9 @@ ExecuTorch offers `ExecuTorchTensor` class in Objective-C and two tensor types i
 
 - `Tensor<T: Scalar>`: A generic, type-safe wrapper around AnyTensor. This is the recommended type for most use cases in Swift. It ensures the element type (e.g., `Float`, `Int`) is known at compile time, providing type-safe access to tensor data and catching type mismatches early.
 
-You can convert between them using `tensor.anyTensor` (to get the underlying `AnyTensor`) and `anyTensor.asTensor()` (to convert to a typed `Tensor<T>` if the data types match).
+You can convert between them using `tensor.anyTensor` (to get the underlying
+`AnyTensor`) and `anyTensor.asTensor()` (which returns an optional typed
+`Tensor<T>` that you must unwrap if the data types match).
 
 #### Key Properties:
 

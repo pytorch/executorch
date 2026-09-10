@@ -2,6 +2,10 @@
 
 This directory contains the LLM Runner framework for ExecuTorch, providing high-level C++ APIs for running Large Language Models with both text-only and multimodal capabilities.
 
+> [!WARNING]
+> The C++ and Python LLM runner APIs are experimental and may change or be
+> removed without notice.
+
 ## Overview
 
 The LLM Runner framework provides two main runner classes:
@@ -216,7 +220,7 @@ runner = MultimodalRunner(
 inputs = []
 inputs.append(make_text_input("What do you see in this image?"))
 
-# Add image from torch tensor (supports both CHW and HWC formats)
+# Add an image from a channels-first CHW tensor
 image_tensor = torch.randint(0, 255, (3, 224, 224), dtype=torch.uint8)  # CHW format
 inputs.append(make_image_input(image_tensor))
 
@@ -261,9 +265,9 @@ token_ids = [1, 15043, 445, 2420]  # Example token IDs
 token_input = make_token_input(token_ids)
 
 # 3. Image input from torch tensor
-# Supports multiple formats: (H,W,C), (C,H,W), (1,H,W,C), (1,C,H,W)
-image_hwc = torch.randint(0, 255, (224, 224, 3), dtype=torch.uint8)  # HWC
-image_input = make_image_input(image_hwc)
+# Supports channels-first (C,H,W), or (1,C,H,W) with batch size 1
+image_chw = torch.randint(0, 255, (3, 224, 224), dtype=torch.uint8)
+image_input = make_image_input(image_chw)
 
 # Float tensors also supported for normalized images
 image_float = torch.rand(3, 224, 224, dtype=torch.float32)  # CHW, normalized
@@ -364,6 +368,10 @@ chat.reset_conversation()
 ### Python API Classes
 
 #### GenerationConfig
+
+The Python binding currently exposes the fields shown below. The C++-only
+constrained-decoding fields are documented in the later C++ API section.
+
 ```python
 from executorch.extension.llm.runner import GenerationConfig
 
@@ -374,10 +382,11 @@ config = GenerationConfig()
 config = GenerationConfig(
     max_new_tokens=100,    # Maximum tokens to generate (-1 = auto)
     temperature=0.8,       # Sampling temperature (0.0 = deterministic)
-    echo=True,            # Echo input prompt in output
-    seq_len=2048,         # Maximum sequence length (-1 = auto)
-    num_bos=0,            # Number of BOS tokens
-    num_eos=0             # Number of EOS tokens
+    echo=True,             # Echo input prompt in output
+    warming=False,         # Whether this is a warmup run
+    seq_len=2048,          # Maximum sequence length (-1 = auto)
+    num_bos=0,             # Number of BOS tokens
+    num_eos=0,             # Number of EOS tokens
 )
 
 # Modify after creation
@@ -388,8 +397,8 @@ config.max_new_tokens = 50
 #### MultimodalInput Types
 ```python
 from executorch.extension.llm.runner import (
-    MultimodalInput, make_text_input, make_token_input, 
-    make_image_input, make_audio_input
+    MultimodalInput, make_text_input, make_token_input,
+    make_image_input, make_audio_input, make_raw_audio_input
 )
 
 # Text input
@@ -404,11 +413,19 @@ print(token_input.get_tokens())  # [1, 2, 3, 4]
 
 # Image input from torch tensor
 import torch
-image_tensor = torch.randint(0, 255, (224, 224, 3), dtype=torch.uint8)
+image_tensor = torch.randint(0, 255, (3, 224, 224), dtype=torch.uint8)
 image_input = make_image_input(image_tensor)
 print(image_input.is_image())  # True
 image = image_input.get_image()
 print(f"Image: {image.width}x{image.height}x{image.channels}")
+
+# Preprocessed and raw audio inputs
+audio_input = make_audio_input(torch.rand(1, 80, 100, dtype=torch.float32))
+raw_audio_input = make_raw_audio_input(
+    torch.randint(0, 255, (1, 1, 16000), dtype=torch.uint8)
+)
+print(audio_input.is_audio())          # True
+print(raw_audio_input.is_raw_audio())  # True
 
 # Check input types safely
 if text_input.is_text():
@@ -461,7 +478,7 @@ try:
     runner = MultimodalRunner("model.pte", "tokenizer.bin")
     
     # Invalid image tensor will raise RuntimeError
-    invalid_image = torch.rand(2, 224, 224, 3)  # Wrong number of dimensions
+    invalid_image = torch.rand(1, 2, 224, 224)  # Wrong channel count
     inputs = [make_image_input(invalid_image)]
     
     config = GenerationConfig(max_new_tokens=50)
@@ -642,13 +659,16 @@ int64_t num_tokens = text_token_generator->generate(
 **Key Parameters**:
 ```cpp
 struct GenerationConfig {
-    int32_t max_new_tokens = -1;    // Max tokens to generate (-1 = use available)
-    int32_t seq_len = 1024;         // Total sequence length
-    float temperature = 0.8f;       // Sampling temperature
-    bool echo = true;               // Echo input prompt
-    int8_t num_bos = 1;            // Number of BOS tokens
-    int8_t num_eos = 1;            // Number of EOS tokens
-    bool warming = false;           // Warmup run flag
+    bool echo = true;
+    std::string grammar;
+    std::string grammar_type;
+    bool ignore_eos = false;
+    int32_t max_new_tokens = -1;
+    bool warming = false;
+    int32_t seq_len = -1;
+    float temperature = 0.8f;
+    int32_t num_bos = 0;
+    int32_t num_eos = 0;
 };
 ```
 
@@ -656,7 +676,7 @@ struct GenerationConfig {
 **Purpose**: Type-safe wrapper for mixed input types
 
 **Key Features**:
-- `std::variant<std::string, Image>` internally
+- `std::variant<std::string, std::vector<uint64_t>, Image, Audio, RawAudio>` internally
 - Type-safe access methods
 - Exception-based and safe access patterns
 - Move semantics for efficiency
@@ -665,19 +685,33 @@ struct GenerationConfig {
 ```cpp
 // Type checking
 bool is_text() const;
+bool is_tokens() const;
 bool is_image() const;
+bool is_audio() const;
+bool is_raw_audio() const;
+MultimodalInput::Type get_type() const;
+const char* type_name() const;
 
 // Direct access (throws on type mismatch)
 const std::string& get_text() const;
+const std::vector<uint64_t>& get_tokens() const;
 const Image& get_image() const;
+const Audio& get_audio() const;
+const RawAudio& get_raw_audio() const;
 
 // Safe access (returns nullptr on type mismatch)
 const std::string* try_get_text() const;
+const std::vector<uint64_t>* try_get_tokens() const;
 const Image* try_get_image() const;
+const Audio* try_get_audio() const;
+const RawAudio* try_get_raw_audio() const;
 
 // Factory functions
 MultimodalInput make_text_input(const std::string& text);
+MultimodalInput make_token_input(const std::vector<uint64_t>& tokens);
 MultimodalInput make_image_input(Image&& image);
+MultimodalInput make_audio_input(Audio&& audio);
+MultimodalInput make_raw_audio_input(RawAudio&& raw_audio);
 ```
 
 ## Helper Functions
@@ -729,13 +763,18 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `max_new_tokens` | `int32_t` | `-1` | Maximum new tokens to generate (-1 = use available context) |
-| `seq_len` | `int32_t` | `1024` | Total sequence length including prompt |
-| `temperature` | `float` | `0.8f` | Sampling temperature in [0.0, 1.0] (0.0 = deterministic) |
 | `echo` | `bool` | `true` | Whether to echo the input prompt |
-| `num_bos` | `int8_t` | `1` | Number of beginning-of-sequence tokens |
-| `num_eos` | `int8_t` | `1` | Number of end-of-sequence tokens |
+| `grammar` | `std::string` | empty | Grammar for constrained decoding |
+| `grammar_type` | `std::string` | empty | Grammar format: `json_schema`, `regex`, `lark`, or `gbnf` |
+| `ignore_eos` | `bool` | `false` | Continue generation after an EOS token |
+| `max_new_tokens` | `int32_t` | `-1` | Maximum new tokens to generate (-1 = use available context) |
 | `warming` | `bool` | `false` | Whether this is a warmup run |
+| `seq_len` | `int32_t` | `-1` | Maximum total sequence length (-1 = use model metadata) |
+| `temperature` | `float` | `0.8f` | Sampling temperature |
+| `num_bos` | `int32_t` | `0` | Number of beginning-of-sequence tokens |
+| `num_eos` | `int32_t` | `0` | Number of end-of-sequence tokens |
+
+Support for constrained decoding is runner-dependent.
 
 ### Performance Tuning
 

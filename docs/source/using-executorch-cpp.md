@@ -40,16 +40,17 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
-There are two ways to get the C++ runtime. Linking the prebuilt libraries from the pip
-package needs no source checkout and is the quicker option. Building from source gives
-you every option the project has, and is what you need for a platform the wheel does not
+There are two ways to get the C++ runtime. Current main/nightly wheels include
+prebuilt libraries and need no source checkout. Building from source gives you
+every option the project has and is required for a platform the wheel does not
 cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux and macOS, `pip install executorch` ships the runtime as prebuilt shared libraries together
-with the headers and a CMake package. So a C++ program can use ExecuTorch without building it from
-source, and without knowing much CMake.
+On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
+shared libraries together with the headers and a CMake package. Stable releases
+from before this packaging was introduced do not contain the namespaced CMake
+targets used below; use the documentation for your installed release.
 
 #### Run your first model in four steps
 
@@ -58,12 +59,12 @@ Copy these three files into an empty folder and follow along. No prior CMake kno
 **1. Install, and make a model file.**
 
 ```
-pip install executorch torch --extra-index-url https://download.pytorch.org/whl/cpu
+pip install --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
-`torch` is named explicitly because the wheel does not depend on it, so you bring your own torch and
-keep the version under your control. You need it only to create a model file in step 1, not to run
-the C++ program.
+`torch` is installed explicitly because nightly ExecuTorch wheels do not declare
+it as a dependency. Python and PyTorch are needed to create the model file in
+step 1, but not to run the compiled C++ program.
 
 A C++ program loads a `.pte` file, which is a model that has already been exported. C++ cannot
 create one, so make it in Python first:
@@ -79,7 +80,7 @@ class Add(torch.nn.Module):
 
 example = (torch.ones(2, 2), torch.ones(2, 2))
 program = to_edge_transform_and_lower(
-    torch.export.export(Add(), example)
+    torch.export.export(Add().eval(), example)
 ).to_executorch()
 open("model.pte", "wb").write(program.buffer)
 ```
@@ -94,6 +95,8 @@ python export.py
 // main.cpp
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+
+#include <array>
 #include <cstdio>
 
 using namespace executorch::extension;
