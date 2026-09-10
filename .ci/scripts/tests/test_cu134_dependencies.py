@@ -205,6 +205,42 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.assertIn("torch", core)
                 self.assertFalse(any(arg.startswith("torch==") for arg in core))
 
+    def test_cu134_keeps_explicit_torchao_source_build(self):
+        with patch.dict(sys.modules, {"install_requirements": self.installer}):
+            package_installer = load_module("install_executorch")
+        for source_flag in (
+            "EXECUTORCH_BUILD_KERNELS_TORCHAO",
+            "TORCHAO_BUILD_EXPERIMENTAL_MPS",
+        ):
+            with self.subTest(source_flag=source_flag):
+                self.utils.determine_torch_url.cache_clear()
+                with (
+                    patch.dict(os.environ, {source_flag: "1"}, clear=True),
+                    patch.object(self.utils, "_get_cuda_version", return_value=(13, 4)),
+                    patch.object(
+                        self.installer.platform, "system", return_value="Linux"
+                    ),
+                    patch.object(self.installer.sys, "platform", "linux"),
+                    patch.object(sys, "argv", ["install_executorch"]),
+                    patch.object(
+                        package_installer, "python_is_compatible", return_value=True
+                    ),
+                    patch.object(package_installer, "check_and_update_submodules"),
+                    patch.object(self.installer.subprocess, "run") as run,
+                ):
+                    package_installer.main([])
+                    metadata = Requirement(self.torchao_requirement())
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(len(commands), 5)
+                self.assertIn("third-party/ao", commands[1])
+                self.assertIn(".", commands[2])
+                for command in commands:
+                    self.assertFalse(
+                        any(arg.startswith("torchao==") for arg in command)
+                    )
+                self.assertIn("torch==2.14.0.dev20260810+cu134", commands[-1])
+                self.assertIn("0.18.0+git03ca489", metadata.specifier)
+
     def test_wheel_torchao_bound_matches_selected_train(self):
         for cuda, expected in (
             ((13, 4), "torchao>=0.19.0.dev20260811,<0.20"),

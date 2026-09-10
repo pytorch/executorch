@@ -27,16 +27,25 @@ CU134_TORCH_PACKAGES = [
 ]
 
 
+def torchao_from_source():
+    return (
+        os.environ.get("EXECUTORCH_BUILD_KERNELS_TORCHAO") == "1"
+        or os.environ.get("TORCHAO_BUILD_EXPERIMENTAL_MPS") == "1"
+    )
+
+
 def cu134_requirements(torch_url, include_domains=False):
     if not torch_url.endswith("/cu134"):
         return []
-    torchao_variant = (
-        "cpu" if platform.machine().lower() in ("aarch64", "arm64") else "cu134"
+    packages = list(
+        CU134_TORCH_PACKAGES if include_domains else CU134_TORCH_PACKAGES[:1]
     )
-    return [
-        *(CU134_TORCH_PACKAGES if include_domains else CU134_TORCH_PACKAGES[:1]),
-        f"torchao=={CU134_TORCHAO_NIGHTLY_VERSION}+{torchao_variant}",
-    ]
+    if not torchao_from_source():
+        torchao_variant = (
+            "cpu" if platform.machine().lower() in ("aarch64", "arm64") else "cu134"
+        )
+        packages.append(f"torchao=={CU134_TORCHAO_NIGHTLY_VERSION}+{torchao_variant}")
+    return packages
 
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
@@ -116,10 +125,7 @@ def install_requirements(use_pytorch_nightly):
     )
 
     LOCAL_REQUIREMENTS = []
-    if (
-        os.environ.get("EXECUTORCH_BUILD_KERNELS_TORCHAO") == "1"
-        or os.environ.get("TORCHAO_BUILD_EXPERIMENTAL_MPS") == "1"
-    ):
+    if torchao_from_source():
         LOCAL_REQUIREMENTS.append("third-party/ao")
     if sys.platform != "win32":
         # TODO(larryliu0820): Setup a pypi package for this.
