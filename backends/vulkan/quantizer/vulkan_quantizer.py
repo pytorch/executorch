@@ -89,12 +89,17 @@ def get_symmetric_quantization_config(
         act_quantization_spec = None
         output_activation_spec = None
     else:
-        # Dynamic quantization: the activation scale is computed at runtime,
-        # per tensor. This matches the kernel behind et_vk.linear_q8ta_q8csw,
-        # which takes a single input scale/zero point (see
-        # QuantizedLinear.cpp: input_quant_config(8, kPerTensor, ...)).
-        # Per-tensor activation scales are a poor fit for transformer encoders,
-        # where a few outlier channels set the scale for the whole tensor; on
+        # Dynamic quantization: a choose_qparams op computes one scale and
+        # zero point for the whole activation tensor at runtime, and the
+        # quantize/dequantize pair around the linear carries them. Per tensor,
+        # not per token, whatever the granularity of the surrounding graph.
+        #
+        # (The fused et_vk.linear_q8ta_q8csw kernel is a different path: it is
+        # matched when the input scale is a static scalar, not one chosen at
+        # runtime.)
+        #
+        # One scale for the whole tensor is a poor fit for transformer
+        # encoders, where a few outlier channels set it for everything else; on
         # sentence-transformer models this costs an order of magnitude more
         # accuracy than a per-token scheme. Prefer is_dynamic=False (weight
         # only) when output fidelity matters.
