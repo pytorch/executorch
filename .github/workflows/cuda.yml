@@ -67,7 +67,7 @@ jobs:
         cuda-version: ["12.6", "13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@2187134c42403134c4c1d7d4cee41832367074d5
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@c3c4c4d48e97dbaaabd9b65496afd8c8d8dad713
     permissions:
       id-token: write
       contents: read
@@ -76,7 +76,7 @@ jobs:
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: ${{ matrix.cuda-version }}
-      test-infra-ref: 2187134c42403134c4c1d7d4cee41832367074d5
+      test-infra-ref: c3c4c4d48e97dbaaabd9b65496afd8c8d8dad713
       driver-version: ${{ matrix.cuda-version == '13.4' && '615.71.09' || '580.65.06' }}
       driver-download-url: ${{ matrix.cuda-version == '13.4' && 'https://download.nvidia.com/XFree86/Linux-x86_64/615.71.09/NVIDIA-Linux-x86_64-615.71.09.run' || '' }}
       use-custom-docker-registry: false
