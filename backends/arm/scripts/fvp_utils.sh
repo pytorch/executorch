@@ -138,8 +138,12 @@ function setup_path_fvp() {
     # Fixup for Corstone-320 python dependency
     append_env_in_setup_path LD_LIBRARY_PATH "${root_dir}/FVP-corstone320/python/lib/"
 
-    echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}.sh
-    echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}.sh
-    echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}.sh
-    echo "hash FVP_Corstone-1000-A320" >> ${setup_path_script}.sh
+    local fvp_command
+    for fvp_command in \
+        FVP_Corstone_SSE-300_Ethos-U55 \
+        FVP_Corstone_SSE-300_Ethos-U65 \
+        FVP_Corstone_SSE-320 \
+        FVP_Corstone-1000-A320; do
+        echo "hash ${fvp_command} 2>/dev/null || true" >> "${setup_path_script}.sh"
+    done
 }

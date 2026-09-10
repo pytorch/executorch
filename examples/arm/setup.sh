@@ -328,6 +328,7 @@ function create_setup_path(){
 if [[ $is_script_sourced -eq 0 ]]; then
     set -e
 
+    ARM_SETUP_CURL_PROGRESS_ARGS=(--progress-bar)
     if [[ -n "$("${et_dir}/.ci/scripts/detect_ci.sh" --and-not-debug)" ]]; then
         ARM_SETUP_CURL_PROGRESS_ARGS=(--no-progress-meter)
         export PIP_PROGRESS_BAR=off
@@ -376,9 +377,12 @@ if [[ $is_script_sourced -eq 0 ]]; then
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
         log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
-        check_fvp_eula
-        setup_fvp
-        install_fvp
+        if [[ "${OS}" == "Linux" ]]; then
+            check_fvp_eula
+            install_fvp
+        else
+            setup_fvp
+        fi
     fi
 
     warn_if_mlsdk_python_is_untested
