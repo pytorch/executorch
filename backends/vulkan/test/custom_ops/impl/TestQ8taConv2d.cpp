@@ -252,28 +252,34 @@ void test_q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
   const ValueRef activation = args.at(idx++);
-  const ValueRef layout_int = args.at(idx++);
+  const ValueRef input_layout_int = args.at(idx++);
+  const ValueRef output_layout_int = args.at(idx++);
   const ValueRef impl_selector_str = args.at(idx++);
   const ValueRef fp_output = args.at(idx++);
 
   // Extract the layout parameter and cast to GPUMemoryLayout
-  int32_t layout_value = graph.extract_scalar<int32_t>(layout_int);
-  utils::GPUMemoryLayout layout =
-      static_cast<utils::GPUMemoryLayout>(layout_value);
+  const auto input_layout = static_cast<utils::GPUMemoryLayout>(
+      graph.extract_scalar<int32_t>(input_layout_int));
+  const auto output_layout = static_cast<utils::GPUMemoryLayout>(
+      graph.extract_scalar<int32_t>(output_layout_int));
 
   // Extract the impl_selector string
   std::string impl_selector = graph.extract_string(impl_selector_str);
 
   // Create temporary packed int8 tensors for input and output
   TmpTensor packed_int8_input(
-      &graph, graph.sizes_of(fp_input), vkapi::kInt8x4, utils::kBuffer, layout);
+      &graph,
+      graph.sizes_of(fp_input),
+      vkapi::kInt8x4,
+      utils::kBuffer,
+      input_layout);
 
   TmpTensor packed_int8_output(
       &graph,
       graph.sizes_of(fp_output),
       vkapi::kInt8x4,
       utils::kBuffer,
-      layout);
+      output_layout);
 
   // Quantize floating point input to packed int8
   add_q8ta_quantize_node(
