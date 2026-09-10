@@ -51,11 +51,8 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 #   cu132   a current TensorRT build target
 #   cu134   the newest, which consumers building against the latest CUDA need
 #
-# A version listed here is published only when the shared generator still offers it. When
-# PyTorch stops shipping a CUDA train, its rows simply do not appear and the release skips it,
-# rather than failing the whole build. So a train PyTorch drops (as it did with cu126) costs
-# only that train, and a train PyTorch restores returns here with no edit. The release still
-# fails if a train that IS offered comes through incomplete, which is a real build break.
+# Skip wholly absent trains so an upstream removal cannot block the remaining releases.
+# Offered trains must still cover every supported Python version.
 #
 # cu132 is included because omitting it would leave a published consumer row with no
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
@@ -191,41 +188,24 @@ def main(argv: List[str]) -> None:
     if args.limit_pr_builds.lower() == "true" and items:
         items = only_pull_request_row(items)
     elif items and not is_jetpack:
-        # A release has to publish every combination this policy advertises. Comparing the result against
-        # what the generator offered cannot catch anything, because both sides apply the same conditions, so
-        # the difference is empty by construction and the check never fires. The policy's own list is the
-        # thing to compare against: a CUDA version the generator stopped offering otherwise disappears from
-        # the release silently, and a missing job is a green check for a wheel that was never built.
-        #
-        # The generic rows only. A JetPack release advertises the single pair its own lists name rather than
-        # every supported CUDA version, so checking it against this list would fail a correct release.
-        #
-        # Both axes come from this policy's own lists, not from the matrix. Reading the generator's python
-        # axis pulled in rows this policy never builds, and deriving it from the rows that survived went
-        # blind to a python that disappeared from every supported train. The generator lives in another
-        # repository and its axes move independently of what this policy promises to publish.
         built = {(item["python_version"], item["desired_cuda"]) for item in items}
-        built_trains = {cuda for _, cuda in built}
-        # A train the generator offered nothing for is one PyTorch stopped shipping, not a build
-        # break here. Skip it and publish the rest, so one dropped train cannot take the others
-        # down with it. When PyTorch dropped CUDA 12.6, failing here also blocked cu130 and cu132
-        # from publishing, which is the opposite of what a consumer needs. The train returns on its
-        # own if PyTorch ships it again, with no edit here.
-        absent_trains = sorted(set(SUPPORTED_CUDA_VERSIONS) - built_trains)
+        # Filtering out every Python row must not disguise an offered train as absent.
+        offered_trains = {
+            item["desired_cuda"]
+            for item in matrix.get("include", [])
+            if item["desired_cuda"] in SUPPORTED_CUDA_VERSIONS
+        }
+        absent_trains = sorted(set(SUPPORTED_CUDA_VERSIONS) - offered_trains)
         if absent_trains:
             print(
                 f"the generator offered no row for {absent_trains}, so they are skipped this run; "
-                f"publishing {sorted(built_trains)}",
+                f"publishing {sorted(offered_trains)}",
                 file=sys.stderr,
             )
-        # A train that IS offered but missing some python versions is a real break, not an upstream
-        # drop: the release would ship an incomplete train, fewer wheels than promised for a version
-        # that is otherwise present. Checked only against the trains actually offered, so a fully
-        # absent train handled above does not also trip this and read as a python problem.
         missing = sorted(
             f"{python}/{cuda}"
             for python in SUPPORTED_PYTHON_VERSIONS
-            for cuda in built_trains
+            for cuda in offered_trains
             if (python, cuda) not in built
         )
         if missing:

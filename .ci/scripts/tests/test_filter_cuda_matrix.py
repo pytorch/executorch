@@ -10,8 +10,12 @@
 # with what the project can publish. Two of its comments record past bugs it now guards against, and
 # a regression in any of them would surface only as a broken release, so each gate is pinned here.
 
+import contextlib
 import importlib.util
+import io
 import json
+import os
+import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -21,29 +25,21 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def _load_filter():
-    """Load the script by path, since .github/scripts is not an importable package."""
-    path = ROOT / ".github" / "scripts" / "filter_cuda_matrix.py"
-    spec = importlib.util.spec_from_file_location("filter_cuda_matrix", path)
+def _load_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-FILTER = _load_filter()
+FILTER = _load_module(
+    "filter_cuda_matrix", ROOT / ".github" / "scripts" / "filter_cuda_matrix.py"
+)
+INSTALL_UTILS = _load_module("install_utils", ROOT / "install_utils.py")
 
 
 def _full_matrix():
-    """Every supported python and CUDA pair.
-
-    The filter refuses anything less: one gate rejects a matrix that would leave a CUDA train
-    unpublished, another rejects a missing python and CUDA combination. Built from the module's own
-    lists so it cannot go stale when either grows.
-
-    That also means it shrinks when either list shrinks, and every gate keeps passing. Measured:
-    deleting cu132 and 3.13 from the filter left all sixteen cases here green. TestPublishedSets
-    below is what notices that, so this fixture does not have to.
-    """
+    """Every supported pair; TestPublishedSets separately guards against shrinking the lists."""
     return {
         "include": [
             {"python_version": python, "desired_cuda": cuda}
@@ -165,9 +161,6 @@ class TestKeep(unittest.TestCase):
 class TestGates(unittest.TestCase):
     def _exit_message(self, matrix, limit="false", extra=None):
         """The stderr text of the gate that fired, so a case can name which one it hit."""
-        import contextlib
-        import io
-
         argv = ["--matrix", json.dumps(matrix), "--limit-pr-builds", limit] + (
             extra or []
         )
@@ -206,15 +199,19 @@ class TestGates(unittest.TestCase):
                 for cuda in offered
             ]
         }
-        emitted = _emitted(_run(matrix))
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            FILTER.main(["--matrix", json.dumps(matrix)])
+        emitted = json.loads(stdout.getvalue())
+        self.assertIn("the generator offered no row", stderr.getvalue())
+        self.assertIn(dropped, stderr.getvalue())
         published = sorted({row["desired_cuda"] for row in emitted["include"]})
         self.assertEqual(published, sorted(offered))
         self.assertNotIn(dropped, published)
 
     def test_dropped_train_still_publishes_the_others(self):
-        # The exact upstream drop this resilience is for: PyTorch stops shipping cu126, the generator
-        # offers only cu130 and cu132, and the release must still publish those two rather than fail
-        # because cu126 is gone. Skips the case cleanly if the policy no longer lists cu126.
+        # Losing cu126 from the generator must not block the remaining supported trains.
         if "cu126" not in FILTER.SUPPORTED_CUDA_VERSIONS:
             self.skipTest("cu126 is not a published train")
         survivors = [c for c in FILTER.SUPPORTED_CUDA_VERSIONS if c != "cu126"]
@@ -243,6 +240,17 @@ class TestGates(unittest.TestCase):
         del matrix["include"][0]
         message = self._exit_message(matrix)
         self.assertIn("incomplete train", message)
+
+    def test_offered_train_with_only_unsupported_pythons_exits_nonzero(self):
+        for cuda in FILTER.SUPPORTED_CUDA_VERSIONS:
+            with self.subTest(cuda=cuda):
+                matrix = _full_matrix()
+                for row in matrix["include"]:
+                    if row["desired_cuda"] == cuda:
+                        row["python_version"] = "3.15"
+                message = self._exit_message(matrix)
+                self.assertIn("incomplete train", message)
+                self.assertIn(f"3.10/{cuda}", message)
 
     def test_jetpack_not_published_exits_nonzero(self):
         # Refused explicitly rather than allowed to fall through to an empty result, so the reason a
@@ -275,6 +283,63 @@ class TestPublishedSets(unittest.TestCase):
         self.assertEqual(
             FILTER.SUPPORTED_CUDA_VERSIONS, ["cu126", "cu130", "cu132", "cu134"]
         )
+
+    def test_published_cuda_versions_are_supported_by_the_installer(self):
+        supported = {
+            f"cu{major}{minor}"
+            for major, minor in INSTALL_UTILS.SUPPORTED_CUDA_VERSIONS
+        }
+        self.assertLessEqual(set(FILTER.SUPPORTED_CUDA_VERSIONS), supported)
+
+    def test_supported_toolkits_select_the_matching_torch_index(self):
+        base_url = "https://download.pytorch.org/whl/nightly"
+        self.addCleanup(INSTALL_UTILS._get_cuda_version.cache_clear)
+        self.addCleanup(INSTALL_UTILS.determine_torch_url.cache_clear)
+        for major, minor in INSTALL_UTILS.SUPPORTED_CUDA_VERSIONS:
+            with self.subTest(cuda=(major, minor)):
+                INSTALL_UTILS._get_cuda_version.cache_clear()
+                INSTALL_UTILS.determine_torch_url.cache_clear()
+                detected = subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=f"Cuda compilation tools, release {major}.{minor}, V{major}.{minor}.0",
+                )
+                with mock.patch.object(
+                    INSTALL_UTILS.platform, "system", return_value="Linux"
+                ), mock.patch.object(
+                    INSTALL_UTILS.subprocess, "run", return_value=detected
+                ):
+                    self.assertEqual(
+                        INSTALL_UTILS.determine_torch_url(base_url),
+                        f"{base_url}/cu{major}{minor}",
+                    )
+                    self.assertTrue(INSTALL_UTILS.is_cuda_available())
+
+    def test_published_cuda_versions_have_gpu_architectures(self):
+        script = ROOT / ".ci" / "scripts" / "wheel" / "cuda_arch_list.sh"
+        for machine in ("x86_64", "aarch64"):
+            for cuda in FILTER.SUPPORTED_CUDA_VERSIONS:
+                with self.subTest(machine=machine, cuda=cuda):
+                    result = subprocess.run(
+                        [
+                            "bash",
+                            "-c",
+                            'uname() { printf "%s\\n" "$MACHINE"; }; '
+                            'source "$1"; executorch_cuda_arch_list',
+                            "bash",
+                            str(script),
+                        ],
+                        env={
+                            **os.environ,
+                            "MACHINE": machine,
+                            "CU_VERSION": cuda,
+                            "EXECUTORCH_BUILD_CUDA": "1",
+                        },
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("8.0", result.stdout.split())
 
     def test_published_python_versions(self):
         self.assertEqual(
