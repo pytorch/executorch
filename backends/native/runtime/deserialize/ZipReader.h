@@ -76,6 +76,9 @@ class ZipReader {
       size_t offset,
       MutableByteSpan destination) const;
 
+  // Reads a complete member and verifies its checksum without retaining it.
+  void verify(std::string_view name) const;
+
   const std::vector<std::string>& names() const {
     return names_;
   }

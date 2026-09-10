@@ -10,6 +10,7 @@
 #include <array>
 #include <bit>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string_view>
@@ -21,8 +22,6 @@ namespace {
 
 // Reserved header member holding free-form string metadata, not a tensor.
 constexpr std::string_view kMetadataKey = "__metadata__";
-constexpr size_t kHeaderLenSize = 8;
-
 struct DtypeCode {
   std::string_view code;
   ScalarType dtype;
@@ -55,19 +54,6 @@ ScalarType scalar_type_of(std::string_view code) {
         "safetensors: unsupported dtype code: " + std::string(code));
   }
   return it->dtype;
-}
-
-uint64_t read_header_len(ByteSpan blob) {
-  static_assert(
-      std::endian::native == std::endian::little,
-      "the length prefix is little-endian; a big-endian host needs a swap");
-  if (blob.size() < kHeaderLenSize) {
-    throw std::runtime_error(
-        "safetensors: blob is shorter than its length prefix");
-  }
-  uint64_t len = 0;
-  std::memcpy(&len, blob.data(), kHeaderLenSize);
-  return len;
 }
 
 const Json& required_member(
@@ -129,15 +115,39 @@ size_t numel_of(const std::vector<int64_t>& sizes, const std::string& name) {
 
 } // namespace
 
+size_t SafeTensorsReader::header_size(ByteSpan prefix) {
+  static_assert(
+      std::endian::native == std::endian::little,
+      "the length prefix is little-endian; a big-endian host needs a swap");
+  if (prefix.size() < kLengthPrefixSize) {
+    throw std::runtime_error(
+        "safetensors: blob is shorter than its length prefix");
+  }
+  uint64_t size = 0;
+  std::memcpy(&size, prefix.data(), kLengthPrefixSize);
+  if (size > std::numeric_limits<size_t>::max()) {
+    throw std::runtime_error("safetensors: header is too large");
+  }
+  return static_cast<size_t>(size);
+}
+
 SafeTensorsReader SafeTensorsReader::open(ByteSpan blob) {
-  const uint64_t header_len = read_header_len(blob);
-  if (header_len > blob.size() - kHeaderLenSize) {
+  const size_t header_len = header_size(blob);
+  if (header_len > blob.size() - kLengthPrefixSize) {
     throw std::runtime_error("safetensors: header length exceeds the blob");
   }
+  const ByteSpan header =
+      blob.subspan(kLengthPrefixSize, static_cast<size_t>(header_len));
+  return open_header(
+      header,
+      blob.size() - kLengthPrefixSize - static_cast<size_t>(header_len));
+}
 
+SafeTensorsReader SafeTensorsReader::open_header(
+    ByteSpan header_bytes,
+    size_t data_size) {
   const std::string_view header_text(
-      reinterpret_cast<const char*>(blob.data() + kHeaderLenSize),
-      static_cast<size_t>(header_len));
+      reinterpret_cast<const char*>(header_bytes.data()), header_bytes.size());
   Json header;
   try {
     header = Json::parse(header_text);
@@ -150,7 +160,6 @@ SafeTensorsReader SafeTensorsReader::open(ByteSpan blob) {
   }
 
   SafeTensorsReader out;
-  out.data_ = blob.subspan(kHeaderLenSize + static_cast<size_t>(header_len));
 
   for (auto member = header.begin(); member != header.end(); ++member) {
     const std::string& name = member.key();
@@ -188,7 +197,8 @@ SafeTensorsReader SafeTensorsReader::open(ByteSpan blob) {
     }
     const uint64_t begin = range[0].get<uint64_t>();
     const uint64_t end = range[1].get<uint64_t>();
-    if (begin > end || end > out.data_.size()) {
+    if (begin > end || end > data_size ||
+        end > std::numeric_limits<size_t>::max()) {
       throw std::runtime_error(
           "safetensors: entry '" + name +
           "' byte range is outside the data section");
@@ -225,10 +235,6 @@ SafeTensorsReader SafeTensorsReader::open(ByteSpan blob) {
 const TensorEntry* SafeTensorsReader::find(const std::string& name) const {
   const auto it = entries_.find(name);
   return it == entries_.end() ? nullptr : &it->second;
-}
-
-ByteSpan SafeTensorsReader::bytes(const TensorEntry& entry) const {
-  return data_.subspan(entry.offset, entry.nbytes);
 }
 
 size_t SafeTensorsReader::total_bytes() const {

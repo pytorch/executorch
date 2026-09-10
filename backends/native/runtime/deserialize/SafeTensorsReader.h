@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -34,28 +35,29 @@ struct TensorEntry {
 // reader exposes metadata semantics.
 //
 // Tensor payloads are packed with no per-tensor padding, so an entry's absolute
-// alignment within the file is arbitrary: copy through these spans rather than
-// handing them to an API that requires alignment.
+// alignment within the file is arbitrary. Consumers must copy bytes into any
+// destination that requires stronger alignment.
 class SafeTensorsReader {
  private:
-  // The data section only, i.e. the blob past its header.
-  ByteSpan data_;
   std::unordered_map<std::string, TensorEntry> entries_;
   std::vector<std::string> names_;
 
  public:
+  static constexpr size_t kLengthPrefixSize = 8;
+
   // Parse `blob`'s index. Throws std::runtime_error if the blob is truncated,
   // the header is not a JSON object, a dtype has no ScalarType, or a byte range
   // is inconsistent with its dtype and shape.
-  //
-  // Borrows `blob`, which must outlive both this reader and any span from it.
   static SafeTensorsReader open(ByteSpan blob);
+
+  // Decode the format's little-endian length prefix.
+  static size_t header_size(ByteSpan prefix);
+
+  // Parse a header without loading its data section.
+  static SafeTensorsReader open_header(ByteSpan header, size_t data_size);
 
   // Entry for `name`, or nullptr when absent.
   const TensorEntry* find(const std::string& name) const;
-
-  // Payload of an entry obtained from this reader.
-  ByteSpan bytes(const TensorEntry& entry) const;
 
   // Tensor names, in header order, excluding "__metadata__".
   const std::vector<std::string>& names() const {

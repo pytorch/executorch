@@ -10,6 +10,15 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "package_test",
+        srcs = ["test_package.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:package",
+            "fbsource//third-party/libzip:zip",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "safetensors_reader_test",
         srcs = ["test_safetensors_reader.cpp"],
         deps = [

@@ -7,7 +7,8 @@
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 
 #include <algorithm>
-#include <fstream>
+#include <array>
+#include <atomic>
 #include <stdexcept>
 #include <string_view>
 
@@ -18,6 +19,7 @@ namespace {
 
 // Reserved by safetensors, so it can never name a constant.
 constexpr std::string_view kMetadataKey = "__metadata__";
+std::atomic<uint64_t> next_package_id{1};
 
 std::unordered_map<std::string, std::string> parse_aliases(
     ByteSpan member,
@@ -76,57 +78,81 @@ bool Package::looks_like_package(ByteSpan bytes) {
   return bytes.size() >= 2 && bytes[0] == 'P' && bytes[1] == 'K';
 }
 
-Package Package::load(std::vector<uint8_t> bytes) {
+Package::Package()
+    : id_(next_package_id.fetch_add(1, std::memory_order_relaxed)) {}
+
+Package Package::load(OwnedBytes bytes) {
   Package out;
-  out.bytes_ = std::move(bytes);
-  const ByteSpan image{out.bytes_.data(), out.bytes_.size()};
+  out.archive_bytes_ = std::move(bytes);
+  out.zip_ = ZipReader::open(out.archive_bytes_.span());
+  out.load_metadata();
+  return out;
+}
 
-  out.zip_ = ZipReader::open(image);
+Package Package::load(const std::string& path) {
+  Package out;
+  out.zip_ = ZipReader::open(path);
+  out.load_metadata();
+  return out;
+}
 
-  if (!out.zip_->member_size(kProgramEntry)) {
+Package& Package::operator=(Package&& other) noexcept {
+  if (this != &other) {
+    zip_.reset();
+    id_ = other.id_;
+    archive_bytes_ = std::move(other.archive_bytes_);
+    zip_ = std::move(other.zip_);
+    program_ = std::move(other.program_);
+    tensors_ = std::move(other.tensors_);
+    tensor_data_offset_ = other.tensor_data_offset_;
+    aliases_ = std::move(other.aliases_);
+  }
+  return *this;
+}
+
+void Package::load_metadata() {
+  if (!zip_->member_size(kProgramEntry)) {
     throw std::runtime_error(
         std::string("package: missing required member ") + kProgramEntry);
   }
-  out.program_ = out.zip_->read(kProgramEntry);
+  program_ = zip_->read(kProgramEntry);
 
   // Absent whenever the program references no constants, which is normal for a
   // graph over user inputs alone.
-  if (out.zip_->member_size(kSafeTensorsEntry)) {
-    out.tensor_bytes_ = out.zip_->read(kSafeTensorsEntry);
-    out.tensors_ = SafeTensorsReader::open(ByteSpan(out.tensor_bytes_));
+  const std::optional<size_t> tensor_size =
+      zip_->member_size(kSafeTensorsEntry);
+  if (tensor_size) {
+    std::array<uint8_t, SafeTensorsReader::kLengthPrefixSize> prefix{};
+    if (*tensor_size < prefix.size()) {
+      throw std::runtime_error(
+          "package: safetensors member is shorter than its length prefix");
+    }
+    zip_->read_into(kSafeTensorsEntry, 0, MutableByteSpan(prefix));
+    const size_t header_size = SafeTensorsReader::header_size(prefix);
+    if (header_size > *tensor_size - prefix.size()) {
+      throw std::runtime_error(
+          "package: safetensors header exceeds its zip member");
+    }
+    std::vector<uint8_t> header(header_size);
+    zip_->read_into(kSafeTensorsEntry, prefix.size(), MutableByteSpan(header));
+    tensor_data_offset_ = prefix.size() + header_size;
+    tensors_ = SafeTensorsReader::open_header(
+        ByteSpan(header), *tensor_size - tensor_data_offset_);
   }
 
-  if (out.zip_->member_size(kAliasesEntry)) {
-    if (!out.tensors_) {
+  if (zip_->member_size(kAliasesEntry)) {
+    if (!tensors_) {
       throw std::runtime_error(
           std::string("package: has ") + kAliasesEntry + " but no " +
           kSafeTensorsEntry);
     }
-    const std::vector<uint8_t> aliases = out.zip_->read(kAliasesEntry);
-    out.aliases_ = parse_aliases(ByteSpan(aliases), *out.tensors_);
+    const std::vector<uint8_t> aliases = zip_->read(kAliasesEntry);
+    aliases_ = parse_aliases(ByteSpan(aliases), *tensors_);
   }
-
-  return out;
 }
 
-Package Package::load_file(const std::string& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    throw std::runtime_error("package: cannot open " + path);
-  }
-  const std::streamsize size = file.tellg();
-  if (size < 0) {
-    throw std::runtime_error("package: cannot size " + path);
-  }
-  file.seekg(0, std::ios::beg);
-  std::vector<uint8_t> bytes(static_cast<size_t>(size));
-  if (size > 0 && !file.read(reinterpret_cast<char*>(bytes.data()), size)) {
-    throw std::runtime_error("package: cannot read " + path);
-  }
-  return load(std::move(bytes));
-}
-
-std::optional<Constant> Package::constant(const std::string& key) const {
+std::optional<ConstantInfo> Package::constant_info(
+    const std::string& key) const {
   if (!tensors_) {
     return std::nullopt;
   }
@@ -138,12 +164,49 @@ std::optional<Constant> Package::constant(const std::string& key) const {
     return std::nullopt;
   }
 
-  Constant out;
+  ConstantInfo out;
+  out.package_id = id_;
   out.dtype = entry->dtype;
   out.sizes = &entry->sizes;
-  out.bytes = tensors_->bytes(*entry);
+  out.nbytes = entry->nbytes;
   out.owner = owner;
   return out;
+}
+
+std::optional<OwnedBytes> Package::acquire_constant(
+    const std::string& key) const {
+  const std::optional<ConstantInfo> info = constant_info(key);
+  if (!info) {
+    return std::nullopt;
+  }
+  std::vector<uint8_t> bytes(info->nbytes);
+  load_constant_into(key, MutableByteSpan(bytes));
+  return OwnedBytes::from_vector(std::move(bytes));
+}
+
+bool Package::load_constant_into(
+    const std::string& key,
+    MutableByteSpan destination) const {
+  const std::optional<ConstantInfo> info = constant_info(key);
+  if (!info) {
+    return false;
+  }
+  if (destination.size() != info->nbytes) {
+    throw std::runtime_error(
+        "package: destination for '" + key + "' has " +
+        std::to_string(destination.size()) + " bytes; expected " +
+        std::to_string(info->nbytes));
+  }
+  const TensorEntry* entry = tensors_->find(info->owner);
+  zip_->read_into(
+      kSafeTensorsEntry, tensor_data_offset_ + entry->offset, destination);
+  return true;
+}
+
+void Package::verify_constants() const {
+  if (tensors_) {
+    zip_->verify(kSafeTensorsEntry);
+  }
 }
 
 std::vector<std::string> Package::keys() const {
