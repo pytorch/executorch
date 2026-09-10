@@ -8,6 +8,8 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -42,12 +44,38 @@ Program Program::load(const void* data, size_t size) {
   }
 
   const fbs::Program* program_fb = fbs::GetProgram(bytes.data());
+  // Both accessors below are schema-required, so successful verification
+  // guarantees that they are non-null.
+  std::unordered_set<std::string> method_names;
+  for (const fbs::Method* method : *program_fb->methods()) {
+    const std::string name = method->name()->str();
+    if (name.empty()) {
+      throw std::runtime_error("native program: method name is empty");
+    }
+    if (!method_names.insert(name).second) {
+      throw std::runtime_error(
+          "native program: duplicate method name '" + name + "'");
+    }
+  }
   return Program(std::move(bytes), program_fb);
 }
 
 size_t Program::num_methods() const {
   const auto* methods = program_fb_->methods();
   return methods == nullptr ? 0 : methods->size();
+}
+
+std::vector<std::string> Program::method_names() const {
+  std::vector<std::string> names;
+  const auto* methods = program_fb_->methods();
+  if (methods != nullptr) {
+    names.reserve(methods->size());
+    for (flatbuffers::uoffset_t i = 0; i < methods->size(); ++i) {
+      const auto* nm = methods->Get(i)->name();
+      names.push_back(nm != nullptr ? nm->str() : std::string());
+    }
+  }
+  return names;
 }
 
 } // namespace ptn
