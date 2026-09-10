@@ -53,6 +53,32 @@ add_dependencies(op_test_runner strict_compile_test)
 # Multi-threaded inference test
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
+if(APPLE)
+  et_cxx_test(
+    mlx_metallib_path_test SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+  )
+  target_include_directories(
+    mlx_metallib_path_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../runtime
+  )
+  set_source_files_properties(
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+  )
+  if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+    target_compile_options(
+      mlx_metallib_path_test PRIVATE -fsanitize=address,undefined
+                                     -fno-omit-frame-pointer
+    )
+    target_link_options(
+      mlx_metallib_path_test PRIVATE ${_mlx_sanitizer_link_options}
+    )
+  endif()
+  target_link_libraries(mlx_metallib_path_test ${FOUNDATION_FRAMEWORK})
+endif()
+
 et_cxx_test(
   multi_thread_test_runner
   SOURCES

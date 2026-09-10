@@ -28,7 +28,7 @@ class CatVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         tensors = cast(List[torch.fx.Node], node.args[0])
         input_tensor_ids = []
         constant_idx = None
@@ -48,3 +48,5 @@ class CatVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
         enn_graph.define_op(node.name, "CONCAT", input_tensor_ids, [output_id], params)
+
+        return True

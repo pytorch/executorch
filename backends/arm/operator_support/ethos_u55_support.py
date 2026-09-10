@@ -14,8 +14,12 @@ import typing
 import torch
 import torch.fx as fx
 
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_first_fake_tensor,
+    is_param_node,
+)
 from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -200,7 +204,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.gather.default,  # GATHER
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
         exir_ops.edge.aten.index.Tensor,  # GATHER
-        exir_ops.edge.aten.index_select.default,  # GATHER
         exir_ops.edge.aten.index_put.default,  # SCATTER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
@@ -422,6 +425,45 @@ class EthosU55UnfoldCopyCheck(OperatorSupportBase):
             self.reporter.report_reject(
                 node,
                 f"U55 unfold_copy supports at most {self.max_windows} windows.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55IndexSelectCheck(OperatorSupportBase):
+    """Accept constant contiguous index_select cases that lower to a slice."""
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.exported_program = exported_program
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.index_select.default:
+            return True
+
+        input_arg, dim, index_arg = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        index_node = typing.cast(fx.Node, index_arg)
+        input_shape = get_first_fake_tensor(input_node).shape
+        index_shape = get_first_fake_tensor(index_node).shape
+        if (
+            not isinstance(dim, int)
+            or len(input_shape) == 0
+            or not is_param_node(self.exported_program, index_node)
+            or len(index_shape) != 1
+            or index_shape[0] == 0
+            or any(not isinstance(size, int) for size in input_shape)
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 index_select requires static input shape and nonempty "
+                "constant indices.",
             )
             return False
 

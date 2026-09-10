@@ -17,15 +17,17 @@ namespace muse_glimmer::cuda {
 namespace {
 
 constexpr int kArgmaxThreads = 256;
+static_assert(
+    (kArgmaxThreads & (kArgmaxThreads - 1)) == 0,
+    "argmax reduction requires a power-of-two thread count");
 
 struct ArgmaxCandidate {
   float value;
   uint64_t index;
 };
 
-__device__ ArgmaxCandidate better_candidate(
-    ArgmaxCandidate lhs,
-    ArgmaxCandidate rhs) {
+__device__ ArgmaxCandidate
+better_candidate(ArgmaxCandidate lhs, ArgmaxCandidate rhs) {
   if (rhs.value > lhs.value ||
       (rhs.value == lhs.value && rhs.index < lhs.index)) {
     return rhs;
@@ -41,8 +43,7 @@ __global__ void argmax_index_kernel(
   const float* row_values = values + row * row_size;
 
   ArgmaxCandidate candidate{-CUDART_INF_F, uint64_t{0}};
-  for (int64_t token = threadIdx.x; token < row_size;
-       token += blockDim.x) {
+  for (int64_t token = threadIdx.x; token < row_size; token += blockDim.x) {
     candidate = better_candidate(
         candidate,
         ArgmaxCandidate{row_values[token], static_cast<uint64_t>(token)});
@@ -86,8 +87,10 @@ cudaError_t argmax_index(
     return cudaErrorInvalidValue;
   }
   argmax_index_kernel<<<
-      static_cast<unsigned int>(row_count), kArgmaxThreads, 0, stream>>>(
-      values, row_size, indices);
+      static_cast<unsigned int>(row_count),
+      kArgmaxThreads,
+      0,
+      stream>>>(values, row_size, indices);
   return cudaGetLastError();
 }
 

@@ -13,16 +13,26 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace {
 
-#define ASSERT_CUDA_SUCCESS(expression)               \
-  do {                                                \
-    const cudaError_t error = (expression);           \
-    ASSERT_EQ(error, cudaSuccess)                     \
-        << cudaGetErrorString(error);                 \
+#define ASSERT_CUDA_SUCCESS(expression)                         \
+  do {                                                          \
+    const cudaError_t error = (expression);                     \
+    ASSERT_EQ(error, cudaSuccess) << cudaGetErrorString(error); \
   } while (false)
+
+struct CudaDeleter {
+  template <typename T>
+  void operator()(T* pointer) const {
+    cudaFree(pointer);
+  }
+};
+
+template <typename T>
+using CudaPtr = std::unique_ptr<T, CudaDeleter>;
 
 TEST(CudaSamplingTest, ArgmaxMatchesHostForBatchedRowsAndTies) {
   constexpr int64_t kRows = 3;
@@ -36,23 +46,29 @@ TEST(CudaSamplingTest, ArgmaxMatchesHostForBatchedRowsAndTies) {
   host_values[2 * kRowSize + 256] = 4.0f;
   host_values[2 * kRowSize + 511] = 4.0f;
 
-  float* device_values = nullptr;
-  uint64_t* device_indices = nullptr;
+  float* raw_device_values = nullptr;
   ASSERT_CUDA_SUCCESS(
-      cudaMalloc(&device_values, host_values.size() * sizeof(float)));
-  ASSERT_CUDA_SUCCESS(cudaMalloc(&device_indices, kRows * sizeof(uint64_t)));
+      cudaMalloc(&raw_device_values, host_values.size() * sizeof(float)));
+  CudaPtr<float> device_values(raw_device_values);
+
+  uint64_t* raw_device_indices = nullptr;
+  ASSERT_CUDA_SUCCESS(
+      cudaMalloc(&raw_device_indices, kRows * sizeof(uint64_t)));
+  CudaPtr<uint64_t> device_indices(raw_device_indices);
+
   ASSERT_CUDA_SUCCESS(cudaMemcpy(
-      device_values,
+      device_values.get(),
       host_values.data(),
       host_values.size() * sizeof(float),
       cudaMemcpyHostToDevice));
 
-  ASSERT_CUDA_SUCCESS(muse_glimmer::cuda::argmax_index(
-      device_values, kRows, kRowSize, device_indices, nullptr));
+  ASSERT_CUDA_SUCCESS(
+      muse_glimmer::cuda::argmax_index(
+          device_values.get(), kRows, kRowSize, device_indices.get(), nullptr));
   std::vector<uint64_t> actual(kRows);
   ASSERT_CUDA_SUCCESS(cudaMemcpy(
       actual.data(),
-      device_indices,
+      device_indices.get(),
       actual.size() * sizeof(uint64_t),
       cudaMemcpyDeviceToHost));
 
@@ -61,9 +77,6 @@ TEST(CudaSamplingTest, ArgmaxMatchesHostForBatchedRowsAndTies) {
         host_values.data() + row * kRowSize, kRowSize);
     EXPECT_EQ(actual[row], expected) << "row " << row;
   }
-
-  ASSERT_CUDA_SUCCESS(cudaFree(device_indices));
-  ASSERT_CUDA_SUCCESS(cudaFree(device_values));
 }
 
 TEST(CudaSamplingTest, ArgmaxRejectsInvalidArguments) {

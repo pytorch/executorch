@@ -293,6 +293,15 @@ class EdgeTransformAndLowerStage(Stage):
         # method the dict does not name, so it would copy to apply nothing.
         final_passes = pass_manager or _drop_empty(transform_passes) or None
 
+        export_recipe = artifact.context.get("export_recipe")
+        lowering_recipe = getattr(export_recipe, "lowering_recipe", None)
+
+        if (
+            lowering_recipe is not None
+            and lowering_recipe.pre_partitioning_callback is not None
+        ):
+            lowering_recipe.pre_partitioning_callback(self._partitioners, artifact.data)
+
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
                 exported_programs,
