@@ -27,6 +27,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <gflags/gflags.h>
 
+#include <algorithm>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -96,10 +97,26 @@ class DataReader {
     return data_set_[index].size();
   }
 
+  // Some ops rewrite their input buffer in place during execute(), so a
+  // repeated execution would otherwise run on whatever the previous
+  // execution left behind. Snapshot the pristine bytes once inputs are set,
+  // then restore() before every execution.
+  void snapshot() {
+    pristine_ = data_set_;
+  }
+
+  void restore() {
+    for (size_t i = 0; i < data_set_.size(); ++i) {
+      std::copy(
+          pristine_[i].cbegin(), pristine_[i].cend(), data_set_[i].begin());
+    }
+  }
+
   ~DataReader() = default;
 
  private:
   std::vector<data_t> data_set_;
+  std::vector<data_t> pristine_;
   int32_t index_ = 0;
 };
 
@@ -296,24 +313,29 @@ int main(int argc, char** argv) {
     ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
   }
   EXYNOS_ATRACE_END();
+  input_data_reader.snapshot();
 
   // Warm up
   ET_LOG(Info, "Perform %d inference for warming up", FLAGS_warm_up);
   Error status;
   for (int i = 0; i < FLAGS_warm_up; ++i) {
+    input_data_reader.restore();
     status = method->execute();
   }
 
   ET_LOG(Info, "Start inference.");
-  auto before_exec = std::chrono::high_resolution_clock::now();
+  std::chrono::microseconds infs_duration{0};
   for (int i = 0; i < FLAGS_num_executions; ++i) {
+    // Restored outside the timed section so it measures execute() alone,
+    // not the cost of undoing the previous iteration's input mutation.
+    input_data_reader.restore();
+    auto before_exec = std::chrono::high_resolution_clock::now();
     status = method->execute();
+    auto after_exec = std::chrono::high_resolution_clock::now();
+    infs_duration += std::chrono::duration_cast<std::chrono::microseconds>(
+        after_exec - before_exec);
   }
-  auto after_exec = std::chrono::high_resolution_clock::now();
-  double interval_infs = std::chrono::duration_cast<std::chrono::microseconds>(
-                             after_exec - before_exec)
-                             .count() /
-      1000.0;
+  double interval_infs = infs_duration.count() / 1000.0;
 
   if (FLAGS_dump_statistics) {
     auto output_file_name = "statistics.txt";

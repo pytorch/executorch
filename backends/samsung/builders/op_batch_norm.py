@@ -26,6 +26,15 @@ class BatchNormVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> bool:
+        index_zero_getitems = []
+        for user in node.users.keys():
+            if user.target.__name__ != "getitem":
+                continue
+            if user.args[1] == 0:
+                index_zero_getitems.append(user)
+            elif len(user.users) > 0:
+                return False
+
         all_input_tensors = []
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
@@ -51,9 +60,8 @@ class BatchNormVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids, output_idx=0)
 
-        users = list(node.users.keys())
-        if len(users) > 0 and users[0].target.__name__ == "getitem":
-            vals_to_ids[users[0]] = output_id
+        for getitem in index_zero_getitems:
+            vals_to_ids[getitem] = output_id
 
         enn_graph.define_op(
             node.name, "BatchNormalization", all_input_tensors, [output_id], params

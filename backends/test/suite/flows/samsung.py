@@ -1,8 +1,10 @@
 import logging
 
 from executorch.backends.samsung.quantizer.quantizer import EnnQuantizer, Precision
-from executorch.backends.samsung.test.tester.samsung_tester import SamsungTester
-from executorch.backends.test.harness.stages import Quantize
+from executorch.backends.samsung.test.tester.samsung_tester import (
+    Quantize,
+    SamsungTester,
+)
 from executorch.backends.test.suite.flow import TestFlow
 
 logger = logging.getLogger(__name__)
