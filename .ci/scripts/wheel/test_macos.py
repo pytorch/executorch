@@ -11,11 +11,17 @@ import tempfile
 from pathlib import Path
 
 import test_base
+import test_clean_install
 import test_cpp_sdk
 import test_shared_libraries
 from examples.models import Backend, Model
 
 if __name__ == "__main__":
+    # Before anything else, because this is the check that fails the way a user
+    # fails: with only the dependencies the wheel declares.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_clean_install.run_tests(Path(work_dir))
+
     test_base.test_cmsis_nn_install()
 
     # The wheel ships the runtime, the kernels, the delegate, the thread pool and

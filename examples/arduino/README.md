@@ -342,6 +342,12 @@ python export_model.py --checkpoint examples/KeywordSpotting/model.pth \
     --output /tmp/kws.h
 ```
 
+### Releasing
+
+[RELEASING.md](RELEASING.md) is the checklist for cutting a version of the
+published library: what to verify, how to publish without leaving stale files
+behind, and what has gone wrong before.
+
 ### Bumping the pin in executorch-arduino
 
 The published library records the commit it was generated from in

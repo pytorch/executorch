@@ -24,6 +24,7 @@ from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.program import to_edge
+from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -511,6 +512,27 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
         self.assertEqual(new_input.name, "renamed_x")
         self.assertTrue(
             any(dim is not None for dim in self._symbolic_input_shape(new_input))
+        )
+
+    def test_export_pass_ignores_symbolic_metadata_for_constant_input(self) -> None:
+        graph_module = self._export_dynamic_graph_module()
+        original_input = self._find_input_node(graph_module)
+        original_value = original_input.meta["val"]
+        self.assertIsInstance(original_value, FakeTensor)
+        assert isinstance(original_value, FakeTensor)
+        constant = torch.randn(2, 3)
+        original_value.constant = constant
+
+        new_graph_module = ExportPass()(graph_module).graph_module
+        new_input = self._find_input_node(new_graph_module)
+        new_value = new_input.meta["val"]
+
+        self.assertIsInstance(new_value, FakeTensor)
+        assert isinstance(new_value, FakeTensor)
+        self.assertIs(new_value.constant, constant)
+        self.assertEqual(
+            self._symbolic_input_shape(new_input),
+            self._symbolic_input_shape(original_input),
         )
 
     def test_export_pass_rejects_collapsed_symbolic_input_metadata(self) -> None:

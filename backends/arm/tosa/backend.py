@@ -33,6 +33,7 @@ from executorch.backends.arm.process_node import (
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import (
     TOSA_CONTROL_FLOW_REGION_NAME_META,
+    TOSA_CONTROL_FLOW_SOURCE_NODE_META,
     TOSA_TENSOR_NAME_META,
 )
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
@@ -230,6 +231,10 @@ class TOSABackend(BackendDetails):
 
         for submodule_input, submodule_arg in zip(submodule_inputs, args, strict=True):
             submodule_input.meta["val"] = _get_matching_fake_tensor(submodule_arg)
+            # Keep the parent operand reachable from the branch placeholder.
+            # Passes that must rewrite constants can then follow parameters and
+            # buffers across one or more nested control-flow boundaries.
+            submodule_input.meta[TOSA_CONTROL_FLOW_SOURCE_NODE_META] = submodule_arg
 
         output_node = submodule.graph.output_node()
         if isinstance(output_node.args[0], Node):

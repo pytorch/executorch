@@ -16,6 +16,7 @@ on:
       - examples/models/gemma4_31b/**
       - examples/models/muse-glimmer/**
       - examples/models/parakeet/**
+      - examples/models/supertonic/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
   workflow_dispatch:
@@ -67,7 +68,42 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build test runners"
-        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_mutable_state_test mlx_sequence_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_metallib_path_test mlx_mutable_state_test mlx_sequence_cache_test mlx_cell_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        echo "::endgroup::"
+
+        echo "::group::Check MLX artifact sizes"
+        size_check_failed=0
+        check_artifact_size() {
+          local path="$1"
+          local max_size="$2"
+          local baseline_size="$3"
+
+          if [[ ! -f "${path}" ]]; then
+            echo "::error file=${path}::Expected MLX artifact not found"
+            size_check_failed=1
+            return
+          fi
+
+          local actual_size
+          actual_size=$(wc -c < "${path}" | tr -d '[:space:]')
+          echo "${path}: ${actual_size} bytes (baseline ${baseline_size}, limit ${max_size})"
+          if (( actual_size > max_size )); then
+            echo "::error file=${path}::MLX artifact is ${actual_size} bytes, exceeding the ${max_size}-byte limit (baseline ${baseline_size})"
+            size_check_failed=1
+          fi
+        }
+
+        # Baselines recorded from the MLX v0.32.2 Release build on 2026-09-02.
+        check_artifact_size cmake-out/backends/mlx/libmlxdelegate.a 5000000 4159552
+        check_artifact_size cmake-out/backends/mlx/mlx/libmlx.a 14000000 11458544
+        check_artifact_size cmake-out/backends/mlx/mlx/mlx/backend/metal/kernels/mlx.metallib 2000000 1460840
+        echo "::endgroup::"
+        if (( size_check_failed )); then
+          exit 1
+        fi
+
+        echo "::group::Run SwiftPM metallib path unit test"
+        ./cmake-out/backends/mlx/test/mlx_metallib_path_test
         echo "::endgroup::"
 
         echo "::group::Run mutable-state (multi-session) unit test"
@@ -76,6 +112,7 @@ jobs:
 
         echo "::group::Run off-graph KV-cache op test"
         ./cmake-out/backends/mlx/test/mlx_sequence_cache_test
+        ./cmake-out/backends/mlx/test/mlx_cell_cache_test
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
@@ -113,6 +150,93 @@ jobs:
           echo "--- ${mod} ---"
           ${CONDA_RUN} python -m "${mod}" run -v
         done
+        echo "::endgroup::"
+
+  test-mlx-supertonic:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-supertonic
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch and Supertonic requirements"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} pip install -r examples/models/supertonic/requirements.txt
+        echo "::endgroup::"
+
+        echo "::group::Run asset-independent Supertonic Python tests"
+        ${CONDA_RUN} python -m pytest examples/models/supertonic/tests -v
+        echo "::endgroup::"
+
+        echo "::group::Download pinned Supertonic assets"
+        SUPERTONIC_ASSETS=/tmp/supertonic-3
+        ${CONDA_RUN} python - <<'PY'
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(
+            "Supertone/supertonic-3",
+            revision="3cadd1ee6394adea1bd021217a0e650ede09a323",
+            allow_patterns=(
+                "onnx/tts.json",
+                "onnx/duration_predictor.onnx",
+                "onnx/text_encoder.onnx",
+                "onnx/vector_estimator.onnx",
+                "onnx/vocoder.onnx",
+                "onnx/unicode_indexer.json",
+                "voice_styles/F1.json",
+                "LICENSE",
+            ),
+            local_dir="/tmp/supertonic-3",
+        )
+        PY
+        echo "::endgroup::"
+
+        echo "::group::Run published-model parity tests"
+        SUPERTONIC_MODEL_DIR="${SUPERTONIC_ASSETS}" \
+          ${CONDA_RUN} python -m pytest \
+            examples/models/supertonic/tests/test_checkpoint_loader.py \
+            examples/models/supertonic/tests/test_stage_parity.py \
+            -v
+        echo "::endgroup::"
+
+        echo "::group::Export the Supertonic PTE"
+        SUPERTONIC_PTE="${SUPERTONIC_ASSETS}/supertonic_fp16_mlx.pte"
+        ${CONDA_RUN} python -m examples.models.supertonic.export.export_supertonic \
+          --asset-dir "${SUPERTONIC_ASSETS}" \
+          --output "${SUPERTONIC_PTE}" \
+          --max-text-length 512 \
+          --max-latent-length 512 \
+          --flow-steps 5
+        echo "::endgroup::"
+
+        echo "::group::Build ExecuTorch and Supertonic with MLX"
+        ${CONDA_RUN} make supertonic-mlx
+        echo "::endgroup::"
+
+        echo "::group::Run Supertonic native tests"
+        pushd examples/models/supertonic
+        ${CONDA_RUN} cmake --preset supertonic-mlx \
+          -DSUPERTONIC_INTEGRATION_PTE="${SUPERTONIC_PTE}" \
+          -DSUPERTONIC_INTEGRATION_ASSET_DIR="${SUPERTONIC_ASSETS}" \
+          -DSUPERTONIC_INTEGRATION_STYLE="${SUPERTONIC_ASSETS}/voice_styles/F1.json"
+        ${CONDA_RUN} ctest --preset supertonic-mlx
+        popd
+        echo "::endgroup::"
+
+        echo "::group::Verify the Supertonic runner and MLX metallib"
+        RUNNER=cmake-out/examples/models/supertonic/supertonic_runner
+        test -x "${RUNNER}"
+        test -f "$(dirname "${RUNNER}")/mlx.metallib"
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:
@@ -913,10 +1037,13 @@ jobs:
         ${CONDA_RUN} cmake --build cmake-out/backends/mlx/examples/llm \
           -j$(( $(sysctl -n hw.ncpu) - 1 ))
         RUNNER=cmake-out/backends/mlx/examples/llm/mlx_run_llm_hf
-        if [ ! -x "${RUNNER}" ]; then
-          echo "Failed: runner not found at ${RUNNER}"
-          exit 1
-        fi
+        BATCHED_RUNNER=cmake-out/backends/mlx/examples/llm/mlx_run_llm_batched
+        for binary in "${RUNNER}" "${BATCHED_RUNNER}"; do
+          if [ ! -x "${binary}" ]; then
+            echo "Failed: runner not found at ${binary}"
+            exit 1
+          fi
+        done
         echo "::endgroup::"
 
         echo "::group::Install LLM requirements"
@@ -960,4 +1087,29 @@ jobs:
           echo "Failed: Expected 'Paris' not found in output"
           exit 1
         fi
+        echo "::endgroup::"
+
+        echo "::group::Run ${MODEL_NAME} batched off-graph inference"
+        ${BATCHED_RUNNER} \
+          --pte /tmp/${MODEL_NAME}_offgraph.pte \
+          --tokenizer "${TOKENIZER}" \
+          --chat "${CHAT}" \
+          --max-session-tokens 1024 \
+          --max-new-tokens 50 \
+          --max-decode-sequences 2 \
+          --out-prefix /tmp/${MODEL_NAME}_batched \
+          "What is the capital of France?" \
+          "What color is grass?"
+        for check in "0:Paris" "1:green"; do
+          index="${check%%:*}"
+          expected="${check#*:}"
+          output="/tmp/${MODEL_NAME}_batched_${index}.txt"
+          if grep -iq "${expected}" "${output}"; then
+            echo "Success: '${expected}' found in ${output}"
+          else
+            echo "Failed: Expected '${expected}' not found in ${output}"
+            cat "${output}"
+            exit 1
+          fi
+        done
         echo "::endgroup::"

@@ -14,8 +14,12 @@ import typing
 import torch
 import torch.fx as fx
 
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_first_fake_tensor,
+    is_param_node,
+)
 from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -197,22 +201,15 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.ne.Scalar,
-        exir_ops.edge.aten.flip.default,  # REVERSE
         exir_ops.edge.aten.gather.default,  # GATHER
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
-        exir_ops.edge.aten.index.Tensor,  # GATHER
-        exir_ops.edge.aten.index_select.default,  # GATHER
         exir_ops.edge.aten.index_put.default,  # SCATTER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
         exir_ops.edge.aten.select_scatter.default,
         exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.scatter_add.default,
-        exir_ops.edge.aten.unfold_copy.default,  # GATHER
         exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
-        exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad3d.default,  # REVERSE
         exir_ops.edge.aten.where.self,  # SELECT
     ]
 
@@ -334,6 +331,189 @@ class EthosU55ResizeCheck(OperatorSupportBase):
             node, "U55 nearest-neighbor resize requires a 2x, 4x, or 8x upscale."
         )
         return False
+
+
+class EthosU55ReverseCheck(OperatorSupportBase):
+    """Accept the REVERSE cases proven to run on Ethos-U55."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target == exir_ops.edge.aten.flip.default:
+            input_rank = len(get_first_fake_tensor(node.all_input_nodes[0]).shape)
+            dims = typing.cast(typing.Sequence[int], node.args[1])
+            if input_rank == 4 and len(dims) == 1 and dims[0] % input_rank in (1, 2):
+                return True
+            self.reporter.report_reject(
+                node,
+                "U55 flip support is limited to rank-4 channel or height reversal.",
+            )
+            return False
+
+        reflection_pad_constraints = {
+            exir_ops.edge.aten.reflection_pad1d.default: ((2, 3), (2,)),
+            exir_ops.edge.aten.reflection_pad2d.default: ((3, 4), (2, 4)),
+            exir_ops.edge.aten.reflection_pad3d.default: ((4, 5), (6,)),
+        }
+        if node.target in reflection_pad_constraints:
+            input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+            padding = typing.cast(typing.Sequence[int], node.args[1])
+            supported_ranks, supported_padding_lengths = reflection_pad_constraints[
+                node.target
+            ]
+            if (
+                len(input_shape) in supported_ranks
+                and len(padding) in supported_padding_lengths
+            ):
+                spatial_sizes = tuple(reversed(input_shape[-(len(padding) // 2) :]))
+                pad_pairs = tuple(zip(padding[::2], padding[1::2]))
+                if all(
+                    isinstance(size, int) and 0 <= before < size and 0 <= after < size
+                    for (before, after), size in zip(pad_pairs, spatial_sizes)
+                ):
+                    return True
+            self.reporter.report_reject(
+                node,
+                "U55 reflection padding requires a supported static input rank "
+                "and nonnegative padding smaller than its spatial dimension.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55UnfoldCopyCheck(OperatorSupportBase):
+    """Accept bounded static unfold_copy cases that lower to slices."""
+
+    max_windows = 16
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.unfold_copy.default:
+            return True
+
+        input_arg, dim, size, step = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        input_tensor = get_first_fake_tensor(input_node)
+        input_shape = input_tensor.shape
+        if (
+            input_tensor.dtype == torch.bool
+            or not all(isinstance(arg, int) for arg in (dim, size, step))
+            or any(not isinstance(value, int) for value in input_shape)
+        ):
+            self.reporter.report_reject(
+                node, "U55 unfold_copy requires static non-BOOL input."
+            )
+            return False
+
+        rank = len(input_shape)
+        dim = typing.cast(int, dim) % rank
+        size = typing.cast(int, size)
+        step = typing.cast(int, step)
+        windows = (input_shape[dim] - size) // step + 1
+        if windows > self.max_windows:
+            self.reporter.report_reject(
+                node,
+                f"U55 unfold_copy supports at most {self.max_windows} windows.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55IndexTensorCheck(OperatorSupportBase):
+    """Accept single constant index.Tensor cases that lower to slices."""
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.exported_program = exported_program
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.index.Tensor:
+            return True
+
+        input_arg, indices_arg = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        indices = typing.cast(typing.Sequence[fx.Node | None], indices_arg)
+        input_shape = get_first_fake_tensor(input_node).shape
+        tensor_indices = [index for index in indices if index is not None]
+        if len(tensor_indices) != 1:
+            self.reporter.report_reject(
+                node,
+                "U55 index.Tensor only supports indexing along one dimension but got "
+                f"{len(tensor_indices)}.",
+            )
+            return False
+
+        index_node = tensor_indices[0]
+        index_shape = get_first_fake_tensor(index_node).shape
+        if (
+            not is_param_node(self.exported_program, index_node)
+            or len(index_shape) != 1
+            or index_shape[0] == 0
+            or any(not isinstance(size, int) for size in input_shape)
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 index.Tensor requires static input shape and a nonempty "
+                "constant rank-1 index.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55IndexSelectCheck(OperatorSupportBase):
+    """Accept constant contiguous index_select cases that lower to a slice."""
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.exported_program = exported_program
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.index_select.default:
+            return True
+
+        input_arg, dim, index_arg = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        index_node = typing.cast(fx.Node, index_arg)
+        input_shape = get_first_fake_tensor(input_node).shape
+        index_shape = get_first_fake_tensor(index_node).shape
+        if (
+            not isinstance(dim, int)
+            or len(input_shape) == 0
+            or not is_param_node(self.exported_program, index_node)
+            or len(index_shape) != 1
+            or index_shape[0] == 0
+            or any(not isinstance(size, int) for size in input_shape)
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 index_select requires static input shape and nonempty "
+                "constant indices.",
+            )
+            return False
+
+        return True
 
 
 class EthosU55CastCheck(OperatorSupportBase):

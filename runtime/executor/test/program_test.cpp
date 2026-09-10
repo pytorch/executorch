@@ -210,6 +210,96 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
   }
 }
 
+namespace {
+
+// Builds the smallest program that Program::load() accepts, stamped with the
+// given schema version.
+std::vector<uint8_t> CreateProgramWithVersion(uint32_t version) {
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  auto plan_name = builder.CreateString("forward");
+  auto empty_values = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{});
+  auto empty_inputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_outputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_chains = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{});
+  auto empty_operators = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{});
+  auto empty_delegates = builder.CreateVector(
+      std::vector<
+          flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{});
+  auto buffer_sizes = builder.CreateVector(std::vector<int64_t>{0});
+
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      plan_name,
+      /*container_meta_type=*/0,
+      empty_values,
+      empty_inputs,
+      empty_outputs,
+      empty_chains,
+      empty_operators,
+      empty_delegates,
+      buffer_sizes);
+  auto execution_plans = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+          execution_plan});
+
+  // A constant segment holding only the placeholder offset means "no
+  // constants", which keeps this program off the deprecated constant_buffer
+  // path that OSS builds compile out.
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      version,
+      execution_plans,
+      /*constant_buffer=*/0,
+      /*backend_delegate_data=*/0,
+      /*segments=*/0,
+      constant_segment);
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  const uint8_t* data = builder.GetBufferPointer();
+  return std::vector<uint8_t>(data, data + builder.GetSize());
+}
+
+} // namespace
+
+TEST_F(ProgramTest, SupportedSchemaVersionLoads) {
+  std::vector<uint8_t> data =
+      CreateProgramWithVersion(Program::kMaxSupportedSchemaVersion);
+
+  alignas(16) uint8_t aligned_buffer[2048];
+  ASSERT_LE(data.size(), sizeof(aligned_buffer));
+  memcpy(aligned_buffer, data.data(), data.size());
+
+  BufferDataLoader data_loader(aligned_buffer, data.size());
+  Result<Program> program = Program::load(&data_loader, kDefaultVerification);
+
+  EXPECT_EQ(program.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, NewerSchemaVersionFailsToLoad) {
+  std::vector<uint8_t> data =
+      CreateProgramWithVersion(Program::kMaxSupportedSchemaVersion + 1);
+
+  alignas(16) uint8_t aligned_buffer[2048];
+  ASSERT_LE(data.size(), sizeof(aligned_buffer));
+  memcpy(aligned_buffer, data.data(), data.size());
+
+  // Use minimal verification to show that even the cheapest level catches it.
+  BufferDataLoader data_loader(aligned_buffer, data.size());
+  Result<Program> program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+
+  EXPECT_EQ(program.error(), Error::InvalidProgram);
+}
+
 // These tests require ET_ENABLE_PROGRAM_VERIFICATION to be enabled.
 // In Release builds, verification is disabled by default to save binary size.
 #ifndef ET_ENABLE_PROGRAM_VERIFICATION

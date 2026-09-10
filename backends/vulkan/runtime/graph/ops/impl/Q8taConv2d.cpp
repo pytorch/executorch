@@ -42,6 +42,52 @@ bool q8ta_conv2d_check_4w4c_packed_dim_info(const api::PackedDimInfo& info) {
       info.outer_packed_dim_block_size == 4;
 }
 
+namespace {
+
+uint64_t q8ta_conv2d_im2col_scratch_limit(ComputeGraph& graph) {
+  constexpr uint64_t kMaxBatchedIm2ColScratchBytes = 32ULL * 1024ULL * 1024ULL;
+  const uint64_t device_scratch_limit =
+      graph.context()->adapter_ptr()->max_buffer_numel();
+  return device_scratch_limit < kMaxBatchedIm2ColScratchBytes
+      ? device_scratch_limit
+      : kMaxBatchedIm2ColScratchBytes;
+}
+
+bool should_use_q8ta_conv2d_im2col(
+    ComputeGraph& graph,
+    const int64_t batch,
+    const int64_t groups,
+    const int64_t in_channels_per_group,
+    const int64_t flattened_kernel_size,
+    const int64_t out_height,
+    const int64_t out_width) {
+  const bool im2col_eligible = in_channels_per_group % 4 == 0;
+  if (!im2col_eligible) {
+    return false;
+  }
+
+  const int64_t spatial_out = out_height * out_width;
+  if (batch > 1) {
+    constexpr int64_t kMinFlattenedKernelSize = 1024;
+    constexpr int64_t kMaxSpatialOutput = 64;
+    const uint64_t scratch_bytes = static_cast<uint64_t>(batch) *
+        static_cast<uint64_t>(flattened_kernel_size) *
+        static_cast<uint64_t>(out_height) *
+        static_cast<uint64_t>(utils::align_up_4(out_width));
+    return groups == 1 && flattened_kernel_size >= kMinFlattenedKernelSize &&
+        spatial_out <= kMaxSpatialOutput &&
+        scratch_bytes <= q8ta_conv2d_im2col_scratch_limit(graph);
+  }
+
+  if (graph.device_is_mali()) {
+    return true;
+  }
+
+  return groups == 1 && (in_channels_per_group >= 32 || spatial_out <= 4096);
+}
+
+} // namespace
+
 //
 // Workgroup size selection functions
 //
@@ -57,7 +103,7 @@ bool q8ta_conv2d_check_4w4c_packed_dim_info(const api::PackedDimInfo& info) {
  *
  * Each thread processes a 4Wx4C tile of output elements.
  */
-utils::uvec3 pick_q8ta_conv2d_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -70,13 +116,16 @@ utils::uvec3 pick_q8ta_conv2d_global_wg_size(
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
+  const uint32_t N = graph->size_at<uint32_t>(-4, output);
 
   // Each thread processes 4 adjacent width positions and 4 channels (4Wx4C
   // tile)
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid(
+      {W4, utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N), C4},
+      kTiledWorkGrid);
 }
 
 /**
@@ -86,10 +135,10 @@ utils::uvec3 pick_q8ta_conv2d_global_wg_size(
  *   - {8, 1, 8} for very large tensors: best baseline performance
  *   - {64, 1, 1} for narrow channel dimensions: minimize inactive invocations
  */
-utils::uvec3 pick_q8ta_conv2d_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
@@ -102,34 +151,32 @@ utils::uvec3 pick_q8ta_conv2d_local_wg_size(
 
   // For very large tensors (H >= 100 and large x/z), use {8, 1, 8}
   // This configuration performed best for 128x128 tensors in experiments
-  if (H >= 100 && global_workgroup_size[0u] >= 24 &&
-      global_workgroup_size[2u] >= 24) {
-    return {8u, 1u, 8u};
+  if (H >= 100 && gwg[0u] >= 24 && gwg[2u] >= 24) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
 
   // For medium-sized tensors, use {4, 2, 8} for better height parallelism
   // This configuration showed +57% improvement on 81x81 tensors
-  if (global_workgroup_size[0u] >= 4 && global_workgroup_size[1u] >= 2 &&
-      global_workgroup_size[2u] >= 8) {
-    return {4u, 2u, 8u};
+  if (gwg[0u] >= 4 && gwg[1u] >= 2 && gwg[2u] >= 8) {
+    return LocalWorkGroup(4u, 2u, 8u);
   }
 
   // For tensors with sufficient x and z dimensions, use square configuration
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
+  if (gwg[0u] >= 6 && gwg[2u] >= 6) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
 
   // If x dimension is very small, bias towards z dimension
-  if (global_workgroup_size[0u] < 2u) {
-    return {1u, 1u, 64u};
+  if (gwg[0u] < 2u) {
+    return LocalWorkGroup(1u, 1u, 64u);
   }
 
   // If z dimension is very small, bias towards x dimension
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
+  if (gwg[2u] < 2u) {
+    return LocalWorkGroup(64u, 1u, 1u);
   }
 
-  return {16u, 1u, 4u};
+  return LocalWorkGroup(16u, 1u, 4u);
 }
 
 //
@@ -192,10 +239,11 @@ ValueRef prepack_quantized_conv2d_weight(
       storage_type,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(num_blocks_x),
-      utils::safe_downcast<uint32_t>(num_blocks_y),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(num_blocks_x),
+       utils::safe_downcast<uint32_t>(num_blocks_y),
+       1u},
+      kTiledWorkGrid);
 
   std::string kernel_name = "pack_q8_conv2d_weights";
   add_storage_type_suffix(kernel_name, storage_type);
@@ -203,8 +251,8 @@ ValueRef prepack_quantized_conv2d_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       // Inputs and Outputs
       weight_data,
       packed_weight,
@@ -357,8 +405,8 @@ void add_q8ta_conv2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_global_wg_size,
-      pick_q8ta_conv2d_local_wg_size,
+      pick_q8ta_conv2d_gwg,
+      pick_q8ta_conv2d_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -467,32 +515,32 @@ void q8ta_conv2d_general(
 
 void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef input = args.at(0);
+  const ValueRef kernel_size_ref = args.at(9);
   const ValueRef groups_ref = args.at(13);
   const ValueRef output = args.at(15);
 
   const int64_t groups = graph.extract_scalar<int64_t>(groups_ref);
   const int64_t in_channels = graph.size_at<int64_t>(-3, input);
   const int64_t in_channels_per_group = in_channels / groups;
+  const int64_t batch = graph.size_at<int64_t>(-4, input);
 
   const int64_t H_out = graph.size_at<int64_t>(-2, output);
   const int64_t W_out = graph.size_at<int64_t>(-1, output);
-  const int64_t spatial_out = H_out * W_out;
-
-  // Im2col requires input channels per group to be a multiple of 4
-  const bool im2col_eligible = in_channels_per_group % 4 == 0;
-
-  bool use_im2col = false;
-  if (graph.device_is_mali()) {
-    // On Mali, im2col is faster than the general shader across the board.
-    use_im2col = im2col_eligible;
-  } else {
-    // Default: on Adreno and unknown GPU architectures, im2col is only
-    // beneficial for ungrouped convolutions with sufficient channel depth or
-    // small spatial output. For grouped convolutions, the general shader is
-    // more efficient (0.7-0.95x regression measured on Adreno).
-    use_im2col = im2col_eligible && groups == 1 &&
-        (in_channels_per_group >= 32 || spatial_out <= 4096);
+  int64_t flattened_kernel_size;
+  {
+    const auto kernel_size = graph.get_int_list(kernel_size_ref);
+    flattened_kernel_size = utils::align_up_4(
+        in_channels_per_group * kernel_size->at(0) * kernel_size->at(1));
   }
+
+  const bool use_im2col = should_use_q8ta_conv2d_im2col(
+      graph,
+      batch,
+      groups,
+      in_channels_per_group,
+      flattened_kernel_size,
+      H_out,
+      W_out);
 
   if (use_im2col) {
     q8ta_conv2d_im2col(graph, args);

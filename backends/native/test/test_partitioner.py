@@ -13,10 +13,15 @@ import torch.nn as nn
 from executorch.backends.native import get_default_compile_config
 from executorch.backends.native.partitioner import (
     _SUPPORTED_NON_CORE_OPS,
+    EXTERNAL_CONSTANTS_TAG_KEY,
     NativePartitioner,
     NativeSupportedOperators,
+    PTN_SERIALIZATION_KEY,
 )
-from executorch.backends.native.passes import get_default_passes
+from executorch.backends.native.passes import (
+    backend_inplace_aten_variants,
+    get_default_passes,
+)
 from executorch.backends.native.serialization import deserialize_graph
 from executorch.backends.native.serialization.schema import GraphArg
 from executorch.exir import to_edge_transform_and_lower
@@ -62,6 +67,18 @@ class NativeSupportedOperatorsTest(unittest.TestCase):
         # Every op in the explicit opt-in set is claimed.
         for op in _SUPPORTED_NON_CORE_OPS:
             with self.subTest(op=str(op)):
+                self.assertTrue(
+                    self.sup.is_node_supported({}, _make_node("call_function", op))
+                )
+
+    def test_accepts_inplace_aten_variants(self):
+        # reinplace rewrites e.g. relu -> relu_; the mutating variants are not
+        # core-tagged, so the partitioner must claim them explicitly.
+        variants = backend_inplace_aten_variants()
+        self.assertTrue(variants)
+        for op in variants:
+            with self.subTest(op=str(op)):
+                self.assertNotIn(torch.Tag.core, op.tags)
                 self.assertTrue(
                     self.sup.is_node_supported({}, _make_node("call_function", op))
                 )
@@ -200,3 +217,29 @@ class NativePartitionerHOPTest(unittest.TestCase):
         self.assertTrue(
             any(n.target and n.target.endswith("cond") for n in graph.nodes)
         )
+
+
+class NativePartitionerCompileSpecTest(unittest.TestCase):
+    def _keys(self, partitioner: NativePartitioner) -> list[str]:
+        return [s.key for s in partitioner.delegation_spec.compile_specs]
+
+    def test_default_selects_the_named_data_store_path(self):
+        partitioner = NativePartitioner()
+        self.assertEqual(self._keys(partitioner), [EXTERNAL_CONSTANTS_TAG_KEY])
+        value = partitioner.delegation_spec.compile_specs[0].value
+        self.assertEqual(bytes(value).decode("utf-8"), "native_weights")
+
+    def test_ptn_mode_selects_only_ptn_serialization(self):
+        partitioner = NativePartitioner(
+            external_constants_tag=None, _serialize_as_ptn=True
+        )
+        self.assertEqual(self._keys(partitioner), [PTN_SERIALIZATION_KEY])
+
+    def test_no_specs_when_neither_is_requested(self):
+        self.assertEqual(self._keys(NativePartitioner(external_constants_tag=None)), [])
+
+    def test_ptn_mode_with_external_constants_tag_raises(self):
+        # The tag only means anything to the NamedDataStore path, so requesting
+        # both would silently ignore it.
+        with self.assertRaisesRegex(ValueError, "only applies to the "):
+            NativePartitioner(_serialize_as_ptn=True)

@@ -11,13 +11,29 @@ This directory contains documentation and scripts to
 help you setup and run a PyTorch model on the Arm backend
 via ExecuTorch.
 
+## Python package setup
+
+For Ethos-U examples, install the current checkout and the dependencies needed
+for ahead-of-time (AOT) export in a clean Python environment:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+./install_executorch.sh --optional-dependency ethos_u
+```
+
+After the base dependencies are installed, the equivalent editable package
+command is `pip install -e '.[ethos_u]' --no-build-isolation`. The `ethos_u`
+extra provides host-side export dependencies; it does not install the Arm
+toolchain, FVPs, or target runtime. Run `setup.sh` below to install the cross
+compiler, FVPs, and backend tools used by these examples.
+
 ## setup.sh
 
 `setup.sh` downloads the Arm cross-compilation toolchain and Corstone FVP
-simulators, installs the Python dependencies for TOSA, Ethos-U Vela, and
-Cortex-M/CMSIS-NN, and generates `setup_path.sh` scripts for adding those tools
-to your environment. Optional flags also install VGF/MLSDK and Vulkan
-dependencies.
+simulators, installs the backend dependencies, and generates `setup_path.sh`
+scripts for adding those tools to your environment. Optional flags also install
+VGF/MLSDK and Vulkan dependencies.
 
 Example to install the default Arm backend dependencies and add them to your current shell:
 
@@ -73,6 +89,8 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
 
 ### Application examples
 
+- [minimal_classic_ml](minimal_classic_ml/) - Minimal single-shot runtime
+  integration, intended for models such as MobileNetV2 and YOLO.
 - [image_classification_example_ethos_u](image_classification_example_ethos_u/)
   - End-to-end DEiT-Tiny image classification flow for Ethos-U, including
   model fine-tuning, export, bare-metal runtime build, and Corstone-320 FVP
@@ -90,8 +108,12 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
 
 ### Utility examples and guides
 
+- [executor_runner](executor_runner/) - Advanced test and diagnostic runner for
+  BundleIO, ETDump, profiling, semihosted files, and backend regression tests.
 - [ethos-u-porting-guide.md](ethos-u-porting-guide.md) - Notes for adapting
   the example Ethos-U runtime integration to another target.
+- [model-explorer.md](model-explorer.md) - Visualize PTE and TOSA graphs and
+  overlay per-operator Ethos-U cycle data collected from an FVP PMU trace.
 - [export_standalone_tosa_graph.py](export_standalone_tosa_graph.py) -
   Example of exporting a standalone TOSA graph with multiple outputs.
 - [visualize.py](visualize.py) - Helper used by `run.sh --model_explorer` to

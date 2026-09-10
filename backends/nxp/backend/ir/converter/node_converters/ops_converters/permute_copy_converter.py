@@ -400,7 +400,7 @@ class PermuteCopyConverter(NodeConverter):
         is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
         if has_static_input and is_alone_in_partition:
             # Transpose with a static input is a no-op on Neutron. If it was the only operator in the partition,
-            #  Neutron Converter would produce and empty graph, so delegation is prohibited.
+            #  Neutron Compiler would produce and empty graph, so delegation is prohibited.
             return False
 
         return True

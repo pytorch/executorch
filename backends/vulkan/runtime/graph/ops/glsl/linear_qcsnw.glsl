@@ -46,6 +46,8 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 // This header file must be defined after the layout descriptors have been
 // declared because the functions in the header assume some variables have been
 // declared as layout descriptors.
@@ -57,7 +59,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #endif
 
 void main() {
-  const int out_bufi = int(gl_GlobalInvocationID.x);
+  const int out_bufi = int(linear_idx_from_gid());
   if (out_bufi >= out_numel) {
     return;
   }
@@ -88,9 +90,10 @@ void main() {
 #else // USING_TEXTURE
 
 void main() {
+  const uint linear_idx = linear_idx_from_gid();
   const ivec2 out_pos = ivec2(
-    gl_GlobalInvocationID.x % out_limits.x,
-    gl_GlobalInvocationID.x / out_limits.x);
+    linear_idx % out_limits.x,
+    linear_idx / out_limits.x);
 
   if (out_pos.y >= out_limits.y) {
     return;

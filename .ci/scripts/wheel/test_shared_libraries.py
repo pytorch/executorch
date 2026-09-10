@@ -149,6 +149,23 @@ _OPENVINO_BACKEND_SYMBOLS = ("executorch::backends::openvino::OpenvinoBackend",)
 
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 
+# A representative symbol from the MLX delegate, and one from the MLX runtime the
+# delegate bundles. The runtime is third-party code compiled into the delegate
+# rather than depended on, so it gets its own row for the same reason XNNPACK's
+# does: a second copy means two MLX runtimes in one process.
+_MLX_SYMBOLS = ("executorch::backends::mlx::mutable_state_note_handle",)
+_BUNDLED_MLX_SYMBOLS = ("mlx::core::allocator::free",)
+# A representative symbol from the Core ML delegate, exported from the shipped
+# library. get_registered_delegate() rather than the constructor, which demangles
+# to two entries (complete and base object), while this is a single definition.
+_COREML_SYMBOLS = (
+    "executorch::backends::coreml::CoreMLBackendDelegate::get_registered_delegate()",
+)
+
+# A representative symbol from the TorchAO kernels. These are Apple Silicon only, so
+# most wheels ship no such library and the row below is not required.
+_TORCHAO_KERNEL_SYMBOLS = ("torchao::quantization::get_qvals_range",)
+
 # A representative symbol from the profiler. A second definer means two event
 # tracers, so a trace records only part of what ran.
 _ETDUMP_SYMBOLS = ("executorch::etdump::ETDumpGen::ETDumpGen",)
@@ -861,6 +878,11 @@ _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
 # Marker for a row whose owner every Linux wheel carries and no macOS wheel does.
 _REQUIRED_ON_LINUX = "linux-only"
+# Marker for a row whose owner every macOS wheel carries and no other wheel does.
+# The Core ML delegate is built on every macOS wheel, so its presence is decidable
+# from the installed wheel and a macOS wheel that dropped it should fail rather than
+# quietly regress to folding it into the Python extension.
+_REQUIRED_ON_MACOS = "macos-only"
 # Narrower than the marker above on purpose. The Qualcomm SDK the delegate builds
 # against is published for Linux x86_64 only, so the aarch64 Linux wheels ship no such
 # library and demanding it there would fail a wheel that is correct. Reusing the
@@ -874,6 +896,8 @@ def _resolve_required(required):
         return bool(_wheel_cuda_train())
     if required == _REQUIRED_ON_LINUX:
         return sys.platform == "linux"
+    if required == _REQUIRED_ON_MACOS:
+        return sys.platform == "darwin"
     if required == _REQUIRED_ON_LINUX_X86:
         return sys.platform == "linux" and platform.machine() in ("x86_64", "amd64")
     return required
@@ -935,6 +959,24 @@ _OWNED_COMPONENTS = (
         _library_file_name("libexecutorch_backend_xnnpack"),
         True,
     ),
+    # Required on macOS, where the delegate is built for every wheel, so a macOS
+    # wheel that folds it back into the Python extension fails here. Not built on
+    # any other platform, where the row resolves to not-required and skips.
+    (
+        "Core ML delegate",
+        _COREML_SYMBOLS,
+        _library_file_name("libexecutorch_backend_coreml"),
+        _REQUIRED_ON_MACOS,
+    ),
+    # Not required: the delegate is built only on an Apple Silicon macOS wheel whose
+    # build found the Metal compiler, so every other wheel legitimately ships no MLX
+    # library and the row skips.
+    (
+        "MLX delegate",
+        _MLX_SYMBOLS,
+        _library_file_name("libexecutorch_backend_mlx"),
+        False,
+    ),
     (
         "set of CPU kernels",
         _KERNEL_SYMBOLS,
@@ -946,6 +988,12 @@ _OWNED_COMPONENTS = (
         _QUANTIZED_KERNEL_SYMBOLS,
         _library_file_name("libexecutorch_kernels_quantized"),
         True,
+    ),
+    (
+        "set of TorchAO kernels",
+        _TORCHAO_KERNEL_SYMBOLS,
+        _library_file_name("libexecutorch_kernels_torchao"),
+        False,
     ),
     # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
     # which is decided at check time rather than here: a fixed False meant a wheel
@@ -992,6 +1040,13 @@ _OWNED_COMPONENTS = (
         _BUNDLED_XNNPACK_SYMBOLS,
         _library_file_name("libexecutorch_backend_xnnpack"),
         True,
+    ),
+    # Not required, for the same reason as the delegate row above.
+    (
+        "bundled MLX runtime",
+        _BUNDLED_MLX_SYMBOLS,
+        _library_file_name("libexecutorch_backend_mlx"),
+        False,
     ),
     # Required on Linux, where packaging turns the backend on for every non-minimal
     # build. A fixed False passed a wheel that had compiled the delegate back into the
@@ -1962,6 +2017,79 @@ def _names_a_build_directory(entry: str) -> bool:
     )
 
 
+# Absolute directories a shipped library may name. PyTorch's own is allowed because the wheel
+# neither declares nor bundles PyTorch, so an absolute path is the only way to reach it. The maths
+# library arch directories are allowed because a real installation spells them below a prefix, as
+# /opt/intel/mkl/lib/intel64, which the environment genuinely provides.
+#
+# Matched as a suffix. A substring test exempted any path merely CONTAINING one of these, so a
+# directory such as /home/user/torch/lib.backup/stage passed without reaching the build-directory
+# classifier. Both "_win" spellings are listed explicitly now that the match is anchored.
+_ALLOWED_ABSOLUTE_SUFFIXES = (
+    "/torch/lib",
+    "/lib/intel64",
+    "/lib/intel64_win",
+    "/lib/win-x64",
+)
+
+# The same arch directories with an EMPTY prefix, which is what PyTorch's exported link interface
+# records when its MKL_ROOT resolves to nothing. They point nowhere, and they sit ahead of the
+# relative hops packaging appends, which is the shadowing a CUDA toolkit prefix is rejected for.
+# Matched exactly rather than folded into the allowlist above, because the two differ only in the
+# prefix and a suffix match cannot tell them apart.
+_UNRESOLVED_MATH_DIRECTORIES = (
+    "/lib/intel64",
+    "/lib/intel64_win",
+    "/lib/win-x64",
+)
+
+# Held for a wheel that bundles PyTorch's libraries rather than declaring them: such a copy records
+# the CUDA toolkit directory of the machine that built IT, which is not this project's to fix.
+#
+# No wheel ships one today, so this clause never fires. It stays as a guard for a future
+# bundling change; if that never comes, delete it rather than leaving an unexercised exemption.
+_VENDORED_PREFIXES = (
+    "libtorch",
+    "libc10",
+    "libshm",
+    "libcaffe2",
+    "libgomp",
+    "libiomp",
+)
+
+
+def _unusable_runtime_path_kind(entry: str, library_name: str) -> str | None:
+    """Why a recorded runtime search path is one a user cannot use, or None if it is fine.
+
+    A library must not name an absolute directory the wheel has a relative route to. The one that
+    shipped was a CUDA toolkit prefix recorded on the build machine: it sat ahead of the relative
+    hop, so a user with a toolkit at the same prefix resolved the runtime from there instead of from
+    the declared dependency, and the builder always has one, so nothing exercised the hop. Stated as
+    a property rather than a list of known-bad directories, because a list only catches what someone
+    already thought of and that prefix was not on one.
+
+    Order matters. The build-directory branch runs before the suffix allowlist so that a torch
+    directory inside a CI worker tree is rejected rather than accepted for its /torch/lib ending.
+
+    Module scope so a unit test can call this directly and compare the reason it returns. Inline in
+    the caller's loop it could only be reached by building a wheel.
+    """
+    if not entry:
+        # The loader reads an empty entry as the process working directory.
+        return "the process working directory"
+    if not entry.startswith("/") or library_name.startswith(_VENDORED_PREFIXES):
+        return None
+    if _names_a_build_directory(entry):
+        return "inside a build of this project"
+    if entry.rstrip("/") in _UNRESOLVED_MATH_DIRECTORIES:
+        return "a maths library directory whose prefix resolved empty"
+    if any(
+        entry.rstrip("/").endswith(allowed) for allowed in _ALLOWED_ABSOLUTE_SUFFIXES
+    ):
+        return None
+    return "an absolute directory the wheel has a relative route to"
+
+
 def test_no_absolute_runtime_paths() -> None:
     """No shipped library may search a directory a user does not have.
 
@@ -2004,53 +2132,6 @@ def test_no_absolute_runtime_paths() -> None:
 
     package_dir = _installed_package_dir()
 
-    # This project's libraries must not name an absolute directory the wheel has a relative route to. The
-    # one that shipped was a CUDA toolkit prefix recorded on the build machine: it sat ahead of the relative
-    # hop, so a user with a toolkit at the same prefix resolved the CUDA runtime from there instead of from
-    # the declared dependency, and the builder always has one, so nothing exercised the hop.
-    #
-    # Stated as a property rather than a list of known-bad directories, because a list only catches what
-    # someone already thought of and that prefix was not on one.
-    #
-    # PyTorch's own directory is allowed: the wheel neither declares nor bundles PyTorch, so an absolute
-    # path is the only way to reach it. The maths library directories are allowed too. They arrive as
-    # -L flags in PyTorch's exported link interface, which CMake mirrors into the runtime path, so every
-    # library here that links PyTorch carries them. They point nowhere on any machine: measured on the
-    # link line as -L/lib/intel64 -L/lib/intel64_win -L/lib/win-x64, which is a prefix variable that
-    # resolved empty leaving the concatenation at the filesystem root.
-    #
-    # Matched as a suffix, the same way packaging decides what to strip at setup.py:1300. A substring
-    # test exempted any path merely CONTAINING one of these, so a directory such as
-    # /home/user/torch/lib.backup/stage passed without ever reaching the build-directory classifier.
-    # Both "_win" spellings are listed explicitly now that the match is anchored.
-    #
-    # A torch directory inside a CI worker tree, such as
-    # /home/ec2-user/actions-runner/_work/.../pytorch/torch/lib, is rejected rather than allowed: the
-    # build-directory classifier sees the worker components and the allowlist never gets to accept the
-    # /torch/lib suffix. Packaging strips the same entry, because every extension that names Torch now
-    # records a relative route to it.
-    allowed_absolute = (
-        "/torch/lib",
-        "/lib/intel64",
-        "/lib/intel64_win",
-        "/lib/win-x64",
-    )
-    # Held for a wheel that bundles PyTorch's libraries rather than declaring them: such a copy records
-    # the CUDA toolkit directory of the machine that built IT, which is not this project's to fix.
-    #
-    # No wheel ships one today. Six wheels across manylinux and macOS contain zero files with these
-    # prefixes, because the wheel declares torch as a dependency and there is no auditwheel step, so
-    # this clause is currently never false. It stays as a guard for a future bundling change; if that
-    # never comes, delete it rather than leaving an unexercised exemption in the check.
-    vendored_prefixes = (
-        "libtorch",
-        "libc10",
-        "libshm",
-        "libcaffe2",
-        "libgomp",
-        "libiomp",
-    )
-
     offenders = {}
     inspected = 0
     with_a_runtime_path = 0
@@ -2067,27 +2148,9 @@ def test_no_absolute_runtime_paths() -> None:
         with_a_runtime_path += 1
         bad = []
         for entry in entries:
-            if not entry:
-                bad.append("<empty>")
-            elif (
-                entry.startswith("/")
-                and not library.name.startswith(vendored_prefixes)
-                and (
-                    _names_a_build_directory(entry)
-                    or not any(
-                        entry.rstrip("/").endswith(allowed)
-                        for allowed in allowed_absolute
-                    )
-                )
-            ):
-                # Named separately so the message says which kind it is: a build directory and a
-                # toolkit prefix are the same defect with different causes.
-                kind = (
-                    "inside a build of this project"
-                    if _names_a_build_directory(entry)
-                    else "an absolute directory the wheel has a relative route to"
-                )
-                bad.append(f"{entry} ({kind})")
+            kind = _unusable_runtime_path_kind(entry, library.name)
+            if kind is not None:
+                bad.append(f"{entry or '<empty>'} ({kind})")
         if bad:
             offenders[str(library.relative_to(package_dir))] = bad
 
@@ -2172,7 +2235,9 @@ def test_extension_contains_no_component() -> None:
     # Not every shipped library serves Python. The quantized kernels exist for a C++
     # application, since Python registers those operators through the torch-linked
     # ahead-of-time library at export time, and requiring a dependency would demand the
-    # extension link code it has no use for.
+    # extension link code it has no use for. The TorchAO kernels are in that same
+    # category: torchao registers its operators itself at export time, so the extension
+    # has no reason to link them either.
     #
     # The CUDA delegate is NOT in that category. The build deliberately links it into the
     # extension with a retention option, so it does carry a dependency, and excluding it
@@ -2182,7 +2247,10 @@ def test_extension_contains_no_component() -> None:
     expected = {
         name
         for name in shipped
-        if not any(marker in name for marker in ("kernels_quantized", "extension_cuda"))
+        if not any(
+            marker in name
+            for marker in ("kernels_quantized", "kernels_torchao", "extension_cuda")
+        )
     }
     unused = sorted(expected - needed)
     assert not unused, (
@@ -2290,6 +2358,7 @@ def test_shipped_library_names_are_expected() -> None:
         "libexecutorch",
         "libexecutorch_kernels_optimized",
         "libexecutorch_kernels_quantized",
+        "libexecutorch_kernels_torchao",
         "libexecutorch_backend_cuda",
         "libexecutorch_extension_cuda",
         # The same library under the name a non-shared build gives it. The shared
@@ -2298,6 +2367,8 @@ def test_shipped_library_names_are_expected() -> None:
         # dependency, so both have to ship and both are expected here.
         "libextension_cuda",
         "libexecutorch_backend_xnnpack",
+        "libexecutorch_backend_coreml",
+        "libexecutorch_backend_mlx",
         "libexecutorch_backend_openvino",
         "libexecutorch_backend_qnn",
         "libexecutorch_threadpool",
@@ -2341,6 +2412,41 @@ def test_shipped_library_names_are_expected() -> None:
         f"consumer would look for a file the wheel does not ship: {mismatched}"
     )
     print(f"✓ {len(shipped)} shipped libraries have expected names and identities")
+
+
+def test_windows_import_library_tracks_the_cuda_delegate() -> None:
+    """The Windows import library ships exactly where the CUDA delegate does.
+
+    It is the link input the delegate uses when lowering for a Windows target, so a
+    wheel without the delegate has no use for it and a CUDA wheel cannot do that
+    lowering without it. Checked here rather than by the symbol tests above, because
+    it is an archive of import stubs rather than a shared object, so nothing that
+    scans shipped libraries sees it. It is also checked in rather than built, which
+    is how it came to ship in every wheel with nothing noticing.
+
+    Keyed on the shim library the wheel actually ships rather than on the version
+    label, because only a published wheel carries a +cuXXX local version and a
+    locally built CUDA wheel would otherwise be told to drop a file it needs. Both
+    files are packaged behind EXECUTORCH_BUILD_CUDA alone, so they arrive together.
+    """
+    package_dir = _installed_package_dir()
+    import_library = package_dir / "data" / "lib" / "aoti_cuda_shims.lib"
+    shim_library = _library_file_name("libaoti_cuda_shims")
+    present = import_library.is_file()
+    if any(
+        path.name.startswith(shim_library)
+        for path in _shipped_shared_objects(package_dir)
+    ):
+        assert present, (
+            f"this CUDA wheel ships no {import_library.name}, so lowering the "
+            "delegate for a Windows target has nothing to link against."
+        )
+    else:
+        assert not present, (
+            f"this wheel ships {import_library.name} but no CUDA delegate, so it "
+            "carries a link stub for a library it does not contain."
+        )
+    print(f"✓ {import_library.name} {'ships' if present else 'is absent'} as expected")
 
 
 _PARITY_MODEL = '''
@@ -2559,6 +2665,7 @@ def run_tests(work_dir: Path) -> None:
     test_declared_dependencies_match_the_wheel_tag()
     test_extension_contains_no_component()
     test_shipped_library_names_are_expected()
+    test_windows_import_library_tracks_the_cuda_delegate()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
     test_custom_op_compiles(work_dir)

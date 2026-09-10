@@ -12,9 +12,7 @@ import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
 )
-
 from executorch.backends.arm.test import common
-
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -290,13 +288,7 @@ def test_avg_pool2d_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module",
-    test_modules | test_modules_bf16 | test_modules_fp16,
-    xfails={
-        "kernel_3x3_stride_1_pad_1_bf16": "'Unsupported BF16 PAD constant encoding' in emulation layer. MLCE-1887."
-    },
-)
+@common.parametrize("test_module", test_modules | test_modules_bf16 | test_modules_fp16)
 @common.SkipIfNoModelConverter
 def test_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()

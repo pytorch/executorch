@@ -255,8 +255,8 @@ modules are adapted from torchtune modules with changes for export and inference
 While ExecuTorch provides a portable, cross-platform implementation for all
 operators, it also provides specialized backends for a number of different
 targets. These include, but are not limited to, x86 and ARM CPU acceleration via
-the XNNPACK backend, Apple acceleration via the Core ML backend and Metal
-Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.
+the XNNPACK backend, Apple acceleration via the Core ML backend,
+and GPU acceleration via the Vulkan backend.
 
 Because optimizations are specific to a given backend, each pte file is specific
 to the backend(s) targeted at export. To support multiple devices, such as

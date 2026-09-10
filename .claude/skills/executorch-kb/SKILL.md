@@ -32,7 +32,7 @@ Read `<repo>/.wiki/index.md` to find relevant articles. The repo root is the nea
 | QNN SoC compatibility, V68/V73 | `backends/qnn/soc-compatibility.md` |
 | XNNPACK, CPU delegation | `backends/xnnpack/` |
 | Vulkan, GPU, shader bugs | `backends/vulkan/` |
-| CoreML, Apple, MPS | `backends/coreml/overview.md` |
+| CoreML, Apple | `backends/coreml/overview.md` |
 | Arm, Ethos-U, Cortex-M, TOSA | `backends/arm/` |
 | Cadence, Xtensa | `backends/cadence/overview.md` |
 | torch.export, lowering | `export/common-pitfalls.md` |

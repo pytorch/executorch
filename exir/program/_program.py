@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -1114,6 +1114,14 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     return check_op_support is None
 
 
+def _apply_pre_decomposition_transforms(
+    program: ExportedProgram, partitioners: List[Partitioner]
+) -> ExportedProgram:
+    for partitioner in partitioners:
+        program = partitioner.transform_for_pre_decomposition(program)
+    return program
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1137,11 +1145,13 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        partitioners_for_program = partitioner.get(name, [])
+        program = _apply_pre_decomposition_transforms(program, partitioners_for_program)
+
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
 
         if partitioner is not None:
-            partitioners_for_program = partitioner.get(name, [])
             final_ops_to_preserve = set()
 
             # Decompose by default if there are no partitioners for the method

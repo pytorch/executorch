@@ -81,6 +81,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     ExpandDimsNode,
     Expm1Node,
     ExpNode,
+    FlipNode,
     FloatOrVid,
     FloorDivideIntNode,
     FloorDivideNode,
@@ -159,6 +160,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     TransposeNode,
     TrilNode,
     TriuNode,
+    TruncNode,
     UpdateAndAttendNode,
     VarNode,
     VidOrTid,
@@ -384,6 +386,7 @@ _UNARY_OPS: List[Tuple[Any, Any, str]] = [
     # Rounding
     (torch.ops.aten.floor.default, FloorNode, "aten.floor"),
     (torch.ops.aten.ceil.default, CeilNode, "aten.ceil"),
+    (torch.ops.aten.trunc.default, TruncNode, "aten.trunc"),
     # Powers / roots
     (torch.ops.aten.square.default, SquareNode, "aten.square"),
     (torch.ops.aten.exp.default, ExpNode, "aten.exp"),
@@ -2754,6 +2757,246 @@ def _native_layer_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
     return output_slots
+
+
+@REGISTRY.register(target=[torch.ops.aten.native_group_norm.default])
+def _native_group_norm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle native_group_norm which returns (output, mean, rstd).
+
+    Group norm normalizes each group of ``C / group`` channels together with all
+    of their spatial positions, so reshaping the input to
+    ``(N * group, (C / group) * HxW)`` puts exactly that set on the last axis and
+    lets fast::layer_norm compute the normalization as a single fused kernel.
+
+    The affine parameters are applied afterwards on the original shape rather
+    than being passed to layer_norm: group norm's weight and bias are per
+    channel, while layer_norm's are per normalized element, so the two only
+    coincide when every group holds a single channel.
+
+    Only the normalized output (index 0) is computed; mean and rstd (indices 1
+    and 2) are needed only for backward.
+    """
+    unsupported = used_getitem_indices(n) & {1, 2}
+    if unsupported:
+        raise ValueError(
+            f"native_group_norm outputs {unsupported} (mean/rstd) are used, "
+            "but only the normalized output (index 0) is supported"
+        )
+
+    args = P.args(n)
+    require_args(args, 8, 8, "aten.native_group_norm")
+    require_kwargs(P.kwargs(n), set(), "aten.native_group_norm")
+    x, weight, bias, N, C, HxW, group, eps = args
+
+    for name, value in (("N", N), ("C", C), ("HxW", HxW), ("group", group)):
+        if not isinstance(value, int):
+            raise ValueError(
+                f"aten.native_group_norm requires a static {name}, got {value!r}"
+            )
+
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("aten.native_group_norm requires input shape metadata")
+    if any(not isinstance(d, int) for d in x_meta.shape):
+        raise ValueError(
+            f"aten.native_group_norm requires a static input shape, "
+            f"got {tuple(x_meta.shape)}"
+        )
+    x_ndim = len(x_meta.shape)
+
+    # native_group_norm returns (output, mean, rstd) -- allocate all 3 slots
+    output_slots = P.make_or_get_slots(n)
+    out = output_slots[0]
+
+    _, flat = P.make_tmp_slot()
+    P.emit(
+        ReshapeNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(flat),
+            shape=[
+                IntOrVid.from_literal(N * group),
+                IntOrVid.from_literal((C // group) * HxW),
+            ],
+        )
+    )
+
+    _, normed = P.make_tmp_slot()
+    P.emit(
+        LayerNormNode(
+            x=P.slot_to_tid(flat),
+            out=P.slot_to_tid(normed),
+            weight=None,
+            bias=None,
+            eps=eps,
+        )
+    )
+
+    orig_shape = [IntOrVid.from_literal(int(d)) for d in x_meta.shape]
+    if weight is None and bias is None:
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(normed),
+                out=P.slot_to_tid(out),
+                shape=orig_shape,
+            )
+        )
+        return output_slots
+
+    _, restored = P.make_tmp_slot()
+    P.emit(
+        ReshapeNode(
+            x=P.slot_to_tid(normed),
+            out=P.slot_to_tid(restored),
+            shape=orig_shape,
+        )
+    )
+
+    # Broadcast the per-channel affine over the batch and spatial dimensions.
+    affine_shape = [IntOrVid.from_literal(1), IntOrVid.from_literal(C)] + [
+        IntOrVid.from_literal(1)
+    ] * (x_ndim - 2)
+
+    cur = restored
+    if weight is not None:
+        _, weight_bc = P.make_tmp_slot()
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(weight),
+                out=P.slot_to_tid(weight_bc),
+                shape=affine_shape,
+            )
+        )
+        if bias is None:
+            scaled = out
+        else:
+            _, scaled = P.make_tmp_slot()
+        P.emit(
+            MultiplyNode(
+                a=P.slot_to_tid(cur),
+                b=P.slot_to_tid(weight_bc),
+                out=P.slot_to_tid(scaled),
+            )
+        )
+        cur = scaled
+
+    if bias is not None:
+        _, bias_bc = P.make_tmp_slot()
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(bias),
+                out=P.slot_to_tid(bias_bc),
+                shape=affine_shape,
+            )
+        )
+        P.emit(
+            AddNode(
+                a=P.slot_to_tid(cur),
+                b=P.slot_to_tid(bias_bc),
+                out=P.slot_to_tid(out),
+            )
+        )
+
+    return output_slots
+
+
+def _nearest_source_indices(in_size: int, out_size: int, scale: Optional[float]):
+    """Source index per output position for nearest-neighbour resampling.
+
+    Mirrors aten's compute_scales_value + nearest_neighbor_compute_source_index:
+    the step is ``1 / scale`` when an explicit scale factor was given and
+    ``in_size / out_size`` otherwise, and the index is truncated then clamped to
+    the last input position.
+    """
+    step = (1.0 / scale) if scale is not None else (in_size / out_size)
+    idx = (torch.arange(out_size, dtype=torch.float64) * step).to(torch.int64)
+    return torch.clamp(idx, max=in_size - 1).to(torch.int32)
+
+
+@REGISTRY.register(
+    target=[
+        torch.ops.aten.upsample_nearest2d.vec,
+        torch.ops.aten.upsample_nearest2d.default,
+    ]
+)
+def _upsample_nearest2d_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Nearest-neighbour 2D resampling as two gathers.
+
+    Each output position reads a source position that depends only on the static
+    input and output sizes, so both index vectors are constants and the op is
+    ``take(take(x, idx_h, -2), idx_w, -1)``. Expressing it as a gather rather
+    than a repeat also covers non-integer scale factors and downsampling.
+    """
+    args = P.args(n)
+    kwargs = P.kwargs(n)
+    x = args[0]
+
+    if ".vec" in str(n.target):
+        require_args(args, 2, 3, "aten.upsample_nearest2d.vec")
+        require_kwargs(kwargs, set(), "aten.upsample_nearest2d.vec")
+        scale_factors = args[2] if len(args) > 2 else None
+        if scale_factors is None:
+            scales = (None, None)
+        else:
+            if len(scale_factors) != 2:
+                raise ValueError(
+                    f"aten.upsample_nearest2d.vec expects 2 scale factors, "
+                    f"got {len(scale_factors)}"
+                )
+            scales = (scale_factors[0], scale_factors[1])
+    else:
+        require_args(args, 2, 4, "aten.upsample_nearest2d")
+        require_kwargs(kwargs, set(), "aten.upsample_nearest2d")
+        scales = (
+            args[2] if len(args) > 2 else None,
+            args[3] if len(args) > 3 else None,
+        )
+
+    x_meta = n.args[0].meta.get("val")
+    out_meta = n.meta.get("val")
+    if x_meta is None or out_meta is None:
+        raise ValueError("aten.upsample_nearest2d requires input and output shapes")
+
+    sizes = (x_meta.shape[-2], x_meta.shape[-1], out_meta.shape[-2], out_meta.shape[-1])
+    if any(not isinstance(d, int) for d in sizes):
+        raise ValueError(
+            f"aten.upsample_nearest2d requires static spatial sizes, got "
+            f"{tuple(x_meta.shape)} -> {tuple(out_meta.shape)}"
+        )
+    in_h, in_w, out_h, out_w = sizes
+
+    index_slots = []
+    for axis_name, in_size, out_size, scale in (
+        ("h", in_h, out_h, scales[0]),
+        ("w", in_w, out_w, scales[1]),
+    ):
+        indices = _nearest_source_indices(in_size, out_size, scale)
+        index_slots.append(
+            P.make_or_get_constant(
+                f"_upsample_nearest2d_{axis_name}_{in_size}_{out_size}_{scale}",
+                indices,
+            )
+        )
+
+    _, rows = P.make_tmp_slot()
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(rows),
+            index=IntOrVidOrTid.from_tid(P.slot_to_tid(index_slots[0])),
+            axis=-2,
+        )
+    )
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(rows),
+            out=P.slot_to_tid(out),
+            index=IntOrVidOrTid.from_tid(P.slot_to_tid(index_slots[1])),
+            axis=-1,
+        )
+    )
+    return out
 
 
 @REGISTRY.register(target=[torch.ops.aten.arange.default])
@@ -5209,6 +5452,28 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
     return output_slots
+
+
+@REGISTRY.register(target=[torch.ops.aten.flip.default])
+def _flip_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 2, "aten.flip")
+    require_kwargs(P.kwargs(n), set(), "aten.flip")
+    x, dims = args
+
+    require_static_ints(dims, "dims", "aten.flip")
+
+    out = P.make_or_get_slot(n)
+
+    P.emit(
+        FlipNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            axes=list(dims),
+        )
+    )
+
+    return out
 
 
 # ---------------------------------------------------------------------------

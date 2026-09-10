@@ -23,6 +23,14 @@ This package includes the dependencies needed to export a PyTorch model, as well
 pip install executorch
 ```
 
+To get the latest features before they reach a stable release, install a nightly
+build instead. Nightly wheels are built from the `main` branch every day, so a
+change that has landed but is not yet in a stable release is available there first.
+
+```
+pip install executorch --pre --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+```
+
 To build the framework from source, see [Building From Source](using-executorch-building-from-source.md). Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
 
 > **_NOTE:_** On Windows, ExecuTorch requires a [Visual Studio Developer Powershell](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell?view=vs-2022). Running from outside of a developer prompt will manifest as errors related to CL.exe.
@@ -158,7 +166,7 @@ For a full example of running a model on Android, see the [DeepLabV3AndroidDemo]
 ### iOS
 
 #### Installation
-ExecuTorch supports both iOS and macOS via C++, as well as hardware backends for CoreML, MPS, and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
+ExecuTorch supports both iOS and macOS via C++, as well as hardware backends for CoreML and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
 
 To get started with Xcode, go to File > Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-”, (e.g. “swiftpm-0.6.0”).  The ExecuTorch dependency can also be added to the package file manually. See [Using ExecuTorch on iOS](using-executorch-ios.md) for more information.
 
