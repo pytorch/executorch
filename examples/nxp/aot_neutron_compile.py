@@ -27,6 +27,7 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import (
     core_aten_ops_exception_list,
+    default_preserve_ops,
     generate_neutron_compile_spec,
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -245,7 +246,7 @@ def _get_arg_parser():
         required=False,
         default=False,
         action="store_true",
-        help="During conversion to Neutron microcode by Neutron Converter, a kernel selection file will be dumped in "
+        help="During compilation to Neutron microcode by Neutron Compiler, a kernel selection file will be dumped in "
         "the working directory. This file can be used for reduction of Neutron Firmware size in the built app."
         "See `docs/source/backends/nxp/nxp-kernel-selection.md` for details.",
     )
@@ -384,6 +385,7 @@ if __name__ == "__main__":  # noqa C901
                 compile_spec,
                 neutron_target_spec,
                 post_quantization_state_dict=module.state_dict(),
+                preserve_ops=default_preserve_ops,
             )
         ]
         if args.delegate
