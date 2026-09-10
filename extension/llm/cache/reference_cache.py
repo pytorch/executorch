@@ -28,6 +28,7 @@ with sharing and eviction). All store float KV.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
@@ -106,10 +107,16 @@ class CacheConfig:
     batch_size: int = 1
     # Per-layer policy: one entry applies to every layer, else one per layer.
     layers: Sequence[LayerPolicy] = (LayerPolicy.flat(),)
+    # Positions any one sequence may reach, from the model rather than from the
+    # caller: past it the model was never trained. Bounds a sequence, where
+    # capacity bounds them all together. None = only capacity bounds a sequence.
+    max_context: Optional[int] = None
 
     def __post_init__(self):
         if self.capacity <= 0:
             raise ValueError("capacity must be positive")
+        if self.max_context is not None and self.max_context <= 0:
+            raise ValueError("max_context must be positive when set")
         if len(self.layers) not in (1, self.n_layers):
             raise ValueError("layers must be one policy, or one per layer")
 
@@ -214,6 +221,11 @@ class SequenceReferenceCache:
             raise RuntimeError(
                 f"KV cache overflow on layer {layer_id}: "
                 f"{new_used} cells exceeds capacity {cap}"
+            )
+        limit = self.config.max_context
+        if limit is not None and new_used > limit:
+            raise RuntimeError(
+                f"position {new_used} passes the model context limit {limit}"
             )
 
         k = k.to(self.config.dtype)
@@ -363,6 +375,14 @@ class BatchedSequenceReferenceCache:
                 f"KV cache overflow: {held + len(seq_ids)} cells exceeds "
                 f"capacity {self.config.capacity}"
             )
+        # The pool is weighed once against the whole step; each sequence's own
+        # reach is weighed against the tokens the step gives it.
+        for seq_id, taking in Counter(seq_ids).items():
+            if not self.can_admit(seq_id, taking):
+                raise RuntimeError(
+                    f"sequence {seq_id} would pass the model context limit "
+                    f"{self.config.max_context}"
+                )
 
         for span in spans:
             if span.seq_id not in self._sequences:
@@ -427,28 +447,47 @@ class BatchedSequenceReferenceCache:
         self._served.clear()
         self._declared = False
 
-    def seq_rm(self, seq_id: int, p0: int = 0, p1: Optional[int] = None) -> None:
-        """Drop seq_id's claim on positions [p0, p1); p1 = None runs to the end.
+    def seq_rm(self, seq_id: int) -> None:
+        """Release the whole sequence and its id."""
+        self._check_seq_id(seq_id)
+        self._sequences.pop(seq_id, None)
+        self._invalidate_step()
 
-        A private contiguous history drops its tail but not its middle: it has
-        no per-token position map to reindex what would survive. Bounding
-        history from below is a layer policy, not a verb.
+    def rewind(self, seq_id: int, new_len: int) -> None:
+        """Truncate one sequence to ``new_len``, as a single-sequence rewind.
+
+        A windowed layer has physically dropped what it no longer retains, so a
+        target older than that is refused.
         """
         self._check_seq_id(seq_id)
-        if p1 is not None:
-            raise NotImplementedError(
-                "a private history drops only its tail, so [p0, p1) with a "
-                "bounded end has nothing to reindex the remainder against"
-            )
         sequence = self._sequences.get(seq_id)
         if sequence is not None:
-            if p0 == 0:
-                del self._sequences[seq_id]
-            else:
-                sequence.rewind(p0)
+            sequence.rewind(new_len)
+        self._invalidate_step()
+
+    def _invalidate_step(self) -> None:
         self._spans.clear()
         self._served.clear()
         self._declared = False
+
+    def can_admit(self, seq_id: int, n: int = 1) -> bool:
+        """Whether seq_id may reach n further positions before max_context.
+
+        Sequences are bounded independently, so this holds per sequence across a
+        whole step. It says nothing about room: the capacity is shared, and
+        whether a step fits is declare_step's answer.
+        """
+        self._check_seq_id(seq_id)
+        limit = self.config.max_context
+        if limit is None:
+            return True
+        sequence = self._sequences.get(seq_id)
+        reached = sequence.used(0) if sequence is not None else 0
+        return reached + n <= limit
+
+    def max_seqs(self) -> Optional[int]:
+        """None: a sequence is a dict entry, so only the cells they take bound them."""
+        return None
 
     def seq_len(self, seq_id: int) -> int:
         self._check_seq_id(seq_id)
@@ -565,13 +604,42 @@ class CellReferenceCache:
     def free_cells(self) -> int:
         return self._pos.count(-1)
 
-    def can_extend(self, n: int = 1) -> bool:
+    def _has_room(self, n: int = 1) -> bool:
         """Whether `n` more tokens fit: cache-wide, one cell per token.
 
         The bound is on cells, so a prefix shared by several sequences counts
         once and their lengths can sum past `capacity` while a step still fits.
         """
         return self.free_cells() >= n
+
+    def next_pos(self, seq_id: int) -> int:
+        """One past the newest position the sequence holds.
+
+        Not its cell count: positions need only increase, so what a sequence
+        owns and where it has reached are different numbers.
+        """
+        self._check_seq_id(seq_id)
+        bit = 1 << seq_id
+        reached = -1
+        for i, owners in enumerate(self._owners):
+            if owners & bit:
+                reached = max(reached, self._pos[i])
+        return reached + 1
+
+    def can_admit(self, seq_id: int, n: int = 1) -> bool:
+        """Whether seq_id may reach n further positions before max_context.
+
+        Sequences are bounded independently, so this holds per sequence across a
+        whole step. It says nothing about room: the cells are shared, and
+        whether a step fits is declare_step's answer.
+        """
+        self._check_seq_id(seq_id)
+        limit = self.config.max_context
+        return limit is None or self.next_pos(seq_id) + n <= limit
+
+    def max_seqs(self) -> Optional[int]:
+        """MAX_SEQS: one bit each in the owner bitset."""
+        return MAX_SEQS
 
     def seq_len(self, seq_id: int) -> int:
         self._check_seq_id(seq_id)
@@ -589,11 +657,19 @@ class CellReferenceCache:
             raise ValueError("a step carries at least one token")
         for seq_id in seq_ids:
             self._check_seq_id(seq_id)
-        if not self.can_extend(len(seq_ids)):
+        if not self._has_room(len(seq_ids)):
             raise RuntimeError(
                 f"KV cache full: {len(seq_ids)} tokens need as many cells, "
                 f"{self.free_cells()} free"
             )
+        # The pool is weighed once against the whole step; each sequence's own
+        # reach is weighed against the tokens the step gives it.
+        for seq_id, taking in Counter(seq_ids).items():
+            if not self.can_admit(seq_id, taking):
+                raise RuntimeError(
+                    f"sequence {seq_id} would pass the model context limit "
+                    f"{self.config.max_context}"
+                )
         self._step_seq_ids = list(seq_ids)
         self._declared = True
         self._plan = None
@@ -614,18 +690,28 @@ class CellReferenceCache:
                 self._owners[i] |= dst_bit
         self._invalidate_plan()
 
-    def seq_rm(self, seq_id: int, p0: int = 0, p1: Optional[int] = None) -> None:
-        """Drop seq_id's claim on positions [p0, p1); p1 = None runs to the end.
+    def seq_rm(self, seq_id: int) -> None:
+        """Release the whole sequence and its id.
 
-        A cell frees only once no sequence owns it, so removing a shared range
-        reclaims nothing until the last owner lets go. seq_rm(s) drops the whole
-        sequence, seq_rm(s, 0, k) evicts its oldest k positions, and seq_rm(s, k)
-        truncates it at position k.
+        A cell frees only once no sequence owns it, so a shared cell survives
+        until its last owner lets go.
         """
         self._check_seq_id(seq_id)
+        self._drop_from(seq_id, 0)
+
+    def rewind(self, seq_id: int, new_len: int) -> None:
+        """Truncate one sequence to ``new_len``.
+
+        Always possible here: a windowed layer narrows the mask over cells that
+        are still present, so no position is unrecoverable.
+        """
+        self._check_seq_id(seq_id)
+        self._drop_from(seq_id, new_len)
+
+    def _drop_from(self, seq_id: int, from_pos: int) -> None:
         bit = 1 << seq_id
         for i in range(self._used_end):
-            if self._owners[i] & bit and self._in_range(self._pos[i], p0, p1):
+            if self._owners[i] & bit and self._pos[i] >= from_pos:
                 self._owners[i] &= ~bit
                 if self._owners[i] == 0:
                     self._pos[i] = -1
@@ -781,10 +867,6 @@ class CellReferenceCache:
         # only surfaces much later as an int64 overflow building the mask.
         if not 0 <= seq_id < MAX_SEQS:
             raise ValueError(f"seq_id {seq_id} outside [0, {MAX_SEQS})")
-
-    @staticmethod
-    def _in_range(pos: int, p0: int, p1: Optional[int]) -> bool:
-        return pos >= p0 and (p1 is None or pos < p1)
 
 
 def attend(

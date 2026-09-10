@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -45,6 +46,109 @@ inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
   return reshape(band, Shape{1, 1, T, S}, s);
 }
 
+// Scatter `update` across the step's runs. Runs are in logical order, so
+// consecutive slices of `update` map to consecutive runs. A flat step is one
+// run; a ring step splits in two when it wraps the pool.
+inline void write_runs(
+    Pool& pool,
+    const cache::Run* runs,
+    int n,
+    const Tensor& update,
+    StreamOrDevice s) {
+  if (n == 1) {
+    pool.write(runs[0].start, runs[0].len, update, s);
+    return;
+  }
+  const int H = static_cast<int>(update.shape(1));
+  const int D = static_cast<int>(update.shape(3));
+  int off = 0;
+  for (int i = 0; i < n; ++i) {
+    pool.write(
+        runs[i].start,
+        runs[i].len,
+        ::mlx::core::slice(
+            update,
+            ::mlx::core::Shape{0, 0, off, 0},
+            ::mlx::core::Shape{1, H, off + runs[i].len, D},
+            ::mlx::core::Shape{1, 1, 1, 1},
+            s),
+        s);
+    off += runs[i].len;
+  }
+}
+
+// Gather the step's runs into the retained window, oldest -> newest.
+inline Tensor
+read_runs(const Pool& pool, const cache::Run* runs, int n, StreamOrDevice s) {
+  if (n == 1) {
+    return pool.read(runs[0].start, runs[0].len, s);
+  }
+  std::vector<Tensor> parts;
+  parts.reserve(static_cast<size_t>(n));
+  for (int i = 0; i < n; ++i) {
+    parts.push_back(pool.read(runs[i].start, runs[i].len, s));
+  }
+  return ::mlx::core::concatenate(parts, 2, s);
+}
+
+// One layer's pools and its window, from that layer's own policy. A flat layer
+// retains all history, so its pool may reach the full cap and starts small; a
+// ring layer recycles a fixed window + max_write - 1 slots and reserves them up
+// front. Every sequence a layout holds is sized this way.
+struct LayerPools {
+  std::vector<Pool> kpool;
+  std::vector<Pool> vpool;
+  std::vector<int> window; // per layer; 0 = keeps all history
+};
+
+inline LayerPools make_pools(const cache::CacheConfig& cfg) {
+  const ::mlx::core::Dtype dt =
+      resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
+  LayerPools out;
+  out.kpool.reserve(static_cast<size_t>(cfg.n_layers));
+  out.vpool.reserve(static_cast<size_t>(cfg.n_layers));
+  out.window.reserve(static_cast<size_t>(cfg.n_layers));
+  for (int l = 0; l < cfg.n_layers; ++l) {
+    // layers size 1 = one config broadcast to every layer, else per-layer.
+    const cache::LayerConfig& lc =
+        cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+    const bool ring = lc.policy.kind == cache::LayerPolicy::Kind::Ring;
+    out.window.push_back(ring ? lc.policy.window : 0);
+    // A layer keeping its history cannot outgrow what one sequence may reach,
+    // which is the tighter of the shared capacity and the model's context.
+    const int keeps = cfg.max_context ? std::min(cfg.capacity, *cfg.max_context)
+                                      : cfg.capacity;
+    const int max_slots = ring ? lc.policy.window +
+            (cfg.max_write ? *cfg.max_write : lc.policy.window) - 1
+                               : keeps;
+    const int initial = ring ? max_slots : cfg.initial_capacity;
+    out.kpool.emplace_back(initial, max_slots, lc.n_kv_heads, lc.head_dim, dt);
+    out.vpool.emplace_back(initial, max_slots, lc.n_kv_heads, lc.head_dim, dt);
+  }
+  return out;
+}
+
+// Which of MLX's mask forms a contiguous run of `T` new tokens needs at the
+// tail of an `S`-cell window. A single decode token needs no mask -- its span
+// is exactly what it may attend, on a ring layer as much as a flat one. A ring
+// bounds each query to its own window, which only bites when the window is
+// narrower than the span (a multi-token step reads the union of its queries'
+// windows, window + T - 1 cells); otherwise plain causal is exact and MLX
+// applies it fused. MLX "causal" is lower-right aligned, so fresh and chunked
+// prefill are both correct with the new tokens at the tail.
+inline AttendSpec
+spec_for(Tensor K, Tensor V, int T, int window, StreamOrDevice s) {
+  if (T == 1) {
+    return AttendSpec{K, V, AttendSpec::Mask::None, std::nullopt};
+  }
+  const int S = static_cast<int>(K.shape(2));
+  if (window > 0 && window < S) {
+    return AttendSpec{
+        K, V, AttendSpec::Mask::Explicit, window_causal_mask(T, S, window, s)};
+  }
+  return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
+}
+
 // The MLX byte layer behind the neutral SequenceCache: one Pool per layer for K
 // and one for V, sized from that layer's own policy. update_and_fetch plans the
 // step (integer runs), writes the new K/V, reads the retained window, and
@@ -56,36 +160,15 @@ inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
 class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
  public:
   explicit MLXSequenceCache(const cache::CacheConfig& cfg)
-      : cache::SequenceCache(checked(cfg)) {
-    const ::mlx::core::Dtype dt =
-        resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
-    kpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    vpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    window_.reserve(static_cast<size_t>(cfg.n_layers));
-    for (int l = 0; l < cfg.n_layers; ++l) {
-      // layers size 1 = one config broadcast to every layer, else per-layer.
-      const cache::LayerConfig& lc =
-          cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
-      const bool ring = lc.policy.kind == cache::LayerPolicy::Kind::Ring;
-      window_.push_back(ring ? lc.policy.window : 0);
-      // Flat retains all history, so its pool may reach the full cap and starts
-      // small. A ring layer recycles a fixed window + max_write - 1 slots.
-      const int max_slots = ring ? lc.policy.window +
-              (cfg.max_write ? *cfg.max_write : lc.policy.window) - 1
-                                 : cfg.capacity;
-      const int initial = ring ? max_slots : cfg.initial_capacity;
-      kpool_.emplace_back(initial, max_slots, lc.n_kv_heads, lc.head_dim, dt);
-      vpool_.emplace_back(initial, max_slots, lc.n_kv_heads, lc.head_dim, dt);
-    }
-  }
+      : cache::SequenceCache(checked(cfg)), pools_(make_pools(cfg)) {}
 
   AttendSpec update_and_fetch(
       int layer,
       const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
-      StreamOrDevice s) override {
-    if (layer < 0 || layer >= static_cast<int>(kpool_.size())) {
+      StreamOrDevice s) {
+    if (layer < 0 || layer >= static_cast<int>(pools_.kpool.size())) {
       throw std::out_of_range("update_and_fetch: layer out of range");
     }
     const int T = static_cast<int>(k.shape(2)); // BHSD: seq axis is 2
@@ -97,32 +180,25 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
           "update_and_fetch: step exceeds capacity or invalid layer");
     }
     const size_t l = static_cast<size_t>(layer);
-    write_runs(kpool_[l], p->write, p->n_write, k, s);
-    write_runs(vpool_[l], p->write, p->n_write, v, s);
-    Tensor K = read_runs(kpool_[l], p->read, p->n_read, s);
-    Tensor V = read_runs(vpool_[l], p->read, p->n_read, s);
+    write_runs(pools_.kpool[l], p->write, p->n_write, k, s);
+    write_runs(pools_.vpool[l], p->write, p->n_write, v, s);
+    Tensor K = read_runs(pools_.kpool[l], p->read, p->n_read, s);
+    Tensor V = read_runs(pools_.vpool[l], p->read, p->n_read, s);
     this->commit(*p);
 
-    // A single decode token needs no mask -- its span is exactly what it may
-    // attend, on a ring layer as much as a flat one.
-    if (T == 1) {
-      return AttendSpec{K, V, AttendSpec::Mask::None, std::nullopt};
-    }
-    // A ring layer bounds each query to its own window. That only bites when
-    // the window is narrower than the span (a multi-token step reads the union
-    // of its queries' windows, window + T - 1 cells); otherwise plain causal is
-    // exact and MLX applies it fused, with no mask tensor.
-    const int S = static_cast<int>(K.shape(2));
-    if (window_[l] > 0 && window_[l] < S) {
-      return AttendSpec{
-          K,
-          V,
-          AttendSpec::Mask::Explicit,
-          window_causal_mask(T, S, window_[l], s)};
-    }
-    // MLX "causal" is lower-right aligned, so fresh and chunked prefill are
-    // both correct with the new tokens at the tail.
-    return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
+    return spec_for(K, V, T, pools_.window[l], s);
+  }
+
+  Tensor attend(
+      int layer,
+      const std::vector<int32_t>& positions,
+      const Tensor& q,
+      const Tensor& k,
+      const Tensor& v,
+      float scale,
+      StreamOrDevice s) override {
+    return ::executorch::backends::mlx::attend(
+        update_and_fetch(layer, positions, k, v, s), q, scale, s);
   }
 
  protected:
@@ -152,51 +228,6 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     return positions[0];
   }
 
-  // Scatter `update` across the step's runs. Runs are in logical order, so
-  // consecutive slices of `update` map to consecutive runs. A flat step is one
-  // run; a ring step splits in two when it wraps the pool.
-  static void write_runs(
-      Pool& pool,
-      const cache::Run* runs,
-      int n,
-      const Tensor& update,
-      StreamOrDevice s) {
-    if (n == 1) {
-      pool.write(runs[0].start, runs[0].len, update, s);
-      return;
-    }
-    const int H = static_cast<int>(update.shape(1));
-    const int D = static_cast<int>(update.shape(3));
-    int off = 0;
-    for (int i = 0; i < n; ++i) {
-      pool.write(
-          runs[i].start,
-          runs[i].len,
-          ::mlx::core::slice(
-              update,
-              ::mlx::core::Shape{0, 0, off, 0},
-              ::mlx::core::Shape{1, H, off + runs[i].len, D},
-              ::mlx::core::Shape{1, 1, 1, 1},
-              s),
-          s);
-      off += runs[i].len;
-    }
-  }
-
-  // Gather the step's runs into the retained window, oldest -> newest.
-  static Tensor
-  read_runs(const Pool& pool, const cache::Run* runs, int n, StreamOrDevice s) {
-    if (n == 1) {
-      return pool.read(runs[0].start, runs[0].len, s);
-    }
-    std::vector<Tensor> parts;
-    parts.reserve(static_cast<size_t>(n));
-    for (int i = 0; i < n; ++i) {
-      parts.push_back(pool.read(runs[i].start, runs[i].len, s));
-    }
-    return ::mlx::core::concatenate(parts, 2, s);
-  }
-
   // Enforce the neutral contract as an exception, the failure mode this layer
   // already uses. Runs as the base initializer's argument because
   // SequenceCache's own ctor indexes `layers` before this class's body does.
@@ -207,9 +238,7 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     return cfg;
   }
 
-  std::vector<Pool> kpool_;
-  std::vector<Pool> vpool_;
-  std::vector<int> window_; // per layer; 0 = flat (unbounded history)
+  LayerPools pools_;
 };
 
 } // namespace mlx

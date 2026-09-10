@@ -72,6 +72,8 @@ namespace kind {
 inline constexpr const char* kSingle = "single";
 // Many sequences sharing one pool of per-token cells.
 inline constexpr const char* kBatchedCell = "batched-cell";
+// Many sequences, each over its own private history.
+inline constexpr const char* kBatchedSequence = "batched-sequence";
 } // namespace kind
 
 // Cache kind is expressed by which factory you call: backends register a

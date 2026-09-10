@@ -6,6 +6,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+#include "MLXBatchedSequenceCache.h"
 #include "MLXCache.h"
 #include "MLXCellCache.h"
 #include "MLXExecutor.h"
@@ -627,6 +628,18 @@ const int cache_builders_registered = [] {
       "Failed to register cache builder for %s:%s",
       kMLXBackendId,
       cache::kind::kBatchedCell);
+  const Error batched_seq = cache::CacheFactory::global().register_builder(
+      kMLXBackendId,
+      cache::kind::kBatchedSequence,
+      [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
+            std::make_shared<MLXBatchedSequenceCache>(cfg));
+      });
+  ET_CHECK_MSG(
+      batched_seq == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatchedSequence);
   return 0;
 }();
 } // namespace

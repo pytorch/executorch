@@ -74,20 +74,24 @@ class ET_EXPERIMENTAL Cache {
   virtual void* face(FaceId id) = 0;
 };
 
-// Lifecycle and admission, tensor-free.
+// Lifecycle, tensor-free. Admission needs a subject, so it belongs to the
+// faces below, which have one.
 class ET_EXPERIMENTAL CacheControl {
  public:
   virtual ~CacheControl() = default;
-  virtual bool can_extend(int n = 1) const = 0; // admission / hard-stop
   virtual int capacity() const = 0; // logical cap
   virtual void clear() = 0; // reset for reuse
 };
 
-// Application face of a single-sequence cache: one length to rewind.
+// Application face of a single-sequence cache: one history to extend and one
+// length to rewind.
 class ET_EXPERIMENTAL SequenceControl : public CacheControl {
  public:
   static constexpr const char* kFaceName = "et.cache.SequenceControl";
 
+  // Room for n more tokens: the one history is bounded by capacity and, where
+  // the model sets one, by max_context.
+  virtual bool can_extend(int n = 1) const = 0;
   // Truncate to new_len; false = cannot grow, or the target is older than an
   // evicting layer still retains.
   virtual bool rewind(int new_len) = 0;
@@ -105,6 +109,15 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   // its tokens. Whether its positions are well-formed is checked when the step
   // is placed.
   virtual bool declare_step(const std::vector<int32_t>& seq_ids) = 0;
+  // Whether seq_id may reach n further positions before max_context, the limit
+  // the model was trained to. Sequences are bounded independently, so this
+  // holds per sequence across a whole step.
+  // False also = an unknown sequence.
+  virtual bool can_admit(int32_t seq_id, int n = 1) const = 0;
+  // How many sequences may be live at once. nullopt = no fixed bound, so the
+  // capacity they share is the only limit. A caller sizing itself against the
+  // cache asks this before it hands out work seq_new would refuse.
+  virtual std::optional<int> max_seqs() const = 0;
   // An id no live sequence is using, held until that sequence's last slot is
   // freed. nullopt = every id is in use. Ids may also be chosen by the caller;
   // this only guarantees the one it returns is not already taken.
@@ -116,10 +129,12 @@ class ET_EXPERIMENTAL BatchControl : public CacheControl {
   virtual std::optional<int32_t> seq_clone(
       int32_t src,
       std::optional<int> upto) = 0;
-  // Drop the sequence's claim on positions [p0, p1). A slot frees only once
-  // no sequence owns it. False = an unknown sequence; a range owning nothing
-  // is a no-op.
-  virtual bool seq_rm(int32_t seq_id, int p0, std::optional<int> p1) = 0;
+  // Release the whole sequence and its id. A slot frees only once no sequence
+  // owns it. False = an unknown sequence.
+  virtual bool seq_rm(int32_t seq_id) = 0;
+  // Truncate one sequence to new_len. False = an unknown sequence, a target
+  // that would grow it, or one older than an evicting layer still retains.
+  virtual bool rewind(int32_t seq_id, int new_len) = 0;
   virtual int seq_len(int32_t seq_id) const = 0; // slots the sequence owns
   // one past its newest position
   virtual int next_pos(int32_t seq_id) const = 0;
@@ -149,10 +164,17 @@ struct ET_EXPERIMENTAL CacheConfig {
   int n_layers;
   std::vector<LayerConfig> layers;
   int kv_dtype; // ET ScalarType the byte layer stores K/V in
-  int initial_capacity = 512; // starting pool size; grows lazily to capacity
+  // Starting slots for a layer that keeps its history; it doubles from here
+  // toward capacity. A windowed layer takes its whole window at once instead.
+  // A layout holding a private history per sequence pays this per sequence.
+  int initial_capacity = 512;
   // Max tokens per step; a ring layer sizes slots to window + max_write - 1.
   // Unset = each ring layer uses its own window.
   std::optional<int> max_write;
+  // Positions any one sequence may reach, from the model rather than from the
+  // caller: past it the model was never trained. Bounds a sequence, where
+  // capacity bounds them all together. Unset = only capacity bounds a sequence.
+  std::optional<int> max_context;
 };
 
 // Whether `cfg` satisfies the contract above.
@@ -160,6 +182,7 @@ ET_EXPERIMENTAL inline bool valid(const CacheConfig& cfg) {
   // initial_capacity may be 0 but not negative, and may exceed capacity -- the
   // byte layer clamps it.
   return cfg.capacity > 0 && cfg.n_layers > 0 && cfg.initial_capacity >= 0 &&
+      (!cfg.max_context || *cfg.max_context > 0) &&
       (cfg.layers.size() == 1 ||
        cfg.layers.size() == static_cast<size_t>(cfg.n_layers));
 }

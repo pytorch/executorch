@@ -200,7 +200,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
   }
 
   for (const auto& [seq_id, from] : rewinds) {
-    if (!ctl_->seq_rm(seq_id, from, std::nullopt)) {
+    if (!ctl_->rewind(seq_id, from)) {
       ET_LOG(Error, "build_step: sequence %d would not truncate", seq_id);
       return Error::Internal;
     }
@@ -473,7 +473,7 @@ void ModuleExecutor::close_session(SessionId session) {
     return;
   }
   // Frees the cells and hands the sequence id back. The session id is not.
-  ctl_->seq_rm(it->second.seq_id, 0, std::nullopt);
+  ctl_->seq_rm(it->second.seq_id);
   sessions_.erase(it);
 }
 
