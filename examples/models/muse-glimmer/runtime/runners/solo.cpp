@@ -53,6 +53,7 @@ extern "C" void et_pal_emit_log_message(
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
 #endif
 
 // The vision runtime translation unit owns the stb implementations; this file
@@ -179,6 +180,10 @@ DEFINE_string(
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
+#ifdef EXECUTORCH_BUILD_CUDA
+using ::executorch::extension::clone_tensor_ptr_to;
+using ::executorch::extension::TensorPtr;
+#endif
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 
@@ -256,7 +261,7 @@ copy_to_host(const executorch::aten::Tensor& src, void* dst, size_t num_bytes) {
 // MuseGlimmerConfig).
 
 // Preprocess one image file, run the exported vision_encoder, and copy the
-// resulting soft-token embeddings ([num_soft_tokens, hidden] bf16) to host.
+// resulting soft-token embeddings ([num_soft_tokens, hidden]) to host.
 // Used by the multimodal NLL path to score the image/perception reference.
 static Error encode_image_nll(
     Module& module,
@@ -264,7 +269,9 @@ static Error encode_image_nll(
     const std::vector<float>& pos_table,
     std::vector<uint16_t>& out_embeds,
     int64_t& out_num_soft_tokens,
-    int64_t& out_hidden) {
+    int64_t& out_hidden,
+    executorch::aten::ScalarType expected_dtype,
+    bool validate_dtype) {
   namespace gv = ::executorch::examples::muse_glimmer_vision;
   int img_w = 0, img_h = 0, img_c = 0;
   unsigned char* img_data =
@@ -303,10 +310,18 @@ static Error encode_image_nll(
     ET_LOG(Error, "vision_encoder failed for %s", image_path.c_str());
     return Error::Internal;
   }
+  if (validate_dtype && (ve_result->empty() || !(*ve_result)[0].isTensor())) {
+    ET_LOG(Error, "vision_encoder must return image embeddings");
+    return Error::InvalidProgram;
+  }
   const auto& image_embeds = ve_result.get()[0].toTensor();
   if (image_embeds.dim() != 3 || image_embeds.size(0) != 1) {
     ET_LOG(Error, "vision_encoder output must be [1, N, hidden]");
     return Error::Internal;
+  }
+  if (validate_dtype && image_embeds.scalar_type() != expected_dtype) {
+    ET_LOG(Error, "vision_encoder output must use the activation dtype");
+    return Error::InvalidProgram;
   }
   out_num_soft_tokens = image_embeds.size(1);
   out_hidden = image_embeds.size(2);
@@ -333,7 +348,7 @@ static int64_t apply_prefill_chunk_override(
   return model_chunk;
 }
 
-#ifdef EXECUTORCH_BUILD_MLX
+#if defined(EXECUTORCH_BUILD_CUDA) || defined(EXECUTORCH_BUILD_MLX)
 static Error read_activation_dtype(
     Module& module,
     executorch::aten::ScalarType& dtype) {
@@ -355,6 +370,34 @@ static Error read_activation_dtype(
         tag.data());
     return Error::InvalidProgram;
   }
+  return Error::Ok;
+}
+#endif
+
+#ifdef EXECUTORCH_BUILD_CUDA
+static Error copy_dflash_to_host(
+    const executorch::aten::Tensor& src,
+    void* dst,
+    size_t num_bytes) {
+  if (num_bytes > src.nbytes()) {
+    ET_LOG(
+        Error,
+        "DFlash D2H requested %zu bytes from a %zu-byte tensor",
+        num_bytes,
+        src.nbytes());
+    return Error::InvalidArgument;
+  }
+  auto stream = executorch::backends::cuda::getCurrentCUDAStream(0);
+  if (!stream.ok()) {
+    return stream.error();
+  }
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+      dst,
+      src.const_data_ptr(),
+      num_bytes,
+      cudaMemcpyDeviceToHost,
+      stream.get()));
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream.get()));
   return Error::Ok;
 }
 #endif
@@ -788,7 +831,8 @@ int main(int argc, char** argv) {
   bool nll_vision_uses_short_forward = false;
   if (nll_vision) {
     const auto method_names = module->method_names();
-    if (method_names.ok() &&
+    if (method_names.ok() && method_names->count("draft_forward") != 0 &&
+        method_names->count("embed_text") != 0 &&
         method_names->count("target_forward_from_embeddings") != 0) {
       // DFlash long prefill intentionally computes lm_head for only the last
       // position. NLL needs one logits row per input position, which the short
@@ -796,6 +840,13 @@ int main(int argc, char** argv) {
       nll_vision_forward_method = "target_forward_from_embeddings";
       nll_vision_uses_short_forward = true;
     }
+  }
+  executorch::aten::ScalarType nll_vision_activation_dtype =
+      executorch::aten::ScalarType::BFloat16;
+  if (nll_vision_uses_short_forward &&
+      read_activation_dtype(*module, nll_vision_activation_dtype) !=
+          Error::Ok) {
+    return 1;
   }
   // embed_text is needed for generation (splice image/text embeds) and for the
   // multimodal NLL path; the text-only NLL path uses token-input
@@ -1023,8 +1074,14 @@ int main(int argc, char** argv) {
       for (size_t k = 0; k < image_paths.size(); ++k) {
         int64_t n = 0, h = 0;
         if (encode_image_nll(
-                *module, image_paths[k], pos_table, img_embeds[k], n, h) !=
-            Error::Ok) {
+                *module,
+                image_paths[k],
+                pos_table,
+                img_embeds[k],
+                n,
+                h,
+                nll_vision_activation_dtype,
+                nll_vision_uses_short_forward) != Error::Ok) {
           return 1;
         }
         if (vision_hidden == 0) {
@@ -1084,6 +1141,8 @@ int main(int argc, char** argv) {
       }
 
       // 1) embed_text over the whole doc (chunked) -> host embeds [T, hidden].
+      const auto cuda_device =
+          executorch::aten::Device(executorch::aten::DeviceType::CUDA, 0);
       int64_t hidden = 0;
       std::vector<uint16_t> embeds_host;
       for (int64_t ep = 0; ep < num_tokens; ep += embed_chunk_sz) {
@@ -1094,14 +1153,29 @@ int main(int argc, char** argv) {
             tok_chunk.data(),
             {1, static_cast<SizesType>(elen)},
             executorch::aten::ScalarType::Long);
-        auto et_res = module->execute("embed_text", {EValue(tok_t)});
+        TensorPtr tok_input = tok_t;
+        if (nll_vision_uses_short_forward) {
+          tok_input = clone_tensor_ptr_to(tok_t, cuda_device);
+        }
+        auto et_res = module->execute("embed_text", {EValue(tok_input)});
         if (et_res.error() != Error::Ok) {
           ET_LOG(Error, "embed_text failed at %lld", (long long)ep);
           return 1;
         }
+        if (nll_vision_uses_short_forward &&
+            (et_res->size() != 1 || !(*et_res)[0].isTensor())) {
+          ET_LOG(Error, "embed_text must return one tensor");
+          return 1;
+        }
         const auto& te = et_res.get()[0].toTensor();
-        if (te.dim() != 3 || te.size(1) != elen) {
-          ET_LOG(Error, "embed_text returned unexpected shape");
+        if (te.dim() != 3 || te.size(1) != elen ||
+            (nll_vision_uses_short_forward &&
+             (te.size(0) != 1 || te.size(2) <= 0 ||
+              (hidden != 0 && te.size(2) != hidden) ||
+              te.scalar_type() != nll_vision_activation_dtype))) {
+          ET_LOG(
+              Error,
+              "embed_text returned an unexpected shape or activation dtype");
           return 1;
         }
         if (hidden == 0) {
@@ -1116,11 +1190,13 @@ int main(int argc, char** argv) {
           }
           embeds_host.resize(static_cast<size_t>(num_tokens * hidden));
         }
-        if (copy_to_host(
-                te,
-                embeds_host.data() + ep * hidden,
-                static_cast<size_t>(elen * hidden) * sizeof(uint16_t)) !=
-            Error::Ok) {
+        const size_t embed_bytes =
+            static_cast<size_t>(elen * hidden) * sizeof(uint16_t);
+        const Error copy_error = nll_vision_uses_short_forward
+            ? copy_dflash_to_host(
+                  te, embeds_host.data() + ep * hidden, embed_bytes)
+            : copy_to_host(te, embeds_host.data() + ep * hidden, embed_bytes);
+        if (copy_error != Error::Ok) {
           return 1;
         }
       }
@@ -1183,6 +1259,7 @@ int main(int argc, char** argv) {
             FLAGS_nll_output_file.c_str());
         return 1;
       }
+      int64_t dflash_vocab_size = 0;
       int64_t pos = 0;
       while (pos < num_tokens) {
         int64_t clen = std::min(num_tokens - pos, forward_chunk_sz);
@@ -1198,38 +1275,66 @@ int main(int argc, char** argv) {
         auto chunk_embeds = from_blob(
             chunk_ptr,
             {1, static_cast<SizesType>(clen), static_cast<SizesType>(hidden)},
-            executorch::aten::ScalarType::BFloat16);
+            nll_vision_uses_short_forward
+                ? nll_vision_activation_dtype
+                : executorch::aten::ScalarType::BFloat16);
         auto pos_t = from_blob(
             pos_data.data(),
             {static_cast<SizesType>(clen)},
             executorch::aten::ScalarType::Long);
+        TensorPtr chunk_input = chunk_embeds;
+        TensorPtr pos_input = pos_t;
+        if (nll_vision_uses_short_forward) {
+          chunk_input = clone_tensor_ptr_to(chunk_embeds, cuda_device);
+          pos_input = clone_tensor_ptr_to(pos_t, cuda_device);
+        }
         auto res = module->execute(
-            nll_vision_forward_method, {EValue(chunk_embeds), EValue(pos_t)});
+            nll_vision_forward_method,
+            {EValue(chunk_input), EValue(pos_input)});
         if (res.error() != Error::Ok) {
           ET_LOG(Error, "NLL forward(embeds) failed at %lld", (long long)pos);
           return 1;
         }
+        if (nll_vision_uses_short_forward &&
+            (res->empty() || !(*res)[0].isTensor())) {
+          ET_LOG(
+              Error,
+              "%s must return logits",
+              nll_vision_forward_method.c_str());
+          return 1;
+        }
         const auto& logits = res.get()[0].toTensor();
+        if (nll_vision_uses_short_forward &&
+            (logits.scalar_type() != executorch::aten::ScalarType::Float ||
+             logits.dim() != 3 || logits.size(0) != 1)) {
+          ET_LOG(Error, "DFlash target logits must be float32 [1, T, V]");
+          return 1;
+        }
         const int64_t vocab_size = logits.size(logits.dim() - 1);
         const int64_t logits_rows = logits.size(logits.dim() - 2);
         // CUDA outputs use their bounded capacity (four rows) even when the
         // logical tail chunk has fewer rows. The valid logits are the leading
         // `clen` rows, matching DFlashSession::process_target_outputs().
-        if (logits_rows < clen) {
+        if (logits_rows < clen ||
+            (nll_vision_uses_short_forward &&
+             (vocab_size <= 0 ||
+              (dflash_vocab_size != 0 && vocab_size != dflash_vocab_size)))) {
           ET_LOG(
               Error,
-              "%s returned only %lld logits rows for a %lld-token NLL chunk",
+              "%s returned invalid logits for a %lld-token NLL chunk",
               nll_vision_forward_method.c_str(),
-              (long long)logits_rows,
               (long long)clen);
           return 1;
         }
+        if (nll_vision_uses_short_forward) {
+          dflash_vocab_size = vocab_size;
+        }
         std::vector<float> host_logits(static_cast<size_t>(clen) * vocab_size);
-        if (copy_to_host(
-                logits,
-                host_logits.data(),
-                static_cast<size_t>(clen) * vocab_size * sizeof(float)) !=
-            Error::Ok) {
+        const size_t logits_bytes = host_logits.size() * sizeof(float);
+        const Error copy_error = nll_vision_uses_short_forward
+            ? copy_dflash_to_host(logits, host_logits.data(), logits_bytes)
+            : copy_to_host(logits, host_logits.data(), logits_bytes);
+        if (copy_error != Error::Ok) {
           return 1;
         }
         std::vector<float> lps;
@@ -1252,6 +1357,15 @@ int main(int argc, char** argv) {
             sum_exp += std::exp(static_cast<double>(row[v]) - m);
           }
           const int64_t target = tokens[g + 1];
+          if (nll_vision_uses_short_forward &&
+              (target < 0 || target >= vocab_size)) {
+            ET_LOG(
+                Error,
+                "NLL target id %lld is outside vocabulary [0, %lld)",
+                (long long)target,
+                (long long)vocab_size);
+            return 1;
+          }
           const double lp =
               static_cast<double>(row[target]) - m - std::log(sum_exp);
           lps.push_back(static_cast<float>(lp));
