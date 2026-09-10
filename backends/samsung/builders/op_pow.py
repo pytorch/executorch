@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import Dict
 
 import torch
@@ -24,15 +25,17 @@ class PowVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input1 = node.args[0]
         input2 = node.args[1]
         input_tensor_1 = get_tensor(self.exported_program, input1)
         input_tensor_2 = get_tensor(self.exported_program, input2)
-        assert (
-            input_tensor_1.dtype == torch.float32
-            and input_tensor_2.dtype == torch.float32
-        ), "Requires the two inputs are all float type"
+        if (
+            input_tensor_1.dtype != torch.float32
+            or input_tensor_2.dtype != torch.float32
+        ):
+            logging.warning("Requires the two inputs are all float type.")
+            return False
 
         input_id_1 = self.define_tensor(input1, enn_graph, vals_to_ids)
         input_id_2 = self.define_tensor(input2, enn_graph, vals_to_ids)
@@ -40,3 +43,5 @@ class PowVisitor(NodeVisitor):
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         enn_graph.define_op(node.name, "POW", [input_id_1, input_id_2], [output_id])
+
+        return True

@@ -1080,6 +1080,20 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_binary_op_zero_dim(self):
+        # Both operands, and therefore the output, are 0-dimensional. This is
+        # what a reduction to a scalar followed by arithmetic produces, e.g. the
+        # log-mel normalisation in Whisper's preprocessor.
+        class ZeroDimModule(torch.nn.Module):
+            def forward(self, x):
+                m = x.max()
+                return (m - (m - 1.0)).reshape(1)
+
+        self.lower_module_and_test_output(
+            ZeroDimModule(),
+            (torch.randn(size=(64,), dtype=torch.float32),),
+        )
+
     @disable_test("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
@@ -1477,6 +1491,32 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             TestModule(),
             sample_inputs,
+        )
+
+    def test_vulkan_backend_constant_pad_nd_symbolic_pad(self):
+        """A pad amount derived from a dynamic dim, as LSTM padding produces.
+
+        Without the guard this partitions and then aborts at prepack with
+        "Expected value to have type IntList, got VALUELIST instead", because
+        the pad list is serialized as a VALUELIST of Int/SymInt.
+        """
+
+        class TestModule(torch.nn.Module):
+            def forward(self, x):
+                # Pad up to a static length, the shape every unrolled LSTM
+                # wants its input in.
+                return torch.nn.functional.pad(x, (0, 0, 0, 16 - x.shape[1]))
+
+        sample_inputs = (torch.randn(size=(1, 12, 8), dtype=torch.float32),)
+        seq = Dim("seq", min=2, max=16)
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: seq}},
+            test_inputs=[
+                (torch.randn(size=(1, 4, 8), dtype=torch.float32),),
+                (torch.randn(size=(1, 16, 8), dtype=torch.float32),),
+            ],
         )
 
     def test_vulkan_backend_repeat(self):

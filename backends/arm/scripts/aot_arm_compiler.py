@@ -981,8 +981,6 @@ def _to_edge_cortex_m(
             calibration_samples = [example_inputs]
 
         for sample in calibration_samples:
-            if not args.cortex_m_explicit_layout:
-                sample = tuple(_to_channels_last(x) for x in sample)
             prepared(*sample)
 
         model_quant = convert_pt2e(prepared)
