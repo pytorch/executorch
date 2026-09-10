@@ -27,7 +27,7 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     to_quantized_edge_program,
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
     Conv1dModule,
     Conv2dModule,
     Conv3dModule,

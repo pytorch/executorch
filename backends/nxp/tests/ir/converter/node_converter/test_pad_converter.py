@@ -14,8 +14,8 @@ from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
 )
 from executorch.backends.nxp.backend.ops_aliases import Convolution, Pad
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import PadConvModule, PadModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import PadConvModule, PadModule
 
 
 @pytest.fixture(autouse=True)

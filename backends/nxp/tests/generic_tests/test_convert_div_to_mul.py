@@ -18,11 +18,11 @@ from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
     NonstaticDivLinearModel,
     StaticDivLinearModel,
 )
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 
 
 @pytest.fixture(autouse=True)

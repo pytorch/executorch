@@ -18,12 +18,12 @@ from executorch.backends.nxp.backend.ops_aliases import SliceCopy
 from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
     GRUModel,
     SplitWithSections,
     SplitWithSize,
 )
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 
 
 @pytest.fixture(autouse=True)

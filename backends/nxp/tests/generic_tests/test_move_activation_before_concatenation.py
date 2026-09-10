@@ -42,7 +42,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.models import get_activation
+from executorch.backends.nxp.tests.simple_models import get_activation
 from parameterized import parameterized
 from torch import nn
 from torch.export import ExportedProgram

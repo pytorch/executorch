@@ -28,7 +28,10 @@ from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
 )
-from executorch.backends.nxp.tests.models import Conv1dModule, ConvTranspose1dModule
+from executorch.backends.nxp.tests.simple_models import (
+    Conv1dModule,
+    ConvTranspose1dModule,
+)
 from torch import nn
 from torch.export import ExportedProgram
 

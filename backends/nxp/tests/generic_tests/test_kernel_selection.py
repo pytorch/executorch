@@ -13,7 +13,7 @@ import pytest
 import torch
 
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
     AdaptiveAvgPool2dConvModule,
     Conv2dReLUMaxPoolModule,
 )

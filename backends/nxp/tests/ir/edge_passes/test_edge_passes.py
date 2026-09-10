@@ -48,7 +48,7 @@ from executorch.backends.nxp.tests.executors import (
     EdgeProgramExecutor,
     OverrideTargetSupportCheck,
 )
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
     Conv2dModule,
     ConvActivationModule,
     ConvFCFCSoftmaxModuleWithoutReshape,

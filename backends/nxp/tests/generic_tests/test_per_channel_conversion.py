@@ -33,7 +33,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.models import Conv2dModule
+from executorch.backends.nxp.tests.simple_models import Conv2dModule
 from parameterized import parameterized
 
 from torch import fx

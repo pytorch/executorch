@@ -29,7 +29,7 @@ from executorch.backends.nxp.tests.executors import (
     graph_contains_any_of_ops,
     OverrideTargetSupportCheck,
 )
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
     ConvBatchNormModule,
     LinearBatchNormModule,
 )

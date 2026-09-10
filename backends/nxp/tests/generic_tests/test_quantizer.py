@@ -9,7 +9,7 @@ import itertools
 from copy import deepcopy
 
 import executorch.backends.nxp.tests.executorch_pipeline as executorch_pipeline
-import executorch.backends.nxp.tests.models as models
+import executorch.backends.nxp.tests.simple_models as models
 import numpy as np
 
 # noinspection PyUnusedImports

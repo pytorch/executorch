@@ -14,12 +14,12 @@ import torch
 
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
-from executorch.backends.nxp.tests.models import AddTensorModule, AvgPool2dModule
 from executorch.backends.nxp.tests.nsys_testing import (
     get_test_name,
     lower_run_compare,
     OUTPUTS_DIR,
 )
+from executorch.backends.nxp.tests.simple_models import AddTensorModule, AvgPool2dModule
 
 
 @pytest.fixture(autouse=True)
