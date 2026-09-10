@@ -9,10 +9,10 @@
 #include <executorch/examples/models/muse-glimmer/runtime/engine/sampling_cuda.h>
 
 #include <cuda_runtime.h>
-#include <cub/device/device_segmented_radix_sort.cuh>
-#include <cub/device/device_scan.cuh>
 #include <curand_kernel.h>
 #include <math_constants.h>
+#include <cub/device/device_scan.cuh>
+#include <cub/device/device_segmented_radix_sort.cuh>
 
 #include <algorithm>
 #include <cstdint>
@@ -22,6 +22,9 @@ namespace muse_glimmer::cuda {
 namespace {
 
 constexpr int kArgmaxThreads = 256;
+static_assert(
+    (kArgmaxThreads & (kArgmaxThreads - 1)) == 0,
+    "argmax reduction requires a power-of-two thread count");
 constexpr int kSamplingThreads = 256;
 
 struct ArgmaxCandidate {
@@ -35,9 +38,8 @@ struct DeviceRngState {
   unsigned long long base;
 };
 
-__device__ ArgmaxCandidate better_candidate(
-    ArgmaxCandidate lhs,
-    ArgmaxCandidate rhs) {
+__device__ ArgmaxCandidate
+better_candidate(ArgmaxCandidate lhs, ArgmaxCandidate rhs) {
   if (rhs.value > lhs.value ||
       (rhs.value == lhs.value && rhs.index < lhs.index)) {
     return rhs;
@@ -53,8 +55,7 @@ __global__ void argmax_index_kernel(
   const float* row_values = values + row * row_size;
 
   ArgmaxCandidate candidate{-CUDART_INF_F, uint64_t{0}};
-  for (int64_t token = threadIdx.x; token < row_size;
-       token += blockDim.x) {
+  for (int64_t token = threadIdx.x; token < row_size; token += blockDim.x) {
     candidate = better_candidate(
         candidate,
         ArgmaxCandidate{row_values[token], static_cast<uint64_t>(token)});
@@ -89,8 +90,8 @@ __global__ void initialize_offsets_kernel(
     int64_t* offsets,
     int64_t row_count,
     int64_t row_size) {
-  const int64_t row = static_cast<int64_t>(blockIdx.x) * blockDim.x +
-      threadIdx.x;
+  const int64_t row =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (row <= row_count) {
     offsets[row] = row * row_size;
   }
@@ -100,8 +101,8 @@ __global__ void initialize_token_indices_kernel(
     int32_t* indices,
     int64_t total_size,
     int64_t row_size) {
-  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
-      threadIdx.x;
+  const int64_t offset =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (offset < total_size) {
     indices[offset] = static_cast<int32_t>(offset % row_size);
   }
@@ -114,8 +115,8 @@ __global__ void compute_sorted_weights_kernel(
     int32_t retained_count,
     float inverse_temperature,
     double* weights) {
-  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
-      threadIdx.x;
+  const int64_t offset =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (offset >= total_size) {
     return;
   }
@@ -138,8 +139,8 @@ __global__ void find_nucleus_kernel(
     double top_p,
     int32_t* cutoffs,
     float* denominators) {
-  const int64_t row = static_cast<int64_t>(blockIdx.x) * blockDim.x +
-      threadIdx.x;
+  const int64_t row =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (row >= row_count) {
     return;
   }
@@ -162,8 +163,7 @@ __global__ void find_nucleus_kernel(
     cutoff = low;
   }
   cutoffs[row] = cutoff;
-  denominators[row] =
-      static_cast<float>(cumulative[row_start + cutoff]);
+  denominators[row] = static_cast<float>(cumulative[row_start + cutoff]);
 }
 
 __global__ void scatter_probabilities_kernel(
@@ -174,8 +174,8 @@ __global__ void scatter_probabilities_kernel(
     int64_t total_size,
     int64_t row_size,
     float* probabilities) {
-  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
-      threadIdx.x;
+  const int64_t offset =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (offset >= total_size) {
     return;
   }
@@ -207,8 +207,8 @@ __global__ void probabilities_to_double_kernel(
     const float* probabilities,
     int64_t total_size,
     double* values) {
-  const int64_t offset = static_cast<int64_t>(blockIdx.x) * blockDim.x +
-      threadIdx.x;
+  const int64_t offset =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (offset < total_size) {
     values[offset] = static_cast<double>(probabilities[offset]);
   }
@@ -226,14 +226,15 @@ __global__ void categorical_sample_kernel(
     int64_t row_size,
     DeviceRngState* rng,
     uint64_t* tokens) {
-  const int64_t row = static_cast<int64_t>(blockIdx.x) * blockDim.x +
-      threadIdx.x;
+  const int64_t row =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (row >= row_count) {
     return;
   }
   curandStatePhilox4_32_10_t local_rng;
   curand_init(rng->seed, 0, rng->base + row, &local_rng);
-  const double coin = static_cast<double>(uniform_from_uint32(curand(&local_rng)));
+  const double coin =
+      static_cast<double>(uniform_from_uint32(curand(&local_rng)));
   const int64_t row_start = row * row_size;
   int64_t low = 0;
   int64_t high = row_size - 1;
@@ -313,15 +314,15 @@ cudaError_t SamplingWorkspace::reserve(
   impl_->total_size = row_count * row_size;
   const size_t total_size = static_cast<size_t>(impl_->total_size);
 
-#define MUSE_GLIMMER_CUDA_ALLOCATE(member, count)                                  \
-  do {                                                                     \
-    const cudaError_t error = cudaMalloc(                                  \
-        reinterpret_cast<void**>(&impl_->member),                          \
-        static_cast<size_t>(count) * sizeof(*impl_->member));              \
-    if (error != cudaSuccess) {                                            \
-      impl_->release();                                                    \
-      return error;                                                        \
-    }                                                                      \
+#define MUSE_GLIMMER_CUDA_ALLOCATE(member, count)             \
+  do {                                                        \
+    const cudaError_t error = cudaMalloc(                     \
+        reinterpret_cast<void**>(&impl_->member),             \
+        static_cast<size_t>(count) * sizeof(*impl_->member)); \
+    if (error != cudaSuccess) {                               \
+      impl_->release();                                       \
+      return error;                                           \
+    }                                                         \
   } while (false)
 
   MUSE_GLIMMER_CUDA_ALLOCATE(sort_keys_in, total_size);
@@ -387,8 +388,7 @@ cudaError_t SamplingWorkspace::reserve(
   }
 
   impl_->temporary_storage_bytes = std::max(sort_bytes, scan_bytes);
-  error = cudaMalloc(
-      &impl_->temporary_storage, impl_->temporary_storage_bytes);
+  error = cudaMalloc(&impl_->temporary_storage, impl_->temporary_storage_bytes);
   if (error != cudaSuccess) {
     impl_->release();
   }
@@ -414,8 +414,10 @@ cudaError_t argmax_index(
     return cudaErrorInvalidValue;
   }
   argmax_index_kernel<<<
-      static_cast<unsigned int>(row_count), kArgmaxThreads, 0, stream>>>(
-      values, row_size, indices);
+      static_cast<unsigned int>(row_count),
+      kArgmaxThreads,
+      0,
+      stream>>>(values, row_size, indices);
   return cudaGetLastError();
 }
 
@@ -452,10 +454,9 @@ cudaError_t fill_sampling_probabilities(
     return error;
   }
 
-  const int item_blocks = static_cast<int>(
-      (total_size + kSamplingThreads - 1) / kSamplingThreads);
-  initialize_token_indices_kernel<<<
-      item_blocks, kSamplingThreads, 0, stream>>>(
+  const int item_blocks =
+      static_cast<int>((total_size + kSamplingThreads - 1) / kSamplingThreads);
+  initialize_token_indices_kernel<<<item_blocks, kSamplingThreads, 0, stream>>>(
       state.sort_indices_in, total_size, row_size);
   error = cudaGetLastError();
   if (error != cudaSuccess) {
@@ -482,8 +483,7 @@ cudaError_t fill_sampling_probabilities(
 
   const int32_t retained_count =
       top_k > 0 && top_k < row_size ? top_k : static_cast<int32_t>(row_size);
-  compute_sorted_weights_kernel<<<
-      item_blocks, kSamplingThreads, 0, stream>>>(
+  compute_sorted_weights_kernel<<<item_blocks, kSamplingThreads, 0, stream>>>(
       state.sort_keys_out,
       total_size,
       row_size,
@@ -508,8 +508,8 @@ cudaError_t fill_sampling_probabilities(
     }
   }
 
-  const int row_blocks = static_cast<int>(
-      (row_count + kSamplingThreads - 1) / kSamplingThreads);
+  const int row_blocks =
+      static_cast<int>((row_count + kSamplingThreads - 1) / kSamplingThreads);
   find_nucleus_kernel<<<row_blocks, kSamplingThreads, 0, stream>>>(
       state.cumulative,
       row_count,
@@ -523,8 +523,7 @@ cudaError_t fill_sampling_probabilities(
     return error;
   }
 
-  scatter_probabilities_kernel<<<
-      item_blocks, kSamplingThreads, 0, stream>>>(
+  scatter_probabilities_kernel<<<item_blocks, kSamplingThreads, 0, stream>>>(
       state.weights,
       state.sort_indices_out,
       state.cutoffs,
@@ -553,10 +552,9 @@ cudaError_t categorical_sample(
   }
   auto& state = *workspace.impl_;
   const int64_t total_size = state.total_size;
-  const int item_blocks = static_cast<int>(
-      (total_size + kSamplingThreads - 1) / kSamplingThreads);
-  probabilities_to_double_kernel<<<
-      item_blocks, kSamplingThreads, 0, stream>>>(
+  const int item_blocks =
+      static_cast<int>((total_size + kSamplingThreads - 1) / kSamplingThreads);
+  probabilities_to_double_kernel<<<item_blocks, kSamplingThreads, 0, stream>>>(
       probabilities, total_size, state.weights);
   error = cudaGetLastError();
   if (error != cudaSuccess) {
@@ -580,8 +578,8 @@ cudaError_t categorical_sample(
   if (error != cudaSuccess) {
     return error;
   }
-  const int row_blocks = static_cast<int>(
-      (row_count + kSamplingThreads - 1) / kSamplingThreads);
+  const int row_blocks =
+      static_cast<int>((row_count + kSamplingThreads - 1) / kSamplingThreads);
   categorical_sample_kernel<<<row_blocks, kSamplingThreads, 0, stream>>>(
       state.cumulative, row_count, row_size, state.rng, tokens);
   return cudaGetLastError();
