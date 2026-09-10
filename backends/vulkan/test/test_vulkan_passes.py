@@ -1,8 +1,9 @@
 import unittest
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 
+from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
@@ -86,7 +87,104 @@ def op_node_count(graph_module: torch.fx.GraphModule, canonical_op_name: str) ->
     return count
 
 
+def run_conv1d_as_conv2d(
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor],
+    dynamic_shapes=None,
+) -> torch.fx.GraphModule:
+    """Exports `model` to edge and runs Conv1dAsConv2dPass over it."""
+    program = torch.export.export(
+        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    )
+    edge_program = to_edge(
+        program,
+        compile_config=EdgeCompileConfig(_skip_dim_order=False, _check_ir_validity=False),
+    )
+    exported = edge_program.exported_program()
+
+    conv_pass = Conv1dAsConv2dPass()
+    conv_pass._exported_program = exported
+    return conv_pass(exported.graph_module).graph_module
+
+
+def conv_input_ranks(graph_module: torch.fx.GraphModule) -> List[int]:
+    """The rank of the input to every convolution in the graph."""
+    ranks = []
+    for node in graph_module.graph.nodes:
+        if get_target_canonical_name(node) == "convolution.default":
+            ranks.append(len(node.args[0].meta["val"].shape))
+    return ranks
+
+
 class TestVulkanPasses(unittest.TestCase):
+    def test_conv1d_as_conv2d_rewrites_eligible_conv(self):
+        # Output equality cannot show this: an unrewritten conv1d computes the
+        # same numbers. What distinguishes the two is the rank the convolution
+        # is asked to work at, so that is what is asserted.
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(32, 128, kernel_size=3, padding=1)
+
+            def forward(self, x):
+                return self.conv(x)
+
+        gm = run_conv1d_as_conv2d(
+            Conv1dModule(), (torch.randn(1, 32, 64),)
+        )
+
+        self.assertEqual(conv_input_ranks(gm), [4])
+        # Two views: one lifting the input to 4-D, one lowering the output back.
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 2)
+
+    def test_conv1d_as_conv2d_rejects_shared_weight(self):
+        # The rewrite reshapes the weight in place. A second consumer would go
+        # on reading a tensor that has silently become rank 4, so a shared
+        # weight has to be left alone.
+        class SharedWeightModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(128, 32, 3))
+
+            def forward(self, x, y):
+                return (
+                    torch.nn.functional.conv1d(x, self.weight, padding=1),
+                    torch.nn.functional.conv1d(y, self.weight, padding=1),
+                )
+
+        gm = run_conv1d_as_conv2d(
+            SharedWeightModule(), (torch.randn(1, 32, 64), torch.randn(1, 32, 64))
+        )
+
+        self.assertEqual(conv_input_ranks(gm), [3, 3])
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 0)
+
+    def test_conv1d_as_conv2d_rejects_symbolic_batch(self):
+        # A batch free to vary at runtime is not a batch of 1, whatever value it
+        # was traced with, and conv2d refuses batched input. The guard is on the
+        # dimension being a plain integer rather than on its traced value, so
+        # that a comparison never decides this from the hint alone.
+        #
+        # Traced at 2 because export specializes a size-1 dimension: the batch
+        # has to be genuinely symbolic here for the graph to be the one the
+        # guard exists for.
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(32, 128, kernel_size=3, padding=1)
+
+            def forward(self, x):
+                return self.conv(x)
+
+        gm = run_conv1d_as_conv2d(
+            Conv1dModule(),
+            (torch.randn(2, 32, 64),),
+            dynamic_shapes={"x": {0: torch.export.Dim.AUTO}},
+        )
+
+        self.assertEqual(conv_input_ranks(gm), [3])
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 0)
+
     def test_fuse_torchao_quantized_embedding(self):
         """A torchao-dialect 4-bit weight-only quantized embedding
         (torchao.dequantize_affine -> aten.embedding) should fuse into a single
