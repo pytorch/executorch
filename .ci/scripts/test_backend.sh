@@ -154,9 +154,6 @@ if [[ "$FLOW" == *nxp* ]]; then
     export NXP_RUNNER_PATH="$(pwd)/examples/nxp/executor_runner/build/nxp_executor_runner"
 fi
 
-GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
-export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
-
 EXIT_CODE=0
 # An Ethos-U failure captures a few hundred thousand lines of Vela operator
 # listings, and the runner agent throws System.OutOfMemoryException processing

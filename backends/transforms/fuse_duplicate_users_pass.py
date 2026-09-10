@@ -11,7 +11,76 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
-from torch.fx.node import Argument, map_arg
+from torch.fx.node import map_arg
+
+
+DO_NOT_FUSE_DUPLICATE_META_KEY = "do_not_fuse_duplicate"
+
+
+def _map_leaf_to_key(node: Node) -> str:
+    return node.name
+
+
+def _to_hashable(value: Any) -> Hashable:
+    """Convert arbitrarily nested structures into hashable tuples."""
+
+    if isinstance(value, (list, tuple)):
+        return tuple(_to_hashable(v) for v in value)
+    if isinstance(value, dict):
+        normalized_items = [(k, _to_hashable(v)) for k, v in value.items()]
+        return tuple(sorted(normalized_items, key=lambda item: repr(item[0])))
+    if isinstance(value, set):
+        hashable_values: List[Hashable] = [_to_hashable(v) for v in value]
+        return tuple(sorted(hashable_values, key=repr))
+    if isinstance(value, slice):
+        return (
+            "slice",
+            _to_hashable(value.start),
+            _to_hashable(value.stop),
+            _to_hashable(value.step),
+        )
+    if isinstance(value, range):
+        return ("range", value.start, value.stop, value.step)
+    if isinstance(value, torch.Size):
+        return ("size", tuple(value))
+    if isinstance(value, torch.dtype):
+        return ("dtype", str(value))
+    if isinstance(value, torch.device):
+        return ("device", str(value))
+    if isinstance(value, torch.memory_format):
+        return ("memory_format", str(value))
+    if isinstance(value, torch.Tensor):
+        return (
+            "tensor",
+            str(value.dtype),
+            tuple(value.size()),
+            value.device.type,
+            value.requires_grad,
+        )
+    return value
+
+
+def _get_target_key(target: Any) -> Hashable:
+    if isinstance(target, (EdgeOpOverload, OpOverload)):
+        return str(target)
+    return target
+
+
+def build_node_signature(
+    node: Node, *, positional_arg_start: int = 0
+) -> Tuple[Hashable, ...] | None:
+    """Build a stable signature while ignoring leading positional operands."""
+    try:
+        normalized_args = _to_hashable(
+            map_arg(node.args[positional_arg_start:], _map_leaf_to_key)
+        )
+        normalized_kwargs = _to_hashable(
+            {k: map_arg(v, _map_leaf_to_key) for k, v in node.kwargs.items()}
+        )
+    except TypeError:
+        return None
+
+    return (node.op, _get_target_key(node.target), normalized_args, normalized_kwargs)
 
 
 class FuseDuplicateUsersPass(ExportPass):
@@ -106,7 +175,7 @@ class FuseDuplicateUsersPass(ExportPass):
             if user.target in self._excluded_targets:
                 continue
 
-            target_key = self._get_target_key(user.target)
+            target_key = _get_target_key(user.target)
             target_signature = (user.op, target_key)
             users_by_target.setdefault(target_signature, []).append(user)
 
@@ -120,62 +189,6 @@ class FuseDuplicateUsersPass(ExportPass):
         return candidate_groups
 
     def _build_user_signature(self, node: Node) -> Tuple[Hashable, ...] | None:
-        try:
-            normalized_args = self._to_hashable(
-                map_arg(node.args, self._map_leaf_to_key)
-            )
-            normalized_kwargs = self._to_hashable(
-                {k: map_arg(v, self._map_leaf_to_key) for k, v in node.kwargs.items()}
-            )
-        except TypeError:
+        if node.meta.get(DO_NOT_FUSE_DUPLICATE_META_KEY, False):
             return None
-
-        target_key = self._get_target_key(node.target)
-
-        return (node.op, target_key, normalized_args, normalized_kwargs)
-
-    def _map_leaf_to_key(self, node: Node) -> Argument:
-        return node.name
-
-    def _to_hashable(self, value: Any) -> Hashable:
-        """Convert arbitrarily nested structures into hashable tuples."""
-
-        if isinstance(value, (list, tuple)):
-            return tuple(self._to_hashable(v) for v in value)
-        if isinstance(value, dict):
-            normalized_items = [(k, self._to_hashable(v)) for k, v in value.items()]
-            return tuple(sorted(normalized_items, key=lambda item: repr(item[0])))
-        if isinstance(value, set):
-            hashable_values: List[Hashable] = [self._to_hashable(v) for v in value]
-            return tuple(sorted(hashable_values, key=repr))
-        if isinstance(value, slice):
-            return (
-                "slice",
-                self._to_hashable(value.start),
-                self._to_hashable(value.stop),
-                self._to_hashable(value.step),
-            )
-        if isinstance(value, range):
-            return ("range", value.start, value.stop, value.step)
-        if isinstance(value, torch.Size):
-            return ("size", tuple(value))
-        if isinstance(value, torch.dtype):
-            return ("dtype", str(value))
-        if isinstance(value, torch.device):
-            return ("device", str(value))
-        if isinstance(value, torch.memory_format):
-            return ("memory_format", str(value))
-        if isinstance(value, torch.Tensor):
-            return (
-                "tensor",
-                str(value.dtype),
-                tuple(value.size()),
-                value.device.type,
-                value.requires_grad,
-            )
-        return value
-
-    def _get_target_key(self, target: Any) -> Hashable:
-        if isinstance(target, (EdgeOpOverload, OpOverload)):
-            return str(target)
-        return target
+        return build_node_signature(node)
