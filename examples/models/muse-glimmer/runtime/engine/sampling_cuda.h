@@ -31,6 +31,9 @@ class SamplingWorkspace {
       int64_t row_size,
       cudaStream_t stream);
 
+  // Resets the graph-safe Philox state used by stochastic primitives.
+  cudaError_t set_seed(uint64_t seed, cudaStream_t stream);
+
  private:
   struct Impl;
   Impl* impl_;
@@ -43,6 +46,13 @@ class SamplingWorkspace {
       int32_t,
       double,
       float*,
+      SamplingWorkspace&,
+      cudaStream_t);
+  friend cudaError_t categorical_sample(
+      const float*,
+      int64_t,
+      int64_t,
+      uint64_t*,
       SamplingWorkspace&,
       cudaStream_t);
 };
@@ -71,6 +81,16 @@ cudaError_t fill_sampling_probabilities(
     int32_t top_k,
     double top_p,
     float* probabilities,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream);
+
+// CUDA counterpart of muse_glimmer::categorical_sample for normalized contiguous
+// probability rows. Produces one device-resident token id per row.
+cudaError_t categorical_sample(
+    const float* probabilities,
+    int64_t row_count,
+    int64_t row_size,
+    uint64_t* tokens,
     SamplingWorkspace& workspace,
     cudaStream_t stream);
 
