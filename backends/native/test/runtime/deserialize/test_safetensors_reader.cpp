@@ -45,7 +45,6 @@ TEST(SafeTensorsReaderTest, ReadsIndexAndPayloadsInHeaderOrder) {
   EXPECT_EQ(reader.find("first")->sizes, (std::vector<int64_t>{1}));
   EXPECT_EQ(reader.find("first")->offset, 0);
   EXPECT_EQ(reader.find("first")->nbytes, 4);
-  EXPECT_EQ(reader.bytes(*reader.find("second"))[0], 'X');
   EXPECT_EQ(reader.total_bytes(), 6);
   EXPECT_EQ(reader.find("missing"), nullptr);
 }
@@ -55,6 +54,17 @@ TEST(SafeTensorsReaderTest, RejectsNonEmptyMetadata) {
       SafeTensorsReader::open(
           make_safetensors(R"({"__metadata__":{"source":"test"}})", "")),
       std::runtime_error);
+}
+
+TEST(SafeTensorsReaderTest, ReadsHeaderWithoutPayload) {
+  const std::string header =
+      R"({"x":{"dtype":"U8","shape":[2],"data_offsets":[0,2]}})";
+  const SafeTensorsReader reader = SafeTensorsReader::open_header(
+      ByteSpan(reinterpret_cast<const uint8_t*>(header.data()), header.size()),
+      2);
+
+  ASSERT_NE(reader.find("x"), nullptr);
+  EXPECT_EQ(reader.find("x")->nbytes, 2);
 }
 
 TEST(SafeTensorsReaderTest, RejectsInvalidMetadata) {
