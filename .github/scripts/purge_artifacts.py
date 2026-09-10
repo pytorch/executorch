@@ -8,13 +8,16 @@
 """Delete GitHub Actions artifacts older than the repository retention window.
 
 `list` crawls the artifact API and writes the candidates to a file for
-inspection, grouped by workflow run with the largest runs first. `delete` removes the artifacts in that file and records
-progress next to it, so an interrupted run resumes where it stopped. Uses
-GITHUB_TOKEN if set, otherwise the token of the logged-in gh CLI. Progress is
-logged to stderr; results go to stdout.
+inspection, grouped by workflow run with the largest runs first. `delete`
+removes the artifacts in that file and records progress next to it, so an
+interrupted run resumes where it stopped. `auto` repeats list and delete until
+nothing older than the cutoff is left. Uses GITHUB_TOKEN if set, otherwise the
+token of the logged-in gh CLI. Progress is logged to stderr; results go to
+stdout. Rate limits never fail a run: the script waits for the reset and goes on.
 """
 
 import argparse
+import itertools
 import json
 import logging
 import os
@@ -28,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from http.client import HTTPException
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import HTTPError
 
 from github_utils import gh_fetch_url_and_headers, GITHUB_API_URL
@@ -40,7 +43,11 @@ RETENTION_DAYS = 14
 # GitHub's longest retention; nothing older can still be live.
 MAX_RETENTION_DAYS = 90
 MAX_ATTEMPTS = 5
-RATE_LIMIT_RESERVE = 20
+# Requests per hour left untouched so that gh keeps working for whoever runs this.
+RATE_LIMIT_RESERVE = 500
+DEFAULT_PER_MINUTE = 75
+MAX_CYCLE_FAILURES = 5
+RETRY_MINUTES = 5
 SOCKET_TIMEOUT_SECONDS = 60
 LOG_EVERY_PAGES = 100
 LOG_EVERY_DELETES = 250
@@ -58,7 +65,8 @@ def is_rate_limited(err: HTTPError, body: str) -> bool:
 
 def request(url: str, method: str = "GET") -> bytes:
     path = url[len(GITHUB_API_URL) :]
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    failures = 0
+    while True:
         started = time.monotonic()
         try:
             headers, body = gh_fetch_url_and_headers(
@@ -69,27 +77,37 @@ def request(url: str, method: str = "GET") -> bytes:
             )
         except HTTPError as err:
             text = err.read().decode(errors="replace").strip()[:200]
-            wait: Optional[float] = None
             if is_rate_limited(err, text):
                 if "Retry-After" in err.headers:
                     wait = float(err.headers["Retry-After"])
                 elif err.headers.get("X-RateLimit-Remaining") == "0":
                     wait = seconds_until_reset(err.headers)
                 else:
-                    wait = 60.0 * attempt
-            elif err.code >= 500:
-                wait = float(2**attempt)
-            if wait is None or attempt == MAX_ATTEMPTS:
+                    wait = 60.0
+                logging.warning(
+                    "%s %s -> %d %s, rate limited, resuming in %.0fs",
+                    method,
+                    path,
+                    err.code,
+                    text,
+                    wait,
+                )
+                time.sleep(wait)
+                continue
+            failures += 1
+            if err.code < 500 or failures == MAX_ATTEMPTS:
                 logging.info("%s %s -> %d %s", method, path, err.code, text)
                 raise
+            wait = float(2**failures)
             logging.warning(
                 "%s %s -> %d %s, retrying in %.0fs", method, path, err.code, text, wait
             )
             time.sleep(wait)
         except (OSError, HTTPException) as err:
-            if attempt == MAX_ATTEMPTS:
+            failures += 1
+            if failures == MAX_ATTEMPTS:
                 raise
-            wait = float(2**attempt)
+            wait = float(2**failures)
             logging.warning(
                 "%s %s failed (%r), retrying in %.0fs", method, path, err, wait
             )
@@ -222,7 +240,7 @@ def write_candidates(
 
 def delete_candidates(
     repo: str, candidates_path: Path, per_minute: float, limit: Optional[int]
-) -> None:
+) -> Tuple[int, int]:
     done_path = candidates_path.with_name(candidates_path.name + ".done")
     done = set()
     if done_path.exists():
@@ -292,6 +310,38 @@ def delete_candidates(
         f"Deleted {count:,} artifacts ({tb(freed)} TB) in "
         f"{(time.monotonic() - start) / 3600:.1f} h; {len(done) + count:,} recorded in {done_path}"
     )
+    return count, freed
+
+
+def auto(repo: str, older_than_days: int, per_minute: float) -> None:
+    workdir = Path(tempfile.mkdtemp(prefix="purge-artifacts-"))
+    logging.info("Candidates files and progress are kept in %s", workdir)
+    cycles = deleted = freed = failures = 0
+    for attempt in itertools.count(1):
+        try:
+            candidates = list_candidates(repo, older_than_days)
+            if not candidates:
+                break
+            out = workdir / f"candidates-{attempt}.jsonl"
+            write_candidates(candidates, out, older_than_days)
+            count, size = delete_candidates(repo, out, per_minute, limit=None)
+        except Exception:
+            failures += 1
+            if failures == MAX_CYCLE_FAILURES:
+                raise
+            logging.exception(
+                "Cycle %d failed, starting over in %d minutes", attempt, RETRY_MINUTES
+            )
+            time.sleep(RETRY_MINUTES * 60)
+            continue
+        cycles += 1
+        deleted += count
+        freed += size
+        failures = 0
+    print(
+        f"Nothing older than {older_than_days} days remains; deleted {deleted:,} "
+        f"artifacts ({tb(freed)} TB) in {cycles} cycles"
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -319,10 +369,22 @@ def parse_args() -> argparse.Namespace:
     )
     deleter.add_argument("--repo", default="pytorch/executorch")
     deleter.add_argument("--candidates", type=Path, required=True)
-    deleter.add_argument("--per-minute", type=float, default=80)
+    deleter.add_argument("--per-minute", type=float, default=DEFAULT_PER_MINUTE)
     deleter.add_argument("--limit", type=int, help="stop after this many deletions")
+    runner = sub.add_parser(
+        "auto",
+        help="list and delete, again and again, until nothing older than the cutoff is left",
+    )
+    runner.add_argument("--repo", default="pytorch/executorch")
+    runner.add_argument(
+        "--older-than-days",
+        type=int,
+        default=RETENTION_DAYS,
+        help=f"at least {RETENTION_DAYS}, the repository retention (default)",
+    )
+    runner.add_argument("--per-minute", type=float, default=DEFAULT_PER_MINUTE)
     args = parser.parse_args()
-    if args.command == "list" and args.older_than_days < RETENTION_DAYS:
+    if args.command != "delete" and args.older_than_days < RETENTION_DAYS:
         parser.error(f"--older-than-days must be at least {RETENTION_DAYS}")
     return args
 
@@ -355,8 +417,10 @@ def main() -> None:
         write_candidates(
             list_candidates(args.repo, args.older_than_days), out, args.older_than_days
         )
-    else:
+    elif args.command == "delete":
         delete_candidates(args.repo, args.candidates, args.per_minute, args.limit)
+    else:
+        auto(args.repo, args.older_than_days, args.per_minute)
 
 
 if __name__ == "__main__":
