@@ -21,6 +21,18 @@ for f in $(echo "${XTENSAD_LICENSE_FILE}:${XTENSA_TOOLCHAIN}/${TOOLCHAIN_VER}/Xt
   awk '/^(FEATURE|INCREMENT)/ { print "   feature:", $1, $2, $3, $4, $5 }' "$f" 2>/dev/null | sort -u
   grep -o 'HOSTID=[^ ]*' "$f" 2>/dev/null | sort -u | sed 's/^/   /'
 done
+echo "--- core config fingerprints (is the key input identical?)"
+CORE_DIR=$(dirname "$(dirname "${XTENSAD_LICENSE_FILE}")")/$(basename "$(dirname "$(dirname "${XTENSAD_LICENSE_FILE}")")")
+CORE_DIR=$(dirname "$(dirname "${XTENSAD_LICENSE_FILE}")")
+echo "CORE_DIR=${CORE_DIR}"
+echo "core dir aggregate: $(find "${CORE_DIR}" -type f -print0 2>/dev/null | sort -z | xargs -0 md5sum 2>/dev/null | md5sum)"
+echo "core file count:    $(find "${CORE_DIR}" -type f 2>/dev/null | wc -l)"
+for f in "${CORE_DIR}"/config/*-params "${XTENSA_SYSTEM}"/*-params; do
+  [ -f "$f" ] && echo "  params $(md5sum "$f")"
+done
+TC="${XTENSA_TOOLCHAIN}/${TOOLCHAIN_VER}/XtensaTools"
+echo "toolchain lic dir:  $(find "${TC}/Tools/lic" -type f -print0 2>/dev/null | sort -z | xargs -0 md5sum 2>/dev/null | md5sum)"
+echo "xt-clang binary:    $(md5sum "${TC}/bin/xt-clang" 2>/dev/null)"
 echo "--- core resolution"
 echo "XTENSA_CORE=${XTENSA_CORE:-unset}"
 echo "XTENSA_SYSTEM=${XTENSA_SYSTEM:-unset}"
