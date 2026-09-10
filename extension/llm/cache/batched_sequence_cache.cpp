@@ -77,10 +77,8 @@ std::optional<int> BatchedSequenceCache::max_seqs() const {
 }
 
 std::optional<int32_t> BatchedSequenceCache::seq_new() {
-  const std::optional<int32_t> id = free_id();
-  if (id) {
-    rows_.emplace(*id, SequenceCache(cfg_));
-  }
+  const int32_t id = free_id();
+  rows_.emplace(id, SequenceCache(cfg_));
   return id;
 }
 
@@ -102,11 +100,9 @@ std::optional<int32_t> BatchedSequenceCache::seq_clone(
   if (!fork.rewind(len)) {
     return std::nullopt; // older than a windowed layer retains
   }
-  const std::optional<int32_t> dst = free_id();
-  if (!dst) {
-    return std::nullopt;
-  }
-  rows_.emplace(*dst, std::move(fork));
+  const int32_t dst = free_id();
+  rows_.emplace(dst, std::move(fork));
+  clone_bytes(src, dst);
   invalidate_step();
   return dst;
 }
@@ -191,7 +187,7 @@ const std::vector<SeqSpan>* BatchedSequenceCache::place_step(
 
 // -- internals --------------------------------------------------------------
 
-std::optional<int32_t> BatchedSequenceCache::free_id() const {
+int32_t BatchedSequenceCache::free_id() const {
   int32_t id = 0;
   while (rows_.find(id) != rows_.end()) {
     ++id;

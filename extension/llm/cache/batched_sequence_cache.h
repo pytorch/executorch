@@ -88,8 +88,10 @@ class ET_EXPERIMENTAL BatchedSequenceCache : public Cache,
   // is copied, so each fork holds its own and is a snapshot: positions src
   // gains afterwards are its own. nullopt = an unknown or empty src, no room
   // for the copy, or a prefix a windowed layer no longer retains.
-  std::optional<int32_t> seq_clone(int32_t src, std::optional<int> upto)
-      override;
+  //
+  // final: the bookkeeping here and the cells a byte layer holds must move
+  // together, so the byte half is a hook rather than an override to remember.
+  std::optional<int32_t> seq_clone(int32_t src, std::optional<int> upto) final;
 
   bool seq_rm(int32_t seq_id) override;
 
@@ -108,12 +110,21 @@ class ET_EXPERIMENTAL BatchedSequenceCache : public Cache,
   place_step(int layer, const int32_t* positions, int length) override;
 
  protected:
+  // Put src's cells under dst. Called once seq_clone has taken the fork, so
+  // src is present and dst is new. The fork's bookkeeping already claims src's
+  // history: a layer that leaves the cells behind reads whatever its own fresh
+  // storage holds, which is not an error anything downstream can detect.
+  virtual void clone_bytes(int32_t /*src*/, int32_t /*dst*/) {}
+
   void* face(FaceId id) override {
     return expose<BatchControl, SeqSpanStepper>(this, id);
   }
 
  private:
-  std::optional<int32_t> free_id() const;
+  // The lowest id not in use. Always finds one: ids are map keys, so a gap
+  // exists below rows_.size() however many are live.
+  int32_t free_id() const;
+
   int held() const;
 
   // Room for n more tokens, whoever they belong to.

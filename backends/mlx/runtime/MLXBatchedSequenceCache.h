@@ -100,23 +100,6 @@ class MLXBatchedSequenceCache : public cache::BatchedSequenceCache,
                             : ::mlx::core::concatenate(outs, 2, s);
   }
 
-  // Copies the donor's pools whole, not just its first `upto` cells: a ring
-  // addresses slots by position, so the same pools at the length the base set
-  // hold the same history.
-  std::optional<int32_t> seq_clone(int32_t src, std::optional<int> upto)
-      override {
-    const std::optional<int32_t> dst =
-        cache::BatchedSequenceCache::seq_clone(src, upto);
-    if (!dst) {
-      return std::nullopt;
-    }
-    auto it = rows_.find(src);
-    if (it != rows_.end()) {
-      rows_.emplace(*dst, it->second);
-    }
-    return dst;
-  }
-
   // The pools go with the sequence; the base frees the bookkeeping.
   bool seq_rm(int32_t seq_id) override {
     if (!cache::BatchedSequenceCache::seq_rm(seq_id)) {
@@ -132,6 +115,14 @@ class MLXBatchedSequenceCache : public cache::BatchedSequenceCache,
   }
 
  protected:
+  // The donor's pools whole, not just its first `upto` cells: a ring addresses
+  // slots by position, so the same pools at the length the base set hold the
+  // same history. at(): src holds cells whenever the base took the fork, and a
+  // fork without them would read its own zeros.
+  void clone_bytes(int32_t src, int32_t dst) override {
+    rows_.emplace(dst, rows_.at(src));
+  }
+
   void* face(cache::FaceId id) override {
     if (void* p = cache::BatchedSequenceCache::face(id)) {
       return p;
