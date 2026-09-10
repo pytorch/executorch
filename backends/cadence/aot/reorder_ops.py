@@ -1179,17 +1179,23 @@ class PropagateSlice(RemoveOrReplacePassInterface):
     Handles any slice dim and any step size.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        additional_unary_targets: Optional[list[EdgeOpOverload]] = None,
+        additional_binary_targets: Optional[list[EdgeOpOverload]] = None,
+    ) -> None:
         super().__init__()
-        elementwise_targets = [
+        unary_targets = [
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.cadence.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             exir_ops.edge.cadence.dequantize_per_tensor.default,
+            *(additional_unary_targets or []),
         ]
         binary_targets = [
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.mul.Tensor,
+            *(additional_binary_targets or []),
         ]
         self._dispatch: dict[
             EdgeOpOverload,
@@ -1198,7 +1204,7 @@ class PropagateSlice(RemoveOrReplacePassInterface):
                 Callable[[torch.fx.Node, torch.fx.Node], bool],
             ],
         ] = {}
-        for t in elementwise_targets:
+        for t in unary_targets:
             self._dispatch[t] = (
                 self._should_swap_elementwise,
                 self._swap_elementwise_slice,
@@ -1224,7 +1230,8 @@ class PropagateSlice(RemoveOrReplacePassInterface):
     def _swap_elementwise_slice(
         self, op_node: torch.fx.Node, slice_node: torch.fx.Node
     ) -> bool:
-        op_input = get_arg(op_node, "input", torch.fx.Node)
+        op_input = op_node.args[0]
+        assert isinstance(op_input, torch.fx.Node)
         graph = slice_node.graph
 
         slice_dim = get_arg(slice_node, "dim", int)
