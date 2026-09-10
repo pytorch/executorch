@@ -18,6 +18,13 @@
 
 using namespace std;
 
+// Weak default for NPU clock frequency (MHz) used to convert nanosecond
+// timestamps to NPU hardware cycles in the profiling dump event.
+// Override with a strong definition in the application to match the actual
+// board configuration.
+// Default value for the i.MXRT700 SoC is 324 MHz.
+__attribute__((weak)) uint32_t neutron_npu_freq_mhz = 324U;
+
 namespace torch {
 namespace executor {
 namespace neutron {
@@ -659,23 +666,28 @@ class NeutronBackend final : public PyTorchBackendInterface {
           index++;
         }
       }
-      // The neutronGetSdkVersion() function is available starting with Neutron
-      // Software 3.2.1. The code below is not backward compatible with earlier
-      // Neutron Software versions.
-      NeutronSdkVersion neutron_sdk_version = neutronGetSdkVersion();
-      uint16_t neutron_sdk_version_uint16 =
-          static_cast<const uint16_t>(neutron_sdk_version.major << 8) |
-          static_cast<const uint16_t>(neutron_sdk_version.minor << 4) |
-          static_cast<const uint16_t>(neutron_sdk_version.patch);
-      event_tracer_log_profiling_delegate(
-          tracer,
-          nullptr,
-          index,
-          neutron_events[events_num - 1].startEvent.time,
-          neutron_events[events_num - 1].stopEvent.time + stop_ticks -
-              start_ticks,
-          static_cast<const void*>(&neutron_sdk_version_uint16),
-          sizeof(uint16_t));
+      if (events_num > 0) {
+        // The neutronGetSdkVersion() function is available starting with
+        // Neutron Software 3.2.1. The code below is not backward compatible
+        // with earlier Neutron Software versions.
+        NeutronSdkVersion neutron_sdk_version = neutronGetSdkVersion();
+        uint16_t neutron_sdk_version_uint16 =
+            static_cast<const uint16_t>(neutron_sdk_version.major << 8) |
+            static_cast<const uint16_t>(neutron_sdk_version.minor << 4) |
+            static_cast<const uint16_t>(neutron_sdk_version.patch);
+        et_timestamp_t neutron_dump_cycles =
+            (stop_ticks - start_ticks) * neutron_npu_freq_mhz / 1000U +
+            neutron_events[events_num - 1].stopEvent.time -
+            neutron_events[0].startEvent.time;
+        event_tracer_log_profiling_delegate(
+            tracer,
+            nullptr,
+            index,
+            neutron_events[events_num - 1].stopEvent.time,
+            neutron_events[events_num - 1].stopEvent.time + neutron_dump_cycles,
+            static_cast<const void*>(&neutron_sdk_version_uint16),
+            sizeof(uint16_t));
+      }
     }
 #endif
 
