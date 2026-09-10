@@ -39,7 +39,7 @@ from typing import Any, Dict, List
 # not on that list is rejected whether or not it appears here.
 DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 
-# CUDA versions to publish.
+# CUDA versions to publish, when the generator offers them.
 #
 # Chosen so that every consumer row can find a matching wheel rather than by what is
 # convenient to verify. A delegate built against one of these has to be able to depend on an
@@ -49,6 +49,12 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 #   cu126   the floor, and what Jetson devices are limited to
 #   cu130   the generator's stable choice, and the default for accelerator consumers
 #   cu132   the newest, which consumers building against a current TensorRT need
+#
+# A version listed here is published only when the shared generator still offers it. When
+# PyTorch stops shipping a CUDA train, its rows simply do not appear and the release skips it,
+# rather than failing the whole build. So a train PyTorch drops (as it did with cu126) costs
+# only that train, and a train PyTorch restores returns here with no edit. The release still
+# fails if a train that IS offered comes through incomplete, which is a real build break.
 #
 # cu132 is included because omitting it would leave a published consumer row with no
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
@@ -198,31 +204,33 @@ def main(argv: List[str]) -> None:
         # blind to a python that disappeared from every supported train. The generator lives in another
         # repository and its axes move independently of what this policy promises to publish.
         built = {(item["python_version"], item["desired_cuda"]) for item in items}
-        # A train that produced no row at all is missing for every python, so reporting it per python
-        # would read as a python problem. Named on its own instead, and first, because the per-pair
-        # report below would otherwise bury it.
-        absent_trains = sorted(
-            set(SUPPORTED_CUDA_VERSIONS) - {cuda for _, cuda in built}
-        )
+        built_trains = {cuda for _, cuda in built}
+        # A train the generator offered nothing for is one PyTorch stopped shipping, not a build
+        # break here. Skip it and publish the rest, so one dropped train cannot take the others
+        # down with it. When PyTorch dropped CUDA 12.6, failing here also blocked cu130 and cu132
+        # from publishing, which is the opposite of what a consumer needs. The train returns on its
+        # own if PyTorch ships it again, with no edit here.
+        absent_trains = sorted(set(SUPPORTED_CUDA_VERSIONS) - built_trains)
         if absent_trains:
             print(
-                f"this policy publishes {SUPPORTED_CUDA_VERSIONS}, but the generator offered no row "
-                f"this filter could keep for {absent_trains}, so a release would publish no wheel for "
-                "that CUDA version at all",
+                f"the generator offered no row for {absent_trains}, so they are skipped this run; "
+                f"publishing {sorted(built_trains)}",
                 file=sys.stderr,
             )
-            sys.exit(1)
+        # A train that IS offered but missing some python versions is a real break, not an upstream
+        # drop: the release would ship an incomplete train, fewer wheels than promised for a version
+        # that is otherwise present. Checked only against the trains actually offered, so a fully
+        # absent train handled above does not also trip this and read as a python problem.
         missing = sorted(
             f"{python}/{cuda}"
             for python in SUPPORTED_PYTHON_VERSIONS
-            for cuda in SUPPORTED_CUDA_VERSIONS
+            for cuda in built_trains
             if (python, cuda) not in built
         )
         if missing:
             print(
-                f"this policy publishes {SUPPORTED_CUDA_VERSIONS} for each of "
-                f"{SUPPORTED_PYTHON_VERSIONS}, but {len(missing)} combination(s) produced no row, so a "
-                f"release would publish no wheel for them: {missing}",
+                f"a published train is missing some of {SUPPORTED_PYTHON_VERSIONS}, so a release "
+                f"would ship an incomplete train: {missing}",
                 file=sys.stderr,
             )
             sys.exit(1)
