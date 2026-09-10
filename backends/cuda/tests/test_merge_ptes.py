@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import Sequence
 from unittest.mock import patch
 
 from executorch.backends.cuda.cuda_weight_collector import (
@@ -128,6 +129,17 @@ class TestMergeCudaPtes(unittest.TestCase):
             ptd_path=ptd_path,
         )
 
+    @staticmethod
+    def _write_merged_artifact(
+        directory: Path,
+        inputs: Sequence[CudaPteInput],
+        fallback: CudaPteInput,
+    ) -> CudaPteInput:
+        pte_path = directory / "model.pte"
+        with pte_path.open("wb") as output:
+            merge_cuda_pte_files(inputs, fallback).write_to_file(output)
+        return CudaPteInput(pte_path, inputs[0].ptd_path)
+
     def test_merges_variants_and_keeps_one_weight_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -212,6 +224,129 @@ class TestMergeCudaPtes(unittest.TestCase):
                 [variant.fallback_only for variant in metadata.variants],
                 [False, False, True],
             )
+
+    def test_remerge_preserves_existing_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("sm80", "sm90", "sm120", "fallback", "merged"):
+                (root / name).mkdir()
+            first_inputs = [
+                self._write_artifact(
+                    root / "sm80", 80, b"sm80-so", b"shared-weight", ptx_compute=0
+                ),
+                self._write_artifact(
+                    root / "sm120",
+                    120,
+                    b"sm120-so",
+                    b"shared-weight",
+                    ptx_compute=0,
+                ),
+            ]
+            fallback = self._write_artifact(
+                root / "fallback", 75, b"fallback-so", b"shared-weight"
+            )
+            merged_input = self._write_merged_artifact(
+                root / "merged", first_inputs, fallback
+            )
+            sm90 = self._write_artifact(
+                root / "sm90", 90, b"sm90-so", b"shared-weight", ptx_compute=0
+            )
+
+            remerged = deserialize_pte_binary(
+                bytes(merge_cuda_pte_files([merged_input, sm90]))
+            )
+            delegate = remerged.program.execution_plan[0].delegates[0]
+            metadata = decode_cuda_aoti_metadata(
+                remerged.program.backend_delegate_data[delegate.processed.index].data
+            )
+            self.assertEqual(
+                [
+                    (variant.target_sm, variant.ptx_compute, variant.fallback_only)
+                    for variant in metadata.variants
+                ],
+                [
+                    (80, 0, False),
+                    (90, 0, False),
+                    (120, 0, False),
+                    (75, 75, True),
+                ],
+            )
+            assert remerged.named_data is not None
+            fallback_key = metadata.variants[-1].so_blob_key
+            fallback_entry = remerged.named_data.pte_data[fallback_key]
+            self.assertEqual(
+                bytes(remerged.named_data.buffers[fallback_entry.buffer_index]),
+                b"fallback-so",
+            )
+
+    def test_remerge_rejects_additional_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in (
+                "sm80",
+                "sm90",
+                "fallback",
+                "replacement-fallback",
+                "merged",
+            ):
+                (root / name).mkdir()
+            sm80 = self._write_artifact(
+                root / "sm80", 80, b"sm80-so", b"shared-weight", ptx_compute=0
+            )
+            fallback = self._write_artifact(
+                root / "fallback", 75, b"fallback-so", b"shared-weight"
+            )
+            merged_input = self._write_merged_artifact(
+                root / "merged", [sm80], fallback
+            )
+            sm90 = self._write_artifact(
+                root / "sm90", 90, b"sm90-so", b"shared-weight", ptx_compute=0
+            )
+            replacement_fallback = self._write_artifact(
+                root / "replacement-fallback",
+                70,
+                b"replacement-fallback-so",
+                b"shared-weight",
+            )
+
+            with self.assertRaisesRegex(ValueError, "already contain a fallback"):
+                merge_cuda_pte_files(
+                    [merged_input, sm90], fallback=replacement_fallback
+                )
+
+    def test_remerge_rejects_multiple_inherited_fallbacks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in (
+                "sm80",
+                "sm90",
+                "fallback75",
+                "fallback70",
+                "merged80",
+                "merged90",
+            ):
+                (root / name).mkdir()
+            sm80 = self._write_artifact(
+                root / "sm80", 80, b"sm80-so", b"shared-weight", ptx_compute=0
+            )
+            sm90 = self._write_artifact(
+                root / "sm90", 90, b"sm90-so", b"shared-weight", ptx_compute=0
+            )
+            fallback75 = self._write_artifact(
+                root / "fallback75", 75, b"fallback75-so", b"shared-weight"
+            )
+            fallback70 = self._write_artifact(
+                root / "fallback70", 70, b"fallback70-so", b"shared-weight"
+            )
+            merged80 = self._write_merged_artifact(
+                root / "merged80", [sm80], fallback75
+            )
+            merged90 = self._write_merged_artifact(
+                root / "merged90", [sm90], fallback70
+            )
+
+            with self.assertRaisesRegex(ValueError, "multiple fallback variants"):
+                merge_cuda_pte_files([merged80, merged90])
 
     def test_preserves_no_ptx_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
