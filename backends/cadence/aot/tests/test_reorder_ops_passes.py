@@ -1425,6 +1425,47 @@ class TestPropagateSlice(unittest.TestCase):
         self.assertIs(sub_nodes[0].args[1], slice_nodes[0])
         self.assertEqual(list(sub_nodes[0].meta["val"].shape), [2, 60, 1, 1])
 
+    def test_swap_additional_binary_target_with_mismatched_ranks(self) -> None:
+        lhs_data = torch.randn(2, 3, 4)
+        rhs_data = torch.randn(3, 4)
+        builder = GraphBuilder()
+        lhs = builder.placeholder("lhs", lhs_data)
+        rhs = builder.placeholder("rhs", rhs_data)
+        sub = builder.call_operator(
+            exir_ops.edge.aten.sub.Tensor,
+            args=(lhs, rhs),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(sub, 1, 0, 2, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            gm,
+            (lhs_data, rhs_data),
+            PropagateSlice(additional_binary_targets=[exir_ops.edge.aten.sub.Tensor]),
+        )
+
+        self.assertTrue(result.modified)
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 2)
+        lhs_slice, rhs_slice = slice_nodes
+        self.assertIs(lhs_slice.args[0], lhs.node)
+        self.assertEqual(lhs_slice.args[1], 1)
+        self.assertEqual(list(lhs_slice.meta["val"].shape), [2, 2, 4])
+        self.assertIs(rhs_slice.args[0], rhs.node)
+        self.assertEqual(rhs_slice.args[1], 0)
+        self.assertEqual(list(rhs_slice.meta["val"].shape), [2, 4])
+        sub_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.sub.Tensor
+        )
+        self.assertEqual(len(sub_nodes), 1)
+        self.assertEqual(list(sub_nodes[0].meta["val"].shape), [2, 2, 4])
+
     def test_swap_broadcast_mul_slice_on_broadcast_dim(self) -> None:
         """[1,60,1,1] * [4,1,1,1] → [4,60,1,1] → slice(dim=0, step=2)
         Only the [4,1,1,1] input should be sliced."""
