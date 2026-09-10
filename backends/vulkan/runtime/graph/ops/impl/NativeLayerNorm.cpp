@@ -15,7 +15,9 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
-#include <executorch/runtime/core/portable_type/half.h>
+
+#include <algorithm>
+#include <cstdint>
 
 namespace vkcompute {
 
@@ -51,7 +53,7 @@ void resize_native_layer_norm_node(
   graph->virtual_resize(rstd, mean_size);
 }
 
-utils::uvec3 layer_norm_buffer_global_wg_size(
+GlobalWorkGrid layer_norm_buffer_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -61,58 +63,45 @@ utils::uvec3 layer_norm_buffer_global_wg_size(
   const ValueRef mean_tensor = args.at(0).refs.at(1);
   const uint32_t num_rows =
       utils::safe_downcast<uint32_t>(graph->numel_of(mean_tensor));
-  return {1u, num_rows, 1u};
+  return GlobalWorkGrid(
+      {1u, num_rows, 1u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
 }
 
-utils::uvec3 layer_norm_buffer_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {64u, 1u, 1u};
-}
-
-// Builds a TensorRef of `sizes` filled with `value`, for synthesizing a
-// layer_norm affine parameter the caller did not supply. Ownership of the
-// buffer passes to the FreeableBuffer, then to the TensorRef, then to the
-// graph.
-namespace etensor = executorch::runtime::etensor;
-
+// Builds a TensorRef of `sizes` filled with ones, or left at zero, for
+// synthesizing a layer_norm affine parameter the caller did not supply.
+// Ownership of the buffer passes to the FreeableBuffer, then to the TensorRef,
+// then to the graph.
+//
+// Only those two values are ever needed, which is what lets the fp16 case be a
+// single bit pattern. Writing it out keeps this file clear of a float16 type;
+// the backend already avoids that dependency elsewhere (see the hand-rolled
+// conversions in api/containers/StagingBuffer.cpp).
 ValueRef constant_affine_tensorref(
     ComputeGraph& graph,
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
-    const float value) {
+    const bool ones) {
+  VK_CHECK_COND(
+      dtype == vkapi::kFloat || dtype == vkapi::kHalf,
+      "native_layer_norm cannot synthesize an affine parameter of dtype ",
+      static_cast<int>(dtype));
+
   int64_t numel = 1;
   for (int64_t d : sizes) {
     numel *= d;
   }
   const size_t total_bytes =
       static_cast<size_t>(numel) * vkapi::element_size(dtype);
+  // Zero bits are zero in both fp32 and fp16, so a zero parameter needs no
+  // fill at all.
   auto* data = new uint8_t[total_bytes]();
-  if (value != 0.0f) {
-    switch (dtype) {
-      case vkapi::kFloat: {
-        auto* typed = reinterpret_cast<float*>(data);
-        std::fill(typed, typed + numel, value);
-        break;
-      }
-      case vkapi::kHalf: {
-        auto* typed = reinterpret_cast<etensor::Half*>(data);
-        std::fill(typed, typed + numel, etensor::Half(value));
-        break;
-      }
-      default:
-        delete[] data;
-        VK_THROW(
-            "native_layer_norm cannot synthesize an affine parameter of dtype ",
-            static_cast<int>(dtype));
+  if (ones) {
+    if (dtype == vkapi::kFloat) {
+      std::fill_n(reinterpret_cast<float*>(data), numel, 1.0f);
+    } else {
+      // 1.0 in IEEE binary16: sign 0, exponent 0b01111, mantissa 0.
+      constexpr uint16_t kHalfOne = 0x3C00;
+      std::fill_n(reinterpret_cast<uint16_t*>(data), numel, kHalfOne);
     }
   }
   executorch::runtime::FreeableBuffer buffer(
@@ -152,13 +141,13 @@ void add_native_layer_norm_node(
 
   ValueRef synthesized_weight = weight_data;
   if (graph.val_is_none(weight_data)) {
-    synthesized_weight =
-        constant_affine_tensorref(graph, affine_sizes, affine_dtype, 1.0f);
+    synthesized_weight = constant_affine_tensorref(
+        graph, affine_sizes, affine_dtype, /*ones=*/true);
   }
   ValueRef synthesized_bias = bias_data;
   if (graph.val_is_none(bias_data)) {
-    synthesized_bias =
-        constant_affine_tensorref(graph, affine_sizes, affine_dtype, 0.0f);
+    synthesized_bias = constant_affine_tensorref(
+        graph, affine_sizes, affine_dtype, /*ones=*/false);
   }
 
   ValueRef arg_weight = prepack_standard_like(graph, synthesized_weight, in);
@@ -193,9 +182,8 @@ void add_native_layer_norm_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      is_buffer ? layer_norm_buffer_global_wg_size
-                : default_pick_global_wg_size,
-      is_buffer ? layer_norm_buffer_local_wg_size : default_pick_local_wg_size,
+      is_buffer ? layer_norm_buffer_gwg : default_pick_gwg,
+      is_buffer ? pick_required_lwg : default_pick_lwg,
       // Inputs and Outputs
       {{{out_tensor, mean_tensor, rstd_tensor}, vkapi::kWrite},
        {{in, arg_weight, arg_bias}, vkapi::kRead}},
