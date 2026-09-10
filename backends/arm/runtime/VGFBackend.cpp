@@ -58,6 +58,8 @@ using executorch::runtime::EventTracerEntry;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
+
 // Dependencies for processing VGF files into Vulkan calls
 #include <vgf/decoder.hpp>
 #include <vgf/vulkan_helpers.generated.hpp>
@@ -961,23 +963,36 @@ VkResult vkml_allocate_basics(
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
       .pNext = &available_12,
   };
+  VkPhysicalDeviceDataGraphFeaturesARM available_graph{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM, &available_11};
 #if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
       available_neural_statistics{
           .sType =
               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_FEATURES_ARM,
-          .pNext = &available_11,
+          .pNext = &available_graph,
           .dataGraphNeuralAcceleratorStatistics = VK_FALSE,
       };
   void* available_features_pnext = &available_neural_statistics;
 #else
-  void* available_features_pnext = &available_11;
+  void* available_features_pnext = &available_graph;
 #endif
   VkPhysicalDeviceFeatures2 available_2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
       .pNext = available_features_pnext,
   };
   vkGetPhysicalDeviceFeatures2(*physical_device, &available_2);
+
+  if (!vgf_data_graph_features_supported(available_graph)) {
+    ET_LOG(
+        Error,
+        "VGF requires VK_ARM_data_graph features dataGraph and "
+        "dataGraphShaderModule (reported dataGraph=%u, "
+        "dataGraphShaderModule=%u)",
+        available_graph.dataGraph,
+        available_graph.dataGraphShaderModule);
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+  }
 
   // Select features
   VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT features_c{
@@ -1013,10 +1028,8 @@ VkResult vkml_allocate_basics(
   features_tensor.shaderTensorAccess = true;
   features_tensor.tensors = true;
   features_tensor.pNext = &features_11;
-  VkPhysicalDeviceDataGraphFeaturesARM features_graph{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM, nullptr};
-  features_graph.dataGraph = true;
-  features_graph.pNext = &features_tensor;
+  VkPhysicalDeviceDataGraphFeaturesARM features_graph =
+      make_vgf_data_graph_features(&features_tensor);
 #if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
       features_neural_statistics{
