@@ -143,7 +143,12 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       return read_status;
     }
 
-    handle->platform_state = platform_init(compile_specs, allocator, handle);
+    const Error platform_status =
+        platform_init(compile_specs, allocator, handle);
+    if (platform_status != Error::Ok) {
+      delete handle;
+      return platform_status;
+    }
 
     // Return the same buffer we were passed - this data will be
     // executed directly
