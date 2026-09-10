@@ -27,7 +27,7 @@ import unittest
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-from executorch.backends.cuda.cuda_weight_collector import CUDA_WEIGHT_CACHE_MAGIC
+from executorch.backends.cuda.cuda_weight_collector import CUDA_AOTI_METADATA_MAGIC
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir._serialize._program import deserialize_pte_binary
 from torch.export import export
@@ -92,7 +92,7 @@ class TestMissingWeightsBlob(unittest.TestCase):
         self.assertEqual(len(payloads), 1, "expected one CUDA delegate")
         payload = payloads[0]
         self.assertTrue(
-            payload.startswith(CUDA_WEIGHT_CACHE_MAGIC),
+            payload.startswith(CUDA_AOTI_METADATA_MAGIC),
             "expected the weight metadata payload this rewrite consumes",
         )
 
@@ -154,7 +154,7 @@ class TestMissingWeightsBlob(unittest.TestCase):
             # the same error number for the same program.
             with open(path, "rb") as f:
                 self.assertNotIn(
-                    CUDA_WEIGHT_CACHE_MAGIC,
+                    CUDA_AOTI_METADATA_MAGIC,
                     f.read(),
                     "the rewrite left the metadata payload in place",
                 )
