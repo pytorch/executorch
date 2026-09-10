@@ -55,6 +55,12 @@ class SamplingWorkspace {
       uint64_t*,
       SamplingWorkspace&,
       cudaStream_t);
+  friend cudaError_t accept_with_probability(
+      const float*,
+      int64_t,
+      uint8_t*,
+      SamplingWorkspace&,
+      cudaStream_t);
 };
 
 // Computes one argmax per contiguous row of `values`.
@@ -91,6 +97,15 @@ cudaError_t categorical_sample(
     int64_t row_count,
     int64_t row_size,
     uint64_t* tokens,
+    SamplingWorkspace& workspace,
+    cudaStream_t stream);
+
+// CUDA counterpart of muse_glimmer::accept_with_probability. Each probability gets an
+// independent Philox draw and produces a byte-valued device result.
+cudaError_t accept_with_probability(
+    const float* probabilities,
+    int64_t count,
+    uint8_t* accepted,
     SamplingWorkspace& workspace,
     cudaStream_t stream);
 
