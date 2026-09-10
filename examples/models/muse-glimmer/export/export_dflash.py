@@ -18,6 +18,7 @@ import gc
 import torch
 
 from executorch.examples.models.muse_glimmer.export import common
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 
 
 def validate_dflash_export_options(backend: str) -> None:
@@ -45,6 +46,24 @@ def _max_draft_prefill_len(draft_config, max_target_prefill: int) -> int:
     ):
         return min(draft_config.sliding_window, max_target_prefill)
     return max_target_prefill
+
+
+def _cuda_propagate_device_config() -> dict[str, PropagateDeviceConfig]:
+    device_resident = PropagateDeviceConfig(
+        skip_h2d_for_method_inputs=True,
+        skip_d2h_for_method_outputs=True,
+    )
+    return {
+        "embed_text": device_resident,
+        "target_forward_from_embeddings": device_resident,
+        "target_prefill_from_embeddings": device_resident,
+        "draft_forward": PropagateDeviceConfig(
+            skip_d2h_for_method_outputs=True
+        ),
+        "draft_prefill": PropagateDeviceConfig(
+            skip_d2h_for_method_outputs=True
+        ),
+    }
 
 
 def export_dflash(
@@ -681,23 +700,21 @@ def _export_dflash_cuda(
     )
     gc.collect()
 
+    # The target methods consume and return device tensors. Host-owned prefill
+    # and image-splice inputs are staged explicitly with cudaMemcpyAsync by the
+    # DFlash session. Draft methods retain host inputs; draft-forward logits and
+    # draft-prefill hidden state remain device-resident.
     et_program = et_prog.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
+                alloc_graph_output=False,
                 share_mutable_buffers=_share_graph_mutable_buffers("cuda"),
             ),
             emit_mutable_buffer_names=True,
-            propagate_device_config={
-                "target_prefill_from_embeddings": PropagateDeviceConfig(
-                    skip_d2h_for_method_outputs=True
-                ),
-                "draft_prefill": PropagateDeviceConfig(
-                    skip_d2h_for_method_outputs=True
-                ),
-            },
+            propagate_device_config=_cuda_propagate_device_config(),
         ),
     )
 
