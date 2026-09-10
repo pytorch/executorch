@@ -358,21 +358,23 @@ Error create_driver_objects(const VelaHandles& handles, PlatformState* state) {
 
 // Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
 // cppcheck-suppress unusedFunction
-PlatformState* platform_init(
+Error platform_init(
     ArrayRef<CompileSpec> specs,
     MemoryAllocator* allocator,
-    const ExecutionHandle* handle) {
+    ExecutionHandle* handle) {
   (void)allocator;
   PlatformState* state = new (std::nothrow) PlatformState();
   if (state == nullptr) {
-    return nullptr;
+    return Error::MemoryAllocationFailed;
   }
   state->options = parse_linux_options(specs);
-  if (create_driver_objects(handle->handles, state) != Error::Ok) {
+  const Error status = create_driver_objects(handle->handles, state);
+  if (status != Error::Ok) {
     delete state;
-    return nullptr;
+    return status;
   }
-  return state;
+  handle->platform_state = state;
+  return Error::Ok;
 }
 
 // Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
