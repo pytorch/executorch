@@ -60,6 +60,10 @@ void __attribute__((weak)) EthosUBackend_execute_end() {}
 void __attribute__((weak)) EthosUBackend_delegate_begin(const void*) {}
 void __attribute__((weak)) EthosUBackend_delegate_end() {}
 #endif
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void __attribute__((weak)) EthosUBackend_input_memcpy(size_t) {}
+void __attribute__((weak)) EthosUBackend_output_memcpy(size_t) {}
+#endif
 __attribute__((weak)) unsigned char* ethosu_fast_scratch = nullptr;
 __attribute__((weak)) size_t ethosu_fast_scratch_size = 0;
 }
@@ -268,6 +272,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
               event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
           // Sizes match and elt size matches so memcpy.
           // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+          EthosUBackend_input_memcpy(tensor_in.nbytes());
+#endif
           arm_ethos_io_memcpy(
               scratch_addr,
               tensor_in.mutable_data_ptr<char>(),
@@ -422,6 +429,9 @@ Error copy_with_layout_adjustment(
   const char* src_bytes = src;
   for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
     // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+    EthosUBackend_output_memcpy(chunk_size);
+#endif
     arm_ethos_io_memcpy(dest, src_bytes, chunk_size);
     src_bytes += vela_chunk_size;
     dest += chunk_size;

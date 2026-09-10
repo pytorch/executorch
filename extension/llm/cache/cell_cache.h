@@ -40,8 +40,12 @@ struct ET_EXPERIMENTAL CellStep {
 // every later layer reuses that placement. `layer` selects the window, which
 // decides the kind and mask, so a step is per policy and memoized for the
 // forward. The returned step is owned by the cache and valid until the next
-// verb. nullptr = no declaration, a token count disagreeing with it, a position
-// a sequence already holds, a layer out of range, or a layer served twice.
+// verb. A layer may be served more than once per forward -- a KV-shared layer
+// re-serves its donor's id -- provided the repeat passes the same positions; it
+// returns the same step and claims no new cells. nullptr = no declaration, a
+// token count disagreeing with it, a position a sequence already holds, a layer
+// out of range, or a re-serve whose positions differ (a step that never
+// declared).
 class ET_EXPERIMENTAL CellStepper {
  public:
   static constexpr const char* kFaceName = "et.cache.CellStepper";
@@ -148,7 +152,6 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   std::vector<int32_t> step_seq_ids_; // set by declare_step
   std::vector<int32_t> step_pos_; // set when the step is placed
   std::vector<int32_t> cells_; // the step's placement, shared by every layer
-  std::vector<bool> served_; // layers this step has already answered
   std::vector<int> windows_; // per layer; 0 = keeps all history
   // window -> step, memoized per forward. Node-based is required: a step
   // handed to one layer must survive another layer's insert.

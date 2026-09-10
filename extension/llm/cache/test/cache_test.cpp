@@ -532,7 +532,7 @@ TEST_F(CacheTest, CellPlacementIsSharedByEveryLayerOfTheStep) {
   const auto* first = c.place(0, args.positions); // layer 0 places the cells
   ASSERT_NE(first, nullptr);
   EXPECT_EQ(c.place(1, args.positions), first); // later layers reuse them
-  EXPECT_EQ(c.place(0, args.positions), nullptr); // asking twice is a new step
+  EXPECT_EQ(c.place(0, args.positions), first); // re-serving repeats the step
   EXPECT_EQ(c.cache.free_cells(), 14); // placed once, not once per layer
 }
 
@@ -775,4 +775,23 @@ TEST_F(CacheTest, CellClearReturnsEveryCell) {
   EXPECT_EQ(c.ctl->seq_len(s0), 0);
   EXPECT_EQ(c.ctl->next_pos(s0), 0); // the sequence is gone
   EXPECT_EQ(c.place(0, {0}), nullptr); // and the step went with it
+}
+
+TEST_F(CacheTest, KvSharedLayerReservesIdempotently) {
+  // A KV-shared layer re-serves its donor's id with the same tokens: the repeat
+  // returns the donor's step and claims no new cells. A re-serve with different
+  // tokens is a new step that never declared, and is refused.
+  Cells c(16, {flat_layer(), flat_layer()});
+  const int32_t s0 = c.seq_new();
+  const auto args = flatten_step({{s0, 0, 3}});
+  ASSERT_TRUE(c.ctl->declare_step(args.seq_ids));
+
+  const auto* donor = c.place(0, args.positions);
+  ASSERT_NE(donor, nullptr);
+  const int free_after_place = c.cache.free_cells();
+
+  EXPECT_EQ(c.place(0, args.positions), donor); // same tokens -> same step
+  EXPECT_EQ(c.cache.free_cells(), free_after_place); // no new cells claimed
+
+  EXPECT_EQ(c.place(0, {7, 8, 9}), nullptr); // different tokens, never declared
 }

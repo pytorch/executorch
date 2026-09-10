@@ -1037,10 +1037,13 @@ jobs:
         ${CONDA_RUN} cmake --build cmake-out/backends/mlx/examples/llm \
           -j$(( $(sysctl -n hw.ncpu) - 1 ))
         RUNNER=cmake-out/backends/mlx/examples/llm/mlx_run_llm_hf
-        if [ ! -x "${RUNNER}" ]; then
-          echo "Failed: runner not found at ${RUNNER}"
-          exit 1
-        fi
+        BATCHED_RUNNER=cmake-out/backends/mlx/examples/llm/mlx_run_llm_batched
+        for binary in "${RUNNER}" "${BATCHED_RUNNER}"; do
+          if [ ! -x "${binary}" ]; then
+            echo "Failed: runner not found at ${binary}"
+            exit 1
+          fi
+        done
         echo "::endgroup::"
 
         echo "::group::Install LLM requirements"
@@ -1084,4 +1087,29 @@ jobs:
           echo "Failed: Expected 'Paris' not found in output"
           exit 1
         fi
+        echo "::endgroup::"
+
+        echo "::group::Run ${MODEL_NAME} batched off-graph inference"
+        ${BATCHED_RUNNER} \
+          --pte /tmp/${MODEL_NAME}_offgraph.pte \
+          --tokenizer "${TOKENIZER}" \
+          --chat "${CHAT}" \
+          --max-session-tokens 1024 \
+          --max-new-tokens 50 \
+          --max-decode-sequences 2 \
+          --out-prefix /tmp/${MODEL_NAME}_batched \
+          "What is the capital of France?" \
+          "What color is grass?"
+        for check in "0:Paris" "1:green"; do
+          index="${check%%:*}"
+          expected="${check#*:}"
+          output="/tmp/${MODEL_NAME}_batched_${index}.txt"
+          if grep -iq "${expected}" "${output}"; then
+            echo "Success: '${expected}' found in ${output}"
+          else
+            echo "Failed: Expected '${expected}' not found in ${output}"
+            cat "${output}"
+            exit 1
+          fi
+        done
         echo "::endgroup::"

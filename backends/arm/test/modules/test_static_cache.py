@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.insert_int32_casts_after_int64_placeholders
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ToExecutorch
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -19,6 +20,11 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
+    StaticQuantizedKVCache,
+)
+from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from torch.export.graph_signature import InputKind, OutputKind
 
 from transformers import LlamaConfig
@@ -41,39 +47,23 @@ EXPECTED_INPUT_COUNTS = {
     InputKind.USER_INPUT: 3,
 }
 
-EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS = {
-    InputKind.BUFFER: 4,
-    InputKind.USER_INPUT: 3,
-}
-
 EXPECTED_OUTPUT_COUNTS = {
     OutputKind.BUFFER_MUTATION: 2,
     OutputKind.USER_OUTPUT: 2,
 }
 
 
-DYNAMIC_KVQ_OPS = [
-    "torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default",
-    "torch.ops.quantized_decomposed.quantize_per_token.default",
-    "torch.ops.quantized_decomposed.dequantize_per_token.default",
-    "torch.ops.llama.update_cache.default",
-    "torch.ops.llama.update_cache_with_indices.default",
-]
-
-
-def _reject_dynamic_kvq_ops(pipeline):
-    pipeline.add_stage_after(
-        "export", pipeline.tester.check_not, DYNAMIC_KVQ_OPS, suffix="dynamic_kvq_ops"
+def _initialize_cache_buffers(pipeline, pattern: list[str]) -> None:
+    pipeline.change_args(
+        "to_executorch",
+        ToExecutorch(
+            ExecutorchBackendConfig(passes=[InitializedMutableBufferPass(pattern)])
+        ),
     )
 
 
 @torch.no_grad()
 class StaticQuantizedCacheModule(torch.nn.Module):
-    key_cache: torch.Tensor
-    value_cache: torch.Tensor
-    key_scale: torch.Tensor
-    value_scale: torch.Tensor
-
     def __init__(
         self,
         config: LlamaConfig,
@@ -90,21 +80,15 @@ class StaticQuantizedCacheModule(torch.nn.Module):
         self.hidden_size = hidden_size
         self.num_attention_heads = num_attention_heads
         self.head_dim = self.hidden_size // self.num_attention_heads
-        cache_shape = (1, self.num_attention_heads, max_cache_len, self.head_dim)
-        scale_shape = (1, 1, 1, self.head_dim)
-
-        self.register_buffer("key_cache", torch.zeros(cache_shape, dtype=torch.int8))
-        self.register_buffer("value_cache", torch.zeros(cache_shape, dtype=torch.int8))
-        self.register_buffer(
-            "key_scale", torch.full(scale_shape, scale, dtype=torch.float32)
+        self.cache = StaticQuantizedKVCache(
+            max_batch_size=1,
+            max_context_length=max_cache_len,
+            n_heads=self.num_attention_heads,
+            head_dim=self.head_dim,
+            scale=scale,
+            use_custom_update_cache_op=False,
+            use_per_channel=False,
         )
-        self.register_buffer(
-            "value_scale", torch.full(scale_shape, scale, dtype=torch.float32)
-        )
-
-    # PT2E activation quantization does not create persistent int8 mutable buffers.
-    def _quantize(self, value: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
-        return torch.clamp(torch.round(value / scale), -128, 127).to(torch.int8)
 
     def forward(
         self,
@@ -112,18 +96,7 @@ class StaticQuantizedCacheModule(torch.nn.Module):
         value_states: torch.Tensor,
         cache_position: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        key_q = self._quantize(key_states, self.key_scale)
-        value_q = self._quantize(value_states, self.value_scale)
-
-        self.key_cache[:, :, cache_position] = key_q
-        self.value_cache[:, :, cache_position] = value_q
-
-        key = self.key_cache.to(torch.float32) * self.key_scale
-        value = self.value_cache.to(torch.float32) * self.value_scale
-        key[:, :, cache_position] = key_states
-        value[:, :, cache_position] = value_states
-
-        return key.clone(), value.clone()
+        return self.cache.update(cache_position, key_states, value_states)
 
     def get_inputs(self) -> input_t:
         key_states = torch.randn(
@@ -236,17 +209,18 @@ def test_static_cache_tosa_FP(test_data):
         exir_op=[],
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
     )
+    _initialize_cache_buffers(pipeline, ["cache_layer_"])
     pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()
 
 
-@pytest.mark.xfail(reason="BUFFER_MUTATION count mismatch: MLETORCH-1971")
 @common.parametrize("test_data", test_configs)
 def test_static_cache_tosa_INT(test_data):
-    module = StaticCacheModule(test_data).eval()
+    module = StaticQuantizedCacheModule(test_data).eval()
     pipeline = TosaPipelineINT[input_t](
-        module, module.get_inputs(), aten_op=[], exir_op=[], fold_quantize=False
+        module, module.get_inputs(), aten_op=[], exir_op=[]
     )
+    _initialize_cache_buffers(pipeline, ["k_cache", "v_cache"])
     pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()
 
@@ -255,41 +229,26 @@ def test_static_cache_tosa_INT(test_data):
 @pytest.mark.xfail(reason="Scatter operator is not supported on U55.")
 @common.parametrize("test_data", test_configs)
 def test_static_cache_u55_INT(test_data):
-    module = StaticCacheModule(test_data).eval()
+    module = StaticQuantizedCacheModule(test_data).eval()
     pipeline = EthosU55PipelineINT[input_t](
         module,
         module.get_inputs(),
         aten_ops=[],
     )
+    _initialize_cache_buffers(pipeline, ["k_cache", "v_cache"])
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_configs,
-    xfails={
-        "multihead_attention": (
-            "BUFFER_MUTATION count mismatch: MLETORCH-1971"
-            "Incorrect numerical behavior: MLBEDSW-11589"
-        ),
-        "grouped_query_attention": (
-            "BUFFER_MUTATION count mismatch: MLETORCH-1971"
-            "Incorrect numerical behavior: MLBEDSW-11589"
-        ),
-        "multi_query_attention": (
-            "BUFFER_MUTATION count mismatch: MLETORCH-1971"
-            "Incorrect numerical behavior: MLBEDSW-11589"
-        ),
-    },
-)
+@common.XfailIfNoCorstone320
+@common.parametrize("test_data", test_configs)
 def test_static_cache_u85_INT(test_data):
-    module = StaticCacheModule(test_data).eval()
+    module = StaticQuantizedCacheModule(test_data).eval()
     pipeline = EthosU85PipelineINT[input_t](
         module,
         module.get_inputs(),
         aten_ops=[],
-        fold_quantize=False,
     )
+    _initialize_cache_buffers(pipeline, ["k_cache", "v_cache"])
     # U85: keep _to_dim_order_copy portable for int64->int32 cast of cache_position (not delegatable).
     pipeline.tester.use_portable_ops = True
     pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
@@ -308,85 +267,23 @@ def test_static_cache_vgf_no_quant(test_data):
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
         quantize=False,
     )
+    _initialize_cache_buffers(pipeline, ["cache_layer_"])
     pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="BUFFER_MUTATION count mismatch: MLETORCH-1971")
 @common.parametrize("test_data", test_configs)
 def test_static_cache_vgf_quant(test_data):
-    module = StaticCacheModule(test_data).eval()
+    module = StaticQuantizedCacheModule(test_data).eval()
     pipeline = VgfPipeline[input_t](
         module,
         module.get_inputs(),
         aten_op=[],
         exir_op=[],
         quantize=True,
-        fold_quantize=False,
         tosa_spec="TOSA-1.0+INT",
     )
+    _initialize_cache_buffers(pipeline, ["k_cache", "v_cache"])
     pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_configs)
-def test_static_quantized_cache_tosa_INT(test_data):
-    module = StaticQuantizedCacheModule(test_data).eval()
-    pipeline = TosaPipelineINT[input_t](
-        module, module.get_inputs(), aten_op=[], exir_op=[], fold_quantize=False
-    )
-    _reject_dynamic_kvq_ops(pipeline)
-    pipeline.change_args(
-        "check_count.exir",
-        {"torch.ops.higher_order.executorch_call_delegate": 2},
-    )
-    pipeline.count_program_io_kinds(
-        EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS
-    )
-    pipeline.run()
-
-
-@common.parametrize(
-    "test_data",
-    test_configs,
-    xfails={
-        config: "Incorrect numerical behavior: MLBEDSW-11589" for config in test_configs
-    },
-)
-def test_static_quantized_cache_u85_INT(test_data):
-    module = StaticQuantizedCacheModule(test_data).eval()
-    pipeline = EthosU85PipelineINT[input_t](
-        module, module.get_inputs(), aten_ops=[], fold_quantize=False
-    )
-    _reject_dynamic_kvq_ops(pipeline)
-    pipeline.change_args(
-        "check_count.exir",
-        {"torch.ops.higher_order.executorch_call_delegate": 2},
-    )
-    pipeline.tester.use_portable_ops = True
-    pipeline.count_program_io_kinds(
-        EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS
-    )
-    pipeline.run()
-
-
-@common.SkipIfNoModelConverter
-@common.parametrize("test_data", test_configs)
-def test_static_quantized_cache_vgf_quant(test_data):
-    module = StaticQuantizedCacheModule(test_data).eval()
-    pipeline = VgfPipeline[input_t](
-        module,
-        module.get_inputs(),
-        aten_op=[],
-        exir_op=[],
-        quantize=True,
-        fold_quantize=False,
-        tosa_spec="TOSA-1.0+INT",
-        n_expected_delegates=2,
-    )
-    _reject_dynamic_kvq_ops(pipeline)
-    pipeline.count_program_io_kinds(
-        EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS
-    )
     pipeline.run()

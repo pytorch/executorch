@@ -15,6 +15,7 @@ from executorch.backends.samsung.enn_preprocess import EnnBackend
 from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
 )
+from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.samsung.utils.utils import get_compile_spec
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -70,8 +71,15 @@ class EnnOperatorSupport(OperatorSupportBase):
         ]:
             return False
 
-        if node.target in SUPPORTED_OPS or node.target.__name__ in self.node_visitors:
+        if node.target in SUPPORTED_OPS:
             return True
+
+        if node.target.__name__ in self.node_visitors:
+            enn_graph = EnnGraph()
+            vals_to_ids: Dict[torch.fx.Node, int] = {}
+            return self.node_visitors[node.target.__name__].define_node(
+                node, enn_graph, vals_to_ids
+            )
 
         supported = self.enn_wrapper.IsNodeSupportedByBackend()
         return supported
@@ -91,10 +99,19 @@ class EnnPartitioner(Partitioner):
         self, edge_program: torch.export.ExportedProgram
     ) -> List[Any]:
         self.op_support_checker = EnnOperatorSupport(edge_program, self.compile_specs)
-        return generate_partitions_from_list_of_nodes(
+        partition_list = generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
             op_support=self.op_support_checker,
         )
+        if len(partition_list) == 1 and partition_list[0].size() == 1:
+            first_node = list(partition_list[0].nodes.keys())[0]
+            # If there is only one partition graph containing a single "aten.clone.default" that is a useless operation,
+            # the RemoveUselessOpPass will remove this operation and cause a graph error.
+            # Therefore, we delete this node to prevent this graph error.
+            # For example, in the test_index_put_in_place_dtype case partition_list is [{aten_clone_default: 2}]
+            if first_node.target == exir_ops.edge.aten.clone.default:
+                del partition_list[0]
+        return partition_list
 
     def tag_nodes(self, partitions: List[Partition]) -> None:
         partition_tags: Dict[str, DelegationSpec] = {}
@@ -127,8 +144,6 @@ class EnnPartitioner(Partitioner):
             torch.ops.aten.max_pool2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten._safe_softmax.default,
-            torch.ops.aten.upsample_bilinear2d.vec,
-            torch.ops.aten.upsample_nearest2d.vec,
             torch.ops.aten.prelu.default,
             torch.ops.aten.layer_norm.default,
             torch.ops.aten.pixel_shuffle.default,
