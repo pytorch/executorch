@@ -28,6 +28,35 @@ void check_index_select_args(
   VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kChannelsDim);
 }
 
+// index_select replaces the selected dim with as many entries as the index
+// tensor holds and leaves every other dim alone.
+std::vector<int64_t> index_select_out_sizes(
+    ComputeGraph* graph,
+    const ValueRef in,
+    const ValueRef idx,
+    const DimIndex dim_idx) {
+  std::vector<int64_t> out_sizes = graph->sizes_of(in);
+  const int64_t ndim = static_cast<int64_t>(out_sizes.size());
+  // dim_idx is a negative index counted from the innermost dim.
+  const int64_t dim = ndim + dim_idx;
+  VK_CHECK_COND(dim >= 0 && dim < ndim);
+  out_sizes.at(dim) = graph->numel_of(idx);
+  return out_sizes;
+}
+
+void resize_index_select_channel_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  const ValueRef idx = args.at(1).refs.at(1);
+
+  graph->virtual_resize(
+      out, index_select_out_sizes(graph, in, idx, kChannel4D));
+}
+
 void add_index_select_channel_node(
     ComputeGraph& graph,
     ValueRef in,
@@ -58,25 +87,36 @@ void add_index_select_channel_node(
 
 struct IndexSelectParams final {
   int32_t gpu_dim;
-  int32_t stride;
 };
 
-IndexSelectParams create_index_select_params(
-    ComputeGraph& graph,
-    const int64_t dim_idx,
-    const ValueRef in) {
+IndexSelectParams create_index_select_params(const int64_t dim_idx) {
   if (dim_idx == kWidth4D) {
-    return {0, 1};
+    return {0};
   } else if (dim_idx == kHeight4D) {
-    return {1, 1};
+    return {1};
   } else if (dim_idx == kBatch4D) {
-    const std::vector<int64_t> in_sizes = graph.sizes_of(in);
-    int64_t n_channels = dim_at(in_sizes, kChannel4D);
-    int64_t stride = utils::div_up_4(n_channels);
-    return {2, static_cast<int32_t>(stride)};
+    // The batch axis shares the z axis with the channels, so the shader steps
+    // over one batch in units of channel texels. That stride is derived from
+    // the channel count, which a resize can change, so the shader reads it out
+    // of in_sizes rather than taking a value frozen at build time.
+    return {2};
   } else {
     VK_THROW("Unexpected dim_idx!");
   }
+}
+
+void resize_index_select_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  const ValueRef idx = args.at(1).refs.at(1);
+
+  const DimIndex dim_idx =
+      static_cast<DimIndex>(graph->extract_scalar<int32_t>(resize_args.at(0)));
+
+  graph->virtual_resize(out, index_select_out_sizes(graph, in, idx, dim_idx));
 }
 
 void add_index_select_node(
@@ -87,7 +127,7 @@ void add_index_select_node(
     ValueRef out) {
   check_index_select_args(graph, in, idx, out);
 
-  IndexSelectParams params = create_index_select_params(graph, dim_idx, in);
+  IndexSelectParams params = create_index_select_params(dim_idx);
 
   std::string kernel_name = "index_select";
   kernel_name.reserve(kShaderNameReserve);
@@ -99,15 +139,17 @@ void add_index_select_node(
       default_pick_gwg,
       default_pick_lwg,
       {{out, vkapi::kWrite}, {{in, idx}, vkapi::kRead}},
-      {graph.sizes_ubo(out), graph.create_params_buffer(params)},
+      {graph.sizes_ubo(out),
+       graph.sizes_ubo(in),
+       graph.create_params_buffer(params)},
       // Push Constants
       {},
       // Specialization Constants
       {},
       // Resize Args
-      {},
+      {graph.get_or_add_value_for_int(dim_idx)},
       // Resizing Logic
-      resize_fn));
+      resize_index_select_node));
 }
 
 int64_t get_dim_idx(ComputeGraph& graph, ValueRef in, ValueRef dim_ref) {
