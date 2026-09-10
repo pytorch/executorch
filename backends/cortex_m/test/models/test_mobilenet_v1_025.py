@@ -10,29 +10,33 @@ from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
 from executorch.examples.models.mlperf_tiny.mobilenet_v1_025 import MobileNetV1025
 
 ops_before_transforms: dict[str, int] = {
+    "executorch_exir_dialects_edge__ops_aten__softmax_default": 1,
     "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
+    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default": 5,
     "executorch_exir_dialects_edge__ops_aten_convolution_default": 27,
     "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
     "executorch_exir_dialects_edge__ops_aten_relu_default": 27,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 54,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 33,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 31,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 40,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 38,
 }
 
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
+    "executorch_exir_dialects_edge__ops_cortex_m_pad_default": 5,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 14,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 13,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_softmax_default": 1,
 }
 
 test_cases = {
     "mobilenet_v1_025": McuTestCase(
-        model=MobileNetV1025().eval(),
+        model=MobileNetV1025(apply_softmax=True).eval(),
         example_inputs=lambda: (
             (torch.rand(1, 3, 96, 96) * 2 - 1).to(memory_format=torch.channels_last),
         ),
