@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -29,6 +32,64 @@ def _model_quant(entry):
 
 
 class CudaWorkflowTest(unittest.TestCase):
+    def test_build_matrix_preserves_existing_cuda_versions(self):
+        job = WORKFLOW["jobs"]["test-cuda-builds"]
+        self.assertEqual(
+            job["strategy"]["matrix"]["cuda-version"], ["12.6", "13.0", "13.4"]
+        )
+        self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
+
+    def test_cuda134_driver_uses_matching_workflow_and_action_revision(self):
+        job = WORKFLOW["jobs"]["test-cuda-builds"]
+        workflow, revision = job["uses"].split("@")
+        self.assertEqual(
+            workflow, "pytorch/test-infra/.github/workflows/linux_job_v2.yml"
+        )
+        self.assertRegex(revision, r"^[0-9a-f]{40}$")
+        self.assertEqual(job["with"]["test-infra-ref"], revision)
+        self.assertEqual(
+            job["with"]["driver-version"],
+            "${{ matrix.cuda-version == '13.4' && '615.71.09' || '580.65.06' }}",
+        )
+        self.assertEqual(
+            job["with"]["driver-download-url"],
+            "${{ matrix.cuda-version == '13.4' && "
+            "'https://download.nvidia.com/XFree86/Linux-x86_64/615.71.09/"
+            "NVIDIA-Linux-x86_64-615.71.09.run' || '' }}",
+        )
+
+    def test_cuda_probe_rejects_a_different_torch_train(self):
+        script = (ROOT / ".ci/scripts/test-cuda-build.sh").read_text()
+        probes = [block.split('\n"', 1)[0] for block in script.split('python -c "')[1:]]
+        probe = next(block for block in probes if "import torch" in block)
+        fake_torch = """
+import sys
+from types import SimpleNamespace
+class Tensor:
+    device = 'cuda'
+    shape = (10, 10)
+    def to(self, device):
+        return self
+sys.modules['torch'] = SimpleNamespace(
+    __version__='test', version=SimpleNamespace(cuda='13.4'),
+    cuda=SimpleNamespace(
+        is_available=lambda: True, device_count=lambda: 1,
+        current_device=lambda: 0, get_device_name=lambda: 'test',
+    ),
+    device=lambda name: name, randn=lambda *args: Tensor(),
+    mm=lambda x, y: Tensor(),
+)
+"""
+        for expected, succeeds in (("13.4", True), ("13.0", False)):
+            with self.subTest(expected=expected):
+                result = subprocess.run(
+                    [sys.executable, "-c", fake_torch + probe],
+                    env={**os.environ, "EXPECTED_CUDA_VERSION": expected},
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode == 0, succeeds, result.stdout)
+
     def test_pybind_runs_inline_for_the_expected_matrix_cells(self):
         job = WORKFLOW["jobs"]["test-model-cuda-e2e"]
         matrix = job["strategy"]["matrix"]

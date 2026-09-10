@@ -49,10 +49,16 @@ import executorch
 print('SUCCESS: ExecuTorch imported successfully')
 "
 
+    python -m pip check
+
     # Test CUDA availability and show details
-    python -c "
+    EXPECTED_CUDA_VERSION="$cuda_version" python -c "
 try:
+    import os
     import torch
+    assert torch.version.cuda == os.environ['EXPECTED_CUDA_VERSION'], (
+        torch.version.cuda, os.environ['EXPECTED_CUDA_VERSION']
+    )
     print('INFO: PyTorch version:', torch.__version__)
     print('INFO: CUDA available:', torch.cuda.is_available())
 
