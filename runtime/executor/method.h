@@ -14,6 +14,8 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
+#include <cstdint>
+
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -56,6 +58,17 @@ using OpFunction = void (*)(KernelRuntimeContext&, Span<EValue*>);
 using InstructionArgs = Span<EValue*>;
 using deserialization::NamedData;
 
+#ifndef USE_ATEN_LIB
+namespace internal {
+/**
+ * True if `impl` is aligned and within [lo, hi], the span of TensorImpl
+ * allocations observed while parsing a method's values. Implementation detail
+ * of Method::resolve_operator(), declared here so it can be tested directly.
+ */
+bool is_plausible_tensor_impl(const void* impl, uintptr_t lo, uintptr_t hi);
+} // namespace internal
+#endif // USE_ATEN_LIB
+
 /**
  * An executable method of an executorch program. Maps to a python method like
  * `forward()` on the original nn.Module.
@@ -76,6 +89,8 @@ class Method final {
         n_value_(rhs.n_value_),
         values_(rhs.values_),
         input_set_(rhs.input_set_),
+        tensor_impls_lo_(rhs.tensor_impls_lo_),
+        tensor_impls_hi_(rhs.tensor_impls_hi_),
         n_delegate_(rhs.n_delegate_),
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
@@ -344,6 +359,8 @@ class Method final {
         n_value_(0),
         values_(nullptr),
         input_set_(nullptr),
+        tensor_impls_lo_(0),
+        tensor_impls_hi_(0),
         n_delegate_(0),
         delegates_(nullptr),
         n_chains_(0),
@@ -397,6 +414,13 @@ class Method final {
   size_t n_value_;
   EValue* values_;
   bool* input_set_;
+
+  // Span of the TensorImpl allocations made while parsing values_, used by
+  // resolve_operator() to reject a forged TensorImpl*. Recording what was
+  // actually handed out avoids relying on MemoryAllocator bounds, which a
+  // subclass may report without allocating from them. Zero if none were made.
+  uintptr_t tensor_impls_lo_;
+  uintptr_t tensor_impls_hi_;
 
   size_t n_delegate_;
   BackendDelegate* delegates_;
