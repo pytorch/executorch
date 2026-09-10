@@ -7,15 +7,24 @@ import pytest
 import torch
 import torch.nn
 
+from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
+    FuseBatchNormWithLinearPass,
+)
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes import (
+    AddSimulatedLinearBatchNormFusionQATPass,
+    RemoveSimulatedLinearBatchNormFusionQATPass,
+)
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.graph_utils import batch_norm_target_ops
 from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.recipes.nxp_recipe_provider import (
+    _histogram_observer_fix_pass,
     NEUTRON_RECIPE_CONFIG_KEY,
     NeutronRecipeConfig,
     NXPRecipeProvider,
@@ -25,6 +34,10 @@ from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.executors import (
     graph_contains_any,
     graph_contains_any_of_ops,
+)
+from executorch.backends.nxp.tests.models import ConvBatchNormModule
+from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
+    QuantizeFusedConvBnBiasAtenPass,
 )
 from executorch.export import export
 from executorch.export.recipe import ExportRecipe
@@ -74,7 +87,10 @@ def test_ptq_neutron_basic():
     assert not graph_contains_any(graph, is_cnn_op)
 
     nodes = list(graph.nodes)
-    first_call = next(n for n in nodes if n.op == "call_function" and n.name != "alloc")
+    # Skip alloc nodes (e.g. "alloc", "alloc_1") which also have op == "call_function".
+    first_call = next(
+        n for n in nodes if n.op == "call_function" and not n.name.startswith("alloc")
+    )
     last_call = next(n for n in reversed(nodes) if n.op == "call_function")
     assert first_call.target == quantized_decomposed.quantize_per_tensor.out
     assert last_call.target == quantized_decomposed.dequantize_per_tensor.out
@@ -96,14 +112,6 @@ class TestInt8PTQNoDelegate:
 
         # With no delegation, original ops should be visible in the graph.
         assert graph_contains_any(graph, is_cnn_op)
-
-    def test__recipe_has_empty_partitioners(self):
-        """INT8_PTQ_NO_DELEGATE recipe has an empty partitioner list."""
-        rc = NeutronRecipeConfig(INPUT_SHAPE)
-        recipe = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_PTQ_NO_DELEGATE, neutron_recipe_config=rc
-        )
-        assert recipe.lowering_recipe.partitioners == []
 
 
 class TestNeutronRecipeConfigFlags:
@@ -413,3 +421,313 @@ class TestEdgeManagerTransformPasses:
         qdq_callable = recipe.lowering_recipe.edge_manager_transform_passes[0]
         result = qdq_callable(mocker.MagicMock())
         assert isinstance(result, NeutronEdgePassManager)
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by QAT tests
+# ---------------------------------------------------------------------------
+
+
+def _noop_train_fn(model: torch.fx.GraphModule) -> None:
+    """A no-op train_fn used by structural/unit tests that only inspect pass shape."""
+    pass
+
+
+def _minimal_train_fn(model: torch.fx.GraphModule, shape=(1, 3, 5, 5)) -> None:
+    """Run a few SGD steps on random data so fake-quant observer statistics are populated.
+    Used by end-to-end tests.
+    """
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
+    for _ in range(3):
+        optimizer.zero_grad()
+        out = model(torch.randn(shape))
+        loss = out.sum()
+        loss.backward()
+        optimizer.step()
+
+
+def _run_qat_export(model, train_fn=None, recipe_type=NXPRecipeType.INT8_QAT_NEUTRON):
+    if train_fn is None:
+        train_fn = _noop_train_fn
+    rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=train_fn)
+    return _run_export(model, rc, recipe_type=recipe_type)
+
+
+# ---------------------------------------------------------------------------
+# QAT recipe: end-to-end tests
+# ---------------------------------------------------------------------------
+
+
+# Both QAT recipe types must reject a missing train_fn.
+@pytest.mark.parametrize(
+    "recipe_type",
+    [NXPRecipeType.INT8_QAT_NEUTRON, NXPRecipeType.INT8_QAT_NO_DELEGATE],
+    ids=lambda r: r.value,
+)
+def test__qat_requires_train_fn(recipe_type):
+    """Any QAT recipe raises ValueError when train_fn is absent from NeutronRecipeConfig."""
+    rc = NeutronRecipeConfig(INPUT_SHAPE)  # train_fn=None (default)
+    with pytest.raises(ValueError, match="train_fn"):
+        NXPRecipeProvider().create_recipe(recipe_type, neutron_recipe_config=rc)
+
+
+# Both _NO_DELEGATE recipe types (PTQ and QAT) must produce an empty partitioner list.
+@pytest.mark.parametrize(
+    "recipe_type",
+    [NXPRecipeType.INT8_PTQ_NO_DELEGATE, NXPRecipeType.INT8_QAT_NO_DELEGATE],
+    ids=lambda r: r.value,
+)
+def test__no_delegate_recipe_has_empty_partitioners(recipe_type):
+    """Both NO_DELEGATE recipe types produce an empty partitioner list."""
+    # train_fn is required by QAT recipes; PTQ ignores it, so always pass it.
+    rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=_noop_train_fn)
+    recipe = NXPRecipeProvider().create_recipe(recipe_type, neutron_recipe_config=rc)
+    assert recipe.lowering_recipe.partitioners == []
+
+
+class TestInt8QATNeutron:
+
+    def test__basic(self):
+        """INT8_QAT_NEUTRON: full export succeeds and the graph contains a delegate call."""
+        model = SimpleCNN()
+        sess = _run_qat_export(model)
+        graph = _get_graph(sess)
+        assert graph_contains_any_of_ops(graph, [ExecutorchDelegateCall])
+
+    def test__train_fn_is_called(self):
+        """train_fn is invoked exactly once during the QAT export pipeline."""
+        model = SimpleCNN()
+        call_count = []
+
+        def counting_train_fn(m):
+            call_count.append(1)
+
+        rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=counting_train_fn)
+        _run_export(model, rc, recipe_type=NXPRecipeType.INT8_QAT_NEUTRON)
+        assert (
+            len(call_count) == 1
+        ), f"Expected train_fn called once, got {len(call_count)}"
+
+    def test__recipe_name(self):
+        """INT8_QAT_NEUTRON recipe has the expected name."""
+        rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=_noop_train_fn)
+        recipe = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_QAT_NEUTRON, neutron_recipe_config=rc
+        )
+        assert recipe.name == NXPRecipeType.INT8_QAT_NEUTRON.value
+
+    def test__recipe_structure(self):
+        """INT8_QAT_NEUTRON recipe has is_qat=True, one quantizer, one partitioner."""
+        rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=_noop_train_fn)
+        recipe = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_QAT_NEUTRON, neutron_recipe_config=rc
+        )
+        qr = recipe.quantization_recipe
+        assert qr is not None
+        assert qr.is_qat is True
+        assert qr.train_fn is _noop_train_fn
+        assert len(qr.quantizers) == 1
+        assert recipe.lowering_recipe.partitioners is not None
+        assert len(recipe.lowering_recipe.partitioners) == 1
+
+    def test__io_is_quantized_by_default(self):
+        """QAT export with default settings: IO boundary has quantize/dequantize ops."""
+        model = SimpleCNN()
+        sess = _run_qat_export(model)
+        graph = _get_graph(sess)
+        nodes = list(graph.nodes)
+        # Skip alloc nodes (e.g. "alloc", "alloc_1") which also have op == "call_function".
+        first_call = next(
+            n
+            for n in nodes
+            if n.op == "call_function" and not n.name.startswith("alloc")
+        )
+        last_call = next(n for n in reversed(nodes) if n.op == "call_function")
+        assert first_call.target == quantized_decomposed.quantize_per_tensor.out
+        assert last_call.target == quantized_decomposed.dequantize_per_tensor.out
+
+
+class TestInt8QATNoDelegate:
+
+    def test__basic(self):
+        """INT8_QAT_NO_DELEGATE: export succeeds without any delegate call."""
+        model = SimpleCNN()
+        sess = _run_qat_export(model, recipe_type=NXPRecipeType.INT8_QAT_NO_DELEGATE)
+        graph = _get_graph(sess)
+        assert not graph_contains_any_of_ops(graph, [ExecutorchDelegateCall])
+
+
+# ---------------------------------------------------------------------------
+# QAT recipe: NXP-specific pass structure tests
+# ---------------------------------------------------------------------------
+
+# Both QAT recipe types are built from the same _build_quantization_recipe(is_qat=True)
+# call, so their pass lists must be identical. The parametrization below makes this
+# explicit and catches any accidental divergence.
+_QAT_RECIPE_TYPES = [NXPRecipeType.INT8_QAT_NEUTRON, NXPRecipeType.INT8_QAT_NO_DELEGATE]
+
+
+@pytest.mark.parametrize("recipe_type", _QAT_RECIPE_TYPES, ids=lambda r: r.value)
+class TestQATNXPPasses:
+
+    def _get_qat_recipe(self, recipe_type: NXPRecipeType) -> "ExportRecipe":
+        rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=_noop_train_fn)
+        return NXPRecipeProvider().create_recipe(recipe_type, neutron_recipe_config=rc)
+
+    def test__post_prepare_passes_start_with_add_bn_fusion(self, recipe_type):
+        """QAT post_prepare_passes: first pass is AddSimulatedLinearBatchNormFusionQATPass wrapper."""
+        recipe = self._get_qat_recipe(recipe_type)
+        qr = recipe.quantization_recipe
+        assert qr.post_prepare_passes is not None
+        # The first post-prepare pass must wrap AddSimulatedLinearBatchNormFusionQATPass.
+        # We verify by inspecting the __qualname__ set by _wrap_exir_pass.
+        first_pass = qr.post_prepare_passes[0]
+        assert (
+            AddSimulatedLinearBatchNormFusionQATPass.__name__ in first_pass.__qualname__
+        )
+
+    def test__post_prepare_passes_end_with_histogram_observer_fix(self, recipe_type):
+        """QAT post_prepare_passes: last pass is _histogram_observer_fix_pass."""
+        recipe = self._get_qat_recipe(recipe_type)
+        qr = recipe.quantization_recipe
+        assert qr.post_prepare_passes is not None
+        last_pass = qr.post_prepare_passes[-1]
+        assert last_pass is _histogram_observer_fix_pass
+
+    def test__pre_convert_passes_include_remove_bn_fusion_and_fold(self, recipe_type):
+        """QAT pre_convert_passes: contains RemoveSimulatedLinearBatchNormFusionQATPass
+        followed by FuseBatchNormWithLinearPass (each applied once)."""
+        recipe = self._get_qat_recipe(recipe_type)
+        qr = recipe.quantization_recipe
+        assert qr.pre_convert_passes is not None
+        assert len(qr.pre_convert_passes) == 2, (
+            "Expected 2 pre_convert passes (remove + fuse), "
+            f"got {len(qr.pre_convert_passes)}"
+        )
+        qualnames = [p.__qualname__ for p in qr.pre_convert_passes]
+        assert (
+            qualnames[0]
+            == f"_wrap_exir_pass({RemoveSimulatedLinearBatchNormFusionQATPass.__name__})"
+        )
+        assert (
+            qualnames[1] == f"_wrap_exir_pass({FuseBatchNormWithLinearPass.__name__})"
+        )
+
+    def test__post_convert_passes_include_quant_fused_conv_bn_bias(self, recipe_type):
+        """QAT post_convert_passes: contains QuantizeFusedConvBnBiasAtenPass wrapper."""
+        recipe = self._get_qat_recipe(recipe_type)
+        qr = recipe.quantization_recipe
+        assert qr.post_convert_passes is not None
+        assert len(qr.post_convert_passes) == 1
+        assert f"_wrap_exir_pass({QuantizeFusedConvBnBiasAtenPass.__name__})" in (
+            qr.post_convert_passes[0].__qualname__
+        )
+
+
+# ---------------------------------------------------------------------------
+# PTQ recipe: pass structure tests (complement to TestQATNXPPasses above)
+# ---------------------------------------------------------------------------
+
+
+class TestPTQNXPPasses:
+    """Verifies the pass structure of INT8_PTQ_NEUTRON recipes.
+
+    These tests are separate from TestQATNXPPasses because the assertions are
+    PTQ-specific and independent of which QAT recipe type is being tested.
+    """
+
+    def _get_ptq_recipe(self) -> "ExportRecipe":
+        rc = NeutronRecipeConfig(INPUT_SHAPE)
+        return NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_PTQ_NEUTRON, neutron_recipe_config=rc
+        )
+
+    def test__no_pre_or_post_convert_passes(self):
+        """PTQ recipe does not set pre_convert_passes or post_convert_passes."""
+        qr = self._get_ptq_recipe().quantization_recipe
+        assert qr.pre_convert_passes is None
+        assert qr.post_convert_passes is None
+
+    def test__post_prepare_passes_include_histogram_observer_fix(self):
+        """PTQ recipe post_prepare_passes contains _histogram_observer_fix_pass."""
+        qr = self._get_ptq_recipe().quantization_recipe
+        assert qr.post_prepare_passes is not None
+        assert _histogram_observer_fix_pass in qr.post_prepare_passes
+
+    def test__post_prepare_passes_do_not_include_add_bn_fusion(self):
+        """PTQ recipe post_prepare_passes must NOT contain AddSimulatedLinearBatchNormFusionQATPass."""
+        qr = self._get_ptq_recipe().quantization_recipe
+        for p in qr.post_prepare_passes or []:
+            assert AddSimulatedLinearBatchNormFusionQATPass.__name__ not in getattr(
+                p, "__qualname__", ""
+            )
+
+
+# ---------------------------------------------------------------------------
+# QAT recipe: e2e test on a real model - equivalent to imperative QAT tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "bias", [True, False], ids=lambda b: "bias" if b else "no_bias"
+)
+class TestQATEquivalentToImperative:
+    """Recipe-path QAT tests that mirror the imperative-path tests in test_batch_norm_fusion.py.
+
+    The imperative reference is test_biasless_convbn_fusion_qat (and its bias=True variant).
+    The recipe path must produce an equivalent result: the graph is delegated and the
+    BN is fully fused away by the QAT passes.
+    """
+
+    # Use (1, 3, 5, 5) so that Conv2d(kernel_size=3) produces a (1, 3, 3, 3) feature map,
+    # giving BatchNorm > 1 value per channel in training mode (QAT requires train mode).
+    _CONVBN_INPUT_SHAPE = (1, 3, 5, 5)
+
+    def test__convbn_qat_produces_delegate_call(self, bias):
+        """INT8_QAT_NEUTRON on ConvBatchNormModule produces a delegate call.
+        Equivalent imperative test: test_biasless_convbn_fusion_qat / test_batch_norm_conv_fusing
+        in backends/nxp/tests/generic_tests/test_batch_norm_fusion.py."""
+        model = ConvBatchNormModule(
+            bias=bias,
+            input_rank=len(self._CONVBN_INPUT_SHAPE),
+            num_features=self._CONVBN_INPUT_SHAPE[1],
+        )
+        rc = NeutronRecipeConfig(
+            self._CONVBN_INPUT_SHAPE,
+            train_fn=_minimal_train_fn,
+            use_neutron_for_format_conversion=False,
+        )
+        sess = _run_export(
+            model,
+            rc,
+            recipe_type=NXPRecipeType.INT8_QAT_NEUTRON,
+            input_shape=self._CONVBN_INPUT_SHAPE,
+        )
+        graph = _get_graph(sess)
+
+        # Same assertion as the imperative path: the model is delegated.
+        assert graph_contains_any_of_ops(graph, [ExecutorchDelegateCall])
+
+    def test__convbn_qat_bn_is_fused_away(self, bias):
+        """INT8_QAT_NEUTRON on ConvBatchNormModule: BN is fused away by QAT passes.
+        Equivalent imperative test: test_batch_norm_conv_fusing__full_pipeline__2d
+        in backends/nxp/tests/generic_tests/test_batch_norm_fusion.py."""
+        model = ConvBatchNormModule(
+            bias=bias,
+            input_rank=len(self._CONVBN_INPUT_SHAPE),
+            num_features=self._CONVBN_INPUT_SHAPE[1],
+        )
+        rc = NeutronRecipeConfig(
+            self._CONVBN_INPUT_SHAPE,
+            train_fn=_minimal_train_fn,
+            use_neutron_for_format_conversion=False,
+        )
+        sess = _run_export(
+            model,
+            rc,
+            recipe_type=NXPRecipeType.INT8_QAT_NEUTRON,
+            input_shape=self._CONVBN_INPUT_SHAPE,
+        )
+        # The edge program (before delegation) must not contain any BN ops.
+        edge_graph = sess.get_edge_program_manager().exported_program().graph
+        assert not graph_contains_any_of_ops(edge_graph, batch_norm_target_ops)
