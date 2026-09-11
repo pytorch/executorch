@@ -1287,6 +1287,20 @@ class _Emitter(torch.fx.Interpreter):
         self.chain.instructions.append(kernel)
         return out_arg
 
+    def _emit_slice(self, args: Tuple[_Argument, ...]) -> _EmitterValue:
+        """Emit a statically memory-planned slice as a sub-buffer alias.
+
+        ``ReplaceSliceCopyWithSlicePass`` creates ``_SliceSpec`` values whose
+        ``mem_offset`` is the byte offset into their base allocation.  No kernel
+        is needed for a static planned slice: the tensor value can be emitted
+        directly from that specification.
+        """
+        assert 4 <= len(args) <= 5
+        spec = self.node.meta["spec"]
+        assert spec.is_static_shape_tensor
+        assert spec.mem_id is not None and spec.mem_offset is not None
+        return self._emit_spec(spec)
+
     def _add_debug_handle(
         self,
         emitter_id: int,
@@ -1785,6 +1799,9 @@ class _Emitter(torch.fx.Interpreter):
 
         elif target == memory.view:
             return self._emit_view(args)
+
+        elif target == memory.slice:
+            return self._emit_slice(args)
 
         elif target == memory.free:
             assert len(args) == 1
