@@ -8,19 +8,10 @@ import unittest
 
 import torch
 import torch.nn as nn
-from executorch.backends.native import get_default_compile_config
 
 from executorch.backends.native.passes.reinplace import NativeReinplacePass
-from executorch.exir import to_edge
+from executorch.backends.native.test.utils import _transformed
 from executorch.exir.passes.cse_pass import CSEPass
-
-
-def _transformed(model, example_inputs, passes):
-    edge = to_edge(
-        torch.export.export(model, example_inputs),
-        compile_config=get_default_compile_config(),
-    )
-    return edge.transform(passes).exported_program()
 
 
 class CSEPassTest(unittest.TestCase):
