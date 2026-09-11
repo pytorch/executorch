@@ -8,6 +8,7 @@
 # pyre-unsafe
 
 from dataclasses import dataclass, field
+from operator import getitem
 from typing import cast
 
 import torch
@@ -109,6 +110,17 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.view.default,
     )
+
+    _SPLIT_OPS = (exir_ops.edge.aten.split_with_sizes_copy.default,)
+
+    def _split_producer(self, node: torch.fx.Node) -> torch.fx.Node | None:
+        """Return the split feeding ``node`` when it is a getitem off a split."""
+        if node.op != "call_function" or node.target is not getitem:
+            return None
+        src = node.args[0] if node.args else None
+        if isinstance(src, torch.fx.Node) and src.target in self._SPLIT_OPS:
+            return src
+        return None
 
     @staticmethod
     def _concrete_shape(node: torch.fx.Node) -> list[int] | None:
@@ -564,7 +576,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if self.get_permutation(inp) != current_start_permute:
                     return False
                 subgraph.edges_in.add((inp, node))
-            elif (inp_val := inp.meta.get("val")) is not None and inp_val.numel() == 1:
+            elif (
+                (inp_val := inp.meta.get("val")) is not None
+                and isinstance(inp_val, torch.Tensor)
+                and inp_val.numel() == 1
+            ):
                 # A numel-1 input (per-tensor quant scale / zero_point, scalar
                 # constant, ...) is layout-invariant: it broadcasts identically
                 # under any permutation, so it needs no compensating permute and
@@ -657,6 +673,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
         if node.target in self._PAD_OPS and not self._is_constant_pad(node):
             return False
+        # A split and the getitems unpacking it form one rank-preserving unit:
+        # the split's dim is remapped like cat's, and tuple indexing is
+        # layout-invariant.
+        if node.target in self._SPLIT_OPS or self._split_producer(node) is not None:
+            return True
         if node.target in self._permutable_ops:
             if node.target in (
                 exir_ops.edge.aten.amax.default,
@@ -759,6 +780,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 self.update_reduction_dim(node, node_start_perm)
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, node_start_perm)
+            elif node.target in self._SPLIT_OPS:
+                self.update_split(node, node_start_perm)
             elif node.target in self._PAD_OPS:
                 self.update_pad(node, node_start_perm)
             elif node.target in self._VIEW_OPS:
@@ -923,6 +946,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             )
 
     def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
+        dim = get_arg(node, "dim", int)
+        set_arg(node, "dim", start_permute[dim])
+
+    def update_split(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         dim = get_arg(node, "dim", int)
         set_arg(node, "dim", start_permute[dim])
 
