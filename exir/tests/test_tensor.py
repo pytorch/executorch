@@ -322,48 +322,67 @@ class TestTensor(unittest.TestCase):
             dim_order_from_stride((u0, 0, 1))
 
     def test_dim_order_from_stride_with_sizes(self) -> None:
-        # Regression test for https://github.com/pytorch/executorch/issues/22520:
-        # a channels-last tensor with a size-1 channel has strides whose stable
-        # sort is the non-canonical (0, 2, 1, 3), which portable kernels reject.
-        # With sizes, the canonical dim order is returned instead.
         dim_order = dim_order_from_stride((490, 1, 10, 1), (1, 1, 49, 10))
         self.assertEqual((0, 2, 3, 1), dim_order)
-        # The canonical dim order describes the identical physical layout.
         self.assertEqual(
             [490, 1, 10, 1],
             stride_from_dim_order([1, 1, 49, 10], [0, 2, 3, 1]),
         )
 
-        # Contiguous tensors are unaffected, including with size-1 dims.
         self.assertEqual(
             (0, 1, 2, 3),
             dim_order_from_stride((490, 490, 10, 1), (1, 1, 49, 10)),
         )
 
-        # Shapes matching both canonical layouts keep the historical result.
         self.assertEqual(
             (0, 1, 2, 3), dim_order_from_stride((1, 1, 1, 1), (2, 1, 1, 1))
         )
 
-        # 5D channels-last with a size-1 channel.
         self.assertEqual(
             (0, 2, 3, 4, 1),
             dim_order_from_stride((120, 1, 30, 6, 1), (1, 1, 4, 5, 6)),
         )
 
-        # Genuinely non-canonical layouts still fall back to sorting.
         self.assertEqual(
             (3, 1, 2, 0),
             dim_order_from_stride((1, 20, 5, 60), (2, 3, 4, 5)),
         )
 
-        # Without sizes, behavior is unchanged (stable sort).
         self.assertEqual((0, 2, 1, 3), dim_order_from_stride((490, 1, 10, 1)))
 
-        # TensorSpec picks up the canonical dim order (used by SpecPropPass).
         t = torch.empty(1, 1, 49, 10).to(memory_format=torch.channels_last)
         spec = TensorSpec.from_tensor(t)
         self.assertEqual((0, 2, 3, 1), spec.dim_order)
+
+    def test_dim_order_from_stride_preserves_supported_orders(self) -> None:
+        for sizes, strides in (
+            ((2, 1, 3, 1), (3, 1, 1, 1)),
+            ((2, 1, 3, 1, 1), (3, 1, 1, 1, 1)),
+            ((2, 3, 4, 5), (60, 1, 15, 3)),
+            ((2, 3, 4, 5, 6), (360, 1, 90, 18, 3)),
+        ):
+            with self.subTest(sizes=sizes):
+                self.assertEqual(
+                    dim_order_from_stride(strides),
+                    dim_order_from_stride(strides, sizes),
+                )
+
+    def test_dim_order_from_stride_with_symbolic_sizes(self) -> None:
+        from torch.fx.experimental.symbolic_shapes import ShapeEnv
+
+        shape_env = ShapeEnv()
+        height = shape_env.create_unbacked_symint()
+        torch._check_is_size(height)
+        torch._check(height >= 2)
+        self.assertEqual(
+            (0, 2, 3, 1),
+            dim_order_from_stride((10 * height, 1, 10, 1), (2, 1, height, 10)),
+        )
+        self.assertEqual(
+            (0, 2, 1, 3),
+            dim_order_from_stride((490, 1, 10, 1), (2, 1, height, 10)),
+        )
+        self.assertEqual(shape_env.guards, [])
 
     def test_strides_from_dim_order(self) -> None:
         sizes = []

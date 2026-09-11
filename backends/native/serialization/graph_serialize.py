@@ -203,8 +203,6 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     strides = tuple(t.stride())
     sizes = list(t.shape)
     # dim_order_from_stride handles symbolic strides and rejects stride-0 layouts.
-    # Sizes are passed so size-ambiguous canonical layouts (e.g. channels-last
-    # with a size-1 channel) serialize the canonical dim order.
     dim_order = [int(d) for d in dim_order_from_stride(strides, tuple(sizes))]
     expected = stride_from_dim_order(sizes, dim_order)
     for i in range(ndim):

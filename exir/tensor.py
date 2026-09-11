@@ -49,76 +49,6 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
     return tuple(reversed(strides))
 
 
-def _expected_channels_last_stride(sizes: Tuple[int]) -> Optional[Tuple[int]]:
-    """
-    Expected strides of a channels-last tensor with the given sizes.
-
-    Only 4D (NCHW) and 5D (NCDHW) tensors have a channels-last layout;
-    returns None for any other rank.
-    """
-    ndim = len(sizes)
-    if ndim not in (4, 5):
-        return None
-    # Stride of dim 1 (channels) is 1, stride of dim i >= 2 is
-    # channels * prod(sizes[i + 1 :]), stride of dim 0 is prod(sizes[1:]).
-    expected = [1] * ndim
-    accum = sizes[1]
-    for i in range(ndim - 1, 1, -1):
-        expected[i] = accum
-        accum = accum * sizes[i]
-    expected[0] = accum
-    return tuple(expected)
-
-
-def _strides_match(stride: Tuple[int], expected: Tuple[int]) -> bool:
-    """
-    Exact stride equality that is safe for symbolic (SymInt) values.
-
-    Uses statically_known_true so no shape guards are added; returns False
-    when equality cannot be proven (or comparison itself fails), in which
-    case callers fall back to sorting.
-    """
-    if len(stride) != len(expected):
-        return False
-    pairs = list(zip(stride, expected))
-    if all(type(s) is int and type(e) is int for s, e in pairs):
-        return all(s == e for s, e in pairs)
-    from torch.fx.experimental.symbolic_shapes import statically_known_true
-
-    try:
-        return all(statically_known_true(s == e) for s, e in pairs)
-    except Exception:
-        return False
-
-
-def _canonical_dim_order_for_strides(
-    stride: Tuple[int], sizes: Tuple[int]
-) -> Optional[Tuple[bytes]]:
-    """
-    Canonical dim order when the strides exactly match a canonical layout.
-
-    Returns None when the strides match neither contiguous nor channels-last
-    (or when sizes/strides are symbolic and equality cannot be proven), in
-    which case the caller falls back to sorting strides.
-
-    Contiguous is checked first so that shapes whose strides match both
-    layouts (only possible when every dim but the batch is size 1, e.g.
-    (N, 1, 1, 1)) keep the historical stable-sort result, matching
-    torch.Tensor.dim_order().
-    """
-    ndim = len(stride)
-    if ndim == 0:
-        return ()
-    if _strides_match(stride, contiguous_stride_from_shape(torch.Size(sizes))):
-        return tuple(typing.cast(Tuple[bytes], tuple(range(ndim))))
-    if ndim in (4, 5):
-        expected = _expected_channels_last_stride(sizes)
-        assert expected is not None
-        if _strides_match(stride, expected):
-            return tuple(typing.cast(Tuple[bytes], (0, *range(2, ndim), 1)))
-    return None
-
-
 def dim_order_from_stride(
     stride: Tuple[int], sizes: Optional[Tuple[int]] = None
 ) -> Tuple[bytes]:
@@ -138,22 +68,18 @@ def dim_order_from_stride(
     Another example is: sizes = (1, 3, 1, 1) with strides = (3, 1, 3, 3), returned
     value is (0, 2, 3, 1)
 
-    When sizes are provided and the strides exactly match the strides of a
-    contiguous or channels-last tensor of that shape, the canonical dim order
-    is returned instead. Size-1 dimensions make the sort ambiguous: e.g. a
-    channels-last (N, 1, H, W) tensor has strides (H*W, 1, W, 1), whose stable
-    sort is the non-canonical (0, 2, 1, 3) that portable kernels reject, even
-    though the canonical (0, 2, 3, 1) describes the identical physical layout.
+    With sizes, ambiguous non-canonical orders are corrected when strides
+    exactly match channels-last. Preserve existing default orders: portable
+    kernels require matching dim orders even for physically equivalent layouts.
     """
-    from torch.fx.experimental.symbolic_shapes import guard_or_false, guard_or_true
+    from torch.fx.experimental.symbolic_shapes import (
+        guard_or_false,
+        guard_or_true,
+        statically_known_true,
+    )
 
     for s in stride:
         torch._check(s != 0, lambda: "0 in strides is not supported for ExecuTorch.")
-
-    if sizes is not None and len(sizes) == len(stride):
-        canonical = _canonical_dim_order_for_strides(stride, sizes)
-        if canonical is not None:
-            return canonical
 
     class K(NamedTuple):
         stride: int
@@ -177,6 +103,18 @@ def dim_order_from_stride(
     sorted_dims = [
         i[0] for i in sorted(enumerate(stride), key=lambda x: K(x[1]), reverse=True)
     ]
+    ndim = len(stride)
+    if (
+        sizes is not None
+        and len(sizes) == ndim
+        and ndim in (4, 5)
+        and sorted_dims != list(range(ndim))
+    ):
+        from torch._prims_common import make_channels_last_strides_for
+
+        expected = make_channels_last_strides_for(sizes)
+        if all(statically_known_true(s == e) for s, e in zip(stride, expected)):
+            sorted_dims = [0, *range(2, ndim), 1]
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
 
