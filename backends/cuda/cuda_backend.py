@@ -751,6 +751,31 @@ class CudaBackend(AotiBackend, BackendDetails):
             passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes
 
+    @staticmethod
+    def _parse_aoti_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> Dict[str, typing.Any]:
+        values: Dict[str, typing.Any] = {
+            "platform": "linux",
+            "emulate_precision_casts": True,
+            "max_autotune": True,
+            "max_autotune_gemm": None,
+            "autotune_at_compile_time": None,
+            "shim_library_path": None,
+        }
+        boolean_specs = {
+            "emulate_precision_casts",
+            "max_autotune",
+            "max_autotune_gemm",
+            "autotune_at_compile_time",
+        }
+        for spec in compile_specs:
+            if spec.key in boolean_specs:
+                values[spec.key] = _on_off_compile_spec_value(spec)
+            elif spec.key in {"platform", "shim_library_path"}:
+                values[spec.key] = spec.value.decode("utf-8")
+        return values
+
     @classmethod
     def get_aoti_compile_options(
         cls, compile_specs: List[CompileSpec]
@@ -796,37 +821,21 @@ class CudaBackend(AotiBackend, BackendDetails):
 
         # Parse compile_specs to check for platform
 
-        platform = "linux"
-        emulate_precision_casts = True
-        max_autotune = True
-        max_autotune_gemm = None
-        autotune_at_compile_time = None
-        shim_library_path = None
-        for spec in compile_specs:
-            if spec.key == "platform":
-                platform = spec.value.decode("utf-8")
-            elif spec.key == "emulate_precision_casts":
-                emulate_precision_casts = _on_off_compile_spec_value(spec)
-            elif spec.key == "max_autotune":
-                max_autotune = _on_off_compile_spec_value(spec)
-            elif spec.key == "max_autotune_gemm":
-                max_autotune_gemm = _on_off_compile_spec_value(spec)
-            elif spec.key == "autotune_at_compile_time":
-                autotune_at_compile_time = _on_off_compile_spec_value(spec)
-            elif spec.key == "shim_library_path":
-                shim_library_path = spec.value.decode("utf-8")
-        options["emulate_precision_casts"] = emulate_precision_casts
-        options["max_autotune"] = max_autotune
-        if max_autotune_gemm is not None:
-            options["max_autotune_gemm"] = max_autotune_gemm
-        if autotune_at_compile_time is not None:
-            options["triton.autotune_at_compile_time"] = autotune_at_compile_time
+        spec_values = cls._parse_aoti_compile_specs(compile_specs)
+        options["emulate_precision_casts"] = spec_values["emulate_precision_casts"]
+        options["max_autotune"] = spec_values["max_autotune"]
+        if spec_values["max_autotune_gemm"] is not None:
+            options["max_autotune_gemm"] = spec_values["max_autotune_gemm"]
+        if spec_values["autotune_at_compile_time"] is not None:
+            options["triton.autotune_at_compile_time"] = spec_values[
+                "autotune_at_compile_time"
+            ]
         # Add platform-specific options
 
-        if platform == "windows":
+        if spec_values["platform"] == "windows":
             # For Windows, get default shim library path if not provided
 
-            if shim_library_path is None:
+            if spec_values["shim_library_path"] is None:
                 lib_dir = resources.files("executorch").joinpath("data/lib")
                 # Only a CUDA build ships the import library, and a package directory
                 # that does not exist still reads back as an ordinary path rather than
@@ -838,12 +847,14 @@ class CudaBackend(AotiBackend, BackendDetails):
                         "or pass a shim_library_path compile spec naming a directory "
                         "that holds the import library."
                     )
-                shim_library_path = str(lib_dir)
+                spec_values["shim_library_path"] = str(lib_dir)
             options.update(
                 {
                     "aot_inductor.cross_target_platform": "windows",
                     "aot_inductor.aoti_shim_library": "aoti_cuda_shims",
-                    "aot_inductor.aoti_shim_library_path": shim_library_path,
+                    "aot_inductor.aoti_shim_library_path": spec_values[
+                        "shim_library_path"
+                    ],
                     "aot_inductor.precompile_headers": False,
                 }
             )
@@ -851,7 +862,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             # Linux platform
 
             assert (
-                shim_library_path is None
+                spec_values["shim_library_path"] is None
             ), "shim_library_path should not be set for Linux"
         return options
 
