@@ -1,19 +1,22 @@
 # Single source of truth for the OSDC build-runner labels used by the wheel build
-# workflows: release-isolated (mt-rel-l-*) runners on protected refs, and the
-# caller's existing default otherwise. Callers pass the outputs to
-# build_wheels_linux.yml's `runner` input, which falls back to the build matrix's
-# validation_runner when it is empty.
+# workflows: release-isolated (mt-rel-l-*) runners on protected refs, regular
+# (mt-l-*) runners otherwise. Callers pass the outputs to
+# build_wheels_linux.yml's `runner` input, which overrides the build matrix's
+# validation_runner. No path returns an EC2 label.
 name: Select release runner
 
 on:
   workflow_call:
     outputs:
       x86:
-        description: "x86_64 build runner label, empty to keep the matrix default"
+        description: "x86_64 build runner label"
         value: ${{ jobs.select.outputs.x86 }}
       arm64:
-        description: "aarch64 build runner label, empty to keep the matrix default"
+        description: "aarch64 build runner label"
         value: ${{ jobs.select.outputs.arm64 }}
+      x86-gpu:
+        description: "x86_64 build runner label for rows whose smoke test needs a GPU"
+        value: ${{ jobs.select.outputs.x86-gpu }}
 
 jobs:
   select:
@@ -22,6 +25,7 @@ jobs:
     outputs:
       x86: ${{ steps.pick.outputs.x86 }}
       arm64: ${{ steps.pick.outputs.arm64 }}
+      x86-gpu: ${{ steps.pick.outputs.x86-gpu }}
     steps:
       - id: pick
         shell: bash
@@ -35,7 +39,9 @@ jobs:
           if [[ "${protected}" == "true" ]]; then
             echo "x86=mt-rel-l-x86iavx512-44-340" >> "${GITHUB_OUTPUT}"
             echo "arm64=mt-rel-l-arm64g3-44-340" >> "${GITHUB_OUTPUT}"
+            echo "x86-gpu=mt-rel-l-x86aavx2-29-113-l4" >> "${GITHUB_OUTPUT}"
           else
-            echo "x86=" >> "${GITHUB_OUTPUT}"
-            echo "arm64=" >> "${GITHUB_OUTPUT}"
+            echo "x86=mt-l-x86iavx512-8-64" >> "${GITHUB_OUTPUT}"
+            echo "arm64=mt-l-arm64g4-16-62" >> "${GITHUB_OUTPUT}"
+            echo "x86-gpu=mt-l-x86aavx2-29-113-a10g" >> "${GITHUB_OUTPUT}"
           fi

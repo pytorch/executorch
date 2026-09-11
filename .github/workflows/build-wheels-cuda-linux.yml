@@ -78,8 +78,11 @@ jobs:
           echo "${MATRIX_BLOB}"
           echo "matrix=${MATRIX_BLOB}" >> "${GITHUB_OUTPUT}"
 
+  select-runner:
+    uses: ./.github/workflows/_select-release-runner.yml
+
   build:
-    needs: filter-matrix
+    needs: [filter-matrix, select-runner]
     permissions:
       id-token: write
       contents: read
@@ -107,3 +110,4 @@ jobs:
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
+      runner: ${{ needs.select-runner.outputs.x86-gpu }}
