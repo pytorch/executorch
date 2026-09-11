@@ -119,6 +119,9 @@ class ModelArgs:
     no_rope_layer_interval: Optional[int] = (
         None  # Interval at which to skip RoPE. From Rope to Nope and Back Again: A New Hybrid Attention Strategy (https://huggingface.co/papers/2501.18795).
     )
+    no_rope_layers: Optional[list[int]] = (
+        None  # Explicit layer indices that skip RoPE (NoPE). Takes precedence over no_rope_layer_interval; used for Llama4 global (NoPE) layers.
+    )
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
