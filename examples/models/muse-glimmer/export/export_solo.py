@@ -84,6 +84,7 @@ def export_and_lower(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    greedy_sampling: bool = False,
 ) -> None:
     if backend == "cuda":
         _export_cuda(
@@ -96,6 +97,7 @@ def export_and_lower(
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
             vision_fp32_mm=vision_fp32_mm,
+            greedy_sampling=greedy_sampling,
         )
     elif backend == "mlx":
         _export_mlx(
@@ -158,6 +160,7 @@ def _export_cuda(
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
+    greedy_sampling: bool = False,
 ) -> None:
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -206,7 +209,7 @@ def _export_cuda(
     programs: dict[str, "torch.export.ExportedProgram"] = {}
 
     if sample:
-        add_on_device_sampler(model)
+        add_on_device_sampler(model, greedy=greedy_sampling)
 
     hidden = config.dim
     temp = torch.tensor([1.0], dtype=torch.float32)
@@ -611,6 +614,14 @@ def main() -> None:
         help="Optional FP32-output linear implementation for vision blocks "
         "0-34. The default preserves the original all-BF16 encoder.",
     )
+    parser.add_argument(
+        "--greedy-sampling",
+        action="store_true",
+        help=(
+            "Specialize on-device sampling to exact argmax. This removes RNG/Gumbel "
+            "work and is intended for temperature=0 inference."
+        ),
+    )
     args = parser.parse_args()
 
     if args.backend == "cuda" and not torch.cuda.is_available():
@@ -685,6 +696,7 @@ def main() -> None:
         pos_embed_table=pos_embed_table,
         max_vision_patches=args.max_vision_patches,
         vision_fp32_mm=args.vision_fp32_mm,
+        greedy_sampling=args.greedy_sampling,
     )
 
 

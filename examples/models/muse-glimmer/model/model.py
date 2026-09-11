@@ -42,6 +42,10 @@ class MuseGlimmerConfig:
     # separate so it can carry its own per-layer quant bit-width. Takes
     # precedence over ``fuse_qkv`` when True.
     fuse_qko: bool = False
+    # Optional per-layer QKV fusion. CUDA GGUF loading populates this for layers
+    # whose V projection has the same quantization type as Q/K/OG, while mixed
+    # Q4/Q6 layers retain the qko_proj + v_proj layout.
+    fuse_qkv_layers: tuple[int, ...] = ()
     fuse_gate_up: bool = True
     output_soft_cap_temp: float = 20.0
     global_attn_cfg: str = "[2048,2048,2048,0]"
@@ -262,8 +266,8 @@ class MuseGlimmerAttention(nn.Module):
         og_dim = q_dim if self.use_o_gate else 0
         self.q_dim = q_dim
         self.kv_dim = kv_dim
-        self.fuse_qkv = config.fuse_qkv
-        self.fuse_qko = config.fuse_qko
+        self.fuse_qkv = config.fuse_qkv or layer_idx in config.fuse_qkv_layers
+        self.fuse_qko = config.fuse_qko and not self.fuse_qkv
 
         # Attention input pre-norm, shared by the projections below.
         self.qkv_proj_norm = RMSNorm(config.dim, config.norm_eps)
