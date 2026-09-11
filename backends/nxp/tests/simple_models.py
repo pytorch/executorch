@@ -456,6 +456,16 @@ class AvgPool2dConvModule(torch.nn.Module):
         return self.avg_pool(x)
 
 
+class AdaptiveAvgPool1dModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool1d(output_size=output_size)
+
+    def forward(self, x):
+        return self.adaptive_avg_pool(x)
+
+
 class AdaptiveAvgPool2dModule(torch.nn.Module):
     def __init__(self, output_size):
         super().__init__()

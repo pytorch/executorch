@@ -15,6 +15,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.aten_passes.split_group_convolution import (
     SplitGroupConvolution,
 )
+from executorch.backends.nxp.backend.ops_aliases import Cat, Convolution
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -26,13 +27,12 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     to_quantized_edge_program,
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
     Conv1dModule,
     Conv2dModule,
     Conv3dModule,
 )
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.export_util import export_to_edge
 from parameterized import parameterized
 from torch.fx import GraphModule
@@ -129,7 +129,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         assert nodes[-5].name == "lowered_module_0"
         assert not graph_contains_any_of_ops(
             ep.graph,
-            [exir_ops.edge.aten.convolution.default, exir_ops.edge.aten.cat.default],
+            [Convolution, Cat],
         )
 
     @parameterized.expand(
@@ -206,7 +206,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         assert nodes[-5].name == "lowered_module_0"
         assert not graph_contains_any_of_ops(
             ep.graph,
-            [exir_ops.edge.aten.convolution.default, exir_ops.edge.aten.cat.default],
+            [Convolution, Cat],
         )
 
     @parameterized.expand(
@@ -303,5 +303,5 @@ class TestSplitGroupConvolution(unittest.TestCase):
         assert nodes[-5].name == "lowered_module_0"
         assert not graph_contains_any_of_ops(
             ep.graph,
-            [exir_ops.edge.aten.convolution.default, exir_ops.edge.aten.cat.default],
+            [Convolution, Cat],
         )

@@ -5,8 +5,11 @@
 
 import torch
 
+from executorch.backends.nxp.backend.ops_aliases import (
+    DequantizePerTensor,
+    QuantizePerTensor,
+)
 from executorch.exir import EdgeProgramManager
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 from torch.fx.passes.infra.pass_base import PassResult
@@ -37,10 +40,7 @@ class RemoveIOQuantOpsPass(ExportPass):
                 raise ValueError(f"Input {input_index} has more than one users")
 
             quantize = next(iter(target_placeholder.users))
-            if (
-                quantize.target
-                != exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-            ):
+            if quantize.target != QuantizePerTensor:
                 continue
 
             inputs_to_quantization.append(input_index)
@@ -59,10 +59,7 @@ class RemoveIOQuantOpsPass(ExportPass):
 
         user_outputs = list(outputs[0].args[0])
         for output_index, user_output in enumerate(user_outputs):
-            if (
-                user_output.target
-                != exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-            ):
+            if user_output.target != DequantizePerTensor:
                 continue
 
             outputs_to_quantization.append(output_index)

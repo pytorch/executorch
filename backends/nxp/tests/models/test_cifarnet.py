@@ -5,6 +5,7 @@
 
 import os.path
 
+# noinspection PyUnusedImports
 import pytest
 import torch
 

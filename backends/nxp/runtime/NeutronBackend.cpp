@@ -659,6 +659,14 @@ class NeutronBackend final : public PyTorchBackendInterface {
           index++;
         }
       }
+      // The neutronGetSdkVersion() function is available starting with Neutron
+      // Software 3.2.1. The code below is not backward compatible with earlier
+      // Neutron Software versions.
+      NeutronSdkVersion neutron_sdk_version = neutronGetSdkVersion();
+      uint16_t neutron_sdk_version_uint16 =
+          static_cast<const uint16_t>(neutron_sdk_version.major << 8) |
+          static_cast<const uint16_t>(neutron_sdk_version.minor << 4) |
+          static_cast<const uint16_t>(neutron_sdk_version.patch);
       event_tracer_log_profiling_delegate(
           tracer,
           nullptr,
@@ -666,9 +674,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
           neutron_events[events_num - 1].startEvent.time,
           neutron_events[events_num - 1].stopEvent.time + stop_ticks -
               start_ticks,
-          static_cast<const void*>(
-              &neutron_events[events_num - 1].startEvent.functionCode),
-          sizeof(uint8_t));
+          static_cast<const void*>(&neutron_sdk_version_uint16),
+          sizeof(uint16_t));
     }
 #endif
 

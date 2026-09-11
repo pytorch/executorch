@@ -5,10 +5,14 @@
 
 import pytest
 import torch
+from executorch.backends.arm.operator_support.index_tensor_support import (
+    IndexTensorSupported,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckFPComparisonInputs,
     CheckKnownUnsupportedTOSASemantics,
 )
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
@@ -132,3 +136,19 @@ def test_rejects_argmax_with_mixed_int32_cast_and_raw_user() -> None:
     raw_user.meta["val"] = _fake_tensor((3,), torch.int64)
 
     assert not _checker().is_node_supported({}, node)
+
+
+@pytest.mark.parametrize("dtype", (torch.bool, torch.uint8))
+def test_rejects_index_tensor_mask(dtype: torch.dtype) -> None:
+    graph = torch.fx.Graph()
+    x = _placeholder(graph, "x", (5, 2, 3))
+    index = _placeholder(graph, "index", (5,), dtype)
+    node = graph.call_function(exir_ops.edge.aten.index.Tensor, (x, [index]))
+    node.meta["val"] = _fake_tensor((2, 2, 3))
+
+    checker = IndexTensorSupported(
+        TosaSpecification.create_from_string("TOSA-1.0+INT+u55"),
+        WhyNoPartitionReporter(),
+    )
+
+    assert not checker.is_node_supported({}, node)

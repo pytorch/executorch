@@ -10,7 +10,11 @@ from typing import Sequence, Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
-from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_param_tensor,
+    is_param_node,
+    meta_without_qparams,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -20,6 +24,7 @@ from executorch.backends.arm._passes.convert_squeezes_to_view import (
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
     ReplaceScalarWithTensorByProfilePass,
 )
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -169,6 +174,12 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
         exir_ops.edge.aten.index.Tensor,
     }
 
+    def __init__(
+        self, exported_program: ExportedProgram | None = None, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.exported_program = exported_program
+
     @staticmethod
     def _shape_to_stride(
         values_shape: Sequence[int],
@@ -245,6 +256,70 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
 
         return x_data, S, W, K, C, trailing, lin_scales
 
+    def _decompose_constant_index(self, x, indices, meta):
+        tensor_indices = [
+            (dim, index) for dim, index in enumerate(indices) if index is not None
+        ]
+        if (
+            self.exported_program is None
+            or len(tensor_indices) != 1
+            or any(not isinstance(size, int) for size in x.data.shape)
+        ):
+            return None
+
+        indexed_dim, index_tensor = tensor_indices[0]
+        if not is_param_node(self.exported_program, index_tensor.node):
+            return None
+
+        constant_index = get_param_tensor(self.exported_program, index_tensor.node)
+        if (
+            constant_index is None
+            or constant_index.dim() != 1
+            or constant_index.numel() == 0
+        ):
+            return None
+
+        indexed_dim_size = x.data.shape[indexed_dim]
+        index_values = []
+        for value in constant_index.tolist():
+            normalized_value = value if value >= 0 else value + indexed_dim_size
+            if normalized_value < 0 or normalized_value >= indexed_dim_size:
+                raise IndexError(
+                    f"index {value} is out of bounds for dimension {indexed_dim} "
+                    f"with size {indexed_dim_size}"
+                )
+            index_values.append(normalized_value)
+
+        if index_values == list(
+            range(index_values[0], index_values[0] + len(index_values))
+        ):
+            return super().call_operator(
+                exir_ops.edge.aten.slice_copy.Tensor,
+                (x, indexed_dim, index_values[0], index_values[-1] + 1),
+                {},
+                meta,
+                updated=True,
+            )
+
+        slices = []
+        for index_value in index_values:
+            slices.append(
+                super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (x, indexed_dim, index_value, index_value + 1),
+                    {},
+                    meta,
+                    updated=True,
+                )
+            )
+        return super().call_operator(
+            exir_ops.edge.aten.cat.default,
+            (slices, indexed_dim),
+            {},
+            meta,
+            updated=True,
+        )
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
@@ -254,6 +329,17 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
         ), f"[{self.__class__.__name__}] Expected 2 args for {op}, got {len(args)}."
 
         x, indices = args
+
+        tensor_indices = [index for index in indices if index is not None]
+        if len(tensor_indices) == 1 and tensor_indices[0].data.dtype in (
+            torch.bool,
+            torch.uint8,
+        ):
+            return super().call_operator(op, args, kwargs, meta)
+
+        constant_result = self._decompose_constant_index(x, indices, meta)
+        if constant_result is not None:
+            return constant_result
 
         self._validate_tensor_indices(indices)
         index_shapes = [idx.data.shape for idx in indices]

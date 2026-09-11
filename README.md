@@ -64,6 +64,10 @@ Learn more: [How ExecuTorch Works](https://docs.pytorch.org/executorch/main/intr
 pip install executorch
 ```
 
+Backend export tools can require optional dependencies. For example, use
+`pip install 'executorch[ethos_u]'` for Ethos-U AOT export. Embedded
+toolchains, simulators, and target runtimes are installed separately.
+
 For platform-specific setup (Android, iOS, embedded systems), see the [Quick Start](https://docs.pytorch.org/executorch/main/quick-start-section.html) documentation for additional info.
 
 ### Export and Deploy in 3 Steps
