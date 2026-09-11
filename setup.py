@@ -696,7 +696,7 @@ def _base_dependencies() -> List[str]:
         # scope. Neither is needed merely to import the backend.
         "py-cpuinfo",
         "requests",
-        "pytorch-tokenizers>=1.5.0",
+        "pytorch-tokenizers>=1.4.1",
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
         # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
