@@ -64,7 +64,7 @@ class EnnBackend(BackendDetails):
                 ConstantPropPass(edge_program),
                 Conv1dToConv2d(edge_program),
                 FuseBatchNormWithConvPass(edge_program),
-                AddmmToLinearTransform(),
+                AddmmToLinearTransform(edge_program),
                 ReplaceOpsWithScalar(),
                 RemoveGetItemPass(),
                 InsertQDQPass(edge_program),
