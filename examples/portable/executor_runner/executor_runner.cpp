@@ -42,6 +42,9 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+#include <executorch/examples/arm/executor_runner/arm_perf_monitor.h>
+#endif
 #ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif // ET_EVENT_TRACER_ENABLED
@@ -720,6 +723,9 @@ int main(int argc, char** argv) {
   }
 
   et_timestamp_t time_spent_executing = 0;
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  StartMeasurements();
+#endif
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
     // Allocate input tensors and set all of their elements to 1 or to the
@@ -784,6 +790,9 @@ int main(int argc, char** argv) {
         static_cast<double>(iter_elapsed) * iter_tick_ratio.numerator /
             iter_tick_ratio.denominator / 1000000.0);
   }
+#if defined(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  StopMeasurements(FLAGS_num_executions);
+#endif
   const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
   constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
   ET_LOG(
