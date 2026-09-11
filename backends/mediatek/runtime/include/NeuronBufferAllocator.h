@@ -56,8 +56,9 @@ struct BufferDeleter {
 
 class MemoryUnit {
  public:
-  static std::unique_ptr<MemoryUnit> Create(size_t size) {
-    auto obj = std::unique_ptr<MemoryUnit>(new (std::nothrow) MemoryUnit(size));
+  static std::unique_ptr<MemoryUnit> Create(size_t size, bool is_cached = true) {
+    auto obj = std::unique_ptr<MemoryUnit>(
+        new (std::nothrow) MemoryUnit(size, is_cached));
     return (obj && (obj->Allocate() == NEURON_NO_ERROR)) ? std::move(obj)
                                                          : nullptr;
   }
@@ -80,7 +81,12 @@ class MemoryUnit {
   }
 
  private:
-  explicit MemoryUnit(size_t size) : mSize(size) {}
+  explicit MemoryUnit(size_t size, bool is_cached) : mSize(size) {
+    if (!is_cached) {
+      mAhwbType = AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
+          AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY;
+    }
+  }
 
   int Allocate() {
     AHardwareBuffer_Desc iDesc{
@@ -126,7 +132,7 @@ class BufferAllocator : public executorch::runtime::MemoryAllocator {
  public:
   static BufferAllocator& GetInstance();
 
-  void* Allocate(size_t size);
+  void* Allocate(size_t size, bool is_cached = true);
 
   void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
     return Allocate(size);
