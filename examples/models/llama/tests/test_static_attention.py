@@ -743,6 +743,9 @@ class StaticAttentionTest(unittest.TestCase):
         self.assertFalse(AttentionMHA(config, layer_id=1, rope=rope).use_rope)
         self.assertFalse(attn_mha.use_rope)
 
+        rope_attn_mha = AttentionMHA(config, layer_id=0, rope=rope).eval()
+        self.assertTrue(rope_attn_mha.use_rope)
+
         x = torch.rand(1, config.max_seq_len, config.dim)
         q = attn_mha.wq(x).view(1, config.max_seq_len, config.n_heads, config.head_dim)
         freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
