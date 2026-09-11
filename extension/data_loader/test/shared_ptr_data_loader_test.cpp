@@ -140,3 +140,60 @@ TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }
+
+TEST_F(SharedPtrDataLoaderTest, LoadIntoNullDstFails) {
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[256](), std::default_delete<uint8_t[]>());
+  SharedPtrDataLoader edl(data, 256);
+
+  EXPECT_EQ(
+      edl.load_into(
+          /*offset=*/0,
+          /*size=*/1,
+          /*segment_info=*/
+          DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+          nullptr),
+      Error::InvalidArgument);
+
+  EXPECT_EQ(
+      edl.load_into(
+          /*offset=*/0,
+          /*size=*/0,
+          /*segment_info=*/
+          DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+          nullptr),
+      Error::InvalidArgument);
+}
+
+TEST_F(SharedPtrDataLoaderTest, LoadIntoCopiesRequestedData) {
+  constexpr size_t kDataSize = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[kDataSize], std::default_delete<uint8_t[]>());
+  for (size_t i = 0; i < kDataSize; ++i) {
+    data[i] = static_cast<uint8_t>(i);
+  }
+  SharedPtrDataLoader edl(data, kDataSize);
+  uint8_t buffer[3] = {};
+
+  EXPECT_EQ(
+      edl.load_into(
+          /*offset=*/kDataSize - sizeof(buffer),
+          /*size=*/sizeof(buffer),
+          /*segment_info=*/
+          DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+          buffer),
+      Error::Ok);
+  EXPECT_EQ(
+      0,
+      std::memcmp(
+          buffer, data.get() + kDataSize - sizeof(buffer), sizeof(buffer)));
+
+  EXPECT_EQ(
+      edl.load_into(
+          /*offset=*/0,
+          /*size=*/kDataSize + 1,
+          /*segment_info=*/
+          DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+          buffer),
+      Error::InvalidArgument);
+}
