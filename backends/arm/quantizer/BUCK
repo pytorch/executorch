@@ -20,7 +20,6 @@ fbcode_target(
     srcs = ["arm_quantizer.py"],
     deps = [
         ":arm_quantizer_utils",
-        ":quantization_annotator",
         ":quantizer_support",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm:ethosu",
@@ -39,8 +38,6 @@ fbcode_target(
     name = "quantization_annotator",
     srcs = ["quantization_annotator.py"],
     deps = [
-        ":arm_quantizer_utils",
-        ":quantization_config",
         "//caffe2:torch",
         "//pytorch/ao:torchao",
     ],

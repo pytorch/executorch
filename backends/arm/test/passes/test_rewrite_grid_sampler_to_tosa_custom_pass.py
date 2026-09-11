@@ -226,19 +226,13 @@ def test_rewrite_grid_sampler_to_tosa_custom_no_target_uses_sampler_for_c4():
 
 
 @pytest.mark.parametrize("channels", [3, 4])
-@pytest.mark.parametrize("use_composable_quantizer", [False, True])
-def test_quantized_grid_sampler_uses_int8_sampler_payload(
-    channels, use_composable_quantizer
-):
+def test_quantized_grid_sampler_uses_int8_sampler_payload(channels):
     model = GridSampler2d().eval()
     example_inputs = (
         torch.randn(1, channels, 8, 8),
         torch.rand(1, 4, 4, 2),
     )
-    quantizer = VgfQuantizer(
-        VgfCompileSpec("TOSA-1.0+INT"),
-        use_composable_quantizer=use_composable_quantizer,
-    )
+    quantizer = VgfQuantizer(VgfCompileSpec("TOSA-1.0+INT"))
     quantizer.set_global(get_symmetric_quantization_config(is_per_channel=False))
 
     exported = export(model, example_inputs, strict=True)
