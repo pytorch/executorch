@@ -91,8 +91,7 @@ inline runtime::Result<std::int64_t> read_vocab_size(Module& module) {
 }
 
 inline runtime::Result<aten::ScalarType> read_activation_dtype(Module& module) {
-  ET_ASSIGN_OR_RETURN(
-      value, detail::read_int_method(module, kActivationDtype));
+  ET_ASSIGN_OR_RETURN(value, detail::read_int_method(module, kActivationDtype));
   ET_CHECK_OR_RETURN_ERROR(
       value.has_value(),
       InvalidProgram,
