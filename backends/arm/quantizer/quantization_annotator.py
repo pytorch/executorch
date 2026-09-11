@@ -611,6 +611,7 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.t_copy.default,
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
+    torch.ops.aten.roll.default,
     torch.ops.aten.chunk.default,
     torch.ops.aten.contiguous.default,
     torch.ops.aten.upsample_bilinear2d.vec,

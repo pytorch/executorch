@@ -29,14 +29,16 @@ from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
 from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
     can_decompose_large_stride_maxpool2d,
 )
+from executorch.backends.arm._passes.decompose_roll_pass import can_decompose_roll
 from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
     is_exact_tosa_boundary_bilinear_downscale,
 )
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    is_quantized,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
@@ -121,6 +123,51 @@ class DecomposableResizeSupported(OperatorSupportBase):
         """
         del submodules
         return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
+
+
+def _is_decomposable_roll_node(
+    node: torch.fx.Node, tosa_spec: TosaSpecification
+) -> bool:
+    """Return whether backend preprocessing can decompose a roll node."""
+    if node.target not in {
+        torch.ops.aten.roll.default,
+        exir_ops.edge.aten.roll.default,
+    }:
+        return False
+    if (
+        tosa_spec.support_integer()
+        and not tosa_spec.support_float()
+        and not is_quantized(node)
+    ):
+        return False
+    input_node = ensure_type(torch.fx.Node, node.args[0])
+    input_tensor = get_first_fake_tensor(input_node)
+    if not 0 < len(input_tensor.shape) <= MAX_RANK:
+        return False
+    if input_tensor.dtype not in {torch.float16, torch.float32} and not (
+        input_tensor.dtype == torch.bfloat16 and tosa_spec.support_extension("bf16")
+    ):
+        return False
+
+    dims = node.args[2] if len(node.args) > 2 else ()
+    return can_decompose_roll(input_tensor.shape, node.args[1], dims)
+
+
+class DecomposableRollSupported(OperatorSupportBase):
+    """Accept static rolls that backend preprocessing can decompose."""
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        """Initialize the check with the active TOSA specification."""
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when backend preprocessing can decompose the roll."""
+        del submodules
+        return _is_decomposable_roll_node(node, self.tosa_spec)
 
 
 def _is_custom_partition_op(
@@ -693,6 +740,7 @@ class TOSAPartitioner(Partitioner):
             additional_positive_checks=[
                 self._decomposable_resize_support,
                 DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
+                DecomposableRollSupported(self.tosa_spec),
             ],
         )
 
@@ -782,6 +830,9 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_always = {
             torch.ops.aten.logit.default,
         }
+        ops_to_not_decompose_conditionally = {
+            torch.ops.aten.roll.default,
+        }
         ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
@@ -792,6 +843,7 @@ class TOSAPartitioner(Partitioner):
             | ops_to_not_decompose_if_quant_op
             | ops_to_not_decompose_if_fp
             | ops_to_not_decompose_if_integer
+            | ops_to_not_decompose_conditionally
         )
 
         if not self.tosa_spec.is_U55_subset:
@@ -824,6 +876,8 @@ class TOSAPartitioner(Partitioner):
                 and get_first_fake_tensor(node).dtype == torch.float64
             ):
                 return False
+            if node.target in ops_to_not_decompose_conditionally:
+                return _is_decomposable_roll_node(node, self.tosa_spec)
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp

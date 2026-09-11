@@ -29,6 +29,7 @@ GlobalWorkGrid pick_q8ta_conv2d_dw_gwg(
   (void)shader;
   (void)resize_args;
 
+  VK_CHECK_COND(graph != nullptr);
   const ValueRef output = args.at(0).refs.at(0);
 
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
@@ -46,6 +47,15 @@ GlobalWorkGrid pick_q8ta_conv2d_dw_gwg(
       kTiledWorkGrid);
 }
 
+/**
+ * Picks a local workgroup size for q8ta_conv2d_dw with adaptive sizing based
+ * on tensor dimensions. Uses experimentation results:
+ *   - {2, 1, 32} or {4, 1, 16} for narrow output widths
+ *
+ * Unlike the regular conv picker, there is no medium-tensor branch shadowing
+ * gwg[0] == 4, so the second narrow branch matches 3..4 (the conv picker's
+ * {4, 2, 8} branch claims gwg[0] >= 4 first, leaving only == 3 reachable).
+ */
 LocalWorkGroup pick_q8ta_conv2d_dw_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -56,6 +66,16 @@ LocalWorkGroup pick_q8ta_conv2d_dw_lwg(
   (void)shader;
   (void)args;
   (void)resize_args;
+
+  if (gwg[0u] == 2u && gwg[2u] >= 32u) {
+    return LocalWorkGroup(2u, 1u, 32u);
+  }
+
+  // LWG x oversubscribes when gwg[0] is 3; safe only because the shader
+  // early-returns out-of-bounds invocations.
+  if (gwg[0u] >= 3u && gwg[0u] <= 4u && gwg[2u] >= 16u) {
+    return LocalWorkGroup(4u, 1u, 16u);
+  }
 
   // Some inactive invocations are okay; set 6 as the threshold to use the
   // a square wg size.
