@@ -330,7 +330,8 @@ void _qk_at_v_gemm(
     const int64_t o_stride_m,
     const accum_t beta,
     accum_t* buf_qdq_ptr,
-    const bool widen_v) {
+    const bool widen_v,
+    const bool use_fp32_qk_weights) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
       const float* qk = static_cast<const float*>(qk_data);
@@ -380,6 +381,18 @@ void _qk_at_v_gemm(
     // qk has been cast to the activation dtype (see qk_reduced_data); both
     // operands are reduced precision and accumulate into the float output.
     if constexpr (std::is_same<accum_t, float>::value) {
+      if (use_fp32_qk_weights) {
+        ::executorch::cpublas::gemv(
+            n,
+            k,
+            1.0f,
+            static_cast<const ::executorch::aten::BFloat16*>(v_data.data),
+            v_stride_n,
+            static_cast<const float*>(qk_data),
+            beta,
+            o_data);
+        return;
+      }
       if (widen_v) {
         ET_CHECK_MSG(
             v_data.dtype == ScalarType::BFloat16,
@@ -1032,11 +1045,17 @@ void cpu_flash_attention(
           is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
-      fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
+      fill_stub(dst_data, static_cast<accum_t>(0), qBlockSize * headSize);
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
-        int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
+        // Only the first num_keys columns are causally attendable; the rest
+        // would be masked to -inf and contribute exactly zero, so clamping
+        // here skips their gemm, softmax and v-multiply. This matters for the
+        // leading query blocks of a prefill, where num_keys is much smaller
+        // than the key-cache extent. Not bit-exact: shortening the reduction
+        // moves the vector-lane partition, so the accumulation order changes.
+        int64_t kvBlockSize = std::min(kvSplitSize, num_keys - n);
         // Calculate scale * q @ k.T
-        fill_stub(qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
+        fill_stub(qk_data, static_cast<accum_t>(0), qBlockSize * kvBlockSize);
 
         const void* q_sub_matrix_data_ptr;
         const void* k_sub_matrix_data_ptr;
@@ -1134,10 +1153,10 @@ void cpu_flash_attention(
         take care of this case because the loop for (int64_t n = 0; n <
         num_keys; n += kvSplitSize) will exit before that.
         */
-        if (is_causal && m_start_pos <= n + kvSplitSize) {
+        if (is_causal && m_start_pos <= n + kvBlockSize) {
           // For this fn to work k_split_size > q_split_size
           for (int32_t row = 0;
-               row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1));
+               row < qBlockSize && (m_start_pos + row < n + (kvBlockSize - 1));
                ++row) {
             // When last_col is 0, it means that the entire row is not attended
             // to because m_pos is smaller than n_pos. So everything in n is for
@@ -1251,9 +1270,13 @@ void cpu_flash_attention(
         const bool widen_v = is_reduced_type && !is_quantized_sdpa &&
             std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
             qBlockSize >= kMinQBlockForWidenedAV;
+        const bool use_fp32_qk_weights = is_reduced_type &&
+            !is_quantized_sdpa &&
+            std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+            qBlockSize == 1;
         const void* qk_gemm_data = qk_data;
         if constexpr (is_reduced_type) {
-          if (!is_quantized_sdpa && !widen_v) {
+          if (!is_quantized_sdpa && !widen_v && !use_fp32_qk_weights) {
             vec::convert<accum_t, scalar_t>(
                 qk_data, qk_reduced_data, qBlockSize * kvBlockSize);
             qk_gemm_data = qk_reduced_data;
@@ -1272,7 +1295,8 @@ void cpu_flash_attention(
             headSize,
             n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
             buf_qdq_ptr,
-            widen_v);
+            widen_v,
+            use_fp32_qk_weights);
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides

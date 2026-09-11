@@ -64,29 +64,6 @@ struct CudaWeightStorage {
   CudaWeightStorage& operator=(const CudaWeightStorage&) = delete;
 };
 
-// Shared CUDA stream wrapper with proper RAII cleanup.
-// This ensures the stream is destroyed when all handles using it are destroyed.
-struct CudaStreamDeleter {
-  void operator()(cudaStream_t* stream) const {
-    if (stream != nullptr && *stream != nullptr) {
-      (void)cudaStreamDestroy(*stream);
-    }
-    delete stream;
-  }
-};
-
-// Creates a new shared CUDA stream.
-// Returns nullptr on failure.
-inline std::shared_ptr<cudaStream_t> create_cuda_stream() {
-  cudaStream_t stream;
-  cudaError_t err = cudaStreamCreate(&stream);
-  if (err != cudaSuccess) {
-    return nullptr;
-  }
-  return std::shared_ptr<cudaStream_t>(
-      new cudaStream_t(stream), CudaStreamDeleter());
-}
-
 // Phases of the CUDA graph lifecycle for a delegate handle.
 //
 // The transition flow is:
@@ -193,27 +170,20 @@ struct CudaGraphState {
 };
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
-// This consolidates CUDA stream management into a single location.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 
-  // CUDA stream for this handle, support both shared mode and single mode.
-  // In shared mode, all cuda delegate handles share the same stream (e.g., for
-  // skip-copy optimization), they will all hold a reference to the same
-  // shared_ptr. The stream is automatically destroyed when the last handle is
-  // destroyed. In single mode, every cuda delegate handle has its own stream.
-  std::shared_ptr<cudaStream_t> cuda_stream;
+  // The per-thread stream. Nothing owns it: the value is a fixed sentinel the
+  // driver resolves to a different stream on each host thread, so releasing the
+  // holder destroys nothing. Initialised to that sentinel rather than null,
+  // because null is the legacy default stream, which is a different stream and
+  // would silently drop the per-thread ordering this handle relies on.
+  cudaStream_t cuda_stream = cudaStreamPerThread;
 
-  // Get the raw CUDA stream pointer for use in CUDA API calls.
-  // Returns nullptr if no stream is set.
+  // The stream this handle's work runs on.
   cudaStream_t get_cuda_stream() const {
-    return cuda_stream ? *cuda_stream : nullptr;
-  }
-
-  // Check if this handle has a valid CUDA stream.
-  bool has_cuda_stream() const {
-    return cuda_stream != nullptr && *cuda_stream != nullptr;
+    return cuda_stream;
   }
 
   // CUDA graph state (warmup, capture, replay, static buffers)

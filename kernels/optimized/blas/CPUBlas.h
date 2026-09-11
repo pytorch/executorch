@@ -50,6 +50,18 @@ inline char to_blas(TransposeType trans) {
 // this library.
 bool gemm_uses_blas();
 
+// Column-major c = beta * c + alpha * (a @ b), where a is BFloat16 and b and
+// c are float.
+void gemv(
+    int64_t m,
+    int64_t k,
+    const float alpha,
+    const executorch::aten::BFloat16* a,
+    int64_t lda,
+    const float* b,
+    const float beta,
+    float* c);
+
 // clang-format off
 template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
 void gemm_impl(

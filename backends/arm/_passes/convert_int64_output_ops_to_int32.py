@@ -242,6 +242,8 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
         ranges: Dict[torch.fx.Node, Tuple[int, int]],
         graph_module: torch.fx.GraphModule,
     ) -> Optional[Tuple[int, int]]:
+        if node.target not in self.aten_index_binary_ops + self.edge_index_binary_ops:
+            return None
         if get_first_fake_tensor(node).dtype != torch.int64 or len(node.args) < 2:
             return None
         lhs = self._operand_range(node.args[0], ranges, graph_module)
@@ -482,7 +484,7 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
         for node in list(graph.nodes):
             if node.op != "call_function":
                 continue
-            if node.target not in self.aten_ops + self.edge_ops:
+            if node.target not in self.aten_ops + self.edge_ops or not node.users:
                 continue
             output_dtype = get_first_fake_tensor(node).dtype
             if output_dtype != torch.int64:

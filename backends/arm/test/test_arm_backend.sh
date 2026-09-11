@@ -12,6 +12,9 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 cd "${et_root_dir}"
 pwd
+
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
 scratch_dir=${et_root_dir}/examples/arm/arm-scratch
 setup_path_script=${scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
@@ -189,6 +192,44 @@ test_run_ethos_u55() {
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --select_ops_list="aten::sub.out,aten::add.out,aten::mul.out"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_minimal_classic_ml_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Test minimal classic ML runner on Ethos-U55"
+
+    local build_dir="${et_root_dir}/arm_test/minimal_classic_ml"
+    local pte_path="${build_dir}/mv2.pte"
+    local fvp_log="${build_dir}/run_fvp.log"
+    mkdir -p "${build_dir}"
+
+    python3 -m backends.arm.scripts.aot_arm_compiler \
+        --model_name=mv2 \
+        --target=ethos-u55-128 \
+        --delegate \
+        --quantize \
+        --intermediates="${build_dir}" \
+        --output="${pte_path}" \
+        --system_config=Ethos_U55_High_End_Embedded \
+        --memory_mode=Shared_Sram
+
+    cmake \
+        -S examples/arm/minimal_classic_ml \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DET_PTE_FILE_PATH="${pte_path}" \
+        -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded \
+        -DMEMORY_MODE=Shared_Sram
+    cmake --build "${build_dir}" --target arm_classic_ml_runner -j"$(nproc)"
+
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${build_dir}/arm_classic_ml_runner" \
+        --target=ethos-u55-128 | tee "${fvp_log}"
+    local fvp_status="${PIPESTATUS[0]}"
+    [[ "${fvp_status}" -eq 0 ]]
+    grep -Fq "Inference complete: 1 output(s)" "${fvp_log}"
 
     echo "${TEST_SUITE_NAME}: PASS"
 }

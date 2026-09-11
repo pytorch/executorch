@@ -155,6 +155,15 @@ void bf16_gemv_notrans_with_fp32_arith(
     const torch::executor::BFloat16* b,
     float beta,
     float* c);
+void bf16_fp32_gemv_notrans_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const torch::executor::BFloat16* a,
+    int64_t lda,
+    const float* b,
+    float beta,
+    float* c);
 void bf16_gemv_transa_with_fp32_arith(
     int64_t m,
     int64_t k,

@@ -119,21 +119,20 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr
-        # ARM cross-compilation) rejects it with -Werror, so exclude it for
-        # Zephyr and Windows builds. OSS bypasses the zephyr branch via
-        # runtime.is_oss since ovr_config//os:zephyr is not in the OSS
-        # buck2 prelude.
+        # GCC's C++ frontend rejects this C-only flag under -Werror. Nested under
+        # DEFAULT so the windows (OS) and gcc (compiler) keys can't both match.
         # The vendored ATen vec headers pulled in on the Windows host trip
         # several -Werror warnings (e.g. -Wundef on __GNUC__), so disable
         # warnings-as-errors for the Windows (clang) kernel compiles.
         compiler_flags = (select({
-                "DEFAULT": ["-Wno-missing-prototypes"],
+                "DEFAULT": select({
+                    "DEFAULT": ["-Wno-missing-prototypes"],
+                    "ovr_config//compiler:gcc": [],
+                }),
                 "ovr_config//os:windows": select({
                     "DEFAULT": ["-Wno-error"],
                     "ovr_config//compiler:msvc": [],
                 }),
-                "ovr_config//os:zephyr": [],
             }) if not runtime.is_oss else select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
                 # OSS buck2 has no compiler constraint (ovr_config//compiler:msvc
@@ -572,6 +571,13 @@ ATEN_OPS = (
         name = "op_expm1",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
+        name = "op_fft_r2c",
+        deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(

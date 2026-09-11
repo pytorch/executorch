@@ -14,7 +14,11 @@
 #
 
 cmake_minimum_required(VERSION 3.24)
-cmake_policy(SET CMP0144 NEW)
+# CMP0144 arrives in 3.27, and cmake_policy(SET) on a policy the running CMake
+# does not know is a hard error, so the request has to be guarded.
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
 project(phi_3_mini_runner)
 
 set(CMAKE_CXX_STANDARD 17)

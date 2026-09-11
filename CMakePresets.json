@@ -64,7 +64,7 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "OS64",
         "DEPLOYMENT_TARGET": "17.0",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -82,13 +82,35 @@
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "SIMULATORARM64",
         "DEPLOYMENT_TARGET": "17.0",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
         "type": "equals",
         "rhs": "Darwin"
       }
+    },
+    {
+      "name": "apple-framework-resources",
+      "hidden": true,
+      "cacheVariables": {
+        "EXECUTORCH_MLX_SWIFTPM_RESOURCES": "ON"
+      }
+    },
+    {
+      "name": "apple-framework-macos",
+      "displayName": "Build ExecuTorch frameworks for macOS",
+      "inherits": ["macos", "apple-framework-resources"]
+    },
+    {
+      "name": "apple-framework-ios",
+      "displayName": "Build ExecuTorch frameworks for iOS",
+      "inherits": ["ios", "apple-framework-resources"]
+    },
+    {
+      "name": "apple-framework-ios-simulator",
+      "displayName": "Build ExecuTorch frameworks for iOS Simulator",
+      "inherits": ["ios-simulator", "apple-framework-resources"]
     },
     {
       "name": "linux",

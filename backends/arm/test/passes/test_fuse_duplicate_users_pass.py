@@ -8,6 +8,7 @@ from typing import Dict, Tuple
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes import (
+    DeduplicateConstShapesPass,
     EnsureUniqueOutputNodesPass,
     FuseDuplicateUsersPass,
     InsertRescalePass,
@@ -20,6 +21,9 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
+)
+from executorch.backends.transforms.fuse_duplicate_users_pass import (
+    DO_NOT_FUSE_DUPLICATE_META_KEY,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -163,6 +167,22 @@ def test_fuse_duplicate_users_preserves_graph_order_for_representative():
     assert len(_add_node_names(result.graph_module)) == 1
 
 
+def test_fuse_duplicate_users_honors_do_not_fuse_marker():
+    graph_module = _graph_with_users_not_in_node_order()
+    marked_node = next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == torch.ops.aten.add.Tensor
+    )
+    marked_node.meta[DO_NOT_FUSE_DUPLICATE_META_KEY] = True
+
+    result = FuseDuplicateUsersPass()(graph_module)
+
+    result.graph_module.graph.lint()
+    assert not result.modified
+    assert len(_add_node_names(result.graph_module)) == 2
+
+
 def test_fuse_duplicate_users_keeps_identical_rescale_users():
     graph_module = _graph_with_duplicate_rescale_users()
 
@@ -222,8 +242,9 @@ def test_fuse_duplicate_users_runs_after_tosa_transformations():
         for index, pass_type in enumerate(pass_types)
         if pass_type is RemoveNoopPass
     )
-    assert pass_types[post_noop_index + 1 : post_noop_index + 4] == [
+    assert pass_types[post_noop_index + 1 : post_noop_index + 5] == [
         FuseDuplicateUsersPass,
         InsertRescalePass,
+        DeduplicateConstShapesPass,
         EnsureUniqueOutputNodesPass,
     ]

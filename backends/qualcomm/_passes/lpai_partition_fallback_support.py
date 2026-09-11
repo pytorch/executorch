@@ -254,7 +254,9 @@ class LpaiPartitionFallbackSupport(ExportPass):
                 output_dq_node.meta[QCOM_BYPASS_NODE] = True
         graph_module.graph.eliminate_dead_code()
 
-    def handle_back_to_back_nodes(self, graph_module: torch.fx.GraphModule):
+    def handle_back_to_back_nodes(
+        self, graph_module: torch.fx.GraphModule, unsupported_nodes: set[torch.fx.Node]
+    ):
         """
         This function takes care of following cases:
         1. When 2 contiguous fall back nodes ``a`` and ``b`` (both
@@ -279,6 +281,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
                     input_node
                     for input_node in node.all_input_nodes
                     if input_node.op == "call_function"
+                    and input_node not in unsupported_nodes
                 ]
                 assert all(
                     input_node.target in dq_ops for input_node in input_call_func_nodes
@@ -327,7 +330,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
         unsupported_nodes = self.get_unsupported_nodes(graph_module)
         for node in unsupported_nodes:
             self.insert_partition_qdq(graph_module, node)
-        self.handle_back_to_back_nodes(graph_module)
+        self.handle_back_to_back_nodes(graph_module, unsupported_nodes)
         graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
-        return PassResult(graph_module, bool(unsupported_nodes))
+        return PassResult(graph_module, True)

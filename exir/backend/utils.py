@@ -406,18 +406,13 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
     # Cache signature lookups to avoid rebuilding dicts on every access.
     sig = edge_program.graph_signature
     buffers_map = sig.inputs_to_buffers
-    buffers_to_mutate = sig.buffers_to_mutate
+    mutated_buffer_targets = set(sig.buffers_to_mutate.values())
 
     for node in edge_program.graph.nodes:
-        # Determine whether this node is a mutated buffer
-        is_mutated_buffer_node = False
-        if node.op == "placeholder" and node.name in buffers_map:
-            for node_user in node.users:
-                if node_user.name in buffers_to_mutate:
-                    is_mutated_buffer_node = True
-                    break
-        # This node is mutated buffer, tag it
-        if is_mutated_buffer_node:
+        if (
+            node.op == "placeholder"
+            and buffers_map.get(node.name) in mutated_buffer_targets
+        ):
             user_tags = set()
             for user in node.users:
                 user_tag = user.meta.get("delegation_tag", None)

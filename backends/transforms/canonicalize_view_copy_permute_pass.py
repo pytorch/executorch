@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import cast, Sequence, Set, Type
+from typing import Any, cast, Iterable, Sequence, Set, Type
 
 import torch
 from executorch.backends.transforms.dim_maps import (
@@ -35,10 +35,21 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    _recompile_before_retrace = True
 
     _VIEW_TARGET = exir_ops.edge.aten.view_copy.default
     _PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
-    _TARGETS = {_VIEW_TARGET, _PERMUTE_TARGET}
+
+    def __init__(self, permute_targets: Iterable[Any] | None = None) -> None:
+        super().__init__()
+        # Which targets count as a permute. A backend carrying its own layout
+        # dialect passes them here; the pass still emits _PERMUTE_TARGET when it
+        # has to create one.
+        self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
+        self._targets = {self._VIEW_TARGET} | self._permute_targets
+
+    def _is_permute(self, node: Node) -> bool:
+        return node.target in self._permute_targets
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
@@ -81,7 +92,10 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
+            if self._recompile_before_retrace:
+                graph_module.recompile()
+            else:
+                graph_module.graph.lint()
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
@@ -91,7 +105,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         chains: list[list[Node]] = []
 
         view_permute_nodes = [
-            node for node in graph_module.graph.nodes if node.target in self._TARGETS
+            node for node in graph_module.graph.nodes if node.target in self._targets
         ]
 
         while view_permute_nodes:
@@ -101,7 +115,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
 
             while len(current.users) == 1:
                 user = next(iter(current.users))
-                if user.target not in self._TARGETS:
+                if user.target not in self._targets:
                     break
                 view_permute_nodes.remove(user)
                 chain.append(user)
@@ -143,7 +157,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
                     any_changed = True
                     continue
 
-                if node.target == self._PERMUTE_TARGET:
+                if self._is_permute(node):
 
                     dims = self._permute_dims(node)
 
@@ -183,47 +197,82 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
                         any_changed = True
                         continue
 
-                if index + 1 < len(updated_chain):
-                    next_node = updated_chain[index + 1]
-                    if (
-                        node.target == self._VIEW_TARGET
-                        and next_node.target == self._VIEW_TARGET
-                    ):
-                        # Fuse conscutive views
-                        self._set_node_op(
-                            node, self._VIEW_TARGET, input_node, self._shape(next_node)
-                        )
-                        self._remove_node(
-                            graph_module, updated_chain, index + 1, replacement=node
-                        )
-                        changed = True
-                        any_changed = True
-                        continue
-
-                    if (
-                        node.target == self._PERMUTE_TARGET
-                        and next_node.target == self._PERMUTE_TARGET
-                    ):
-                        # Fuse consecutive permutes
-                        dims = self._permute_dims(node)
-                        next_dims = self._permute_dims(next_node)
-                        self._set_node_op(
-                            node,
-                            self._PERMUTE_TARGET,
-                            input_node,
-                            [dims[dim] for dim in next_dims],
-                        )
-                        self._remove_node(
-                            graph_module, updated_chain, index + 1, replacement=node
-                        )
-                        changed = True
-                        any_changed = True
-                        continue
+                if self._fuse_pair(graph_module, updated_chain, index):
+                    changed = True
+                    any_changed = True
+                    continue
 
                 index += 1
 
             if not changed:
                 return updated_chain, any_changed
+
+    def _fuse_pair(
+        self, graph_module: GraphModule, chain: list[Node], index: int
+    ) -> bool:
+        """Fuse or reorder the adjacent pair at ``index``, if possible."""
+        if index + 1 >= len(chain):
+            return False
+
+        node, next_node = chain[index], chain[index + 1]
+        input_node = cast(Node, node.args[0])
+
+        if self._sink_singleton_view(chain, index):
+            return True
+
+        if node.target == self._VIEW_TARGET and next_node.target == self._VIEW_TARGET:
+            # Fuse conscutive views
+            self._set_node_op(
+                node, self._VIEW_TARGET, input_node, self._shape(next_node)
+            )
+            self._remove_node(graph_module, chain, index + 1, replacement=node)
+            return True
+
+        if self._is_permute(node) and self._is_permute(next_node):
+            # Fuse consecutive permutes
+            dims = self._permute_dims(node)
+            next_dims = self._permute_dims(next_node)
+            self._set_node_op(
+                node,
+                self._PERMUTE_TARGET,
+                input_node,
+                [dims[dim] for dim in next_dims],
+            )
+            self._remove_node(graph_module, chain, index + 1, replacement=node)
+            return True
+
+        return False
+
+    def _sink_singleton_view(self, chain: list[Node], index: int) -> bool:
+        """Rewrite ``view(S).permute(P)`` to ``permute(P').view(S')``.
+
+        Only applies to a lone pair whose view just inserts unit dimensions.
+        Longer chains are reordered by the swap loop in ``call()``; a pair never
+        is. Permuting at the lower rank lets layout boundaries that reach the
+        same tensor from different ranks converge on one permute.
+
+        """
+        if len(chain) != 2:
+            return False
+
+        view_node, permute_node = chain[index], chain[index + 1]
+        input_node = cast(Node, view_node.args[0])
+        if (
+            view_node.target != self._VIEW_TARGET
+            or not self._is_permute(permute_node)
+            or not self._only_inserts_singletons(
+                self._shape(input_node), self._shape(view_node)
+            )
+        ):
+            return False
+
+        swapped_args = self._view_permute_swap(view_node, permute_node)
+        if swapped_args is None:
+            return False
+
+        self._set_node_op(view_node, self._PERMUTE_TARGET, input_node, swapped_args[0])
+        self._set_node_op(permute_node, self._VIEW_TARGET, view_node, swapped_args[1])
+        return True
 
     def _maybe_swap_args(
         self, op1: Node, op2: Node
@@ -235,10 +284,10 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         assert isinstance(input_node, Node)
         input_val = input_node.meta["val"]
 
-        if op1.target == self._PERMUTE_TARGET and op2.target == self._VIEW_TARGET:
+        if self._is_permute(op1) and op2.target == self._VIEW_TARGET:
             return self._permute_view_swap(input_val, op1, op2)
 
-        if op1.target == self._VIEW_TARGET and op2.target == self._PERMUTE_TARGET:
+        if op1.target == self._VIEW_TARGET and self._is_permute(op2):
             return self._view_permute_swap(op1, op2)
 
         return None
@@ -309,6 +358,18 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         return inverse
 
     @classmethod
+    def _only_inserts_singletons(
+        cls, input_shape: Sequence[_Dim], output_shape: Sequence[_Dim]
+    ) -> bool:
+        """Whether a view only adds singleton dimensions to its input."""
+        if len(output_shape) <= len(input_shape):
+            return False
+        kept = [dim for dim in output_shape if not _dim_equals(dim, 1)]
+        return cls._shapes_equal(
+            kept, [dim for dim in input_shape if not _dim_equals(dim, 1)]
+        )
+
+    @classmethod
     def _is_singleton_permutation(
         cls, shape: Sequence[_Dim], permutation: Sequence[int]
     ) -> bool:
@@ -364,7 +425,7 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         refresh_permute_view_meta(node)
 
     def _permute_dims(self, node: Node) -> list[int]:
-        assert node.target == self._PERMUTE_TARGET, "Expected permute node"
+        assert self._is_permute(node), "Expected permute node"
         return list(cast(Sequence[int], node.args[1]))
 
     @staticmethod

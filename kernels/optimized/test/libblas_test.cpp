@@ -72,6 +72,24 @@ float reference_dot(const T* a, const T* b, int64_t len) {
   return sum;
 }
 
+void reference_bf16_fp32_gemv_notrans(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const executorch::aten::BFloat16* a,
+    int64_t lda,
+    const float* b,
+    float beta,
+    std::vector<float>& c) {
+  for (int64_t i = 0; i < m; ++i) {
+    float dot = 0.0f;
+    for (int64_t l = 0; l < k; ++l) {
+      dot += static_cast<float>(a[l * lda + i]) * b[l];
+    }
+    c[i] = beta == 0.0f ? alpha * dot : beta * c[i] + alpha * dot;
+  }
+}
+
 // Column-major c = beta * c + alpha * (op(a) @ b), accumulated in fp32, mirror-
 // ing the generic gemm_{transa,notrans}_ templates the bf16 specializations
 // replace.
@@ -309,6 +327,35 @@ TEST(BlasTest, BF16FloatGemmDecodeShapesMatchScalarAccumulation) {
           " m=" + std::to_string(shape.m) + " k=" + std::to_string(shape.k) +
           " alpha=" + std::to_string(alpha) + " beta=" + std::to_string(beta);
       for (int64_t i = 0; i < shape.m; ++i) {
+        expect_near_relative(c[i], expected[i], context.c_str());
+      }
+    }
+  }
+}
+
+TEST(BlasTest, BF16FP32GemvDecodeShapesMatchScalarAccumulation) {
+  using executorch::aten::BFloat16;
+
+  for (const auto [m, k] :
+       {std::pair{64, 511}, std::pair{128, 512}, std::pair{130, 513}}) {
+    const int64_t lda = m + 3;
+    const auto a = make_values<BFloat16>(lda * k, 11);
+    const auto b = make_values<float>(k, 12);
+
+    for (const auto [alpha, beta] :
+         {std::pair{1.0f, 0.0f}, std::pair{-0.5f, 0.25f}}) {
+      auto c = make_values<float>(m, 13);
+      auto expected = c;
+
+      reference_bf16_fp32_gemv_notrans(
+          m, k, alpha, a.data(), lda, b.data(), beta, expected);
+      executorch::cpublas::gemv(
+          m, k, alpha, a.data(), lda, b.data(), beta, c.data());
+
+      const std::string context = "m=" + std::to_string(m) +
+          " k=" + std::to_string(k) + " alpha=" + std::to_string(alpha) +
+          " beta=" + std::to_string(beta);
+      for (int64_t i = 0; i < m; ++i) {
         expect_near_relative(c[i], expected[i], context.c_str());
       }
     }

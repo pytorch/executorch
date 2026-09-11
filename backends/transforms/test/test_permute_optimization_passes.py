@@ -1308,12 +1308,18 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
         gm_before = copy.deepcopy(original)
 
         p = RemovePermutesAroundElementwiseOps()
-        # With the fix, the adapted permutation becomes identity [0,1,2],
-        # so no matching end permute is found and the graph is unchanged.
-        # Before the fix, the wrong adapted permutation [1,0,2] would match
-        # the end permute and create an invalid subgraph, causing a crash.
+        # The adapted permutation is the identity [0,1,2], so the end permute
+        # [1,0,2] does not match it. Rather than discarding the region, the end
+        # permute is kept with its permutation composed against the adapted
+        # start -- the identity here, so it stays [1,0,2] -- while the leading
+        # permute is removed. Before the fix, the wrong adapted permutation
+        # [1,0,2] would match the end permute and create an invalid subgraph.
         result = cast(PassResult, p(original))
-        self.assertFalse(result.modified)
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            1,
+        )
         validate_numerics(
             gm_before,
             result.graph_module,
@@ -1594,7 +1600,7 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permutation_sink_view_splitting_the_non_unit_dim",
         )
 
-    def test_permutation_sink_view_preserves_broadcast_layout(self) -> None:
+    def test_permutation_sink_view_terminal_broadcast_is_optimized(self) -> None:
         x_data = torch.randn(1, 4, 1, 1)
         direct_data = torch.randn(1, 8, 4)
         builder = GraphBuilder()
@@ -1617,15 +1623,87 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
         gm_before = copy.deepcopy(original)
 
         result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
-        self.assertFalse(result.modified)
+        self.assertTrue(result.modified)
         self.assertEqual(
-            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
         )
         validate_numerics(
             gm_before,
             result.graph_module,
             [x_data, direct_data],
-            "permutation_sink_view_preserves_broadcast_layout",
+            "permutation_sink_view_terminal_broadcast_is_optimized",
+        )
+
+    def test_split_sink_view_is_not_remapped_for_broadcast(self) -> None:
+        x_data = torch.randn(1, 4, 2)
+        sink_data = torch.randn(1, 1, 1, 8)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        sink_source = builder.placeholder("sink_source", sink_data)
+        permute_in = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        split_sink = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(sink_source, [1, 2, 4]),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(permute_in, split_sink)
+        )
+        permute_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [0, 2, 1])
+        )
+        builder.output([permute_out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, sink_data],
+            "split_sink_view_is_not_remapped_for_broadcast",
+        )
+
+    def test_shared_singleton_view_boundaries_are_not_remapped(self) -> None:
+        x_data = torch.randn(1, 4, 8)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        permute_in = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(permute_in, [1, 8, 4, 1]),
+        )
+        first_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(view, [0, 2, 3, 1]),
+        )
+        second_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(view, [0, 3, 1, 2]),
+        )
+        builder.output([first_out, second_out])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        # The view feeds two differing outgoing permutes, so its shape cannot be
+        # composed across the boundary. Both outgoing permutes survive; only the
+        # incoming permute is folded into them.
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "shared_singleton_view_boundaries_are_not_remapped",
         )
 
     def test_permutation_sink_view_preserves_cat_layout(self) -> None:
@@ -1651,10 +1729,14 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
         gm_before = copy.deepcopy(original)
 
         result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
-        self.assertFalse(result.modified)
+        self.assertTrue(result.modified)
         self.assertEqual(
-            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
         )
+        (view_after,) = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default
+        )
+        self.assertEqual(view_after.args[1], [1, 1, 4])
         validate_numerics(
             gm_before,
             result.graph_module,
@@ -1687,10 +1769,14 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
         gm_before = copy.deepcopy(original)
 
         result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
-        self.assertFalse(result.modified)
+        self.assertTrue(result.modified)
         self.assertEqual(
-            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
         )
+        (view_after,) = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default
+        )
+        self.assertEqual(view_after.args[1], [1, 1, 4])
         validate_numerics(
             gm_before,
             result.graph_module,
@@ -2165,6 +2251,187 @@ class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
         self.assertFalse(result.modified)
         self.assertEqual(
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
+    def test_region_ending_in_permute_then_view(self) -> None:
+        """permute -> mul -> permute -> view(squeeze).
+
+        The end permute is expressed at the region's rank while the view that
+        follows changes rank, so no boundary spanning both can ever match. The
+        end permute is folded on its own instead, absorbing the start permute as
+        [1,0,2]."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 3, 4)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [1, 2, 0])
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(p1, p1))
+        # Not the inverse of [1,2,0] (that would be [2,0,1]).
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [0, 2, 1])
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p2, [3, 4])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+
+        permutes = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(len(permutes), 1)
+        self.assertEqual(list(permutes[0].args[1]), [1, 0, 2])
+
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "region_ending_in_permute_then_view",
+        )
+
+    def test_view_seeded_region_with_shared_view(self) -> None:
+        """permute -> squeeze view -> two slices, only one of which is visited.
+
+        The view-seeded path requires the permute to have a single user, but not
+        the view. It adds the view to the region and rewrites its shape arg,
+        while traversing only one of the view's users, so a sibling consumer is
+        left indexing the pre-rewrite layout: here slice_b keeps slicing dim 0
+        after the view's shape arg becomes [6, 4], yielding [2, 4] instead of
+        [2, 6]."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 6, 4)
+        x = builder.placeholder("x", x_data)
+        # Sole user of the permute is a squeeze view -> takes the view-seeded path.
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p1, [4, 6])
+        )
+        # Two consumers of the same view; each is independently permutable.
+        slice_a = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor, args=(view, 0, 0, 2)
+        )
+        slice_b = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor, args=(view, 0, 2, 4)
+        )
+        # A matching end permute, so slice_a's region is applied.
+        pa = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(slice_a, [1, 0])
+        )
+        builder.output([pa, slice_b])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "view_seeded_region_with_shared_view",
+        )
+
+    def test_non_matching_end_permute_is_composed(self) -> None:
+        """permute([1,2,0]) → mul → permute([1,0,2]), where the end permute is
+        not the inverse of the start one.
+
+        The end permute cannot be dropped, but it can absorb the start permute
+        instead of the region being discarded: with the start permute gone the
+        producer is back in the original layout, so composing the two as
+        R[k] = start[end[k]] = [2,1,0] leaves the consumer's tensor unchanged
+        and still removes one permute."""
+        builder = GraphBuilder()
+        # Distinct dim sizes so a wrong permutation cannot go unnoticed.
+        x_data = torch.randn(2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [1, 2, 0])
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(p1, p1))
+        # [1,0,2] is not the inverse of [1,2,0] (that would be [2,0,1]).
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [1, 0, 2])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+
+        permutes = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(len(permutes), 1)
+        self.assertEqual(list(permutes[0].args[1]), [2, 1, 0])
+
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "non_matching_end_permute_is_composed",
+        )
+
+    def test_chained_regions_absorb_into_last_permute(self) -> None:
+        """permute(A) -> mul -> permute(B) -> add -> permute(C), no pair matching.
+
+        Each region folds its start permute into its end permute, so the chain
+        collapses into the trailing permute carrying A∘B∘C = [2,0,1]. One region
+        folds per invocation: rewriting B in place invalidates the candidate the
+        second region was planned against, so it is skipped until the next run
+        rediscovers it against the rewritten graph."""
+        builder = GraphBuilder()
+        # Distinct dim sizes so a wrong permutation cannot go unnoticed.
+        x_data = torch.randn(2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        # inverse([1,2,0]) is [2,0,1], so B does not match A's region.
+        pa = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [1, 2, 0])
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(pa, pa))
+        pb = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mul, [1, 0, 2])
+        )
+        add = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(pb, pb))
+        pc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(add, [0, 2, 1])
+        )
+        builder.output([pc])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        # One region folds per invocation, so the three-permute chain needs a
+        # few rounds; the bound just keeps a non-converging pass from hanging.
+        graph_module = original
+        for _ in range(5):
+            result = cast(
+                PassResult, RemovePermutesAroundElementwiseOps()(graph_module)
+            )
+            graph_module = result.graph_module
+            if not result.modified:
+                break
+        else:
+            self.fail("pass did not reach a fixed point")
+
+        permutes = graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )
+        self.assertEqual(len(permutes), 1)
+        self.assertEqual(list(permutes[0].args[1]), [2, 0, 1])
+
+        validate_numerics(
+            gm_before,
+            graph_module,
+            [x_data],
+            "chained_regions_absorb_into_last_permute",
         )
 
 

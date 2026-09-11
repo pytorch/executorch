@@ -106,12 +106,18 @@ def _add_const(
     tosa_arg: TosaArg,
     name: str,
 ) -> None:
-    """Add a constant, preserving packed FP4 storage when required."""
+    """Add a graph-owned constant under its exact name.
+
+    Parameters, buffers, and lifted constants are referenced by their FX names,
+    so pooling them could leave those names undefined. Preserve packed FP4
+    storage when required.
+
+    """
     if _is_packed_fp4_const(values, tosa_arg):
         # TOSA FP4 tensors have logical FP4 shape, but constants are stored as
         # packed bytes (two values per byte). Add the raw bytes as INT8 first
         # then set TOSA dtype and shape correctly on the tensor metadata.
-        tosa_graph.addConst(
+        tosa_graph.addUnpooledConst(
             normalize_symint(values.shape),
             ts.DType.INT8,
             values,
@@ -124,7 +130,7 @@ def _add_const(
         return
 
     prepared_values = _prepare_const_values_for_tosa_dtype(values, tosa_arg)
-    tosa_graph.addConst(
+    tosa_graph.addUnpooledConst(
         _get_const_shape(prepared_values, tosa_arg),
         tosa_arg.dtype,
         prepared_values,

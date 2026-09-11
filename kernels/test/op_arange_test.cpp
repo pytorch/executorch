@@ -113,6 +113,15 @@ TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+TEST_F(OpArangeOutTest, BooleanEndSupported) {
+  TensorFactory<ScalarType::Long> tf;
+
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {0});
+
+  EXPECT_TENSOR_EQ(op_arange_out(Scalar(true), out), expected);
+}
+
 TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,
@@ -193,6 +202,17 @@ TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   Tensor expected = tf.make({6}, {0.0, 1.0, 2.0, 3.0, 4.0, 5.0});
 
   EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpArangeStartOutTest, BooleanStartAndStepSupported) {
+  TensorFactory<ScalarType::Long> tf;
+
+  Tensor out = tf.zeros({3});
+  Tensor expected = tf.make({3}, {0, 1, 2});
+
+  EXPECT_TENSOR_EQ(
+      op_arange_start_out(Scalar(false), Scalar(3), Scalar(true), out),
+      expected);
 }
 
 TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {

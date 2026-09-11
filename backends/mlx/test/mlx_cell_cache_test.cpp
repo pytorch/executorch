@@ -224,8 +224,9 @@ TEST_F(MLXCellCacheTest, StorageDtypeDiffersCastsOnWrite) {
   EXPECT_TRUE(allclose(spec.K, k, 1e-2f));
 }
 
-// The step verbs are a contract: no declaration, a miscounted call, a repeated
-// layer and a position a sequence already holds are all refused.
+// The step verbs are a contract: no declaration, a miscounted call, and a
+// position a sequence already holds are refused. A repeated layer with the same
+// tokens (a KV-shared donor re-serving) is served again idempotently.
 TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
   using namespace ::mlx::core;
   MLXCellCache c(flat_config(32, 1, H, D, kHalf));
@@ -239,8 +240,9 @@ TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
   EXPECT_ANY_THROW(c.update_and_fetch(1, {0, 1}, k, v, s)); // no such layer
 
   c.update_and_fetch(0, {0, 1}, k, v, s);
-  EXPECT_ANY_THROW(
-      c.update_and_fetch(0, {0, 1}, k, v, s)); // layer served twice
+  // A KV-shared layer re-serves its donor's id with the same tokens; the repeat
+  // is idempotent and returns the same step rather than throwing.
+  EXPECT_NO_THROW(c.update_and_fetch(0, {0, 1}, k, v, s));
 
   EXPECT_TRUE(c.declare_step({a}));
   array k1 = randn(1), v1 = randn(1);
@@ -268,12 +270,16 @@ TEST_F(MLXCellCacheTest, InvalidConfigThrows) {
 // A runner reaches a layout by (backend_id, kind), so the builder registration
 // is as much a part of the layout as the class.
 TEST_F(MLXCellCacheTest, RegistryBuildsCellLayout) {
-  auto built = cache::CacheBuilderRegistry::global().build(
-      kMLXBackendId, "cell", flat_config(32, 1, H, D, kHalf));
+  auto built = cache::CacheFactory::global().build(
+      kMLXBackendId,
+      cache::kind::kBatchedCell,
+      flat_config(32, 1, H, D, kHalf));
   ASSERT_TRUE(built.ok());
-  const std::shared_ptr<cache::CacheBase>& c = *built;
-  EXPECT_NE(c->as_batch_control(), nullptr);
-  EXPECT_EQ(c->as_control(), nullptr);
+  const std::shared_ptr<cache::Cache>& c = *built;
+  EXPECT_NE(c->as<cache::BatchControl>(), nullptr);
+  EXPECT_NE(c->as<MLXCache>(), nullptr) << "the backend face comes back too";
+  // A cell layout is multi-sequence, so it offers no single-sequence face.
+  EXPECT_EQ(c->as<cache::SequenceControl>(), nullptr);
 }
 
 } // namespace
