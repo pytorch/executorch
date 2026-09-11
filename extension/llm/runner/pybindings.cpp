@@ -610,7 +610,7 @@ PYBIND11_MODULE(_llm_runner, m) {
 
         image_tensor = image_tensor.contiguous();
         if (image_tensor.scalar_type() == torch::kUInt8) {
-          uint8_t* data = image_tensor.data_ptr<uint8_t>();
+          const uint8_t* data = image_tensor.const_data_ptr<uint8_t>();
           std::vector<uint8_t> image_data(data, data + image_tensor.numel());
           return MultimodalInput(Image(
               std::move(image_data),
@@ -618,7 +618,7 @@ PYBIND11_MODULE(_llm_runner, m) {
               static_cast<int32_t>(height),
               static_cast<int32_t>(channels)));
         } else if (image_tensor.scalar_type() == torch::kFloat) {
-          float* data = image_tensor.data_ptr<float>();
+          const float* data = image_tensor.const_data_ptr<float>();
           std::vector<float> image_data(data, data + image_tensor.numel());
           return MultimodalInput(Image(
               std::move(image_data),
@@ -647,7 +647,7 @@ PYBIND11_MODULE(_llm_runner, m) {
 
         audio_tensor = audio_tensor.contiguous();
         if (audio_tensor.scalar_type() == torch::kUInt8) {
-          uint8_t* data = audio_tensor.data_ptr<uint8_t>();
+          const uint8_t* data = audio_tensor.const_data_ptr<uint8_t>();
           std::vector<uint8_t> audio_data(data, data + audio_tensor.numel());
           return MultimodalInput(Audio(
               std::move(audio_data),
@@ -655,7 +655,7 @@ PYBIND11_MODULE(_llm_runner, m) {
               static_cast<int32_t>(n_bins),
               static_cast<int32_t>(n_frames)));
         } else if (audio_tensor.scalar_type() == torch::kFloat) {
-          float* data = audio_tensor.data_ptr<float>();
+          const float* data = audio_tensor.const_data_ptr<float>();
           std::vector<float> audio_data(data, data + audio_tensor.numel());
           return MultimodalInput(Audio(
               std::move(audio_data),
@@ -684,7 +684,7 @@ PYBIND11_MODULE(_llm_runner, m) {
 
         audio_tensor = audio_tensor.contiguous();
         if (audio_tensor.scalar_type() == torch::kUInt8) {
-          uint8_t* data = audio_tensor.data_ptr<uint8_t>();
+          const uint8_t* data = audio_tensor.const_data_ptr<uint8_t>();
           std::vector<uint8_t> audio_data(data, data + audio_tensor.numel());
           return MultimodalInput(RawAudio{
               std::move(audio_data),
