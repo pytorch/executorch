@@ -19,6 +19,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.backends.arm.constants import MAX_U55_INDEX_TENSOR_ELEMENTS
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -465,12 +466,13 @@ class EthosU55IndexTensorCheck(OperatorSupportBase):
             not is_param_node(self.exported_program, index_node)
             or len(index_shape) != 1
             or index_shape[0] == 0
+            or index_shape[0] > MAX_U55_INDEX_TENSOR_ELEMENTS
             or any(not isinstance(size, int) for size in input_shape)
         ):
             self.reporter.report_reject(
                 node,
-                "U55 index.Tensor requires static input shape and a nonempty "
-                "constant rank-1 index.",
+                "U55 index.Tensor requires static input shape and a constant "
+                f"rank-1 index with at most {MAX_U55_INDEX_TENSOR_ELEMENTS} elements.",
             )
             return False
 
