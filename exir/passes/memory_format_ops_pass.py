@@ -29,8 +29,11 @@ class MemoryFormatOpsPass(ExportPass):
     the aten op and the new edge dialect dim_order op.
     """
 
+    enable_fast_copy = True
+    targeted_ops = DimOrderOpsMap.keys()
+
     def call_operator(self, op, args, kwargs, meta):
-        if not (isinstance(op, EdgeOpOverload) and op in DimOrderOpsMap):
+        if not (isinstance(op, EdgeOpOverload) and op in self.targeted_ops):
             return super().call_operator(
                 op,
                 args,
@@ -96,8 +99,11 @@ class DimOrderOpsRevertPass(ExportPass):
     This pass is to revert the dim_order ops back to the memory format ops.
     """
 
+    enable_fast_copy = True
+    targeted_ops = MemoryFormatOpsMap.keys()
+
     def call_operator(self, op, args, kwargs, meta):
-        if not (isinstance(op, EdgeOpOverload) and op in MemoryFormatOpsMap):
+        if not (isinstance(op, EdgeOpOverload) and op in self.targeted_ops):
             return super().call_operator(
                 op,
                 args,
