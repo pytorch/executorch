@@ -38,3 +38,19 @@ def define_common_targets():
             ],  # + kernel_deps,
             visibility = ["PUBLIC"],
         )
+
+        runtime.cxx_library(
+            name = "adamw" + aten_suffix,
+            srcs = [
+                "adamw.cpp",
+            ],
+            exported_headers = [
+                "adamw.h",
+            ],
+            exported_deps = [
+                "//executorch/extension/tensor:tensor" + aten_suffix,
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+            ],
+            visibility = ["PUBLIC"],
+        )
