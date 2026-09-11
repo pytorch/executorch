@@ -25,7 +25,10 @@ def _serializer(path_prefix=""):
 
 def _serialized_operator_count(serializer):
     graph = TosaGraph.GetRootAs(serializer.serialize(), 0)
-    return graph.Regions(0).Blocks(0).OperatorsLength()
+    assert graph.RegionsLength() == 1
+    region = graph.Regions(0)
+    assert region.BlocksLength() == 1
+    return region.Blocks(0).OperatorsLength()
 
 
 @pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])
