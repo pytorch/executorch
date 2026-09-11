@@ -38,60 +38,6 @@ bool is_supported_logits_type(::executorch::aten::ScalarType type) {
       type == ScalarType::BFloat16 || type == ScalarType::UInt16;
 }
 
-// Constant methods carry no delegate, so the layout reads with the program
-// loaded and the method not. Sizing is the caller's and is left unset.
-Result<cache::CacheConfig> config_from_program(Module& module) {
-  const auto read_int = [&module](const char* name) -> std::optional<int64_t> {
-    const auto r = module.execute(name);
-    if (!r.ok() || r->empty() || !r->at(0).isInt()) {
-      return std::nullopt;
-    }
-    return r->at(0).toInt();
-  };
-  const auto read_ints =
-      [&module](const char* name) -> std::optional<std::vector<int>> {
-    const auto r = module.execute(name);
-    if (!r.ok() || r->empty() || !r->at(0).isTensor()) {
-      return std::nullopt;
-    }
-    const auto t = r->at(0).toTensor();
-    if (t.scalar_type() != ::executorch::aten::ScalarType::Int) {
-      return std::nullopt;
-    }
-    const int32_t* p = t.const_data_ptr<int32_t>();
-    return std::vector<int>(p, p + t.numel());
-  };
-
-  const auto n_caches = read_int("get_n_caches");
-  const auto kv_heads = read_ints("get_kv_heads");
-  const auto head_dims = read_ints("get_head_dims");
-  const auto windows = read_ints("get_windows");
-  ET_CHECK_OR_RETURN_ERROR(
-      n_caches && kv_heads && head_dims && windows,
-      InvalidArgument,
-      "ModuleExecutor: the program publishes no KV layout");
-  const auto n = static_cast<size_t>(*n_caches);
-  ET_CHECK_OR_RETURN_ERROR(
-      kv_heads->size() == n && head_dims->size() == n && windows->size() == n,
-      InvalidArgument,
-      "ModuleExecutor: the published KV layout names %zu caches inconsistently",
-      n);
-
-  cache::CacheConfig cfg{};
-  cfg.n_layers = static_cast<int>(n);
-  cfg.layers.reserve(n);
-  for (size_t l = 0; l < n; ++l) {
-    cache::LayerConfig lc{};
-    lc.n_kv_heads = (*kv_heads)[l];
-    lc.head_dim = (*head_dims)[l];
-    lc.policy = (*windows)[l] > 0
-        ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, (*windows)[l]}
-        : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
-    cfg.layers.push_back(lc);
-  }
-  return cfg;
-}
-
 std::uint64_t nondeterministic_seed() {
   std::random_device device;
   return device();
@@ -280,20 +226,19 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return Error::NotSupported;
   }
 
-  auto cfg = config_from_program(*module);
-  if (!cfg.ok()) {
-    return cfg.error();
+  auto geometry = read_cache_geometry(*module);
+  if (!geometry.ok()) {
+    return geometry.error();
   }
   if (max_sessions > std::numeric_limits<int>::max() / max_session_tokens) {
     ET_LOG(Error, "ModuleExecutor: total cache capacity exceeds int range");
     return Error::InvalidArgument;
   }
-  cfg->capacity = max_sessions * max_session_tokens;
-  cfg->kv_dtype = kv_dtype;
+  cache::CacheConfig cfg{max_sessions * max_session_tokens, kv_dtype};
   if (initial_capacity >= 0) {
-    cfg->initial_capacity = initial_capacity;
+    cfg.initial_capacity = initial_capacity;
   }
-  if (!cache::valid(*cfg)) {
+  if (!cache::valid(*geometry, cfg)) {
     ET_LOG(Error, "ModuleExecutor: the program's layout is unusable");
     return Error::InvalidProgram;
   }
@@ -405,8 +350,8 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return Error::InvalidProgram;
   }
 
-  auto built =
-      cache::CacheFactory::global().build(backend_id, cache_kind, *cfg);
+  auto built = cache::CacheFactory::global().build(
+      backend_id, cache_kind, *geometry, cfg);
   if (!built.ok()) {
     ET_LOG(
         Error,
