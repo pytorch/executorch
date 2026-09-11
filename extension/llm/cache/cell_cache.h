@@ -62,9 +62,9 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   // One bit per sequence in the owner bitset.
   static constexpr int kMaxSeqs = 64;
 
-  // Precondition: valid(cfg). CacheFactory::build enforces it for
+  // Precondition: valid(geometry, cfg). CacheFactory::build enforces it for
   // registry-created caches; direct construction must check first.
-  explicit CellCache(const CacheConfig& cfg);
+  CellCache(const CacheGeometry& geometry, const CacheConfig& cfg);
 
   // -- CacheControl ------------------------------------------------------
 

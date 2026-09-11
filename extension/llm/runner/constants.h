@@ -18,6 +18,10 @@ inline constexpr auto kMaxContextLen = "get_max_context_len";
 inline constexpr auto kVocabSize = "get_vocab_size";
 inline constexpr auto kActivationDtype = "get_activation_dtype";
 inline constexpr auto kLogitsToKeepMode = "get_logits_to_keep_mode";
+inline constexpr auto kNumCaches = "get_n_caches";
+inline constexpr auto kKVHeads = "get_kv_heads";
+inline constexpr auto kHeadDims = "get_head_dims";
+inline constexpr auto kWindows = "get_windows";
 inline constexpr auto kUseKVCache = "use_kv_cache";
 inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 

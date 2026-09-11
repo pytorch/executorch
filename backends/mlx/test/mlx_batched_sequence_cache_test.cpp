@@ -83,7 +83,7 @@ class MLXBatchedSequenceCacheTest : public ::testing::Test {
 // Two sequences in one step: each comes back with what it would have computed
 // alone, so neither saw the other's cells.
 TEST_F(MLXBatchedSequenceCacheTest, SpansMatchSeparateRuns) {
-  MLXBatchedSequenceCache c(
+  auto c = make_cache<MLXBatchedSequenceCache>(
       flat_config(/*capacity=*/32, /*n_layers=*/1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
@@ -92,8 +92,8 @@ TEST_F(MLXBatchedSequenceCacheTest, SpansMatchSeparateRuns) {
   array out = step(c, {a, a, a, b, b}, {0, 1, 2, 0, 1}, q, k, v);
   EXPECT_EQ(out.shape(2), 5);
 
-  MLXSequenceCache solo_a(flat_config(32, 1, H, D, kHalf));
-  MLXSequenceCache solo_b(flat_config(32, 1, H, D, kHalf));
+  auto solo_a = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
+  auto solo_b = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
   EXPECT_TRUE(allclose(
       span(out, 0, 3),
       alone(solo_a, {0, 1, 2}, span(q, 0, 3), span(k, 0, 3), span(v, 0, 3)),
@@ -106,11 +106,11 @@ TEST_F(MLXBatchedSequenceCacheTest, SpansMatchSeparateRuns) {
 
 // Decode: each span continues its own history, not the step before it.
 TEST_F(MLXBatchedSequenceCacheTest, DecodeContinuesEachPrivateHistory) {
-  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
-  MLXSequenceCache solo_a(flat_config(32, 1, H, D, kHalf));
-  MLXSequenceCache solo_b(flat_config(32, 1, H, D, kHalf));
+  auto solo_a = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
+  auto solo_b = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
 
   array q0 = randn(3), k0 = randn(3), v0 = randn(3);
   step(c, {a, a, b}, {0, 1, 0}, q0, k0, v0);
@@ -133,20 +133,20 @@ TEST_F(MLXBatchedSequenceCacheTest, DecodeContinuesEachPrivateHistory) {
 // A sequence named twice in one step: its second span continues its first,
 // and the outputs come back in the order the step declared them.
 TEST_F(MLXBatchedSequenceCacheTest, SequenceSpannedTwicePreservesOrder) {
-  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
 
   array q = randn(3), k = randn(3), v = randn(3);
   array out = step(c, {a, b, a}, {0, 0, 1}, q, k, v);
 
-  MLXSequenceCache solo_a(flat_config(32, 1, H, D, kHalf));
+  auto solo_a = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
   array a0 = alone(solo_a, {0}, span(q, 0, 1), span(k, 0, 1), span(v, 0, 1));
   array a1 = alone(solo_a, {1}, span(q, 2, 1), span(k, 2, 1), span(v, 2, 1));
   EXPECT_TRUE(allclose(span(out, 0, 1), a0, 1e-2f));
   EXPECT_TRUE(allclose(span(out, 2, 1), a1, 1e-2f));
 
-  MLXSequenceCache solo_b(flat_config(32, 1, H, D, kHalf));
+  auto solo_b = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
   EXPECT_TRUE(allclose(
       span(out, 1, 1),
       alone(solo_b, {0}, span(q, 1, 1), span(k, 1, 1), span(v, 1, 1)),
@@ -157,11 +157,12 @@ TEST_F(MLXBatchedSequenceCacheTest, SequenceSpannedTwicePreservesOrder) {
 // history is in it -- a neighbour's cells are in another pool entirely.
 TEST_F(MLXBatchedSequenceCacheTest, WindowBoundsEachSpanWithinItsSequence) {
   const int window = 2;
-  MLXBatchedSequenceCache c(
+  auto c = make_cache<MLXBatchedSequenceCache>(
       ring_config(/*capacity=*/32, window, /*max_write=*/4, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
-  MLXSequenceCache solo_a(ring_config(32, window, 4, H, D, kHalf));
+  auto solo_a =
+      make_cache<MLXSequenceCache>(ring_config(32, window, 4, H, D, kHalf));
 
   array q0 = randn(4), k0 = randn(4), v0 = randn(4);
   step(c, {a, a, a, b}, {0, 1, 2, 0}, q0, k0, v0);
@@ -190,7 +191,7 @@ TEST_F(MLXBatchedSequenceCacheTest, WindowBoundsEachSpanWithinItsSequence) {
 // K/V are cast to the configured storage dtype on the way in, per sequence.
 TEST_F(MLXBatchedSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
   using namespace ::mlx::core;
-  MLXBatchedSequenceCache c(
+  auto c = make_cache<MLXBatchedSequenceCache>(
       flat_config(32, 1, H, D, static_cast<int>(ScalarType::BFloat16)));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
@@ -199,7 +200,7 @@ TEST_F(MLXBatchedSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
   array out = step(c, {a, b}, {0, 0}, q, k, v);
   EXPECT_EQ(out.shape(2), 2);
 
-  MLXSequenceCache solo(
+  auto solo = make_cache<MLXSequenceCache>(
       flat_config(32, 1, H, D, static_cast<int>(ScalarType::BFloat16)));
   EXPECT_TRUE(allclose(
       span(out, 0, 1),
@@ -209,7 +210,7 @@ TEST_F(MLXBatchedSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
 
 // A sequence removed frees its pools; the id comes back and starts empty.
 TEST_F(MLXBatchedSequenceCacheTest, RemovedSequenceStartsOverOnReuse) {
-  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   step(c, {a, a, a}, {0, 1, 2}, randn(3), randn(3), randn(3));
   EXPECT_EQ(c.pos(a), 3);
@@ -220,14 +221,15 @@ TEST_F(MLXBatchedSequenceCacheTest, RemovedSequenceStartsOverOnReuse) {
 
   array q = randn(1), k = randn(1), v = randn(1);
   array out = step(c, {a}, {0}, q, k, v); // and starts at position 0 again
-  MLXSequenceCache solo(flat_config(32, 1, H, D, kHalf));
+  auto solo = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
   EXPECT_TRUE(allclose(out, alone(solo, {0}, q, k, v), 1e-2f));
 }
 
 // The step verbs are a contract: no declaration, a miscounted call, a repeated
 // layer and a position a sequence does not continue are all refused.
 TEST_F(MLXBatchedSequenceCacheTest, IllFormedStepsThrow) {
-  MLXBatchedSequenceCache c(flat_config(32, /*n_layers=*/2, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(
+      flat_config(32, /*n_layers=*/2, H, D, kHalf));
   const int32_t a = *c.seq_new();
   array q = randn(2), k = randn(2), v = randn(2);
 
@@ -249,7 +251,7 @@ TEST_F(MLXBatchedSequenceCacheTest, IllFormedStepsThrow) {
 // A fork holds the donor's prefix and then diverges: the copy is its own, so
 // what either writes afterwards is invisible to the other.
 TEST_F(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
-  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf));
   c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t a = *c.seq_new();
   array q0 = randn(2), k0 = randn(2), v0 = randn(2);
@@ -266,7 +268,7 @@ TEST_F(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
   };
   array out = step(c, {a, b}, {2, 2}, twice(q1), twice(k1), twice(v1));
 
-  MLXSequenceCache solo(flat_config(32, 1, H, D, kHalf));
+  auto solo = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
   alone(solo, {0, 1}, q0, k0, v0);
   array want = alone(solo, {2}, q1, k1, v1);
   EXPECT_TRUE(allclose(span(out, 0, 1), want, 1e-2f)); // the source
@@ -274,7 +276,7 @@ TEST_F(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
 }
 
 TEST_F(MLXBatchedSequenceCacheTest, PartialFlatForkCopiesOnlyPrefix) {
-  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf));
   c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t source = *c.seq_new();
   array q0 = randn(8), k0 = randn(8), v0 = randn(8);
@@ -286,7 +288,7 @@ TEST_F(MLXBatchedSequenceCacheTest, PartialFlatForkCopiesOnlyPrefix) {
   EXPECT_EQ(c.pos(*fork), 3);
   EXPECT_TRUE(c.seq_rm(source));
 
-  MLXSequenceCache oracle(flat_config(32, 1, H, D, kHalf));
+  auto oracle = make_cache<MLXSequenceCache>(flat_config(32, 1, H, D, kHalf));
   alone(oracle, {0, 1, 2}, span(q0, 0, 3), span(k0, 0, 3), span(v0, 0, 3));
   array q1 = randn(1), k1 = randn(1), v1 = randn(1);
   array got = step(c, {*fork}, {3}, q1, k1, v1);
@@ -299,7 +301,7 @@ TEST_F(MLXBatchedSequenceCacheTest, PartialFlatForkCopiesOnlyPrefix) {
 TEST_F(MLXBatchedSequenceCacheTest, ForkAndSourceDivergeOnDifferentTokens) {
   // A small initial capacity so the pool grows past it and the fork compacts.
   auto cfg = [&] { return flat_config(32, 1, H, D, kHalf, 2); };
-  MLXBatchedSequenceCache c(cfg());
+  auto c = make_cache<MLXBatchedSequenceCache>(cfg());
   c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t a = *c.seq_new();
 
@@ -313,7 +315,8 @@ TEST_F(MLXBatchedSequenceCacheTest, ForkAndSourceDivergeOnDifferentTokens) {
   const int32_t b = *c.seq_clone(a, /*upto=*/3);
   ASSERT_EQ(c.pos(b), 3);
 
-  MLXSequenceCache oa(cfg()), ob(cfg());
+  auto oa = make_cache<MLXSequenceCache>(cfg());
+  auto ob = make_cache<MLXSequenceCache>(cfg());
   for (int32_t p = 0; p < 8; ++p) {
     alone(oa, {p}, qs[p], ks[p], vs[p]);
     if (p < 3) {
@@ -345,7 +348,7 @@ TEST_F(MLXBatchedSequenceCacheTest, ForkAndSourceDivergeOnDifferentTokens) {
 TEST_F(
     MLXBatchedSequenceCacheTest,
     RejectedDeclarationLeavesTheLastOneStanding) {
-  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
 
   EXPECT_TRUE(c.declare_step({a}));
@@ -360,7 +363,8 @@ TEST_F(
 // One capacity behind the private histories: what either holds is what the
 // other cannot, and a fork needs room for the prefix it copies.
 TEST_F(MLXBatchedSequenceCacheTest, SequencesShareOneCapacity) {
-  MLXBatchedSequenceCache c(flat_config(/*capacity=*/4, 1, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(
+      flat_config(/*capacity=*/4, 1, H, D, kHalf));
   c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
@@ -382,10 +386,9 @@ TEST_F(MLXBatchedSequenceCacheTest, SequencesShareOneCapacity) {
 }
 
 TEST_F(MLXBatchedSequenceCacheTest, RegistryBuildsBatchedSequenceLayout) {
+  CacheArgs args = flat_config(32, 1, H, D, kHalf);
   auto built = cache::CacheFactory::global().build(
-      kMLXBackendId,
-      cache::kind::kBatchedSequence,
-      flat_config(32, 1, H, D, kHalf));
+      kMLXBackendId, cache::kind::kBatchedSequence, args.geometry, args.config);
   ASSERT_TRUE(built.ok());
   const std::shared_ptr<cache::Cache>& c = *built;
   EXPECT_NE(c->as<cache::BatchControl>(), nullptr);
@@ -398,9 +401,11 @@ TEST_F(MLXBatchedSequenceCacheTest, RegistryBuildsBatchedSequenceLayout) {
 // enough on its own.
 TEST_F(MLXBatchedSequenceCacheTest, PartialForkOfAWrappedRing) {
   const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
-  MLXBatchedSequenceCache c(ring_config(32, window, max_write, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(
+      ring_config(32, window, max_write, H, D, kHalf));
   c.bind_controller_stream(::mlx::core::to_stream(s));
-  MLXSequenceCache oracle(ring_config(32, window, max_write, H, D, kHalf));
+  auto oracle = make_cache<MLXSequenceCache>(
+      ring_config(32, window, max_write, H, D, kHalf));
   const int32_t a = *c.seq_new();
 
   // Decode the donor to 10, feeding the oracle only the first 6.
@@ -436,7 +441,8 @@ TEST_F(MLXBatchedSequenceCacheTest, PartialForkOfAWrappedRing) {
 // as it was from the donor.
 TEST_F(MLXBatchedSequenceCacheTest, ForkOfAForkKeepsTheDonorsFloor) {
   const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
-  MLXBatchedSequenceCache c(ring_config(32, window, max_write, H, D, kHalf));
+  auto c = make_cache<MLXBatchedSequenceCache>(
+      ring_config(32, window, max_write, H, D, kHalf));
   c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t a = *c.seq_new();
   for (int32_t p = 0; p < 10; ++p) {
