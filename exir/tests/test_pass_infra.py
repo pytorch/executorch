@@ -192,7 +192,6 @@ class TestPassInfra(unittest.TestCase):
             if node.target != "output":
                 self.assertIn("val", node.meta)
 
-
     def test_export_pass_reuses_graph_fake_mode(self) -> None:
         """A graph whose placeholders are all constant-carrying fake tensors.
 
