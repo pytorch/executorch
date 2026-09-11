@@ -363,4 +363,20 @@ TEST_F(MLXBatchedSequenceCacheTest, PartialForkOfAWrappedRing) {
   EXPECT_TRUE(allclose(got, alone(oracle, {9}, q, k, v), 1e-2f));
 }
 
+// A fork copies the same slots, so the second one's target is as unreachable
+// as it was from the donor.
+TEST_F(MLXBatchedSequenceCacheTest, ForkOfAForkKeepsTheDonorsFloor) {
+  const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
+  MLXBatchedSequenceCache c(ring_config(32, window, max_write, H, D, kHalf));
+  const int32_t a = *c.seq_new();
+  for (int32_t p = 0; p < 10; ++p) {
+    array q = randn(1), k = randn(1), v = randn(1);
+    step(c, {a}, {p}, q, k, v);
+  }
+
+  const auto b = c.seq_clone(a, /*upto=*/9);
+  ASSERT_TRUE(b);
+  EXPECT_FALSE(c.seq_clone(*b, /*upto=*/8));
+}
+
 } // namespace

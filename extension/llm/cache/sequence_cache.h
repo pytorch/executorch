@@ -170,6 +170,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
       : capacity_(other.capacity_),
         max_write_(other.max_write_),
         length_(other.length_),
+        written_(other.written_),
         specs_(other.specs_),
         layer_to_policy_(other.layer_to_policy_) {
     policies_.reserve(specs_.size());
@@ -189,6 +190,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   }
   void clear() override {
     length_ = 0;
+    written_ = 0;
   }
   // Positions are dense from 0, so this is both what the sequence holds and
   // where its next token goes.
@@ -200,10 +202,11 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
       return false; // a position it has not reached
     }
     // An evicting layer physically drops everything older than it retains, so
-    // the target must be no older than the most-restrictive layer retains.
+    // the target must be no older than the most-restrictive layer retains,
+    // measured from what was written rather than from the current length.
     int floor = 0;
     for (const auto& p : policies_) {
-      floor = std::max(floor, p->retained_from(length_));
+      floor = std::max(floor, p->retained_from(written_));
     }
     if (position < floor) {
       return false; // history evicted from an evicting layer
@@ -239,6 +242,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
       end += plan.read[i].len;
     }
     length_ = std::max(length_, end);
+    written_ = std::max(written_, length_);
   }
 
  protected:
@@ -269,6 +273,9 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   int capacity_;
   std::optional<int> max_write_;
   int length_ = 0;
+  // How far the byte layer has been written; a rewind lowers the length but
+  // not this.
+  int written_ = 0;
   std::vector<LayerPolicy> specs_; // parallel to policies_, for dedup
   std::vector<std::unique_ptr<LayoutPolicy>> policies_;
   std::vector<int> layer_to_policy_;

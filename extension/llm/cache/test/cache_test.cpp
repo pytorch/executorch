@@ -188,6 +188,22 @@ TEST_F(CacheTest, RewindBoundedByRingWindow) {
   EXPECT_FALSE(cache.rewind(11)); // cannot grow
 }
 
+TEST_F(CacheTest, RewindFloorHoldsAcrossSuccessiveRewinds) {
+  // window 4, max_write 1 -> a ring of 4 slots holding the newest 4 positions.
+  CacheConfig cfg{100, 1, {ring_layer(4)}, 0};
+  cfg.max_write = 1;
+  SequenceCache cache(cfg);
+  for (int pos = 0; pos < 10; ++pos) {
+    auto p = cache.plan(0, pos, 1);
+    ASSERT_TRUE(p.has_value());
+    cache.commit(*p);
+  }
+  // The ring holds 6..9, so 9 is the oldest target a step can continue from.
+  ASSERT_TRUE(cache.rewind(9));
+  // That rewind freed no slot, so 8 is as unreachable as it was before.
+  EXPECT_FALSE(cache.rewind(8));
+}
+
 TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   SequenceCache cache(CacheConfig{4, 1, {flat_layer()}});
   Cache* base = &cache;
