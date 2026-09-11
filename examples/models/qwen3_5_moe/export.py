@@ -1077,6 +1077,10 @@ def _export_cuda(model, config, args):
     # Coordinate descent recompiles each kernel trying config perturbations,
     # adding minutes with negligible runtime benefit for this model's shapes.
     inductor_config.coordinate_descent_tuning = False
+    # Keep GEMM autotuning for Triton-only prefill lowering without enabling
+    # the broader pointwise and reduction autotuning paths. Those paths can
+    # access released low-memory KV-cache storage under PyTorch 2.14.
+    inductor_config.max_autotune_gemm = True
     # The wrapper.cpp is pure kernel launch orchestration — no heavy compute.
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
@@ -1138,9 +1142,9 @@ def _export_cuda(model, config, args):
         "enable_dynamic_shape": True,
         "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
-    # Avoid PyTorch 2.13's fused cast/reduction compile-time autotune path. Keep
-    # max autotuning enabled so prefill GEMMs use the CUDA backend's Triton-only
-    # GEMM lowering instead of emitting libtorch fallback kernels.
+    # Keep broad autotuning disabled for this low-memory export. GEMM tuning is
+    # enabled above so prefill GEMMs still use the CUDA backend's Triton-only
+    # lowering instead of emitting libtorch fallback kernels.
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
@@ -1150,7 +1154,7 @@ def _export_cuda(model, config, args):
                         CudaBackend.generate_method_name_compile_spec("decode"),
                         CompileSpec("low_memory_mode", b"ON"),
                         CompileSpec("emulate_precision_casts", b"OFF"),
-                        CompileSpec("max_autotune", b"ON"),
+                        CompileSpec("max_autotune", b"OFF"),
                         CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
@@ -1161,7 +1165,7 @@ def _export_cuda(model, config, args):
                         CudaBackend.generate_method_name_compile_spec("prefill"),
                         CompileSpec("low_memory_mode", b"ON"),
                         CompileSpec("emulate_precision_casts", b"OFF"),
-                        CompileSpec("max_autotune", b"ON"),
+                        CompileSpec("max_autotune", b"OFF"),
                         CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
