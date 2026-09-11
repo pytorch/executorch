@@ -72,8 +72,9 @@ build_android_native_library() {
   cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
 
   # libexecutorch.so links the NDK C++ runtime dynamically, so the AAR has to
-  # carry it. Apps that already ship libc++_shared.so collapse the two copies
-  # when they package their APK.
+  # carry it. An app that also pulls libc++_shared.so from another dependency
+  # (fbjni ships one) has two files at the same path, which AGP treats as an
+  # error rather than collapsing; the AAR sets jniLibs.pickFirsts for it.
   local ANDROID_TRIPLE
   case "${ANDROID_ABI}" in
     arm64-v8a)   ANDROID_TRIPLE=aarch64-linux-android ;;
