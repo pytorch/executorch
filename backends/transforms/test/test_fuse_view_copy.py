@@ -55,8 +55,32 @@ class TestFuseViewCopyTransform(unittest.TestCase):
             (torch.rand(8, 32),),
             dynamic_shapes={"x": {0: dim}},
         )
-        # No assertion on the view count: the point is that lint() above passes,
-        # i.e. the pass never leaves an argument used before it is defined.
+        # The chain is one view long and its shape is unavailable, so nothing
+        # fuses and both views stay.
+        self.assertEqual(self._count_views(graph), 2)
+
+    def test_chain_fuses_up_to_the_first_unavailable_shape(self):
+        # Three views. The middle shape reuses `n * 4`, computed before the
+        # first view, so it can move onto it. The last needs `n * 2`, computed
+        # only after the first view runs, so it has to stay put. Fusing the
+        # whole chain would drag `n * 2` backwards past its definition.
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                n = x.shape[0]
+                a = x.view(n * 4, 8)
+                b = a.relu()
+                c = b.view(n * 4, 4, 2)
+                d = c.sqrt()
+                return d.view(n * 2, 16) + float(0)
+
+        dim = torch.export.Dim("n", min=2, max=64)
+        graph = self._fuse(
+            Model().eval(),
+            (torch.rand(8, 32) + 1.0,),
+            dynamic_shapes={"x": {0: dim}},
+        )
+        # The middle view folded into the first; the last one survives.
+        self.assertEqual(self._count_views(graph), 2)
 
 
 if __name__ == "__main__":
