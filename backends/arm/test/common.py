@@ -326,6 +326,8 @@ def xfail_if_version(
     """
     versions = SpecifierSet(specifier)
     try:
+        if isinstance(version, str):
+            version = Version(version)
         matches = version is not None and version in versions
     except InvalidVersion:
         warnings.warn(
