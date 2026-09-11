@@ -20,8 +20,7 @@ _STAGE_CHANNELS = (16, 32, 64)
 
 
 def _make_conv(ch_in: int, ch_out: int, ks: int, s: int = 1, pad: int = 0) -> nn.Conv2d:
-    """Create a Conv2d layer without bias (used before batch-norm)."""
-    return nn.Conv2d(ch_in, ch_out, kernel_size=ks, stride=s, padding=pad, bias=False)
+    return nn.Conv2d(ch_in, ch_out, kernel_size=ks, stride=s, padding=pad, bias=True)
 
 
 class _ResStage(nn.Module):
@@ -30,9 +29,12 @@ class _ResStage(nn.Module):
     def __init__(self, ch_in: int, ch_out: int, downsample: bool = False) -> None:
         super().__init__()
         s = 2 if downsample else 1
+        self.path_a_padding = (
+            nn.ZeroPad2d((0, 1, 0, 1)) if downsample else nn.Identity()
+        )
 
         self.path_a = nn.Sequential(
-            _make_conv(ch_in, ch_out, ks=3, s=s, pad=1),
+            _make_conv(ch_in, ch_out, ks=3, s=s, pad=0 if downsample else 1),
             nn.BatchNorm2d(ch_out),
             nn.ReLU(),
             _make_conv(ch_out, ch_out, ks=3, s=1, pad=1),
@@ -48,17 +50,19 @@ class _ResStage(nn.Module):
         self.act = nn.ReLU()
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.act(self.path_a(x) + self.skip(x))
+        return self.act(self.path_a(self.path_a_padding(x)) + self.skip(x))
 
 
 class ResNet8(nn.Module):
     """
     Three-stage residual network for the MLPerf Tiny image-classification
-    benchmark (CIFAR-10, 32x32 RGB, 10 classes).
+    benchmark (CIFAR-10, 32x32 RGB, 10 classes). Returns logits unless
+    apply_softmax is set.
     """
 
-    def __init__(self, n_classes: int = 10) -> None:
+    def __init__(self, n_classes: int = 10, *, apply_softmax: bool = False) -> None:
         super().__init__()
+        self.apply_softmax = apply_softmax
 
         # Initial convolution + normalisation.
         self.entry = nn.Sequential(
@@ -82,12 +86,13 @@ class ResNet8(nn.Module):
         x = self.stages(x)
         x = self.pool(x)
         x = torch.flatten(x, 1)
-        return self.head(x)
+        x = self.head(x)
+        return torch.softmax(x, dim=-1) if self.apply_softmax else x
 
 
 class ResNet8Model(EagerModelBase):
     def get_eager_model(self) -> nn.Module:
-        return ResNet8().eval()
+        return ResNet8(apply_softmax=True).eval()
 
     def get_example_inputs(self):
         return (torch.rand(1, 3, 32, 32) * 2 - 1,)
