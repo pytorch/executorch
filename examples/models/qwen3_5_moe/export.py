@@ -1077,10 +1077,6 @@ def _export_cuda(model, config, args):
     # Coordinate descent recompiles each kernel trying config perturbations,
     # adding minutes with negligible runtime benefit for this model's shapes.
     inductor_config.coordinate_descent_tuning = False
-    # Keep GEMM autotuning for Triton-only prefill lowering without enabling
-    # the broader pointwise and reduction autotuning paths. Those paths can
-    # access released low-memory KV-cache storage under PyTorch 2.14.
-    inductor_config.max_autotune_gemm = True
     # The wrapper.cpp is pure kernel launch orchestration — no heavy compute.
     # -O0 compiles ~8x faster than -O1 with no measurable runtime impact.
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
@@ -1142,9 +1138,8 @@ def _export_cuda(model, config, args):
         "enable_dynamic_shape": True,
         "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
-    # Keep broad autotuning disabled for this low-memory export. GEMM tuning is
-    # enabled above so prefill GEMMs still use the CUDA backend's Triton-only
-    # lowering instead of emitting libtorch fallback kernels.
+    # PyTorch 2.14 autotuning can launch kernels against released low-memory
+    # KV-cache storage, poisoning the CUDA context. Disable it for this model.
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
