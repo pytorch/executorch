@@ -4,18 +4,26 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+"""HTP profiling demo — Hextimate on host.
+
+This example exports a `.pte` with `QnnConfig.online_prepare=True`, estimates
+HTP performance on host with `estimate_htp_profile_result()`, and opens the
+QHAS report with QAIRT Visualizer.
+
+Hextimate is compile-time estimation, not an on-device OpTrace run. It does not
+use sample inputs or adb during profiling.
+"""
+
 import json
 import os
 from multiprocessing.connection import Client
 
-import qairt_visualizer
 import torch
-from executorch.backends.qualcomm.debugger.utils import generate_optrace
+from executorch.backends.qualcomm.debugger.utils import estimate_htp_profile_result
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.tests.models import SimpleModel
@@ -24,17 +32,17 @@ from executorch.backends.qualcomm.utils.utils import get_soc_to_chipset_map
 
 def main(args) -> None:
     qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
+    assert qnn_config.online_prepare, (
+        "This demo uses host-only Hextimate; pass --online_prepare "
+        "(or set online_prepare=True in your config file)."
+    )
+
     model = SimpleModel()
     example_inputs = [(torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))]
 
     pte_filename = "qnn_simple_model"
     os.makedirs(args.artifact, exist_ok=True)
 
-    assert (
-        qnn_config.profile_level == 3
-    ), "Please turn profile_level to 3 for the purpose of this tutorial."
-
-    # lower to QNN
     build_executorch_binary(
         model=model,
         qnn_config=qnn_config,
@@ -43,32 +51,43 @@ def main(args) -> None:
         quant_dtype=QuantDtype.use_8a8w,
     )
 
-    # generate optrace and QHAS
-    adb = SimpleADB(
-        qnn_config=qnn_config,
+    artifacts = estimate_htp_profile_result(
+        artifact_dir=args.artifact,
+        soc_id=get_soc_to_chipset_map()[args.soc_model],
         pte_path=f"{args.artifact}/{pte_filename}.pte",
-        workspace=f"/data/local/tmp/executorch/{pte_filename}",
-    )
-    binaries_trace = generate_optrace(
-        args.artifact,
-        get_soc_to_chipset_map()[args.soc_model],
-        adb,
-        f"{args.artifact}/{pte_filename}.pte",
-        example_inputs,
     )
 
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
-            conn.send(json.dumps({"binaries_trace": binaries_trace}))
-    else:
-        # Visualize the model and reports
-        for binary, (optrace, qhas) in binaries_trace.items():
-            file_extension = os.path.splitext(binary)[-1]
-            if file_extension == ".bin":
-                qairt_visualizer.view(reports=[optrace, qhas])
-            elif file_extension == ".dlc":
-                # We only show graph for dlc binary
-                qairt_visualizer.view(binary, reports=[optrace, qhas])
+            conn.send(
+                json.dumps(
+                    {
+                        "artifacts": [
+                            {
+                                "binary_path": a.binary_path,
+                                "mode": a.mode,
+                                "prepare_mode": a.prepare_mode,
+                                "chrometrace_json": a.chrometrace_json,
+                                "qhas_json": a.qhas_json,
+                                "qhas_html": a.qhas_html,
+                            }
+                            for a in artifacts
+                        ],
+                    }
+                )
+            )
+        return
+
+    try:
+        import qairt_visualizer
+    except ImportError:
+        for a in artifacts:
+            print(f"QHAS HTML: {a.qhas_html}")
+        return
+
+    for a in artifacts:
+        qairt_visualizer.view(a.binary_path, reports=a.visualizer_reports())
+        print(f"QHAS HTML: {a.qhas_html}")
 
 
 if __name__ == "__main__":
