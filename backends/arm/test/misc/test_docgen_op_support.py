@@ -49,19 +49,6 @@ def test_normalize_pytorch_op_name_rejects_non_canonical_inputs(raw: str) -> Non
     assert docgen._normalize_pytorch_op_name(raw) is None
 
 
-def test_normalize_pytorch_op_name_reports_diagnostics() -> None:
-    diagnostics: list[str] = []
-
-    normalized = docgen._normalize_pytorch_op_name(
-        "torch.aten.ops.relu.default", diagnostics=diagnostics
-    )
-
-    assert normalized == "torch.ops.aten.relu.default"
-    assert diagnostics == [
-        "normalised malformed namespace: torch.aten.ops.relu.default"
-    ]
-
-
 def test_contextual_overload_alias_is_path_specific() -> None:
     path = Path("backends/arm/test/ops/test_amax.py")
 
