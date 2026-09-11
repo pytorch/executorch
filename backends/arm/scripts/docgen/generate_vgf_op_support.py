@@ -2669,7 +2669,7 @@ def run_check(repo_root: Path, *, strict_ast: bool = False) -> int:  # noqa: C90
             print(f"| `{op}` | {profile} | {classification} | {sat} | {test_cell} |")
         print()
 
-    if unresolved:
+    if strict_ast and unresolved:
         _print_unresolved(unresolved)
     if diagnostics:
         print("AST normalisation diagnostics:")
