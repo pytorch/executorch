@@ -16,6 +16,7 @@ from executorch.exir.passes.dim_order_ops_registry import (
     DimOrderOpsMap,
     MemoryFormatOpsMap,
 )
+from executorch.exir.tensor import dim_order_from_stride
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
@@ -64,9 +65,16 @@ class MemoryFormatOpsPass(ExportPass):
         # Derive dim_order based on memory format
         dim_order: List[int]
         if mem_format in (None, torch.preserve_format):
-            # preserve_format: inherit dim_order from input tensor
+            # preserve_format: inherit dim_order from input tensor,
+            # canonicalized so size-1 dims keep the canonical
+            # contiguous/channels-last dim order.
             if input_tensor is not None:
-                dim_order = [int(d) for d in input_tensor.dim_order()]
+                dim_order = [
+                    int(d)
+                    for d in dim_order_from_stride(
+                        input_tensor.stride(), tuple(input_tensor.shape)
+                    )
+                ]
             else:
                 # Fallback to contiguous if no single input tensor is available
                 # (e.g. list inputs like torch.stack).
