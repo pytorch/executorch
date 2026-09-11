@@ -98,7 +98,9 @@ def run_conv1d_as_conv2d(
     )
     edge_program = to_edge(
         program,
-        compile_config=EdgeCompileConfig(_skip_dim_order=False, _check_ir_validity=False),
+        compile_config=EdgeCompileConfig(
+            _skip_dim_order=False, _check_ir_validity=False
+        ),
     )
     exported = edge_program.exported_program()
 
@@ -129,9 +131,7 @@ class TestVulkanPasses(unittest.TestCase):
             def forward(self, x):
                 return self.conv(x)
 
-        gm = run_conv1d_as_conv2d(
-            Conv1dModule(), (torch.randn(1, 32, 64),)
-        )
+        gm = run_conv1d_as_conv2d(Conv1dModule(), (torch.randn(1, 32, 64),))
 
         self.assertEqual(conv_input_ranks(gm), [4])
         # Two views: one lifting the input to 4-D, one lowering the output back.

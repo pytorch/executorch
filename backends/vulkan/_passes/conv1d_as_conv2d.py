@@ -119,9 +119,7 @@ class Conv1dAsConv2dPass(ExportPass):
         set_param_tensor(
             self._exported_program, weight_node, weight.reshape(w_4d_shape)
         )
-        weight_node.meta["val"] = _reshape_fake(
-            weight_node.meta["val"], w_4d_shape
-        )
+        weight_node.meta["val"] = _reshape_fake(weight_node.meta["val"], w_4d_shape)
 
         with graph.inserting_before(node):
             in_4d = graph.call_function(view, args=(in_node, in_4d_shape))
