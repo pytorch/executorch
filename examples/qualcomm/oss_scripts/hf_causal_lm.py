@@ -12,19 +12,8 @@ import os
 import subprocess
 from multiprocessing.connection import Client
 
-import torch
-from executorch.backends.qualcomm.export_utils import (
-    QnnConfig,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.backends.qualcomm.export_utils import QnnConfig, SimpleADB
 
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-
-from executorch.examples.qualcomm.oss_scripts.llm_utils.qnn_decoder_model_manager import (
-    get_qnn_llm_edge_manager,
-    HUGGING_FACE_REPO_IDS,
-)
 from executorch.examples.qualcomm.utils import make_output_dir
 
 from transformers import AutoTokenizer
@@ -33,72 +22,10 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
 
-PTE_FILENAME = "hf_causal_lm_qnn"
 
-
-def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
-
-    # ensure the working directory exist.
-    os.makedirs(args.artifact, exist_ok=True)
-
-    manager = get_qnn_llm_edge_manager(
-        args.decoder_model, args.max_seq_len, args.enable_spinquant_r3
-    )
-
-    fixed_point_type = {}
-    if args.ptq:
-        if args.ptq == "8a8w":
-            fixed_point_type["io_type"] = torch.uint8
-            fixed_point_type["kv_type"] = torch.uint8
-        elif args.ptq in (
-            "16a8w",
-            "16a4w",
-            "16a4w_block",
-            "16a16w",
-        ):
-            fixed_point_type["io_type"] = torch.uint16
-            fixed_point_type["kv_type"] = torch.uint16
-        else:
-            raise ValueError(
-                f"No support for quant type {args.ptq}. Support 8a8w, 16a8w, 16a4w and 16a4w_block."
-            )
-        quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
-        model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
-        tokenizer_json_path = tokenizer.save_pretrained(args.artifact)[-1]
-
-        manager.pt2e_quantize(
-            quant_dtype,
-            fixed_point_type,
-            args.calibration_tasks,
-            args.calibration_limit,
-            args.prompt,
-            tokenizer_json_path,
-            qnn_config.backend,
-            qnn_config.soc_model,
-        )
-
-    manager.to_edge_transform_and_lower_to_qnn(
-        qnn_config.soc_model,
-        qnn_config.skip_delegate_node_ids,
-        qnn_config.skip_delegate_node_ops,
-    )
-    if args.ptq:
-        logits_quant_attrs = manager.get_logits_quant_attrs()
-        json.dump(
-            {
-                "scale": logits_quant_attrs["scale"],
-                "zero_point": logits_quant_attrs["zero_point"],
-            },
-            open(f"{args.artifact}/{PTE_FILENAME}_quant_attrs.txt", "w"),
-        )
-
-    manager.to_executorch(args.artifact, PTE_FILENAME)
-
-
-def inference(args: argparse, qnn_config: QnnConfig):
-    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{PTE_FILENAME}"
-    pte_path = f"{args.artifact}/{PTE_FILENAME}.pte"
+def inference(args: argparse, qnn_config: QnnConfig, pte_name: str):
+    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_name}"
+    pte_path = f"{args.artifact}/{pte_name}.pte"
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
@@ -106,12 +33,28 @@ def inference(args: argparse, qnn_config: QnnConfig):
 
     def post_process():
         with open(f"{args.artifact}/outputs/result.txt", "r") as f:
-            outputs.append(f.read())
+            text = f.read()
+        # In tokenized-prompt mode the runner echoes the prompt-file path instead
+        # of the prompt text; drop it and prepend the real prompt for readability.
+        prefix = os.path.basename(tokenized_prompt_path)
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+        outputs.append(args.prompt + text)
 
-    model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(args.decoder_model_id)
     tokenizer_json_path = tokenizer.save_pretrained(args.artifact)[-1]
     seq_len = args.max_seq_len
+    runner_bin = "examples/qualcomm/oss_scripts/llama/qnn_llama_runner"
+
+    # The base (non-instruct) HF models were not trained on the runner's chat
+    # template. Tokenize the raw prompt here (matching the Python calibration
+    # path) and feed it via --tokenized_prompt so the runner skips
+    # get_formatted_prompt. File format: raw little-endian uint64 tokens.
+    import numpy as np
+
+    prompt_token_ids = tokenizer(args.prompt)["input_ids"]
+    tokenized_prompt_path = f"{args.artifact}/tokenized_prompt.raw"
+    np.asarray(prompt_token_ids, dtype=np.uint64).tofile(tokenized_prompt_path)
     if args.enable_x86_64:
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
@@ -121,13 +64,14 @@ def inference(args: argparse, qnn_config: QnnConfig):
         runner_cmd = " ".join(
             [
                 f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
-                f"{args.build_folder}/examples/models/llama/llama_main",
-                f'--prompt "{args.prompt}"',
+                f"{args.build_folder}/{runner_bin}",
+                f"--tokenized_prompt {tokenized_prompt_path}",
+                "--eval_mode 0",
                 f"--tokenizer_path {tokenizer_json_path}",
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
                 "--temperature 0",
-                f" > {output_data_folder}/result.txt",
+                f"--output_path {output_data_folder}/result.txt",
             ]
         )
         subprocess.run(
@@ -141,23 +85,24 @@ def inference(args: argparse, qnn_config: QnnConfig):
         runner_cmd = " ".join(
             [
                 f"cd {workspace} &&",
-                "./llama_main",
-                f'--prompt "{args.prompt}"',
+                "./qnn_llama_runner",
+                "--tokenized_prompt tokenized_prompt.raw",
+                "--eval_mode 0",
                 "--tokenizer_path tokenizer.json",
-                f"--model_path {PTE_FILENAME}.pte",
+                f"--model_path {pte_name}.pte",
                 f"--seq_len {seq_len}",
                 "--temperature 0",
-                " > outputs/result.txt",
+                "--output_path outputs/result.txt",
             ]
         )
         adb = SimpleADB(
             qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
-            runner="examples/models/llama/llama_main",
+            runner=runner_bin,
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], files=[tokenizer_json_path])
+        adb.push(inputs=[], files=[tokenizer_json_path, tokenized_prompt_path])
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(host_output_path=args.artifact, callback=post_process)
@@ -174,87 +119,3 @@ def inference(args: argparse, qnn_config: QnnConfig):
     else:
         for idx, output in enumerate(outputs):
             logging.info(f"Results[{idx}]:\n{output}")
-
-
-def main(args):
-    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
-
-    if args.compile_only:
-        compile(args, qnn_config)
-    elif args.pre_gen_pte:
-        inference(args, qnn_config)
-    else:
-        compile(args, qnn_config)
-        inference(args, qnn_config)
-
-
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example.",
-        default="hf_causal_lm",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-P",
-        "--ptq",
-        choices=["8a8w", "16a8w", "16a4w", "16a4w_block"],
-        help="If specified, will do PTQ quantization.",
-        type=str,
-    )
-
-    parser.add_argument(
-        "--prompt",
-        help="User prompts for Qwen.",
-        required=True,
-        type=str,
-    )
-
-    parser.add_argument(
-        "--decoder_model",
-        choices=list(HUGGING_FACE_REPO_IDS.keys()),
-        help=f"The Hugging Face decoder model to export. Available options are: {list(HUGGING_FACE_REPO_IDS.keys())}",
-        required=True,
-    )
-
-    parser.add_argument(
-        "--max_seq_len",
-        help="This refers to maximum number of tokens that the model can process & consider at once to generate predictions/responses.",
-        default=128,
-        type=int,
-    )
-    parser.add_argument(
-        "--calibration_tasks",
-        nargs="+",
-        type=str,
-        default=None,
-        help="Tasks for GPTQ calibration from lm_eval",
-    )
-    parser.add_argument(
-        "--calibration_limit",
-        type=int,
-        default=None,
-        help="number of samples used for calibration from lm_eval",
-    )
-    parser.add_argument(
-        "--enable_spinquant_r3",
-        action="store_true",
-        help="Specify to enable spin quant R3",
-    )
-
-    try:
-        args = parser.parse_args()
-
-        if args.artifact is None:
-            args.artifact = args.decoder_model
-        main(args)
-    except Exception as e:
-        if args.ip and args.port != -1:
-            with Client((args.ip, args.port)) as conn:
-                conn.send(json.dumps({"Error": str(e)}))
-        else:
-            raise Exception(e)

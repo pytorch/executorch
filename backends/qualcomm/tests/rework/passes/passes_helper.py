@@ -176,11 +176,16 @@ class PassPipeline:
         sample_input: tuple[torch.Tensor, ...],
         target_pass: type[ExportPass],
         backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
+        convert_linear_to_conv2d: bool = False,
     ) -> torch.fx.GraphModule:
         pm_cls = get_qnn_pass_manager_cls(backend_type)
         gm = torch.export.export(module, sample_input, strict=True).module()
         pass_classes = PassPipeline._slice_to_target(
-            pm_cls.get_annotation_passes(), target_pass, "annotation"
+            pm_cls.get_annotation_passes(
+                convert_linear_to_conv2d=convert_linear_to_conv2d,
+            ),
+            target_pass,
+            "annotation",
         )
         instances = PassPipeline._instantiate(
             pass_classes,
