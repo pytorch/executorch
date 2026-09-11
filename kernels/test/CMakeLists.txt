@@ -261,6 +261,7 @@ set(all_test_sources
     "op_pdist_forward_test.cpp"
     "op_permute_copy_test.cpp"
     "op_pixel_shuffle_test.cpp"
+    "op_pixel_unshuffle_test.cpp"
     "op_prod_test.cpp"
     "op_rand_test.cpp"
     "op_randn_test.cpp"

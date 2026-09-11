@@ -6,6 +6,8 @@
 from typing import Sequence
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 

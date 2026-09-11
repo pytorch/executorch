@@ -31,7 +31,9 @@
 #include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/runtime/backend/backend_options_map.h>
@@ -42,14 +44,14 @@
 #include <gflags/gflags.h>
 #include <mlx/memory.h>
 
-#include <chrono>
+#include <executorch/backends/mlx/examples/llm/runner_utils.h>
+
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <map>
 #include <optional>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 DEFINE_string(pte, "", "Model .pte file.");
@@ -79,8 +81,9 @@ DEFINE_int32(
     "only choose policy.");
 DEFINE_string(
     kv_storage_dtype,
-    "bf16",
-    "Off-graph: KV storage dtype, bf16|fp16|fp32.");
+    "",
+    "Off-graph: override KV storage dtype with bf16|fp16|fp32. Defaults to "
+    "the PTE activation dtype, or bf16 when metadata is absent.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -100,11 +103,20 @@ DEFINE_bool(
     false,
     "Run once before measuring, to absorb JIT and pool growth.");
 
+using ::executorch::backends::mlx::examples::llm::resolve_kv_storage_dtype;
+using ::executorch::backends::mlx::examples::llm::resolve_stop_tokens;
+using ::executorch::backends::mlx::examples::llm::StopTokens;
+using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
-using ::executorch::extension::TensorPtr;
+using ::executorch::extension::llm::check_vocab_size;
+using ::executorch::extension::llm::LogitsToKeepMode;
+using ::executorch::extension::llm::read_activation_dtype;
+using ::executorch::extension::llm::read_logits_to_keep_mode;
+using ::executorch::extension::llm::read_max_seq_len;
+using ::executorch::extension::llm::read_vocab_size;
+using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
-using ::executorch::runtime::EValue;
 
 namespace cache = ::executorch::extension::llm::cache;
 
@@ -142,20 +154,6 @@ bool parse_int_list(
   return true;
 }
 
-int storage_dtype(const std::string& name) {
-  using S = ::executorch::runtime::etensor::ScalarType;
-  if (name == "bf16") {
-    return static_cast<int>(S::BFloat16);
-  }
-  if (name == "fp16") {
-    return static_cast<int>(S::Half);
-  }
-  if (name == "fp32") {
-    return static_cast<int>(S::Float);
-  }
-  return -1;
-}
-
 // Constant methods the export publishes (get_n_caches and friends). They carry
 // no delegate, so reading them only needs the program loaded -- which is what
 // lets the cache be built before forward's backend init consumes its key.
@@ -165,6 +163,53 @@ std::optional<int64_t> const_int(Module& module, const char* name) {
     return std::nullopt;
   }
   return r->at(0).toInt();
+}
+
+// The sampler (sample_from_logits) fatally aborts on any other dtype, so an
+// unsupported logits type must be rejected at startup rather than at inference.
+bool is_supported_logits_type(::executorch::aten::ScalarType type) {
+  using ScalarType = ::executorch::aten::ScalarType;
+  return type == ScalarType::Float || type == ScalarType::Half ||
+      type == ScalarType::BFloat16 || type == ScalarType::UInt16;
+}
+
+bool validate_forward_abi(
+    Module& module,
+    LogitsToKeepMode logits_to_keep_mode,
+    std::int64_t& vocab_size) {
+  const auto meta = module.method_meta("forward");
+  if (!meta.ok()) {
+    std::cerr << "Forward metadata is unavailable" << std::endl;
+    return false;
+  }
+  // The runner feeds tokens + positions, plus a selector in Selected mode; a
+  // mismatch means the published logits mode disagrees with the traced graph.
+  const std::size_t expected_inputs =
+      logits_to_keep_mode == LogitsToKeepMode::Selected ? 3 : 2;
+  if (meta->num_inputs() != expected_inputs) {
+    std::cerr << "Forward must take " << expected_inputs
+              << " inputs for its logits-to-keep mode, got "
+              << meta->num_inputs() << std::endl;
+    return false;
+  }
+  // The logits output's last dim is the observed vocab width, cross-checked
+  // against the published get_vocab_size by the caller; its dtype must be one
+  // the sampler supports.
+  if (meta->num_outputs() == 0) {
+    std::cerr << "Forward publishes no logits output" << std::endl;
+    return false;
+  }
+  const auto logits = meta->output_tensor_meta(0);
+  if (!logits.ok() || logits->sizes().size() < 2 ||
+      logits->sizes()[logits->sizes().size() - 1] <= 0 ||
+      !is_supported_logits_type(logits->scalar_type())) {
+    std::cerr << "Forward logits must have a sampler-supported dtype and shape "
+                 "[..., vocab]"
+              << std::endl;
+    return false;
+  }
+  vocab_size = logits->sizes()[logits->sizes().size() - 1];
+  return true;
 }
 
 std::optional<std::vector<int>> const_ints(Module& module, const char* name) {
@@ -292,33 +337,6 @@ void print_cache_summary(const cache::CacheConfig& cfg) {
   std::cout << std::endl;
 }
 
-// One user turn wrapped in the model's instruct template. Returns false for an
-// unknown template name. The leading BOS belongs to the first turn only, so a
-// continuing conversation passes with_bos=false.
-bool wrap_turn(
-    const std::string& chat,
-    const std::string& prompt,
-    bool with_bos,
-    std::string& out) {
-  if (chat == "0") {
-    out = prompt;
-  } else if (chat == "llama3") {
-    out = std::string(with_bos ? "<|begin_of_text|>" : "") +
-        "<|start_header_id|>user<|end_header_id|>\n\n" + prompt +
-        "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
-  } else if (chat == "gemma") {
-    out = std::string(with_bos ? "<bos>" : "") + "<start_of_turn>user\n" +
-        prompt + "<end_of_turn>\n<start_of_turn>model\n";
-  } else if (chat == "gemma4") {
-    // Gemma 4 renamed the turn markers; its own <turn|> is also the eos.
-    out = std::string(with_bos ? "<bos>" : "") + "<|turn>user\n" + prompt +
-        "<turn|>\n<|turn>model\n";
-  } else {
-    return false;
-  }
-  return true;
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -339,6 +357,12 @@ int main(int argc, char** argv) {
   if (pte.empty() || tok_path.empty()) {
     std::cerr << "Required: --pte <file> --tokenizer <file>  "
                  "[--kv-max-capacity N for off-graph models]\n";
+    return 1;
+  }
+  if (warmup && kv_capacity <= 0) {
+    std::cerr << "--warmup requires an off-graph cache selected with "
+                 "--kv_max_capacity"
+              << std::endl;
     return 1;
   }
 
@@ -364,15 +388,44 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to load " << pte << std::endl;
       return 1;
     }
-    const auto published_prefill_chunk =
-        const_int(module, "get_prefill_chunk_size");
-    if (!published_prefill_chunk || *published_prefill_chunk <= 0 ||
-        *published_prefill_chunk > std::numeric_limits<int>::max()) {
-      std::cerr << "Invalid or missing get_prefill_chunk_size in " << pte
+    const auto logits_to_keep_mode_result = read_logits_to_keep_mode(module);
+    if (!logits_to_keep_mode_result.ok()) {
+      std::cerr << "Invalid model metadata in " << pte << std::endl;
+      return 1;
+    }
+    const LogitsToKeepMode logits_to_keep_mode = *logits_to_keep_mode_result;
+    std::int64_t output_vocab_size = 0;
+    if (!validate_forward_abi(module, logits_to_keep_mode, output_vocab_size)) {
+      return 1;
+    }
+    const auto published_vocab_size = read_vocab_size(module);
+    if (!published_vocab_size.ok()) {
+      std::cerr << "Invalid get_vocab_size in " << pte << std::endl;
+      return 1;
+    }
+    const auto vocab_size_result =
+        check_vocab_size(*published_vocab_size, output_vocab_size);
+    if (!vocab_size_result.ok()) {
+      std::cerr << "Invalid get_vocab_size for the forward output in " << pte
                 << std::endl;
       return 1;
     }
-    const int prefill_chunk = static_cast<int>(*published_prefill_chunk);
+    const std::int32_t vocab_size = *vocab_size_result;
+    const auto max_seq_len = read_max_seq_len(module);
+    if (!max_seq_len.ok()) {
+      std::cerr << "Invalid or missing get_max_seq_len in " << pte << std::endl;
+      return 1;
+    }
+    const int prefill_chunk = static_cast<int>(*max_seq_len);
+    StopTokens stop_tokens;
+    if (!resolve_stop_tokens(*tokenizer, module, chat, stop_tokens)) {
+      std::cerr << "Could not resolve stop tokens for --chat=" << chat
+                << std::endl;
+      return 1;
+    }
+    auto write_text = [](const std::string& text) {
+      std::cout << text << std::flush;
+    };
 
     // Everything past load_method is identical for both model kinds; only
     // setup differs. ctl is null for an in-graph model, which owns its cache
@@ -399,47 +452,8 @@ int main(int argc, char** argv) {
       std::cout << "[mem]   after load  : " << mem_at_load << " MiB"
                 << std::endl;
 
-      // Encode. HFTokenizer maps special-token markers in the string to their
-      // ids, so the template's <|...|> tokens encode correctly; it already
-      // carries <|begin_of_text|>, so pass bos=0 to avoid a doubled BOS.
-      std::string enc_input;
-      if (!wrap_turn(chat, prompt, /*with_bos=*/true, enc_input)) {
-        std::cerr << "Unknown --chat template: " << chat
-                  << " (expected llama3, gemma, gemma4, or 0)" << std::endl;
-        return 1;
-      }
-      // The template carries its own BOS, so only a raw prompt asks for one.
-      const int8_t bos = chat == "0" ? 1 : 0;
-      auto enc = tokenizer->encode(enc_input, bos, /*eos=*/0);
-      if (!enc.ok()) {
-        std::cerr << "Encode failed" << std::endl;
-        return 1;
-      }
-      std::vector<uint64_t> tokens = std::move(*enc);
-      const int prompt_len = static_cast<int>(tokens.size());
-
-      // End-of-text from the model's metadata when it publishes any, else the
-      // tokenizer's. The turn-end token is ours: it depends on --chat, which
-      // the .pte knows nothing about.
-      std::unordered_set<uint64_t> stop_ids =
-          ::executorch::extension::llm::get_eos_ids(tokenizer.get(), &module);
-      std::optional<int64_t> turn_end_id;
-      if (chat != "0") {
-        const char* turn_end = chat == "llama3" ? "<|eot_id|>"
-            : chat == "gemma4"                  ? "<turn|>"
-                                                : "<end_of_turn>";
-        if (auto eot = tokenizer->piece_to_id(turn_end); eot.ok()) {
-          turn_end_id = static_cast<int64_t>(*eot);
-          stop_ids.insert(*eot);
-        }
-      }
-      auto is_stop = [&](int64_t t) {
-        for (uint64_t s : stop_ids) {
-          if (t == static_cast<int64_t>(s)) {
-            return true;
-          }
-        }
-        return false;
+      auto is_stop = [&](int64_t token) {
+        return stop_tokens.ids.count(static_cast<uint64_t>(token)) != 0;
       };
 
       // One Sampler for the whole run, as the shared runner does: constructing
@@ -453,14 +467,37 @@ int main(int argc, char** argv) {
         auto in =
             make_tensor_ptr({1, (int)ids.size()}, std::vector<int64_t>(ids));
         auto cp = make_tensor_ptr({(int)pos.size()}, std::vector<int64_t>(pos));
-        auto out = module.execute("forward", {in, cp});
+        auto out = [&]() -> ::executorch::runtime::Result<
+                             std::vector<::executorch::runtime::EValue>> {
+          if (logits_to_keep_mode == LogitsToKeepMode::Selected) {
+            auto selector = make_tensor_ptr(
+                {1},
+                std::vector<int64_t>{static_cast<int64_t>(ids.size() - 1)});
+            return module.execute("forward", {in, cp, selector});
+          }
+          return module.execute("forward", {in, cp});
+        }();
         if (!out.ok()) {
           throw std::runtime_error("execute failed");
         }
+        if (out->empty() || !out->at(0).isTensor()) {
+          throw std::runtime_error("forward returned no logits");
+        }
         const auto& logits = out->at(0).toTensor();
+        const int64_t actual_vocab_size = logits.dim() == 0
+            ? 0
+            : static_cast<int64_t>(logits.size(logits.dim() - 1));
+        const int64_t expected_rows =
+            logits_to_keep_mode == LogitsToKeepMode::Full
+            ? static_cast<int64_t>(ids.size())
+            : 1;
+        if (logits.dim() != 3 || logits.size(0) != 1 ||
+            logits.size(1) != expected_rows ||
+            actual_vocab_size != vocab_size) {
+          throw std::runtime_error("forward returned an invalid logits shape");
+        }
         if (!sampler) {
-          sampler.emplace(
-              static_cast<int32_t>(logits.size(logits.dim() - 1)), temperature);
+          sampler.emplace(vocab_size, temperature);
         }
         stats.on_sampling_begin();
         const int32_t tok =
@@ -494,7 +531,6 @@ int main(int argc, char** argv) {
           std::cerr << "--interactive requires --kv-max-capacity\n";
           return 1;
         }
-        auto* control = ctl;
         std::cout
             << "Multi-turn chat. /reset clears, /undo drops the last turn, "
                "/undo N drops N tokens, /quit exits.\n";
@@ -506,7 +542,7 @@ int main(int argc, char** argv) {
             break;
           }
           if (line == "/reset") {
-            control->clear();
+            ctl->clear();
             position = turn_start = 0;
             std::cout << "[cleared]\n";
             continue;
@@ -523,7 +559,7 @@ int main(int argc, char** argv) {
                 continue;
               }
             }
-            if (control->rewind(static_cast<int>(target))) {
+            if (ctl->rewind(static_cast<int>(target))) {
               position = target;
               turn_start = std::min(turn_start, position);
               std::cout << "[rewound to " << position << "]\n";
@@ -540,8 +576,8 @@ int main(int argc, char** argv) {
           std::string turn;
           wrap_turn(chat, line, /*with_bos=*/position == 0, turn);
           auto te = tokenizer->encode(turn, /*bos=*/chat == "0" ? 1 : 0, 0);
-          if (!te.ok()) {
-            std::cerr << "Encode failed\n";
+          if (!te.ok() || te->empty()) {
+            std::cerr << "Encode failed or produced no tokens\n";
             continue;
           }
           const int n = static_cast<int>(te->size());
@@ -549,15 +585,15 @@ int main(int argc, char** argv) {
           // whole max_new budget up front would report "full" with most of the
           // cache still free. Generation is then clamped to the room that
           // remains.
-          if (!control->can_extend(n + 1)) {
-            std::cout << "[cache full: " << position << "/"
-                      << control->capacity() << ", turn " << n << " tokens"
-                      << (control->can_extend(1) ? "" : ", length at capacity")
+          if (!ctl->can_extend(n + 1)) {
+            std::cout << "[cache full: " << position << "/" << ctl->capacity()
+                      << ", turn " << n << " tokens"
+                      << (ctl->can_extend(1) ? "" : ", length at capacity")
                       << ", use /reset]\n";
             continue;
           }
           const int budget = std::min(
-              max_new, control->capacity() - static_cast<int>(position) - n);
+              max_new, ctl->capacity() - static_cast<int>(position) - n);
 
           turn_start = position;
           std::vector<int64_t> tin(te->begin(), te->end()), tpos;
@@ -567,27 +603,28 @@ int main(int argc, char** argv) {
           int64_t next = prefill(tin, tpos);
           position += n;
 
-          uint64_t prev = te->back();
+          TextStream text_stream(*tokenizer, write_text, te->back());
           for (int i = 0; i < budget && !is_stop(next); ++i) {
-            if (auto piece =
-                    tokenizer->decode(prev, static_cast<uint64_t>(next));
-                piece.ok()) {
-              std::cout << *piece << std::flush;
+            if (text_stream.append(static_cast<uint64_t>(next)) != Error::Ok) {
+              text_stream.flush();
+              std::cerr << "Failed to decode generated token" << std::endl;
+              return 1;
             }
-            prev = static_cast<uint64_t>(next);
             next = step({next}, {position});
             ++position;
           }
+          text_stream.flush();
           // The turn-end token stops generation, so it is neither printed nor
           // fed back -- but the next turn opens without closing this one, and
           // an unterminated assistant turn compounds over a session. Commit it,
           // at the cost of one extra step per turn.
-          if (turn_end_id && next == *turn_end_id && control->can_extend(1)) {
+          if (stop_tokens.turn_end_id &&
+              static_cast<uint64_t>(next) == *stop_tokens.turn_end_id &&
+              ctl->can_extend(1)) {
             step({next}, {position});
             ++position;
           }
-          std::cout << "\n[" << position << "/" << control->capacity()
-                    << " tokens"
+          std::cout << "\n[" << position << "/" << ctl->capacity() << " tokens"
                     << (budget < max_new ? ", generation capped by capacity"
                                          : "")
                     << "]\n";
@@ -595,13 +632,24 @@ int main(int argc, char** argv) {
         return 0;
       }
 
+      std::string enc_input;
+      if (!wrap_turn(chat, prompt, /*with_bos=*/true, enc_input)) {
+        std::cerr << "Unknown --chat template: " << chat
+                  << " (expected llama3, gemma, gemma4, or 0)" << std::endl;
+        return 1;
+      }
+      const int8_t bos = chat == "0" ? 1 : 0;
+      auto enc = tokenizer->encode(enc_input, bos, /*eos=*/0);
+      if (!enc.ok() || enc->empty()) {
+        std::cerr << "Encode failed or produced no tokens" << std::endl;
+        return 1;
+      }
+      std::vector<uint64_t> tokens = std::move(*enc);
+      const int prompt_len = static_cast<int>(tokens.size());
       std::vector<int64_t> ids(tokens.begin(), tokens.end()), prefill_pos;
       for (int i = 0; i < prompt_len; ++i) {
         prefill_pos.push_back(i);
       }
-      auto ms = [](auto a, auto b) {
-        return std::chrono::duration<double, std::milli>(b - a).count();
-      };
       // Sequence length against the configured ceiling, with what MLX actually
       // holds for it. Pools start at initial_capacity and grow by doubling, so
       // the bytes lag the token count in steps; bf16 storage (kv_dtype 15)
@@ -640,24 +688,25 @@ int main(int argc, char** argv) {
           std::cout << "\n"; // blank line before the streamed generation
         }
 
-        uint64_t prev = tokens.back();
+        TextStream::Sink sink;
+        if (measured) {
+          sink = write_text;
+        }
+        TextStream text_stream(*tokenizer, std::move(sink), tokens.back());
         int generated = 0;
         for (int i = 0; i < max_new; ++i) {
           if (is_stop(next)) {
             break;
           }
-          if (measured) {
-            if (auto piece =
-                    tokenizer->decode(prev, static_cast<uint64_t>(next));
-                piece.ok()) {
-              ::executorch::extension::llm::safe_printf(piece->c_str());
-              fflush(stdout);
-            }
+          if (text_stream.append(static_cast<uint64_t>(next)) != Error::Ok) {
+            text_stream.flush();
+            std::cerr << "Failed to decode generated token" << std::endl;
+            return 1;
           }
-          prev = static_cast<uint64_t>(next);
           ++generated;
           next = step({next}, {prompt_len + i});
         }
+        text_stream.flush();
         stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
         if (measured) {
           std::cout << "\n\n"; // close the generation line + blank separator
@@ -681,11 +730,16 @@ int main(int argc, char** argv) {
           /*run_prefill_chunk=*/prefill_chunk);
     }
 
+    const auto activation_dtype = read_activation_dtype(module);
+    if (!activation_dtype.ok()) {
+      std::cerr << "Invalid get_activation_dtype in " << pte << std::endl;
+      return 1;
+    }
     cache::CacheConfig cfg{};
     cfg.capacity = kv_capacity;
-    cfg.kv_dtype = storage_dtype(kv_dtype);
+    cfg.kv_dtype = resolve_kv_storage_dtype(kv_dtype, *activation_dtype);
     if (cfg.kv_dtype < 0) {
-      std::cerr << "Invalid --kv-storage-dtype: " << kv_dtype
+      std::cerr << "Invalid --kv-storage-dtype override: " << kv_dtype
                 << " (bf16|fp16|fp32)" << std::endl;
       return 1;
     }

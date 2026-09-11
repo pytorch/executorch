@@ -39,6 +39,8 @@ from executorch.backends.arm.operator_support.control_flow_support import (
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
+    EthosU55IndexSelectCheck,
+    EthosU55IndexTensorCheck,
     EthosU55NotSupported,
     EthosU55ResizeCheck,
     EthosU55ReverseCheck,
@@ -413,6 +415,8 @@ def _negative_checks(
         checks.append(EthosU55ResizeCheck(reporter))
         checks.append(EthosU55ReverseCheck(reporter))
         checks.append(EthosU55UnfoldCopyCheck(reporter))
+        checks.append(EthosU55IndexTensorCheck(exported_program, reporter))
+        checks.append(EthosU55IndexSelectCheck(exported_program, reporter))
         checks.append(EthosU55DtypeSupport(reporter))
         checks.append(EthosU55CastCheck(reporter))
 

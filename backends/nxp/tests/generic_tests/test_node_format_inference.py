@@ -20,7 +20,7 @@ from executorch.backends.nxp.backend.ops_aliases import (
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
     Conv2dModule,
     MaxPool2dModule,
     SoftmaxModule,

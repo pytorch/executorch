@@ -32,9 +32,13 @@ binary_op_texture:
       MASK_PADDING: 1
     - NAME: binary_minimum_texture3d
       OPERATOR: min(X, Y)
-    - NAME: binary_eq_int32_texture3d
+    # See binary_op_buffer.yaml: the name has to match what the dispatcher
+    # builds, otherwise the generated shader is unreachable.
+    - NAME: binary_eq_texture3d
       OPERATOR: equal(X, Y)
-      DTYPE: int32
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: int32
     - NAME: binary_eq_texture3d
       OPERATOR: lessThan(abs(X - Y), VEC4_T(1e-5))
       generate_variant_forall:
