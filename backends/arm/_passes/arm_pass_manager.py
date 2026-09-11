@@ -109,6 +109,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
+    DeduplicateConstShapesPass,
     DeduplicateGetAttrPass,
     EnsureUniqueOutputNodesPass,
     ExirToTosaPass,
@@ -725,6 +726,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 # fusing generated RESCALE users can corrupt distinct quantized paths.
                 FuseDuplicateUsersPass(),
                 InsertRescalePass(),
+                DeduplicateConstShapesPass(),
                 EnsureUniqueOutputNodesPass(),
             ]
         )

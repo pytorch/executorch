@@ -102,6 +102,15 @@ inline int storage_dtype(const std::string& name) {
   return -1;
 }
 
+inline int resolve_kv_storage_dtype(
+    const std::string& override_name,
+    ::executorch::aten::ScalarType activation_dtype) {
+  if (!override_name.empty()) {
+    return storage_dtype(override_name);
+  }
+  return static_cast<int>(activation_dtype);
+}
+
 } // namespace llm
 } // namespace examples
 } // namespace mlx

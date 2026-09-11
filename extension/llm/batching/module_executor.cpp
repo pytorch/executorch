@@ -9,7 +9,6 @@
 #include <executorch/extension/llm/batching/module_executor.h>
 
 #include <algorithm>
-#include <cinttypes>
 #include <limits>
 #include <random>
 #include <utility>
@@ -32,6 +31,12 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 namespace {
+
+bool is_supported_logits_type(::executorch::aten::ScalarType type) {
+  using ScalarType = ::executorch::aten::ScalarType;
+  return type == ScalarType::Float || type == ScalarType::Half ||
+      type == ScalarType::BFloat16 || type == ScalarType::UInt16;
+}
 
 // Constant methods carry no delegate, so the layout reads with the program
 // loaded and the method not. Sizing is the caller's and is left unset.
@@ -211,7 +216,8 @@ ModuleExecutor::ModuleExecutor(
     std::string backend_id,
     std::string method,
     std::int32_t vocab_size,
-    int max_step_tokens)
+    int max_step_tokens,
+    LogitsToKeepMode logits_to_keep_mode)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<cache::BatchControl>()),
@@ -220,7 +226,8 @@ ModuleExecutor::ModuleExecutor(
       backend_id_(std::move(backend_id)),
       method_(std::move(method)),
       vocab_size_(vocab_size),
-      max_step_tokens_(max_step_tokens) {}
+      max_step_tokens_(max_step_tokens),
+      logits_to_keep_mode_(logits_to_keep_mode) {}
 
 ModuleExecutor::~ModuleExecutor() = default;
 
@@ -247,6 +254,32 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return load_error;
   }
 
+  const auto max_context_length = read_max_context_length(*module);
+  if (!max_context_length.ok()) {
+    ET_LOG(Error, "ModuleExecutor: the program's metadata is malformed");
+    return max_context_length.error();
+  }
+  if (max_session_tokens > *max_context_length) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: max session tokens %d exceeds model context length %" PRId64,
+        max_session_tokens,
+        *max_context_length);
+    return Error::InvalidArgument;
+  }
+  const auto logits_mode_result = read_logits_to_keep_mode(*module);
+  if (!logits_mode_result.ok()) {
+    ET_LOG(Error, "ModuleExecutor: the program's metadata is malformed");
+    return logits_mode_result.error();
+  }
+  const LogitsToKeepMode logits_mode = *logits_mode_result;
+  if (logits_mode == LogitsToKeepMode::Last) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: logits-to-keep mode last is incompatible with batched execution");
+    return Error::NotSupported;
+  }
+
   auto cfg = config_from_program(*module);
   if (!cfg.ok()) {
     return cfg.error();
@@ -269,6 +302,83 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
   if (!meta.ok()) {
     ET_LOG(Error, "ModuleExecutor: %s has no metadata", method.c_str());
     return meta.error();
+  }
+
+  const std::size_t expected_inputs =
+      logits_mode == LogitsToKeepMode::Selected ? 3 : 2;
+  if (meta->num_inputs() != expected_inputs) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %s expects %zu inputs for its logits mode, got %zu",
+        method.c_str(),
+        expected_inputs,
+        meta->num_inputs());
+    return Error::InvalidProgram;
+  }
+
+  const auto tokens_info = meta->input_tensor_meta(0);
+  const auto positions_info = meta->input_tensor_meta(1);
+  if (!tokens_info.ok() || !positions_info.ok()) {
+    ET_LOG(Error, "ModuleExecutor: %s inputs must be tensors", method.c_str());
+    return Error::InvalidProgram;
+  }
+  const auto token_sizes = tokens_info->sizes();
+  const auto position_sizes = positions_info->sizes();
+  if (tokens_info->scalar_type() != ::executorch::aten::ScalarType::Long ||
+      token_sizes.size() != 2 || token_sizes[0] != 1 || token_sizes[1] <= 0 ||
+      positions_info->scalar_type() != ::executorch::aten::ScalarType::Long ||
+      position_sizes.size() != 1 || position_sizes[0] != token_sizes[1]) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %s must take Long[1, T] tokens and Long[T] positions",
+        method.c_str());
+    return Error::InvalidProgram;
+  }
+  if (logits_mode == LogitsToKeepMode::Selected) {
+    const auto selector_info = meta->input_tensor_meta(2);
+    if (!selector_info.ok() ||
+        selector_info->scalar_type() != ::executorch::aten::ScalarType::Long ||
+        selector_info->sizes().size() != 1) {
+      ET_LOG(
+          Error,
+          "ModuleExecutor: %s selected logits selector must be rank-one Long",
+          method.c_str());
+      return Error::InvalidProgram;
+    }
+  }
+
+  if (meta->num_outputs() == 0) {
+    ET_LOG(Error, "ModuleExecutor: %s publishes no outputs", method.c_str());
+    return Error::InvalidProgram;
+  }
+  const auto logits_info = meta->output_tensor_meta(0);
+  if (!logits_info.ok()) {
+    ET_LOG(Error, "ModuleExecutor: %s has no logits metadata", method.c_str());
+    return logits_info.error();
+  }
+  const auto logits_sizes = logits_info->sizes();
+  if (logits_sizes.size() < 2 || logits_sizes[logits_sizes.size() - 1] <= 0 ||
+      !is_supported_logits_type(logits_info->scalar_type())) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %s logits must have supported dtype and shape [..., vocab]",
+        method.c_str());
+    return Error::InvalidProgram;
+  }
+  const auto published_vocab_size = read_vocab_size(*module);
+  if (!published_vocab_size.ok()) {
+    ET_LOG(
+        Error, "ModuleExecutor: invalid get_vocab_size for %s", method.c_str());
+    return published_vocab_size.error();
+  }
+  const auto vocab_size = check_vocab_size(
+      *published_vocab_size, logits_sizes[logits_sizes.size() - 1]);
+  if (!vocab_size.ok()) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: invalid get_vocab_size for %s output width",
+        method.c_str());
+    return vocab_size.error();
   }
 
   std::string backend_id;
@@ -311,36 +421,6 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return Error::InvalidType;
   }
 
-  if (meta->num_outputs() == 0) {
-    ET_LOG(Error, "ModuleExecutor: %s publishes no outputs", method.c_str());
-    return Error::InvalidProgram;
-  }
-  const auto logits_info = meta->output_tensor_meta(0);
-  if (!logits_info.ok()) {
-    ET_LOG(Error, "ModuleExecutor: %s has no logits metadata", method.c_str());
-    return logits_info.error();
-  }
-  if (logits_info->sizes().empty()) {
-    ET_LOG(Error, "ModuleExecutor: %s has no logits shape", method.c_str());
-    return Error::InvalidProgram;
-  }
-  const auto logits_sizes = logits_info->sizes();
-
-  const auto tokens_info = meta->input_tensor_meta(0);
-  if (!tokens_info.ok()) {
-    ET_LOG(
-        Error,
-        "ModuleExecutor: %s has no token input metadata",
-        method.c_str());
-    return tokens_info.error();
-  }
-  if (tokens_info->sizes().empty()) {
-    ET_LOG(
-        Error, "ModuleExecutor: %s has no token input shape", method.c_str());
-    return Error::InvalidProgram;
-  }
-  const auto tokens_sizes = tokens_info->sizes();
-
   return std::unique_ptr<ModuleExecutor>(new ModuleExecutor(
       std::move(module),
       std::move(cache),
@@ -348,8 +428,9 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
       max_session_tokens,
       std::move(backend_id),
       std::move(method),
-      logits_sizes[logits_sizes.size() - 1],
-      tokens_sizes[tokens_sizes.size() - 1]));
+      *vocab_size,
+      token_sizes[1],
+      logits_mode));
 }
 
 bool ModuleExecutor::initialize() {
@@ -443,7 +524,32 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
         {n},
         std::vector<std::int64_t>(
             step->positions.begin() + off, step->positions.begin() + off + n));
-    auto result = module_->execute(method_, {tokens, positions});
+    std::vector<std::int64_t> selector_values;
+    std::vector<std::size_t> selected_inputs;
+    if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
+      for (std::size_t i = 0; i < step->logit_indices.size(); ++i) {
+        const int row = step->logit_indices[i];
+        if (row >= off && row < off + n) {
+          selector_values.push_back(row - off);
+          selected_inputs.push_back(i);
+        }
+      }
+      if (selector_values.empty()) {
+        selector_values.push_back(n - 1);
+      }
+    }
+
+    const int expected_rows = logits_to_keep_mode_ == LogitsToKeepMode::Selected
+        ? static_cast<int>(selector_values.size())
+        : n;
+    auto result = [&]() -> Result<std::vector<::executorch::runtime::EValue>> {
+      if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
+        auto selector =
+            make_tensor_ptr({expected_rows}, std::move(selector_values));
+        return module_->execute(method_, {tokens, positions, selector});
+      }
+      return module_->execute(method_, {tokens, positions});
+    }();
     if (!result.ok()) {
       ET_LOG(
           Error,
@@ -458,18 +564,43 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
     }
     // Non-const: the sampler reduces each row in place. Each is read once.
     auto logits = result->at(0).toTensor();
+    if (logits.dim() < 2 || logits.size(logits.dim() - 1) != vocab_size_ ||
+        logits.numel() !=
+            static_cast<std::int64_t>(expected_rows) * vocab_size_) {
+      ET_LOG(
+          Error,
+          "ModuleExecutor: %s returned invalid logits shape for %d rows and vocab %d",
+          method_.c_str(),
+          expected_rows,
+          vocab_size_);
+      return false;
+    }
 
-    for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
-      const int row = step->logit_indices[i];
-      if (row < off || row >= off + n) {
-        continue; // another slice's row, or a chunk whose prediction is dropped
+    if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
+      for (std::size_t row = 0; row < selected_inputs.size(); ++row) {
+        const std::size_t input_index = selected_inputs[row];
+        const SessionId session = batch.inputs[input_index].sid;
+        const std::optional<Token> token =
+            sample_row(logits, static_cast<int>(row), session);
+        if (!token) {
+          return false;
+        }
+        out.outputs[input_index] = Output{session, {*token}};
       }
-      const SessionId session = batch.inputs[i].sid;
-      const std::optional<Token> token = sample_row(logits, row - off, session);
-      if (!token) {
-        return false;
+    } else {
+      for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
+        const int row = step->logit_indices[i];
+        if (row < off || row >= off + n) {
+          continue; // another slice's row, or a dropped chunk prediction
+        }
+        const SessionId session = batch.inputs[i].sid;
+        const std::optional<Token> token =
+            sample_row(logits, row - off, session);
+        if (!token) {
+          return false;
+        }
+        out.outputs[i] = Output{session, {*token}};
       }
-      out.outputs[i] = Output{session, {*token}};
     }
   }
   return true;

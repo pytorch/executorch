@@ -148,7 +148,7 @@ Total supported PyTorch APIs: **155**.
 | `torch.t` / `torch.Tensor.t` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.tan` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.tanh` / `torch.nn.Tanh` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
-| `torch.Tensor.__getitem__` / `tensor indexing` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.Tensor.__getitem__` / `tensor indexing` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.Tensor.__getitem__` / `tensor slicing` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.Tensor.__setitem__` / `tensor indexing assignment` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.Tensor.copy_` | FP, INT | `FP32`, `INT8` | 8x8 |
