@@ -609,7 +609,10 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeStridedSliceCopyPass(),
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
-                DecomposeIndexTensorToGatherPass(exported_program),
+                DecomposeIndexTensorToGatherPass(
+                    exported_program,
+                    decompose_constant_indices=self.tosa_spec.is_U55_subset,
+                ),
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
