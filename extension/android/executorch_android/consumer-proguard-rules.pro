@@ -11,6 +11,17 @@
     @com.facebook.jni.annotations.DoNotStrip *;
 }
 
+# Keep fbjni classes and members according to fbjni's JNI annotations.
+# ExecuTorch's native bindings depend on these internals at runtime.
+-keep @com.facebook.jni.annotations.DoNotStrip class com.facebook.jni.** { *; }
+-keepclasseswithmembers class com.facebook.jni.** {
+    @com.facebook.jni.annotations.DoNotStrip *;
+}
+-keep @com.facebook.jni.annotations.DoNotStripAny class com.facebook.jni.** { *; }
+
+# javax.annotation is a compile-time-only dependency of fbjni.
+-dontwarn javax.annotation.Nullable
+
 # Keep all native methods across ExecuTorch packages.
 # Use -keepclasseswithmembers (not -keepclasseswithmembernames) to prevent
 # both shrinking and obfuscation of JNI entry points.
