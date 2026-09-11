@@ -1297,17 +1297,28 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         slice_step = get_arg(slice_node, "step", int)
 
         output_shape = op_node.meta["val"].shape
+        output_dim = slice_dim % len(output_shape)
 
         new_args = list(op_node.args)
         with graph.inserting_before(op_node):
             for i, inp in enumerate([lhs, rhs]):
-                if inp.meta["val"].shape[slice_dim] == output_shape[slice_dim]:
+                input_shape = inp.meta["val"].shape
+                # Broadcasting aligns operand dimensions to the right of the output.
+                input_dim = output_dim - (len(output_shape) - len(input_shape))
+                if (
+                    input_dim >= 0
+                    and input_shape[input_dim] == output_shape[output_dim]
+                ):
                     new_slice = graph.call_function(
                         exir_ops.edge.aten.slice_copy.Tensor,
-                        args=(inp, slice_dim, slice_start, slice_end, slice_step),
+                        args=(inp, input_dim, slice_start, slice_end, slice_step),
                     )
                     new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
-                        inp.meta["val"], slice_dim, slice_start, slice_end, slice_step
+                        inp.meta["val"],
+                        input_dim,
+                        slice_start,
+                        slice_end,
+                        slice_step,
                     )
                     new_args[i] = new_slice
 
