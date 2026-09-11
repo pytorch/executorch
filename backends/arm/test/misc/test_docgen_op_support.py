@@ -411,6 +411,7 @@ def test_run_check_reports_missing_profile(
 
 def test_run_check_strict_ast_fails_on_unresolved_attribution(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     unresolved = [
         docgen.UnresolvedPipelineEvidence(
@@ -431,7 +432,10 @@ def test_run_check_strict_ast_fails_on_unresolved_attribution(
     monkeypatch.setattr(docgen, "_collect_backend_supported_ops", lambda _root: {})
 
     assert docgen.run_check(Path("/repo"), strict_ast=False) == 0
+    assert "Unresolved VgfPipeline attribution" not in capsys.readouterr().out
+
     assert docgen.run_check(Path("/repo"), strict_ast=True) == 1
+    assert "Unresolved VgfPipeline attribution" in capsys.readouterr().out
 
 
 def test_main_writes_requested_markdown_and_html(
