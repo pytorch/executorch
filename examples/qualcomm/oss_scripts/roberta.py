@@ -15,10 +15,10 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -97,7 +97,7 @@ def main(args):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
     pte_path = f"{args.artifact}/{pte_filename}.pte"
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
@@ -122,9 +122,9 @@ def main(args):
     )
     sample_input = tuple(sample_input.values())
     golden = module(*sample_input)[0]
-    adb.push(inputs=[sample_input])
-    adb.execute()
-    adb.pull(host_output_path=args.artifact)
+    device.push(inputs=[sample_input])
+    device.execute()
+    device.pull(host_output_path=args.artifact)
 
     print(f"input: {tokenizer.batch_decode(sample_input[0])}")
     print(f"golden output: {tokenizer.batch_decode(golden.argmax(axis=2))}")
@@ -134,9 +134,9 @@ def main(args):
     print(f"QNN output: {tokenizer.batch_decode(predictions.argmax(axis=2))}")
 
     # accuracy analysis
-    adb.push(inputs=inputs)
-    adb.execute()
-    adb.pull(host_output_path=args.artifact)
+    device.push(inputs=inputs)
+    device.execute()
+    device.pull(host_output_path=args.artifact)
     goldens, predictions = [], []
     for i in range(len(inputs)):
         indice = [i for i, x in enumerate(targets[i]) if x != -100]

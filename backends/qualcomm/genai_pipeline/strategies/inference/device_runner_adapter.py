@@ -35,7 +35,7 @@ class InferenceResult:
 class DeviceRunnerAdapter(Protocol):
     """Protocol for on-device inference operations.
 
-    Wraps external device runner APIs (SimpleADB) behind an injectable
+    Wraps external device runner APIs (Device) behind an injectable
     interface for testability.
     """
 

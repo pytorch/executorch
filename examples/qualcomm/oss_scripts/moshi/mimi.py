@@ -22,10 +22,10 @@ import torchaudio
 
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
@@ -177,19 +177,19 @@ def compile_mimi_encoder(
 
 
 def inference_mimi_encoder(args, qnn_config, encoder_inputs, encoder_pte_filename):
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{encoder_pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{encoder_pte_filename}",
     )
-    adb.push(inputs=encoder_inputs)
-    adb.execute()
+    device.push(inputs=encoder_inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     encoder_predictions = []
     for i in range(len(encoder_inputs)):
@@ -344,20 +344,20 @@ def inference_static_mimi_decoder(
             f"--output_folder_path {workspace}/outputs",
         ]
     )
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
         runner="examples/qualcomm/oss_scripts/moshi/qnn_mimi_decoder_runner",
     )
-    adb.push(inputs=encoded_results)
-    adb.execute(custom_runner_cmd=runner_cmd)
+    device.push(inputs=encoded_results)
+    device.execute(custom_runner_cmd=runner_cmd)
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     num_chunks = len(encoded_results)
     shape = num_chunks * pcm_chunk_size
