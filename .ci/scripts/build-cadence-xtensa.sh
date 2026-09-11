@@ -27,6 +27,22 @@ RUN_SMOKE=1
 : "${XTENSA_CORE:?run setup-xtensa-tools.sh first}"
 : "${CADENCE_OPT_FLAG:?run setup-xtensa-tools.sh first}"
 
+# [do-not-land] Reproduce the failing pod: rename ourselves to the 48-char
+# hostname of an mt-l-x86iavx512-8-64 runner, show that xt-clang then asks for a
+# key the licence does not grant, and fall through to the shim, which should
+# recover. Proves the fix end to end on a pool whose own name is short enough.
+if [[ -z "${XTENSA_FAKE_LONG_HOSTNAME:-}" ]]; then
+  export XTENSA_FAKE_LONG_HOSTNAME=1
+  exec unshare -Uur bash -c '
+    hostname mt-l-x86iavx512-8-64-r6gdl-runner-6525q-workflow
+    _hn=$(hostname); echo "=== faked hostname: ${_hn} (${#_hn} chars) ==="
+    echo "int main(void){return 0;}" > /tmp/_lic_probe.c
+    echo -n "  xt-clang asks for: "
+    FLEXLM_DIAGNOSTICS=3 xt-clang -c /tmp/_lic_probe.c -o /tmp/_lic_probe.o 2>&1 \
+      | grep -oE "(Checkout succeeded: )?XT_XCC_TIE[A-Z0-9_]*" | head -1
+    exec "$0" "$@"' "$0" "$@"
+fi
+
 # shellcheck source=.ci/scripts/xtensa-short-hostname.sh
 source "$(dirname "${BASH_SOURCE[0]}")/xtensa-short-hostname.sh"
 
