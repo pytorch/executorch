@@ -17,6 +17,7 @@
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -238,8 +239,11 @@ class XNNWeightsCache {
   std::unordered_map<std::string, PackedDataMeta> name_to_packed_data_metadata_;
   // Vector holding list of pointers to the packed data
   std::vector<void*> packed_data_ptrs_;
-  // vector holding list of strings which are containers for packed_data_ptrs
-  std::unordered_map<void*, std::string> packed_pointer_to_container_;
+  // Owns heap allocations backing packed_data_ptrs_. XNNPACK initializes the
+  // allocation before packing, so these buffers do not need value
+  // initialization.
+  std::unordered_map<void*, std::unique_ptr<char[]>>
+      packed_pointer_to_container_;
   // Vector hodling list of unpacked freeable buffers
   std::vector<FreeableBuffer> unpacked_data_;
   // xnnpack's weight cache provider
