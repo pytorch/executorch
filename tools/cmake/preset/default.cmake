@@ -101,6 +101,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_HF_RUST_TOKENIZER
+  "Build the opt-in Hugging Face .tok tokenizer backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE "Build the ETDump Apple extension"
   BOOL OFF
 )
