@@ -30,12 +30,40 @@ struct SelectParams {
   uint32_t _pad[2];
 };
 
-// dim/index are static integer scalars (SymInt throws); Vulkan serialization
-// can reuse an earlier Double value for an equal integer scalar.
+// Deny by default: a SymInt holds a build-time constant only if NO producer
+// registry claims it. The three SymInt producers are select_as_symint
+// (symint_sources), sym_size.int (symint_dim_sources), and SymInt arithmetic
+// (symint_computed). A NEW SYMINT PRODUCER MUST BE CONSULTED HERE -- if one is
+// missed, select silently reads a build-time seed for a value that varies at
+// execute and emits a wrong-rank result instead of failing loudly.
+bool is_runtime_driven_symint(const WebGPUGraph& graph, int id) {
+  for (const auto& src : graph.symint_sources()) {
+    if (src.symint_id == id) {
+      return true;
+    }
+  }
+  for (const auto& src : graph.symint_dim_sources()) {
+    if (src.symint_id == id) {
+      return true;
+    }
+  }
+  return graph.symint_computed().count(id) != 0;
+}
+
+// dim/index are static integer scalars; Vulkan serialization can reuse an
+// earlier Double value for an equal integer scalar, or park one in a SymInt
+// slot. Only a SymInt an op actually drives at runtime throws: select drops an
+// axis, so a varying dim/index would change the output rank.
 int64_t read_scalar(WebGPUGraph& graph, int id, const char* what) {
   switch (graph.get_value_type(id)) {
     case WebGPUGraph::ValueType::Int:
       return graph.get_int(id);
+    case WebGPUGraph::ValueType::SymInt:
+      if (is_runtime_driven_symint(graph, id)) {
+        throw std::runtime_error(
+            std::string("select: dynamic/unsupported ") + what);
+      }
+      return graph.read_symint(id);
     case WebGPUGraph::ValueType::Double: {
       const double d = graph.get_double(id);
       constexpr double kInt64Limit = 0x1p63;
