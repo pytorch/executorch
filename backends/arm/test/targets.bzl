@@ -73,6 +73,7 @@ def define_arm_tests():
     test_files += [
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
+        "misc/test_diff_pte.py",
         "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
@@ -173,7 +174,10 @@ def define_arm_tests():
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",
-            ] if test_file == "misc/test_version_xfail.py" else []),
+            ] if test_file == "misc/test_version_xfail.py" else []) + ([
+                "//executorch/exir:schema",
+                "//executorch/exir/_serialize:lib",
+            ] if test_file == "misc/test_diff_pte.py" else []),
         )
 
     runtime.cxx_test(
