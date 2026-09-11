@@ -77,4 +77,4 @@ jobs:
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
-      runner: ${{ needs.select-runner.outputs.x86 }}
+      runner: mt-l-x86iavx512-8-64  # TEMPORARY: probe build_wheels_linux on OSDC
