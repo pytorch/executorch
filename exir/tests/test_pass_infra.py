@@ -234,7 +234,10 @@ class TestPassInfra(unittest.TestCase):
                 if isinstance(tensor, FakeTensor):
                     fake_modes.add(id(tensor.fake_mode))
 
-        self.assertEqual(len(fake_modes), 1)
+        # Not just "one mode": a fresh mode applied uniformly would also leave
+        # one behind, having dropped the ShapeEnv this change exists to keep.
+        # It has to be the mode the graph arrived with.
+        self.assertEqual(fake_modes, {id(mode)})
 
 
 class TestProxyValueSymbolicCoercions(unittest.TestCase):
