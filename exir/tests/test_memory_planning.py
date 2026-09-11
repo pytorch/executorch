@@ -35,6 +35,7 @@ from executorch.exir.memory_planning import (
     apply_algo,
     collect_specs_from_nodes,
     filter_nodes,
+    get_cond_nodes,
     get_node_tensor_specs,
     greedy,
     MemoryAlgoResult,
@@ -56,6 +57,7 @@ from executorch.exir.tensor import TensorSpec
 from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
 from torch import nn
+from torch._higher_order_ops import cond as torch_cond
 from torch.ao.quantization import (  # @manual=//caffe2:torch
     float_qparams_weight_only_qconfig,
 )
@@ -1122,6 +1124,70 @@ def _get_specs(gm: torch.fx.GraphModule) -> set[TensorSpec]:
             )[0],
         )
     )
+
+
+class ConsecutiveCondModel(torch.nn.Module):
+    def forward(
+        self, pred: torch.Tensor, data: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        first = torch_cond(
+            pred,
+            lambda x: x + 1,
+            lambda x: x - 1,
+            [data],
+        )
+        second = torch_cond(
+            pred,
+            lambda x: x + 2,
+            lambda x: x - 2,
+            [first],
+        )
+        return first, second
+
+
+class TestCond(unittest.TestCase):
+    def test_consecutive_cond_output_lifetime(self) -> None:
+        graph_module = (
+            to_edge(
+                export(
+                    ConsecutiveCondModel(),
+                    (torch.tensor(True), torch.ones(2)),
+                    strict=True,
+                )
+            )
+            .exported_program()
+            .graph_module
+        )
+        graph_module = PassManager(
+            passes=[
+                SpecPropPass(),
+                ToOutVarPass(),
+            ],
+        )(graph_module).graph_module
+        graph_module = MemoryPlanningPass().run(graph_module).graph_module
+
+        cond_nodes = list(get_cond_nodes(graph_module))
+        self.assertEqual(len(cond_nodes), 2)
+
+        def branch_output_specs(
+            cond_node: torch.fx.Node,
+        ) -> List[List[TensorSpec]]:
+            outputs = []
+            for branch_node in cond_node.args[1:3]:
+                self.assertIsInstance(branch_node, torch.fx.Node)
+                branch = getattr(graph_module, branch_node.target)
+                outputs.append(get_node_tensor_specs(branch.graph.output_node()))
+            return outputs
+
+        first_outputs = branch_output_specs(cond_nodes[0])
+        second_outputs = branch_output_specs(cond_nodes[1])
+        for first_branch_outputs in first_outputs:
+            for second_branch_outputs in second_outputs:
+                for first_spec in first_branch_outputs:
+                    for second_spec in second_branch_outputs:
+                        self.assertFalse(
+                            Verifier.storage_overlap(first_spec, second_spec)
+                        )
 
 
 class MapModel(torch.nn.Module):
