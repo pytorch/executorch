@@ -9,6 +9,7 @@
 #include <executorch/extension/data_loader/shared_ptr_data_loader.h>
 
 #include <cstring>
+#include <limits>
 #include <memory>
 
 #include <gtest/gtest.h>
@@ -139,4 +140,72 @@ TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
         DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
+}
+
+TEST_F(SharedPtrDataLoaderTest, InBoundsLoadIntoSucceeds) {
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+  for (int i = 0; i < SIZE; ++i) {
+    data[i] = i;
+  }
+
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  uint8_t buffer[3] = {};
+  DataLoader::SegmentInfo segment_info(DataLoader::SegmentInfo::Type::Mutable);
+  Error err = sbdl.load_into(
+      /*offset=*/SIZE - 3,
+      /*size=*/3,
+      segment_info,
+      buffer);
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(0, std::memcmp(buffer, "\xfd\xfe\xff", 3));
+}
+
+TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadIntoFails) {
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  uint8_t buffer[2] = {};
+  DataLoader::SegmentInfo segment_info(DataLoader::SegmentInfo::Type::Mutable);
+  Error err = sbdl.load_into(
+      /*offset=*/SIZE - 1,
+      /*size=*/2,
+      segment_info,
+      buffer);
+  EXPECT_EQ(err, Error::InvalidArgument);
+}
+
+TEST_F(SharedPtrDataLoaderTest, OverflowLoadIntoFails) {
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  uint8_t buffer[1] = {};
+  DataLoader::SegmentInfo segment_info(DataLoader::SegmentInfo::Type::Mutable);
+  Error err = sbdl.load_into(
+      /*offset=*/1,
+      /*size=*/std::numeric_limits<size_t>::max(),
+      segment_info,
+      buffer);
+  EXPECT_EQ(err, Error::InvalidArgument);
+}
+
+TEST_F(SharedPtrDataLoaderTest, LoadIntoNullDstFails) {
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+  SharedPtrDataLoader sbdl(data, SIZE);
+
+  DataLoader::SegmentInfo segment_info(DataLoader::SegmentInfo::Type::Mutable);
+  Error err = sbdl.load_into(
+      /*offset=*/0,
+      /*size=*/1,
+      segment_info,
+      nullptr);
+  EXPECT_EQ(err, Error::InvalidArgument);
 }
