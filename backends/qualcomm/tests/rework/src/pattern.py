@@ -1319,8 +1319,10 @@ class DecomposeColIm:
                 x, output_size=(4, 4), kernel_size=2, stride=2
             )
 
-    # im2col violation models — each breaks exactly one assertion in _decompose_im2col
-    class _Im2ColStrideMismatch(torch.nn.Module):
+    # im2col support models: stride == kernel_size goes straight to
+    # space_to_depth; stride != kernel_size first gathers each spatial dim
+    # with index_select so the result tiles the way space_to_depth expects.
+    class _Im2ColOverlappingWindows(torch.nn.Module):
         def forward(self, x):
             return torch.nn.functional.unfold(x, kernel_size=2, stride=1)
 
@@ -1328,13 +1330,30 @@ class DecomposeColIm:
         def forward(self, x):
             return torch.nn.functional.unfold(x, kernel_size=(2, 3), stride=(2, 3))
 
+    class _Im2ColNonSquareStrideMismatch(torch.nn.Module):
+        def forward(self, x):
+            return torch.nn.functional.unfold(x, kernel_size=(4, 2), stride=(2, 2))
+
+    # im2col violation models — each breaks exactly one remaining assertion
+    # in _decompose_im2col
     class _Im2ColDilation(torch.nn.Module):
         def forward(self, x):
             return torch.nn.functional.unfold(x, kernel_size=2, stride=2, dilation=2)
 
+    # im2col with nonzero padding: constant_pad_nd zero-pads the input on
+    # both sides of each spatial dim before the existing gather/space_to_depth
+    # decomposition runs.
     class _Im2ColPadding(torch.nn.Module):
         def forward(self, x):
             return torch.nn.functional.unfold(x, kernel_size=2, stride=2, padding=1)
+
+    # im2col config whose stride is far smaller than its kernel: the gather
+    # expansion factor (ceil(kernel/stride) per dim) exceeds
+    # DecomposeColIm._MAX_GATHER_EXPANSION_FACTOR, so decomposition is
+    # skipped instead of building an unbounded index_select gather.
+    class _Im2ColExpansionFactorTooLarge(torch.nn.Module):
+        def forward(self, x):
+            return torch.nn.functional.unfold(x, kernel_size=9, stride=2)
 
     # col2im violation models — each breaks exactly one assertion in _decompose_col2im
     class _Col2ImStrideMismatch(torch.nn.Module):
@@ -1371,9 +1390,19 @@ class DecomposeColIm:
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
+        # DecomposeColIm now runs in the to_edge pipeline (see
+        # QnnPassManager.get_default_pass_activations), so node targets are
+        # exir_ops.edge.*, not plain torch.ops.aten.*.
         target_pass = _passes.DecomposeColIm
+        im2col_op = exir_ops.edge.aten.im2col.default
+        col2im_op = exir_ops.edge.aten.col2im.default
+        space_to_depth_op = exir_ops.edge.qnn_custom.space_to_depth.default
+        index_select_op = exir_ops.edge.aten.index_select.default
+        pad_op = exir_ops.edge.aten.constant_pad_nd.default
+        view_copy_op = exir_ops.edge.aten.view_copy.default
+        pixel_shuffle_op = exir_ops.edge.aten.pixel_shuffle.default
 
-        # im2col (unfold): pixel_unshuffle + view_copy
+        # im2col (unfold), stride == kernel_size: space_to_depth + view_copy
         with subtests.test(msg="im2col"):
             gm = pass_pipeline.lower_edge_ep(
                 module=DecomposeColIm._Im2Col(),
@@ -1383,11 +1412,71 @@ class DecomposeColIm:
                 target_pass=target_pass,
                 quantizer=quantizer,
             ).graph_module
-            assertions.assert_no_target(gm, exir_ops.edge.aten.im2col.default)
-            assertions.assert_target_count(
-                gm, exir_ops.edge.aten.pixel_unshuffle.default, 1
-            )
-            assertions.assert_target_count(gm, exir_ops.edge.aten.view_copy.default, 1)
+            assertions.assert_no_target(gm, im2col_op)
+            assertions.assert_no_target(gm, index_select_op)
+            assertions.assert_target_count(gm, space_to_depth_op, 1)
+            assertions.assert_target_count(gm, view_copy_op, 1)
+
+        # im2col, stride != kernel_size: index_select gather (h, w) + space_to_depth + view_copy
+        with subtests.test(msg="im2col_overlapping_windows"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=DecomposeColIm._Im2ColOverlappingWindows(),
+                sample_input=(torch.randn(1, 4, 4, 4),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_no_target(gm, im2col_op)
+            assertions.assert_target_count(gm, index_select_op, 2)
+            assertions.assert_target_count(gm, space_to_depth_op, 1)
+            assertions.assert_target_count(gm, view_copy_op, 1)
+
+        # im2col, non-square kernel, stride == kernel_size
+        with subtests.test(msg="im2col_non_square_kernel"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=DecomposeColIm._Im2ColNonSquareKernel(),
+                sample_input=(torch.randn(1, 4, 4, 6),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_no_target(gm, im2col_op)
+            assertions.assert_no_target(gm, index_select_op)
+            assertions.assert_target_count(gm, space_to_depth_op, 1)
+            assertions.assert_target_count(gm, view_copy_op, 1)
+
+        # im2col, non-square kernel AND stride != kernel_size combined
+        with subtests.test(msg="im2col_non_square_stride_mismatch"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=DecomposeColIm._Im2ColNonSquareStrideMismatch(),
+                sample_input=(torch.randn(1, 4, 8, 6),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_no_target(gm, im2col_op)
+            assertions.assert_target_count(gm, index_select_op, 1)
+            assertions.assert_target_count(gm, space_to_depth_op, 1)
+            assertions.assert_target_count(gm, view_copy_op, 1)
+
+        # im2col with nonzero padding: constant_pad_nd + space_to_depth + view_copy
+        with subtests.test(msg="im2col_padding"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=DecomposeColIm._Im2ColPadding(),
+                sample_input=(torch.randn(1, 4, 4, 4),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_no_target(gm, im2col_op)
+            assertions.assert_no_target(gm, index_select_op)
+            assertions.assert_target_count(gm, pad_op, 1)
+            assertions.assert_target_count(gm, space_to_depth_op, 1)
+            assertions.assert_target_count(gm, view_copy_op, 1)
 
         # col2im (fold): view_copy + pixel_shuffle
         with subtests.test(msg="col2im"):
@@ -1402,51 +1491,43 @@ class DecomposeColIm:
                 target_pass=target_pass,
                 quantizer=quantizer,
             ).graph_module
-            assertions.assert_no_target(gm, exir_ops.edge.aten.col2im.default)
-            assertions.assert_target_count(
-                gm, exir_ops.edge.aten.pixel_shuffle.default, 1
-            )
-            assertions.assert_target_count(gm, exir_ops.edge.aten.view_copy.default, 1)
+            assertions.assert_no_target(gm, col2im_op)
+            assertions.assert_target_count(gm, pixel_shuffle_op, 1)
+            assertions.assert_target_count(gm, view_copy_op, 1)
 
-        # im2col assertion failures
-        im2col_fail_cases = [
-            (
-                "im2col_stride_mismatch",
-                DecomposeColIm._Im2ColStrideMismatch(),
-                (torch.randn(1, 4, 4, 4),),
-            ),
-            (
-                "im2col_non_square_kernel",
-                DecomposeColIm._Im2ColNonSquareKernel(),
-                (torch.randn(1, 4, 4, 6),),
-            ),
+        # im2col configs the decomposition doesn't handle: each hits exactly
+        # one skip condition in _decompose_im2col, so the node is left
+        # undecomposed instead of being replaced.
+        im2col_skip_cases = [
             (
                 "im2col_dilation_not_one",
                 DecomposeColIm._Im2ColDilation(),
                 (torch.randn(1, 4, 8, 8),),
             ),
             (
-                "im2col_nonzero_padding",
-                DecomposeColIm._Im2ColPadding(),
-                (torch.randn(1, 4, 4, 4),),
+                "im2col_expansion_factor_too_large",
+                DecomposeColIm._Im2ColExpansionFactorTooLarge(),
+                (torch.randn(1, 4, 20, 20),),
             ),
         ]
-        for label, module, inputs in im2col_fail_cases:
+        for label, module, inputs in im2col_skip_cases:
             with subtests.test(msg=label):
-                with pytest.raises(  # noqa: B017
-                    Exception, check=check_exception(EXCEPTION_FROM_PASSES)
-                ):
-                    pass_pipeline.lower_edge_ep(
-                        module=module,
-                        sample_input=inputs,
-                        backend_type=backend_type,
-                        compile_spec=compile_spec,
-                        target_pass=target_pass,
-                        quantizer=quantizer,
-                    )
+                gm = pass_pipeline.lower_edge_ep(
+                    module=module,
+                    sample_input=inputs,
+                    backend_type=backend_type,
+                    compile_spec=compile_spec,
+                    target_pass=target_pass,
+                    quantizer=quantizer,
+                ).graph_module
+                assertions.assert_target_count(gm, im2col_op, 1)
+                assertions.assert_no_target(gm, space_to_depth_op)
+                assertions.assert_no_target(gm, index_select_op)
 
-        # col2im assertion failures
-        col2im_fail_cases = [
+        # col2im configs the decomposition doesn't handle: each hits exactly
+        # one skip condition in _decompose_col2im, so the node is left
+        # undecomposed instead of being replaced.
+        col2im_skip_cases = [
             (
                 "col2im_stride_mismatch",
                 DecomposeColIm._Col2ImStrideMismatch(),
@@ -1484,19 +1565,18 @@ class DecomposeColIm:
                 ),
             ),
         ]
-        for label, module, inputs in col2im_fail_cases:
+        for label, module, inputs in col2im_skip_cases:
             with subtests.test(msg=label):
-                with pytest.raises(  # noqa: B017
-                    Exception, check=check_exception(EXCEPTION_FROM_PASSES)
-                ):
-                    pass_pipeline.lower_edge_ep(
-                        module=module,
-                        sample_input=inputs,
-                        backend_type=backend_type,
-                        compile_spec=compile_spec,
-                        target_pass=target_pass,
-                        quantizer=quantizer,
-                    )
+                gm = pass_pipeline.lower_edge_ep(
+                    module=module,
+                    sample_input=inputs,
+                    backend_type=backend_type,
+                    compile_spec=compile_spec,
+                    target_pass=target_pass,
+                    quantizer=quantizer,
+                ).graph_module
+                assertions.assert_target_count(gm, col2im_op, 1)
+                assertions.assert_no_target(gm, pixel_shuffle_op)
 
 
 class DecomposeDiagonal:
