@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/VulkanSequenceCache.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
@@ -27,7 +28,7 @@
 // SDPA Mode Enum
 //
 
-enum class SDPAMode { DECOMPOSED, FUSED, ATTN_WEIGHT_ONLY };
+enum class SDPAMode { DECOMPOSED, FUSED, ATTN_WEIGHT_ONLY, OFFGRAPH };
 
 std::ostream& operator<<(std::ostream& os, const SDPAMode& mode) {
   switch (mode) {
@@ -37,6 +38,8 @@ std::ostream& operator<<(std::ostream& os, const SDPAMode& mode) {
       return os << "FUSED";
     case SDPAMode::ATTN_WEIGHT_ONLY:
       return os << "ATTN_WEIGHT_ONLY";
+    case SDPAMode::OFFGRAPH:
+      return os << "OFFGRAPH";
   }
   return os;
 }
@@ -327,8 +330,40 @@ void test_vulkan_sdpa(
   // Build Vulkan SDPA graph
   using namespace vkcompute;
 
+  std::unique_ptr<VulkanSequenceCache> offgraph_cache;
+  if (mode == SDPAMode::OFFGRAPH) {
+    cache::CacheConfig cfg;
+    cfg.capacity = max_seq_len + 128;
+    cfg.n_layers = 1;
+    cfg.layers = {cache::LayerConfig{{}, num_kv_heads, head_dim}};
+    cfg.kv_dtype = static_cast<int>(
+        dtype == at::kFloat ? ::executorch::runtime::etensor::ScalarType::Float
+                            : ::executorch::runtime::etensor::ScalarType::Half);
+    auto created = VulkanSequenceCache::create(cfg);
+    ASSERT_EQ(created.error(), executorch::runtime::Error::Ok);
+    offgraph_cache = std::move(created.get());
+  }
+
   GraphConfig config;
   ComputeGraph graph(config);
+
+  if (offgraph_cache) {
+    graph.set_kv_cache(offgraph_cache.get());
+  }
+
+  // The off-graph op takes and returns [B, H, S, D]; every other mode below is
+  // [B, S, H, D]. The harness stays [B, S, H, D] and swaps at the boundary.
+  const bool bhsd_io = mode == SDPAMode::OFFGRAPH;
+  auto io_sizes = [bhsd_io](const at::Tensor& t) {
+    std::vector<int64_t> sizes = t.sizes().vec();
+    if (bhsd_io) {
+      std::swap(sizes.at(1), sizes.at(2));
+    }
+    return sizes;
+  };
+  auto io_tensor = [bhsd_io](const at::Tensor& t) {
+    return bhsd_io ? t.transpose(1, 2).contiguous() : t;
+  };
 
   // "Data" variant for vulkan initialization
 
@@ -346,7 +381,7 @@ void test_vulkan_sdpa(
 
 #define MAKE_INPUT_FOR(x)                    \
   IOValueRef r_##x = graph.add_input_tensor( \
-      x.sizes().vec(), from_at_scalartype(x.scalar_type()), storage_type);
+      io_sizes(x), from_at_scalartype(x.scalar_type()), storage_type);
 
   MAKE_INPUT_FOR(q);
   MAKE_INPUT_FOR(k);
@@ -355,9 +390,23 @@ void test_vulkan_sdpa(
 
   const ValueRef r_input_pos_symint = graph.add_symint(start_input_pos);
   const ValueRef r_out = graph.add_tensor(
-      out.sizes().vec(), from_at_scalartype(out.scalar_type()), storage_type);
+      io_sizes(out), from_at_scalartype(out.scalar_type()), storage_type);
 
   switch (mode) {
+    case SDPAMode::OFFGRAPH:
+      VK_GET_OP_FN("kvcache.update_and_attend.default")
+      (graph,
+       {
+           r_q.value,
+           r_k.value,
+           r_v.value,
+           r_input_pos_symint,
+           graph.add_scalar<int64_t>(0), // layer_id
+           graph.add_scalar<double>(1.0 / std::sqrt((double)head_dim)), // scale
+           kDummyValueRef, // out_dtype
+           r_out,
+       });
+      break;
     case SDPAMode::DECOMPOSED: {
       const ValueRef r_k_cache = graph.add_tensor(
           k_cache_data.sizes().vec(),
@@ -449,20 +498,26 @@ void test_vulkan_sdpa(
   // Run model
   //
 
-#define COPY_INPUT(x)                     \
-  graph.maybe_cast_and_copy_into_staging( \
-      r_##x.staging,                      \
-      x.const_data_ptr(),                 \
-      x.numel(),                          \
-      from_at_scalartype(x.scalar_type()));
+#define COPY_INPUT(x)                              \
+  {                                                \
+    at::Tensor io_##x = io_tensor(x);              \
+    graph.maybe_cast_and_copy_into_staging(        \
+        r_##x.staging,                             \
+        io_##x.const_data_ptr(),                   \
+        io_##x.numel(),                            \
+        from_at_scalartype(io_##x.scalar_type())); \
+  }
 
-#define EXTRACT_TENSOR(x)                             \
-  at::Tensor vk_##x = at::zeros_like(x).contiguous(); \
-  graph.maybe_cast_and_copy_from_staging(             \
-      staging_##x,                                    \
-      vk_##x.mutable_data_ptr(),                      \
-      vk_##x.numel(),                                 \
-      from_at_scalartype(vk_##x.scalar_type()));
+#define EXTRACT_TENSOR(x)                                  \
+  at::Tensor vk_##x = at::zeros(io_sizes(x), x.options()); \
+  graph.maybe_cast_and_copy_from_staging(                  \
+      staging_##x,                                         \
+      vk_##x.mutable_data_ptr(),                           \
+      vk_##x.numel(),                                      \
+      from_at_scalartype(vk_##x.scalar_type()));           \
+  if (bhsd_io) {                                           \
+    vk_##x = vk_##x.transpose(1, 2).contiguous();          \
+  }
 
   torch::manual_seed(0);
 
@@ -480,9 +535,9 @@ void test_vulkan_sdpa(
         q, k, v, k_cache, v_cache, input_pos, seq_len, {}, 0.0, true, {}, mode);
 
     graph.set_symint(r_input_pos_symint, input_pos);
-    graph.resize_input(0, q.sizes().vec());
-    graph.resize_input(1, k.sizes().vec());
-    graph.resize_input(2, v.sizes().vec());
+    graph.resize_input(0, io_sizes(q));
+    graph.resize_input(1, io_sizes(k));
+    graph.resize_input(2, io_sizes(v));
     graph.propagate_resize();
 
     // Run Vulkan SDPA
@@ -589,7 +644,10 @@ void test_vulkan_sdpa(
     const int batch_size,
     at::ScalarType dtype = at::kFloat) {
   for (SDPAMode mode :
-       {SDPAMode::ATTN_WEIGHT_ONLY, SDPAMode::DECOMPOSED, SDPAMode::FUSED}) {
+       {SDPAMode::ATTN_WEIGHT_ONLY,
+        SDPAMode::DECOMPOSED,
+        SDPAMode::FUSED,
+        SDPAMode::OFFGRAPH}) {
     // Test texture
     test_vulkan_sdpa(
         start_input_pos,

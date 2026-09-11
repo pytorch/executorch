@@ -43,6 +43,7 @@ $if GQA:
   #define MAX_GROUP_SIZE 8
 
 ${define_required_extensions(IO_STORAGE, DTYPE)}
+${define_required_extensions(V_CACHE_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 

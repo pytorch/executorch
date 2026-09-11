@@ -38,6 +38,7 @@ $else:
 #define TILE_N ${TILE_N4 * 4}
 
 ${define_required_extensions(IO_STORAGE, DTYPE)}
+${define_required_extensions(V_CACHE_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
