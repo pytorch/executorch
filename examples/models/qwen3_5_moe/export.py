@@ -1138,9 +1138,11 @@ def _export_cuda(model, config, args):
         "enable_dynamic_shape": True,
         "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
-    # Avoid PyTorch 2.13's fused cast/reduction compile-time autotune path. Keep
-    # max autotuning enabled so prefill GEMMs use the CUDA backend's Triton-only
-    # GEMM lowering instead of emitting libtorch fallback kernels.
+    # Keep compile-time autotuning enabled so AOTI embeds the selected Triton
+    # kernels in the shared object. PyTorch 2.14's lazy JIT path otherwise leaves
+    # runtime references to temporary kernel files that disappear after export.
+    # Max autotuning is also needed so prefill GEMMs use the CUDA backend's
+    # Triton-only GEMM lowering instead of emitting libtorch fallback kernels.
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
@@ -1151,7 +1153,7 @@ def _export_cuda(model, config, args):
                         CompileSpec("low_memory_mode", b"ON"),
                         CompileSpec("emulate_precision_casts", b"OFF"),
                         CompileSpec("max_autotune", b"ON"),
-                        CompileSpec("autotune_at_compile_time", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"ON"),
                     ]
                 )
             ],
@@ -1162,7 +1164,7 @@ def _export_cuda(model, config, args):
                         CompileSpec("low_memory_mode", b"ON"),
                         CompileSpec("emulate_precision_casts", b"OFF"),
                         CompileSpec("max_autotune", b"ON"),
-                        CompileSpec("autotune_at_compile_time", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"ON"),
                     ]
                 )
             ],
