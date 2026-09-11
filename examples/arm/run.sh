@@ -45,7 +45,6 @@ scratch_dir_set=false
 toolchain="arm-none-eabi-gcc"
 select_ops_list="aten::_softmax.out"
 select_ops_list_overridden=false
-qdq_fusion_op=false
 model_explorer=false
 perf_overlay=false
 visualize_tosa=false
@@ -88,7 +87,6 @@ function help() {
     echo "  --specify_ethosu_scratch               Use actual Ethos-U scratch size for given model to size temp allocator"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scratch dir if you not using default ${arm_scratch_dir}"
-    echo "  --qdq_fusion_op                        Enable QDQ fusion op"
     echo "  --model_explorer                       Enable model explorer to visualize a TOSA or PTE model graph."
     echo "  --visualize_pte                        With --model_explorer, visualize PTE flatbuffer model and delegates. Cannot be used with --visualize_tosa"
     echo "                                            NOTE: If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags includes -i for TOSA dumps."
@@ -125,7 +123,6 @@ for arg in "$@"; do
       --specify_ethosu_scratch) specify_ethosu_scratch=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
-      --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
       --perf_overlay) perf_overlay=true ;;
       --visualize_tosa) visualize_tosa=true ;;
@@ -618,17 +615,12 @@ cd "${et_root_dir}"
 
 bundleio_flag=""
 etrecord_flag_template=""
-qdq_fusion_op_flag=""
 if [ "$build_with_etdump" = true ] ; then
     etrecord_flag_template="--etrecord"
 fi
 
 if [ "$bundleio" = true ] ; then
     bundleio_flag="--bundleio"
-fi
-
-if [ "$qdq_fusion_op" = true ] ; then
-    qdq_fusion_op_flag="--enable_qdq_fusion_pass"
 fi
 
 if [[ "${auto_configure}" == true ]]; then
@@ -756,7 +748,7 @@ for i in "${!test_model[@]}"; do
     fi
 
     model_etrecord_flag="${etrecord_flag_template}"
-    ARM_AOT_CMD="python3 -m backends.arm.scripts.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${model_etrecord_flag} --config=${config} $qdq_fusion_op_flag"
+    ARM_AOT_CMD="python3 -m backends.arm.scripts.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${model_etrecord_flag} --config=${config}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
