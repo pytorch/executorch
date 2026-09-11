@@ -3,20 +3,35 @@ load("@fbsource//tools/build_defs/android:fb_android_library.bzl", "fb_android_l
 
 oncall("executorch")
 
+# NOTE: the platform-neutral sources live in the shared source directory
+# extension/java/src/main/java and are referenced here in place, so the
+# Android targets keep their historical names, ownership, and attributes
+# (required_for_source_only_abi, pure_kotlin, deps) while compiling the
+# exact same classes as before the move. Log.kt is the Android-backed
+# implementation of the org.pytorch.executorch.Log facade that the shared
+# sources reference.
+#
+# MAINTENANCE: Gradle globs the shared directory (java.srcDirs) while the
+# srcs lists below are explicit per-file. When adding a shared source under
+# extension/java/src/main/java, add it to the matching target here in the
+# same change — otherwise the OSS AAR picks it up while this build silently
+# omits it.
+
 non_fbcode_target(_kind = fb_android_library,
     name = "executorch",
     warnings_as_errors = False,
     required_for_source_only_abi = True,
     srcs = [
-        "executorch_android/src/main/java/org/pytorch/executorch/BackendOptionsMap.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/DType.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/EValue.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/ExecuTorchRuntime.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/ExecutorchRuntimeException.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/MethodMetadata.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/Module.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/Tensor.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/annotations/Experimental.kt",
+        "../java/src/main/java/org/pytorch/executorch/BackendOptionsMap.kt",
+        "../java/src/main/java/org/pytorch/executorch/DType.kt",
+        "../java/src/main/java/org/pytorch/executorch/EValue.kt",
+        "../java/src/main/java/org/pytorch/executorch/ExecuTorchRuntime.kt",
+        "../java/src/main/java/org/pytorch/executorch/ExecutorchRuntimeException.kt",
+        "../java/src/main/java/org/pytorch/executorch/MethodMetadata.kt",
+        "../java/src/main/java/org/pytorch/executorch/Module.kt",
+        "../java/src/main/java/org/pytorch/executorch/Tensor.kt",
+        "../java/src/main/java/org/pytorch/executorch/annotations/Experimental.kt",
+        "executorch_android/src/main/java/org/pytorch/executorch/Log.kt",
     ],
     autoglob = False,
     language = "KOTLIN",
@@ -34,8 +49,8 @@ non_fbcode_target(_kind = fb_android_library,
     name = "executorch_training",
     warnings_as_errors = False,
     srcs = [
-        "executorch_android/src/main/java/org/pytorch/executorch/training/SGD.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/training/TrainingModule.kt",
+        "../java/src/main/java/org/pytorch/executorch/training/SGD.kt",
+        "../java/src/main/java/org/pytorch/executorch/training/TrainingModule.kt",
     ],
     autoglob = False,
     language = "KOTLIN",
@@ -50,10 +65,10 @@ non_fbcode_target(_kind = fb_android_library,
     name = "executorch_llama",
     warnings_as_errors = False,
     srcs = [
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmCallback.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmGenerationConfig.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmModule.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmModuleConfig.kt",
+        "../java/src/main/java/org/pytorch/executorch/extension/llm/LlmCallback.kt",
+        "../java/src/main/java/org/pytorch/executorch/extension/llm/LlmGenerationConfig.kt",
+        "../java/src/main/java/org/pytorch/executorch/extension/llm/LlmModule.kt",
+        "../java/src/main/java/org/pytorch/executorch/extension/llm/LlmModuleConfig.kt",
     ],
     autoglob = False,
     language = "KOTLIN",
