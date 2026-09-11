@@ -14,9 +14,15 @@
       executorch::runtime*::get_backend_name*;
       executorch::runtime*::get_num_registered_backends*;
     };
-    # Same reason, for the thread pool the split XNNPACK backend runs on: bind
-    # its pthreadpool calls to the pool extension_threadpool configures here
-    # rather than to a second, unconfigured copy inside the backend .so.
+    # Same reason, for the thread pool the split XNNPACK backend runs on. It
+    # reaches the pool through get_pthreadpool(), which owns the singleton, so
+    # exporting only the C pthreadpool_* entry points would still leave the
+    # backend with a second, unconfigured pool of its own; the accessors the
+    # JNI layer configures through have to be exported too.
+    extern "C++" {
+      executorch::extension::threadpool*::get_pthreadpool*;
+      executorch::extension::threadpool*::get_threadpool*;
+    };
     pthreadpool_*;
   local:
     *;
