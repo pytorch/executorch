@@ -14,19 +14,20 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <algorithm>
+
 namespace vkcompute {
 
 //
 // Shader dispatch utilities
 //
 
-GlobalWorkGrid pick_q8ta_conv2d_pw_gwg(
+GlobalWorkGrid pick_q8ta_conv2d_pw_gwg_impl(
     ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)resize_args;
+    const std::vector<ValueRef>& resize_args,
+    const bool is_im2col_tile) {
+  VK_CHECK_COND(graph != nullptr);
 
   const ValueRef output = args.at(0).refs.at(0);
 
@@ -35,23 +36,50 @@ GlobalWorkGrid pick_q8ta_conv2d_pw_gwg(
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
   const uint32_t N = graph->size_at<uint32_t>(-4, output);
 
-  // Each thread covers a 4-width x 4-channel output block.
-  // Tile constants must match TILE_M4 / TILE_N4 in q8ta_conv2d_pw.glsl.
-  constexpr uint32_t TILE_N4 = 1;
-  constexpr uint32_t TILE_M4 = 1;
-
+  // Each thread covers a 4-width x 4-channel output block, matching TILE_M4 /
+  // TILE_N4 (= 1) in q8ta_conv2d_pw.glsl.
   const uint32_t C4 = utils::div_up_4(C);
   const uint32_t W4 = utils::div_up_4(W);
 
-  // Global workgroup size:
-  // x = output channels / (TILE_N4 * 4) = C4 / TILE_N4 = C4
-  // y = width / (TILE_M4 * 4) = W4 / TILE_M4 = W4
-  // z = height * batch
-  return GlobalWorkGrid(
-      {utils::div_up(C4, TILE_N4),
-       utils::div_up(W4, TILE_M4),
-       utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N)},
-      kTiledWorkGrid);
+  uint32_t z;
+  if (is_im2col_tile) {
+    // The bound input is one [1, K, rows, W] scratch tile; the grid covers
+    // the live tile rows after the tile offset.
+    const ValueRef input = args.at(1).refs.at(0);
+    const uint32_t rows_per_tile = graph->size_at<uint32_t>(-2, input);
+    const int64_t row_offset =
+        graph->extract_scalar<int64_t>(resize_args.at(5));
+    const int64_t total_rows = static_cast<int64_t>(N) * H;
+    if (row_offset >= total_rows) {
+      return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
+    }
+    z = utils::safe_downcast<uint32_t>(
+        std::min<int64_t>(rows_per_tile, total_rows - row_offset));
+  } else {
+    // The bound input is the batched activation; the grid covers every
+    // output row.
+    z = utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N);
+  }
+  return GlobalWorkGrid({C4, W4, z}, kTiledWorkGrid);
+}
+
+GlobalWorkGrid pick_q8ta_conv2d_pw_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  return pick_q8ta_conv2d_pw_gwg_impl(graph, args, resize_args, false);
+}
+
+GlobalWorkGrid pick_q8ta_conv2d_pw_streaming_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  return pick_q8ta_conv2d_pw_gwg_impl(graph, args, resize_args, true);
 }
 
 LocalWorkGroup pick_q8ta_conv2d_pw_lwg(
@@ -118,7 +146,8 @@ ValueRef prepack_quantized_conv2d_pw_weight(
     const QuantizationConfig& weight_quant_config,
     const ValueRef weight_data,
     const ValueRef input,
-    const ValueRef output) {
+    const ValueRef output,
+    const bool use_unsigned_dot) {
   VK_CHECK_COND(weight_quant_config.nbits == 8);
   VK_CHECK_COND(weight_quant_config.is_symmetric);
 
@@ -149,7 +178,8 @@ ValueRef prepack_quantized_conv2d_pw_weight(
   std::vector<int64_t> packed_weight_sizes{output_height, output_width};
 
   utils::StorageType storage_type = utils::kTexture2D;
-  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
+  const uint32_t max_extent =
+      graph.context()->adapter_ptr()->max_texture2d_dim();
   if (output_width > max_extent * 4 || output_height > max_extent) {
     storage_type = utils::kBuffer;
   }
@@ -166,7 +196,8 @@ ValueRef prepack_quantized_conv2d_pw_weight(
        1u},
       kTiledWorkGrid);
 
-  std::string kernel_name = "pack_q8_conv2d_weights";
+  std::string kernel_name = use_unsigned_dot ? "pack_q8_conv2d_weights_unsigned"
+                                             : "pack_q8_conv2d_weights";
   add_storage_type_suffix(kernel_name, storage_type);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
@@ -215,14 +246,16 @@ void resize_q8ta_conv2d_pw_node(
   graph->virtual_resize(out, new_sizes);
 }
 
-// resize_args = { conv_input, kernel_size, stride, padding, dilation }
+// resize_args = { conv_input, kernel_size, stride, padding, dilation,
+//                 row_offset, max_im2col_rows }. The grid picker reads the row
+// offset at index 5; append-only.
 //
 // im2col-path PW conv. Here the PW node's bound input is the im2col scratch
-// tensor sized {K, H_out, align_up_4(W_out)} — its width is rounded up to a
-// multiple of 4 for texel alignment, so it must NOT be used to size the output.
-// Recompute the TRUE conv H_out/W_out from the ORIGINAL activation + conv
-// geometry, exactly as resize_q8ta_conv2d_node does. N/C are shape-independent
-// and stay as currently allocated.
+// tensor sized {1, K, rows, align_up_4(W)} (one row tile) — its width is
+// rounded up to a multiple of 4 for texel alignment, so it must NOT be used
+// to size the output.
+// Recompute the true conv N/H_out/W_out from the original activation + conv
+// geometry, exactly as resize_q8ta_conv2d_node does. C is shape-independent.
 void resize_q8ta_conv2d_pw_im2col_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -233,8 +266,13 @@ void resize_q8ta_conv2d_pw_im2col_node(
   const ValueRef stride = resize_args.at(2);
   const ValueRef padding = resize_args.at(3);
   const ValueRef dilation = resize_args.at(4);
+  // Row tiles are fixed at build time: fail fast on growth past max im2col
+  // rows instead of leaving outputs stale.
+  const int64_t max_im2col_rows =
+      graph->extract_scalar<int64_t>(resize_args.at(6));
 
   const std::vector<int64_t> in_sizes = graph->sizes_of(conv_input);
+  const int64_t batch = utils::val_at(-4, in_sizes);
 
   const std::vector<int64_t> out_hw = calc_out_sizes_hw(
       *graph,
@@ -244,8 +282,13 @@ void resize_q8ta_conv2d_pw_im2col_node(
       {stride, padding, dilation, dilation},
       /*transposed=*/false);
 
+  VK_CHECK_COND(
+      batch * out_hw.at(0) <= max_im2col_rows,
+      "q8ta im2col resize grew past max im2col rows");
+
   std::vector<int64_t> new_sizes = graph->sizes_of(out);
   const size_t ndim = new_sizes.size();
+  new_sizes.at(ndim - 4) = utils::val_at(-4, in_sizes);
   new_sizes.at(ndim - 2) = out_hw.at(0);
   new_sizes.at(ndim - 1) = out_hw.at(1);
   graph->virtual_resize(out, new_sizes);
@@ -257,6 +300,7 @@ void resize_q8ta_conv2d_pw_im2col_node(
 
 void add_q8ta_conv2d_pw_node(
     ComputeGraph& graph,
+    const bool use_unsigned_dot,
     const ValueRef packed_int8_input,
     const ValueRef input_scale,
     const ValueRef input_zp,
@@ -274,7 +318,10 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef kernel_size,
     const ValueRef stride,
     const ValueRef padding,
-    const ValueRef dilation) {
+    const ValueRef dilation,
+    const bool is_im2col,
+    const ValueRef stream_row_offset_ref,
+    const ValueRef max_im2col_rows_ref) {
   VK_CHECK_COND(q8ta_conv2d_check_4w4c_packed_dim_info(
       graph.packed_dim_info_of(packed_int8_input)));
   VK_CHECK_COND(q8ta_conv2d_check_packed_dim_info(
@@ -300,6 +347,16 @@ void add_q8ta_conv2d_pw_node(
   int32_t output_zp_val = graph.extract_scalar<int32_t>(output_zp);
 
   uint32_t apply_bias = graph.val_is_none(bias_data) ? 0u : 1u;
+  // The tile offset lives in the graph scalar; re-extract it here so the
+  // shader push constant and the grid picker read one value. Standalone
+  // dispatches have no tile and push 0.
+  int32_t stream_row_offset = 0;
+  if (is_im2col) {
+    VK_CHECK_COND(stream_row_offset_ref != kDummyValueRef);
+    VK_CHECK_COND(max_im2col_rows_ref != kDummyValueRef);
+    stream_row_offset = utils::safe_downcast<int32_t>(
+        graph.extract_scalar<int64_t>(stream_row_offset_ref));
+  }
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&input_scale_val, sizeof(input_scale_val)),
       PushConstantDataInfo(&input_zp_val, sizeof(input_zp_val)),
@@ -307,12 +364,35 @@ void add_q8ta_conv2d_pw_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
       PushConstantDataInfo(&K4_per_group, sizeof(K4_per_group)),
       PushConstantDataInfo(&OC4_per_group, sizeof(OC4_per_group)),
+      PushConstantDataInfo(&stream_row_offset, sizeof(stream_row_offset)),
   };
+
+  // The im2col path consumes one flat scratch tile per dispatch; the
+  // standalone 1x1 path reads its batched activation input directly. The
+  // addressing is selected by spec constant, so both share one shader.
+  const uint32_t use_flat_tile = is_im2col ? 1u : 0u;
 
   const bool use_hw_dot =
       graph.context()->adapter_ptr()->supports_int8_dot_product();
-  std::string kernel_name =
-      use_hw_dot ? "q8ta_conv2d_pw" : "q8ta_conv2d_pw_fallback";
+  std::string kernel_name;
+  if (use_unsigned_dot) {
+    VK_CHECK_COND(
+        use_hw_dot,
+        "Unsigned q8ta pointwise convolution requires integer dot product");
+    kernel_name = "q8ta_conv2d_pw_unsigned";
+    if (graph.storage_type_of(packed_weight) == utils::kBuffer) {
+      kernel_name += "_buffer";
+    }
+  } else {
+    kernel_name = use_hw_dot ? "q8ta_conv2d_pw" : "q8ta_conv2d_pw_fallback";
+  }
+  if (!use_unsigned_dot) {
+    // Signed PW kernels are only codegen'd for texture weights; a buffer
+    // weight here would fail kernel lookup at dispatch, so fail fast.
+    VK_CHECK_COND(
+        graph.storage_type_of(packed_weight) != utils::kBuffer,
+        "Signed q8ta pointwise convolution requires texture weights");
+  }
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   vkapi::ParamsBindList param_buffers = {
@@ -324,6 +404,8 @@ void add_q8ta_conv2d_pw_node(
       activation_type,
       graph.hashed_layout_of(packed_int8_output),
       graph.hashed_layout_of(packed_int8_input),
+      // Appended last to match the use_flat_tile declaration order.
+      use_flat_tile,
   };
 
   // The im2col path passes the original activation + conv geometry so the
@@ -333,18 +415,28 @@ void add_q8ta_conv2d_pw_node(
   // output matches directly.
   std::vector<ValueRef> resize_args;
   ExecuteNode::ResizeFunction resize_fn;
-  if (conv_input == kDummyValueRef) {
+  if (!is_im2col) {
     resize_args = {packed_int8_input};
     resize_fn = resize_q8ta_conv2d_pw_node;
   } else {
-    resize_args = {conv_input, kernel_size, stride, padding, dilation};
+    resize_args = {
+        conv_input,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        stream_row_offset_ref,
+        max_im2col_rows_ref};
     resize_fn = resize_q8ta_conv2d_pw_im2col_node;
   }
+
+  const auto pick_gwg =
+      is_im2col ? pick_q8ta_conv2d_pw_streaming_gwg : pick_q8ta_conv2d_pw_gwg;
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_pw_gwg,
+      pick_gwg,
       pick_q8ta_conv2d_pw_lwg,
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -364,7 +456,18 @@ void add_q8ta_conv2d_pw_node(
 // High level operator impl
 //
 
-void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+bool can_use_unsigned_pw_dot(
+    const vkapi::Adapter& adapter,
+    const int64_t k_per_group) {
+  return adapter.accelerates_unsigned_packed4x8_dot() &&
+      !adapter.accelerates_signed_packed4x8_dot() &&
+      k_per_group <= kMaxUnsignedDotAccumulatorBytes;
+}
+
+void q8ta_conv2d_pw_impl(
+    ComputeGraph& graph,
+    const bool use_unsigned_dot,
+    const std::vector<ValueRef>& args) {
   int32_t idx = 0;
   const ValueRef packed_int8_input = args.at(idx++);
   const ValueRef input_scale = args.at(idx++);
@@ -385,6 +488,12 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef activation_ref = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
 
+  VK_CHECK_COND(
+      !use_unsigned_dot ||
+          graph.size_at<int64_t>(-1, weight_data) <=
+              kMaxUnsignedDotAccumulatorBytes,
+      "Unsigned q8ta pointwise convolution exceeds the accumulator bound");
+
   uint32_t activation_type_val = static_cast<uint32_t>(
       activation_type_from_string(graph.extract_string(activation_ref)));
 
@@ -396,7 +505,8 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       weight_quant_config,
       weight_data,
       packed_int8_input,
-      packed_int8_output);
+      packed_int8_output,
+      use_unsigned_dot);
 
   ValueRef packed_weight_sums = prepack_standard(
       graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
@@ -422,6 +532,7 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   add_q8ta_conv2d_pw_node(
       graph,
+      use_unsigned_dot,
       packed_int8_input,
       input_scale,
       input_zp,
@@ -434,6 +545,14 @@ void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       packed_bias,
       activation_type_val,
       packed_int8_output);
+}
+
+void q8ta_conv2d_pw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  const vkapi::Adapter* const adapter = graph.context()->adapter_ptr();
+  const ValueRef weight_data = args.at(3);
+  const int64_t k_per_group = graph.size_at<int64_t>(-1, weight_data);
+  const bool use_unsigned_dot = can_use_unsigned_pw_dot(*adapter, k_per_group);
+  q8ta_conv2d_pw_impl(graph, use_unsigned_dot, args);
 }
 
 REGISTER_OPERATORS {

@@ -10,10 +10,13 @@
 
 #include <xnnpack.h>
 
+#include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <array>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -51,6 +54,13 @@ struct PackedDataMeta {
   // packed weights to a newer ukernel.
   uint32_t seed{0};
 };
+
+// Telemetry types live in XNNPACKBackend.h — hosts read them without pulling
+// in xnnpack.h through this header.
+using xnnpack::PackedCacheFailure;
+using xnnpack::PackedCacheHeapReason;
+using xnnpack::PackedCacheState;
+using xnnpack::PackedCacheStats;
 
 class XNNWeightsCache {
  public:
@@ -162,7 +172,50 @@ class XNNWeightsCache {
     return instance_mutex_;
   }
 
+  /**
+   * Outcome of the file-backed path for this instance. HeapFallback is
+   * sticky: once an init has been served from heap the instance keeps
+   * reporting it, because that is the memory the process is actually
+   * carrying for the rest of its life.
+   */
+  PackedCacheStats stats() const noexcept;
+
  private:
+  /** Record a fallback. Overwrites any previous failure for this instance. */
+  void record_cache_failure(PackedCacheFailure failure, int err) noexcept;
+  /** Note a working file-backed path; never downgrades a recorded fallback. */
+  void mark_cache_file_backed() noexcept;
+  /** Attribute `n` packed bytes to heap under `reason`. */
+  void record_heap_alloc(size_t n, PackedCacheHeapReason reason) noexcept;
+  /** Attribute `n` packed bytes to the mmap'd file. */
+  void record_mapped_alloc(size_t n) noexcept;
+
+  // Telemetry counters. Written from the XNNPACK callbacks (which run under
+  // the caller-held instance mutex) and read by hosts through
+  // XNNWeightsCacheManager::aggregate_stats() with no lock at all — atomics,
+  // not the mutex, are what make that read safe. The mutex is held across the
+  // whole of xnn_create_runtime, so a telemetry read that waited on it could
+  // stall an inference thread for the length of a model compile.
+  //
+  // relaxed ordering throughout: these are independent accumulators, and a
+  // reader that observes one field slightly ahead of another still gets a
+  // usable picture. There is no invariant spanning them.
+  //
+  // Cumulative for the instance's lifetime — delete_packed_data and
+  // full_unload do not decrement. Decrementing would need a ptr -> reason map
+  // kept alive purely for telemetry, and hosts sample right after a load or a
+  // generate, before anything is released, so the two agree in practice.
+  // Read them as "bytes this cache ever packed", not current residency.
+  std::atomic<int32_t> state_{static_cast<int32_t>(PackedCacheState::Disabled)};
+  std::atomic<int32_t> failure_{static_cast<int32_t>(PackedCacheFailure::None)};
+  std::atomic<int32_t> last_errno_{0};
+  std::atomic<int64_t> file_bytes_{0};
+  std::atomic<int64_t> mapped_bytes_{0};
+  std::array<
+      std::atomic<int64_t>,
+      static_cast<std::size_t>(PackedCacheHeapReason::Count)>
+      heap_bytes_by_reason_{};
+
   static constexpr uint32_t kCacheMagic = 0x58505743; // "XPWC"
   // Bump when the on-disk layout (footer or per-entry record) changes.
   // v2: per-entry seed added — old v1 files don't carry seeds and would

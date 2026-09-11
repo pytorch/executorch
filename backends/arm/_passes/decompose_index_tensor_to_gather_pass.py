@@ -10,7 +10,11 @@ from typing import Sequence, Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
-from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_param_tensor,
+    is_param_node,
+    meta_without_qparams,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -20,12 +24,13 @@ from executorch.backends.arm._passes.convert_squeezes_to_view import (
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
     ReplaceScalarWithTensorByProfilePass,
 )
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
 def get_index_tensor_decomposition(op):
-    """Return the operator overloads used to lower index.Tensor via TOSA gather.
+    """Return operators used to lower index.Tensor through TOSA gather.
 
     Raises:
         RuntimeError: If the provided operator is not supported by this pass.
@@ -48,12 +53,12 @@ def get_index_tensor_decomposition(op):
 def _broadcast_shape(
     shapes: Sequence[Sequence[int]],
 ) -> list[int]:
-    """Compute the broadcasted shape (PyTorch/Numpy semantics) for a list of
-    shapes.
+    """Compute the broadcasted shape using PyTorch/NumPy semantics.
 
     Requirements:
       - static shape only
-      - shapes are right-aligned; lower-rank shapes are implicitly front-padded with 1s
+      - shapes are right-aligned; lower-rank shapes are implicitly
+        front-padded with 1s
       - per-axis dims must either match exactly or be 1
 
     Raises:
@@ -76,86 +81,121 @@ def _broadcast_shape(
 
 
 class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
-    """Decompose edge.aten.index.Tensor into backend TOSA gather (+ basic
-    arith).
+    """Decompose edge.aten.index.Tensor into a TOSA gather and arithmetic.
 
     Supported subset:
-      y = x.index([i0, i1, ..., i{m-1}])
+      y = x.index([None, ..., None, i0, i1, ..., i{m-1}])
 
-    where each ik is a Tensor index, and m is the number of index tensors.
+    where each ik is a Tensor index, m is the number of index tensors, and the
+    optional leading None entries preserve dimensions before the indexed block.
 
     Constraints:
-      - `indices` list contains only Tensor indices (no None/slice/ellipsis)
+      - `indices` contains an optional leading run of None entries followed by
+        only Tensor indices
       - Each index tensor dtype is int32
-      - Index tensor shapes are broadcastable to a common shape `S` (per index.Tensor semantics)
-      - Only prefix indexing is supported: the `m` tensor indices select elements
-            from the first `m` dimensions of `x`, so `m <= rank(x)`.
+      - Index tensor shapes are broadcastable to a common shape `S` (per
+        index.Tensor semantics)
+      - The `m` tensor indices select one contiguous block of dimensions after
+        the leading preserved dimensions.
       - Static shapes are required
-      - If `x` has more than 2^31 elements, the computed linear index may overflow int32.
+      - If `x` has more than 2^31 elements, the computed linear index may
+        overflow int32.
 
     Lowering strategy (single gather)
     ---------------------------------
     Let:
+      - `p` be the number of leading None entries
       - `S` be the broadcasted index shape
       - `W = prod(S)` (number of indexed positions)
-      - `K = prod(x.shape[:m])` (flattened size of the indexed prefix)
-      - `C = prod(x.shape[m:])` (flattened size of the trailing slice per index)
-      - `trailing = x.shape[m:]`
+      - `P = prod(x.shape[:p])` (flattened size of the leading preserved
+        dimensions)
+      - `K = prod(x.shape[p:p+m])` (flattened size of the indexed block)
+      - `C = prod(x.shape[p+m:])` (flattened size of the trailing slice per
+        index)
+      - `leading = x.shape[:p]` and `trailing = x.shape[p+m:]`
 
     Steps:
     1) Compute parameters needed to lower index.Tensor
-         - `S`, `W`, `K`, `C`, `trailing`
-         - `lin_scales[i] = stride_i // C`, where `stride_i` are the contiguous-style
-           strides derived from `x.shape` (for dim i).
-    2) Reshape x to `[1, K, C]` (`x_1kc`).
-    3) Build linear indices (`lin_1w`) by scaling each flattened index and summing:
-         lin_1w = unsqueeze0( sum_{i=0..m-1} ( idx_flat[i] * lin_scales[i] ) )
-       where:
-         - `m = len(indices)`
-         - `idx_flat[i]` is the i-th index tensor after broadcast to `S` and flatten to `[W]`
-         - `lin_1w` has shape `[1, W]` and is used as the `indices` input to `tosa.GATHER`
-    4) Single gather:
-         `tosa.GATHER(x=x_1kc, indices=lin_1w) -> [1,W,C]`
-    5) Reshape result to `[*S, *trailing]`.
+         - `S`, `W`, `P`, `K`, `C`, `leading`, `trailing`
+         - `lin_scales` as the contiguous strides of the indexed block
+           `x.shape[p:p+m]`.
+    2) Reshape x to `[P, K, C]` (`x_pkc`).
+    3) Build linear indices by scaling and accumulating the flattened index
+       tensors element-wise:
+         For each tensor index, broadcast it to `S`, then flatten it:
 
-    Example
-    -------
+           idx_broadcast[i] = broadcast_to(indices[p + i], S)
+           idx_flat[i] = reshape(idx_broadcast[i], [W])
+
+         For each j in [0, W):
+
+           lin_w[j] =
+               sum_{i=0..m-1} idx_flat[i][j] * lin_scales[i]
+
+         Equivalently, in tensor notation:
+
+           lin_w =
+               sum_{i=0..m-1} idx_flat[i] * lin_scales[i]  # shape [W]
+
+         Then:
+
+           lin_1w = unsqueeze(lin_w, 0)                    # [1, W]
+           lin_pw = lin_1w
+           if P > 1:
+               lin_pw = expand(lin_1w, [P, W])             # [P, W]
+    4) Single gather:
+         `tosa.GATHER(x=x_pkc, indices=lin_pw) -> [P,W,C]`
+    5) Reshape result to `[*leading, *S, *trailing]`.
+
+    Example:
     Consider:
-        x.shape = [2, 3, 4]
-        indices = [i0, i1]   # m = 2
+        x.shape = [2, 3, 4, 5]
+        indices = [None, i0, i1]   # p = 1, m = 2
         i0.shape = [2, 1]
         i1.shape = [1, 2]
+
+    This corresponds to ``x[:, i0, i1, :]``: the first dimension is
+    preserved, the next two dimensions are indexed, and the last dimension is
+    trailing.
 
     1) The index shapes broadcast to:
         S := [2, 2]
         W := prod(S) = 4
 
-    We index the first m=2 dimensions of x, so:
-        K := prod(x.shape[:m]) = 2 * 3 = 6
-        C := prod(x.shape[m:]) = 4
-        trailing := x.shape[m:] = [4]
+    We preserve p=1 leading dimension and index the next m=2 dimensions:
+        leading := x.shape[:p] = [2]
+        trailing := x.shape[p+m:] = [5]
+        P := prod(leading) = 2
+        K := prod(x.shape[p:p+m]) = 3 * 4 = 12
+        C := prod(trailing) = 5
 
-    Contiguous strides of x are [12, 4, 1], so:
-        lin_scales := [stride0 // C, stride1 // C] = [12//4, 4//4] = [3, 1]
+    The indexed block has shape [3, 4], so its contiguous strides are:
+        lin_scales := [4, 1]
 
     2) Values are reshaped to:
-        x_1kc = view(x, [1, K, C]) = [1, 6, 4]
+        x_pkc = view(x, [P, K, C]) = [2, 12, 5]
 
     3) After broadcasting and flattening the indices to length W:
         i0_broadcast, i1_broadcast have shape S=[2,2]
         i0_flat, i1_flat have shape [W]=[4]
 
-    Linear indices are computed as:
-        lin_w
-            = lin_scales * [i0_flat, i1_flat]
-            = 3 * i0_flat + 1 * i1_flat          # shape [W]
-        lin_w is reshaped to [1, W] to match tosa.Gather semantics
+    Linear indices are computed element-wise as:
+        for each j in [0, W):
+
+            lin_w[j] = 4 * i0_flat[j] + i1_flat[j]
+
+        hence:
+
+            lin_w = 4 * i0_flat + i1_flat  # shape [W]
+
+        lin_w is then unsqueezed to [1, W] and expanded so that
+        lin_pw.shape = [P, W] = [2, 4].
 
     4) Single Gather:
-        out_1wc = tosa.GATHER(values=x_1kc, indices=lin_1w)  # [1, 4, 4]
+        out_pwc = tosa.GATHER(values=x_pkc, indices=lin_pw)  # [2, 4, 5]
 
     5) Reshape result:
-        out = view(out_1wc, [*S, *x.shape[m:]])              # [2, 2, 4]
+        out = view(out_pwc, [*leading, *S, *trailing])       # [2, 2, 2, 5]
 
     """
 
@@ -169,6 +209,12 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
         exir_ops.edge.aten.index.Tensor,
     }
 
+    def __init__(
+        self, exported_program: ExportedProgram | None = None, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.exported_program = exported_program
+
     @staticmethod
     def _shape_to_stride(
         values_shape: Sequence[int],
@@ -181,69 +227,140 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
         return strides
 
     @staticmethod
-    def _validate_tensor_indices(indices):
+    def _validate_and_split_indices(indices):
         assert (
             isinstance(indices, (list, tuple)) and len(indices) > 0
         ), f"index.Tensor expects non-empty indices list/tuple, got {type(indices)}."
 
-        for i, idx in enumerate(indices):
-            assert (
-                idx is not None
-            ), f"index.Tensor: None indices are not supported at the moment (indices[{i}] is None)."
+        leading_rank = 0
+        while leading_rank < len(indices) and indices[leading_rank] is None:
+            leading_rank += 1
+
+        tensor_indices = indices[leading_rank:]
+        assert tensor_indices, "index.Tensor expects at least one tensor index."
+        for i, idx in enumerate(tensor_indices, start=leading_rank):
+            assert idx is not None, (
+                "index.Tensor supports None entries only before all tensor indices "
+                f"(indices[{i}] is None)."
+            )
             assert (
                 idx.data.dtype == torch.int32
             ), "index.Tensor requires index dtype must be int32"
 
-    def _compute_index_tensor_params(self, x, m, index_shapes):
-        """Compute shape/stride-derived parameters needed to lower
-        edge.aten.index.Tensor.
+        return leading_rank, tensor_indices
 
-        Derives the broadcasted index shape and the scale factors used to flatten and
-        acculumulate multi-dimensional indices into a single gather index, following
-        the S/W/K/C notation described in the class docstring.
+    def _compute_index_tensor_params(self, x, leading_rank, m, index_shapes):
+        """Compute parameters needed to lower edge.aten.index.Tensor.
+
+        Derives the broadcasted index shape and the scale factors used to
+        flatten and accumulate multi-dimensional indices into a single gather
+        index, following the S/W/P/K/C notation described in the class
+        docstring.
 
         Args:
-          x: Values tensor being indexed.
-          m: Number of tensor indices (i.e., len(indices)).
-          index_shapes: Shapes corresponding to each tensor index.
+            x (ProxyValue): Values tensor being indexed.
+            leading_rank (int): Number of leading dimensions preserved by None
+                entries.
+            m (int): Number of tensor indices.
+            index_shapes (Sequence[Sequence[int]]): Shapes corresponding to
+                each tensor index.
 
         Returns:
-          (x_data, S, W, K, C, trailing, lin_scales), where:
-            - x_data is `x.data` (FakeTensor)
-            - trailing is `x.shape[m:]` as a list of ints
-            - lin_scales are per-dimension scale factors for linearization
+            tuple: `(x_data, S, W, P, K, C, leading, trailing, lin_scales)`,
+                where `x_data` is `x.data`, `leading` and `trailing` contain
+                the preserved dimensions, and `lin_scales` contains the
+                indexed-block strides used for linearization.
 
         """
-
         x_data = x.data  # FakeTensor
         x_shape = tuple(x_data.shape)
         x_rank = len(x_shape)
 
         assert x_rank >= 1, f"index.Tensor expects x rank>=1, got {x_shape}."
-        assert (
-            m <= x_rank
-        ), f"index.Tensor has too many indices ({m}) for x rank {x_rank}."
+        assert leading_rank + m <= x_rank, (
+            "index.Tensor has more preserved and indexed dimensions "
+            f"({leading_rank + m}) than the input rank ({x_rank})."
+        )
 
         # Broadcast shape S for indices, and flattened length W
         S = _broadcast_shape(index_shapes)
         W = math.prod(S) if S else 1
 
-        # Compute gather factors K and C for leading-dims indexing
-        leading = list(x_shape[:m])
-        trailing = list(x_shape[m:])
-        K = math.prod(leading) if leading else 1
+        # Compute gather factors for the preserved, indexed, and trailing blocks.
+        leading = list(x_shape[:leading_rank])
+        indexed = list(x_shape[leading_rank : leading_rank + m])
+        trailing = list(x_shape[leading_rank + m :])
+        P = math.prod(leading) if leading else 1
+        K = math.prod(indexed) if indexed else 1
         C = math.prod(trailing) if trailing else 1
 
-        # Strides for linearization (contiguous-style)
-        strides = self._shape_to_stride(x_shape)
+        lin_scales = self._shape_to_stride(indexed)
 
-        # Stride/C divisibility is guaranteed for contiguous strides and C=prod(trailing).
-        lin_scales: list[int] = []
-        for i in range(m):
-            stride = strides[i]
-            lin_scales.append(stride // C)
+        return x_data, S, W, P, K, C, leading, trailing, lin_scales
 
-        return x_data, S, W, K, C, trailing, lin_scales
+    def _decompose_constant_index(self, x, indices, meta):
+        tensor_indices = [
+            (dim, index) for dim, index in enumerate(indices) if index is not None
+        ]
+        if (
+            self.exported_program is None
+            or len(tensor_indices) != 1
+            or any(not isinstance(size, int) for size in x.data.shape)
+        ):
+            return None
+
+        indexed_dim, index_tensor = tensor_indices[0]
+        if not is_param_node(self.exported_program, index_tensor.node):
+            return None
+
+        constant_index = get_param_tensor(self.exported_program, index_tensor.node)
+        if (
+            constant_index is None
+            or constant_index.dim() != 1
+            or constant_index.numel() == 0
+        ):
+            return None
+
+        indexed_dim_size = x.data.shape[indexed_dim]
+        index_values = []
+        for value in constant_index.tolist():
+            normalized_value = value if value >= 0 else value + indexed_dim_size
+            if normalized_value < 0 or normalized_value >= indexed_dim_size:
+                raise IndexError(
+                    f"index {value} is out of bounds for dimension {indexed_dim} "
+                    f"with size {indexed_dim_size}"
+                )
+            index_values.append(normalized_value)
+
+        if index_values == list(
+            range(index_values[0], index_values[0] + len(index_values))
+        ):
+            return super().call_operator(
+                exir_ops.edge.aten.slice_copy.Tensor,
+                (x, indexed_dim, index_values[0], index_values[-1] + 1),
+                {},
+                meta,
+                updated=True,
+            )
+
+        slices = []
+        for index_value in index_values:
+            slices.append(
+                super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (x, indexed_dim, index_value, index_value + 1),
+                    {},
+                    meta,
+                    updated=True,
+                )
+            )
+        return super().call_operator(
+            exir_ops.edge.aten.cat.default,
+            (slices, indexed_dim),
+            {},
+            meta,
+            updated=True,
+        )
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
@@ -255,13 +372,32 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
 
         x, indices = args
 
-        self._validate_tensor_indices(indices)
+        tensor_indices = [index for index in indices if index is not None]
+        if len(tensor_indices) == 1 and tensor_indices[0].data.dtype in (
+            torch.bool,
+            torch.uint8,
+        ):
+            return super().call_operator(op, args, kwargs, meta)
+
+        constant_result = self._decompose_constant_index(x, indices, meta)
+        if constant_result is not None:
+            return constant_result
+
+        leading_rank, indices = self._validate_and_split_indices(indices)
         index_shapes = [idx.data.shape for idx in indices]
         m = len(indices)
 
-        x_data, S, W, K, C, trailing, lin_scales = self._compute_index_tensor_params(
-            x, m, index_shapes
-        )
+        (
+            x_data,
+            S,
+            W,
+            P,
+            K,
+            C,
+            leading,
+            trailing,
+            lin_scales,
+        ) = self._compute_index_tensor_params(x, leading_rank, m, index_shapes)
 
         (
             view_op,
@@ -285,16 +421,16 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
                 updated=True,
             )
 
-        # ---- x: [1, K, C] ----
-        x_1kc = super().call_operator(
+        # ---- x: [P, K, C] ----
+        x_pkc = super().call_operator(
             view_op,
-            (x_for_gather, [1, K, C]),
+            (x_for_gather, [P, K, C]),
             {},
             meta,
             updated=True,
         )
 
-        # Build linear index [1, W] from broadcasted indices
+        # Build linear index [W] from broadcasted indices
         lin_w = None
         plain_meta = meta_without_qparams(meta)
         for i, idx in enumerate(indices):
@@ -341,7 +477,7 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
                 updated=True,
             )
 
-            # Accumulate into lin_1w: [1, W]
+            # Accumulate into lin_w: [W]
             if lin_w is None:
                 lin_w = idx_scaled
             else:
@@ -355,10 +491,10 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
 
         if lin_w is None:
             raise RuntimeError(
-                f"[{self.__class__.__name__}] internal error: lin_1w not constructed."
+                f"[{self.__class__.__name__}] internal error: lin_w not constructed."
             )
 
-        # Make indices shape [1, W] for tosa.GATHER
+        # Make indices shape [P, W] for tosa.GATHER.
         lin_1w = super().call_operator(
             unsqueeze_op,
             (lin_w, 0),
@@ -366,22 +502,31 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
             plain_meta,
             updated=True,
         )
+        lin_pw = lin_1w
+        if P > 1:
+            lin_pw = super().call_operator(
+                expand_op,
+                (lin_1w, [P, W]),
+                {},
+                plain_meta,
+                updated=True,
+            )
 
         # ---- backend tosa gather ---
-        # tosa.GATHER(x=[1,K,C], indices=[1,W]) -> [1,W,C]
-        gathered_1wc = super().call_operator(
+        # tosa.GATHER(x=[P,K,C], indices=[P,W]) -> [P,W,C]
+        gathered_pwc = super().call_operator(
             tosa_gather_op,
-            (x_1kc, lin_1w),
+            (x_pkc, lin_pw),
             {},
             meta,
             updated=True,
         )
 
-        # ---- output: [*S, *trailing] ----
-        out_shape = list(S) + list(trailing)
+        # ---- output: [*leading, *S, *trailing] ----
+        out_shape = list(leading) + list(S) + list(trailing)
         out = super().call_operator(
             view_op,
-            (gathered_1wc, out_shape),
+            (gathered_pwc, out_shape),
             {},
             meta,
             updated=True,

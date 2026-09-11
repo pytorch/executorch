@@ -14,6 +14,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.utils import normalize_symint
 
@@ -32,8 +33,10 @@ class TosaConstShapeVisitor(NodeVisitor):
         shape_input = inputs[0].special
         rank = len(shape_input)
         vals = normalize_symint(node.meta["val"])
-        tosa_graph = cast(ts.TosaSerializer, tosa_graph)
-        tosa_graph.addConst(
+        tosa_graph = cast(TosaSerializerWithConstantPool, tosa_graph)
+        # Downstream visitors reference this FX output by name. Pooling it with a
+        # serializer-generated constant could leave output.name undefined.
+        tosa_graph.addUnpooledConst(
             [
                 rank,
             ],

@@ -12,7 +12,6 @@
 #import "ExecuTorchBackendOptionsMap+Internal.h"
 #import "ExecuTorchBackendOptionsMap.h"
 #import "ExecuTorchError.h"
-#import "ExecuTorchEventTracer+Internal.h"
 #import "ExecuTorchUtils.h"
 
 #import <executorch/extension/module/module.h>
@@ -330,7 +329,10 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value)
     // Taking it empties the handle, so a tracer handed to a second module would
     // yield nothing and that module would run and record silently into nowhere.
     // Catch it here rather than letting it surface as an empty profile.
-    auto cppTracer = [eventTracer takeCppTracer];
+    auto *cppTracerPtr = reinterpret_cast<std::unique_ptr<EventTracer> *>(
+        eventTracer.nativeInstance);
+    ET_CHECK(cppTracerPtr);
+    auto cppTracer = std::move(*cppTracerPtr);
     NSAssert(cppTracer != nullptr,
              @"This event tracer was already given to another module. Create one "
              @"tracer per module.");

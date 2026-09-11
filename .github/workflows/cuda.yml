@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 13.0) using the command:
+# across different CUDA versions (12.6, 13.0, 13.4) using the command:
 #   ./install_executorch.sh
 # 
 # Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
@@ -64,10 +64,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "13.0"]
+        cuda-version: ["12.6", "13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@c3c4c4d48e97dbaaabd9b65496afd8c8d8dad713
     permissions:
       id-token: write
       contents: read
@@ -76,14 +76,19 @@ jobs:
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: ${{ matrix.cuda-version }}
+      test-infra-ref: c3c4c4d48e97dbaaabd9b65496afd8c8d8dad713
+      driver-version: ${{ matrix.cuda-version == '13.4' && '615.71.09' || '580.65.06' }}
+      driver-download-url: ${{ matrix.cuda-version == '13.4' && 'https://download.nvidia.com/XFree86/Linux-x86_64/615.71.09/NVIDIA-Linux-x86_64-615.71.09.run' || '' }}
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
-        # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
-        # and install the appropriate PyTorch wheel
+        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
+          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
+          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        fi
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -112,7 +117,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 13.0) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds completed successfully!"
           fi
 
   test-models-cuda:
@@ -160,7 +165,7 @@ jobs:
         done
 
   export-cuda-target-smem-cross-arch:
-    name: export-cuda-target-smem-cross-arch-a100
+    name: export-cuda-multi-arch-a100
     needs: [changed-files, run-decision]
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
@@ -178,15 +183,13 @@ jobs:
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: cuda-target-smem-cross-arch
+      upload-artifact: cuda-multi-arch-a100
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
         PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-        # A10G (sm_86) supports 99 KiB of opt-in shared memory per block.
-        export ET_CUDA_TARGET_SMEM_BYTES=101376
         # The A100 exporter has an AVX-512 host CPU while the A10G runner has
         # AVX2. Keep the generated AOTI host wrapper compatible with both.
         export ATEN_CPU_CAPABILITY=avx2
@@ -199,16 +202,33 @@ jobs:
         assert capability == (8, 0), f"Expected A100 sm_80 exporter, got {capability}"
         PY
 
-        for model in linear sdpa; do
-          model_dir="${RUNNER_ARTIFACT_DIR}/${model}"
-          mkdir -p "${model_dir}"
+        # Export an sm80 native PTE with no PTX. This artifact must fail on the
+        # A10G because its metadata has neither an sm86 native variant nor PTX.
+        model_dir="${RUNNER_ARTIFACT_DIR}/native-sm80/linear"
+        mkdir -p "${model_dir}"
+        TORCHINDUCTOR_CACHE_DIR="${RUNNER_TEMP}/inductor-native-sm80" \
           python -m examples.cuda.scripts.export \
+            --model_name=linear \
+            --output_dir="${model_dir}" \
+            --cuda_include_ptx=OFF \
+            --seed=0
+
+        # Export the explicit PTX fallback separately. A10G supports 99 KiB of
+        # opt-in shared memory per block, so constrain the A100 export to it.
+        for model in linear sdpa; do
+          model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
+          mkdir -p "${model_dir}"
+          ET_CUDA_TARGET_SMEM_BYTES=101376 \
+          TORCHINDUCTOR_CACHE_DIR="${RUNNER_TEMP}/inductor-fallback-sm80-${model}" \
+            python -m examples.cuda.scripts.export \
             --model_name="${model}" \
-            --output_dir "${model_dir}"
+            --output_dir="${model_dir}" \
+            --cuda_include_ptx=ON \
+            --seed=0
         done
 
   test-cuda-target-smem-cross-arch:
-    name: test-cuda-target-smem-cross-arch-a10g
+    name: merge-and-test-cuda-multi-arch-a10g
     needs: [export-cuda-target-smem-cross-arch]
     if: needs.export-cuda-target-smem-cross-arch.result == 'success'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -222,7 +242,8 @@ jobs:
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
-      download-artifact: cuda-target-smem-cross-arch
+      download-artifact: cuda-multi-arch-a100
+      upload-artifact: cuda-multi-arch-merged
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -243,19 +264,140 @@ jobs:
         )
         PY
 
+        # Independently export an sm86 native PTE with no PTX. A fixed seed
+        # makes its external weights byte-identical to both A100 exports.
+        model_dir="${RUNNER_ARTIFACT_DIR}/native-sm86/linear"
+        mkdir -p "${model_dir}"
+        TORCHINDUCTOR_CACHE_DIR="${RUNNER_TEMP}/inductor-native-sm86" \
+          python -m examples.cuda.scripts.export \
+            --model_name=linear \
+            --output_dir="${model_dir}" \
+            --cuda_include_ptx=OFF \
+            --seed=0
+
+        sm80_ptd="${RUNNER_ARTIFACT_DIR}/native-sm80/linear/aoti_cuda_blob.ptd"
+        sm86_ptd="${RUNNER_ARTIFACT_DIR}/native-sm86/linear/aoti_cuda_blob.ptd"
+        fallback_ptd="${RUNNER_ARTIFACT_DIR}/fallback-sm80/linear/aoti_cuda_blob.ptd"
+        cmp "${sm80_ptd}" "${sm86_ptd}"
+        cmp "${sm80_ptd}" "${fallback_ptd}"
+        sha256sum "${sm80_ptd}" "${sm86_ptd}" "${fallback_ptd}"
+
+        merged_dir="${RUNNER_ARTIFACT_DIR}/merged"
+        mkdir -p "${merged_dir}"
+        python -m executorch.backends.cuda.merge_ptes \
+          --input-pte "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
+          --input-pte "${RUNNER_ARTIFACT_DIR}/native-sm86/linear/linear.pte" \
+          --input-ptd "${sm80_ptd}" \
+          --input-ptd "${sm86_ptd}" \
+          --fallback-pte "${RUNNER_ARTIFACT_DIR}/fallback-sm80/linear/linear.pte" \
+          --fallback-ptd "${fallback_ptd}" \
+          --output-pte "${merged_dir}/linear.pte" \
+          --output-ptd "${merged_dir}/aoti_cuda_blob.ptd" \
+          | tee "${merged_dir}/provenance.txt"
+        cmp "${sm80_ptd}" "${merged_dir}/aoti_cuda_blob.ptd"
+
         cmake -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_CUDA=ON \
             -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_ENABLE_LOGGING=ON \
             -DPYTHON_EXECUTABLE=python \
             -Bcmake-out .
         cmake --build cmake-out --target executor_runner -j4
 
         for model in linear sdpa; do
-          model_dir="${RUNNER_ARTIFACT_DIR}/${model}"
+          model_dir="${RUNNER_ARTIFACT_DIR}/fallback-sm80/${model}"
           ./cmake-out/executor_runner \
             --model_path "${model_dir}/${model}.pte" \
             --data_path "${model_dir}/aoti_cuda_blob.ptd"
         done
+
+        # The local native PTE and merged PTE must run on sm86.
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm86/linear/linear.pte" \
+          --data_path "${sm86_ptd}"
+        ./cmake-out/executor_runner \
+          --model_path "${merged_dir}/linear.pte" \
+          --data_path "${merged_dir}/aoti_cuda_blob.ptd"
+
+        # The sm80 native-only PTE must be rejected on sm86.
+        set +e
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
+          --data_path "${sm80_ptd}" \
+          >"${RUNNER_ARTIFACT_DIR}/native-sm80-on-sm86.log" 2>&1
+        native_status=$?
+        set -e
+        cat "${RUNNER_ARTIFACT_DIR}/native-sm80-on-sm86.log"
+        test "${native_status}" -ne 0
+        grep -q "no native or PTX variant compatible with sm86" \
+          "${RUNNER_ARTIFACT_DIR}/native-sm80-on-sm86.log"
+
+  test-cuda-merged-pte-a100:
+    name: test-cuda-merged-pte-a100
+    needs: [test-cuda-target-smem-cross-arch]
+    if: needs.test-cuda-target-smem-cross-arch.result == 'success'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: mt-l-x86iavx512-11-125-a100
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      use-custom-docker-registry: false
+      submodules: recursive
+      download-artifact: cuda-multi-arch-merged
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
+        export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+        python - <<'PY'
+        import torch
+
+        capability = torch.cuda.get_device_capability()
+        assert capability == (8, 0), f"Expected A100 sm_80 runner, got {capability}"
+        PY
+
+        cmake -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_CUDA=ON \
+            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+            -DEXECUTORCH_ENABLE_LOGGING=ON \
+            -DPYTHON_EXECUTABLE=python \
+            -Bcmake-out .
+        cmake --build cmake-out --target executor_runner -j4
+
+        sm80_ptd="${RUNNER_ARTIFACT_DIR}/native-sm80/linear/aoti_cuda_blob.ptd"
+        sm86_ptd="${RUNNER_ARTIFACT_DIR}/native-sm86/linear/aoti_cuda_blob.ptd"
+        fallback_ptd="${RUNNER_ARTIFACT_DIR}/fallback-sm80/linear/aoti_cuda_blob.ptd"
+        merged_ptd="${RUNNER_ARTIFACT_DIR}/merged/aoti_cuda_blob.ptd"
+        cmp "${sm80_ptd}" "${sm86_ptd}"
+        cmp "${sm80_ptd}" "${fallback_ptd}"
+        cmp "${sm80_ptd}" "${merged_ptd}"
+
+        # The local native PTE and merged PTE must run on sm80.
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm80/linear/linear.pte" \
+          --data_path "${sm80_ptd}"
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/merged/linear.pte" \
+          --data_path "${merged_ptd}"
+
+        # The sm86 native-only PTE must be rejected on sm80.
+        set +e
+        ./cmake-out/executor_runner \
+          --model_path "${RUNNER_ARTIFACT_DIR}/native-sm86/linear/linear.pte" \
+          --data_path "${sm86_ptd}" \
+          >"${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log" 2>&1
+        native_status=$?
+        set -e
+        cat "${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log"
+        test "${native_status}" -ne 0
+        grep -q "no native or PTX variant compatible with sm80" \
+          "${RUNNER_ARTIFACT_DIR}/native-sm86-on-sm80.log"
 
   unittest-cuda:
     name: unittest-cuda
@@ -369,6 +511,11 @@ jobs:
         bash ./install_executorch.sh
         conda install -y -c conda-forge 'libstdcxx-ng>=12'
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        python -m pytest \
+          backends/cuda/tests/test_cuda_weight_metadata.py \
+          backends/cuda/tests/test_merge_ptes.py \
+          -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
         cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache -j$(nproc)
@@ -504,6 +651,25 @@ jobs:
               repo: "openai"
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
+        include:
+          - model:
+              repo: "google"
+              name: "gemma-3-4b-it"
+            quant: "quantized-int4-tile-packed"
+            pybind_model: "gemma3-4b"
+            pybind_quantized: true
+          - model:
+              repo: "Qwen"
+              name: "Qwen3-0.6B"
+            quant: "non-quantized"
+            pybind_model: "qwen3-0.6b"
+            pybind_quantized: false
+          - model:
+              repo: "Qwen"
+              name: "Qwen3-0.6B"
+            quant: "quantized-int4-tile-packed"
+            pybind_model: "qwen3-0.6b"
+            pybind_quantized: true
     with:
       timeout: 240
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -512,7 +678,6 @@ jobs:
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
-      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
@@ -547,10 +712,30 @@ jobs:
           echo "::endgroup::"
         fi
 
+        MODEL_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cuda_model_XXXXXX")"
         RUN_EXPORT=1 source .ci/scripts/test_model_e2e.sh cuda \
           "${{ matrix.model.repo }}/${{ matrix.model.name }}" \
           "${{ matrix.quant }}" \
-          "${RUNNER_ARTIFACT_DIR}"
+          "${MODEL_DIR}"
+
+        if [ -n "${{ matrix.pybind_model }}" ]; then
+          echo "::group::Run CUDA model with pybind"
+          conda install -y -c conda-forge 'libstdcxx-ng>=12'
+          export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+          strings /opt/conda/lib/libstdc++.so.6 | grep GLIBCXX_3.4.29
+
+          PYBIND_ARGS=()
+          if [ "${{ matrix.pybind_quantized }}" = "true" ]; then
+            PYBIND_ARGS+=(--quantize)
+          fi
+          python .ci/scripts/test_huggingface_optimum_model.py \
+            --model "${{ matrix.pybind_model }}" \
+            --recipe cuda \
+            --model_dir "${MODEL_DIR}" \
+            --run_only \
+            "${PYBIND_ARGS[@]}"
+          echo "::endgroup::"
+        fi
 
   test-muse-glimmer-cuda-e2e:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
@@ -621,96 +806,3 @@ jobs:
           "${{ matrix.variant }}" \
           "${RUNNER_TEMP}/muse_glimmer" \
           "${{ matrix.mode }}"
-
-  test-cuda-pybind:
-    name: test-cuda-pybind
-    # This job downloads models exported by test-model-cuda-e2e and runs them using pybind.
-    # Explicitly check the producer job so a skipped run (fork PR,
-    # non-sampled push, or no path match) auto-skips this job too.
-    needs: [changed-files, test-model-cuda-e2e, run-decision]
-    if: |
-      needs.test-model-cuda-e2e.result == 'success' &&
-      (
-        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
-        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
-        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
-        needs.run-decision.outputs.is-full-run == 'true'
-      )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - model: "gemma3-4b"
-            quantize: "--quantize"
-            artifact: "google-gemma-3-4b-it-cuda-quantized-int4-tile-packed"
-          - model: "qwen3-0.6b"
-            quantize: ""
-            artifact: "Qwen-Qwen3-0.6B-cuda-non-quantized"
-          - model: "qwen3-0.6b"
-            quantize: "--quantize"
-            artifact: "Qwen-Qwen3-0.6B-cuda-quantized-int4-tile-packed"
-    with:
-      timeout: 120
-      secrets-env: EXECUTORCH_HF_TOKEN
-      download-artifact: ${{ matrix.artifact }}
-      runner: linux.g5.4xlarge.nvidia.gpu
-      gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
-      submodules: recursive
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      script: |
-        set -eux
-
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
-        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
-        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
-        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
-        mkdir -p "${HF_HOME}"
-
-        echo "::group::Setup ExecuTorch"
-        # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
-        export USE_MKL=OFF
-        ./install_executorch.sh
-        echo "::endgroup::"
-
-        echo "::group::Fix libstdc++ GLIBCXX version"
-        # The embedded .so files in the CUDA blob require GLIBCXX_3.4.29
-        # which the default conda libstdc++ doesn't have. Install a newer
-        # libstdc++ from conda-forge and use it via LD_PRELOAD.
-        conda install -y -c conda-forge 'libstdcxx-ng>=12'
-        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        # Verify the new libstdc++ has GLIBCXX_3.4.29
-        strings /opt/conda/lib/libstdc++.so.6 | grep GLIBCXX_3.4.29 || {
-            echo "Error: GLIBCXX_3.4.29 not found in /opt/conda/lib/libstdc++.so.6"
-            exit 1
-        }
-        echo "::endgroup::"
-
-        echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]>=1.2.1,<2.0"
-        export HF_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
-        echo "::endgroup::"
-
-        echo "::group::Install optimum-executorch"
-        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install "optimum~=2.0.0" "transformers==5.0.0rc1"
-        pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        echo "::endgroup::"
-
-        echo "::group::Test CUDA Model: ${{ matrix.model }} ${{ matrix.quantize }}"
-        python .ci/scripts/test_huggingface_optimum_model.py \
-          --model ${{ matrix.model }} \
-          --recipe cuda \
-          --model_dir "${RUNNER_ARTIFACT_DIR}" \
-          --run_only \
-          ${{ matrix.quantize }}
-        echo "::endgroup::"

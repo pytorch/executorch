@@ -17,9 +17,10 @@ from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
 from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
+from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
-from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
+from .convert_bool_sum_pass import ConvertBoolSumPass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
@@ -74,6 +75,7 @@ from .decompose_index_tensor_to_gather_pass import (  # noqa
     DecomposeIndexTensorToGatherPass,
 )
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
+from .decompose_isinf_isnan_pass import DecomposeIsInfAndIsNanPass  # noqa
 from .decompose_large_stride_maxpool2d_pass import (  # noqa
     DecomposeLargeStrideMaxPool2dForU55Pass,
 )
@@ -91,11 +93,16 @@ from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
 from .decompose_prelu_pass import DecomposePReLUPass  # noqa
+from .decompose_prod_pass import DecomposeProdPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
+from .decompose_roll_pass import DecomposeRollPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
+from .decompose_sdpa_with_regular_softmax_pass import (  # noqa
+    DecomposeSDPAWithRegularSoftmaxPass,
+)
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
@@ -117,6 +124,7 @@ from .decompose_unsupported_bilinear_resize_pass import (  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
+from .deduplicate_const_shapes_pass import DeduplicateConstShapesPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
@@ -168,6 +176,9 @@ from .normalize_index_put_bool_index_tensor_pass import (  # noqa
 from .normalize_index_put_none_indices_pass import (  # noqa
     NormalizeIndexPutNoneIndicesPass,
 )
+from .normalize_max_pool2d_input_rank_pass import (  # noqa
+    NormalizeMaxPool2dInputRankPass,
+)
 from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
 from .propagate_view_copy_permute_pass import (  # noqa
@@ -184,6 +195,7 @@ from .remove_safe_softmax_guard_pass import RemoveSafeSoftmaxGuardPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
+from .resolve_view_copy_inferred_dim_pass import ResolveViewCopyInferredDimPass  # noqa
 from .rewrite_adaptive_avg_pool2d import RewriteAdaptiveAvgPool2dPass  # noqa
 from .rewrite_avg_pool2d_pass import RewriteAvgPool2dPass  # noqa
 from .rewrite_bool_bitwise_to_logical_pass import (  # noqa

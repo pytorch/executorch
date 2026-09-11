@@ -139,7 +139,41 @@ Error QnnExecuTorchBackend::execute(
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
-  int args_index = 0;
+  // The loops below walk the tensor lists recovered from the context binary and
+  // index args[] with a running counter, so the number of bindable tensors the
+  // binary declares has to agree with what the program passes. When it does not
+  // -- a stale binary, or an AOT bug that publishes extra graph I/O -- the walk
+  // runs off the end of the Span. Count first and fail with both numbers rather
+  // than reading out of bounds.
+  size_t bindable_inputs = 0;
+  for (const auto& input_tensor : input_tensors) {
+    const auto& name = input_tensor->GetName();
+    if (name.find("mutbuf_") == std::string::npos) {
+      ++bindable_inputs;
+    }
+  }
+  size_t bindable_outputs = 0;
+  for (const auto& output_tensor : output_tensors) {
+    const auto& name = output_tensor->GetName();
+    if (name.rfind("output_", 0) == 0 &&
+        name.find("mutbuf_") == std::string::npos) {
+      ++bindable_outputs;
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      bindable_inputs + bindable_outputs == args.size(),
+      Internal,
+      "Method %s: the QNN context binary binds %zu tensors (%zu bindable inputs, "
+      "%zu bindable outputs) but ExecuTorch passed %zu arguments. The binary and "
+      "the program disagree on the delegate signature; the model has to be "
+      "re-exported.",
+      method_name.c_str(),
+      bindable_inputs + bindable_outputs,
+      bindable_inputs,
+      bindable_outputs,
+      args.size());
+
+  size_t args_index = 0;
   input_tensor_structs.reserve(input_tensors.size());
   for (const auto& input_tensor : input_tensors) {
     if (input_tensor->GetName().find("mutbuf_") == std::string::npos) {

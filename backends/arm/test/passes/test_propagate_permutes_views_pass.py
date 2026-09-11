@@ -347,13 +347,13 @@ def _run_pass_on_graph(
 def test_is_swappable_rejects_unnormalized_keep_dim_operator() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
-    sum_node = graph.call_function(SUM, args=(x, [1], False))
+    mean_node = graph.call_function(MEAN, args=(x, [1], False))
 
     with pytest.raises(
         RuntimeError,
         match="expects keep_dim=True for reduction ops to simplify propagation logic, got",
     ):
-        PropagateViewCopyPermuteUpPass().is_swappable(sum_node)
+        PropagateViewCopyPermuteUpPass().is_swappable(mean_node)
 
 
 def test_down_pass_moves_permute_after_transparent_chain() -> None:
@@ -553,6 +553,25 @@ def test_up_pass_refreshes_permute_meta_before_view_slice_swap() -> None:
     assert permute.meta["val"].shape == torch.Size((3, 16, 2, 8))
     assert view.args == (permute, [3, 32, 8])
     assert slice_node.args == (view, 0, 0, 1)
+
+
+class ViewPermutePropagationMRE(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.ops.aten.slice_copy.Tensor(x, 1, 0, 1, 1)
+        x = torch.ops.aten.permute_copy.default(x, [2, 1, 0])
+        return torch.ops.aten.view_copy.default(x, [8, 1])
+
+    data = (torch.arange(24, dtype=torch.float32).reshape(2, 3, 4),)
+
+
+def test_up_pass_preserves_slice_permute_view_output() -> None:
+    pipeline = PassPipeline[input_t](
+        ViewPermutePropagationMRE(),
+        ViewPermutePropagationMRE.data,
+        quantize=False,
+        pass_list=[PropagateViewCopyPermuteUpPass],
+    )
+    pipeline.run()
 
 
 def test_up_pass_keeps_scatter_input_view_after_slice() -> None:
@@ -918,7 +937,7 @@ def test_down_pass_keeps_shared_input_permutations_before_cat() -> None:
     assert cat_node.args[1] == 3
 
 
-def test_down_pass_moves_permutation_after_reduction() -> None:
+def test_down_pass_keeps_permutation_before_sum() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4))
@@ -936,9 +955,9 @@ def test_down_pass_moves_permutation_after_reduction() -> None:
     sum_node = next(node for node in call_nodes if node.target == SUM)
     transform = next(node for node in call_nodes if node.target in (PERMUTE, VIEW))
 
-    assert targets.index(SUM) < targets.index(transform.target)
-    assert sum_node.args[1] == [1]
-    assert transform.meta["val"].shape == torch.Size((1, 3, 4, 1))
+    assert targets.index(transform.target) < targets.index(SUM)
+    assert sum_node.args[1] == [3]
+    assert transform.meta["val"].shape == torch.Size((1, 3, 4, 2))
 
 
 @pytest.mark.parametrize("mean_first", [False, True])
@@ -1198,7 +1217,7 @@ def test_propagate_moves_through_elementwise_fork() -> None:
     assert targets.index(WHERE) < targets.index(PERMUTE)
 
 
-def test_propagate_moves_through_reduction_fork() -> None:
+def test_propagate_stops_at_sum_reduction_fork() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.float32)
@@ -1231,8 +1250,10 @@ def test_propagate_moves_through_reduction_fork() -> None:
     reductions = [node for node in call_nodes if node.target in {SUM, MEAN}]
 
     assert targets.count(PERMUTE) == 1
-    assert targets.index(WHERE) < targets.index(PERMUTE)
-    assert all(reduction.args[1] == [2] for reduction in reductions)
+    assert targets.index(PERMUTE) < min(
+        targets.index(reduction.target) for reduction in reductions
+    )
+    assert [reduction.args[1] for reduction in reductions] == [[1], [1], [1]]
 
 
 def test_propagate_view_moves_through_elementwise_fork() -> None:
@@ -1575,7 +1596,7 @@ def test_permute_does_not_cross_int48_rescale_input() -> None:
     assert targets.index(RESCALE) < targets.index(PERMUTE)
 
 
-def test_propagate_moves_output_view_before_sum_with_split_dim_remap() -> None:
+def test_propagate_keeps_output_view_after_sum_with_split_dim_remap() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((6, 4))
@@ -1593,12 +1614,12 @@ def test_propagate_moves_output_view_before_sum_with_split_dim_remap() -> None:
     sum_node = next(node for node in call_nodes if node.target == SUM)
     view = next(node for node in call_nodes if node.target == VIEW)
 
-    assert targets.index(VIEW) < targets.index(SUM)
-    assert sum_node.args[1] == [0, 1]
-    assert view.args[1] == [6, 1, 4]
+    assert targets.index(SUM) < targets.index(VIEW)
+    assert sum_node.args[1] == [0]
+    assert view.args[1] == [1, 1, 4]
 
 
-def test_propagate_updates_view_map_between_arg_updates() -> None:
+def test_propagate_stops_view_map_update_before_sum() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((6, 4))
@@ -1619,10 +1640,10 @@ def test_propagate_updates_view_map_between_arg_updates() -> None:
     slice_node = next(node for node in call_nodes if node.target == SLICE)
     sum_node = next(node for node in call_nodes if node.target == SUM)
 
-    assert targets.index(VIEW) < targets.index(SLICE) < targets.index(SUM)
-    assert view.args[1] == [6, 1, 4]
+    assert targets.index(SLICE) < targets.index(SUM) < targets.index(VIEW)
+    assert view.args[1] == [1, 1, 4]
     assert slice_node.args[1] == 0
-    assert sum_node.args[1] == [0, 1]
+    assert sum_node.args[1] == [0]
 
 
 def test_propagate_moves_output_view_before_mean_with_split_dim_remap() -> None:

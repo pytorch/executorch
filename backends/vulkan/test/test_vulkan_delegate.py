@@ -13,6 +13,7 @@ from typing import Tuple
 
 import executorch.backends.vulkan.test.utils as test_utils
 import torch
+import torch.nn.functional as F
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
@@ -537,6 +538,20 @@ class TestVulkanBackend(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(ClampModule(), sample_inputs)
+
+    def test_vulkan_backend_dynamic_float_clamp(self):
+        class ClampModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.clamp(x, max=x.shape[0])
+
+        sample_inputs = (torch.arange(32).reshape(8, 4).float(),)
+        length = Dim("length", min=2, max=16)
+        self.lower_module_and_test_output(
+            ClampModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {0: length}},
+            test_inputs=[(torch.arange(12).reshape(3, 4).float(),)],
+        )
 
     def test_vulkan_backend_cos(self):
         class CosModule(torch.nn.Module):
@@ -1065,6 +1080,20 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_binary_op_zero_dim(self):
+        # Both operands, and therefore the output, are 0-dimensional. This is
+        # what a reduction to a scalar followed by arithmetic produces, e.g. the
+        # log-mel normalisation in Whisper's preprocessor.
+        class ZeroDimModule(torch.nn.Module):
+            def forward(self, x):
+                m = x.max()
+                return (m - (m - 1.0)).reshape(1)
+
+        self.lower_module_and_test_output(
+            ZeroDimModule(),
+            (torch.randn(size=(64,), dtype=torch.float32),),
+        )
+
     @disable_test("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
@@ -1464,6 +1493,32 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_constant_pad_nd_symbolic_pad(self):
+        """A pad amount derived from a dynamic dim, as LSTM padding produces.
+
+        Without the guard this partitions and then aborts at prepack with
+        "Expected value to have type IntList, got VALUELIST instead", because
+        the pad list is serialized as a VALUELIST of Int/SymInt.
+        """
+
+        class TestModule(torch.nn.Module):
+            def forward(self, x):
+                # Pad up to a static length, the shape every unrolled LSTM
+                # wants its input in.
+                return torch.nn.functional.pad(x, (0, 0, 0, 16 - x.shape[1]))
+
+        sample_inputs = (torch.randn(size=(1, 12, 8), dtype=torch.float32),)
+        seq = Dim("seq", min=2, max=16)
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: seq}},
+            test_inputs=[
+                (torch.randn(size=(1, 4, 8), dtype=torch.float32),),
+                (torch.randn(size=(1, 16, 8), dtype=torch.float32),),
+            ],
+        )
+
     def test_vulkan_backend_repeat(self):
         class TestModule(torch.nn.Module):
             def __init__(self):
@@ -1623,6 +1678,190 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             IndexSelectModule(dim=0, indices=[1, 3, 5, 7, 8, 9, 10, 11, 2, 3]),
             sample_inputs,
+        )
+
+    def test_vulkan_backend_index_select_batch_dynamic_channels(self):
+        # Selecting along the batch dim walks the z axis in units of channel
+        # texels, so the step depends on the channel count. Vary the channels
+        # below the built size: a step frozen at build time reads the wrong
+        # texel once the count drops.
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.index = torch.tensor([1, 3, 0, 2])
+
+            def forward(self, x):
+                return torch.index_select(x, 0, self.index)
+
+        sample_inputs = (torch.randn(size=(5, 8, 3, 4), dtype=torch.float32),)
+        dynamic_shapes = {"x": {1: Dim("channels", min=1, max=8)}}
+        test_inputs = [
+            (torch.randn(5, 1, 3, 4),),
+            (torch.randn(5, 3, 3, 4),),
+            (torch.randn(5, 4, 3, 4),),
+            (torch.randn(5, 5, 3, 4),),
+            (torch.randn(5, 8, 3, 4),),
+        ]
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(),
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_index_select_width_dynamic_shapes(self):
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.index = torch.tensor([2, 0, 1])
+
+            def forward(self, x):
+                return torch.index_select(x, 2, self.index)
+
+        sample_inputs = (torch.randn(size=(2, 3, 4, 6), dtype=torch.float32),)
+        dynamic_shapes = {"x": {3: Dim("width", min=1, max=6)}}
+        test_inputs = [
+            (torch.randn(2, 3, 4, 1),),
+            (torch.randn(2, 3, 4, 3),),
+            (torch.randn(2, 3, 4, 6),),
+        ]
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(),
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_index_select_channel_dynamic_shapes(self):
+        # The channel path takes a separate shader and a separate resize
+        # callback from the one above.
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.index = torch.tensor([3, 1, 0, 1])
+
+            def forward(self, x):
+                return torch.index_select(x, 1, self.index)
+
+        sample_inputs = (torch.randn(size=(2, 5, 4, 6), dtype=torch.float32),)
+        dynamic_shapes = {"x": {3: Dim("width", min=1, max=6)}}
+        test_inputs = [
+            (torch.randn(2, 5, 4, 1),),
+            (torch.randn(2, 5, 4, 4),),
+            (torch.randn(2, 5, 4, 6),),
+        ]
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(),
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_embedding_dynamic_shapes(self):
+        # The output picks up the index tensor's shape, so it has to be resized
+        # with it rather than left at the size it was built with.
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(10, 8)
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        sample_inputs = (torch.randint(0, 10, (2, 6), dtype=torch.int32),)
+        dynamic_shapes = {"x": {1: Dim("seq", min=1, max=6)}}
+        test_inputs = [
+            (torch.randint(0, 10, (2, 1), dtype=torch.int32),),
+            (torch.randint(0, 10, (2, 3), dtype=torch.int32),),
+            (torch.randint(0, 10, (2, 6), dtype=torch.int32),),
+        ]
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(),
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_index_tensor_nonzero_axis(self):
+        class IndexTensorModule(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor([0, 2])
+
+            def forward(self, x):
+                indices = [slice(None)] * x.dim()
+                indices[self.dim] = self.index
+                return x[tuple(indices)]
+
+        sample_inputs = (torch.arange(24).reshape(1, 3, 8).float(),)
+        for dim in (1, 2):
+            self.lower_module_and_test_output(
+                IndexTensorModule(dim),
+                sample_inputs,
+            )
+
+    def test_vulkan_backend_dynamic_replicate_pad_time_reduction(self):
+        class TimeReductionModule(torch.nn.Module):
+            def forward(self, x):
+                padded_frames = 8 * ((x.shape[1] + 7) // 8)
+                x = F.pad(
+                    x,
+                    (0, 0, 0, padded_frames - x.shape[1]),
+                    mode="replicate",
+                )
+                return x.view(x.shape[0], -1, 640)
+
+        sample_inputs = (torch.randn(1, 24, 80),)
+        frames = Dim("frames", min=1, max=24)
+        self.lower_module_and_test_output(
+            TimeReductionModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: frames}},
+            test_inputs=[
+                (torch.randn(1, 8, 80),),
+                (torch.randn(1, 9, 80),),
+                (torch.randn(1, 17, 80),),
+            ],
+        )
+
+    def test_vulkan_backend_dynamic_arange_float_step(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, end_scale, step):
+                super().__init__()
+                self.end_scale = end_scale
+                self.step = step
+
+            def forward(self, x):
+                return torch.arange(0, self.end_scale * x.shape[0], self.step)
+
+        sample_inputs = (torch.randn(8),)
+        length = Dim("length", min=2, max=16)
+        for end_scale, step in ((1, 0.5), (-1, -0.5)):
+            with self.subTest(end_scale=end_scale, step=step):
+                self.lower_module_and_test_output(
+                    ArangeModule(end_scale, step),
+                    sample_inputs,
+                    dynamic_shapes={"x": {0: length}},
+                    test_inputs=[(torch.randn(3),), (torch.randn(7),)],
+                )
+
+    def test_vulkan_backend_dynamic_arange_start(self):
+        class ArangeModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.arange(x.shape[0], 32, 2)
+
+        sample_inputs = (torch.randn(8),)
+        length = Dim("length", min=2, max=16)
+        self.lower_module_and_test_output(
+            ArangeModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {0: length}},
+            test_inputs=[(torch.randn(3),), (torch.randn(15),)],
         )
 
     def test_vulkan_backend_arange_int(self):

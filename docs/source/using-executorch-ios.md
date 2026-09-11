@@ -23,6 +23,8 @@ Link your binary with the ExecuTorch runtime and any backends or kernels used by
 
 **Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details.
 
+**Note:** The MLX backend links and registers on the iOS simulator, so an app builds for both destinations, but it reports itself unavailable there because the simulator has no Metal device it can use. A model delegated to MLX will not load on the simulator. Use a real device or a Mac to run one.
+
 ### Swift Package Manager
 
 The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift PM](https://www.swift.org/documentation/package-manager/) package.
@@ -169,7 +171,7 @@ OTHER_LDFLAGS = $(inherited) \
 
 **Note:** In the example above, we link against the Debug version of the ExecuTorch runtime (`libexecutorch_debug`) to preserve the logs. Normally, that does not impact the performance too much. Nevertheless, remember to link against the release version of the runtime (`libexecutorch`) for the best performance and no logs.
 
-**Note:** The MLX backend loads its Metal kernels at runtime from a per-slice metallib inside a resource bundle named `executorch_backend_mlx_resources`, not from the frameworks in `cmake-out`. The build stages the correctly named files (`mlx-ios.metallib`, `mlx-ios-simulator.metallib`, `mlx-macos.metallib`) under `.Package.swift/backend_mlx_resources/`. If you integrate MLX from a source build, ship those files in a bundle of that name for the slices you use, or MLX links and registers but has no kernels to run.
+**Note:** The MLX backend loads its Metal kernels at runtime from a per-slice metallib inside a resource bundle named `executorch_backend_mlx_resources`, not from the frameworks in `cmake-out`. The Apple framework presets enable this resource lookup when MLX is available, and the framework build stages the correctly named files (`mlx-ios.metallib`, `mlx-ios-simulator.metallib`, `mlx-macos.metallib`) under `.Package.swift/backend_mlx_resources/`. Generic Apple presets retain MLX's native colocated-metallib lookup. If you use a custom CMake configuration for SwiftPM packaging, enable `EXECUTORCH_MLX_SWIFTPM_RESOURCES` and ship the matching slice in a bundle of that name.
 
 You can assign such a config file to your target in Xcode:
 
