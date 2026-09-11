@@ -4607,13 +4607,13 @@ class TestQNNQuantizedOperator(TestQNN):
                     pte_path = f"{tmp_dir}/model.pte"
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
-                    adb = self.get_adb_tool(pte_path)
+                    device = self.get_device_tool(pte_path)
                     artifacts = generate_htp_profile_result(
                         artifact_dir=tmp_dir,
                         soc_id=self.chipset_table[TestQNN.soc_model],
                         pte_path=pte_path,
                         inputs=[sample_input],
-                        adb=adb,
+                        device=device,
                     )
                     htp_ops = []
                     for artifact in artifacts:
@@ -4668,13 +4668,13 @@ class TestQNNQuantizedOperator(TestQNN):
                     pte_path = f"{tmp_dir}/model.pte"
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
-                    adb = self.get_adb_tool(pte_path)
+                    device = self.get_device_tool(pte_path)
                     artifacts = generate_htp_profile_result(
                         artifact_dir=tmp_dir,
                         soc_id=self.chipset_table[TestQNN.soc_model],
                         pte_path=pte_path,
                         inputs=[sample_input],
-                        adb=adb,
+                        device=device,
                     )
                     htp_ops = []
                     for artifact in artifacts:
@@ -4723,13 +4723,13 @@ class TestQNNQuantizedOperator(TestQNN):
             pte_path = f"{tmp_dir}/model.pte"
             with open(pte_path, "wb") as f:
                 edge_prog_mgr.write_to_file(f)
-            adb = self.get_adb_tool(pte_path)
+            device = self.get_device_tool(pte_path)
             artifacts = generate_htp_profile_result(
                 artifact_dir=tmp_dir,
                 soc_id=self.chipset_table[TestQNN.soc_model],
                 pte_path=pte_path,
                 inputs=[sample_input],
-                adb=adb,
+                device=device,
             )
             htp_ops = []
             for artifact in artifacts:
@@ -6704,13 +6704,13 @@ class TestQNNQuantizedModel(TestQNN):
                     pte_path = f"{tmp_dir}/model.pte"
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
-                    adb = self.get_adb_tool(pte_path)
+                    device = self.get_device_tool(pte_path)
                     artifacts = generate_htp_profile_result(
                         artifact_dir=tmp_dir,
                         soc_id=self.chipset_table[TestQNN.soc_model],
                         pte_path=pte_path,
                         inputs=[tc[QCOM_SAMPLE_INPUTS]],
-                        adb=adb,
+                        device=device,
                     )
                     htp_ops = []
                     for a in artifacts:
@@ -6834,13 +6834,13 @@ class TestQNNQuantizedModel(TestQNN):
             pte_path = f"{tmp_dir}/model.pte"
             with open(pte_path, "wb") as f:
                 edge_prog_mgr.write_to_file(f)
-            adb = self.get_adb_tool(pte_path)
+            device = self.get_device_tool(pte_path)
             artifacts = generate_htp_profile_result(
                 artifact_dir=tmp_dir,
                 soc_id=self.chipset_table[self.soc_model],
                 pte_path=pte_path,
                 inputs=[sample_input],
-                adb=adb,
+                device=device,
             )
             has_masked_softmax = False
             for a in artifacts:
@@ -7771,13 +7771,13 @@ class TestQNNFloatingPointUtils(TestQNN):
                 with open(pte_path, "wb") as f:
                     edge_prog_mgr.write_to_file(f)
 
-                adb = self.get_adb_tool(pte_path)
+                device = self.get_device_tool(pte_path)
                 artifacts = generate_htp_profile_result(
                     artifact_dir=tmp_dir,
                     soc_id=self.chipset_table[self.soc_model],
                     pte_path=pte_path,
                     inputs=[sample_input],
-                    adb=adb,
+                    device=device,
                 )
                 for a in artifacts:
                     with open(a.chrometrace_json, "r") as f:
@@ -8936,13 +8936,13 @@ class TestQNNQuantizedUtils(TestQNN):
                 with open(pte_path, "wb") as f:
                     edge_prog_mgr.write_to_file(f)
 
-                adb = self.get_adb_tool(pte_path)
+                device = self.get_device_tool(pte_path)
                 artifacts = generate_htp_profile_result(
                     artifact_dir=tmp_dir,
                     soc_id=self.chipset_table[self.soc_model],
                     pte_path=pte_path,
                     inputs=[sample_input],
-                    adb=adb,
+                    device=device,
                 )
                 for a in artifacts:
                     with open(a.chrometrace_json, "r") as f:

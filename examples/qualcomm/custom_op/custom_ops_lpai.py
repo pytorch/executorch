@@ -36,12 +36,13 @@ from executorch.backends.qualcomm.custom_op.annotator import (
 from executorch.backends.qualcomm.custom_op.interface import QnnCustomOpPackageBuilder
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     generate_inputs,
     get_backend_type,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
+    WINDOWS_TARGET,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     get_ptq_per_channel_quant_config,
@@ -186,7 +187,7 @@ def _sign_op_package(op_package_dir: str, lpai_arch: str, op_package_arch: str) 
     return f"{os.getenv('QNN_SDK_ROOT')}/lib/lpai-{lpai_arch}/signed"
 
 
-def main(args):
+def main(args):  # noqa: C901
     qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     if args.backend != "lpai":
@@ -357,26 +358,32 @@ def main(args):
             check=True,
         )
     else:
-        adb = SimpleADB(
+        if args.debug and qnn_config.target in WINDOWS_TARGET:
+            raise RuntimeError(
+                "Debug mode for this script only supports Android devices."
+            )
+        device = Device(
             qnn_config=qnn_config,
             pte_path=f"{args.artifact}/{pte_filename}.pte",
             workspace=workspace,
         )
-        adb.push(inputs=sample_input, files=op_package_paths)
+        device.push(inputs=sample_input, files=op_package_paths)
         if args.debug:
-            adb.execute(custom_runner_cmd="logcat -c")
+            device.execute(custom_runner_cmd="logcat -c")
             # FARF configuration is looked up as <runner base name>.farf, and in
             # direct mode the runner is qnn_executor_direct_runner rather than
             # qnn_executor_runner, so derive the name instead of hardcoding it.
-            runner_name = os.path.basename(adb.runner)
-            adb.execute(custom_runner_cmd=f"echo 0x1f > {workspace}/{runner_name}.farf")
+            runner_name = os.path.basename(device.runner)
+            device.execute(
+                custom_runner_cmd=f"echo 0x1f > {workspace}/{runner_name}.farf"
+            )
 
-        adb.execute()
+        device.execute()
         if args.debug:
-            adb.execute(
+            device.execute(
                 custom_runner_cmd=f"logcat -d -v time >{workspace}/outputs/debug_logs.txt"
             )
-        adb.pull(host_output_path=args.artifact)
+        device.pull(host_output_path=args.artifact)
 
     # By default the eager result is the reference. When the inference input
     # exceeds the calibrated range the quantized graph must saturate instead,
