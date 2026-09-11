@@ -282,6 +282,17 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_mean",
+        deps = [
+            "//executorch/kernels/optimized:libutils",
+            "//executorch/kernels/optimized:libvec",
+            "//executorch/kernels/portable/cpu:op_mean",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
         name = "op_mm",
         deps = [
             "//executorch/kernels/optimized:libblas",
