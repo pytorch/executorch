@@ -1074,10 +1074,6 @@ def _export_cuda(model, config, args):
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
-    # TorchAO 0.18 no longer sets this process-wide option during quantization.
-    # Keep this export on the TF32 path used by the previous release pin.
-    torch.set_float32_matmul_precision("high")
-
     # Coordinate descent recompiles each kernel trying config perturbations,
     # adding minutes with negligible runtime benefit for this model's shapes.
     inductor_config.coordinate_descent_tuning = False

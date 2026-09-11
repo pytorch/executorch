@@ -128,6 +128,11 @@ fi
 
 echo "Testing model: $HF_MODEL (quantization: $QUANT_NAME)"
 
+if [ "$DEVICE" = "cuda" ] && [ "$HF_MODEL" = "SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4" ]; then
+  # Surface the originating kernel for asynchronous CUDA failures during export.
+  export CUDA_LAUNCH_BLOCKING=1
+fi
+
 if [ "$HF_MODEL" = "meta-models/Muse-Glimmer-30B-GGUF" ] && [ "$DEVICE" != "cuda" ]; then
   echo "Error: Muse Glimmer is only supported with the cuda device"
   exit 1
