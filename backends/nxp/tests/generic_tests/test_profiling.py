@@ -360,23 +360,23 @@ class TestProfiling:
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (14, 15),  # Conv2DStandardV2 (Pad + Conv)
-            1: (17, 18),  # Conv2DStandardV1 (Pad + Conv)
-            2: (20,),  # Conv2DStandardV1
-            3: (21,),  # Add
-            4: (22,),  # GlobalBiasScale (Relu)
-            5: (28,),  # Conv2DStandardV1
-            6: (24, 25),  # Conv2DStandardV1 (Pad + Conv)
-            7: (27,),  # Conv2DStandardV1
-            8: (29,),  # Add
-            9: (30,),  # GlobalBiasScale (Relu)
-            10: (36,),  # Conv2DStandardV1
-            11: (32, 33),  # Conv2DStandardV1 (Pad + Conv)
-            12: (35,),  # Conv2DStandardV1
-            13: (37,),  # Add
-            14: (38,),  # GlobalBiasScale (Relu)
+            0: (22, 23),  # Conv2DStandardV2 (Pad + Conv)
+            1: (24, 25),  # Conv2DStandardV1 (Pad + Conv)
+            2: (26,),  # Conv2DStandardV1
+            3: (27,),  # Add
+            4: (28,),  # GlobalBiasScale (Relu)
+            5: (33,),  # Conv2DStandardV1
+            6: (29, 30, 31),  # Conv2DStandardV1 (Pad + Conv)
+            7: (32,),  # Conv2DStandardV1
+            8: (34,),  # Add
+            9: (35,),  # GlobalBiasScale (Relu)
+            10: (40,),  # Conv2DStandardV1
+            11: (36, 37, 38),  # Conv2DStandardV1 (Pad + Conv)
+            12: (39,),  # Conv2DStandardV1
+            13: (41,),  # Add
+            14: (42,),  # GlobalBiasScale (Relu)
             15: (),  # GlobalAvgPool (Mean)
-            16: (41,),  # FullyConnected
+            16: (45,),  # FullyConnected
             17: (),  # Neutron Dump
         }
 
@@ -397,18 +397,18 @@ class TestProfiling:
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (14, 15),  # Pad (Conv + Relu)
-            1: (14, 15),  # Conv2DStandardV2 (Conv + Relu)
-            2: (18, 19),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            3: (21, 22),  # Conv2DPointwise (Conv + Relu)
-            4: (24, 25),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            5: (27, 28),  # Conv2DDepthwiseV1 (Conv + Relu)
-            6: (30, 31),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            7: (33, 34),  # Conv2DPointwise (Conv + Relu)
-            8: (36, 37),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            9: (39, 40),  # Conv2DPointwise  (Conv + Relu)
-            10: (42,),  # Conv2DDepthwiseDense (AvgPool)
-            11: (44,),  # FullyConnected
+            0: (22, 23, 24),  # Pad (Pad + Conv + Relu)
+            1: (22, 23, 24),  # Conv2DStandardV2 (Pad + Conv + Relu)
+            2: (26, 27),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            3: (28, 29),  # Conv2DPointwise (Conv + Relu)
+            4: (30, 31),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            5: (32, 33),  # Conv2DDepthwiseV1 (Conv + Relu)
+            6: (34, 35),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            7: (36, 37),  # Conv2DPointwise (Conv + Relu)
+            8: (38, 39),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            9: (40, 41),  # Conv2DPointwise  (Conv + Relu)
+            10: (43,),  # Conv2DDepthwiseDense (AvgPool)
+            11: (45,),  # FullyConnected
             12: (),  # Neutron Dump
         }
 
@@ -429,35 +429,35 @@ class TestProfiling:
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (32, 33),  # Conv2DStandardV2 (Conv + Relu)
-            1: (35, 36),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            2: (38, 39),  # Conv2DPointwise (Conv + Relu)
-            3: (41, 42),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            4: (44, 45),  # Conv2DPointwise (Conv + Relu)
-            5: (47, 48),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            6: (50, 51),  # Conv2DPointwise (Conv + Relu)
-            7: (53, 54),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            8: (56, 57),  # Conv2DPointwise (Conv + Relu)
-            9: (59, 60),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            10: (62, 63),  # Conv2DPointwise (Conv + Relu)
-            11: (65, 66),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            12: (68, 69),  # Conv2DPointwise (Conv + Relu)
-            13: (71, 72),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            14: (74, 75),  # Conv2DPointwise (Conv + Relu)
-            15: (77, 78),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            16: (80, 81),  # Conv2DPointwise (Conv + Relu)
-            17: (83, 84),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            18: (86, 87),  # Conv2DPointwise (Conv + Relu)
-            19: (89, 90),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            20: (92, 93),  # Conv2DPointwise (Conv + Relu)
-            21: (95, 96),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            22: (98, 99),  # Conv2DPointwise (Conv + Relu)
-            23: (101, 102),  # Conv2DDepthwiseDense (DepthwiseConv + Relu)
-            24: (104, 105),  # Conv2DPointwise (Conv + Relu)
-            25: (107, 108),  # Conv2DDepthwiseDense (DepthwiseConv + Relu)
-            26: (110, 111),  # Conv2DPointwise (Conv + Relu)
+            0: (58, 59, 60),  # Conv2DStandardV2 (Pad + Conv + Relu)
+            1: (61, 62),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            2: (63, 64),  # Conv2DPointwise (Conv + Relu)
+            3: (65, 66, 67),  # Conv2DDepthwiseV1 (Pad + DepthwiseConv + Relu)
+            4: (68, 69),  # Conv2DPointwise (Conv + Relu)
+            5: (70, 71),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            6: (72, 73),  # Conv2DPointwise (Conv + Relu)
+            7: (74, 75, 76),  # Conv2DDepthwiseV1 (Pad + DepthwiseConv + Relu)
+            8: (77, 78),  # Conv2DPointwise (Conv + Relu)
+            9: (79, 80),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            10: (81, 82),  # Conv2DPointwise (Conv + Relu)
+            11: (83, 84, 85),  # Conv2DDepthwiseV1 (Pad + DepthwiseConv + Relu)
+            12: (86, 87),  # Conv2DPointwise (Conv + Relu)
+            13: (88, 89),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            14: (90, 91),  # Conv2DPointwise (Conv + Relu)
+            15: (92, 93),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            16: (94, 95),  # Conv2DPointwise (Conv + Relu)
+            17: (96, 97),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            18: (98, 99),  # Conv2DPointwise (Conv + Relu)
+            19: (100, 101),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            20: (102, 103),  # Conv2DPointwise (Conv + Relu)
+            21: (104, 105),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            22: (106, 107),  # Conv2DPointwise (Conv + Relu)
+            23: (108, 109, 110),  # Conv2DDepthwiseDense (Pad + DepthwiseConv + Relu)
+            24: (111, 112),  # Conv2DPointwise (Conv + Relu)
+            25: (113, 114),  # Conv2DDepthwiseDense (DepthwiseConv + Relu)
+            26: (115, 116),  # Conv2DPointwise (Conv + Relu)
             27: (),  # Mean (GlobalAvgPool)
-            28: (114,),  # FullyConnected
+            28: (119,),  # FullyConnected
             29: (),  # Neutron Dump
         }
 
