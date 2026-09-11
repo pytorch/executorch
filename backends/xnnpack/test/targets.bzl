@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     runtime.cxx_test(
@@ -19,17 +19,21 @@ def define_common_targets():
         ],
     )
 
-    runtime.cxx_test(
-        name = "xnnexecutor_test",
-        srcs = ["runtime/test_xnnexecutor.cpp"],
-        deps = [
-            third_party_dep("XNNPACK"),
-            third_party_dep("FP16"),
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/backends/xnnpack:xnnpack_backend",
-        ],
-    )
+    for aten_mode in get_aten_mode_options():
+        aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_test(
+            name = "xnnexecutor_test" + aten_suffix,
+            srcs = ["runtime/test_xnnexecutor.cpp"],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            deps = [
+                third_party_dep("XNNPACK"),
+                third_party_dep("FP16"),
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+                "//executorch/backends/xnnpack:xnnpack_backend" + aten_suffix,
+            ],
+        )
 
     runtime.cxx_test(
         name = "test_xnn_weights_cache",
