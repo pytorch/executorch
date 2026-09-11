@@ -48,6 +48,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/devtools/etdump:schema_flatcc",
             "//executorch/devtools/etrecord/tests:etrecord_test_library",
             "//executorch/devtools/inspector:inspector_utils",
+            "//executorch/devtools/inspector/numerical_comparator:lib",
         ],
     )
 
