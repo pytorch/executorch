@@ -45,7 +45,7 @@ namespace detail {
 inline runtime::Result<std::optional<std::int64_t>> read_int_method(
     Module& module,
     const char* name) {
-  const auto names = ET_UNWRAP(module.method_names());
+  ET_ASSIGN_OR_RETURN(names, module.method_names());
   if (names.count(name) == 0) {
     return std::optional<std::int64_t>{};
   }
@@ -65,7 +65,7 @@ inline runtime::Result<std::optional<std::int64_t>> read_int_method(
 inline runtime::Result<std::int64_t> read_required_positive_int(
     Module& module,
     const char* name) {
-  const auto value = ET_UNWRAP(read_int_method(module, name));
+  ET_ASSIGN_OR_RETURN(value, read_int_method(module, name));
   ET_CHECK_OR_RETURN_ERROR(
       value.has_value(), InvalidProgram, "metadata %s is required", name);
   ET_CHECK_OR_RETURN_ERROR(
@@ -91,8 +91,8 @@ inline runtime::Result<std::int64_t> read_vocab_size(Module& module) {
 }
 
 inline runtime::Result<aten::ScalarType> read_activation_dtype(Module& module) {
-  const auto value =
-      ET_UNWRAP(detail::read_int_method(module, kActivationDtype));
+  ET_ASSIGN_OR_RETURN(
+      value, detail::read_int_method(module, kActivationDtype));
   ET_CHECK_OR_RETURN_ERROR(
       value.has_value(),
       InvalidProgram,
@@ -117,8 +117,8 @@ inline runtime::Result<aten::ScalarType> read_activation_dtype(Module& module) {
 
 inline runtime::Result<LogitsToKeepMode> read_logits_to_keep_mode(
     Module& module) {
-  const auto value =
-      ET_UNWRAP(detail::read_int_method(module, kLogitsToKeepMode));
+  ET_ASSIGN_OR_RETURN(
+      value, detail::read_int_method(module, kLogitsToKeepMode));
   ET_CHECK_OR_RETURN_ERROR(
       value.has_value(),
       InvalidProgram,
@@ -142,8 +142,8 @@ inline runtime::Result<LogitsToKeepMode> read_logits_to_keep_mode(
 }
 
 inline runtime::Result<std::int64_t> read_max_seq_len(Module& module) {
-  const auto value =
-      ET_UNWRAP(detail::read_required_positive_int(module, kMaxSeqLen));
+  ET_ASSIGN_OR_RETURN(
+      value, detail::read_required_positive_int(module, kMaxSeqLen));
   // Consumers narrow this to int for chunked prefill, so reject a value that
   // would truncate rather than letting the cast overflow.
   ET_CHECK_OR_RETURN_ERROR(
