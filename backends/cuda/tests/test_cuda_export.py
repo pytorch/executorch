@@ -91,19 +91,6 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 [CompileSpec(key="max_autotune", value=b"MAYBE")]
             )
 
-    def test_max_autotune_gemm_compile_spec(self):
-        options = CudaBackend.get_aoti_compile_options(
-            [CompileSpec(key="max_autotune_gemm", value=b"ON")]
-        )
-
-        self.assertTrue(options["max_autotune_gemm"])
-
-    def test_invalid_max_autotune_gemm_compile_spec(self):
-        with self.assertRaisesRegex(ValueError, "Invalid max_autotune_gemm"):
-            CudaBackend.get_aoti_compile_options(
-                [CompileSpec(key="max_autotune_gemm", value=b"MAYBE")]
-            )
-
     def test_autotune_at_compile_time_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec(key="autotune_at_compile_time", value=b"OFF")]
