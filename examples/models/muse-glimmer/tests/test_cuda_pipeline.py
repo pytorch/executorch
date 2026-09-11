@@ -58,6 +58,32 @@ def _require_cuda(testcase: unittest.TestCase) -> None:
         testcase.skipTest("CUDA required")
 
 
+class TestGreedySamplerTest(unittest.TestCase):
+    def test_greedy_sampling_keeps_softcap_and_returns_argmax(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.output_norm = torch.nn.Identity()
+                self.lm_head = torch.nn.Identity()
+                self.softcap_called = False
+
+            def _run_blocks(self, inputs, _input_pos):
+                return inputs
+
+            def _soft_cap(self, logits):
+                self.softcap_called = True
+                return logits
+
+        model = Model()
+        add_on_device_sampler(model, greedy=True)
+        logits = torch.tensor([[[-2.0, 5.0, 1.0]]])
+        token = model.decode_from_embedding(
+            logits, torch.tensor([0]), torch.tensor(0.0)
+        )
+        self.assertTrue(model.softcap_called)
+        torch.testing.assert_close(token, torch.tensor([[1.0]]))
+
+
 class TestMutableBufferMetadataTest(unittest.TestCase):
     def test_combined_model_contains_target_and_draft_kv_caches(self):
         combined = torch.nn.Module()
