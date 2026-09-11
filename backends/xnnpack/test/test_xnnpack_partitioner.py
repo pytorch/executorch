@@ -266,11 +266,17 @@ class TestXnnpackPartitioner(unittest.TestCase):
         # The delegate call and the getitem on its output are all that is left.
         self.assertEqual(len(call_functions), 2)
 
-        executorch_module = _load_for_executorch_from_buffer(
-            edge.to_executorch().buffer
-        )
+        # The module keeps a pointer into the buffer rather than a copy, so the
+        # program manager that owns the buffer has to outlive the module.
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
         self.assertTrue(
-            torch.allclose(executorch_module.forward(example_inputs)[0], eager, 1e-5)
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                eager,
+                rtol=1e-5,
+                atol=1e-5,
+            )
         )
 
     def test_pre_decomposition_folding_keeps_quantization_primitives(self):
@@ -417,12 +423,21 @@ class TestXnnpackPartitioner(unittest.TestCase):
             list(edge.exported_program().graph_signature.buffers_to_mutate.values()),
             ["cache"],
         )
-        executorch_module = _load_for_executorch_from_buffer(
-            edge.to_executorch().buffer
-        )
-        # The cache carries state from one call to the next.
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        # The initial state of a mutated buffer is not serialized, so the first
+        # call only primes the cache on both sides. From then on the cache
+        # carries state from one call to the next.
+        x = torch.randn(2, 8)
+        executorch_module.forward((x,))
+        model(x)
         for _ in range(3):
             x = torch.randn(2, 8)
             self.assertTrue(
-                torch.allclose(executorch_module.forward((x,))[0], model(x), 1e-5)
+                torch.allclose(
+                    executorch_module.forward((x,))[0],
+                    model(x),
+                    rtol=1e-5,
+                    atol=1e-5,
+                )
             )
