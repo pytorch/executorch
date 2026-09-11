@@ -45,8 +45,11 @@ jobs:
       with-rocm: disabled
       python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
 
+  select-runner:
+    uses: ./.github/workflows/_select-release-runner.yml
+
   build:
-    needs: generate-matrix
+    needs: [generate-matrix, select-runner]
     permissions:
       id-token: write
       contents: read
@@ -74,3 +77,4 @@ jobs:
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
+      runner: ${{ needs.select-runner.outputs.x86 }}

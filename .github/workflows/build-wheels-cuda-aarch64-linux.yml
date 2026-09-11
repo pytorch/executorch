@@ -79,8 +79,11 @@ jobs:
           echo "${MATRIX_BLOB}"
           echo "matrix=${MATRIX_BLOB}" >> "${GITHUB_OUTPUT}"
 
+  select-runner:
+    uses: ./.github/workflows/_select-release-runner.yml
+
   build:
-    needs: filter-matrix
+    needs: [filter-matrix, select-runner]
     permissions:
       id-token: write
       contents: read
@@ -108,6 +111,7 @@ jobs:
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
+      runner: ${{ needs.select-runner.outputs.arm64 }}
       # Required for aarch64. Without it the shared build workflow prepares an x86_64 job
       # and skips the aarch64 conda install, so the first build step fails on a missing
       # conda.
