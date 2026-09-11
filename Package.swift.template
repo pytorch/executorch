@@ -65,6 +65,13 @@ let products = deliverables([
   "executorch": [
     "sha256": "__SHA256_executorch__",
     "sha256" + debug_suffix: "__SHA256_executorch_debug__",
+    "frameworks": [
+      "Accelerate",
+      "CoreGraphics",
+      "CoreImage",
+      "CoreVideo",
+      "Foundation",
+    ],
     "libraries": [
       "c++",
     ],
