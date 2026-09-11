@@ -39,16 +39,15 @@ Tensor& gelu_out(
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, "gelu.out", CTYPE, [&]() {
     if (approximate == "tanh") {
+      const CTYPE kBeta = M_SQRT2 * M_2_SQRTPI * 0.5;
+      const CTYPE kKappa = static_cast<float>(0.044715);
       apply_unary_map_fn(
-          [](const CTYPE x) {
+          [kBeta, kKappa](const CTYPE x) {
             if (x == -std::numeric_limits<CTYPE>::infinity()) {
               return static_cast<CTYPE>(0.0);
             } else if (x == std::numeric_limits<CTYPE>::infinity()) {
               return std::numeric_limits<CTYPE>::infinity();
             }
-            const CTYPE kBeta = M_SQRT2 * M_2_SQRTPI * 0.5;
-            const CTYPE kKappa = static_cast<float>(0.044715);
-
             const CTYPE x_cubed = x * x * x;
             const CTYPE inner = kBeta * (x + kKappa * x_cubed);
             const CTYPE ret = 0.5 * x * (1.0 + std::tanh(inner));
