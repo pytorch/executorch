@@ -137,8 +137,8 @@ class SequenceReferenceCache:
     def used(self, layer_id: int) -> int:
         return self._used[layer_id]
 
-    def rewind(self, new_len: int) -> None:
-        """Drop everything from ``new_len`` on, in every layer.
+    def rewind(self, position: int) -> None:
+        """Drop everything from ``position`` on, in every layer.
 
         A windowed layer retains only its last ``window`` positions, so it
         cannot go back further than that even though this reference keeps the
@@ -147,8 +147,8 @@ class SequenceReferenceCache:
         longer holds.
         """
         used = self._used[0]
-        if new_len < 0 or new_len > used:
-            raise ValueError(f"rewind to {new_len}: the history holds {used}")
+        if position < 0 or position > used:
+            raise ValueError(f"rewind to {position}: the history holds {used}")
         floor = max(
             (
                 used - self.config.policy_for(layer_id).window
@@ -157,15 +157,15 @@ class SequenceReferenceCache:
             ),
             default=0,
         )
-        if new_len < floor:
+        if position < floor:
             raise ValueError(
-                f"rewind to {new_len}: a windowed layer retains only from {floor}"
+                f"rewind to {position}: a windowed layer retains only from {floor}"
             )
         for layer_id in range(self.config.n_layers):
             if self.config.sizing == CacheSizing.DYNAMIC:
-                self._k[layer_id] = self._k[layer_id][:, :, :new_len, :]
-                self._v[layer_id] = self._v[layer_id][:, :, :new_len, :]
-            self._used[layer_id] = new_len
+                self._k[layer_id] = self._k[layer_id][:, :, :position, :]
+                self._v[layer_id] = self._v[layer_id][:, :, :position, :]
+            self._used[layer_id] = position
 
     def reset(self):
         self._used = [0] * self.config.n_layers
@@ -427,30 +427,35 @@ class BatchedSequenceReferenceCache:
         self._served.clear()
         self._declared = False
 
-    def seq_rm(self, seq_id: int, p0: int = 0, p1: Optional[int] = None) -> None:
-        """Drop seq_id's claim on positions [p0, p1); p1 = None runs to the end.
+    def seq_rm(self, seq_id: int) -> None:
+        """Release the whole sequence and its id."""
+        self._check_seq_id(seq_id)
+        self._sequences.pop(seq_id, None)
+        self._invalidate_step()
 
-        A private contiguous history drops its tail but not its middle: it has
-        no per-token position map to reindex what would survive. Bounding
-        history from below is a layer policy, not a verb.
+    def rewind(self, seq_id: int, position: int) -> None:
+        """Keep the sequence's ``[0, position)``, dropping the rest.
+
+        A windowed layer has physically dropped what it no longer retains, so a
+        target older than that is refused.
         """
         self._check_seq_id(seq_id)
-        if p1 is not None:
-            raise NotImplementedError(
-                "a private history drops only its tail, so [p0, p1) with a "
-                "bounded end has nothing to reindex the remainder against"
-            )
         sequence = self._sequences.get(seq_id)
         if sequence is not None:
-            if p0 == 0:
-                del self._sequences[seq_id]
-            else:
-                sequence.rewind(p0)
+            sequence.rewind(position)
+        self._invalidate_step()
+
+    def _invalidate_step(self) -> None:
         self._spans.clear()
         self._served.clear()
         self._declared = False
 
-    def seq_len(self, seq_id: int) -> int:
+    def max_seqs(self) -> Optional[int]:
+        """None: a sequence is a dict entry, so only the cells they take bound them."""
+        return None
+
+    def pos(self, seq_id: int) -> int:
+        """Where the sequence stands: one past its newest position."""
         self._check_seq_id(seq_id)
         sequence = self._sequences.get(seq_id)
         return sequence.used(0) if sequence is not None else 0
@@ -565,7 +570,7 @@ class CellReferenceCache:
     def free_cells(self) -> int:
         return self._pos.count(-1)
 
-    def can_extend(self, n: int = 1) -> bool:
+    def _has_room(self, n: int = 1) -> bool:
         """Whether `n` more tokens fit: cache-wide, one cell per token.
 
         The bound is on cells, so a prefix shared by several sequences counts
@@ -573,10 +578,23 @@ class CellReferenceCache:
         """
         return self.free_cells() >= n
 
-    def seq_len(self, seq_id: int) -> int:
+    def pos(self, seq_id: int) -> int:
+        """Where the sequence stands: one past its newest position.
+
+        A sequence's cells are scattered across the pool, so the position lives
+        on the cell and this scans for it.
+        """
         self._check_seq_id(seq_id)
         bit = 1 << seq_id
-        return sum(1 for owners in self._owners if owners & bit)
+        reached = -1
+        for i, owners in enumerate(self._owners):
+            if owners & bit:
+                reached = max(reached, self._pos[i])
+        return reached + 1
+
+    def max_seqs(self) -> Optional[int]:
+        """MAX_SEQS: one bit each in the owner bitset."""
+        return MAX_SEQS
 
     def declare_step(self, seq_ids: Sequence[int]) -> None:
         """Declare the sequence each of the next forward's tokens belongs to.
@@ -589,7 +607,7 @@ class CellReferenceCache:
             raise ValueError("a step carries at least one token")
         for seq_id in seq_ids:
             self._check_seq_id(seq_id)
-        if not self.can_extend(len(seq_ids)):
+        if not self._has_room(len(seq_ids)):
             raise RuntimeError(
                 f"KV cache full: {len(seq_ids)} tokens need as many cells, "
                 f"{self.free_cells()} free"
@@ -614,18 +632,28 @@ class CellReferenceCache:
                 self._owners[i] |= dst_bit
         self._invalidate_plan()
 
-    def seq_rm(self, seq_id: int, p0: int = 0, p1: Optional[int] = None) -> None:
-        """Drop seq_id's claim on positions [p0, p1); p1 = None runs to the end.
+    def seq_rm(self, seq_id: int) -> None:
+        """Release the whole sequence and its id.
 
-        A cell frees only once no sequence owns it, so removing a shared range
-        reclaims nothing until the last owner lets go. seq_rm(s) drops the whole
-        sequence, seq_rm(s, 0, k) evicts its oldest k positions, and seq_rm(s, k)
-        truncates it at position k.
+        A cell frees only once no sequence owns it, so a shared cell survives
+        until its last owner lets go.
         """
         self._check_seq_id(seq_id)
+        self._drop_from(seq_id, 0)
+
+    def rewind(self, seq_id: int, position: int) -> None:
+        """Keep the sequence's ``[0, position)``, dropping the rest.
+
+        Always possible here: a windowed layer narrows the mask over cells that
+        are still present, so no position is unrecoverable.
+        """
+        self._check_seq_id(seq_id)
+        self._drop_from(seq_id, position)
+
+    def _drop_from(self, seq_id: int, from_pos: int) -> None:
         bit = 1 << seq_id
         for i in range(self._used_end):
-            if self._owners[i] & bit and self._in_range(self._pos[i], p0, p1):
+            if self._owners[i] & bit and self._pos[i] >= from_pos:
                 self._owners[i] &= ~bit
                 if self._owners[i] == 0:
                     self._pos[i] = -1
@@ -707,6 +735,14 @@ class CellReferenceCache:
                 f"declare_step declared {len(self._step_seq_ids)} tokens, "
                 f"the forward carries {len(positions)}"
             )
+        want = {seq_id: self.pos(seq_id) for seq_id in set(self._step_seq_ids)}
+        for pos, seq_id in zip(positions, self._step_seq_ids):
+            if pos != want[seq_id]:
+                raise ValueError(
+                    f"sequence {seq_id} continues at {want[seq_id]}, "
+                    f"the step declares {pos}"
+                )
+            want[seq_id] += 1
         cells = [
             self._claim(pos, 1 << seq_id)
             for pos, seq_id in zip(positions, self._step_seq_ids)
@@ -781,10 +817,6 @@ class CellReferenceCache:
         # only surfaces much later as an int64 overflow building the mask.
         if not 0 <= seq_id < MAX_SEQS:
             raise ValueError(f"seq_id {seq_id} outside [0, {MAX_SEQS})")
-
-    @staticmethod
-    def _in_range(pos: int, p0: int, p1: Optional[int]) -> bool:
-        return pos >= p0 and (p1 is None or pos < p1)
 
 
 def attend(
