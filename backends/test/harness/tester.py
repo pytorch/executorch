@@ -44,6 +44,7 @@ class Tester:
         stage_classes: Dict[StageType, Callable] | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         training: bool = False,
+        backend: Optional[str] = None,
     ):
         if training:
             module.train()
@@ -54,6 +55,7 @@ class Tester:
         self.original_module = module
         self.example_inputs = example_inputs
         self.dynamic_shapes = dynamic_shapes
+        self.backend = backend
         self.stages: Dict[StageType, Stage] = OrderedDict.fromkeys(list(StageType))
         self.pipeline = {
             StageType.QUANTIZE: [StageType.EXPORT],
@@ -318,13 +320,27 @@ class Tester:
         stage: Optional[StageType] = None,
         inputs: Optional[Tuple[torch.Tensor]] = None,
         num_runs=1,
-        atol=1e-03,
-        rtol=1e-03,
-        qtol=0,
+        atol=None,
+        rtol=None,
+        qtol=None,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
         artifact_dir: Optional[str] = None,
         artifact_name: Optional[str] = None,
     ):
+        # Resolve tolerances: explicit values win, then registry, then defaults.
+        if atol is None or rtol is None or qtol is None:
+            if self.backend is not None:
+                from executorch.backends.test.harness.tolerance import get_tolerance
+
+                config = get_tolerance(self.backend)
+                atol = atol if atol is not None else config.atol
+                rtol = rtol if rtol is not None else config.rtol
+                qtol = qtol if qtol is not None else config.qtol
+            else:
+                atol = atol if atol is not None else 1e-03
+                rtol = rtol if rtol is not None else 1e-03
+                qtol = qtol if qtol is not None else 0
+
         number_of_runs = 1 if inputs is not None else num_runs
         reference_stage = self.stages[StageType.EXPORT]
 
