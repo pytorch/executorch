@@ -244,7 +244,11 @@ class TransformerBlock(nn.Module):
             self.post_attn_norm = ScalelessRMSNorm(args.dim, eps=args.norm_eps)
 
         if args.use_ffn_learnable_scales and self.mlp_type != "skip":
-            self.post_ffn_norm = RMSNormWithInputScale(args.dim, eps=args.norm_eps)
+            self.post_ffn_norm = RMSNormWithInputScale(
+                args.dim,
+                eps=args.norm_eps,
+                zero_centered_gamma=args.norm_zero_centered_gamma,
+            )
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
