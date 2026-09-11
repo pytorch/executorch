@@ -326,6 +326,7 @@ jobs:
         include:
           - test_arm_backend: test_pytest_ops_vkml
           - test_arm_backend: test_pytest_models_vkml
+          - test_arm_backend: test_run_vkml
           - test_arm_backend: test_ootb_tests_vgf
           - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
