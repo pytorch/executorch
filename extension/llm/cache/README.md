@@ -133,10 +133,12 @@ cell is freed once no sequence owns it. Offers `BatchControl` and `CellStepper`.
 
 ## Cache kinds
 
-| constant             | value           | layout                            |
-| -------------------- | --------------- | --------------------------------- |
-| `kind::kSingle`      | `single`        | one sequence, per-layer runs      |
-| `kind::kBatchedCell` | `batched-cell`  | many sequences over a shared pool |
+| constant                 | value              | layout                            |
+| ------------------------ | ------------------ | --------------------------------- |
+| `kind::kSingle`          | `single`           | one sequence, per-layer runs      |
+| `kind::kBatched`         | `batched`          | the backend's default batch layout|
+| `kind::kBatchedCell`     | `batched-cell`     | many sequences over a shared pool |
+| `kind::kBatchedSequence` | `batched-sequence` | many sequences, a history each    |
 
 Kinds are strings so a backend can register a layout this directory has never
 heard of. The constants name the kinds it does know about. Use them: a typo in

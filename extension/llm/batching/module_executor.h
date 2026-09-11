@@ -64,7 +64,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
       int max_session_tokens,
       int kv_dtype,
       int initial_capacity = -1,
-      std::string cache_kind = cache::kind::kBatchedSequence,
+      std::string cache_kind = cache::kind::kBatched,
       std::string method = "forward");
 
   // The widest step this method takes, from the shape its token input was
