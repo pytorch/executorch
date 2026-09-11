@@ -70,6 +70,31 @@ TEST_P(ParallelTest, TestAllInvoked) {
   }
 }
 
+TEST_P(ParallelTest, NestedCallsPreserveOuterThreadNumber) {
+  std::array<std::array<int, 3>, 10> visits{};
+  EXPECT_TRUE(parallel_for(0, 10, 1, [&](int64_t begin, int64_t end) {
+    const auto outer_thread = executorch::extension::get_thread_num();
+    for (int64_t row = begin; row < end; ++row) {
+      EXPECT_TRUE(
+          parallel_for(2, 5, 1, [&](int64_t inner_begin, int64_t inner_end) {
+            EXPECT_EQ(executorch::extension::get_thread_num(), outer_thread);
+            for (int64_t column = inner_begin; column < inner_end; ++column) {
+              ++visits[row][column - 2];
+            }
+          }));
+      EXPECT_TRUE(parallel_for(2, 2, 1, [&](int64_t, int64_t) {
+        ADD_FAILURE() << "Empty nested range invoked its callback";
+      }));
+      EXPECT_EQ(executorch::extension::get_thread_num(), outer_thread);
+    }
+  }));
+  for (const auto& row : visits) {
+    for (const auto count : row) {
+      EXPECT_EQ(count, 1);
+    }
+  }
+}
+
 TEST_P(ParallelTest, TestAllInvokedWithMutex) {
   EXPECT_TRUE(parallel_for(0, 10, 1, [this](int64_t begin, int64_t end) {
     this->RunExclusiveTask(begin, end);
