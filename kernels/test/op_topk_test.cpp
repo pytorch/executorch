@@ -8,6 +8,8 @@
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -172,4 +174,50 @@ TEST_F(OpTopkValuesTest, NonPartialSort) {
     EXPECT_TENSOR_CLOSE(values, values_expected);
     EXPECT_TENSOR_EQ(indices, indices_expected);
   }
+}
+
+TEST_F(OpTopkValuesTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  Tensor in = tf.channels_last_like(tf.make(
+      {1, 4, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}));
+  Tensor values = tf.zeros_channels_last({1, 2, 2, 2});
+  Tensor indices = tf_long.zeros_channels_last({1, 2, 2, 2});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  TempMemoryAllocator allocator = TempMemoryAllocator();
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context(
+      nullptr, &allocator);
+  torch::executor::aten::topk_outf(
+      context, in, 2, 1, true, true, values, indices);
+
+  EXPECT_NE(context.failure_state(), torch::executor::Error::Ok);
+}
+
+TEST_F(OpTopkValuesTest, MixedDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  // Only values has a non-default dim order, so the same dim order check shall
+  // be what rejects it.
+  Tensor in = tf.make(
+      {1, 4, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
+  Tensor values = tf.zeros_channels_last({1, 2, 2, 2});
+  Tensor indices = tf_long.zeros({1, 2, 2, 2});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  TempMemoryAllocator allocator = TempMemoryAllocator();
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context(
+      nullptr, &allocator);
+  torch::executor::aten::topk_outf(
+      context, in, 2, 1, true, true, values, indices);
+
+  EXPECT_NE(context.failure_state(), torch::executor::Error::Ok);
 }

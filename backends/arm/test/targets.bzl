@@ -19,6 +19,8 @@ def define_arm_tests():
         "ops/test_avg_pool2d.py",
         "ops/test_cat.py",
         "ops/test_conv2d.py",
+        "ops/test_isinf.py",
+        "ops/test_isnan.py",
         "ops/test_linear.py",
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
@@ -66,6 +68,7 @@ def define_arm_tests():
         "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
+        "misc/test_tosa_constant_pool.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
@@ -181,6 +184,21 @@ def define_arm_tests():
                 "//executorch/backends/arm/runtime:vgf_backend",
                 "//executorch/runtime/core:core",
                 "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_vulkan_features_test",
+            srcs = ["vgf_vulkan_features_test.cpp"],
+            compiler_flags = [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
                 "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
             ],

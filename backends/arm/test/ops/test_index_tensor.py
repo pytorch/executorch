@@ -8,12 +8,15 @@ from typing import Tuple
 
 import torch
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class IndexTensorTestCommon:
@@ -41,6 +44,58 @@ class IndexTensorInt64Buffer(torch.nn.Module):
         return x[self.index]
 
 
+class IndexTensorLeadingInt64Buffers(torch.nn.Module):
+    """NCHW indexing with leading full slices and int64 index buffers."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("rows", torch.tensor([[0], [2]], dtype=torch.int64))
+        self.register_buffer("columns", torch.tensor([[1, 3]], dtype=torch.int64))
+
+    def forward(self, x: torch.Tensor):
+        return x[:, :, self.rows, self.columns]
+
+
+class ConstantIndexTensor(torch.nn.Module):
+    def __init__(self, indices: list[int]):
+        super().__init__()
+        self.register_buffer("index", torch.tensor(indices, dtype=torch.int32))
+
+    def forward(self, x: torch.Tensor):
+        return x[self.index]
+
+
+class ConstantIndexTensorDim(torch.nn.Module):
+    def __init__(self, dim: int, indices: list[int]):
+        super().__init__()
+        self.dim = dim
+        self.register_buffer("index", torch.tensor(indices, dtype=torch.int32))
+
+    def forward(self, x: torch.Tensor):
+        indices = [slice(None)] * x.dim()
+        indices[self.dim] = self.index
+        return x[tuple(indices)]
+
+
+class ConstantTensorIndex(torch.nn.Module):
+    def __init__(self, index: torch.Tensor):
+        super().__init__()
+        self.register_buffer("index", index)
+
+    def forward(self, x: torch.Tensor):
+        return x[self.index]
+
+
+class ConstantMultiIndexTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("index_0", torch.tensor([0, 1], dtype=torch.int32))
+        self.register_buffer("index_1", torch.tensor([1, 0], dtype=torch.int32))
+
+    def forward(self, x: torch.Tensor):
+        return x[self.index_0, self.index_1]
+
+
 def test_index_tensor_tosa_FP_int64_buffer_index():
     # This mirrors torchvision Swin relative_position_bias_table[index]. The
     # int64 get_attr must be cast before index.Tensor is decomposed to GATHER:
@@ -57,8 +112,73 @@ def test_index_tensor_tosa_FP_int64_buffer_index():
     pipeline.run()
 
 
+def test_index_tensor_tosa_FP_leading_full_slice_int64_buffer_indices():
+    pipeline = TosaPipelineFP[Tuple[torch.Tensor]](
+        IndexTensorLeadingInt64Buffers(),
+        (torch.rand(1, 2, 4, 5),),
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        atol=IndexTensorTestCommon.atol,
+        rtol=IndexTensorTestCommon.rtol,
+    )
+    pipeline.count_tosa_ops({"GATHER": 1, "TRANSPOSE": 0})
+    pipeline.run()
+
+
 input_params_slice = Tuple[torch.Tensor, int, int, str, Tuple[torch.Tensor]]
 input_params = Tuple[torch.Tensor, Tuple[torch.Tensor]]
+input_t2 = Tuple[torch.Tensor, torch.Tensor]
+input_t3 = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+
+
+class IndexTensorLeadingFullSlice(torch.nn.Module):
+    def forward(self, x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
+        return x[:, index, :]
+
+
+class IndexTensorLeadingFullSlicesNCHW(torch.nn.Module):
+    def forward(
+        self, x: torch.Tensor, rows: torch.Tensor, columns: torch.Tensor
+    ) -> torch.Tensor:
+        return x[:, :, rows, columns]
+
+
+class IndexTensorLeadingFullSliceWithTrailingDim(torch.nn.Module):
+    def forward(
+        self, x: torch.Tensor, rows: torch.Tensor, columns: torch.Tensor
+    ) -> torch.Tensor:
+        return x[:, rows, columns, :]
+
+
+leading_full_slice_test_data = {
+    "nchw_broadcast_indices": lambda: (
+        IndexTensorLeadingFullSlicesNCHW(),
+        (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32).reshape(2, 3, 4, 5),
+            torch.tensor([[0], [2]], dtype=torch.int32),
+            torch.tensor([[1, 3, 4]], dtype=torch.int32),
+        ),
+    ),
+    "leading_and_trailing_dims": lambda: (
+        IndexTensorLeadingFullSliceWithTrailingDim(),
+        (
+            torch.arange(2 * 4 * 5 * 3, dtype=torch.float32).reshape(2, 4, 5, 3),
+            torch.tensor([[0], [2]], dtype=torch.int32),
+            torch.tensor([[1, 3, 4]], dtype=torch.int32),
+        ),
+    ),
+}
+
+zero_sized_test_data = {
+    "zero_sized_leading_dimension": (
+        torch.empty(0, 3, 4),
+        torch.tensor([0, 2], dtype=torch.int32),
+    ),
+    "empty_index_tensor": (
+        torch.rand(2, 3, 4),
+        torch.empty(0, dtype=torch.int32),
+    ),
+}
 
 
 class IndexTensor_Ellipsis(torch.nn.Module):
@@ -115,7 +235,6 @@ class IndexTensor_Ellipsis(torch.nn.Module):
     IndexTensor_Ellipsis.test_data_ellipsis,
     xfails={
         # More info in index_tensor_support.py
-        "test_4d_ellipsis_before": "Ellipsis before index unsupported",
         "test_4d_ellipsis_middle": "Ellipsis before index unsupported",
     },
 )
@@ -139,7 +258,6 @@ def test_index_tensor_tosa_FP_ellipsis(test_data: input_params):
     IndexTensor_Ellipsis.test_data_ellipsis,
     xfails={
         # More info in index_tensor_support.py
-        "test_4d_ellipsis_before": "Ellipsis before index unsupported",
         "test_4d_ellipsis_middle": "Ellipsis before index unsupported",
     },
 )
@@ -227,8 +345,6 @@ class IndexTensor_Slice(torch.nn.Module):
     IndexTensor_Slice.test_data,
     xfails={
         # More info in index_tensor_support.py
-        "test_4d_slice_before_1d_idx": "Slice before index unsupported",
-        "test_3d_slice_before_2d_idx": "Slice before index unsupported",
         "test_4d_slice_middle": "Slice before index unsupported",
     },
 )
@@ -252,8 +368,6 @@ def test_index_tensor_tosa_FP_slice(test_data: input_params_slice):
     IndexTensor_Slice.test_data,
     xfails={
         # More info in index_tensor_support.py
-        "test_4d_slice_before_1d_idx": "Slice before index unsupported",
-        "test_3d_slice_before_2d_idx": "Slice before index unsupported",
         "test_4d_slice_middle": "Slice before index unsupported",
     },
 )
@@ -424,8 +538,7 @@ class IndexTensor(torch.nn.Module):
         ),
     }
 
-    # xfail - None (unsqueeze) unsupported
-    test_data_none: dict[input_params] = {
+    test_data_leading_none: dict[input_params] = {
         "test_3d_3_idx_with_none_before": (
             torch.rand(12, 3, 7),
             (
@@ -441,6 +554,9 @@ class IndexTensor(torch.nn.Module):
                 torch.randint(3, size=(12,), dtype=torch.int32),
             ),
         ),
+    }
+
+    test_data_none: dict[input_params] = test_data_leading_none | {
         "test_3d_3_idx_with_none_around": (
             torch.rand(12, 3, 7),
             (
@@ -530,25 +646,22 @@ def test_index_tensor_tosa_INT(test_data: input_params):
     IndexTensor.test_data_none,
     xfails={
         # More info in index_tensor_support.py
-        "test_3d_3_idx_with_none_before": "None (Unsqueeze) unsupported",
-        "test_3d_3_idx_with_2_none_before": "None (Unsqueeze) unsupported",
-        "test_3d_3_idx_with_none_around": "None (Unsqueeze) unsupported",
         "test_3d_3_idx_with_none_middle": "None (Unsqueeze) unsupported",
     },
 )
 def test_index_tensor_tosa_FP_none(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
-        (
-            TosaPipelineFP[input_params](
-                IndexTensor(),
-                test_input,
-                IndexTensorTestCommon.aten_op,
-                IndexTensorTestCommon.exir_op,
-                atol=IndexTensorTestCommon.atol,
-                rtol=IndexTensorTestCommon.rtol,
-            ).run()
+        pipeline = TosaPipelineFP[input_params](
+            IndexTensor(),
+            test_input,
+            IndexTensorTestCommon.aten_op,
+            IndexTensorTestCommon.exir_op,
+            atol=IndexTensorTestCommon.atol,
+            rtol=IndexTensorTestCommon.rtol,
         )
+        pipeline.count_tosa_ops({"GATHER": 1, "TRANSPOSE": 0})
+        pipeline.run()
 
 
 @common.parametrize(
@@ -556,23 +669,100 @@ def test_index_tensor_tosa_FP_none(test_data: input_params):
     IndexTensor.test_data_none,
     xfails={
         # More info in index_tensor_support.py
-        "test_3d_3_idx_with_none_before": "None (Unsqueeze) unsupported",
-        "test_3d_3_idx_with_2_none_before": "None (Unsqueeze) unsupported",
-        "test_3d_3_idx_with_none_around": "None (Unsqueeze) unsupported",
         "test_3d_3_idx_with_none_middle": "None (Unsqueeze) unsupported",
     },
 )
 def test_index_tensor_tosa_INT_none(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
-        (
-            TosaPipelineINT[input_params](
-                IndexTensor(),
-                test_input,
-                IndexTensorTestCommon.aten_op,
-                IndexTensorTestCommon.exir_op,
-            ).run()
+        pipeline = TosaPipelineINT[input_params](
+            IndexTensor(),
+            test_input,
+            IndexTensorTestCommon.aten_op,
+            IndexTensorTestCommon.exir_op,
         )
+        pipeline.count_tosa_ops({"GATHER": 1, "TRANSPOSE": 0})
+        pipeline.run()
+
+
+@common.parametrize("test_data", leading_full_slice_test_data)
+def test_index_tensor_tosa_FP_leading_full_slices(test_data):
+    model, test_inputs = test_data()
+    pipeline = TosaPipelineFP[input_t3](
+        model,
+        test_inputs,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        atol=IndexTensorTestCommon.atol,
+        rtol=IndexTensorTestCommon.rtol,
+    )
+    pipeline.count_tosa_ops({"GATHER": 1, "TRANSPOSE": 0})
+    pipeline.run()
+
+
+@common.parametrize("test_data", leading_full_slice_test_data)
+def test_index_tensor_tosa_INT_leading_full_slices(test_data):
+    model, test_inputs = test_data()
+    pipeline = TosaPipelineINT[input_t3](
+        model,
+        test_inputs,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+    )
+    pipeline.count_tosa_ops({"GATHER": 1, "TRANSPOSE": 0})
+    pipeline.run()
+
+
+@common.parametrize("test_data", zero_sized_test_data)
+def test_index_tensor_zero_sized_not_delegated_tosa_FP(test_data: input_t2):
+    OpNotSupportedPipeline[input_t2](
+        IndexTensorLeadingFullSlice(),
+        test_data,
+        {IndexTensorTestCommon.exir_op: 1},
+    ).run()
+
+
+@common.parametrize("test_data", IndexTensor.test_data_leading_none)
+@common.SkipIfNoModelConverter
+def test_index_tensor_vgf_leading_full_slices(test_data: input_params):
+    pipeline = VgfPipeline[input_params](
+        IndexTensor(),
+        test_data,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        atol=IndexTensorTestCommon.atol,
+        rtol=IndexTensorTestCommon.rtol,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", leading_full_slice_test_data)
+@common.SkipIfNoModelConverter
+def test_index_tensor_leading_full_slice_indexing_vgf_no_quant(test_data):
+    model, test_inputs = test_data()
+    VgfPipeline[input_t3](
+        model,
+        test_inputs,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        atol=IndexTensorTestCommon.atol,
+        rtol=IndexTensorTestCommon.rtol,
+        quantize=False,
+    ).run()
+
+
+@common.parametrize("test_data", leading_full_slice_test_data)
+@common.SkipIfNoModelConverter
+def test_index_tensor_leading_full_slice_indexing_vgf_quant(test_data):
+    model, test_inputs = test_data()
+    VgfPipeline[input_t3](
+        model,
+        test_inputs,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        quantize=True,
+    ).run()
 
 
 @common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
@@ -622,3 +812,116 @@ def test_index_tensor_vgf_quant(test_data: input_params):
         quantize=True,
     )
     pipeline.run()
+
+
+@common.parametrize(
+    "indices",
+    {
+        "contiguous": [1, 2, 3],
+        "noncontiguous": [1, 3],
+        "descending": [3, 1],
+        "duplicate": [1, 1],
+        "negative": [-1, -3],
+    },
+)
+@common.XfailIfNoCorstone300
+def test_index_tensor_u55_INT_constant(indices):
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        ConstantIndexTensor(indices),
+        (torch.rand(5, 2, 3),),
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    {
+        "dim1_contiguous": (1, [1, 2, 3]),
+        "dim1_noncontiguous": (1, [1, 3]),
+        "dim2_descending": (2, [3, 1]),
+        "dim2_duplicate": (2, [1, 1]),
+        "dim2_negative": (2, [-1, -3]),
+    },
+)
+@common.XfailIfNoCorstone300
+def test_index_tensor_u55_INT_constant_later_dim(test_data):
+    dim, indices = test_data
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        ConstantIndexTensorDim(dim, indices),
+        (torch.rand(5, 5, 5),),
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+def test_index_tensor_u55_INT_constant_a16w8():
+    pipeline = EthosU55PipelineINT[Tuple[torch.Tensor]](
+        ConstantIndexTensor([1, 2, 3]),
+        (torch.rand(5, 2, 3),),
+        aten_ops=[],
+        exir_ops=[],
+        a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+def test_index_tensor_u55_INT_constant_empty_not_delegated():
+    pipeline = OpNotSupportedPipeline[Tuple[torch.Tensor]](
+        ConstantIndexTensor([]),
+        (torch.rand(5, 2, 3),),
+        {IndexTensorTestCommon.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
+def test_index_tensor_u55_INT_constant_multi_not_delegated():
+    pipeline = OpNotSupportedPipeline[Tuple[torch.Tensor]](
+        ConstantMultiIndexTensor(),
+        (torch.rand(5, 2, 3),),
+        {IndexTensorTestCommon.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "index",
+    {
+        "multidimensional": torch.tensor([[0, 1]], dtype=torch.int32),
+        "boolean": torch.tensor([False, True, False, True, False]),
+    },
+)
+def test_index_tensor_u55_INT_constant_shape_or_dtype_not_delegated(index):
+    pipeline = OpNotSupportedPipeline[Tuple[torch.Tensor]](
+        ConstantTensorIndex(index),
+        (torch.rand(5, 2, 3),),
+        {IndexTensorTestCommon.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
+def test_index_tensor_u55_INT_constant_symbolic_dim_not_delegated():
+    indexed_dim = torch.export.Dim("indexed_dim", min=4, max=8)
+    tester = ArmTester(
+        ConstantIndexTensor([1, 2, 3]),
+        (torch.rand(5, 2, 3),),
+        common.get_u55_compile_spec(),
+        dynamic_shapes={"x": {0: indexed_dim}},
+    )
+    tester.quantize().export().to_edge().partition()
+
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+    assert exir_ops.edge.aten.index.Tensor in targets
+    assert torch.ops.higher_order.executorch_call_delegate not in targets

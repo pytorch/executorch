@@ -35,7 +35,7 @@ from executorch.backends.nxp.tests.executors import (
     graph_contains_any,
     graph_contains_any_of_ops,
 )
-from executorch.backends.nxp.tests.models import ConvBatchNormModule
+from executorch.backends.nxp.tests.simple_models import ConvBatchNormModule
 from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
     QuantizeFusedConvBnBiasAtenPass,
 )
