@@ -799,6 +799,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         platform = "linux"
         emulate_precision_casts = True
         max_autotune = True
+        max_autotune_gemm = None
         autotune_at_compile_time = None
         shim_library_path = None
         for spec in compile_specs:
@@ -808,12 +809,16 @@ class CudaBackend(AotiBackend, BackendDetails):
                 emulate_precision_casts = _on_off_compile_spec_value(spec)
             elif spec.key == "max_autotune":
                 max_autotune = _on_off_compile_spec_value(spec)
+            elif spec.key == "max_autotune_gemm":
+                max_autotune_gemm = _on_off_compile_spec_value(spec)
             elif spec.key == "autotune_at_compile_time":
                 autotune_at_compile_time = _on_off_compile_spec_value(spec)
             elif spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
         options["emulate_precision_casts"] = emulate_precision_casts
         options["max_autotune"] = max_autotune
+        if max_autotune_gemm is not None:
+            options["max_autotune_gemm"] = max_autotune_gemm
         if autotune_at_compile_time is not None:
             options["triton.autotune_at_compile_time"] = autotune_at_compile_time
         # Add platform-specific options
