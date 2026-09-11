@@ -57,6 +57,15 @@ class ArmPass(ExportPass):
         output_qparams = meta_dict.get("output_qparams", {})
         return bool(input_qparams) and bool(output_qparams)
 
+    def should_fast_copy_node(self, target: torch.fx.node.Target) -> bool:
+        ops_without_quantized_fake_kernel = {
+            exir_ops.edge.aten.bmm.default,
+            exir_ops.edge.aten.leaky_relu.default,
+        }
+        if any(target is op for op in ops_without_quantized_fake_kernel):
+            return False
+        return super().should_fast_copy_node(target)
+
     @property
     @abstractmethod
     def _passes_required_after(self) -> Set[Type[ExportPass]]:
@@ -142,11 +151,11 @@ class ArmPass(ExportPass):
         self, graph_module: GraphModule, inputs: tuple[Any, ...]
     ) -> PassResult:
         self.submodule_depth += 1
-        if self.submodule_depth == 1:
+        if self.submodule_depth == 1 or self.should_run_pass(graph_module):
             result = super().call_submodule(graph_module, inputs)
         else:
-            # When we trace a submodule, we don't want to apply the calling pass.
-            # Temporarily replace call_operator to avoid this.
+            # Nested submodules that do not need this pass still need normal replay.
+            # Temporarily replace call_operator to avoid applying subclass rewrites.
             _call_operator_fn = self.call_operator
             self.call_operator = super().call_operator  # type: ignore
             result = super().call_submodule(graph_module, inputs)

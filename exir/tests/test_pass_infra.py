@@ -8,6 +8,7 @@
 # pyre-strict
 
 import unittest
+from typing import Any
 
 import executorch.exir as exir
 import torch
@@ -28,6 +29,7 @@ from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 
 class TestPassInfra(unittest.TestCase):
@@ -227,6 +229,318 @@ class TestProxyValueSymbolicCoercions(unittest.TestCase):
 
         with self.assertRaisesRegex(ExportPassBaseError, "converted to float"):
             float(ProxyValue(sym_float, torch.fx.Graph().placeholder("x")))
+
+
+class TestExportPassFastCopy(unittest.TestCase):
+    @staticmethod
+    def _edge_graph_module(module: torch.nn.Module) -> torch.fx.GraphModule:
+        return (
+            to_edge(export(module, (torch.randn(2),), strict=True))
+            .exported_program()
+            .graph_module
+        )
+
+    @staticmethod
+    def _raw_add_graph_module(
+        dynamic_shapes: Any | None = None,
+    ) -> torch.fx.GraphModule:
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        return export(
+            AddModule(),
+            (torch.randn(2),),
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
+        ).graph_module
+
+    @staticmethod
+    def _ensure_tensor_meta(graph_module: torch.fx.GraphModule) -> None:
+        for node in graph_module.graph.nodes:
+            value = node.meta.get("val")
+            if isinstance(value, torch.Tensor) and "tensor_meta" not in node.meta:
+                node.meta["tensor_meta"] = _extract_tensor_metadata(value)
+
+    @staticmethod
+    def _call_function_targets(
+        graph_module: torch.fx.GraphModule,
+    ) -> list[torch.fx.node.Target]:
+        return [
+            node.target for node in graph_module.graph.nodes if node.op == "call_function"
+        ]
+
+    def test_empty_targeted_ops_does_not_fall_back_to_target_ops(self) -> None:
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        class EmptyTargetedOpsPass(ExportPass):
+            targeted_ops: tuple[()] = ()
+            target_ops = {exir_ops.edge.aten.add.Tensor}
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        graph_module = self._edge_graph_module(AddModule())
+        pass_ = EmptyTargetedOpsPass()
+
+        pass_(graph_module)
+
+        self.assertEqual(pass_.operator_calls, 0)
+
+    def test_missing_tensor_meta_uses_normal_replay(self) -> None:
+        graph_module = self._edge_graph_module(self._AddModule())
+        add_node = self._single_call_function_node(
+            graph_module, exir_ops.edge.aten.add.Tensor
+        )
+        del add_node.meta["tensor_meta"]
+
+        class TargetedPass(ExportPass):
+            targeted_ops = (exir_ops.edge.aten.mul.Tensor,)
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        pass_ = TargetedPass()
+        new_graph_module = pass_(graph_module).graph_module
+        new_add_node = self._single_call_function_node(
+            new_graph_module, exir_ops.edge.aten.add.Tensor
+        )
+
+        self.assertEqual(pass_.operator_calls, 1)
+        self.assertIn("tensor_meta", new_add_node.meta)
+
+    def test_should_fast_copy_node_hook_keeps_selected_cold_ops_on_slow_path(
+        self,
+    ) -> None:
+        graph_module = self._edge_graph_module(self._AddModule())
+
+        class HookedPass(ExportPass):
+            targeted_ops: tuple[()] = ()
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def should_fast_copy_node(self, target: torch.fx.node.Target) -> bool:
+                return target is not exir_ops.edge.aten.add.Tensor
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        pass_ = HookedPass()
+
+        pass_(graph_module)
+
+        self.assertEqual(pass_.operator_calls, 1)
+
+    def test_packet_target_does_not_match_overload_target(self) -> None:
+        graph_module = self._raw_add_graph_module()
+        self._ensure_tensor_meta(graph_module)
+
+        class PacketTargetPass(ExportPass):
+            targeted_ops = (torch.ops.aten.add,)
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        pass_ = PacketTargetPass()
+        new_graph_module = pass_(graph_module).graph_module
+
+        self.assertEqual(pass_.operator_calls, 0)
+        self.assertEqual(
+            self._call_function_targets(new_graph_module), [torch.ops.aten.add.Tensor]
+        )
+
+    def test_symbolic_metadata_drift_check_does_not_force_symint_bool(
+        self,
+    ) -> None:
+        graph_module = self._raw_add_graph_module(
+            dynamic_shapes=({0: Dim("batch", min=1, max=8)},)
+        )
+
+        class SymbolicTargetPass(ExportPass):
+            targeted_ops = (torch.ops.aten.add.Tensor,)
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        pass_ = SymbolicTargetPass()
+        new_graph_module = pass_(graph_module).graph_module
+
+        self.assertEqual(pass_.operator_calls, 1)
+        self.assertEqual(
+            self._call_function_targets(new_graph_module), [torch.ops.aten.add.Tensor]
+        )
+
+    def test_nested_target_output_metadata_drift_disables_downstream_fast_copy(
+        self,
+    ) -> None:
+        class MaxThenAddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                values, _ = torch.max(x, dim=1)
+                return values + values
+
+        graph_module = export(
+            MaxThenAddModule(),
+            (torch.randn(2, 3),),
+            strict=True,
+        ).graph_module
+        self._ensure_tensor_meta(graph_module)
+
+        class TupleMetadataDriftPass(ExportPass):
+            targeted_ops = (torch.ops.aten.max.dim,)
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue | tuple[ProxyValue, ProxyValue]:
+                self.operator_calls += 1
+                result = super().call_operator(op, args, kwargs, meta)
+                if op is not torch.ops.aten.max.dim:
+                    return result
+
+                values = self.call_getitem(result, 0, meta)
+                indices = self.call_getitem(result, 1, meta)
+                return (ProxyValue(values.data.unsqueeze(0), values.proxy), indices)
+
+        pass_ = TupleMetadataDriftPass()
+
+        pass_(graph_module)
+
+        self.assertEqual(pass_.operator_calls, 2)
+
+    def test_overlapping_get_attr_fast_copy_fallback_is_atomic(self) -> None:
+        class TargetedPass(ExportPass):
+            targeted_ops = (torch.ops.aten.mul.Tensor,)
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        weight = torch.ones(2)
+        weight.x = torch.ones(2)
+        root = torch.nn.Module()
+        root.register_buffer("w", weight)
+        graph = torch.fx.Graph()
+        w = graph.get_attr("w")
+        wx = graph.get_attr("w.x")
+        cold_node = graph.call_function(torch.ops.aten.add.Tensor, (w, wx))
+        cold_node.meta["val"] = weight + weight.x
+        cold_node.meta["tensor_meta"] = _extract_tensor_metadata(cold_node.meta["val"])
+        graph.output(cold_node)
+        graph_module = torch.fx.GraphModule(root, graph)
+        pass_ = TargetedPass()
+
+        new_graph_module = pass_(graph_module).graph_module
+
+        self.assertEqual(pass_.operator_calls, 1)
+        self.assertFalse(
+            any(
+                node.op == "get_attr" and len(node.users) == 0
+                for node in new_graph_module.graph.nodes
+            )
+        )
+
+    def test_unrelated_runtime_error_during_fast_copy_propagates(self) -> None:
+        graph_module = self._edge_graph_module(self._AddModule())
+
+        class RaisingFastCopyPass(ExportPass):
+            targeted_ops: tuple[()] = ()
+
+            class ExportInterpreter(ExportPass.ExportInterpreter):
+                def _fast_copy_node(self, n: torch.fx.Node) -> ProxyValue:
+                    raise RuntimeError("unrelated fast-copy failure")
+
+        with self.assertRaisesRegex(RuntimeError, "unrelated fast-copy failure"):
+            RaisingFastCopyPass()(graph_module)
+
+    class _AddModule(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x + x
+
+    @staticmethod
+    def _single_call_function_node(
+        graph_module: torch.fx.GraphModule,
+        target: torch.fx.node.Target,
+    ) -> torch.fx.Node:
+        matches = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "call_function" and node.target is target
+        ]
+        if len(matches) != 1:
+            raise AssertionError(f"Expected exactly one {target} node, found {matches}")
+        return matches[0]
 
 
 class TestExportedProgramPassManager(unittest.TestCase):
