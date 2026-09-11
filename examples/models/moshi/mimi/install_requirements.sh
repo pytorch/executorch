@@ -15,7 +15,7 @@ if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update
   sudo apt-get install -y --no-install-recommends ffmpeg
 fi
-pip install torchcodec==0.11.0 --extra-index-url https://download.pytorch.org/whl/test/cpu
+pip install torchcodec==0.16.0 --index-url https://download.pytorch.org/whl/cpu
 pip install moshi==0.2.11
 pip install bitsandbytes soundfile einops
 # Run llama2/install requirements for torchao deps

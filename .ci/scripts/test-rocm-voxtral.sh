@@ -11,8 +11,8 @@ ROCM_VERSION="${ROCM_VERSION:-7.2}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 EXPECTED_ROCM_ARCH="${EXPECTED_ROCM_ARCH:-gfx950}"
 EXPECTED_WARP_SIZE="${EXPECTED_WARP_SIZE:-64}"
-PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
-TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
+PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/rocm${ROCM_VERSION}}"
+TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/rocm${ROCM_VERSION}}"
 VOXTRAL_CI_TMP_ROOT="${RUNNER_TEMP:-/tmp}"
 if ! mkdir -p "${VOXTRAL_CI_TMP_ROOT}" 2>/dev/null ||
   [[ ! -w "${VOXTRAL_CI_TMP_ROOT}" ]]; then
@@ -58,8 +58,8 @@ conda install -y -c conda-forge ffmpeg 'libstdcxx-ng>=12'
 
 python -m pip install 'fsspec[http]<=2025.3.0'
 python -m pip install datasets huggingface_hub librosa mistral-common safetensors soundfile
-python -m pip install torchcodec==0.11.0 \
-  --extra-index-url https://download.pytorch.org/whl/test/cpu
+python -m pip install torchcodec==0.16.0 \
+  --index-url https://download.pytorch.org/whl/cpu
 
 python - <<'PY'
 import os
