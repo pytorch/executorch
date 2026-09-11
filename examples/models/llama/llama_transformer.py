@@ -244,7 +244,15 @@ class TransformerBlock(nn.Module):
             self.post_attn_norm = ScalelessRMSNorm(args.dim, eps=args.norm_eps)
 
         if args.use_ffn_learnable_scales and self.mlp_type != "skip":
-            self.post_ffn_norm = RMSNormWithInputScale(args.dim, eps=args.norm_eps)
+            self.post_ffn_norm = RMSNormWithInputScale(
+                args.dim,
+                eps=args.norm_eps,
+                # Same checkpoint property that drives attention_norm, ffn_norm,
+                # q_norm/k_norm and the final norm. rlformers has one flag
+                # (`norm_zero_centered_gamma`) covering all of them, so ET must not
+                # grow a second name for it.
+                zero_centered_gamma=args.rms_norm_add_unit_offset,
+            )
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
