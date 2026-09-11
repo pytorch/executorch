@@ -179,8 +179,14 @@ inline void event_tracer_log_output_delegate(
             std::is_same<T, executorch::aten::Tensor>::value ||
             std::is_same<T, ArrayRef<executorch::aten::Tensor>>::value,
         "Unsupported type for intermediate output");
-    event_tracer->log_intermediate_output_delegate(
+    auto log_result = event_tracer->log_intermediate_output_delegate(
         name, delegate_debug_id, output);
+    if (!log_result.ok()) {
+      ET_LOG(
+          Error,
+          "Failed to log delegate output: %s",
+          to_string(log_result.error()));
+    }
   }
 #else //! ET_EVENT_TRACER_ENABLED
   (void)name;
