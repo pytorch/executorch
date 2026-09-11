@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/span.h>
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
@@ -22,10 +23,12 @@ class BackendExecutionContext final {
   BackendExecutionContext(
       EventTracer* event_tracer = nullptr,
       MemoryAllocator* temp_allocator = nullptr,
-      const char* method_name = nullptr)
+      const char* method_name = nullptr,
+      Span<const Span<uint8_t>> scratch_buffers = {})
       : event_tracer_(event_tracer),
         temp_allocator_(temp_allocator),
-        method_name_(method_name) {}
+        method_name_(method_name),
+        scratch_buffers_(scratch_buffers) {}
 
   /**
    * Returns a pointer to an instance of EventTracer to do profiling/debugging
@@ -62,10 +65,34 @@ class BackendExecutionContext final {
     return method_name_;
   }
 
+  /**
+   * The memory-planned scratch buffers this delegate declared when it was
+   * lowered, in declaration order. Check size() before indexing: a program
+   * that declares none, or one exported before this field existed, yields an
+   * empty span and the backend must fall back to the temp allocator.
+   *
+   * A buffer's address is fixed for the Method's lifetime, provided the
+   * planned buffers the integrator supplied outlive it. Its contents are not:
+   * they are uninitialized on entry and dead on return, because the memory
+   * plan may hand the same bytes to unrelated tensors between calls. Within
+   * one call the planner will not overlap a buffer with this delegate's own
+   * inputs and outputs, with anything live across the call, or with its
+   * siblings.
+   *
+   * Alignment is whatever the arena provides: the planner aligns each buffer's
+   * offset within its pool, to 16 bytes by default, but the pool's base
+   * address comes from the integrator and the runtime does not adjust it. A
+   * backend needing more must declare the slack and align the pointer itself.
+   */
+  Span<const Span<uint8_t>> scratch_buffers() const {
+    return scratch_buffers_;
+  }
+
  private:
   EventTracer* event_tracer_ = nullptr;
   MemoryAllocator* temp_allocator_ = nullptr;
   const char* method_name_ = nullptr;
+  Span<const Span<uint8_t>> scratch_buffers_;
 };
 
 } // namespace ET_RUNTIME_NAMESPACE
