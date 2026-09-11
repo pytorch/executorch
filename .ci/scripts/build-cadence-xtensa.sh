@@ -27,6 +27,22 @@ RUN_SMOKE=1
 : "${XTENSA_CORE:?run setup-xtensa-tools.sh first}"
 : "${CADENCE_OPT_FLAG:?run setup-xtensa-tools.sh first}"
 
+# [do-not-land] Stand in for an mt-l-x86iavx512-8-64 runner, whose 48-character
+# pod hostname is what breaks the RJ-2025.5 licence key. Takes that exact name,
+# shows which key xt-clang then asks for, and falls through to the shim, which
+# should recover and let the build run.
+if [[ -z "${XTENSA_FAKE_LONG_HOSTNAME:-}" ]]; then
+  export XTENSA_FAKE_LONG_HOSTNAME=1
+  exec unshare -Uur bash -c '
+    hostname mt-l-x86iavx512-8-64-r6gdl-runner-6525q-workflow
+    _hn=$(hostname); echo "=== posing as an avx512 pod: ${_hn} (${#_hn} chars) ==="
+    echo "int main(void){return 0;}" > /tmp/_lic_probe.c
+    echo -n "  at this hostname xt-clang asks for: "
+    FLEXLM_DIAGNOSTICS=3 xt-clang -c /tmp/_lic_probe.c -o /tmp/_lic_probe.o 2>&1 \
+      | grep -oE "(Checkout succeeded: )?XT_XCC_TIE[A-Z0-9_]*" | head -1
+    exec "$0" "$@"' "$0" "$@"
+fi
+
 # shellcheck source=.ci/scripts/xtensa-short-hostname.sh
 source "$(dirname "${BASH_SOURCE[0]}")/xtensa-short-hostname.sh"
 

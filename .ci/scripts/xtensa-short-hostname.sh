@@ -17,7 +17,7 @@
 #
 # Source this from a script that invokes the toolchain; do not execute it.
 
-XTENSA_MAX_HOSTNAME="${XTENSA_MAX_HOSTNAME:-10}"
+XTENSA_MAX_HOSTNAME="${XTENSA_MAX_HOSTNAME:-46}"
 XTENSA_SHORT_HOSTNAME=xtensa-ci
 
 if [[ "${TOOLCHAIN_VER:-}" == RJ-* && -z "${XTENSA_HOSTNAME_SHORTENED:-}" ]]; then
