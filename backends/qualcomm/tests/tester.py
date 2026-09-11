@@ -59,6 +59,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         edge_compile_config: Optional[EdgeCompileConfig] = None,
         soc_model: str = "SM8650",
         use_fp16: bool = True,
+        online_prepare: bool = False,
     ):
         backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
         self.backend_type = backend_options.backend_type
@@ -66,6 +67,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         self.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset,
             backend_options=backend_options,
+            online_prepare=online_prepare,
         )
 
         super().__init__(
@@ -98,9 +100,11 @@ class QualcommTester(TesterBase):
         example_inputs: Tuple[torch.Tensor],
         dynamic_shapes: Optional[Tuple[Any]] = None,
         use_fp16: bool = True,
+        online_prepare: bool = False,
     ):
         def create_to_edge_transform_and_lower(*args, **kwargs):
             kwargs["use_fp16"] = use_fp16
+            kwargs["online_prepare"] = online_prepare
             return ToEdgeTransformAndLower(*args, **kwargs)
 
         # Specialize for Qualcomm
