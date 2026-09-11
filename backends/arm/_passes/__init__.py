@@ -122,6 +122,7 @@ from .decompose_unsupported_bilinear_resize_pass import (  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
+from .deduplicate_const_shapes_pass import DeduplicateConstShapesPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
