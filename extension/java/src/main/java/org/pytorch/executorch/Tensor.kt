@@ -8,7 +8,6 @@
 
 package org.pytorch.executorch
 
-import android.util.Log
 import com.facebook.jni.HybridData
 import com.facebook.jni.annotations.DoNotStrip
 import java.nio.Buffer

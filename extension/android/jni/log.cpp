@@ -66,4 +66,34 @@ void access_log_buffer(std::function<void(std::vector<log_entry>&)> accessor) {
 
 } // namespace executorch::extension
 
+#else
+
+#include <cstdio>
+
+namespace executorch::extension {
+
+void access_log_buffer(std::function<void(std::vector<log_entry>&)> accessor) {
+  // No-op for non-Android
+  (void)accessor;
+}
+
+} // namespace executorch::extension
+
+void et_pal_emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    const char* function,
+    size_t line,
+    const char* message,
+    size_t length) {
+  (void)timestamp;
+  (void)filename;
+  (void)function;
+  (void)line;
+  (void)length;
+  // Fallback console log for JVM desktop
+  fprintf(stderr, "[ExecuTorch JNI %c] %s\n", level, message);
+}
+
 #endif

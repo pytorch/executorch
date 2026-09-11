@@ -1,0 +1,85 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+// Shared, platform-neutral ExecuTorch Java API.
+//
+// This module MUST NOT depend on any Android APIs: the classpath only contains the
+// JDK, fbjni-java-only, soloader nativeloader, and the Kotlin stdlib, so any
+// android.* reference fails at compile time. Platform-specific behavior (logging
+// sink, native library loading) is injected by the thin sibling modules
+// extension/android (AAR) and extension/jvm (desktop jar) through the Logger and
+// ExecuTorchRuntime.configureNativeLoading APIs.
+
+apply plugin: 'kotlin'
+apply plugin: 'java-library'
+apply plugin: 'com.vanniktech.maven.publish'
+apply plugin: 'com.diffplug.spotless'
+
+spotless {
+    kotlin {
+        target '**/*.kt'
+        ktfmt()
+    }
+}
+
+def execuTorchVersion = System.properties['execuTorchVersion']
+
+java {
+    // fbjni-java-only is published for JVM 17+, so the shared API must target Java 17.
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    api "com.facebook.fbjni:fbjni-java-only:${fbjniJavaOnlyVersion}"
+    api "com.facebook.soloader:nativeloader:${soLoaderNativeLoaderVersion}"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.23"
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.assertj:assertj-core:3.27.2'
+    testImplementation 'org.jetbrains.kotlin:kotlin-test:1.9.23'
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += ["-Xjvm-default=all"]
+    }
+}
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+
+    coordinates("org.pytorch", "executorch-java", execuTorchVersion ? execuTorchVersion : "1.2.0-SNAPSHOT")
+
+    pom {
+        name = "ExecuTorch Java"
+        description = "Platform-neutral ExecuTorch Java/Kotlin API shared by the Android and desktop JVM artifacts"
+        inceptionYear = "2025"
+        url = "https://github.com/pytorch/executorch/"
+        licenses {
+            license {
+                name = "BSD 3-Clause"
+                url = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+                distribution = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+            }
+        }
+        developers {
+            developer {
+                id = "pytorch"
+                name = "pytorch"
+                url = "https://github.com/pytorch/executorch/"
+            }
+        }
+        scm {
+            url = "https://github.com/pytorch/executorch.git"
+            connection = "scm:git:git@github.com:pytorch/executorch.git"
+            developerConnection = "scm:git:git@github.com:pytorch/executorch.git"
+        }
+    }
+}
