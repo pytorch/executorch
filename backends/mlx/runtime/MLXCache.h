@@ -92,6 +92,11 @@ class MLXCache {
       const Tensor& v,
       float scale,
       StreamOrDevice s) = 0;
+
+  // The stream for work the cache starts between steps, such as copying cells
+  // to fork a sequence. Bound at init, and by the last of several delegates
+  // that share the cache.
+  virtual void bind_controller_stream(::mlx::core::Stream /*s*/) {}
 };
 
 } // namespace mlx

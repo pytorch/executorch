@@ -393,6 +393,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
               std::string("init: cache under key '") + cache_key +
               "' is not an MLX cache");
         }
+        handle->state.cache->bind_controller_stream(handle->stream);
       }
 
       // Run init chain if present.

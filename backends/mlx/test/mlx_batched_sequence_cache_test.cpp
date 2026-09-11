@@ -250,6 +250,7 @@ TEST_F(MLXBatchedSequenceCacheTest, IllFormedStepsThrow) {
 // what either writes afterwards is invisible to the other.
 TEST_F(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
   MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t a = *c.seq_new();
   array q0 = randn(2), k0 = randn(2), v0 = randn(2);
   step(c, {a, a}, {0, 1}, q0, k0, v0);
@@ -270,6 +271,72 @@ TEST_F(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
   array want = alone(solo, {2}, q1, k1, v1);
   EXPECT_TRUE(allclose(span(out, 0, 1), want, 1e-2f)); // the source
   EXPECT_TRUE(allclose(span(out, 1, 1), want, 1e-2f)); // and its fork
+}
+
+TEST_F(MLXBatchedSequenceCacheTest, PartialFlatForkCopiesOnlyPrefix) {
+  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  c.bind_controller_stream(::mlx::core::to_stream(s));
+  const int32_t source = *c.seq_new();
+  array q0 = randn(8), k0 = randn(8), v0 = randn(8);
+  step(
+      c, std::vector<int32_t>(8, source), {0, 1, 2, 3, 4, 5, 6, 7}, q0, k0, v0);
+
+  const auto fork = c.seq_clone(source, /*upto=*/3);
+  ASSERT_TRUE(fork);
+  EXPECT_EQ(c.pos(*fork), 3);
+  EXPECT_TRUE(c.seq_rm(source));
+
+  MLXSequenceCache oracle(flat_config(32, 1, H, D, kHalf));
+  alone(oracle, {0, 1, 2}, span(q0, 0, 3), span(k0, 0, 3), span(v0, 0, 3));
+  array q1 = randn(1), k1 = randn(1), v1 = randn(1);
+  array got = step(c, {*fork}, {3}, q1, k1, v1);
+  EXPECT_TRUE(allclose(got, alone(oracle, {3}, q1, k1, v1), 1e-2f));
+}
+
+// A compacted fork owns its pool: what it writes must not reach the source,
+// nor the reverse. Feeding the two different tokens is what tells a real copy
+// from a shared buffer -- the same token would agree either way.
+TEST_F(MLXBatchedSequenceCacheTest, ForkAndSourceDivergeOnDifferentTokens) {
+  // A small initial capacity so the pool grows past it and the fork compacts.
+  auto cfg = [&] { return flat_config(32, 1, H, D, kHalf, 2); };
+  MLXBatchedSequenceCache c(cfg());
+  c.bind_controller_stream(::mlx::core::to_stream(s));
+  const int32_t a = *c.seq_new();
+
+  std::vector<array> qs, ks, vs;
+  for (int32_t p = 0; p < 8; ++p) {
+    qs.push_back(randn(1));
+    ks.push_back(randn(1));
+    vs.push_back(randn(1));
+    step(c, {a}, {p}, qs[p], ks[p], vs[p]);
+  }
+  const int32_t b = *c.seq_clone(a, /*upto=*/3);
+  ASSERT_EQ(c.pos(b), 3);
+
+  MLXSequenceCache oa(cfg()), ob(cfg());
+  for (int32_t p = 0; p < 8; ++p) {
+    alone(oa, {p}, qs[p], ks[p], vs[p]);
+    if (p < 3) {
+      alone(ob, {p}, qs[p], ks[p], vs[p]);
+    }
+  }
+
+  auto pair = [](const array& x, const array& y) {
+    return ::mlx::core::concatenate({x, y}, 2);
+  };
+  // The source continues at 8, the fork at 3, with different tokens each.
+  for (int i = 0; i < 3; ++i) {
+    array qa = randn(1), ka = randn(1), va = randn(1);
+    array qb = randn(1), kb = randn(1), vb = randn(1);
+    array out = step(
+        c, {a, b}, {8 + i, 3 + i}, pair(qa, qb), pair(ka, kb), pair(va, vb));
+    EXPECT_TRUE(
+        allclose(span(out, 0, 1), alone(oa, {8 + i}, qa, ka, va), 1e-2f))
+        << "source, step " << i;
+    EXPECT_TRUE(
+        allclose(span(out, 1, 1), alone(ob, {3 + i}, qb, kb, vb), 1e-2f))
+        << "fork, step " << i;
+  }
 }
 
 // A runner reaches a layout by (backend_id, kind), so the builder registration
@@ -294,6 +361,7 @@ TEST_F(
 // other cannot, and a fork needs room for the prefix it copies.
 TEST_F(MLXBatchedSequenceCacheTest, SequencesShareOneCapacity) {
   MLXBatchedSequenceCache c(flat_config(/*capacity=*/4, 1, H, D, kHalf));
+  c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
 
@@ -331,6 +399,7 @@ TEST_F(MLXBatchedSequenceCacheTest, RegistryBuildsBatchedSequenceLayout) {
 TEST_F(MLXBatchedSequenceCacheTest, PartialForkOfAWrappedRing) {
   const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
   MLXBatchedSequenceCache c(ring_config(32, window, max_write, H, D, kHalf));
+  c.bind_controller_stream(::mlx::core::to_stream(s));
   MLXSequenceCache oracle(ring_config(32, window, max_write, H, D, kHalf));
   const int32_t a = *c.seq_new();
 
@@ -368,6 +437,7 @@ TEST_F(MLXBatchedSequenceCacheTest, PartialForkOfAWrappedRing) {
 TEST_F(MLXBatchedSequenceCacheTest, ForkOfAForkKeepsTheDonorsFloor) {
   const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
   MLXBatchedSequenceCache c(ring_config(32, window, max_write, H, D, kHalf));
+  c.bind_controller_stream(::mlx::core::to_stream(s));
   const int32_t a = *c.seq_new();
   for (int32_t p = 0; p < 10; ++p) {
     array q = randn(1), k = randn(1), v = randn(1);

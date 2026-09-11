@@ -197,7 +197,8 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   int length() const {
     return length_;
   }
-  bool rewind(int position) override {
+  // Whether rewind(position) would be accepted, without moving the length.
+  bool can_rewind(int position) const {
     if (position > length_) {
       return false; // a position it has not reached
     }
@@ -208,8 +209,11 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
     for (const auto& p : policies_) {
       floor = std::max(floor, p->retained_from(written_));
     }
-    if (position < floor) {
-      return false; // history evicted from an evicting layer
+    return position >= floor; // else history an evicting layer dropped
+  }
+  bool rewind(int position) override {
+    if (!can_rewind(position)) {
+      return false;
     }
     length_ = position;
     return true;

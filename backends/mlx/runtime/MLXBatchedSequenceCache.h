@@ -85,18 +85,19 @@ class MLXBatchedSequenceCache : public cache::Cache,
       return std::nullopt;
     }
 
-    const int len =
+    const int keep =
         upto ? std::min(*upto, it->second.length()) : it->second.length();
-    if (len <= 0 || !has_room(len)) {
+    // Checked here so the constructor is only given a position it can honour.
+    if (keep <= 0 || !has_room(keep) || !it->second.can_rewind(keep)) {
       return std::nullopt;
     }
 
-    MLXSequenceCache fork(it->second);
-    if (upto && !fork.rewind(len)) {
+    // Forking copies cells, and an unbound cache has no stream to run that on.
+    if (!controller_) {
       return std::nullopt;
     }
     const int32_t dst = free_id();
-    rows_.emplace(dst, fork);
+    rows_.try_emplace(dst, it->second, keep, *controller_);
     invalidate_step();
     return dst;
   }
@@ -158,6 +159,10 @@ class MLXBatchedSequenceCache : public cache::Cache,
     }
     return outs.size() == 1 ? std::move(outs.front())
                             : ::mlx::core::concatenate(outs, 2, s);
+  }
+
+  void bind_controller_stream(::mlx::core::Stream s) override {
+    controller_ = s;
   }
 
  protected:
@@ -282,6 +287,8 @@ class MLXBatchedSequenceCache : public cache::Cache,
 
   cache::CacheConfig cfg_;
   std::map<int32_t, MLXSequenceCache> rows_;
+  // Set at init by the delegate that resolved this cache.
+  std::optional<::mlx::core::Stream> controller_;
   std::vector<Span> spans_;
   std::vector<int32_t> step_pos_;
   bool declared_ = false;
