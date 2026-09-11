@@ -579,3 +579,65 @@ TEST_F(MethodTest, OptionalTensorListDeserialization) {
   EXPECT_EQ(outputs.toTensor().size(2), 10);
 }
 */
+
+#ifndef USE_ATEN_LIB
+using executorch::runtime::internal::is_plausible_tensor_impl;
+
+namespace {
+// A stand-in for the method arena. Deriving the span from a real object keeps
+// the tests free of integer-to-pointer casts.
+constexpr size_t kImplSize = sizeof(executorch::aten::TensorImpl);
+
+// Function-local so it is not a mutable global; only its address is used.
+const char* arena() {
+  alignas(executorch::aten::TensorImpl) static const char storage
+      [4 * kImplSize] = {};
+  return storage;
+}
+
+uintptr_t arena_lo() {
+  return reinterpret_cast<uintptr_t>(arena() + kImplSize);
+}
+uintptr_t arena_hi() {
+  return reinterpret_cast<uintptr_t>(arena() + 2 * kImplSize);
+}
+} // namespace
+
+TEST(TensorImplSpanTest, AcceptsAddressesInsideTheSpan) {
+  EXPECT_TRUE(
+      is_plausible_tensor_impl(arena() + kImplSize, arena_lo(), arena_hi()));
+  EXPECT_TRUE(is_plausible_tensor_impl(
+      arena() + 2 * kImplSize, arena_lo(), arena_hi()));
+}
+
+TEST(TensorImplSpanTest, RejectsAddressesOutsideTheSpan) {
+  EXPECT_FALSE(is_plausible_tensor_impl(arena(), arena_lo(), arena_hi()));
+  EXPECT_FALSE(is_plausible_tensor_impl(
+      arena() + 3 * kImplSize, arena_lo(), arena_hi()));
+}
+
+TEST(TensorImplSpanTest, RejectsMisalignedAddresses) {
+  EXPECT_FALSE(is_plausible_tensor_impl(
+      arena() + kImplSize + 1, arena_lo(), arena_hi()));
+}
+
+// The four impl_ values observed on the crashing fleet (T285504156) are stride
+// products, not pointers, and must all be rejected. These are deliberately
+// bogus addresses, so the integer-to-pointer cast is the point of the test.
+TEST(TensorImplSpanTest, RejectsObservedFieldValues) {
+  for (uintptr_t forged : {0x380UL, 0x370UL, 0x18UL, 0xcUL}) {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    const void* impl = reinterpret_cast<const void*>(forged);
+    EXPECT_FALSE(is_plausible_tensor_impl(impl, arena_lo(), arena_hi()))
+        << "forged impl_ 0x" << std::hex << forged << " was accepted";
+  }
+}
+
+// An empty span carries no information, so the check must not reject. This
+// documents the deliberate fail-open: a method that parses no tensors keeps the
+// pre-existing behavior rather than failing to load.
+TEST(TensorImplSpanTest, FailsOpenOnAnEmptySpan) {
+  EXPECT_TRUE(
+      is_plausible_tensor_impl(arena(), /*lo=*/0, /*hi=*/0));
+}
+#endif // USE_ATEN_LIB

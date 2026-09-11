@@ -607,6 +607,18 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
           return t.error();
         }
         new (&values_[i]) EValue(t.get());
+#ifndef USE_ATEN_LIB
+        // parseTensor() is the only site that allocates a TensorImpl for a
+        // program value; tensor lists reference these same tensors.
+        const uintptr_t impl_addr =
+            reinterpret_cast<uintptr_t>(t.get().unsafeGetTensorImpl());
+        if (tensor_impls_lo_ == 0 || impl_addr < tensor_impls_lo_) {
+          tensor_impls_lo_ = impl_addr;
+        }
+        if (impl_addr > tensor_impls_hi_) {
+          tensor_impls_hi_ = impl_addr;
+        }
+#endif // USE_ATEN_LIB
       } break;
       case executorch_flatbuffer::KernelTypes::TensorList: {
         const auto items =
@@ -726,7 +738,29 @@ Error populate_operator_name(
 
   return Error::Ok;
 }
+
 } // namespace
+
+#ifndef USE_ATEN_LIB
+namespace internal {
+// True if `impl` is aligned and within [lo, hi], the span of TensorImpl
+// allocations observed while parsing, or if that span is empty, in which case
+// no claim can be made. Portable mode only: in ATen mode the TensorImpl is
+// heap-allocated by at::from_blob(), not carved from the method allocator.
+// Named (not anonymous) so method_test.cpp can exercise it directly.
+bool is_plausible_tensor_impl(const void* impl, uintptr_t lo, uintptr_t hi) {
+  if (lo == 0) {
+    return true;
+  }
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(impl);
+  if (addr % alignof(executorch::aten::TensorImpl) != 0) {
+    return false;
+  }
+  return addr >= lo && addr <= hi;
+}
+} // namespace internal
+using internal::is_plausible_tensor_impl;
+#endif // USE_ATEN_LIB
 
 Error Method::resolve_operator(
     int32_t op_index,
@@ -781,6 +815,26 @@ Error Method::resolve_operator(
     // handle tensor list as well
     if (eval->isTensor()) {
       auto tensor = eval->toTensor();
+#ifndef USE_ATEN_LIB
+      // isTensor() checks only the tag, so a slot whose payload was never a
+      // TensorImpl* faults here. Every TensorImpl reachable during init() was
+      // handed out while parsing values_, so an address outside that span
+      // cannot be valid.
+      if (!is_plausible_tensor_impl(
+              tensor.unsafeGetTensorImpl(),
+              tensor_impls_lo_,
+              tensor_impls_hi_)) {
+        ET_LOG(
+            Error,
+            "Arg %" ET_PRIsize_t " TensorImpl* %p outside parsed span",
+            i,
+            static_cast<const void*>(tensor.unsafeGetTensorImpl()));
+        if (allocator == memory_manager_->temp_allocator()) {
+          memory_manager_->temp_allocator()->reset();
+        }
+        return Error::InvalidProgram;
+      }
+#endif // USE_ATEN_LIB
       meta[count].dtype_ = tensor.scalar_type();
       executorch::aten::DimOrderType* dim_order_ptr =
           allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
@@ -1064,7 +1118,10 @@ Error Method::init(
               num_instructions_missing_op++;
             } else if (err == Error::MemoryAllocationFailed) {
               return err;
-            } else {
+            } else if (err != Error::Ok && delayed_error == Error::Ok) {
+              // Keep the first real error: delayed_error is checked once after
+              // the loop, so neither a later Ok nor a later error may replace
+              // it.
               delayed_error = err;
             }
           } break;

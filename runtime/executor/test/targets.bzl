@@ -207,7 +207,9 @@ def define_common_targets(is_fbcode = False):
                 "program_validation_test.cpp",
             ],
             deps = [
+                ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
