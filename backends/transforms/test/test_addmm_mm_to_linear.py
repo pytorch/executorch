@@ -75,6 +75,60 @@ class TestAddmmToLinearTransform(unittest.TestCase):
         graph = AddmmToLinearTransform(program)(program.graph_module).graph_module.graph
         self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
 
+    def test_mutated_buffer_weight_is_not_rewritten(self):
+        # The buffer is a weight by shape but not by lifetime: forward() writes
+        # to it, so a delegate that prepacked it while building its graph would
+        # keep returning the value it was built with.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("w", torch.randn(4, 8))
+
+            def forward(self, x):
+                # Read first, then write: functionalization leaves the matmul
+                # reading the placeholder itself, which is the case the pass
+                # has to reject.
+                y = torch.mm(x, self.w.t())
+                self.w.add_(1.0)
+                return y
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 1)
+
+    def test_frozen_buffer_weight_is_rewritten(self):
+        # The mirror of the case above: a buffer nothing writes to is as
+        # constant as a parameter, and has to keep being rewritten.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("w", torch.randn(4, 8))
+
+            def forward(self, x):
+                return torch.mm(x, self.w.t())
+
+        graph = self._transform(Model().eval(), (torch.randn(2, 8),))
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 1)
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.mm.default), 0)
+
+    def test_no_program_leaves_placeholders_alone(self):
+        # Without the owning program a lifted parameter and a user input look
+        # the same, so nothing is rewritten.
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc = torch.nn.Linear(8, 4)
+
+            def forward(self, x):
+                return self.fc(x)
+
+        edge = to_edge(
+            torch.export.export(Model().eval(), (torch.randn(2, 8),), strict=True)
+        )
+        program = edge.exported_program()
+        graph = AddmmToLinearTransform()(program.graph_module).graph_module.graph
+        self.assertEqual(count_targets(graph, exir_ops.edge.aten.linear.default), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

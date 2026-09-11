@@ -34,6 +34,13 @@ def get_shape(input_node: torch.fx.Node):
     return upper_bound_shape
 
 
+def _is_mutated_buffer(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
+    """Whether `node` is a buffer the program writes back to."""
+    signature = exported_program.graph_signature
+    name = signature.inputs_to_buffers.get(node.name)
+    return name is not None and name in set(signature.buffers_to_mutate.values())
+
+
 def is_constant_tensor(
     node: torch.fx.Node, exported_program: Optional[ExportedProgram]
 ) -> bool:
@@ -51,13 +58,19 @@ def is_constant_tensor(
         return False
     if exported_program is None:
         # Without the owning program a lifted parameter cannot be told apart
-        # from a user input. Placeholders were always rewritten before, so keep
-        # accepting them rather than regressing callers that pass no program.
+        # from a user input, and prepacking a user input would bake in whatever
+        # the first call passed. Every in-tree caller threads the program, so
+        # take the safe side and leave the matmul alone.
+        return False
+    if is_param(exported_program, node) or is_lifted_tensor_constant(
+        exported_program, node
+    ):
         return True
-    return (
-        is_param(exported_program, node)
-        or is_buffer(exported_program, node)
-        or is_lifted_tensor_constant(exported_program, node)
+    # A buffer the program mutates is state, not a build-time constant:
+    # prepacking it would freeze the value the delegate was built with and go
+    # on returning it after the buffer has moved on.
+    return is_buffer(exported_program, node) and not _is_mutated_buffer(
+        node, exported_program
     )
 
 
