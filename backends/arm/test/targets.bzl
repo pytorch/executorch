@@ -64,6 +64,7 @@ def define_arm_tests():
 
     # Misc tests
     test_files += [
+        "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
         "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
@@ -159,7 +160,10 @@ def define_arm_tests():
                 "//executorch/backends/arm:public_api",
             ] if runtime.is_oss else []) + ([
                 "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
-            ] if test_file == "misc/test_docgen_op_support.py" else []),
+            ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
+                "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
+                "fbsource//third-party/pypi/packaging:packaging",
+            ] if test_file == "misc/test_version_xfail.py" else []),
         )
 
     runtime.cxx_test(
