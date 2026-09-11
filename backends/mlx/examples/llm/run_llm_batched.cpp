@@ -49,9 +49,9 @@ DEFINE_string(
     "activation dtype, or bf16 when metadata is absent.");
 DEFINE_string(
     cache_kind,
-    ::executorch::extension::llm::cache::kind::kBatchedCell,
-    "Which cache layout backs the batch: batched-cell shares one table of "
-    "per-token cells; batched-sequence gives each sequence its own history.");
+    ::executorch::extension::llm::cache::kind::kBatchedSequence,
+    "Which cache layout backs the batch: batched-sequence gives each sequence "
+    "its own history; batched-cell shares one table of per-token cells.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,

@@ -8,16 +8,16 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
-#include "MLXCache.h" // AttendSpec, MLXCache
-#include "MLXExecutor.h" // resolve_dtype
-#include "MLXPool.h" // Pool
-#include "MLXSequenceCache.h" // read_runs, write_runs, window_causal_mask
+#include "MLXCache.h"
+#include "MLXSequenceCache.h"
 
-#include <executorch/extension/llm/cache/batched_sequence_cache.h>
 #include <executorch/extension/llm/cache/cache.h>
 
 namespace executorch {
@@ -26,20 +26,102 @@ namespace mlx {
 
 namespace cache = ::executorch::extension::llm::cache;
 
-// The MLX byte layer behind the neutral BatchedSequenceCache: one pool pair per
-// layer per sequence, so a step's spans write and read entirely within their
-// own sequence. update_and_fetch places the step, then answers each span from
-// that sequence's pools.
-//
-// Nothing here builds a mask. A span sees only its own sequence's cells, which
-// is what MLX's fused forms already describe -- no mask for a decode token,
-// "causal" for a prefill -- and only a window narrower than the span needs one,
-// exactly as it does for a single sequence.
-class MLXBatchedSequenceCache : public cache::BatchedSequenceCache,
+// A private MLXSequenceCache per sequence, with one shared logical capacity.
+// A flat token axis is split into consecutive spans and each span attends only
+// over its sequence's history before the results are joined in token order.
+class MLXBatchedSequenceCache : public cache::Cache,
+                                public cache::BatchControl,
                                 public MLXCache {
  public:
   explicit MLXBatchedSequenceCache(const cache::CacheConfig& cfg)
-      : cache::BatchedSequenceCache(checked(cfg)), cfg_(cfg) {}
+      : cfg_(checked(cfg)) {}
+
+  int capacity() const override {
+    return cfg_.capacity;
+  }
+
+  void clear() override {
+    rows_.clear();
+    invalidate_step();
+  }
+
+  bool declare_step(const std::vector<int32_t>& seq_ids) override {
+    if (seq_ids.empty() || !has_room(static_cast<int>(seq_ids.size()))) {
+      return false;
+    }
+    for (int32_t id : seq_ids) {
+      if (rows_.find(id) == rows_.end()) {
+        return false;
+      }
+    }
+
+    invalidate_step();
+    for (size_t i = 0; i < seq_ids.size();) {
+      size_t j = i + 1;
+      while (j < seq_ids.size() && seq_ids[j] == seq_ids[i]) {
+        ++j;
+      }
+      spans_.push_back(Span{seq_ids[i], static_cast<int>(j - i)});
+      i = j;
+    }
+    declared_ = true;
+    return true;
+  }
+
+  std::optional<int> max_seqs() const override {
+    return std::nullopt;
+  }
+
+  std::optional<int32_t> seq_new() override {
+    const int32_t id = free_id();
+    rows_.try_emplace(id, cfg_);
+    return id;
+  }
+
+  std::optional<int32_t> seq_clone(int32_t src, std::optional<int> upto)
+      override {
+    auto it = rows_.find(src);
+    if (it == rows_.end() || it->second.length() == 0) {
+      return std::nullopt;
+    }
+
+    const int len =
+        upto ? std::min(*upto, it->second.length()) : it->second.length();
+    if (len <= 0 || !has_room(len)) {
+      return std::nullopt;
+    }
+
+    MLXSequenceCache fork(it->second);
+    if (upto && !fork.rewind(len)) {
+      return std::nullopt;
+    }
+    const int32_t dst = free_id();
+    rows_.emplace(dst, fork);
+    invalidate_step();
+    return dst;
+  }
+
+  bool seq_rm(int32_t seq_id) override {
+    if (rows_.erase(seq_id) == 0) {
+      return false;
+    }
+    invalidate_step();
+    return true;
+  }
+
+  bool rewind(int32_t seq_id, int position) override {
+    auto it = rows_.find(seq_id);
+    if (it == rows_.end() || position < 0 || !it->second.rewind(position)) {
+      return false;
+    }
+    invalidate_step();
+    return true;
+  }
+
+  int pos(int32_t seq_id) const override {
+    auto it = rows_.find(seq_id);
+    return it == rows_.end() ? 0 : it->second.length();
+  }
 
   Tensor attend(
       int layer,
@@ -49,89 +131,46 @@ class MLXBatchedSequenceCache : public cache::BatchedSequenceCache,
       const Tensor& v,
       float scale,
       StreamOrDevice s) override {
-    if (layer < 0 || layer >= cfg_.n_layers) {
-      throw std::out_of_range("attend: layer out of range");
-    }
-    // Checked before the step is placed, so a miscounted call writes nothing.
-    if (static_cast<int>(positions.size()) !=
-        static_cast<int>(k.shape(2))) { // BHSD: seq axis is 2
-      throw std::runtime_error(
-          "attend: one position per key/value token expected");
-    }
-    const std::vector<cache::SeqSpan>* spans = this->place_step(
-        layer, positions.data(), static_cast<int>(positions.size()));
-    if (!spans) {
-      throw std::runtime_error(
-          "attend: step undeclared, out of room, out of order, "
-          "or already served");
+    validate_step(layer, positions, q, k, v);
+
+    if (!placed_) {
+      step_pos_ = positions;
+      declared_ = false;
+      placed_ = true;
     }
 
-    // Each span reads only its own sequence, so the spans attend
-    // independently and rejoin in the order the step declared them.
     std::vector<Tensor> outs;
-    outs.reserve(spans->size());
-    const size_t l = static_cast<size_t>(layer);
+    outs.reserve(spans_.size());
     int at = 0;
-    for (const cache::SeqSpan& span : *spans) {
-      LayerPools& row = row_for(span.seq_id);
-      write_runs(
-          row.kpool[l],
-          span.plan.write,
-          span.plan.n_write,
-          tokens(k, at, span.q_len, s),
-          s);
-      write_runs(
-          row.vpool[l],
-          span.plan.write,
-          span.plan.n_write,
-          tokens(v, at, span.q_len, s),
-          s);
-      const AttendSpec sp = spec_for(
-          read_runs(row.kpool[l], span.plan.read, span.plan.n_read, s),
-          read_runs(row.vpool[l], span.plan.read, span.plan.n_read, s),
-          span.q_len,
-          row.window[l],
-          s);
-      outs.push_back(::executorch::backends::mlx::attend(
-          sp, tokens(q, at, span.q_len, s), scale, s));
+    for (const Span& span : spans_) {
+      const std::vector<int32_t> span_positions(
+          positions.begin() + at, positions.begin() + at + span.q_len);
+      outs.push_back(rows_.at(span.seq_id)
+                         .attend(
+                             layer,
+                             span_positions,
+                             tokens(q, at, span.q_len, s),
+                             tokens(k, at, span.q_len, s),
+                             tokens(v, at, span.q_len, s),
+                             scale,
+                             s));
       at += span.q_len;
     }
     return outs.size() == 1 ? std::move(outs.front())
                             : ::mlx::core::concatenate(outs, 2, s);
   }
 
-  // The pools go with the sequence; the base frees the bookkeeping.
-  bool seq_rm(int32_t seq_id) override {
-    if (!cache::BatchedSequenceCache::seq_rm(seq_id)) {
-      return false;
-    }
-    rows_.erase(seq_id);
-    return true;
-  }
-
-  void clear() override {
-    cache::BatchedSequenceCache::clear();
-    rows_.clear();
-  }
-
  protected:
-  // The donor's pools whole, not just its first `upto` cells: a ring addresses
-  // slots by position, so the same pools at the length the base set hold the
-  // same history. at(): src holds cells whenever the base took the fork, and a
-  // fork without them would read its own zeros.
-  void clone_bytes(int32_t src, int32_t dst) override {
-    rows_.emplace(dst, rows_.at(src));
-  }
-
   void* face(cache::FaceId id) override {
-    if (void* p = cache::BatchedSequenceCache::face(id)) {
-      return p;
-    }
-    return cache::expose<MLXCache>(this, id);
+    return cache::expose<cache::BatchControl, MLXCache>(this, id);
   }
 
  private:
-  // The step's tokens for one span, on the sequence axis.
+  struct Span {
+    int32_t seq_id;
+    int q_len;
+  };
+
   static Tensor tokens(const Tensor& t, int off, int len, StreamOrDevice s) {
     if (off == 0 && len == static_cast<int>(t.shape(2))) {
       return t;
@@ -143,15 +182,95 @@ class MLXBatchedSequenceCache : public cache::BatchedSequenceCache,
         s);
   }
 
-  // Pools are per sequence, so they are built when one first writes rather than
-  // reserved for every id the cache could hand out. initial_capacity is paid
-  // once per sequence per layer, not once per layer.
-  LayerPools& row_for(int32_t seq_id) {
-    auto it = rows_.find(seq_id);
-    if (it != rows_.end()) {
-      return it->second;
+  void validate_step(
+      int layer,
+      const std::vector<int32_t>& positions,
+      const Tensor& q,
+      const Tensor& k,
+      const Tensor& v) const {
+    if (layer < 0 || layer >= cfg_.n_layers) {
+      throw std::out_of_range("attend: layer out of range");
     }
-    return rows_.emplace(seq_id, make_pools(cfg_)).first->second;
+    if (q.ndim() != 4 || k.ndim() != 4 || v.ndim() != 4) {
+      throw std::runtime_error("attend: Q/K/V must be BHSD tensors");
+    }
+    const int length = static_cast<int>(positions.size());
+    if (static_cast<int>(q.shape(2)) != length ||
+        static_cast<int>(k.shape(2)) != length ||
+        static_cast<int>(v.shape(2)) != length) {
+      throw std::runtime_error(
+          "attend: one position per query/key/value token expected");
+    }
+    if (placed_) {
+      if (positions != step_pos_) {
+        throw std::runtime_error("attend: positions differ from placed step");
+      }
+    } else if (
+        !declared_ || length != step_length() || !check_positions(positions)) {
+      throw std::runtime_error(
+          "attend: step undeclared, out of room, or out of order");
+    }
+
+    int at = 0;
+    for (const Span& span : spans_) {
+      if (!rows_.at(span.seq_id).plan(layer, positions[at], span.q_len)) {
+        throw std::runtime_error("attend: step exceeds sequence capacity");
+      }
+      at += span.q_len;
+    }
+  }
+
+  bool check_positions(const std::vector<int32_t>& positions) const {
+    std::map<int32_t, int> ends;
+    int at = 0;
+    for (const Span& span : spans_) {
+      auto end = ends.find(span.seq_id);
+      int want =
+          end == ends.end() ? rows_.at(span.seq_id).length() : end->second;
+      for (int i = 0; i < span.q_len; ++i, ++want) {
+        if (positions[at + i] != want) {
+          return false;
+        }
+      }
+      ends[span.seq_id] = want;
+      at += span.q_len;
+    }
+    return true;
+  }
+
+  int step_length() const {
+    int length = 0;
+    for (const Span& span : spans_) {
+      length += span.q_len;
+    }
+    return length;
+  }
+
+  int held() const {
+    int length = 0;
+    for (const auto& row : rows_) {
+      length += row.second.length();
+    }
+    return length;
+  }
+
+  bool has_room(int n) const {
+    return held() + n <= cfg_.capacity;
+  }
+
+  int32_t free_id() const {
+    int32_t id = 0;
+    while (rows_.find(id) != rows_.end()) {
+      ++id;
+    }
+    return id;
+  }
+
+  void invalidate_step() {
+    spans_.clear();
+    step_pos_.clear();
+    declared_ = false;
+    placed_ = false;
   }
 
   static const cache::CacheConfig& checked(const cache::CacheConfig& cfg) {
@@ -162,7 +281,11 @@ class MLXBatchedSequenceCache : public cache::BatchedSequenceCache,
   }
 
   cache::CacheConfig cfg_;
-  std::map<int32_t, LayerPools> rows_;
+  std::map<int32_t, MLXSequenceCache> rows_;
+  std::vector<Span> spans_;
+  std::vector<int32_t> step_pos_;
+  bool declared_ = false;
+  bool placed_ = false;
 };
 
 } // namespace mlx

@@ -40,8 +40,12 @@ struct ET_EXPERIMENTAL CellStep {
 // every later layer reuses that placement. `layer` selects the window, which
 // decides the kind and mask, so a step is per policy and memoized for the
 // forward. The returned step is owned by the cache and valid until the next
-// verb. nullptr = no declaration, a token count disagreeing with it, a position
-// a sequence already holds, a layer out of range, or a layer served twice.
+// verb. A layer may be served more than once per forward -- a KV-shared layer
+// re-serves its donor's id -- provided the repeat passes the same positions; it
+// returns the same step and claims no new cells. nullptr = no declaration, a
+// token count disagreeing with it, a position a sequence already holds, a layer
+// out of range, or a re-serve whose positions differ (a step that never
+// declared).
 class ET_EXPERIMENTAL CellStepper {
  public:
   static constexpr const char* kFaceName = "et.cache.CellStepper";
@@ -70,9 +74,6 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   // -- BatchControl ------------------------------------------------------
 
   bool declare_step(const std::vector<int32_t>& seq_ids) override;
-  // Keyed off next_pos, not seq_len: positions need not be consecutive here, so
-  // what a sequence owns and where it has reached are different numbers.
-  bool can_admit(int32_t seq_id, int n = 1) const override;
   // kMaxSeqs: one bit each in the owner bitset.
   std::optional<int> max_seqs() const override;
   std::optional<int32_t> seq_new() override;
@@ -81,9 +82,8 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   bool seq_rm(int32_t seq_id) override;
   // Always succeeds for a live sequence: a windowed layer here narrows the
   // mask over cells that are still present, so no position is unrecoverable.
-  bool rewind(int32_t seq_id, int new_len) override;
-  int seq_len(int32_t seq_id) const override;
-  int next_pos(int32_t seq_id) const override;
+  bool rewind(int32_t seq_id, int position) override;
+  int pos(int32_t seq_id) const override;
 
   int free_cells() const;
   int used_end() const;
@@ -111,10 +111,8 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   bool live(int32_t seq_id) const;
   static bool valid_seq(int32_t seq_id);
 
-  // Every position must be newer than what that sequence already holds, or it
-  // would own two cells for one token. Two cells with the same pos and owner
-  // are indistinguishable, so a branch is its own sequence.
-  bool extends(const int32_t* positions, int length) const;
+  // Whether every position is the next one for its sequence.
+  bool continues(const int32_t* positions, int length) const;
 
   // Placement policy: the lowest free cell, so freed cells refill before the
   // extent grows. The choice moves only the read window's width and how often a
@@ -136,7 +134,6 @@ class ET_EXPERIMENTAL CellCache : public Cache,
 
   // Free cells for n more tokens, whoever they belong to.
   bool has_room(int n) const;
-  bool within_context(int32_t seq_id, int n) const;
 
   // Claim a cell per token, shared by every layer of the forward. False = the
   // pool cannot supply them; no cell is claimed until every one is found, so a
@@ -153,7 +150,6 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   std::vector<uint8_t> build_mask(int window) const;
 
   int capacity_;
-  std::optional<int> max_context_;
   std::vector<int32_t> pos_; // per cell; -1 = free
   std::vector<uint64_t> owners_; // per cell; owning-sequence bitset
   int used_count_ = 0; // occupied cells, so admission stays O(1)
@@ -164,7 +160,6 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   std::vector<int32_t> step_seq_ids_; // set by declare_step
   std::vector<int32_t> step_pos_; // set when the step is placed
   std::vector<int32_t> cells_; // the step's placement, shared by every layer
-  std::vector<bool> served_; // layers this step has already answered
   std::vector<int> windows_; // per layer; 0 = keeps all history
   // window -> step, memoized per forward. Node-based is required: a step
   // handed to one layer must survive another layer's insert.

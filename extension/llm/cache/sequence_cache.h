@@ -70,8 +70,8 @@ class ET_EXPERIMENTAL LayoutPolicy {
   // Write/read runs for T cells at logical `position`. Precondition: T fits the
   // policy's window.
   virtual SeqStepPlan plan(int position, int T) const = 0;
-  // Oldest logical position still retained at this length: 0 for flat,
-  // length - window for ring.
+  // Oldest position a rewind may target at this length, so that the step which
+  // follows still finds its whole window in the pool. 0 for flat.
   virtual int retained_from(int length) const = 0;
 };
 
@@ -100,10 +100,15 @@ class ET_EXPERIMENTAL FlatPolicy final : public LayoutPolicy {
 class ET_EXPERIMENTAL RingPolicy final : public LayoutPolicy {
  public:
   RingPolicy(int window, int max_write)
-      : window_(window), ring_size_(window + max_write - 1) {}
+      : window_(window),
+        max_write_(max_write),
+        ring_size_(window + max_write - 1) {}
 
+  // The ring holds the last window + max_write - 1 positions, and the step
+  // after a rewind to `p` reads [p - window + 1, p]. Both hold only down to
+  // length - max_write, which is the floor even when the window is wider.
   int retained_from(int length) const override {
-    return length > window_ ? length - window_ : 0;
+    return length > max_write_ ? length - max_write_ : 0;
   }
   SeqStepPlan plan(int position, int T) const override {
     const int end = position + T;
@@ -134,6 +139,7 @@ class ET_EXPERIMENTAL RingPolicy final : public LayoutPolicy {
   }
 
   int window_;
+  int max_write_;
   int ring_size_;
 };
 
@@ -146,9 +152,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
                                       public SequencePlanner {
  public:
   explicit SequenceCache(const CacheConfig& cfg)
-      : capacity_(cfg.capacity),
-        max_write_(cfg.max_write),
-        max_context_(cfg.max_context) {
+      : capacity_(cfg.capacity), max_write_(cfg.max_write) {
     assert(valid(cfg));
     layer_to_policy_.reserve(cfg.n_layers);
     for (int l = 0; l < cfg.n_layers; ++l) {
@@ -160,12 +164,11 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   }
 
   // A fork: same capacity and policies, and the source's history. The byte
-  // layer copies the cells. Policies are rebuilt rather than shared, so the
-  // two sequences cannot disturb each other.
+  // layer copies the cells. Each fork gets its own policies, so the two
+  // sequences cannot disturb each other.
   SequenceCache(const SequenceCache& other)
       : capacity_(other.capacity_),
         max_write_(other.max_write_),
-        max_context_(other.max_context_),
         length_(other.length_),
         specs_(other.specs_),
         layer_to_policy_(other.layer_to_policy_) {
@@ -179,7 +182,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   // SequenceControl.
   bool can_extend(int n = 1) const override {
     // Evicting layers reuse rows; capacity bounds.
-    return length_ + n <= capacity_ && within_context(length_ + n);
+    return length_ + n <= capacity_;
   }
   int capacity() const override {
     return capacity_;
@@ -192,9 +195,9 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
   int length() const {
     return length_;
   }
-  bool rewind(int new_len) override {
-    if (new_len > length_) {
-      return false; // cannot grow
+  bool rewind(int position) override {
+    if (position > length_) {
+      return false; // a position it has not reached
     }
     // An evicting layer physically drops everything older than it retains, so
     // the target must be no older than the most-restrictive layer retains.
@@ -202,10 +205,10 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
     for (const auto& p : policies_) {
       floor = std::max(floor, p->retained_from(length_));
     }
-    if (new_len < floor) {
+    if (position < floor) {
       return false; // history evicted from an evicting layer
     }
-    length_ = new_len;
+    length_ = position;
     return true;
   }
 
@@ -215,7 +218,7 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
     if (layer < 0 || layer >= static_cast<int>(layer_to_policy_.size())) {
       return std::nullopt;
     }
-    if (position + T > capacity_ || !within_context(position + T)) {
+    if (position + T > capacity_) {
       return std::nullopt;
     }
     // A ring layer's slots are sized window + max_write - 1 (max_write defaults
@@ -263,13 +266,8 @@ class ET_EXPERIMENTAL SequenceCache : public Cache,
     return std::make_unique<FlatPolicy>();
   }
 
-  bool within_context(int length) const {
-    return !max_context_ || length <= *max_context_;
-  }
-
   int capacity_;
   std::optional<int> max_write_;
-  std::optional<int> max_context_;
   int length_ = 0;
   std::vector<LayerPolicy> specs_; // parallel to policies_, for dedup
   std::vector<std::unique_ptr<LayoutPolicy>> policies_;

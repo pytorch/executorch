@@ -173,6 +173,18 @@ TEST_F(MLXBatchedSequenceCacheTest, WindowBoundsEachSpanWithinItsSequence) {
       span(out, 0, 1),
       alone(solo_a, {3}, span(q1, 0, 1), span(k1, 0, 1), span(v1, 0, 1)),
       1e-2f));
+
+  // Past the ring's window + max_write - 1 slots, so a's write wraps and its
+  // read comes back as two runs. Its neighbour keeps decoding through it.
+  for (int32_t p = 4; p < 9; ++p) {
+    array q = randn(2), k = randn(2), v = randn(2);
+    array o = step(c, {a, b}, {p, p - 2}, q, k, v);
+    EXPECT_TRUE(allclose(
+        span(o, 0, 1),
+        alone(solo_a, {p}, span(q, 0, 1), span(k, 0, 1), span(v, 0, 1)),
+        1e-2f))
+        << "position " << p;
+  }
 }
 
 // K/V are cast to the configured storage dtype on the way in, per sequence.
@@ -200,10 +212,10 @@ TEST_F(MLXBatchedSequenceCacheTest, RemovedSequenceStartsOverOnReuse) {
   MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   step(c, {a, a, a}, {0, 1, 2}, randn(3), randn(3), randn(3));
-  EXPECT_EQ(c.seq_len(a), 3);
+  EXPECT_EQ(c.pos(a), 3);
 
   EXPECT_TRUE(c.seq_rm(a));
-  EXPECT_EQ(c.seq_len(a), 0);
+  EXPECT_EQ(c.pos(a), 0);
   EXPECT_EQ(*c.seq_new(), a); // the id frees for reuse
 
   array q = randn(1), k = randn(1), v = randn(1);
@@ -231,7 +243,7 @@ TEST_F(MLXBatchedSequenceCacheTest, IllFormedStepsThrow) {
   // repeat is idempotent rather than an error.
   EXPECT_NO_THROW(c.attend(0, {0, 1}, q, k, v, kScale, s));
   c.attend(1, {0, 1}, q, k, v, kScale, s);
-  EXPECT_EQ(c.seq_len(a), 2); // and nothing advanced twice
+  EXPECT_EQ(c.pos(a), 2); // and nothing advanced twice
 }
 
 // A fork holds the donor's prefix and then diverges: the copy is its own, so
@@ -243,7 +255,7 @@ TEST_F(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
   step(c, {a, a}, {0, 1}, q0, k0, v0);
 
   const int32_t b = *c.seq_clone(a, std::nullopt);
-  EXPECT_EQ(c.seq_len(b), 2);
+  EXPECT_EQ(c.pos(b), 2);
 
   // Both continue from position 2 with the *same* token, so both must produce
   // what a lone sequence carrying the whole history would.
@@ -262,6 +274,45 @@ TEST_F(MLXBatchedSequenceCacheTest, ForkCopiesThePrefixThenDiverges) {
 
 // A runner reaches a layout by (backend_id, kind), so the builder registration
 // is as much a part of the layout as the class.
+// A refusal is not a verb: the declaration it refused stays standing.
+TEST_F(
+    MLXBatchedSequenceCacheTest,
+    RejectedDeclarationLeavesTheLastOneStanding) {
+  MLXBatchedSequenceCache c(flat_config(32, 1, H, D, kHalf));
+  const int32_t a = *c.seq_new();
+
+  EXPECT_TRUE(c.declare_step({a}));
+  EXPECT_FALSE(c.declare_step({a + 5})); // never handed out
+  EXPECT_FALSE(c.declare_step({})); // a step carries a token
+
+  array q = randn(1), k = randn(1), v = randn(1);
+  EXPECT_NO_THROW(c.attend(0, {0}, q, k, v, kScale, s));
+  EXPECT_EQ(c.pos(a), 1);
+}
+
+// One capacity behind the private histories: what either holds is what the
+// other cannot, and a fork needs room for the prefix it copies.
+TEST_F(MLXBatchedSequenceCacheTest, SequencesShareOneCapacity) {
+  MLXBatchedSequenceCache c(flat_config(/*capacity=*/4, 1, H, D, kHalf));
+  const int32_t a = *c.seq_new();
+  const int32_t b = *c.seq_new();
+
+  step(c, {a, a, b}, {0, 1, 0}, randn(3), randn(3), randn(3));
+  EXPECT_EQ(c.pos(a), 2);
+  EXPECT_EQ(c.pos(b), 1);
+
+  EXPECT_TRUE(c.declare_step({a})); // the fourth cell
+  array q = randn(1), k = randn(1), v = randn(1);
+  c.attend(0, {2}, q, k, v, kScale, s);
+
+  EXPECT_FALSE(c.declare_step({a})); // all four held, whoever holds them
+  EXPECT_FALSE(c.declare_step({b}));
+  EXPECT_FALSE(c.seq_clone(a, std::nullopt)); // no room for the copy
+
+  EXPECT_TRUE(c.seq_rm(b)); // b's cell comes back
+  EXPECT_TRUE(c.declare_step({a}));
+}
+
 TEST_F(MLXBatchedSequenceCacheTest, RegistryBuildsBatchedSequenceLayout) {
   auto built = cache::CacheFactory::global().build(
       kMLXBackendId,
@@ -272,6 +323,44 @@ TEST_F(MLXBatchedSequenceCacheTest, RegistryBuildsBatchedSequenceLayout) {
   EXPECT_NE(c->as<cache::BatchControl>(), nullptr);
   EXPECT_NE(c->as<MLXCache>(), nullptr);
   EXPECT_EQ(c->as<cache::SequenceControl>(), nullptr);
+}
+
+// A partial fork of a wrapped ring. The donor's slots for the fork's window
+// may already hold its later positions, so copying the pools whole is not
+// enough on its own.
+TEST_F(MLXBatchedSequenceCacheTest, PartialForkOfAWrappedRing) {
+  const int window = 4, max_write = 1; // ring of window + max_write - 1 = 4
+  MLXBatchedSequenceCache c(ring_config(32, window, max_write, H, D, kHalf));
+  MLXSequenceCache oracle(ring_config(32, window, max_write, H, D, kHalf));
+  const int32_t a = *c.seq_new();
+
+  // Decode the donor to 10, feeding the oracle only the first 6.
+  std::vector<array> qs, ks, vs;
+  for (int32_t p = 0; p < 10; ++p) {
+    qs.push_back(randn(1));
+    ks.push_back(randn(1));
+    vs.push_back(randn(1));
+    step(c, {a}, {p}, qs[p], ks[p], vs[p]);
+    if (p < 6) {
+      alone(oracle, {p}, qs[p], ks[p], vs[p]);
+    }
+  }
+
+  // Position 6 is more than max_write behind, so the slots its window needs
+  // now hold 7, 8 and 9. Nothing can recover them, so the fork is refused.
+  EXPECT_FALSE(c.seq_clone(a, /*upto=*/6));
+
+  // One step back is still in the ring, and reads what the donor read.
+  const auto fork = c.seq_clone(a, /*upto=*/9);
+  ASSERT_TRUE(fork);
+  EXPECT_EQ(c.pos(*fork), 9);
+
+  for (int32_t p = 6; p < 9; ++p) {
+    alone(oracle, {p}, qs[p], ks[p], vs[p]);
+  }
+  array q = randn(1), k = randn(1), v = randn(1);
+  array got = step(c, {*fork}, {9}, q, k, v);
+  EXPECT_TRUE(allclose(got, alone(oracle, {9}, q, k, v), 1e-2f));
 }
 
 } // namespace

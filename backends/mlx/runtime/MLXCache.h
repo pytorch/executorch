@@ -82,9 +82,8 @@ class MLXCache {
   // token, then attend `q` over it. q/k/v are BHSD.
   //
   // A layout holding one window answers with a single SDPA; one holding a
-  // private window per sequence answers with several and rejoins them. That
-  // choice belongs to the layout, which is why the call lives here rather than
-  // in the op handler.
+  // private window per sequence answers with several and rejoins them. The
+  // layout makes that choice, so it owns the call.
   virtual Tensor attend(
       int layer,
       const std::vector<int32_t>& positions,

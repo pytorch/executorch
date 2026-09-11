@@ -18,10 +18,8 @@ namespace cache {
 
 CellCache::CellCache(const CacheConfig& cfg)
     : capacity_(cfg.capacity),
-      max_context_(cfg.max_context),
       pos_(cfg.capacity, -1),
-      owners_(cfg.capacity, 0),
-      served_(cfg.n_layers, false) {
+      owners_(cfg.capacity, 0) {
   assert(valid(cfg));
   // One window per layer, from the same per-layer config the sequence cache
   // reads. Layers agreeing on a window share a step.
@@ -50,44 +48,28 @@ void CellCache::clear() {
   declared_ = false;
   step_seq_ids_.clear();
   step_pos_.clear();
-  std::fill(served_.begin(), served_.end(), false);
   invalidate_steps();
 }
 
 // -- BatchControl ------------------------------------------------------------
 
 bool CellCache::declare_step(const std::vector<int32_t>& seq_ids) {
-  // The pool is weighed once against the whole step; each sequence's own reach
-  // is weighed against the tokens the step gives it.
   if (seq_ids.empty() || !has_room(static_cast<int>(seq_ids.size()))) {
     return false;
   }
-  std::array<int, kMaxSeqs> taking{};
   for (int32_t seq_id : seq_ids) {
     if (!valid_seq(seq_id) || !live(seq_id)) {
-      return false;
-    }
-    ++taking[seq_id];
-  }
-  for (int32_t seq_id = 0; seq_id < kMaxSeqs; ++seq_id) {
-    if (taking[seq_id] > 0 && !within_context(seq_id, taking[seq_id])) {
       return false;
     }
   }
   step_seq_ids_ = seq_ids;
   declared_ = true;
   invalidate_steps();
-  std::fill(served_.begin(), served_.end(), false);
   return true;
 }
 
 bool CellCache::live(int32_t seq_id) const {
   return (reserved_ & bit(seq_id)) != 0;
-}
-
-bool CellCache::can_admit(int32_t seq_id, int n) const {
-  return valid_seq(seq_id) && live(seq_id) && n >= 0 &&
-      within_context(seq_id, n);
 }
 
 std::optional<int> CellCache::max_seqs() const {
@@ -135,12 +117,12 @@ bool CellCache::seq_rm(int32_t seq_id) {
   return true;
 }
 
-bool CellCache::rewind(int32_t seq_id, int new_len) {
-  if (!valid_seq(seq_id) || !live(seq_id) || new_len < 0 ||
-      new_len > next_pos(seq_id)) {
+bool CellCache::rewind(int32_t seq_id, int position) {
+  if (!valid_seq(seq_id) || !live(seq_id) || position < 0 ||
+      position > pos(seq_id)) {
     return false;
   }
-  drop_from(seq_id, new_len);
+  drop_from(seq_id, position);
   invalidate_steps();
   return true;
 }
@@ -162,11 +144,7 @@ void CellCache::drop_from(int32_t seq_id, int from) {
   rescan(seq_id);
 }
 
-int CellCache::seq_len(int32_t seq_id) const {
-  return valid_seq(seq_id) ? info_[seq_id].count : 0;
-}
-
-int CellCache::next_pos(int32_t seq_id) const {
+int CellCache::pos(int32_t seq_id) const {
   return valid_seq(seq_id) ? info_[seq_id].max_pos + 1 : 0;
 }
 
@@ -178,10 +156,6 @@ bool CellCache::has_room(int n) const {
   return capacity_ - used_count_ >= n;
 }
 
-bool CellCache::within_context(int32_t seq_id, int n) const {
-  return !max_context_ || next_pos(seq_id) + n <= *max_context_;
-}
-
 int CellCache::used_end() const {
   return used_end_;
 }
@@ -190,25 +164,32 @@ int CellCache::used_end() const {
 
 const CellStep*
 CellCache::place_step(int layer, const int32_t* positions, int length) {
-  if (layer < 0 || layer >= static_cast<int>(windows_.size()) ||
-      served_[layer]) {
-    return nullptr; // out of range, or a forward that skipped declare_step
+  if (layer < 0 || layer >= static_cast<int>(windows_.size())) {
+    return nullptr; // layer out of range
   }
-  if (!placed_) {
-    if (!declared_ || length != static_cast<int>(step_seq_ids_.size())) {
-      return nullptr; // no declaration, or a token count disagreeing with it
-    }
-    if (!extends(positions, length)) {
-      return nullptr; // nothing mutated yet, so the step can be re-placed
-    }
-    step_pos_.assign(positions, positions + length);
-    if (!place()) {
+  if (placed_) {
+    // Re-serve within the placed forward. Every layer of a forward places the
+    // same tokens, and a KV-shared layer re-serves its donor's id, so a repeat
+    // with the same positions returns the same step and claims no new cells.
+    // Different positions mean a new step that never declared, still refused.
+    if (length != static_cast<int>(step_pos_.size()) ||
+        !std::equal(positions, positions + length, step_pos_.begin())) {
       return nullptr;
     }
-    declared_ = false; // one declaration, one placement
-    placed_ = true;
+    return &step_for(windows_[layer]);
   }
-  served_[layer] = true;
+  if (!declared_ || length != static_cast<int>(step_seq_ids_.size())) {
+    return nullptr; // no declaration, or a token count disagreeing with it
+  }
+  if (!continues(positions, length)) {
+    return nullptr; // a position a sequence already holds
+  }
+  step_pos_.assign(positions, positions + length);
+  if (!place()) {
+    return nullptr; // out of cells
+  }
+  declared_ = false; // one declaration, one placement
+  placed_ = true;
   return &step_for(windows_[layer]);
 }
 
@@ -222,17 +203,17 @@ bool CellCache::valid_seq(int32_t seq_id) {
   return seq_id >= 0 && seq_id < kMaxSeqs;
 }
 
-bool CellCache::extends(const int32_t* positions, int length) const {
-  std::array<int32_t, kMaxSeqs> newest{};
+bool CellCache::continues(const int32_t* positions, int length) const {
+  std::array<int32_t, kMaxSeqs> next{};
   for (int s = 0; s < kMaxSeqs; ++s) {
-    newest[s] = info_[s].max_pos;
+    next[s] = info_[s].max_pos + 1;
   }
   for (int i = 0; i < length; ++i) {
     const int32_t seq_id = step_seq_ids_[i];
-    if (positions[i] <= newest[seq_id]) {
+    if (positions[i] != next[seq_id]) {
       return false;
     }
-    newest[seq_id] = positions[i];
+    ++next[seq_id];
   }
   return true;
 }

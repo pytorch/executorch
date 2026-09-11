@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/llm/cache/batched_sequence_cache.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
@@ -23,7 +22,6 @@
 #include <gtest/gtest.h>
 
 using executorch::extension::llm::cache::BatchControl;
-using executorch::extension::llm::cache::BatchedSequenceCache;
 using executorch::extension::llm::cache::Cache;
 using executorch::extension::llm::cache::CacheBuilder;
 using executorch::extension::llm::cache::CacheConfig;
@@ -33,8 +31,6 @@ using executorch::extension::llm::cache::CellCache;
 using executorch::extension::llm::cache::CellStep;
 using executorch::extension::llm::cache::CellStepper;
 using executorch::extension::llm::cache::InstallGuard;
-using executorch::extension::llm::cache::SeqSpan;
-using executorch::extension::llm::cache::SeqSpanStepper;
 using executorch::extension::llm::cache::SequenceControl;
 using executorch::extension::llm::cache::SequencePlanner;
 namespace kind = executorch::extension::llm::cache::kind;
@@ -191,22 +187,6 @@ TEST_F(CacheTest, RewindBoundedByRingWindow) {
   EXPECT_TRUE(cache.rewind(6)); // exactly the floor
   EXPECT_FALSE(cache.rewind(11)); // cannot grow
 }
-
-TEST_F(CacheTest, ContextBoundsTheSingleHistory) {
-  CacheConfig cfg{100, 1, {flat_layer()}};
-  cfg.max_context = 4;
-  SequenceCache cache(cfg);
-
-  EXPECT_TRUE(cache.can_extend(4));
-  EXPECT_FALSE(cache.can_extend(5)); // capacity has room, the model does not
-  auto p = cache.plan(0, 0, 4);
-  ASSERT_TRUE(p.has_value());
-  cache.commit(*p);
-  EXPECT_FALSE(cache.can_extend(1));
-  EXPECT_FALSE(cache.plan(0, 4, 1).has_value());
-}
-
-// ---- Faces / registry / lease ----------------------------------------------
 
 TEST_F(CacheTest, FaceRecoveryReturnsSameObject) {
   SequenceCache cache(CacheConfig{4, 1, {flat_layer()}});
@@ -524,8 +504,8 @@ TEST_F(CacheTest, CellDecodeAndPrefillShareOneStep) {
   EXPECT_EQ(row(*step, 0), "111.."); // s0's decode sees its own history
   EXPECT_EQ(row(*step, 1), "...1."); // s1 starts from nothing
   EXPECT_EQ(row(*step, 2), "...11");
-  EXPECT_EQ(c.ctl->next_pos(s0), 3);
-  EXPECT_EQ(c.ctl->next_pos(s1), 2);
+  EXPECT_EQ(c.ctl->pos(s0), 3);
+  EXPECT_EQ(c.ctl->pos(s1), 2);
 }
 
 TEST_F(CacheTest, CellExtendsIsCheckedPerSequence) {
@@ -550,7 +530,7 @@ TEST_F(CacheTest, CellPlacementIsSharedByEveryLayerOfTheStep) {
   const auto* first = c.place(0, args.positions); // layer 0 places the cells
   ASSERT_NE(first, nullptr);
   EXPECT_EQ(c.place(1, args.positions), first); // later layers reuse them
-  EXPECT_EQ(c.place(0, args.positions), nullptr); // asking twice is a new step
+  EXPECT_EQ(c.place(0, args.positions), first); // re-serving repeats the step
   EXPECT_EQ(c.cache.free_cells(), 14); // placed once, not once per layer
 }
 
@@ -564,12 +544,11 @@ TEST_F(CacheTest, CellForkSharesCellsAndEvictionRefcounts) {
   const auto s1 = c.ctl->seq_clone(s0, std::nullopt);
   ASSERT_TRUE(s1);
   EXPECT_EQ(c.cache.free_cells(), 12); // no cell, no byte copied
-  EXPECT_EQ(c.ctl->seq_len(*s1), 4);
-  EXPECT_EQ(c.ctl->next_pos(*s1), 4);
+  EXPECT_EQ(c.ctl->pos(*s1), 4);
 
   c.ctl->seq_rm(s0);
-  EXPECT_EQ(c.ctl->seq_len(s0), 0);
-  EXPECT_EQ(c.ctl->seq_len(*s1), 4); // the fork still owns them
+  EXPECT_EQ(c.ctl->pos(s0), 0);
+  EXPECT_EQ(c.ctl->pos(*s1), 4); // the fork still owns them
   EXPECT_EQ(c.cache.free_cells(), 12); // so nothing is reclaimed yet
 
   c.ctl->seq_rm(*s1);
@@ -586,7 +565,7 @@ TEST_F(CacheTest, CellSeqNewHandsOutIdsUntilTheyAreReleased) {
   EXPECT_EQ(c.ctl->max_seqs(), CellCache::kMaxSeqs); // one bit each
 
   // Reserved before it holds anything, so the next call cannot hand it out.
-  EXPECT_EQ(c.ctl->seq_len(*a), 0);
+  EXPECT_EQ(c.ctl->pos(*a), 0);
   EXPECT_NE(*c.ctl->seq_new(), *a);
 
   // Removing everything a sequence holds returns its id, whether or not it
@@ -612,15 +591,14 @@ TEST_F(CacheTest, CellForkCanShareAPrefixOnly) {
 
   const auto s1 = c.ctl->seq_clone(s0, /*upto=*/2); // positions 0..1 only
   ASSERT_TRUE(s1);
-  EXPECT_EQ(c.ctl->seq_len(*s1), 2);
-  EXPECT_EQ(c.ctl->next_pos(*s1), 2); // the fork resumes where the prefix ends
-  EXPECT_EQ(c.ctl->seq_len(s0), 4); // the source keeps all of its own
+  EXPECT_EQ(c.ctl->pos(*s1), 2);
+  EXPECT_EQ(c.ctl->pos(s0), 4); // the source keeps all of its own
   EXPECT_EQ(c.cache.free_cells(), 12); // still no cell copied
 
   // Removing the source frees only what the fork does not share.
   ASSERT_TRUE(c.ctl->seq_rm(s0));
   EXPECT_EQ(c.cache.free_cells(), 14);
-  EXPECT_EQ(c.ctl->seq_len(*s1), 2);
+  EXPECT_EQ(c.ctl->pos(*s1), 2);
 }
 
 TEST_F(CacheTest, CellWindowAndSequenceBothNarrowTheMask) {
@@ -661,8 +639,7 @@ TEST_F(CacheTest, CellRewindDropsTheTail) {
 
   EXPECT_FALSE(c.ctl->rewind(s0, 6)); // cannot grow
   EXPECT_TRUE(c.ctl->rewind(s0, 2)); // drop positions 2 onwards
-  EXPECT_EQ(c.ctl->seq_len(s0), 2);
-  EXPECT_EQ(c.ctl->next_pos(s0), 2);
+  EXPECT_EQ(c.ctl->pos(s0), 2);
   EXPECT_EQ(c.cache.free_cells(), 14);
   EXPECT_TRUE(c.ctl->rewind(s0, 0)); // a windowed layer retains nothing here
   EXPECT_EQ(c.cache.free_cells(), 16);
@@ -695,6 +672,9 @@ TEST_F(CacheTest, CellRejectsAPositionASequenceStillHolds) {
   EXPECT_EQ(c.step({s0}, {0}), nullptr);
   // nor may its own tokens descend
   EXPECT_EQ(c.step({s0, s0}, {5, 4}), nullptr);
+  // nor skip: a span is a consecutive run, as it is for a private history
+  EXPECT_EQ(c.step({s0}, {4}), nullptr);
+  EXPECT_EQ(c.step({s0, s0}, {3, 5}), nullptr);
   EXPECT_NE(c.step({s0}, {3}), nullptr); // the position it just freed is fine
 
   // A refusal places nothing, so the declaration stands and the same step can
@@ -717,17 +697,22 @@ TEST_F(CacheTest, CellWindowBoundsEachQueryByPosition) {
   }
   {
     Cells c(16, {ring_layer(2)});
-    // Two cells, five positions apart: the span is what counts.
+    // Decoded one at a time, so the window slides: the query at 5 keeps only
+    // position 4 beside itself.
     const int32_t s = c.seq_new();
-    c.step({s}, {0});
-    EXPECT_EQ(row(*c.step({s}, {5}), 0), ".1");
+    for (int32_t p = 0; p < 5; ++p) {
+      ASSERT_NE(c.step({s}, {p}), nullptr);
+    }
+    EXPECT_EQ(row(*c.step({s}, {5}), 0), "....11");
   }
   {
     Cells c(16, {ring_layer(8)});
-    // Sparse but inside the window, so both cells stay visible.
+    // A window wider than the history hides nothing.
     const int32_t s = c.seq_new();
-    c.step({s}, {0});
-    EXPECT_EQ(row(*c.step({s}, {5}), 0), "11");
+    for (int32_t p = 0; p < 5; ++p) {
+      ASSERT_NE(c.step({s}, {p}), nullptr);
+    }
+    EXPECT_EQ(row(*c.step({s}, {5}), 0), "111111");
   }
 }
 
@@ -784,324 +769,36 @@ TEST_F(CacheTest, CellClearReturnsEveryCell) {
   c.step(flatten_step({{s0, 0, 3}}));
   EXPECT_EQ(c.cache.free_cells(), 1);
   EXPECT_FALSE(c.ctl->declare_step({s0, s0})); // one cell left
-  EXPECT_EQ(c.ctl->seq_len(s0), 3);
+  EXPECT_EQ(c.ctl->pos(s0), 3);
 
   c.ctl->clear();
   EXPECT_EQ(c.cache.free_cells(), 4);
   EXPECT_EQ(c.cache.used_end(), 0);
-  EXPECT_EQ(c.ctl->seq_len(s0), 0);
-  EXPECT_EQ(c.ctl->next_pos(s0), 0); // the sequence is gone
+  EXPECT_EQ(c.ctl->pos(s0), 0);
   EXPECT_EQ(c.place(0, {0}), nullptr); // and the step went with it
 }
 
-// ---- Batched-sequence layout -----------------------------------------------
-
-namespace {
-
-// A private history per sequence over a shared capacity. Spans come from the
-// declared ids; nothing is masked, so the subject of these tests is placement:
-// which runs a sequence gets, and that its neighbours are untouched.
-struct Rows {
-  explicit Rows(
-      int capacity,
-      std::vector<LayerConfig> layers = {flat_layer(), flat_layer()})
-      : cache(CacheConfig{capacity, static_cast<int>(layers.size()), layers}),
-        ctl(cache.as<BatchControl>()),
-        stepper(cache.as<SeqSpanStepper>()) {}
-
-  int32_t seq_new() {
-    const auto id = ctl->seq_new();
-    EXPECT_TRUE(id) << "no free sequence id";
-    return id ? *id : -1;
-  }
-
-  const std::vector<SeqSpan>* place(int layer, std::vector<int32_t> positions) {
-    return stepper->place_step(
-        layer, positions.data(), static_cast<int>(positions.size()));
-  }
-
-  const std::vector<SeqSpan>* step(
-      std::vector<int32_t> seq_ids,
-      std::vector<int32_t> positions) {
-    EXPECT_TRUE(ctl->declare_step(seq_ids)) << "the step was not admitted";
-    return place(/*layer=*/0, positions);
-  }
-
-  BatchedSequenceCache cache;
-  BatchControl* ctl;
-  SeqSpanStepper* stepper;
-};
-
-} // namespace
-
-TEST_F(CacheTest, RowsSpanPerSequenceRunInTokenOrder) {
-  Rows r(16);
-  const int32_t a = r.seq_new(), b = r.seq_new();
-  const auto* spans = r.step({a, a, a, b, b}, {0, 1, 2, 0, 1});
-  ASSERT_NE(spans, nullptr);
-
-  ASSERT_EQ(spans->size(), 2u);
-  EXPECT_EQ((*spans)[0].seq_id, a);
-  EXPECT_EQ((*spans)[0].q_len, 3);
-  EXPECT_EQ((*spans)[1].seq_id, b);
-  EXPECT_EQ((*spans)[1].q_len, 2);
-  // Each writes at its own start, so neither sees the other's rows.
-  EXPECT_EQ((*spans)[0].plan.write[0].start, 0);
-  EXPECT_EQ((*spans)[1].plan.write[0].start, 0);
-  EXPECT_EQ(r.ctl->seq_len(a), 3);
-  EXPECT_EQ(r.ctl->seq_len(b), 2);
-}
-
-TEST_F(CacheTest, RowsDecodeContinuesEachPrivateHistory) {
-  Rows r(16);
-  const int32_t a = r.seq_new(), b = r.seq_new();
-  ASSERT_NE(r.step({a, a, b}, {0, 1, 0}), nullptr);
-
-  const auto* spans = r.step({a, b}, {2, 1});
-  ASSERT_NE(spans, nullptr);
-  ASSERT_EQ(spans->size(), 2u);
-  // Each appends after its own history, not after the step before it.
-  EXPECT_EQ((*spans)[0].plan.write[0].start, 2);
-  EXPECT_EQ((*spans)[1].plan.write[0].start, 1);
-  EXPECT_EQ((*spans)[0].plan.read[0].len, 3); // a reads all three of its own
-  EXPECT_EQ((*spans)[1].plan.read[0].len, 2);
-}
-
-TEST_F(CacheTest, RowsSequenceSpannedTwiceContinuesAcrossBoth) {
-  Rows r(16);
-  const int32_t a = r.seq_new(), b = r.seq_new();
-  const auto* spans = r.step({a, b, a}, {0, 0, 1});
-  ASSERT_NE(spans, nullptr);
-
-  ASSERT_EQ(spans->size(), 3u);
-  EXPECT_EQ((*spans)[0].plan.write[0].start, 0); // a's first token
-  EXPECT_EQ((*spans)[2].plan.write[0].start, 1); // a's second, after it
-  EXPECT_EQ(r.ctl->seq_len(a), 2);
-  EXPECT_EQ(r.ctl->seq_len(b), 1);
-}
-
-TEST_F(CacheTest, RowsEveryLayerPlansTheSameStep) {
-  Rows r(16);
-  const int32_t a = r.seq_new();
-  EXPECT_TRUE(r.ctl->declare_step({a, a}));
-  ASSERT_NE(r.place(0, {0, 1}), nullptr);
-  // Layer 0 committed, but layer 1 plans the same positions and lands the
-  // same place: commit takes a max rather than advancing per layer.
-  const auto* second = r.place(1, {0, 1});
-  ASSERT_NE(second, nullptr);
-  EXPECT_EQ((*second)[0].plan.write[0].start, 0);
-  EXPECT_EQ(r.ctl->seq_len(a), 2);
-}
-
-TEST_F(CacheTest, RowsKvSharedLayerReservesIdempotently) {
+TEST_F(CacheTest, KvSharedLayerReservesIdempotently) {
   // A KV-shared layer re-serves its donor's id with the same tokens: the repeat
-  // plans the same runs and leaves the rows where they were. A re-serve with
-  // different tokens is a step that never declared, and is refused.
-  Rows r(16);
-  const int32_t a = r.seq_new();
-  EXPECT_TRUE(r.ctl->declare_step({a, a}));
-  const auto* donor = r.place(0, {0, 1});
+  // returns the donor's step and claims no new cells. A re-serve with different
+  // tokens is a new step that never declared, and is refused.
+  Cells c(16, {flat_layer(), flat_layer()});
+  const int32_t s0 = c.seq_new();
+  const auto args = flatten_step({{s0, 0, 3}});
+  ASSERT_TRUE(c.ctl->declare_step(args.seq_ids));
+  const auto* donor = c.place(0, args.positions);
   ASSERT_NE(donor, nullptr);
-  const int start = (*donor)[0].plan.write[0].start;
-
-  const auto* again = r.place(0, {0, 1});
-  ASSERT_NE(again, nullptr);
-  EXPECT_EQ((*again)[0].plan.write[0].start, start);
-  EXPECT_EQ(r.ctl->seq_len(a), 2); // the repeat advanced nothing
-
-  EXPECT_EQ(r.place(0, {7, 8}), nullptr); // different tokens, never declared
-  EXPECT_EQ(r.ctl->seq_len(a), 2);
+  const int free_after_place = c.cache.free_cells();
+  EXPECT_EQ(c.place(0, args.positions), donor); // same tokens -> same step
+  EXPECT_EQ(c.cache.free_cells(), free_after_place); // no new cells claimed
+  EXPECT_EQ(c.place(0, {7, 8, 9}), nullptr); // different tokens, never declared
 }
 
-TEST_F(CacheTest, RowsRejectPositionsThatDoNotContinueASequence) {
-  Rows r(16);
-  const int32_t a = r.seq_new();
-  EXPECT_TRUE(r.ctl->declare_step({a, a}));
-  EXPECT_EQ(r.place(0, {1, 2}), nullptr); // a holds nothing, so it starts at 0
-  EXPECT_EQ(r.place(0, {0, 2}), nullptr); // a span is a consecutive run
-  EXPECT_EQ(r.ctl->seq_len(a), 0); // a refusal places nothing
-  EXPECT_NE(r.place(0, {0, 1}), nullptr); // and the declaration still stands
-}
-
-TEST_F(CacheTest, RowsShareOneCapacity) {
-  Rows r(4);
-  const int32_t a = r.seq_new(), b = r.seq_new();
-  ASSERT_NE(r.step({a, a}, {0, 1}), nullptr);
-  ASSERT_NE(r.step({b, b}, {0, 1}), nullptr);
-  // Four of four held, so either sequence is now blocked by the other.
-  EXPECT_FALSE(r.ctl->declare_step({a}));
-  EXPECT_EQ(r.ctl->seq_len(a), 2);
-  EXPECT_EQ(r.ctl->seq_len(b), 2);
-}
-
-TEST_F(CacheTest, RowsRewindDropsATailAndRemoveDropsTheSequence) {
-  Rows r(16);
-  const int32_t a = r.seq_new(), b = r.seq_new();
-  ASSERT_NE(r.step({a, a, a, b}, {0, 1, 2, 0}), nullptr);
-
-  EXPECT_FALSE(r.ctl->rewind(a, 4)); // cannot grow
-  EXPECT_EQ(r.ctl->seq_len(a), 3);
-
-  EXPECT_TRUE(r.ctl->rewind(a, 2)); // drop its last position
-  EXPECT_EQ(r.ctl->seq_len(a), 2);
-  EXPECT_EQ(r.ctl->seq_len(b), 1); // its neighbour is untouched
-
-  EXPECT_TRUE(r.ctl->seq_rm(a)); // and the whole sequence
-  EXPECT_EQ(r.ctl->seq_len(a), 0);
-  EXPECT_EQ(r.ctl->seq_len(b), 1);
-  EXPECT_EQ(r.seq_new(), a); // the id frees for reuse
-}
-
-TEST_F(CacheTest, CellBoundsEachSequenceByTheModelContext) {
-  CacheConfig cfg{16, 1, {flat_layer()}};
-  cfg.max_context = 3;
-  CellCache cache(cfg);
-  BatchControl* ctl = cache.as<BatchControl>();
-  CellStepper* stepper = cache.as<CellStepper>();
-  const int32_t a = *ctl->seq_new(), b = *ctl->seq_new();
-
-  EXPECT_TRUE(ctl->can_admit(a, 3));
-  EXPECT_FALSE(ctl->can_admit(a, 4)); // past the trained positions
-  // It speaks only for the sequence: 16 cells free, still refused at 4.
-  EXPECT_FALSE(ctl->can_admit(a, 16));
-  EXPECT_FALSE(ctl->can_admit(a + 40, 1)); // never handed out
-
-  std::vector<int32_t> pos{0, 1, 0};
-  ASSERT_TRUE(ctl->declare_step({a, a, b}));
-  ASSERT_NE(stepper->place_step(0, pos.data(), 3), nullptr);
-  EXPECT_TRUE(ctl->can_admit(a, 1)); // a has reached 2 of 3
-  EXPECT_FALSE(ctl->can_admit(a, 2));
-  EXPECT_TRUE(ctl->can_admit(b, 2)); // b is bounded independently
-
-  EXPECT_FALSE(ctl->declare_step({a, a})); // would carry a past 3
-  EXPECT_TRUE(ctl->declare_step({a, b}));
-}
-
-TEST_F(CacheTest, RowsBoundEachSequenceByTheModelContext) {
-  CacheConfig cfg{16, 1, {flat_layer()}};
-  cfg.max_context = 3;
-  BatchedSequenceCache cache(cfg);
-  BatchControl* ctl = cache.as<BatchControl>();
-  SeqSpanStepper* stepper = cache.as<SeqSpanStepper>();
-  const int32_t a = *ctl->seq_new(), b = *ctl->seq_new();
-
-  EXPECT_TRUE(ctl->can_admit(a, 3));
-  EXPECT_FALSE(ctl->can_admit(a, 4));
-  EXPECT_FALSE(ctl->can_admit(a + 40, 1));
-
-  std::vector<int32_t> pos{0, 1, 0};
-  ASSERT_TRUE(ctl->declare_step({a, a, b}));
-  ASSERT_NE(stepper->place_step(0, pos.data(), 3), nullptr);
-  EXPECT_TRUE(ctl->can_admit(a, 1));
-  EXPECT_FALSE(ctl->can_admit(a, 2));
-  EXPECT_TRUE(ctl->can_admit(b, 2));
-
-  EXPECT_FALSE(ctl->declare_step({a, a}));
-  EXPECT_TRUE(ctl->declare_step({a, b}));
-}
-
-// The probe reports one sequence's reach; declare_step reports the pool. Each
-// sequence could take two more alone, so asking per sequence would admit a step
-// that together overruns four cells.
-TEST_F(CacheTest, CellAdmissionDoesNotCompose) {
-  Cells c(4); // no max_context: nothing bounds a sequence's reach
-  const int32_t a = c.seq_new(), b = c.seq_new();
-  EXPECT_TRUE(c.ctl->can_admit(a, 1000));
-
-  ASSERT_NE(c.step({a, b}, {0, 0}), nullptr); // two of four cells held
-  EXPECT_TRUE(c.ctl->can_admit(a, 2));
-  EXPECT_TRUE(c.ctl->can_admit(b, 2));
-  EXPECT_FALSE(c.ctl->declare_step({a, a, b, b})); // four tokens, two cells
-  EXPECT_TRUE(c.ctl->declare_step({a, b}));
-}
-
-TEST_F(CacheTest, CellAdmissionIgnoresAFullPool) {
-  CacheConfig cfg{2, 1, {flat_layer()}};
-  cfg.max_context = 100;
-  CellCache cache(cfg);
-  BatchControl* ctl = cache.as<BatchControl>();
-  CellStepper* stepper = cache.as<CellStepper>();
-  const int32_t a = *ctl->seq_new();
-
-  std::vector<int32_t> pos{0, 1};
-  ASSERT_TRUE(ctl->declare_step({a, a}));
-  ASSERT_NE(stepper->place_step(0, pos.data(), 2), nullptr); // both cells held
-
-  // Room is gone, reach is not.
-  EXPECT_TRUE(ctl->can_admit(a, 1));
-  EXPECT_FALSE(ctl->declare_step({a}));
-}
-
-TEST_F(CacheTest, RowsAdmissionDoesNotCompose) {
-  Rows r(4);
-  const int32_t a = r.seq_new(), b = r.seq_new();
-  EXPECT_TRUE(r.ctl->can_admit(a, 1000));
-
-  ASSERT_NE(r.step({a, b}, {0, 0}), nullptr);
-  EXPECT_TRUE(r.ctl->can_admit(a, 2));
-  EXPECT_TRUE(r.ctl->can_admit(b, 2));
-  EXPECT_FALSE(r.ctl->declare_step({a, a, b, b}));
-  EXPECT_TRUE(r.ctl->declare_step({a, b}));
-}
-
-TEST_F(CacheTest, RowsAdmissionIgnoresAFullPool) {
-  CacheConfig cfg{2, 1, {flat_layer()}};
-  cfg.max_context = 100;
-  BatchedSequenceCache cache(cfg);
-  BatchControl* ctl = cache.as<BatchControl>();
-  SeqSpanStepper* stepper = cache.as<SeqSpanStepper>();
-  const int32_t a = *ctl->seq_new();
-
-  std::vector<int32_t> pos{0, 1};
-  ASSERT_TRUE(ctl->declare_step({a, a}));
-  ASSERT_NE(stepper->place_step(0, pos.data(), 2), nullptr);
-
-  EXPECT_TRUE(ctl->can_admit(a, 1));
-  EXPECT_FALSE(ctl->declare_step({a}));
-}
-
-TEST_F(CacheTest, RowsRefuseUndeclaredIdsAndCannotShare) {
-  Rows r(16);
-  const int32_t a = r.seq_new();
-  EXPECT_EQ(r.ctl->max_seqs(), std::nullopt); // no bitset to run out of
-  EXPECT_FALSE(r.ctl->declare_step({a, a + 1})); // never handed out
-  EXPECT_FALSE(r.ctl->declare_step({})); // a step carries a token
-  EXPECT_FALSE(r.ctl->seq_clone(a, std::nullopt)); // a holds nothing to fork
-  EXPECT_FALSE(r.ctl->seq_clone(a + 5, std::nullopt)); // never handed out
-}
-
-TEST_F(CacheTest, RowsForkCopiesThePrefixAndDivergesAfter) {
-  Rows r(16);
-  const int32_t a = r.seq_new();
-  ASSERT_NE(r.step({a, a, a}, {0, 1, 2}), nullptr);
-
-  const auto b = r.ctl->seq_clone(a, /*upto=*/2);
-  ASSERT_TRUE(b);
-  EXPECT_EQ(r.ctl->seq_len(*b), 2); // the prefix only
-  EXPECT_EQ(r.ctl->seq_len(a), 3); // the source keeps all of its own
-  // Copied, not shared: the fork's cells are its own, so both now hold 5.
-  EXPECT_EQ(r.cache.capacity() - 5, 11);
-
-  // Each continues from its own length, and neither disturbs the other.
-  ASSERT_NE(r.step({a, *b}, {3, 2}), nullptr);
-  EXPECT_EQ(r.ctl->seq_len(a), 4);
-  EXPECT_EQ(r.ctl->seq_len(*b), 3);
-}
-
-TEST_F(CacheTest, RowsForkIsBoundedByCapacityAndTheWindow) {
-  Rows small(4);
-  const int32_t a = small.seq_new();
-  ASSERT_NE(small.step({a, a, a}, {0, 1, 2}), nullptr);
-  // A copy needs room of its own: 3 held + 3 copied exceeds 4.
-  EXPECT_FALSE(small.ctl->seq_clone(a, std::nullopt));
-  EXPECT_TRUE(small.ctl->seq_clone(a, /*upto=*/1)); // but a shorter prefix fits
-
-  Rows ring(32, {ring_layer(2), ring_layer(2)});
-  const int32_t c = ring.seq_new();
-  // max_write defaults to the window, so the four arrive in two steps.
-  ASSERT_NE(ring.step({c, c}, {0, 1}), nullptr);
-  ASSERT_NE(ring.step({c, c}, {2, 3}), nullptr);
-  // A windowed layer retains only its last two, so an older prefix is gone.
-  EXPECT_FALSE(ring.ctl->seq_clone(c, /*upto=*/1));
-  EXPECT_TRUE(ring.ctl->seq_clone(c, /*upto=*/2)); // exactly the floor
+TEST_F(CacheTest, CellRejectedDeclarationLeavesTheLastOneStanding) {
+  Cells c(16);
+  const int32_t s0 = c.seq_new();
+  ASSERT_TRUE(c.ctl->declare_step({s0}));
+  EXPECT_FALSE(c.ctl->declare_step({CellCache::kMaxSeqs})); // past the bitset
+  EXPECT_FALSE(c.ctl->declare_step({s0 + 5})); // never handed out
+  EXPECT_NE(c.place(0, {0}), nullptr);
 }

@@ -28,7 +28,6 @@ with sharing and eviction). All store float KV.
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
@@ -107,16 +106,10 @@ class CacheConfig:
     batch_size: int = 1
     # Per-layer policy: one entry applies to every layer, else one per layer.
     layers: Sequence[LayerPolicy] = (LayerPolicy.flat(),)
-    # Positions any one sequence may reach, from the model rather than from the
-    # caller: past it the model was never trained. Bounds a sequence, where
-    # capacity bounds them all together. None = only capacity bounds a sequence.
-    max_context: Optional[int] = None
 
     def __post_init__(self):
         if self.capacity <= 0:
             raise ValueError("capacity must be positive")
-        if self.max_context is not None and self.max_context <= 0:
-            raise ValueError("max_context must be positive when set")
         if len(self.layers) not in (1, self.n_layers):
             raise ValueError("layers must be one policy, or one per layer")
 
@@ -144,8 +137,8 @@ class SequenceReferenceCache:
     def used(self, layer_id: int) -> int:
         return self._used[layer_id]
 
-    def rewind(self, new_len: int) -> None:
-        """Drop everything from ``new_len`` on, in every layer.
+    def rewind(self, position: int) -> None:
+        """Drop everything from ``position`` on, in every layer.
 
         A windowed layer retains only its last ``window`` positions, so it
         cannot go back further than that even though this reference keeps the
@@ -154,8 +147,8 @@ class SequenceReferenceCache:
         longer holds.
         """
         used = self._used[0]
-        if new_len < 0 or new_len > used:
-            raise ValueError(f"rewind to {new_len}: the history holds {used}")
+        if position < 0 or position > used:
+            raise ValueError(f"rewind to {position}: the history holds {used}")
         floor = max(
             (
                 used - self.config.policy_for(layer_id).window
@@ -164,15 +157,15 @@ class SequenceReferenceCache:
             ),
             default=0,
         )
-        if new_len < floor:
+        if position < floor:
             raise ValueError(
-                f"rewind to {new_len}: a windowed layer retains only from {floor}"
+                f"rewind to {position}: a windowed layer retains only from {floor}"
             )
         for layer_id in range(self.config.n_layers):
             if self.config.sizing == CacheSizing.DYNAMIC:
-                self._k[layer_id] = self._k[layer_id][:, :, :new_len, :]
-                self._v[layer_id] = self._v[layer_id][:, :, :new_len, :]
-            self._used[layer_id] = new_len
+                self._k[layer_id] = self._k[layer_id][:, :, :position, :]
+                self._v[layer_id] = self._v[layer_id][:, :, :position, :]
+            self._used[layer_id] = position
 
     def reset(self):
         self._used = [0] * self.config.n_layers
@@ -221,11 +214,6 @@ class SequenceReferenceCache:
             raise RuntimeError(
                 f"KV cache overflow on layer {layer_id}: "
                 f"{new_used} cells exceeds capacity {cap}"
-            )
-        limit = self.config.max_context
-        if limit is not None and new_used > limit:
-            raise RuntimeError(
-                f"position {new_used} passes the model context limit {limit}"
             )
 
         k = k.to(self.config.dtype)
@@ -375,14 +363,6 @@ class BatchedSequenceReferenceCache:
                 f"KV cache overflow: {held + len(seq_ids)} cells exceeds "
                 f"capacity {self.config.capacity}"
             )
-        # The pool is weighed once against the whole step; each sequence's own
-        # reach is weighed against the tokens the step gives it.
-        for seq_id, taking in Counter(seq_ids).items():
-            if not self.can_admit(seq_id, taking):
-                raise RuntimeError(
-                    f"sequence {seq_id} would pass the model context limit "
-                    f"{self.config.max_context}"
-                )
 
         for span in spans:
             if span.seq_id not in self._sequences:
@@ -453,8 +433,8 @@ class BatchedSequenceReferenceCache:
         self._sequences.pop(seq_id, None)
         self._invalidate_step()
 
-    def rewind(self, seq_id: int, new_len: int) -> None:
-        """Truncate one sequence to ``new_len``, as a single-sequence rewind.
+    def rewind(self, seq_id: int, position: int) -> None:
+        """Keep the sequence's ``[0, position)``, dropping the rest.
 
         A windowed layer has physically dropped what it no longer retains, so a
         target older than that is refused.
@@ -462,7 +442,7 @@ class BatchedSequenceReferenceCache:
         self._check_seq_id(seq_id)
         sequence = self._sequences.get(seq_id)
         if sequence is not None:
-            sequence.rewind(new_len)
+            sequence.rewind(position)
         self._invalidate_step()
 
     def _invalidate_step(self) -> None:
@@ -470,26 +450,12 @@ class BatchedSequenceReferenceCache:
         self._served.clear()
         self._declared = False
 
-    def can_admit(self, seq_id: int, n: int = 1) -> bool:
-        """Whether seq_id may reach n further positions before max_context.
-
-        Sequences are bounded independently, so this holds per sequence across a
-        whole step. It says nothing about room: the capacity is shared, and
-        whether a step fits is declare_step's answer.
-        """
-        self._check_seq_id(seq_id)
-        limit = self.config.max_context
-        if limit is None:
-            return True
-        sequence = self._sequences.get(seq_id)
-        reached = sequence.used(0) if sequence is not None else 0
-        return reached + n <= limit
-
     def max_seqs(self) -> Optional[int]:
         """None: a sequence is a dict entry, so only the cells they take bound them."""
         return None
 
-    def seq_len(self, seq_id: int) -> int:
+    def pos(self, seq_id: int) -> int:
+        """Where the sequence stands: one past its newest position."""
         self._check_seq_id(seq_id)
         sequence = self._sequences.get(seq_id)
         return sequence.used(0) if sequence is not None else 0
@@ -612,11 +578,11 @@ class CellReferenceCache:
         """
         return self.free_cells() >= n
 
-    def next_pos(self, seq_id: int) -> int:
-        """One past the newest position the sequence holds.
+    def pos(self, seq_id: int) -> int:
+        """Where the sequence stands: one past its newest position.
 
-        Not its cell count: positions need only increase, so what a sequence
-        owns and where it has reached are different numbers.
+        A sequence's cells are scattered across the pool, so the position lives
+        on the cell and this scans for it.
         """
         self._check_seq_id(seq_id)
         bit = 1 << seq_id
@@ -626,25 +592,9 @@ class CellReferenceCache:
                 reached = max(reached, self._pos[i])
         return reached + 1
 
-    def can_admit(self, seq_id: int, n: int = 1) -> bool:
-        """Whether seq_id may reach n further positions before max_context.
-
-        Sequences are bounded independently, so this holds per sequence across a
-        whole step. It says nothing about room: the cells are shared, and
-        whether a step fits is declare_step's answer.
-        """
-        self._check_seq_id(seq_id)
-        limit = self.config.max_context
-        return limit is None or self.next_pos(seq_id) + n <= limit
-
     def max_seqs(self) -> Optional[int]:
         """MAX_SEQS: one bit each in the owner bitset."""
         return MAX_SEQS
-
-    def seq_len(self, seq_id: int) -> int:
-        self._check_seq_id(seq_id)
-        bit = 1 << seq_id
-        return sum(1 for owners in self._owners if owners & bit)
 
     def declare_step(self, seq_ids: Sequence[int]) -> None:
         """Declare the sequence each of the next forward's tokens belongs to.
@@ -662,14 +612,6 @@ class CellReferenceCache:
                 f"KV cache full: {len(seq_ids)} tokens need as many cells, "
                 f"{self.free_cells()} free"
             )
-        # The pool is weighed once against the whole step; each sequence's own
-        # reach is weighed against the tokens the step gives it.
-        for seq_id, taking in Counter(seq_ids).items():
-            if not self.can_admit(seq_id, taking):
-                raise RuntimeError(
-                    f"sequence {seq_id} would pass the model context limit "
-                    f"{self.config.max_context}"
-                )
         self._step_seq_ids = list(seq_ids)
         self._declared = True
         self._plan = None
@@ -699,14 +641,14 @@ class CellReferenceCache:
         self._check_seq_id(seq_id)
         self._drop_from(seq_id, 0)
 
-    def rewind(self, seq_id: int, new_len: int) -> None:
-        """Truncate one sequence to ``new_len``.
+    def rewind(self, seq_id: int, position: int) -> None:
+        """Keep the sequence's ``[0, position)``, dropping the rest.
 
         Always possible here: a windowed layer narrows the mask over cells that
         are still present, so no position is unrecoverable.
         """
         self._check_seq_id(seq_id)
-        self._drop_from(seq_id, new_len)
+        self._drop_from(seq_id, position)
 
     def _drop_from(self, seq_id: int, from_pos: int) -> None:
         bit = 1 << seq_id
@@ -793,6 +735,14 @@ class CellReferenceCache:
                 f"declare_step declared {len(self._step_seq_ids)} tokens, "
                 f"the forward carries {len(positions)}"
             )
+        want = {seq_id: self.pos(seq_id) for seq_id in set(self._step_seq_ids)}
+        for pos, seq_id in zip(positions, self._step_seq_ids):
+            if pos != want[seq_id]:
+                raise ValueError(
+                    f"sequence {seq_id} continues at {want[seq_id]}, "
+                    f"the step declares {pos}"
+                )
+            want[seq_id] += 1
         cells = [
             self._claim(pos, 1 << seq_id)
             for pos, seq_id in zip(positions, self._step_seq_ids)
