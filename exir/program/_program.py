@@ -7,6 +7,7 @@
 
 # pyre-strict
 import copy
+import dataclasses
 import io
 import logging
 import os
@@ -27,6 +28,7 @@ from executorch.exir.backend.backend_api import (
     MethodProgramsPartitionerSpec,
     to_backend,
 )
+from executorch.exir.backend.op_backend import _lower_and_verify, OpBackend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
@@ -1694,6 +1696,45 @@ class EdgeProgramManager:
             config,
         )
 
+        epm._etrecord = self._etrecord
+        return epm
+
+    @et_logger("to_op_backend")
+    def to_op_backend(self, op_backend: OpBackend) -> "EdgeProgramManager":
+        """
+        Returns a program in which every method has been rewritten by an
+        operator backend, which replaces operators with its own kernels rather
+        than delegating a subgraph.
+
+        Returns:
+            EdgeProgramManager: A copy of the calling EdgeProgramManager with
+            its methods lowered.
+        """
+        new_edge_programs: Dict[str, ExportedProgram] = {
+            name: _lower_and_verify(program, op_backend, name)
+            for name, program in self._edge_programs.items()
+        }
+
+        # As in to_backend, an operator backend installs operators outside the
+        # edge dialect, so reconstructing must not re-verify against it. Unlike
+        # to_backend the rest of the config is carried rather than replaced, so
+        # _skip_dim_order -- which edge_to_executorch_passes reads -- survives.
+        # The list fields get their own list objects: `dataclasses.replace`
+        # copies references, so otherwise the rebuilt manager and this one would
+        # share them and appending to either would be felt by both.
+        config = dataclasses.replace(
+            self.compile_config,
+            _check_ir_validity=False,
+            preserve_ops=list(self.compile_config.preserve_ops),
+            _core_aten_ops_exception_list=list(
+                self.compile_config._core_aten_ops_exception_list
+            ),
+        )
+        epm = EdgeProgramManager(
+            new_edge_programs,
+            copy.deepcopy(self._config_methods),
+            config,
+        )
         epm._etrecord = self._etrecord
         return epm
 

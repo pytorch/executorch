@@ -48,6 +48,7 @@ buck2 build //codegen/tools/... \
         //exir/_serialize/test/... \
         //exir/backend/test:test_delegate_map_builder \
         //exir/backend/test:test_graph_partition \
+        //exir/backend/test:test_op_backend \
         //exir/backend/test:test_group_partitioner \
         //exir/backend/test:test_passes \
         //exir/dialects/backend/test/... \
