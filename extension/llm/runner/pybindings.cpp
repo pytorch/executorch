@@ -310,7 +310,7 @@ PYBIND11_MODULE(_llm_runner, m) {
 
   // Bind Stats
   py::class_<Stats>(m, "Stats")
-      .def_readonly(
+      .def_readonly_static(
           "SCALING_FACTOR_UNITS_PER_SECOND",
           &Stats::SCALING_FACTOR_UNITS_PER_SECOND)
       .def_readonly("model_load_start_ms", &Stats::model_load_start_ms)
