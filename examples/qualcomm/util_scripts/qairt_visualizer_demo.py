@@ -13,9 +13,9 @@ import torch
 from executorch.backends.qualcomm.debugger.utils import generate_optrace
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.tests.models import SimpleModel
@@ -44,7 +44,7 @@ def main(args) -> None:
     )
 
     # generate optrace and QHAS
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
@@ -52,7 +52,7 @@ def main(args) -> None:
     binaries_trace = generate_optrace(
         args.artifact,
         get_soc_to_chipset_map()[args.soc_model],
-        adb,
+        device,
         f"{args.artifact}/{pte_filename}.pte",
         example_inputs,
     )

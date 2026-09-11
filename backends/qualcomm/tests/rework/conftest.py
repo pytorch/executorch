@@ -28,6 +28,7 @@ import torch
 from executorch import exir
 from executorch.backends.qualcomm.export_utils import (
     convert_pt2e,
+    Device,
     generate_inputs,
     get_qnn_context_binary_alignment,
     prepare_pt2e,
@@ -35,7 +36,6 @@ from executorch.backends.qualcomm.export_utils import (
     QnnExecuTorchBackendType,
     QnnQuantizer,
     setup_common_args_and_variables,
-    SimpleADB,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.examples.qualcomm.utils import make_output_dir
@@ -332,7 +332,7 @@ def init_remote_env(func):
             device_workspace = (
                 f"{getattr(qnn_config, 'device_workspace', '')}_{qnn_config.backend}"
             )
-            SimpleADB(
+            Device(
                 qnn_config=qnn_config,
                 pte_path=[],
                 workspace=f"/data/local/tmp/{device_workspace}",
@@ -360,13 +360,13 @@ def invoke_remote(
         with open(pte_fname, "wb") as file:
             executorch_prog.write_to_file(file)
 
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=[pte_fname],
             workspace=f"/data/local/tmp/{device_workspace}",
         )
-        adb.push(inputs=[inputs] if inputs is not None else None)
-        callback(adb)
+        device.push(inputs=[inputs] if inputs is not None else None)
+        callback(device)
 
 
 @init_remote_env
@@ -402,15 +402,15 @@ def verify_output_remote(
                     torch.from_numpy(output).reshape(ref_outputs[i].shape)
                 )
 
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=[pte_fname],
             workspace=f"/data/local/tmp/{device_workspace}",
         )
-        adb.push(inputs=[inputs], init_env=False)
-        adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
-        adb.execute(method_index=getattr(qnn_config, "method_index", 0))
-        adb.pull(host_output_path=tmp_dir, callback=post_process)
+        device.push(inputs=[inputs], init_env=False)
+        device.execute(custom_runner_cmd=f"rm -rf {device.output_folder}")
+        device.execute(method_index=getattr(qnn_config, "method_index", 0))
+        device.pull(host_output_path=tmp_dir, callback=post_process)
         metrics.assert_close(device_output=device_outputs, ref_output=ref_outputs)
 
 

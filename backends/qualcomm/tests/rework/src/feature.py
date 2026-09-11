@@ -21,12 +21,12 @@ from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     QNNIntermediateDebugger,
 )
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     make_quantizer,
     QcomChipset,
     QnnConfig,
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
-    SimpleADB,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -93,14 +93,14 @@ class Logging:
 
     @staticmethod
     def _test(qnn_config, compile_specs, expected, aot):
-        def callback(adb: SimpleADB, pattern):
+        def callback(device: Device, pattern):
             def verify(log):
                 msg = log.stdout
                 assert pattern in msg, f"{pattern} in log"
 
             # QnnExecuTorchLogLevel.kLogLevelVerbose
-            adb.extra_cmds += "" if aot else " --log_level 4"
-            adb.execute(output_callback=verify)
+            device.extra_cmds += "" if aot else " --log_level 4"
+            device.execute(output_callback=verify)
 
         with expected:
             # model declaration
@@ -326,7 +326,7 @@ class Performance:
     @staticmethod
     def _test(qnn_config, compile_specs, expected, aot):
         # extend this for other backends
-        def callback_htp(adb: SimpleADB, voltage):
+        def callback_htp(device: Device, voltage):
             def verify(log):
                 msg = log.stdout
                 # refer to HtpDevice.cpp for the following values
@@ -334,15 +334,15 @@ class Performance:
                 assert min_voltage in msg, f"expecting '{min_voltage}' in log"
 
             # high power saver mode
-            adb.extra_cmds += "" if aot else " --htp_performance_mode 6"
-            adb.execute(output_callback=verify)
+            device.extra_cmds += "" if aot else " --htp_performance_mode 6"
+            device.execute(output_callback=verify)
 
         # TODO: extend performance check for following backends
-        def callback_gpu(adb: SimpleADB):
-            adb.execute()
+        def callback_gpu(device: Device):
+            device.execute()
 
-        def callback_lpai(adb: SimpleADB):
-            adb.execute()
+        def callback_lpai(device: Device):
+            device.execute()
 
         with expected:
             # model declaration
@@ -447,14 +447,14 @@ class Profile:
 
     @staticmethod
     def _test(qnn_config, compile_specs, expected, aot):
-        def callback(adb: SimpleADB, executorch_prog_mgr, expected_profile_events):
+        def callback(device: Device, executorch_prog_mgr, expected_profile_events):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 etdump_path = f"{tmp_dir}/etdump.etdp"
                 etrecord_path = f"{tmp_dir}/etrecord.bin"
 
-                adb.extra_cmds += "" if aot else " --profile_level 2"
-                adb.execute()
-                adb.pull_etdump(output_path=etdump_path)
+                device.extra_cmds += "" if aot else " --profile_level 2"
+                device.execute()
+                device.pull_etdump(output_path=etdump_path)
 
                 executorch_prog_mgr.get_etrecord().save(etrecord_path)
                 inspector = Inspector(
@@ -726,12 +726,12 @@ class TensorDump:
     @staticmethod
     @unpack_fixtures
     def test(qnn_config, compile_specs, expected):
-        def callback(adb: SimpleADB, debugger, expected_compared_events):
+        def callback(device: Device, debugger, expected_compared_events):
             with tempfile.TemporaryDirectory() as tmp_dir:
                 etdump_path = f"{tmp_dir}/etdump.etdp"
                 debug_output_path = f"{tmp_dir}/debug_output.bin"
-                adb.execute()
-                adb.pull_debug_output(
+                device.execute()
+                device.pull_debug_output(
                     etdump_path=etdump_path, debug_buffer_path=debug_output_path
                 )
                 debugger.setup_inspector(

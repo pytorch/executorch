@@ -24,11 +24,11 @@ from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     QNNIntermediateDebugger,
 )
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     generate_inputs,
     get_backend_type,
     make_quantizer,
     QnnConfig,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
@@ -239,14 +239,14 @@ class TestQNN(unittest.TestCase):
             )
 
             # init device once
-            adb = SimpleADB(
+            device = Device(
                 qnn_config=qnn_config,
                 pte_path=[],
                 workspace="/data/local/tmp/qnn_executorch_test",
                 error_only=cls.error_only,
             )
 
-            adb.push(
+            device.push(
                 backends={get_backend_type(cls.backend)},
                 init_env=True,
             )
@@ -603,7 +603,7 @@ class TestQNN(unittest.TestCase):
                     direct_build_folder=self.direct_build_folder,
                 )
 
-                adb = SimpleADB(
+                device = Device(
                     qnn_config=qnn_config,
                     pte_path=pte_fname,
                     workspace="/data/local/tmp/qnn_executorch_test",
@@ -619,32 +619,34 @@ class TestQNN(unittest.TestCase):
                         else None
                     ),
                 )
-                adb.push(
+                device.push(
                     inputs=[processed_inputs],
                     files=op_package_paths,
                     init_env=False,
                     backends={get_backend_type(self.backend)},
                 )
-                adb.extra_cmds += extra_cmds
+                device.extra_cmds += extra_cmds
                 if save_inference_speed:
-                    adb.extra_cmds += (
+                    device.extra_cmds += (
                         f" --performance_output_path {self.inference_speed_output_path}"
                     )
 
                 if save_heap_result:
-                    adb.extra_cmds += (
+                    device.extra_cmds += (
                         f" --heap_profiling_path {self.dsp_heap_profile_filename}"
                     )
-                adb.execute(custom_runner_cmd=f"rm -rf {adb.output_folder}")
-                adb.execute(method_index=method_index, output_callback=output_callback)
-                adb.pull(host_output_path=tmp_dir, callback=post_process)
+                device.bridge.rmdir(device.output_folder)
+                device.execute(
+                    method_index=method_index, output_callback=output_callback
+                )
+                device.pull(host_output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
                 if expected_profile_events != -1:
-                    adb.pull_etdump(etdump_path, callback=validate_profile)
+                    device.pull_etdump(etdump_path, callback=validate_profile)
 
                 if expected_compared_events != -1:
-                    adb.pull_debug_output(
+                    device.pull_debug_output(
                         etdump_path,
                         debug_output_path,
                         callback=validate_intermediate_tensor,
@@ -655,8 +657,8 @@ class TestQNN(unittest.TestCase):
                     ) as f:
                         self.inference_speed = float(f.read())
                 if save_heap_result:
-                    adb.pull_heap_output(
-                        f"{adb.workspace}/{self.dsp_heap_profile_filename}",
+                    device.pull_heap_output(
+                        f"{device.workspace}/{self.dsp_heap_profile_filename}",
                         f"{tmp_dir}/{self.dsp_heap_profile_filename}",
                         callback=validate_heap_profile,
                     )
@@ -846,7 +848,7 @@ class TestQNN(unittest.TestCase):
         optimizer.step()
         return convert_pt2e(prepared)
 
-    def get_adb_tool(self, pte_fname):
+    def get_device_tool(self, pte_fname):
         qnn_config = QnnConfig(
             backend=self.backend,
             build_folder=self.build_folder,
@@ -856,13 +858,13 @@ class TestQNN(unittest.TestCase):
             direct_build_folder=self.direct_build_folder,
         )
 
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=pte_fname,
             workspace="/data/local/tmp/qnn_executorch_test",
             error_only=self.error_only,
         )
-        return adb
+        return device
 
     def split_graph(self, division: int):
         class SplitGraph(ExportPass):

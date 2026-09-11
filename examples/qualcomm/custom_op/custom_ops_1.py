@@ -22,12 +22,12 @@ from executorch.backends.qualcomm.custom_op.annotator import (
 from executorch.backends.qualcomm.custom_op.interface import QnnCustomOpPackageBuilder
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     generate_inputs,
     get_backend_type,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     get_ptq_per_channel_quant_config,
@@ -208,24 +208,24 @@ def main(args):
         # qnn_config    : QnnConfig that saves config info
         # device_id     : serial number of android device
         # workspace     : folder for storing artifacts on android device
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=f"{args.artifact}/{pte_filename}.pte",
             workspace=workspace,
         )
-        adb.push(inputs=sample_input, files=op_package_paths)
+        device.push(inputs=sample_input, files=op_package_paths)
         if args.debug:
-            adb.execute(custom_runner_cmd="logcat -c")
-            adb.execute(
+            device.execute(custom_runner_cmd="logcat -c")
+            device.execute(
                 custom_runner_cmd=f"echo 0x1f > {workspace}/qnn_executor_runner.farf"
             )
 
-        adb.execute()
+        device.execute()
         if args.debug:
-            adb.execute(
+            device.execute(
                 custom_runner_cmd=f"logcat -d -v time >{workspace}/outputs/debug_logs.txt"
             )
-        adb.pull(host_output_path=args.artifact)
+        device.pull(host_output_path=args.artifact)
 
     x86_golden = instance(*sample_input)
     device_output = torch.from_numpy(
