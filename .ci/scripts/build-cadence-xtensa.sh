@@ -27,6 +27,9 @@ RUN_SMOKE=1
 : "${XTENSA_CORE:?run setup-xtensa-tools.sh first}"
 : "${CADENCE_OPT_FLAG:?run setup-xtensa-tools.sh first}"
 
+# shellcheck source=.ci/scripts/xtensa-short-hostname.sh
+source "$(dirname "${BASH_SOURCE[0]}")/xtensa-short-hostname.sh"
+
 NPROC=$(nproc)
 echo "=== building cadence_executor_runner for ${XTENSA_CORE} (${CADENCE_OPT_FLAG}) ==="
 xt-clang --version | head -1

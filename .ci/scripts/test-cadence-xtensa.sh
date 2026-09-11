@@ -22,6 +22,9 @@ set -euo pipefail
 : "${XTENSA_CORE:?run setup-xtensa-tools.sh first}"
 : "${CADENCE_OPT_FLAG:?run setup-xtensa-tools.sh first}"
 
+# shellcheck source=.ci/scripts/xtensa-short-hostname.sh
+source "$(dirname "${BASH_SOURCE[0]}")/xtensa-short-hostname.sh"
+
 # Map the optimized-kernel flag to the backend dir + gtest target name.
 case "${CADENCE_OPT_FLAG}" in
   EXECUTORCH_NNLIB_OPT) TARGET_DIR=hifi ;;

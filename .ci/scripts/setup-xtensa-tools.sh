@@ -73,6 +73,16 @@ case "${BACKEND}" in
     ;;
 esac
 
+# See xtensa-short-hostname.sh: RJ-2025.5 xt-clang mis-derives its licence
+# feature name when the hostname is 47 characters or longer. The build and test
+# scripts re-exec themselves under a short one; anything invoking the toolchain
+# by hand has to arrange that itself.
+HOST_NAME=$(hostname)
+if [[ "${TOOLCHAIN_VER}" == RJ-* && ${#HOST_NAME} -ge 47 ]]; then
+  echo "WARNING: hostname is ${#HOST_NAME} chars; ${TOOLCHAIN_VER} needs 46 or fewer or its licence" >&2
+  echo "         checkout fails with a misleading 'no such feature exists'." >&2
+fi
+
 XTENSA_ROOT="${XTENSA_ROOT:-/tmp/xtensa}"
 TOOLS_ROOT="${XTENSA_ROOT}/tools"     # contains <ver>-linux/XtensaTools
 CORES_ROOT="${XTENSA_ROOT}/cores"     # contains <corever>-linux/<core>
