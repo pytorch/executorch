@@ -29,16 +29,107 @@
 namespace torch {
 namespace executor {
 
-/// Returns the minimum element of the array at `x`, which must have `size`
-/// elements.
-inline float vec_minf(const float* x, size_t size) {
-  return *std::min_element(x, x + size);
+namespace internal {
+
+template <bool ComputeMin, bool ComputeMax>
+inline void vec_minmaxf_impl(
+    const float* x,
+    size_t size,
+    float* min_out,
+    float* max_out) {
+  float min_value = x[0];
+  float max_value = x[0];
+  size_t i = 1;
+  if (size >= 4) {
+    // Seeding every lane with x[0] preserves a leading NaN and ignores later NaNs.
+    float mins[4] = {x[0], x[0], x[0], x[0]};
+    float maxs[4] = {x[0], x[0], x[0], x[0]};
+    const size_t vector_end = size - size % 4;
+    for (i = 0; i < vector_end; i += 4) {
+      // Keep the independent lanes together even under size optimization.
+#if defined(__clang__) && (defined(__ARM_NEON) || defined(__SSE2__))
+#pragma clang loop vectorize_width(4) interleave_count(1) unroll(disable)
+#endif
+      for (size_t j = 0; j < 4; ++j) {
+        if constexpr (ComputeMin) {
+          mins[j] = std::min(mins[j], x[i + j]);
+        }
+        if constexpr (ComputeMax) {
+          maxs[j] = std::max(maxs[j], x[i + j]);
+        }
+      }
+    }
+    if constexpr (ComputeMin) {
+      min_value =
+          std::min(std::min(mins[0], mins[1]), std::min(mins[2], mins[3]));
+    }
+    if constexpr (ComputeMax) {
+      max_value =
+          std::max(std::max(maxs[0], maxs[1]), std::max(maxs[2], maxs[3]));
+    }
+  }
+  for (; i < size; ++i) {
+    if constexpr (ComputeMin) {
+      min_value = std::min(min_value, x[i]);
+    }
+    if constexpr (ComputeMax) {
+      max_value = std::max(max_value, x[i]);
+    }
+  }
+
+  // Lane reduction can reorder equal signed zeros. Preserve the first zero.
+  if (size >= 4 &&
+      ((ComputeMin && min_value == 0.0f) || (ComputeMax && max_value == 0.0f))) {
+    for (size_t j = 0; j < size; ++j) {
+      if (x[j] == 0.0f) {
+        if constexpr (ComputeMin) {
+          if (min_value == 0.0f) {
+            min_value = x[j];
+          }
+        }
+        if constexpr (ComputeMax) {
+          if (max_value == 0.0f) {
+            max_value = x[j];
+          }
+        }
+        break;
+      }
+    }
+  }
+  if constexpr (ComputeMin) {
+    *min_out = min_value;
+  }
+  if constexpr (ComputeMax) {
+    *max_out = max_value;
+  }
 }
 
-/// Returns the maximum element of the array at `x`, which must have `size`
-/// elements.
+} // namespace internal
+
+/// Returns the minimum element of the nonempty array at `x`, which must have
+/// `size` elements.
+inline float vec_minf(const float* x, size_t size) {
+  float minimum;
+  internal::vec_minmaxf_impl<true, false>(x, size, &minimum, nullptr);
+  return minimum;
+}
+
+/// Returns the maximum element of the nonempty array at `x`, which must have
+/// `size` elements.
 inline float vec_maxf(const float* x, size_t size) {
-  return *std::max_element(x, x + size);
+  float maximum;
+  internal::vec_minmaxf_impl<false, true>(x, size, nullptr, &maximum);
+  return maximum;
+}
+
+/// Writes the minimum and maximum of the nonempty array at `x`, which must have
+/// `size` elements. `min_out` and `max_out` must point to distinct valid floats.
+inline void vec_minmaxf(
+    const float* x,
+    size_t size,
+    float* min_out,
+    float* max_out) {
+  internal::vec_minmaxf_impl<true, true>(x, size, min_out, max_out);
 }
 
 /// Add each element of `x` and `y` into the corresponding element of `z`. All
