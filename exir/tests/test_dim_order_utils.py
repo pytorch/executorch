@@ -52,11 +52,6 @@ class TestDimOrderUtils(unittest.TestCase):
         edge_prog.to_executorch()
 
     def test_channels_last_single_channel_conv_dim_order(self) -> None:
-        # Regression test for https://github.com/pytorch/executorch/issues/22520:
-        # a channels-last conv input with a size-1 channel must be emitted with
-        # the canonical channels-last dim order. Portable conv kernels reject
-        # anything but default/channels-last dim orders, and require the input
-        # and output dim orders to match.
         class Conv(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -93,3 +88,39 @@ class TestDimOrderUtils(unittest.TestCase):
                 )
             self.assertEqual(list(tensors[0].dim_order), list(tensors[-1].dim_order))
         self.assertTrue(conv_found)
+
+    def test_singleton_dims_preserve_default_order(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        cases = (
+            (
+                Add(),
+                (
+                    torch.randn(2, 1, 3, 1).to(memory_format=torch.channels_last),
+                    torch.randn(2, 1, 3, 1),
+                ),
+            ),
+            (
+                torch.nn.ReLU(),
+                (torch.randn(2, 1, 3, 1, 1).to(memory_format=torch.channels_last_3d),),
+            ),
+        )
+        for model, inputs in cases:
+            with self.subTest(model=type(model).__name__):
+                program = (
+                    to_edge_transform_and_lower(torch.export.export(model, inputs))
+                    .to_executorch()
+                    .executorch_program
+                )
+                tensors = [
+                    value.val
+                    for value in program.execution_plan[0].values
+                    if isinstance(value.val, Tensor)
+                ]
+                self.assertEqual(len(tensors), len(inputs) + 1)
+                for tensor in tensors:
+                    self.assertEqual(
+                        list(tensor.dim_order), list(range(len(tensor.sizes)))
+                    )
