@@ -473,6 +473,71 @@ class TestCoreMLPartitioner(unittest.TestCase):
             # raised during lowering, not carried in the result.
             self.assertIsNotNone(delegated.to_executorch())
 
+    def test_quantize_embedding_tables_opt_in(self):
+        """
+        The embedding table is exempt from op_linear_quantizer_config by default and
+        compressed when the caller opts in, so the opt-in model is the smaller one.
+        """
+
+        class Embed(torch.nn.Module):
+            def __init__(self, vocab=4096, dim=128):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(vocab, dim)
+
+            def forward(self, ids):
+                return self.embedding(ids).sum(dim=1)
+
+        ids = torch.zeros(1, 4, dtype=torch.long)
+        exported = torch.export.export(Embed().eval(), (ids,), strict=True)
+
+        sizes = {}
+        for opt_in in (False, True):
+            compile_specs = CoreMLBackend.generate_compile_specs(
+                minimum_deployment_target=ct.target.iOS18,
+                compute_precision=ct.precision(ct.precision.FLOAT16.value),
+                op_linear_quantizer_config={
+                    "mode": "linear_symmetric",
+                    "dtype": "int8",
+                    "granularity": "per_channel",
+                },
+                quantize_embedding_tables=opt_in,
+            )
+            delegated = executorch.exir.to_edge_transform_and_lower(
+                exported,
+                partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+            )
+            sizes[opt_in] = len(delegated.to_executorch().buffer)
+
+        self.assertLess(sizes[True], sizes[False])
+
+    def test_quantize_embedding_tables_defaults_to_off(self):
+        """
+        Absent the spec, the table stays exempt. Covers models lowered by callers that
+        predate the option.
+        """
+        self.assertFalse(CoreMLBackend.quantize_embedding_tables_from_compile_specs([]))
+        specs = CoreMLBackend.generate_compile_specs(
+            op_linear_quantizer_config={
+                "mode": "linear_symmetric",
+                "dtype": "int8",
+                "granularity": "per_channel",
+            },
+        )
+        self.assertFalse(
+            CoreMLBackend.quantize_embedding_tables_from_compile_specs(specs)
+        )
+        opted_in = CoreMLBackend.generate_compile_specs(
+            op_linear_quantizer_config={
+                "mode": "linear_symmetric",
+                "dtype": "int8",
+                "granularity": "per_channel",
+            },
+            quantize_embedding_tables=True,
+        )
+        self.assertTrue(
+            CoreMLBackend.quantize_embedding_tables_from_compile_specs(opted_in)
+        )
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.

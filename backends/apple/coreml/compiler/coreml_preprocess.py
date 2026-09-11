@@ -73,6 +73,7 @@ class COMPILE_SPEC_KEYS(Enum):
     MIN_DEPLOYMENT_TARGET = "min_deployment_target"
     MODEL_COMPUTE_PRECISION = "model_compute_precision"
     OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
+    QUANTIZE_EMBEDDING_TABLES = "quantize_embedding_tables"
     ENUMERATED_SHAPES = "enumerated_shapes"
     PASS_PIPELINE = "pass_pipeline"
     MULTIMETHOD_WEIGHT_SHARING_STRATEGY = "multimethod_weight_sharing_strategy"
@@ -278,6 +279,32 @@ class CoreMLBackend(BackendDetails):
         return None
 
     @staticmethod
+    def generate_quantize_embedding_tables_compile_spec(
+        quantize_embedding_tables: bool,
+    ) -> CompileSpec:
+        """
+        Returns the compile spec saying whether op_linear_quantizer_config should also
+        compress embedding tables.
+        """
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.QUANTIZE_EMBEDDING_TABLES.value,
+            str(quantize_embedding_tables).encode("utf-8"),
+        )
+
+    @staticmethod
+    def quantize_embedding_tables_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> bool:
+        """
+        Returns whether embedding tables opt in to op_linear_quantizer_config. Defaults
+        to False, which is the behaviour of every model lowered before this spec existed.
+        """
+        for compile_spec in compile_specs:
+            if compile_spec.key == COMPILE_SPEC_KEYS.QUANTIZE_EMBEDDING_TABLES.value:
+                return compile_spec.value.decode("utf-8") == "True"
+        return False
+
+    @staticmethod
     def generate_pass_pipeline_compile_spec(pass_names: List[str]) -> CompileSpec:
         """
         Creates a compile spec representing the pass pipeline to be used by the CoreML backend
@@ -396,6 +423,7 @@ class CoreMLBackend(BackendDetails):
         compute_precision: ct.precision = ct.precision.FLOAT16,
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
+        quantize_embedding_tables: bool = False,
         pass_names: Optional[List[str]] = None,
     ) -> List[CompileSpec]:
         """
@@ -418,6 +446,12 @@ class CoreMLBackend(BackendDetails):
             compile_specs.append(
                 CoreMLBackend.generate_op_linear_quantizer_config_compile_spec(
                     op_linear_quantizer_config
+                )
+            )
+        if quantize_embedding_tables:
+            compile_specs.append(
+                CoreMLBackend.generate_quantize_embedding_tables_compile_spec(
+                    quantize_embedding_tables
                 )
             )
         if pass_names is not None:
@@ -615,12 +649,23 @@ class CoreMLBackend(BackendDetails):
             # embedding is one constant feeding both a gather and a linear, and coremltools
             # refuses to compress a constant its consumers disagree about, so opting the
             # gather out there does not skip the table, it fails the whole lowering.
-            tied = _gathers_sharing_a_weight(mlmodel)
-            config = cto.coreml.OptimizationConfig(
-                global_config=op_linear_quantizer_config,
-                op_type_configs={"gather": None},
-                op_name_configs={name: op_linear_quantizer_config for name in tied},
-            )
+            #
+            # quantize_embedding_tables drops the opt-out entirely, for models whose table
+            # is most of their weight and which have measured that compressing it is worth
+            # it. It stays off by default: the table is the one weight an embedding model's
+            # output quality rests on most directly, so opting in belongs with the caller
+            # who can measure the result.
+            if CoreMLBackend.quantize_embedding_tables_from_compile_specs(compile_specs):
+                config = cto.coreml.OptimizationConfig(
+                    global_config=op_linear_quantizer_config,
+                )
+            else:
+                tied = _gathers_sharing_a_weight(mlmodel)
+                config = cto.coreml.OptimizationConfig(
+                    global_config=op_linear_quantizer_config,
+                    op_type_configs={"gather": None},
+                    op_name_configs={name: op_linear_quantizer_config for name in tied},
+                )
             mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
 
         return mlmodel
