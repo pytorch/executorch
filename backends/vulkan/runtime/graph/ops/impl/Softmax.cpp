@@ -87,8 +87,8 @@ GlobalWorkGrid pick_softmax_gwg(
     // here from the resized extent would launch fewer threads than the shader's
     // tree reduction indexes over, leaving it to fold in shared memory slots
     // that no thread wrote. Read the count the node was built with instead.
-    lwg_extents[reduce_dim] =
-        static_cast<uint32_t>(graph->extract_scalar<int32_t>(resize_args.at(1)));
+    lwg_extents[reduce_dim] = static_cast<uint32_t>(
+        graph->extract_scalar<int32_t>(resize_args.at(1)));
     utils::uvec3 extents = {
         graph->size_at<uint32_t>(-1, out),
         graph->size_at<uint32_t>(-2, out),
