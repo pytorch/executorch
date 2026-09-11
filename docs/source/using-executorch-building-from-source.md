@@ -79,7 +79,28 @@ portability details.
   * `--clean`: Removes build artifacts.
   * `--editable`: Install the ExecuTorch python package in editable mode (see [Editable Install](#editable-install)).
   * `--minimal`: Install only the minimal set of dependencies required to run ExecuTorch. Do not install dependencies for examples.
+  * `--optional-dependency <name>`: Install an optional Python dependency set.
+    Repeat the flag to select more than one. Supported names are `ethos_u`,
+    `vgf`, and `openvino`.
   * `--use-pt-pinned-commit`: Install the pinned PyTorch commit or release version. When not specified, the latest PyTorch nightly build is installed.
+
+  For example, install the current checkout with the dependencies needed for
+  Ethos-U ahead-of-time (AOT) export:
+
+  ```bash
+  ./install_executorch.sh --optional-dependency ethos_u
+  ```
+
+  After the base dependencies have already been installed, the equivalent
+  editable package command is:
+
+  ```bash
+  pip install -e '.[ethos_u]' --no-build-isolation
+  ```
+
+  The `ethos_u` optional dependencies are host-side Python tools used during
+  AOT export. Embedded toolchains, simulators, and target runtimes are
+  configured separately by the backend setup and build instructions.
 
   For Intel-based macOS systems, use `--use-pt-pinned-commit --minimal`. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in [PyTorch Installation](https://github.com/pytorch/pytorch#installation).
 

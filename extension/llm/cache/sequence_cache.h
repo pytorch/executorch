@@ -12,6 +12,11 @@
 // policies (FlatPolicy / RingPolicy). SequenceCache owns the one logical length
 // for the whole model and dispatches per-layer layout to a policy, so a mixed
 // flat/ring model (gemma4) stays coherent. Tensor-free / ET-independent.
+//
+// The backend-facing planner face (SequencePlanner) and the types it hands over
+// live here rather than in cache.h: only this layout implements them, and only
+// a byte layer that already includes this header calls them. cell_cache.h holds
+// CellStepper for the same reason.
 
 #include <algorithm>
 #include <cassert>
@@ -26,8 +31,52 @@ namespace extension {
 namespace llm {
 namespace cache {
 
+// A contiguous span of physical rows in a layer's pool.
+struct ET_EXPERIMENTAL Run {
+  int start;
+  int len;
+};
+
+// Integer-only handoff to the backend byte layer. Runs are in logical order
+// (oldest -> newest); a flat layer uses one, a ring layer two when it wraps.
+// read_base_pos is the logical position of read[0].start.
+struct ET_EXPERIMENTAL SeqStepPlan {
+  Run write[2];
+  int n_write;
+  Run read[2];
+  int n_read;
+  int read_base_pos;
+};
+
+// Backend face. plan() is const: it computes a layer's layout without changing
+// state, and commit() advances the shared logical length. nullopt = the step
+// exceeds capacity, or `layer` is out of range.
+class ET_EXPERIMENTAL SequencePlanner {
+ public:
+  static constexpr const char* kFaceName = "et.cache.SequencePlanner";
+
+  virtual ~SequencePlanner() = default;
+  virtual std::optional<SeqStepPlan> plan(int layer, int position, int T)
+      const = 0;
+  // Advance the logical length past this step. Idempotent, so once per step
+  // suffices.
+  virtual void commit(const SeqStepPlan& plan) = 0;
+};
+
+// Per-layer layout: flat keeps all history, ring slides a window. Stateless.
+class ET_EXPERIMENTAL LayoutPolicy {
+ public:
+  virtual ~LayoutPolicy() = default;
+  // Write/read runs for T cells at logical `position`. Precondition: T fits the
+  // policy's window.
+  virtual SeqStepPlan plan(int position, int T) const = 0;
+  // Oldest position a rewind may target at this length, so that the step which
+  // follows still finds its whole window in the pool. 0 for flat.
+  virtual int retained_from(int length) const = 0;
+};
+
 // Full history [0, length): one contiguous write run, read over all history.
-class FlatPolicy final : public LayoutPolicy {
+class ET_EXPERIMENTAL FlatPolicy final : public LayoutPolicy {
  public:
   int retained_from(int /*length*/) const override {
     return 0; // keeps all history
@@ -48,13 +97,18 @@ class FlatPolicy final : public LayoutPolicy {
 // slots. The ring is oversized so a step of up to max_write tokens fits without
 // overwriting cells earlier queries in the same step still attend to; the
 // backend masks each query to its own window within the read span.
-class RingPolicy final : public LayoutPolicy {
+class ET_EXPERIMENTAL RingPolicy final : public LayoutPolicy {
  public:
   RingPolicy(int window, int max_write)
-      : window_(window), ring_size_(window + max_write - 1) {}
+      : window_(window),
+        max_write_(max_write),
+        ring_size_(window + max_write - 1) {}
 
+  // The ring holds the last window + max_write - 1 positions, and the step
+  // after a rewind to `p` reads [p - window + 1, p]. Both hold only down to
+  // length - max_write, which is the floor even when the window is wider.
   int retained_from(int length) const override {
-    return length > window_ ? length - window_ : 0;
+    return length > max_write_ ? length - max_write_ : 0;
   }
   SeqStepPlan plan(int position, int T) const override {
     const int end = position + T;
@@ -85,6 +139,7 @@ class RingPolicy final : public LayoutPolicy {
   }
 
   int window_;
+  int max_write_;
   int ring_size_;
 };
 
@@ -92,9 +147,9 @@ class RingPolicy final : public LayoutPolicy {
 // rewind; dispatches per-layer layout to a shared LayoutPolicy. Policies are
 // deduped by (kind, window), so a uniform or two-kind (gemma4) model holds one
 // or two policy objects.
-class SequenceCache : public CacheBase,
-                      public SequenceControl,
-                      public SequencePlanner {
+class ET_EXPERIMENTAL SequenceCache : public Cache,
+                                      public SequenceControl,
+                                      public SequencePlanner {
  public:
   explicit SequenceCache(const CacheConfig& cfg)
       : capacity_(cfg.capacity), max_write_(cfg.max_write) {
@@ -108,39 +163,59 @@ class SequenceCache : public CacheBase,
     }
   }
 
-  // CacheBase: face recovery without RTTI.
-  SequenceControl* as_control() override {
-    return this;
+  // A fork: same capacity and policies, and the source's history. The byte
+  // layer copies the cells. Each fork gets its own policies, so the two
+  // sequences cannot disturb each other.
+  SequenceCache(const SequenceCache& other)
+      : capacity_(other.capacity_),
+        max_write_(other.max_write_),
+        length_(other.length_),
+        written_(other.written_),
+        specs_(other.specs_),
+        layer_to_policy_(other.layer_to_policy_) {
+    policies_.reserve(specs_.size());
+    for (const LayerPolicy& lp : specs_) {
+      policies_.push_back(make_policy(lp));
+    }
   }
-  SequencePlanner* as_planner() override {
-    return this;
-  }
+  SequenceCache(SequenceCache&&) = default;
 
   // SequenceControl.
   bool can_extend(int n = 1) const override {
-    return length_ + n <=
-        capacity_; // evicting layers reuse rows; capacity bounds
+    // Evicting layers reuse rows; capacity bounds.
+    return length_ + n <= capacity_;
   }
   int capacity() const override {
     return capacity_;
   }
   void clear() override {
     length_ = 0;
+    written_ = 0;
   }
-  bool rewind(int new_len) override {
-    if (new_len > length_) {
-      return false; // cannot grow
+  // Positions are dense from 0, so this is both what the sequence holds and
+  // where its next token goes.
+  int length() const {
+    return length_;
+  }
+  // Whether rewind(position) would be accepted, without moving the length.
+  bool can_rewind(int position) const {
+    if (position > length_) {
+      return false; // a position it has not reached
     }
     // An evicting layer physically drops everything older than it retains, so
-    // the target must be no older than the most-restrictive layer retains.
+    // the target must be no older than the most-restrictive layer retains,
+    // measured from what was written rather than from the current length.
     int floor = 0;
     for (const auto& p : policies_) {
-      floor = std::max(floor, p->retained_from(length_));
+      floor = std::max(floor, p->retained_from(written_));
     }
-    if (new_len < floor) {
-      return false; // history evicted from an evicting layer
+    return position >= floor; // else history an evicting layer dropped
+  }
+  bool rewind(int position) override {
+    if (!can_rewind(position)) {
+      return false;
     }
-    length_ = new_len;
+    length_ = position;
     return true;
   }
 
@@ -171,6 +246,12 @@ class SequenceCache : public CacheBase,
       end += plan.read[i].len;
     }
     length_ = std::max(length_, end);
+    written_ = std::max(written_, length_);
+  }
+
+ protected:
+  void* face(FaceId id) override {
+    return expose<SequenceControl, SequencePlanner>(this, id);
   }
 
  private:
@@ -196,6 +277,9 @@ class SequenceCache : public CacheBase,
   int capacity_;
   std::optional<int> max_write_;
   int length_ = 0;
+  // How far the byte layer has been written; a rewind lowers the length but
+  // not this.
+  int written_ = 0;
   std::vector<LayerPolicy> specs_; // parallel to policies_, for dedup
   std::vector<std::unique_ptr<LayoutPolicy>> policies_;
   std::vector<int> layer_to_policy_;

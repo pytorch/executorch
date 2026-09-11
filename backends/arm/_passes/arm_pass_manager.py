@@ -22,7 +22,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     ComputeConstantOpsAOTPass,
     ConstantFoldingPass,
     ControlFlowConstInlinePass,
-    Conv1dUnsqueezePass,
+    ConvertBoolSumPass,
     ConvertEluFamilyToEluPass,
     ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
@@ -70,6 +70,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeIndexSelectToGatherPass,
     DecomposeIndexTensorToGatherPass,
     DecomposeIntPowPass,
+    DecomposeIsInfAndIsNanPass,
     DecomposeLargeStrideMaxPool2dForU55Pass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
@@ -89,8 +90,10 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
+    DecomposeRollPass,
     DecomposeRoundPass,
     DecomposeScaledDotProductAttentionPass,
+    DecomposeSDPAWithRegularSoftmaxPass,
     DecomposeSelectPass,
     DecomposeSelectScatterPass,
     DecomposeSignPass,
@@ -108,6 +111,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
+    DeduplicateConstShapesPass,
     DeduplicateGetAttrPass,
     EnsureUniqueOutputNodesPass,
     ExirToTosaPass,
@@ -224,6 +228,7 @@ def _graph_pass_name(graph_pass: Callable[[GraphModule], PassResult | None]) -> 
 class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
     def __init__(self, graph_pass: Callable[[GraphModule], PassResult | None]) -> None:
         self.graph_pass = graph_pass
+        self.__name__ = _graph_pass_name(graph_pass)
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_pass = cast(Any, self.graph_pass)
@@ -312,10 +317,7 @@ class ArmPassManager(ExportedProgramPassManager):
             skip_set.add(DecomposeLeakyReLUPass)
 
         match config.sdpa_safe_softmax_guard:  # type: ignore[attr-defined]
-            case (
-                SDPASafeSoftmaxGuardPolicy.PRESERVE
-                | SDPASafeSoftmaxGuardPolicy.REMOVE_WHEN_PROVEN
-            ):
+            case SDPASafeSoftmaxGuardPolicy.PRESERVE | SDPASafeSoftmaxGuardPolicy.AUTO:
                 skip_set.add(RemoveSafeSoftmaxGuardPass)
             case SDPASafeSoftmaxGuardPolicy.REMOVE:
                 pass
@@ -462,6 +464,15 @@ class ArmPassManager(ExportedProgramPassManager):
         self, exported_program: ExportedProgram
     ) -> ExportedProgram:
         """Apply Arm passes before default ATen decompositions."""
+        config = self.compile_spec._get_pass_pipeline_config()
+        passes: list[ExportPass] = []
+
+        if config.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.AUTO:
+            passes.append(DecomposeSDPAWithRegularSoftmaxPass())
+
+        if passes:
+            self.add_passes(passes)
+            self._transform(exported_program, exported_program.graph_module)
         return exported_program
 
     def _transform_graph_module(self, graph_module: GraphModule):
@@ -567,6 +578,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RemoveGetItemPass(),
                 FuseBatchNorm2dPass(exported_program),
                 DecomposeBatchNormNoStatsPass(),
+                DecomposeIsInfAndIsNanPass(),
                 DecomposeLogitPass(),
                 DecomposeMaskedFillPass(),
                 DecomposeRoundPass(),
@@ -584,26 +596,30 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeExpm1Pass(),
                 DecomposeIntPowPass(),
                 DecomposeLog1pPass(),
+                ConvertBoolSumPass(),
                 PromoteBoolOperandsPass(),
                 DecomposeSinhPass(),
                 DecomposeSignPass(),
                 DecomposeFlipPass(),
+                DecomposeRollPass(),
                 DecomposeFloorDividePass(),
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
                 DecomposeUnfoldToGatherPass(use_slice=self.tosa_spec.is_U55_subset),
                 DecomposeEmbeddingPass(),
-                DecomposeIndexSelectToGatherPass(),
                 CastInt64BuffersToInt32Pass(exported_program),
+                DecomposeIndexSelectToGatherPass(exported_program),
                 DecomposeStridedSliceCopyPass(),
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
-                DecomposeIndexTensorToGatherPass(),
+                DecomposeIndexTensorToGatherPass(
+                    exported_program,
+                    decompose_constant_indices=self.tosa_spec.is_U55_subset,
+                ),
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
-                Conv1dUnsqueezePass(exported_program),
             ]
         )
 
@@ -717,6 +733,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 # fusing generated RESCALE users can corrupt distinct quantized paths.
                 FuseDuplicateUsersPass(),
                 InsertRescalePass(),
+                DeduplicateConstShapesPass(),
                 EnsureUniqueOutputNodesPass(),
             ]
         )
@@ -757,6 +774,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeDynamicFullPass(tfa_pass=True),
                     ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
                     ConvertInt64OutputOpsToInt32Pass(tfa_pass=True),
+                    ConvertBoolSumPass(tfa_pass=True),
                     InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
                     FoldScalarMulIntoConvPass(tfa_pass=True),
                     DecomposeEmbeddingPass(tfa_pass=True),

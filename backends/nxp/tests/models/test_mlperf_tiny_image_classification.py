@@ -6,7 +6,11 @@
 from functools import partial
 
 import numpy as np
+
+# noinspection PyUnusedImports
+import pytest
 import torch
+
 from executorch.backends.nxp.tests.dataset_creator import (
     FromCalibrationDataDatasetCreator,
 )
@@ -23,7 +27,6 @@ from executorch.backends.nxp.tests.nsys_testing import (
     ReferenceModel,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
-import pytest
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
     MLPerfTinyImageClassification,
 )
@@ -64,9 +67,9 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         input_spec.dim_order = torch.channels_last
 
     quant_type_key = "QAT" if use_qat else "PTQ"
-    dim_order_key = "channels-last" if channels_last else "channels-first"
+    format_key = "channels-last" if channels_last else "channels-first"
 
-    mse = BOUNDS_MSE[quant_type_key][dim_order_key]
+    mse = BOUNDS_MSE[quant_type_key][format_key]
     comparator = NumericalStatsOutputComparator(
         max_mse_error=mse, use_softmax=True, is_classification_task=True
     )
@@ -77,7 +80,8 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         else None
     )
 
-    # This model does not work in channels-last format and QAT. See more information below.
+    # This model does not work in channels-last format and QAT when running using portable kernels.
+    # See more information below.
     # Github issue: https://github.com/pytorch/executorch/issues/22179
     # NXP internal issue ID: EIEX-1065
     ref_model = (

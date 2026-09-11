@@ -16,6 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   update-pytorch-commit-hash:
     runs-on: ubuntu-latest
     environment: ${{ (github.event_name == 'schedule') && 'update-commit-hash' || '' }}
@@ -50,8 +54,9 @@ jobs:
       timeout: 180
 
   test-static-hf-llm-qnn-linux:
+    needs: docker-image
     name: test-static-hf-llm-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -60,8 +65,8 @@ jobs:
         task: [smollm2_135m]
       fail-fast: false
     with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      runner: mt-l-x86iavx512-94-192
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900

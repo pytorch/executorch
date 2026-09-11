@@ -20,9 +20,10 @@ but is capped, per the design's "grows lazily and bounds hard".
 The cache places K/V and returns the history plus an ``AttendSpec`` (a mask *semantic*). The attend
 mechanism (``attend`` below) is applied by the op/backend from that spec.
 
-Two caches share the op: ``ContiguousReferenceCache`` (one sequence appended in
-place) and ``CellReferenceCache`` (many sequences over a pool of per-token cells,
-with sharing and eviction). Both store float KV.
+Three caches share the op: ``SequenceReferenceCache`` (one sequence),
+``BatchedSequenceReferenceCache`` (many private sequence caches), and
+``CellReferenceCache`` (many sequences over a shared pool of per-token cells,
+with sharing and eviction). All store float KV.
 """
 
 from __future__ import annotations
@@ -50,7 +51,17 @@ class MaskKind(Enum):
 
 @dataclass
 class AttendSpec:
+    """One attention: what to attend over, which queries do it, how to mask it.
+
+    A step is answered with a list of these -- one for a cache holding a single
+    history, one per sequence for a cache holding a private history each. They
+    cover the query axis in order, so ``q_len`` alone places each.
+    """
+
+    k: torch.Tensor  # [B, H_kv, total, head_dim] -- key history
+    v: torch.Tensor  # [B, H_kv, total, v_head_dim] -- value history
     kind: MaskKind
+    q_len: int  # query tokens this spec answers, following the one before it
     mask: Optional[torch.Tensor] = None  # EXPLICIT only: bool, true = attend
 
 
@@ -109,7 +120,7 @@ class CacheConfig:
 @experimental(
     "update_and_attend KV cache is experimental and may change without notice."
 )
-class ContiguousReferenceCache:
+class SequenceReferenceCache:
     """Per-layer contiguous float KV history for a single sequence."""
 
     def __init__(self, config: CacheConfig):
@@ -125,6 +136,36 @@ class ContiguousReferenceCache:
 
     def used(self, layer_id: int) -> int:
         return self._used[layer_id]
+
+    def rewind(self, position: int) -> None:
+        """Drop everything from ``position`` on, in every layer.
+
+        A windowed layer retains only its last ``window`` positions, so it
+        cannot go back further than that even though this reference keeps the
+        older ones -- the window is applied to the mask here and to the storage
+        in a byte layer, and a rewind past it would attend cells that layer no
+        longer holds.
+        """
+        used = self._used[0]
+        if position < 0 or position > used:
+            raise ValueError(f"rewind to {position}: the history holds {used}")
+        floor = max(
+            (
+                used - self.config.policy_for(layer_id).window
+                for layer_id in range(self.config.n_layers)
+                if self.config.policy_for(layer_id).window > 0
+            ),
+            default=0,
+        )
+        if position < floor:
+            raise ValueError(
+                f"rewind to {position}: a windowed layer retains only from {floor}"
+            )
+        for layer_id in range(self.config.n_layers):
+            if self.config.sizing == CacheSizing.DYNAMIC:
+                self._k[layer_id] = self._k[layer_id][:, :, :position, :]
+                self._v[layer_id] = self._v[layer_id][:, :, :position, :]
+            self._used[layer_id] = position
 
     def reset(self):
         self._used = [0] * self.config.n_layers
@@ -144,8 +185,10 @@ class ContiguousReferenceCache:
         k: torch.Tensor,
         v: torch.Tensor,
         position: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, AttendSpec]:
-        """Place this step's K/V and return the full history + mask semantic.
+    ) -> List[AttendSpec]:
+        """Place this step's K/V and return what to attend over.
+
+        One sequence, one history, so the list is always one long.
 
         Per the design, ``position`` is the cache's placement + masking input.
         This contiguous single-sequence cache appends at its used length, so the
@@ -160,9 +203,8 @@ class ContiguousReferenceCache:
             position: ``[q_len, n_dims]`` int -- per-query-token positions.
 
         Returns:
-            ``(k_hist, v_hist, spec)`` -- history ``[B, H_kv, total, head_dim]`` /
-            ``[B, H_kv, total, v_head_dim]`` (``total`` = prior length + q_len) and
-            the AttendSpec mask semantic.
+            one AttendSpec over the whole history, ``total`` = prior length +
+            q_len.
         """
         q_len = k.shape[-2]
         used = self._used[layer_id]
@@ -188,10 +230,14 @@ class ContiguousReferenceCache:
             v_hist = self._v[layer_id]
         self._used[layer_id] = new_used
 
-        return k_hist, v_hist, self._spec(layer_id, q_len, new_used, k.device)
+        return [self._spec(layer_id, k_hist, v_hist, q_len)]
 
     def _spec(
-        self, layer_id: int, q_len: int, total: int, device: torch.device
+        self,
+        layer_id: int,
+        k_hist: torch.Tensor,
+        v_hist: torch.Tensor,
+        q_len: int,
     ) -> AttendSpec:
         """The mask semantic for q_len new cells at the tail of a total window.
 
@@ -200,21 +246,25 @@ class ContiguousReferenceCache:
         ``i + total - q_len - window``. Whichever bound the fused kinds cannot
         express is what makes the step EXPLICIT.
         """
+        total = k_hist.shape[-2]
         window = self.config.policy_for(layer_id).window
         windowed = 0 < window < total
         if q_len == 1 and not windowed:
-            return AttendSpec(kind=MaskKind.NONE)
+            return AttendSpec(k=k_hist, v=v_hist, kind=MaskKind.NONE, q_len=q_len)
         if q_len == total and not windowed:
-            return AttendSpec(kind=MaskKind.CAUSAL)
+            return AttendSpec(k=k_hist, v=v_hist, kind=MaskKind.CAUSAL, q_len=q_len)
         # torch's is_causal is upper-left and expresses no window, so the band
         # is handed back explicitly.
+        device = k_hist.device
         offsets = torch.arange(total, device=device) - torch.arange(
             q_len, device=device
         ).unsqueeze(-1)
         band = offsets <= total - q_len
         if windowed:
             band &= offsets > total - q_len - window
-        return AttendSpec(kind=MaskKind.EXPLICIT, mask=band)
+        return AttendSpec(
+            k=k_hist, v=v_hist, kind=MaskKind.EXPLICIT, q_len=q_len, mask=band
+        )
 
 
 # A cell's owners are a bitset in a torch int64, so bit 63 (the sign bit) is out.
@@ -242,7 +292,7 @@ def flatten_step(
     Returns:
         ``(tokens, positions, seq_ids, logits_indices)`` -- tokens concatenated
         on the token axis and ``positions`` (``[n_tok, 1]``) as model inputs,
-        ``seq_ids`` for ``begin_step``, and ``logits_indices`` selecting each
+        ``seq_ids`` for ``declare_step``, and ``logits_indices`` selecting each
         sequence's last token, the rows worth running the LM head on.
     """
     tokens, positions, seq_ids, logits_indices = [], [], [], []
@@ -257,6 +307,185 @@ def flatten_step(
         seq_ids,
         torch.tensor(logits_indices, dtype=torch.long),
     )
+
+
+@dataclass(frozen=True)
+class _SequenceSpan:
+    seq_id: int
+    start: int
+    length: int
+
+
+@experimental(
+    "update_and_attend KV cache is experimental and may change without notice."
+)
+class BatchedSequenceReferenceCache:
+    """A private ``SequenceReferenceCache`` per sequence in a flat batch.
+
+    Projections share one model forward over the flattened token axis. Attention
+    splits that axis into its declared sequence spans, runs independently over
+    each sequence's private history, then concatenates the outputs in input
+    order. No sequence attends another and no dense cross-sequence mask is built.
+    """
+
+    def __init__(self, config: CacheConfig):
+        if config.batch_size != 1:
+            raise ValueError(
+                "batched sequence cache is flat on the token axis: batch_size must be 1"
+            )
+        self.config = config
+        self._sequences: Dict[int, SequenceReferenceCache] = {}
+        self._spans: List[_SequenceSpan] = []
+        self._served: Set[int] = set()
+        self._declared = False
+
+    def declare_step(self, seq_ids: Sequence[int]) -> None:
+        if not seq_ids:
+            raise ValueError("a step carries at least one token")
+        for seq_id in seq_ids:
+            self._check_seq_id(seq_id)
+
+        spans: List[_SequenceSpan] = []
+        start = 0
+        while start < len(seq_ids):
+            seq_id = seq_ids[start]
+            end = start + 1
+            while end < len(seq_ids) and seq_ids[end] == seq_id:
+                end += 1
+            spans.append(_SequenceSpan(seq_id, start, end - start))
+            start = end
+
+        # capacity bounds the whole cache. Checked before anything is created so a refusal changes
+        # nothing.
+        held = sum(sequence.used(0) for sequence in self._sequences.values())
+        if held + len(seq_ids) > self.config.capacity:
+            raise RuntimeError(
+                f"KV cache overflow: {held + len(seq_ids)} cells exceeds "
+                f"capacity {self.config.capacity}"
+            )
+
+        for span in spans:
+            if span.seq_id not in self._sequences:
+                self._sequences[span.seq_id] = SequenceReferenceCache(self.config)
+
+        self._spans = spans
+        self._served.clear()
+        self._declared = True
+
+    def update_and_fetch(
+        self,
+        layer_id: int,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        position: torch.Tensor,
+    ) -> List[AttendSpec]:
+        """Place each span's K/V in its own sequence and return one spec each.
+
+        The specs follow the declared spans, so they cover the query axis in
+        order and no sequence appears in another's window.
+        """
+        if not self._declared:
+            raise RuntimeError(
+                "no step declared: declare_step must precede every forward"
+            )
+        if layer_id in self._served:
+            raise RuntimeError(
+                f"layer {layer_id} served twice for one step: "
+                "declare_step must precede every forward"
+            )
+        token_count = k.shape[-2]
+        if not position.shape[0] == token_count == v.shape[-2]:
+            raise ValueError("position, k, and v must have the same token count")
+        if token_count != sum(span.length for span in self._spans):
+            raise ValueError("the forward token count must match declare_step")
+        if position.shape[-1] != 1:
+            raise NotImplementedError(
+                "sequence placement needs one position per token, got "
+                f"{position.shape[-1]}"
+            )
+        self._check_positions(layer_id, position.reshape(-1).tolist())
+
+        specs: List[AttendSpec] = []
+        for span in self._spans:
+            end = span.start + span.length
+            sequence = self._sequences[span.seq_id]
+            specs.extend(
+                sequence.update_and_fetch(
+                    layer_id,
+                    k[:, :, span.start : end, :],
+                    v[:, :, span.start : end, :],
+                    position[span.start : end],
+                )
+            )
+
+        self._served.add(layer_id)
+        return specs
+
+    def reset(self) -> None:
+        self._sequences.clear()
+        self._spans.clear()
+        self._served.clear()
+        self._declared = False
+
+    def seq_rm(self, seq_id: int) -> None:
+        """Release the whole sequence and its id."""
+        self._check_seq_id(seq_id)
+        self._sequences.pop(seq_id, None)
+        self._invalidate_step()
+
+    def rewind(self, seq_id: int, position: int) -> None:
+        """Keep the sequence's ``[0, position)``, dropping the rest.
+
+        A windowed layer has physically dropped what it no longer retains, so a
+        target older than that is refused.
+        """
+        self._check_seq_id(seq_id)
+        sequence = self._sequences.get(seq_id)
+        if sequence is not None:
+            sequence.rewind(position)
+        self._invalidate_step()
+
+    def _invalidate_step(self) -> None:
+        self._spans.clear()
+        self._served.clear()
+        self._declared = False
+
+    def max_seqs(self) -> Optional[int]:
+        """None: a sequence is a dict entry, so only the cells they take bound them."""
+        return None
+
+    def pos(self, seq_id: int) -> int:
+        """Where the sequence stands: one past its newest position."""
+        self._check_seq_id(seq_id)
+        sequence = self._sequences.get(seq_id)
+        return sequence.used(0) if sequence is not None else 0
+
+    def _check_positions(self, layer_id: int, positions: List[int]) -> None:
+        """Every span continues its own sequence, from where that sequence ends.
+
+        A private history appends at its used length and never reads
+        ``position``, so a step that declared the wrong one would still place
+        its tokens contiguously -- correct cells under the wrong names, and no
+        later step would notice. A sequence spanned twice in one step continues
+        across both.
+        """
+        ends: Dict[int, int] = {}
+        for span in self._spans:
+            at = ends.get(span.seq_id, self._sequences[span.seq_id].used(layer_id))
+            got = positions[span.start : span.start + span.length]
+            want = list(range(at, at + span.length))
+            if got != want:
+                raise ValueError(
+                    f"sequence {span.seq_id} holds {at} positions on layer "
+                    f"{layer_id}: the step declares {got}, not {want}"
+                )
+            ends[span.seq_id] = at + span.length
+
+    @staticmethod
+    def _check_seq_id(seq_id: int) -> None:
+        # No upper bound: a sequence is a dict entry, not a bit in an owner set.
+        if seq_id < 0:
+            raise ValueError(f"seq_id must be non-negative, got {seq_id}")
 
 
 @dataclass
@@ -296,7 +525,7 @@ class CellReferenceCache:
     that, so the spec is always EXPLICIT.
 
     The batch is flat: tokens from every sequence sit on one axis with B = 1,
-    and sequence identity is supplied out-of-band. ``begin_step`` declares which
+    and sequence identity is supplied out-of-band. ``declare_step`` declares which
     sequence each of the next forward's tokens belongs to; the positions arrive
     with the forward itself, in the op's ``position`` tensor, so cells are
     allocated on the first layer of the step and memoized for the rest of it.
@@ -332,7 +561,7 @@ class CellReferenceCache:
             for _ in range(config.n_layers)
         ]
         self._step_seq_ids: List[int] = []
-        self._declared = False  # set by begin_step, cleared by the step it authorizes
+        self._declared = False  # set by declare_step, cleared by the step it authorizes
         self._plan: Optional[_CellStepPlan] = None
         self._served: Set[int] = set()
 
@@ -341,7 +570,7 @@ class CellReferenceCache:
     def free_cells(self) -> int:
         return self._pos.count(-1)
 
-    def can_extend(self, n: int = 1) -> bool:
+    def _has_room(self, n: int = 1) -> bool:
         """Whether `n` more tokens fit: cache-wide, one cell per token.
 
         The bound is on cells, so a prefix shared by several sequences counts
@@ -349,12 +578,25 @@ class CellReferenceCache:
         """
         return self.free_cells() >= n
 
-    def seq_len(self, seq_id: int) -> int:
+    def pos(self, seq_id: int) -> int:
+        """Where the sequence stands: one past its newest position.
+
+        A sequence's cells are scattered across the pool, so the position lives
+        on the cell and this scans for it.
+        """
         self._check_seq_id(seq_id)
         bit = 1 << seq_id
-        return sum(1 for owners in self._owners if owners & bit)
+        reached = -1
+        for i, owners in enumerate(self._owners):
+            if owners & bit:
+                reached = max(reached, self._pos[i])
+        return reached + 1
 
-    def begin_step(self, seq_ids: Sequence[int]) -> None:
+    def max_seqs(self) -> Optional[int]:
+        """MAX_SEQS: one bit each in the owner bitset."""
+        return MAX_SEQS
+
+    def declare_step(self, seq_ids: Sequence[int]) -> None:
         """Declare the sequence each of the next forward's tokens belongs to.
 
         Admission is decided here, before the forward: the token count is known
@@ -365,7 +607,7 @@ class CellReferenceCache:
             raise ValueError("a step carries at least one token")
         for seq_id in seq_ids:
             self._check_seq_id(seq_id)
-        if not self.can_extend(len(seq_ids)):
+        if not self._has_room(len(seq_ids)):
             raise RuntimeError(
                 f"KV cache full: {len(seq_ids)} tokens need as many cells, "
                 f"{self.free_cells()} free"
@@ -390,18 +632,28 @@ class CellReferenceCache:
                 self._owners[i] |= dst_bit
         self._invalidate_plan()
 
-    def seq_rm(self, seq_id: int, p0: int = 0, p1: Optional[int] = None) -> None:
-        """Drop seq_id's claim on positions [p0, p1); p1 = None runs to the end.
+    def seq_rm(self, seq_id: int) -> None:
+        """Release the whole sequence and its id.
 
-        A cell frees only once no sequence owns it, so removing a shared range
-        reclaims nothing until the last owner lets go. seq_rm(s) drops the whole
-        sequence, seq_rm(s, 0, k) evicts its oldest k positions, and seq_rm(s, k)
-        truncates it at position k.
+        A cell frees only once no sequence owns it, so a shared cell survives
+        until its last owner lets go.
         """
         self._check_seq_id(seq_id)
+        self._drop_from(seq_id, 0)
+
+    def rewind(self, seq_id: int, position: int) -> None:
+        """Keep the sequence's ``[0, position)``, dropping the rest.
+
+        Always possible here: a windowed layer narrows the mask over cells that
+        are still present, so no position is unrecoverable.
+        """
+        self._check_seq_id(seq_id)
+        self._drop_from(seq_id, position)
+
+    def _drop_from(self, seq_id: int, from_pos: int) -> None:
         bit = 1 << seq_id
         for i in range(self._used_end):
-            if self._owners[i] & bit and self._in_range(self._pos[i], p0, p1):
+            if self._owners[i] & bit and self._pos[i] >= from_pos:
                 self._owners[i] &= ~bit
                 if self._owners[i] == 0:
                     self._pos[i] = -1
@@ -430,17 +682,19 @@ class CellReferenceCache:
         k: torch.Tensor,
         v: torch.Tensor,
         position: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, AttendSpec]:
+    ) -> List[AttendSpec]:
         """Scatter this step's K/V into its cells and return the read window.
 
         The first layer of a step allocates; the rest reuse that allocation, so
         the cells and the mask are computed once per forward, not once per
-        layer. Args are as ``ContiguousReferenceCache.update_and_fetch``.
+        layer. Every sequence reads the same window and the mask holds them
+        apart, so the list is always one long. Args are as
+        ``SequenceReferenceCache.update_and_fetch``.
         """
         if layer_id in self._served:
             raise RuntimeError(
                 f"layer {layer_id} served twice for one step: "
-                "begin_step must precede every forward"
+                "declare_step must precede every forward"
             )
         if self._plan is None:
             self._plan = self._allocate(position)
@@ -451,14 +705,15 @@ class CellReferenceCache:
         cells = self._plan.cells
         self._k[layer_id][:, :, cells, :] = k.to(self.config.dtype)
         self._v[layer_id][:, :, cells, :] = v.to(self.config.dtype)
-        return (
-            self._k[layer_id][:, :, :read_len, :],
-            self._v[layer_id][:, :, :read_len, :],
+        return [
             AttendSpec(
+                k=self._k[layer_id][:, :, :read_len, :],
+                v=self._v[layer_id][:, :, :read_len, :],
                 kind=MaskKind.EXPLICIT,
+                q_len=len(cells),
                 mask=self._plan.mask_for(self.config.policy_for(layer_id).window),
-            ),
-        )
+            )
+        ]
 
     # -- internals ----------------------------------------------------------
 
@@ -467,20 +722,27 @@ class CellReferenceCache:
         device = self._k[0].device
         if not self._declared:
             raise RuntimeError(
-                "no step declared: begin_step must precede every forward"
+                "no step declared: declare_step must precede every forward"
             )
         self._declared = False  # one declaration, one attempt at allocating it
         if position.shape[-1] != 1:
             raise NotImplementedError(
-                "cell placement needs one position per token, got "
-                f"{position.shape[-1]}"
+                f"cell placement needs one position per token, got {position.shape[-1]}"
             )
         positions = position.reshape(-1).tolist()
         if len(positions) != len(self._step_seq_ids):
             raise ValueError(
-                f"begin_step declared {len(self._step_seq_ids)} tokens, "
+                f"declare_step declared {len(self._step_seq_ids)} tokens, "
                 f"the forward carries {len(positions)}"
             )
+        want = {seq_id: self.pos(seq_id) for seq_id in set(self._step_seq_ids)}
+        for pos, seq_id in zip(positions, self._step_seq_ids):
+            if pos != want[seq_id]:
+                raise ValueError(
+                    f"sequence {seq_id} continues at {want[seq_id]}, "
+                    f"the step declares {pos}"
+                )
+            want[seq_id] += 1
         cells = [
             self._claim(pos, 1 << seq_id)
             for pos, seq_id in zip(positions, self._step_seq_ids)
@@ -537,7 +799,7 @@ class CellReferenceCache:
                 self._owners[i] = owners
                 self._used_end = max(self._used_end, i + 1)
                 return i
-        raise RuntimeError("no free cell")  # begin_step admitted the step
+        raise RuntimeError("no free cell")  # declare_step admitted the step
 
     def _shrink(self):
         while self._used_end > 0 and self._pos[self._used_end - 1] < 0:
@@ -546,7 +808,7 @@ class CellReferenceCache:
     def _invalidate_plan(self):
         # A mutated cell table leaves a built plan's cells and mask stale. The
         # step protocol state is deliberately left alone: a mutation must not
-        # disguise a forward that skipped begin_step.
+        # disguise a forward that skipped declare_step.
         self._plan = None
 
     @staticmethod
@@ -556,15 +818,9 @@ class CellReferenceCache:
         if not 0 <= seq_id < MAX_SEQS:
             raise ValueError(f"seq_id {seq_id} outside [0, {MAX_SEQS})")
 
-    @staticmethod
-    def _in_range(pos: int, p0: int, p1: Optional[int]) -> bool:
-        return pos >= p0 and (p1 is None or pos < p1)
-
 
 def attend(
     q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
     spec: AttendSpec,
     scale: float,
     out_dtype: torch.dtype,
@@ -579,17 +835,17 @@ def attend(
     so a cache must declare EXPLICIT for a chunked or multi-turn step.
 
     Args (BHSD):
-        q: ``[B, H_q, q_len, head_dim]`` -- queries (already RoPE-rotated).
-        k: ``[B, H_kv, total, head_dim]`` -- key history.
-        v: ``[B, H_kv, total, v_head_dim]`` -- value history.
-        spec: mask semantic (NONE = attend all; CAUSAL = causal; EXPLICIT = the
-            spec's bool mask).
+        q: ``[B, H_q, q_len, head_dim]`` -- queries (already RoPE-rotated), the
+            ones this spec answers.
+        spec: the K/V history to attend over and its mask semantic (NONE =
+            attend all; CAUSAL = causal; EXPLICIT = the spec's bool mask).
         scale: attention softmax scale.
         out_dtype: output dtype.
 
     Returns:
         ``[B, H_q, q_len, v_head_dim]`` attention output, in ``out_dtype``.
     """
+    k, v = spec.k, spec.v
     n_q_heads = q.shape[1]
     n_kv_heads = k.shape[1]
     if n_q_heads != n_kv_heads:

@@ -47,7 +47,9 @@
 # other computer software, distribute, and sublicense such enhancements or
 # derivative works thereof, in binary and source code form.
 
+import ast
 import contextlib
+import functools
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
@@ -64,7 +66,7 @@ import sys
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path, PurePosixPath
-from typing import List, Optional
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 # Clean dynamic import using importlib
 _install_utils_path = Path(__file__).parent / "install_utils.py"
@@ -177,10 +179,117 @@ def _minimal_cmake_flags() -> List[str]:
     ]
 
 
+_VENDORED_DIR_NAMES = frozenset({"third-party", "third_party"})
+
+# Used only when .gitmodules cannot be read, as in a source distribution. A test keeps it in step.
+_VENDORED_SUBMODULE_FALLBACK = (
+    "backends/cadence/utils/FACTO",
+    "extension/llm/tokenizers",
+)
+
+
+@functools.lru_cache(maxsize=None)
+def _vendored_prefixes() -> Tuple[str, ...]:
+    """Source-tree prefixes holding code from another repository.
+
+    Two shapes reach the wheel. Most vendored code sits in a directory named third-party,
+    which the name above covers wherever it appears. The rest are git submodules checked out
+    under an ordinary name, so they can only be recognized by asking git what they are.
+
+    None of them are importable from where they sit. FACTO is pure Python but its nested copy
+    cannot satisfy backends/cadence/utils/facto_util.py, which imports the top level facto.specdb,
+    and the tokenizers ship separately as pytorch-tokenizers in the dependency list. The rest,
+    XNNPACK and the Vulkan headers among them, are C++ sources that the wheel has no use for once
+    the libraries are built.
+
+    Read through git rather than by scanning the file, so only real submodule entries count.
+    A hand-rolled reader accepts a `path` line from any section, and one stray line elsewhere
+    in the file would drop a first-party package from the wheel with nothing to warn about.
+
+    Submodules at the repository root are skipped. Those are build tooling, never copied into
+    the package, and carrying a bare single-word name here would make the match below drop any
+    directory that happened to share it.
+    """
+    root = Path(__file__).parent
+    if not (root / ".gitmodules").is_file():
+        # A source distribution carries no .gitmodules, so nothing can be read there. Fall
+        # back to the directories the vendored trees occupy, or the exclusion would quietly
+        # do half its job and those files would ship again.
+        return _VENDORED_SUBMODULE_FALLBACK
+    try:
+        listed = subprocess.run(
+            [
+                "git",
+                "config",
+                "-z",
+                "-f",
+                ".gitmodules",
+                "--get-regexp",
+                r"^submodule\..*\.path$",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        # No git on PATH, so fall back for the same reason as above.
+        return _VENDORED_SUBMODULE_FALLBACK
+
+    if listed.returncode or not listed.stdout.strip():
+        # git ran and told us nothing useful, which happens when the file has a bad section
+        # header or conflict markers in it. Reading that as "no submodules" would turn the
+        # exclusion off without a word, so fall back rather than trust an empty answer.
+        return _VENDORED_SUBMODULE_FALLBACK
+
+    prefixes = []
+    # -z separates each record with NUL and its key from its value with a newline, so neither a
+    # name nor a path containing a space can be misread. Splitting the default space-separated
+    # output cannot do that: "submodule.a b.path c d/e" is ambiguous either way round.
+    for record in listed.stdout.split("\0"):
+        if not record:
+            continue
+        _, separator, value = record.partition("\n")
+        if not separator:
+            continue
+        # Normalize, because git accepts a trailing slash, a ./ prefix and doubled
+        # separators as the same path, and the raw text would stop matching the real
+        # directory.
+        parts = Path(value).parts
+        if len(parts) < 2 or any(part in _VENDORED_DIR_NAMES for part in parts):
+            continue
+        prefixes.append("/".join(parts))
+    return tuple(sorted(prefixes))
+
+
+def _is_vendored_path(path: str) -> bool:
+    """Whether a source-tree path holds code from another repository."""
+    parts = Path(path).parts
+    if any(part in _VENDORED_DIR_NAMES for part in parts):
+        return True
+    # A submodule path is relative to the repository root, while a path here may be relative
+    # to src/executorch or carry a src/executorch prefix, so match on any suffix boundary.
+    # Whole-component match: the prefix must be the entire path, or sit at its start, end, or
+    # middle bounded by separators. Substring matching would let a directory whose name merely
+    # begins with a prefix be dropped.
+    posix = "/".join(parts)
+    return any(
+        posix == prefix
+        or posix.startswith(f"{prefix}/")
+        or posix.endswith(f"/{prefix}")
+        or f"/{prefix}/" in posix
+        for prefix in _vendored_prefixes()
+    )
+
+
 def _minimal_packages() -> List[str]:
     return sorted(
         find_namespace_packages(
-            where="src",
+            # Anchored on this file, not the working directory, so the list does not change
+            # with where the build was started from. A cwd-relative path returns nothing when
+            # the build runs from anywhere but the repository root, and a wheel with no packages
+            # in it ships no Python at all.
+            where=str(Path(__file__).parent / "src"),
             include=[
                 "executorch",
                 "executorch.data",
@@ -201,6 +310,334 @@ def _minimal_packages() -> List[str]:
                 "*.__pycache__.*",
             ],
         )
+    )
+
+
+_WALK_SKIP_DIRS = frozenset(
+    {".git", "pip-out", "cmake-out", "third-party", "third_party", "__pycache__"}
+)
+
+_TEST_DIR_NAMES = frozenset({"test", "tests"})
+
+
+@functools.lru_cache(maxsize=None)
+def _top_level_package_dirs() -> FrozenSet[str]:
+    """The first path component of every package the wheel ships.
+
+    Derived from the tree rather than listed, so a new top-level directory is covered without an
+    edit here. Used to recognize the unprefixed spelling of a first-party import.
+    """
+    root = Path(__file__).parent / "src" / "executorch"
+    if not root.is_dir():
+        return frozenset()
+    return frozenset(entry.name for entry in root.iterdir() if entry.is_dir())
+
+
+# Named only by a workflow or by a documented command, so no import reaches them. Listed here
+# rather than scanned from .github, which a source distribution does not carry; a test re-derives
+# the list so it cannot drift.
+_CI_ENTRY_POINTS = (
+    "executorch.backends.mlx.test.run_all_tests",
+    "executorch.backends.mlx.test.test_sample",
+    "executorch.backends.mlx.test.test_slot_recycling",
+    "executorch.backends.samsung.test.utils.run_tests",
+    "executorch.backends.test.suite.generate_markdown_summary_json",
+    "executorch.examples.models.muse_glimmer.tests.gen_prompt_golden",
+    "executorch.examples.models.muse_glimmer.tests.test_mlx_pipeline",
+    "executorch.examples.models.muse_glimmer.tests.test_prompt_tokens",
+    "executorch.extension.pybindings.test.test_pybindings",
+)
+
+# Directories whose test modules are reached without any import statement naming them, so no scan
+# of the source can find them: mlx.yml runs each file it discovers under custom_kernel_ops, the
+# webgpu scripts import one module per operator, runner.py resolves a suite root out of a dict and
+# then walks it, and the llava README documents a `python -m` command. Directories rather than file
+# names, so a new test is covered when it is added.
+_CI_ENTRY_POINT_DIRS = (
+    "executorch.backends.mlx.custom_kernel_ops",
+    "executorch.backends.webgpu.test",
+    "executorch.backends.test.suite",
+    "executorch.examples.models.llava.test",
+)
+
+
+def _is_test_module(dotted: str) -> bool:
+    return any(part in _TEST_DIR_NAMES for part in dotted.split("."))
+
+
+def _module_name(root: Path, path: Path) -> str:
+    parts = list(path.relative_to(root).parts)
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]
+    else:
+        parts[-1] = parts[-1][: -len(".py")]
+    return ".".join(["executorch"] + parts)
+
+
+def _first_party_module(name: str) -> Optional[str]:
+    """The `executorch.`-prefixed spelling of an import target, or None if it is not ours.
+
+    This repository imports itself two ways. Most code says `executorch.backends.x`, but some
+    says `backends.x`, which resolves because pytest puts the repository root on sys.path. Both
+    name the same file, so both have to count as a reference or a helper reached only by the
+    second spelling is dropped from the wheel while its importers still expect it.
+    """
+    if name.startswith("executorch."):
+        return name
+    if name.split(".", 1)[0] in _top_level_package_dirs():
+        return f"executorch.{name}"
+    return None
+
+
+def _scan_imports(path: Path, package: str, out: Set[str], dynamic: Set[str]) -> None:
+    """Collect into out the executorch modules one file refers to."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except SyntaxError:
+        return
+    for node in ast.walk(tree):
+        out.update(_import_targets(node, package, dynamic))
+
+
+_GENERATED_DIR_NAMES = frozenset(
+    {
+        ".venv",
+        "venv",
+        "build",
+        "dist",
+        "buck-out",
+        ".cache",
+        ".hypothesis",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".tox",
+        "test-build",
+        "arm_test",
+        "riscv_test",
+    }
+)
+
+
+def _unshipped_directories(root: Path) -> List[Path]:
+    """Checkout directories the wheel does not carry, whose imports still have to be followed.
+
+    src/executorch is a subset of the repository, so a file under test/ or tools/ is never
+    packaged, yet a module it imports still has to ship.
+
+    Generated directories are left out, because a build tree or an in-tree virtualenv holds an
+    INSTALLED copy of this package, and reading it would let the last wheel vote on what the next
+    one ships. Listed by name rather than asked of git, because `git check-ignore` needs a working
+    repository and answers differently for a pattern with a trailing slash depending on whether the
+    directory exists yet, which made the same build behave differently on two platforms.
+    """
+    repository = Path(__file__).parent
+    if not repository.is_dir() or not root.is_dir():
+        return []
+    shipped = {entry.name for entry in root.iterdir()}
+    return [
+        entry
+        for entry in sorted(repository.iterdir())
+        if entry.is_dir()
+        and entry.name not in shipped
+        and entry.name not in _WALK_SKIP_DIRS
+        and entry.name not in _GENERATED_DIR_NAMES
+        and entry.name not in ("src", ".github")
+    ]
+
+
+def _import_graph(root: Path) -> Tuple[Set[str], Dict[str, Set[str]], Set[str]]:
+    """Every module under root, what each imports, and literal importlib targets.
+
+    The walk covers root, but the SEED covers more: a file elsewhere in the checkout can import
+    a module that ships, so its imports are collected too and attributed to a synthetic name.
+    Without that, a helper whose only importer lives outside the shipped tree looks unreachable.
+    """
+    modules: Set[str] = set()
+    edges: Dict[str, Set[str]] = {}
+    dynamic: Set[str] = set()
+
+    # followlinks, because src/executorch is a tree of symlinks into the repository root.
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+        # Vendored trees are skipped by the same test that excludes them from the package list,
+        # not only by directory name. A submodule checked out under an ordinary name, FACTO and
+        # the tokenizers among them, is otherwise read as first-party, and its imports would keep
+        # test modules the wheel has no reason to carry.
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in _WALK_SKIP_DIRS
+            and not _is_vendored_path(os.path.relpath(os.path.join(dirpath, d), root))
+        ]
+        for filename in filenames:
+            if not filename.endswith(".py"):
+                continue
+            path = Path(dirpath) / filename
+            me = _module_name(root, path)
+            modules.add(me)
+            package = me if filename == "__init__.py" else me.rsplit(".", 1)[0]
+            _scan_imports(path, package, edges.setdefault(me, set()), dynamic)
+
+    # Directories of the checkout that the wheel does not ship, test/ among them. Their files are
+    # never packaged, so they are not modules, but what they import must still ship: for example
+    # test/end2end/test_end2end.py imports two model helpers out of exir/tests.
+    for entry in _unshipped_directories(root):
+        for dirpath, dirnames, filenames in os.walk(entry, followlinks=False):
+            dirnames[:] = [d for d in dirnames if d not in _WALK_SKIP_DIRS]
+            for filename in filenames:
+                if not filename.endswith(".py"):
+                    continue
+                outside = f"<outside>{dirpath}/{filename}"
+                _scan_imports(
+                    Path(dirpath) / filename,
+                    "",
+                    edges.setdefault(outside, set()),
+                    dynamic,
+                )
+
+    return modules, edges, dynamic
+
+
+def _import_targets(node: ast.AST, package: str, dynamic: Set[str]) -> Set[str]:
+    """The executorch modules one AST node refers to."""
+    found: Set[str] = set()
+    if isinstance(node, ast.Import):
+        found.update(
+            name for name in (_first_party_module(a.name) for a in node.names) if name
+        )
+    elif isinstance(node, ast.ImportFrom):
+        if node.level:
+            if not package:
+                # A file outside the shipped tree, so a relative import stays inside that tree
+                # and cannot name anything the wheel carries.
+                return found
+            # A relative import names a real module too, and inside a kept package its target
+            # has to ship: stages/__init__.py does `from .export import Export`, so dropping
+            # stages.export would break every importer of that package.
+            parts = package.split(".")
+            if node.level > 1:
+                parts = parts[: len(parts) - (node.level - 1)]
+            base = ".".join(parts + (node.module.split(".") if node.module else []))
+        elif node.module and (prefixed := _first_party_module(node.module)):
+            base = prefixed
+        else:
+            return found
+        if base.startswith("executorch"):
+            found.add(base)
+            # `from pkg import name` may name a submodule rather than an attribute, and there
+            # is no way to tell without importing, so both readings are kept.
+            found.update(f"{base}.{a.name}" for a in node.names)
+    elif (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "import_module"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ):
+        target = node.args[0].value
+        if target.startswith("."):
+            if not package:
+                return found
+            target = package + target
+        resolved = _first_party_module(target)
+        if resolved:
+            dynamic.add(resolved)
+    return found
+
+
+@functools.lru_cache(maxsize=None)
+def _reachable_test_modules() -> FrozenSet[str]:
+    """Test modules something can still reach once the wheel is installed.
+
+    A test case that nothing imports is dead weight in the wheel: pytest loads it from a path in
+    the checkout, never through the installed name. A shared helper is the opposite, because the
+    suites import each other by installed name, so it has to ship or collection breaks.
+
+    Reachable means named by something, anywhere in the checkout, including by a test module
+    itself. That looks circular and is not: a test collected from the checkout still resolves
+    `from executorch.x.test import helper` through the INSTALLED package, so the helper must be
+    in the wheel even though the file importing it is not.
+    """
+    root = Path(__file__).parent / "src" / "executorch"
+    modules, edges, dynamic = _import_graph(root)
+
+    # Every name anything refers to. No transitive walk is needed: this is already the union of
+    # every edge target, so following an edge could only rediscover a name that is in here.
+    referenced = set(dynamic)
+    referenced.update(_CI_ENTRY_POINTS)
+    for targets in edges.values():
+        referenced.update(targets)
+
+    keep = {name for name in referenced if _is_test_module(name)} & modules
+    # Everything under a directory whose tests are run one file at a time by a discovery loop.
+    keep |= {
+        name
+        for name in modules
+        if _is_test_module(name)
+        and any(
+            name == prefix or name.startswith(f"{prefix}.")
+            for prefix in _CI_ENTRY_POINT_DIRS
+        )
+    }
+    # Parent packages of anything kept, or the dotted path cannot resolve.
+    for name in list(keep):
+        parts = name.split(".")
+        for end in range(2, len(parts)):
+            parent = ".".join(parts[:end])
+            if _is_test_module(parent):
+                keep.add(parent)
+    return frozenset(keep)
+
+
+_SHADER_TEMPLATE_MARKERS = (
+    "parameter_names_with_default_values",
+    "shader_variants",
+    "generate_variant_forall",
+)
+
+
+@functools.lru_cache(maxsize=None)
+def _is_shader_template(path: str) -> bool:
+    """Whether a yaml file is a shader codegen input rather than data the wheel needs.
+
+    gen_vulkan_spv.py and gen_wgsl_headers.py expand these into SPIR-V and WGSL headers during
+    the cmake build, so the wheel already carries the compiled result. Matched on content rather
+    than on a directory list, because the same shape appears under vulkan and webgpu and a path
+    list goes stale as soon as a backend adds one. The op and kernel definitions that ARE read
+    at run time, edge.yaml among them, carry none of these keys.
+    """
+    if not path.endswith(".yaml"):
+        return False
+    full = Path(__file__).parent / path
+    try:
+        head = full.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(marker in head for marker in _SHADER_TEMPLATE_MARKERS)
+
+
+def _full_packages() -> List[str]:
+    """Every package the full wheel ships.
+
+    Without an explicit list setuptools discovers all of src/executorch, which pulls in the
+    Python files and codegen scripts of the vendored third-party checkouts. Those exist to
+    build the C++ targets, so once the libraries are built no shipped module imports them.
+
+    Test packages deliberately stay. The suites in this repository import each other through
+    the installed name, for example `from executorch.backends.arm.test import common`, so
+    dropping them from the wheel stops the suites collecting under a non-editable install.
+    """
+    return sorted(
+        package
+        # Anchored on this file rather than the working directory, so the list does not
+        # change with where the build or a test was started from.
+        for package in find_namespace_packages(
+            where=str(Path(__file__).parent / "src"),
+            include=["executorch", "executorch.*"],
+        )
+        # The include patterns above DO match these, since they are ordinary dotted names,
+        # which is exactly why they have to be removed here instead.
+        if not _is_vendored_path(package.replace(".", "/"))
     )
 
 
@@ -237,6 +674,9 @@ _CUDA_LIBRARY_DIRECTORIES = {
     "12": ("nvidia/cuda_runtime/lib",),
     "13": ("nvidia/cu13/lib",),
 }
+
+# Arch subdirectory names MKL's exported link interface appends to its prefix.
+_MKL_ARCH_DIRECTORIES = ("intel64", "intel64_win", "win-x64")
 
 
 def _cmake_args() -> List[str]:
@@ -600,6 +1040,36 @@ def _is_cuda_toolkit_directory(entry: str) -> bool:
     return len(parts) >= 4 and parts[-3] == "targets" and cuda_named(parts[-4])
 
 
+def _is_unresolved_math_library_directory(entry: str) -> bool:
+    """Whether a runtime search path entry is a maths library directory whose prefix resolved empty.
+
+    Torch's exported CMake package creates a caffe2::mkl imported target, and linking torch brings it
+    in even though this project never asks for MKL. Its link directories are a hardcoded list of four,
+    spelled below MKL_ROOT, which resolves to nothing here, so what the linker records is left
+    anchored at the filesystem root: /lib, /lib/intel64, /lib/intel64_win, /lib/win-x64. The bare
+    /lib does not survive, because CMake filters its own implicit link directories out of the link
+    line.
+
+    An empty prefix is the whole signature, so the entry must be exactly /lib/<arch>. A real
+    installation spells the same arch directory below a prefix, as /opt/intel/mkl/lib/intel64, and
+    that one is a directory the environment genuinely provides.
+
+    Only the three arch directories are handled. The bare prefix/lib is deliberately left, because
+    with a resolving prefix it is an ordinary library directory this project has no business
+    dropping, and with an empty one CMake filters it out as an implicit link directory before the
+    link line is built, so it never reaches a shipped library.
+
+    Dropping these loses nothing: no shipped library names an MKL or OpenMP runtime in DT_NEEDED, so
+    nothing resolves through them, and they sit ahead of the relative hops appended below.
+    """
+    parts = PurePosixPath(entry).parts
+    return (
+        len(parts) == 3
+        and parts[:2] == ("/", "lib")
+        and parts[2] in _MKL_ARCH_DIRECTORIES
+    )
+
+
 def _package_relative_depth(library: Path) -> int:
     """How many directories separate a shipped library from the installed package root.
 
@@ -636,6 +1106,11 @@ def _torchao_requirement() -> str:
     spec.loader.exec_module(module)
 
     version = module.TORCHAO_NIGHTLY_VERSION
+    if (
+        install_utils.determine_torch_url(module.TORCH_URL_BASE).endswith("/cu134")
+        and not module.torchao_from_source()
+    ):
+        version = module.CU134_TORCHAO_NIGHTLY_VERSION
     major, minor = (int(part) for part in version.split(".")[:2])
     return f"torchao>={version},<{major}.{minor + 1}"
 
@@ -1446,6 +1921,9 @@ def _is_usable_runtime_path(
     # directory from the machine that built it. It is kept when no relative route exists, because
     # then it is the only way this library finds torch.
     #
+    # A maths library directory whose prefix resolved empty is dropped for the same reason: nothing in
+    # the wheel resolves through it, and it sits ahead of the relative hops appended below.
+    #
     # Anything else absolute stays, because it is a dependency the environment provides and the wheel
     # has no relative answer for.
     #
@@ -1464,6 +1942,8 @@ def _is_usable_runtime_path(
     # path. A substring test dropped a torch directory that merely sat under a directory named after a
     # CUDA version, which is the one absolute path that has to survive.
     if safe_to_drop_toolkit_paths and _is_cuda_toolkit_directory(entry):
+        return False
+    if _is_unresolved_math_library_directory(entry):
         return False
     if entry.rstrip("/").endswith("/torch/lib") and has_relative_torch_route:
         return False
@@ -1590,6 +2070,68 @@ class CustomBuildPy(build_py):
     a file to a different relative location under the output package directory.
     """
 
+    def _prune_unstaged_files(self) -> None:
+        """Delete .py and .yaml this command staged in an earlier build and no longer wants.
+
+        Restricted to files that exist in the source tree, because build_py is the first of
+        build's sub commands and everything a later one stages is still sitting in the build
+        directory when this runs. build_ext generates executorch/data/bin/__init__.py, the
+        target of the flatc console script, from a template that lives elsewhere, so a walk
+        that removed anything absent from build_py's own file list would delete it.
+        """
+        if self.editable_mode:
+            return
+        if not self.packages:
+            # Nothing to compare against, so every staged file would look unwanted. Refuse
+            # rather than empty the build directory.
+            return
+
+        wanted = set()
+        for package, module, _ in self.find_all_modules():
+            parts = package.split(".") if package else []
+            wanted.add(os.path.join(self.build_lib, *parts, f"{module}.py"))
+        for package in self.packages or ():
+            src_dir = self.get_package_dir(package)
+            build_dir = os.path.join(*([self.build_lib] + package.split(".")))
+            for filename in self.find_data_files(package, src_dir):
+                wanted.add(os.path.join(build_dir, os.path.relpath(filename, src_dir)))
+
+        source_root = Path(__file__).parent / "src"
+        for dirpath, _, filenames in os.walk(self.build_lib):
+            for filename in filenames:
+                if not filename.endswith((".py", ".yaml")):
+                    continue
+                staged = os.path.join(dirpath, filename)
+                if staged in wanted:
+                    continue
+                relative = os.path.relpath(staged, self.build_lib)
+                if not (source_root / relative).is_file():
+                    # Generated by another command, so build_py must not remove it.
+                    continue
+                os.remove(staged)
+
+    def find_package_modules(self, package, package_dir):
+        modules = super().find_package_modules(package, package_dir)
+        if self.editable_mode or not _is_test_module(package):
+            # An editable install exposes the whole source tree whatever is listed here, and a
+            # package outside a test directory has nothing to drop.
+            return modules
+        keep = _reachable_test_modules()
+        return [
+            entry
+            for entry in modules
+            if entry[1] == "__init__" or f"{package}.{entry[1]}" in keep
+        ]
+
+    def find_data_files(self, package, src_dir):
+        files = super().find_data_files(package, src_dir)
+        if self.editable_mode:
+            return files
+        root = os.path.dirname(os.path.abspath(__file__))
+        return [
+            _f for _f in files if not _is_shader_template(os.path.relpath(_f, root))
+        ]
+
     def analyze_manifest(self):
         super().analyze_manifest()
         # Recent versions of setuptools may include bare directory symlinks from version
@@ -1604,6 +2146,13 @@ class CustomBuildPy(build_py):
                     _f
                     for _f in self.manifest_files[_pkg]
                     if os.path.isfile(os.path.join(_root, _f))
+                    # A directory left out of `packages` is not simply skipped. setuptools
+                    # walks up to the nearest listed package and records the file as that
+                    # package's data, so a vendored *.yaml still arrives under its parent.
+                    # Filter with the same list so the two agree.
+                    and not _is_vendored_path(_f)
+                    # Shader templates are consumed by the cmake build, not at run time.
+                    and not _is_shader_template(_f)
                 ]
 
     def _copy_extra_files(self, src_to_dst, dst_root: str) -> None:
@@ -1645,6 +2194,12 @@ class CustomBuildPy(build_py):
         # Copy python files to the output directory. This set of files is
         # defined by the py_module list and package_data patterns.
         build_py.run(self)
+
+        # A rebuild over a staging directory left by an earlier build keeps whatever that build
+        # put there, because build_py only ever copies and never deletes. So a file this build
+        # deliberately leaves out is still present from last time, and the wheel packages it.
+        # Remove what is no longer wanted rather than only skipping the copy.
+        self._prune_unstaged_files()
 
         # dst_root is the root of the `executorch` module in the output package
         # directory. build_lib is the platform-independent root of the output
@@ -2287,6 +2842,7 @@ if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
     setup_kwargs["install_requires"] = _minimal_dependencies()
 else:
+    setup_kwargs["packages"] = _full_packages()
     # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
     # carry it are declared here. A CPU wheel adds nothing.
     setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()

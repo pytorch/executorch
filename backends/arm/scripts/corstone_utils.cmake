@@ -32,14 +32,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     GIT_REPOSITORY
       https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
     GIT_TAG ${ethos_u_base_tag}
-    SOURCE_DIR
-    ${ETHOS_SDK_PATH}
-    BINARY_DIR
-    ${ETHOS_SDK_PATH}
-    SUBBUILD_DIR
-    ${ETHOS_SDK_PATH}/../ethos_u-subbuild
-    SOURCE_SUBDIR
-    none
+    SOURCE_DIR ${ETHOS_SDK_PATH} BINARY_DIR ${ETHOS_SDK_PATH}
+    # Keep the generator-specific population project local to this build.
+    SOURCE_SUBDIR none
   )
   FetchContent_MakeAvailable(ethos_u)
   # Patch manifest to remove unused projects.
@@ -126,7 +121,7 @@ function(get_corstone_linker_script OUT_VAR SYSTEM_CONFIG)
   )
 endfunction()
 
-function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
+function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH MEMORY_MODE)
   if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
     # Both model and scratch in DRAM.
     set(MEMORY_MODEL dram)

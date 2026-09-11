@@ -6,7 +6,7 @@ This page lists VGF-supported PyTorch APIs and the dtype and quantization modes 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **154**.
+Total supported PyTorch APIs: **157**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -63,12 +63,14 @@ Total supported PyTorch APIs: **154**.
 | `torch.full_like` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.gather` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
 | `torch.ge` / `>=` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
-| `torch.grid_sampler` | FP | `FP32` | - |
-| `torch.grid_sampler_2d` | FP | `FP32` | - |
+| `torch.grid_sampler` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.grid_sampler_2d` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.group_norm` | FP | `FP32` | - |
 | `torch.gt` / `>` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.index_put_` | INT | `INT8` | 8x8 |
 | `torch.index_select` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
+| `torch.isinf` | FP | `FP32` | - |
+| `torch.isnan` | FP | `FP32` | - |
 | `torch.layer_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.le` / `<=` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.linspace` | FP, INT | `FP32`, `INT8` | 8x8 |
@@ -125,6 +127,7 @@ Total supported PyTorch APIs: **154**.
 | `torch.relu` / `torch.nn.ReLU` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.remainder` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.repeat_interleave` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `BOOL` | 8x8, 16x8 |
+| `torch.roll` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.round` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.rsqrt` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.rsub` | FP | `FP32` | - |
@@ -147,7 +150,7 @@ Total supported PyTorch APIs: **154**.
 | `torch.t` / `torch.Tensor.t` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.tan` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.tanh` / `torch.nn.Tanh` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
-| `torch.Tensor.__getitem__` / `tensor indexing` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.Tensor.__getitem__` / `tensor indexing` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.Tensor.__getitem__` / `tensor slicing` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
 | `torch.Tensor.__setitem__` / `tensor indexing assignment` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.Tensor.copy_` | FP, INT | `FP32`, `INT8` | 8x8 |

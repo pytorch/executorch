@@ -33,11 +33,13 @@
 # that never claimed the device. So these lists are narrower than torch at the bottom on purpose.
 _cuda_arch_x86_64_cu130="8.0 8.6 8.9 9.0 10.0 12.0"
 _cuda_arch_x86_64_cu132="${_cuda_arch_x86_64_cu130}"
+_cuda_arch_x86_64_cu134="${_cuda_arch_x86_64_cu130}"
 
 # The architectures the published aarch64 PyTorch CUDA build covers, read from its own library on an ARM
 # machine, for the same reason as the x86_64 rows above. Includes the ARM module whose train matches.
 _cuda_arch_aarch64_cu130="8.0 9.0 10.0 11.0 12.0"
 _cuda_arch_aarch64_cu132="${_cuda_arch_aarch64_cu130}"
+_cuda_arch_aarch64_cu134="${_cuda_arch_aarch64_cu130}"
 
 # The older CUDA train.
 #
@@ -104,6 +106,7 @@ executorch_cuda_arch_list() {
         126) printf '%s' "${_cuda_arch_aarch64_cu126}" ;;
         130) printf '%s' "${_cuda_arch_aarch64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_aarch64_cu132}" ;;
+        134) printf '%s' "${_cuda_arch_aarch64_cu134}" ;;
         *) _executorch_unknown_train "${train}" ;;
       esac
       ;;
@@ -112,6 +115,7 @@ executorch_cuda_arch_list() {
         126) printf '%s' "${_cuda_arch_x86_64_cu126}" ;;
         130) printf '%s' "${_cuda_arch_x86_64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_x86_64_cu132}" ;;
+        134) printf '%s' "${_cuda_arch_x86_64_cu134}" ;;
         *) _executorch_unknown_train "${train}" ;;
       esac
       ;;

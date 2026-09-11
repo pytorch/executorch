@@ -37,11 +37,20 @@ from executorch.backends.arm.tosa.mapping import (
     TOSA_CONTROL_FLOW_SOURCE_NODE_META,
     TosaSpecialDtype,
 )
-from executorch.backends.arm.tosa.specification import get_context_shape_env
+from executorch.backends.arm.tosa.specification import (
+    get_context_shape_env,
+    get_context_spec,
+)
+from executorch.backends.transforms.fuse_duplicate_users_pass import (
+    build_node_signature,
+    DO_NOT_FUSE_DUPLICATE_META_KEY,
+)
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 
+from torch._ops import OpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 
@@ -94,7 +103,7 @@ class RewriteConvPass(ArmPass):
                 pass instead.
 
         """
-        mod_remainder = (
+        mod_remainder: int | torch.SymInt = (
             input_len + 2 * pad - dilation * (input_weight - 1) - 1
         ) % stride
 
@@ -121,14 +130,14 @@ class RewriteConvPass(ArmPass):
 
         return pad - mod_remainder
 
-    def _is_depthwise_conv2d(self, node: torch.fx.Node) -> bool:
+    def _is_depthwise_conv(self, node: torch.fx.Node) -> bool:
         if (
             node.op != "call_function"
             or node.target != exir_ops.edge.aten.convolution.default
         ):
             return False
         input_tensor = get_first_fake_tensor(node.all_input_nodes[0])
-        if len(input_tensor.shape) != 4:
+        if len(input_tensor.shape) not in (3, 4):
             return False
         groups = node.args[-1]
         in_channels = input_tensor.shape[1]
@@ -524,7 +533,7 @@ class RewriteConvPass(ArmPass):
     @staticmethod
     def _is_direct_int32_rescale(node: torch.fx.Node) -> bool:
         """Return whether a node directly rescales its input to INT32."""
-        return (
+        return bool(
             node.op == "call_function"
             and node.target == exir_ops.backend.tosa.RESCALE.default
             and len(node.args) > 1
@@ -570,6 +579,88 @@ class RewriteConvPass(ArmPass):
         output_fake_tensor = permute_fake_tensor_metadata(input_fake_tensor, dims)
         output.meta["val"] = output_fake_tensor
         return output, output_fake_tensor
+
+    @classmethod
+    def _deduplicate_a16w8_output_rescales(
+        cls,
+        graph_module: torch.fx.GraphModule,
+        tosa_op: torch.fx.Node,
+        node_order: dict[torch.fx.Node, int],
+    ) -> list[torch.fx.Node] | None:
+        """Merge only complete, canonical RESCALE-to-PERMUTE heads."""
+        if any(user not in node_order for user in tosa_op.users):
+            return None
+        rescale_users = sorted(tosa_op.users, key=node_order.__getitem__)
+        if any(
+            user.target != exir_ops.backend.tosa.RESCALE.default
+            for user in rescale_users
+        ):
+            # RewriteConvPass creates only RESCALE users for this accumulator;
+            # preserve an unfamiliar future shape instead of partially rewriting it.
+            return None
+
+        unique_rescales: dict[tuple[Any, ...], torch.fx.Node] = {}
+        deduplicated_rescales: list[torch.fx.Node] = []
+        for rescale in rescale_users:
+            rescale_outputs = list(rescale.users)
+            if (
+                len(rescale_outputs) != 1
+                or rescale_outputs[0].target != exir_ops.edge.aten.permute_copy.default
+            ):
+                deduplicated_rescales.append(rescale)
+                continue
+            layout_permute = rescale_outputs[0]
+            rescale_signature = build_node_signature(rescale, positional_arg_start=1)
+            permute_signature = build_node_signature(
+                layout_permute, positional_arg_start=1
+            )
+            if rescale_signature is None or permute_signature is None:
+                deduplicated_rescales.append(rescale)
+                continue
+            signature = (
+                rescale_signature,
+                permute_signature,
+            )
+            canonical_permute = unique_rescales.get(signature)
+            if canonical_permute is not None:
+                # Layout permutes are inserted directly after their RESCALE,
+                # so the earliest RESCALE also provides a dominating permute.
+                layout_permute.replace_all_uses_with(canonical_permute)
+                graph_module.graph.erase_node(layout_permute)
+                graph_module.graph.erase_node(rescale)
+            else:
+                unique_rescales[signature] = layout_permute
+                deduplicated_rescales.append(rescale)
+
+        return deduplicated_rescales
+
+    def _separate_u55_a16w8_output_rescales(
+        self,
+        graph_module: torch.fx.GraphModule,
+        tosa_op: torch.fx.Node,
+        node_order: dict[torch.fx.Node, int],
+    ) -> None:
+        if len(tosa_op.users) < 2:
+            return
+
+        rescale_users = self._deduplicate_a16w8_output_rescales(
+            graph_module, tosa_op, node_order
+        )
+        if rescale_users is None or len(rescale_users) < 2:
+            return
+        tosa_op.meta[DO_NOT_FUSE_DUPLICATE_META_KEY] = True
+        for rescale in rescale_users[1:]:
+            with graph_module.graph.inserting_before(rescale):
+                cloned_tosa_op = create_node(
+                    graph=graph_module.graph,
+                    op_target=cast(OpOverload | EdgeOpOverload, tosa_op.target),
+                    args=tosa_op.args,
+                    kwargs=tosa_op.kwargs,
+                    from_node=tosa_op,
+                    inherit_qparams=True,
+                )
+            cloned_tosa_op.meta[DO_NOT_FUSE_DUPLICATE_META_KEY] = True
+            rescale.replace_input_with(tosa_op, cloned_tosa_op)
 
     def _insert_a16w8_output_branches(
         self,
@@ -787,6 +878,7 @@ class RewriteConvPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
+        a16w8_tosa_ops: list[torch.fx.Node] = []
         for node in graph_module.graph.nodes:
             if (
                 node.op != "call_function"
@@ -911,7 +1003,70 @@ class RewriteConvPass(ArmPass):
                 dilation = tuple(dilation_list)
                 pad = pad_attr
 
-                if self._is_conv3d(len(input_shape), group):
+                if spatial_rank == 1:
+                    target_op = (
+                        exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
+                        if self._is_depthwise_conv(node)
+                        else exir_ops.backend.tosa.CONV2D.default
+                    )
+                    pre_permute_dims = (0, 2, 1)
+                    post_permute_dims = (0, 2, 1)
+                    with graph_module.graph.inserting_before(node):
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.permute_copy.default,
+                            args=(x, list(pre_permute_dims)),
+                            from_node=node,
+                        )
+                        permuted_input_fake = permute_fake_tensor_metadata(
+                            input_fake_tensor, pre_permute_dims
+                        )
+                        x.meta["val"] = permuted_input_fake
+                        input_tensor_for_tosa_fake = permuted_input_fake.unsqueeze(1)
+                        x = create_node(
+                            graph=graph_module.graph,
+                            op_target=exir_ops.edge.aten.view_copy.default,
+                            args=(x, list(input_tensor_for_tosa_fake.shape)),
+                            from_node=node,
+                        )
+                        x.meta["val"] = input_tensor_for_tosa_fake
+
+                    kernel_width = weight_shape[2]
+                    if target_op == exir_ops.backend.tosa.DEPTHWISE_CONV2D.default:
+                        in_channels = input_fake_tensor.shape[1]
+                        channel_multiplier = weight_shape[0] // in_channels
+                        weight = self._rewrite_weight(
+                            graph_module,
+                            weight,
+                            node,
+                            permute_dims=(1, 2, 0),
+                            name_suffix="hwicm",
+                            reshape_dims=(
+                                1,
+                                kernel_width,
+                                in_channels,
+                                channel_multiplier,
+                            ),
+                        )
+                    else:
+                        weight = self._rewrite_weight(
+                            graph_module,
+                            weight,
+                            node,
+                            permute_dims=(0, 2, 1),
+                            name_suffix="ohwi",
+                            reshape_dims=(
+                                weight_shape[0],
+                                1,
+                                kernel_width,
+                                weight_shape[1],
+                            ),
+                        )
+                    weight_fake_tensor = get_first_fake_tensor(weight)
+                    stride = (1, stride[0])
+                    dilation = (1, dilation[0])
+                    pad = [0, 0, pad[0], pad[1]]
+                elif self._is_conv3d(len(input_shape), group):
                     target_op = exir_ops.backend.tosa.CONV3D.default
                     pre_permute_dims = ODHWI_ORDER
                     post_permute_dims = ODHWI_INVERSE_ORDER
@@ -934,7 +1089,7 @@ class RewriteConvPass(ArmPass):
                         name_suffix="odhwi",
                     )
                     weight_fake_tensor = get_first_fake_tensor(weight)
-                elif self._is_depthwise_conv2d(node):
+                elif self._is_depthwise_conv(node):
                     target_op = exir_ops.backend.tosa.DEPTHWISE_CONV2D.default
                     pre_permute_dims = NHWC_ORDER
                     post_permute_dims = NHWC_INVERSE_ORDER
@@ -1039,7 +1194,28 @@ class RewriteConvPass(ArmPass):
 
             if post_permute_dims is None:
                 raise RuntimeError("Expected post permute dims for explicit layout")
+            output_conversion_node = node_replacement
             post_permute_input = node_replacement
+            squeeze_view: torch.fx.Node | None = None
+            if spatial_rank == 1:
+                squeezed_output_fake = cast(
+                    FakeTensor, node_replacement_fake_tensor.squeeze(1)
+                )
+                special_dtype = node_replacement.meta.get(TosaSpecialDtype.meta_key())
+                with graph_module.graph.inserting_after(node_replacement):
+                    node_replacement = create_node(
+                        graph=graph_module.graph,
+                        op_target=exir_ops.edge.aten.view_copy.default,
+                        args=(node_replacement, list(squeezed_output_fake.shape)),
+                        from_node=node,
+                    )
+                node_replacement.meta["val"] = squeezed_output_fake
+                if special_dtype:
+                    node_replacement.meta[TosaSpecialDtype.meta_key()] = special_dtype
+                squeeze_view = node_replacement
+                post_permute_input = node_replacement
+                node_replacement_fake_tensor = squeezed_output_fake
+
             with graph_module.graph.inserting_after(node_replacement):
                 node_replacement = create_node(
                     graph=graph_module.graph,
@@ -1059,16 +1235,23 @@ class RewriteConvPass(ArmPass):
                 tosa_node_fake_tensor.dtype == torch.int32
                 and input_fake_tensor.dtype == torch.int16
             )
-            if is_a16w8_conv:
+            if is_a16w8_conv and spatial_rank != 1:
                 # Keep values in INT32 whenever a consumer supports it, even
                 # though the declared output is INT16, by branching from the
                 # accumulator before narrowing.
+                #
+                # Rank-three convolutions are excluded. The legacy Conv1d
+                # expansion placed a rank-changing view between the convolution
+                # and its INT32 consumers, so the convolution narrowed to its
+                # exported output domain instead of forking. Forking here would
+                # give each branch its own boundary rescale and permute, which
+                # Vela materialises as a second full transpose of the output.
                 self._insert_a16w8_output_branches(
                     graph_module,
                     node,
                     tosa_op,
                     tosa_node_fake_tensor,
-                    post_permute_input,
+                    output_conversion_node,
                     post_permute_dims,
                 )
                 # Only users not moved to widened branches remain on the
@@ -1078,11 +1261,23 @@ class RewriteConvPass(ArmPass):
                     node.replace_all_uses_with(node_replacement)
                 else:
                     graph_module.graph.erase_node(node_replacement)
-                    graph_module.graph.erase_node(post_permute_input)
+                    if squeeze_view is not None:
+                        graph_module.graph.erase_node(squeeze_view)
+                    graph_module.graph.erase_node(output_conversion_node)
+                a16w8_tosa_ops.append(tosa_op)
             else:
                 node.replace_all_uses_with(node_replacement)
 
             graph_module.graph.erase_node(node)
+
+        if a16w8_tosa_ops and get_context_spec().is_U55_subset:
+            node_order = {
+                node: index for index, node in enumerate(graph_module.graph.nodes)
+            }
+            for tosa_op in a16w8_tosa_ops:
+                self._separate_u55_a16w8_output_rescales(
+                    graph_module, tosa_op, node_order
+                )
 
         if modified:
             graph_module.recompile()

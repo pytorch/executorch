@@ -130,8 +130,6 @@ def pytest_addoption(parser):
         except Exception:  # nosec B110 - pytest redefines options, safe to ignore
             pass
 
-    try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
-    try_addoption("--arm_run_corstoneFVP", action="store_true", help="Deprecated.")
     try_addoption(
         "--llama_inputs",
         nargs="+",

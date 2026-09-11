@@ -6,6 +6,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+#include "MLXBatchedSequenceCache.h"
 #include "MLXCache.h"
 #include "MLXCellCache.h"
 #include "MLXExecutor.h"
@@ -14,6 +15,10 @@
 #include "MLXSequenceCache.h"
 #include "mlx_mutable_state.h"
 
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+#include "SwiftPMMetallibPath.h"
+#endif
+
 #include <executorch/extension/llm/cache/cache_registry.h>
 
 #include <executorch/runtime/backend/interface.h>
@@ -21,6 +26,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/named_data_map.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <mlx/mlx.h>
 
@@ -186,8 +192,8 @@ struct MLXHandle {
 
   // Keep-alive for the off-graph KV cache bound in init(). state.cache is a
   // non-owning view of the same object, so the cache must outlive the handle
-  // even if the runner's session is torn down first.
-  std::shared_ptr<::executorch::extension::llm::cache::CacheBase> cache_shared;
+  // even if the runner drops its InstallGuard first.
+  std::shared_ptr<::executorch::extension::llm::cache::Cache> cache_shared;
 
   // Keep the constant buffers alive for zero-copy constants
   // Each FreeableBuffer must outlive the MLX arrays that reference it
@@ -214,6 +220,23 @@ static std::mutex& mlx_global_mutex() {
   return m;
 }
 
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+// Must be called while holding mlx_global_mutex() and before MLX initializes
+// its Metal device. An application-provided path always takes precedence.
+static bool configure_metallib_path_locked() {
+  if (!::mlx::core::metal::get_metallib_path().empty()) {
+    return true;
+  }
+
+  const auto path = resolve_swiftpm_metallib_path();
+  if (!path.has_value()) {
+    return false;
+  }
+  ::mlx::core::metal::set_metallib_path(*path);
+  return true;
+}
+#endif
+
 class MLXBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~MLXBackend() override = default;
@@ -236,6 +259,17 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     std::lock_guard<std::mutex> lock(mlx_global_mutex());
+#ifdef EXECUTORCH_MLX_SWIFTPM_RESOURCES
+    if (!configure_metallib_path_locked()) {
+      ET_LOG(
+          Error,
+          "Failed to find the MLX metallib in the SwiftPM resource bundle");
+      if (processed != nullptr) {
+        processed->Free();
+      }
+      return Error::NotFound;
+    }
+#endif
     auto* handle =
         context.get_runtime_allocator()->allocateInstance<MLXHandle>();
     if (handle == nullptr) {
@@ -339,7 +373,8 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       // Bind the off-graph KV cache, if the runner installed one under a key it
       // passed as a runtime spec. Bound before the init chain runs so an
       // update_and_attend node there sees the same cache execute() will.
-      if (auto spec = context.get_runtime_spec<const char*>(kCacheKeyKey);
+      if (auto spec =
+              context.get_runtime_spec<const char*>(cache::kCacheKeyOption);
           spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
         const char* cache_key = spec.get();
         handle->cache_shared =
@@ -349,17 +384,16 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
               std::string("init: cache_key '") + cache_key +
               "' is not installed in the CacheRegistry");
         }
-        // Cross-cast from the neutral ownership anchor to this backend's
-        // tensor-typed op face; the two are deliberately unrelated bases (see
-        // MLXCache.h), so nullptr here means the key names another backend's
-        // cache.
-        handle->state.cache =
-            dynamic_cast<MLXCache*>(handle->cache_shared.get());
+        // Ask the neutral ownership anchor for this backend's tensor-typed op
+        // face. It is named by MLXCache itself rather than by cache.h, so
+        // nullptr here means the key names another backend's cache.
+        handle->state.cache = handle->cache_shared->as<MLXCache>();
         if (handle->state.cache == nullptr) {
           throw std::runtime_error(
               std::string("init: cache under key '") + cache_key +
               "' is not an MLX cache");
         }
+        handle->state.cache->bind_controller_stream(handle->stream);
       }
 
       // Run init chain if present.
@@ -571,18 +605,53 @@ static auto success_with_compiler = register_backend(backend);
 
 // Cache kind is named by the builder tag rather than an enum on the config: a
 // runner asks the registry for (backend_id, kind) and gets back a neutral
-// CacheBase it installs under a cache_key. Adding a kind is a new builder here.
+// Cache it installs under a cache_key. Adding a kind is a new builder here.
 const int cache_builders_registered = [] {
-  cache::CacheBuilderRegistry::global().register_builder(
-      kMLXBackendId, "seq", [](const cache::CacheConfig& cfg) {
-        return std::shared_ptr<cache::CacheBase>(
+  const Error single = cache::CacheFactory::global().register_builder(
+      kMLXBackendId, cache::kind::kSingle, [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXSequenceCache>(cfg));
       });
-  cache::CacheBuilderRegistry::global().register_builder(
-      kMLXBackendId, "cell", [](const cache::CacheConfig& cfg) {
-        return std::shared_ptr<cache::CacheBase>(
+  ET_CHECK_MSG(
+      single == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kSingle);
+  const Error batched_cell = cache::CacheFactory::global().register_builder(
+      kMLXBackendId,
+      cache::kind::kBatchedCell,
+      [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
             std::make_shared<MLXCellCache>(cfg));
       });
+  ET_CHECK_MSG(
+      batched_cell == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatchedCell);
+  const Error batched_seq = cache::CacheFactory::global().register_builder(
+      kMLXBackendId,
+      cache::kind::kBatchedSequence,
+      [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
+            std::make_shared<MLXBatchedSequenceCache>(cfg));
+      });
+  ET_CHECK_MSG(
+      batched_seq == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatchedSequence);
+  // The layout kBatched points at, also registered under its own name above.
+  const Error batched = cache::CacheFactory::global().register_builder(
+      kMLXBackendId, cache::kind::kBatched, [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
+            std::make_shared<MLXBatchedSequenceCache>(cfg));
+      });
+  ET_CHECK_MSG(
+      batched == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatched);
   return 0;
 }();
 } // namespace

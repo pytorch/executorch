@@ -54,6 +54,16 @@ set(ET_NUM_INFERENCES
 
 option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
 option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
+option(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+       "Report Ethos-U PMU statistics per delegate" OFF
+)
+option(ET_ARM_ETHOSU_PROFILE_IO_COPIES
+       "Count Ethos-U backend I/O memcpy calls and bytes" OFF
+)
+set(ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES
+    "16"
+    CACHE STRING "Maximum delegates tracked by per-delegate profiling"
+)
 
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 set(BUNDLED_PROGRAM_LIBRARY_DIR
@@ -335,6 +345,33 @@ arm_runner_configure_model(
 if(ET_NUM_INFERENCES)
   target_compile_definitions(
     arm_executor_runner PUBLIC ET_NUM_INFERENCES=${ET_NUM_INFERENCES}
+  )
+endif()
+
+if(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  if(NOT ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES MATCHES "^[1-9][0-9]*$")
+    message(
+      FATAL_ERROR
+        "ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES must be a positive integer"
+    )
+  endif()
+  target_compile_definitions(
+    arm_executor_runner
+    PRIVATE
+      ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+      ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES=${ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES}
+  )
+  target_compile_definitions(
+    executorch_delegate_ethos_u PRIVATE ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+  )
+endif()
+
+if(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE ET_ARM_ETHOSU_PROFILE_IO_COPIES
+  )
+  target_compile_definitions(
+    executorch_delegate_ethos_u PRIVATE ET_ARM_ETHOSU_PROFILE_IO_COPIES
   )
 endif()
 

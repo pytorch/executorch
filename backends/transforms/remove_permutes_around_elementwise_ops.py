@@ -61,11 +61,22 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         interleaves: dict[
             torch.fx.Node, tuple[int, int, torch.fx.Node, torch.fx.Node]
         ] = field(default_factory=dict)
+        # Views whose target shapes must change when the surrounding layout
+        # transforms are removed. Boundary views are inside the region; sink
+        # views feed it from layout-invariant single-non-unit tensors.
+        view_shape_overrides: dict[torch.fx.Node, list[int]] = field(
+            default_factory=dict
+        )
+        sink_edges_in: set[tuple[torch.fx.Node, torch.fx.Node]] = field(
+            default_factory=set
+        )
 
     def __init__(self, extra_permutable_ops: set | None = None) -> None:
         super().__init__()
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.amax.default,
+            exir_ops.edge.aten.amin.default,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.hardtanh.default,
@@ -186,39 +197,62 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         non_unit = [d for d in shape if not (isinstance(d, int) and d == 1)]
         return len(non_unit) <= 1
 
-    def _sink_users_are_layout_invariant(self, sink: torch.fx.Node) -> bool:
-        """Return whether dropping layout at ``sink`` is safe for its consumers."""
-        frontier = [(user, sink) for user in sink.users]
-        visited: set[torch.fx.Node] = set()
-        while frontier:
-            node, producer = frontier.pop()
-            if node in visited:
-                continue
-            visited.add(node)
+    def _remapped_sink_shape(
+        self, sink: torch.fx.Node, start_permute: list[int]
+    ) -> list[int] | None:
+        """Return the sink shape in the layout before ``start_permute``.
 
-            if node.op == "output":
-                continue
-            if node.target == exir_ops.edge.aten.permute_copy.default:
-                # This explicit transform re-establishes the downstream layout,
-                # so consumers beyond it do not depend on the sink's layout.
-                continue
-            if self._is_permutation_sink_view(node):
-                continue
+        A sink input has at most one non-unit dimension, so changing the view's
+        shape does not change element order. The output rank must match the
+        region permutation so its broadcast axes can be remapped exactly.
+        """
+        out_shape = self._concrete_shape(sink)
+        if out_shape is None or len(out_shape) != len(start_permute):
+            return None
+        # Reshape can relocate one contiguous non-unit run among singleton axes,
+        # but it cannot transpose multiple non-unit output axes.
+        if sum(dim != 1 for dim in out_shape) > 1:
+            return None
+        inverse = [start_permute.index(i) for i in range(len(start_permute))]
+        return [out_shape[index] for index in inverse]
 
-            tensor_inputs = [
-                input_node
-                for input_node in node.all_input_nodes
-                if input_node.meta.get("val") is not None
-            ]
-            if any(
-                input_node is not producer and input_node.meta["val"].numel() != 1
-                for input_node in tensor_inputs
-            ):
-                return False
-            if not self.is_node_permutable(node):
-                return False
-            frontier.extend((user, node) for user in node.users)
-        return True
+    def _singleton_view_boundary_shape(
+        self,
+        view: torch.fx.Node,
+        start_permute: list[int],
+        end_permute_node: torch.fx.Node,
+    ) -> list[int] | None:
+        """Compose a layout pair across a view that only inserts unit dims."""
+        shapes = self._view_shapes(view)
+        end_dims = self.get_permutation(end_permute_node)
+        end_shape = self._concrete_shape(end_permute_node)
+        if shapes is None or end_dims is None or end_shape is None:
+            return None
+        in_shape, out_shape = shapes
+        if len(start_permute) != len(in_shape) or len(end_dims) != len(out_shape):
+            return None
+
+        inserted = self._find_extra_ones(out_shape, in_shape)
+        if inserted is None:
+            return None
+
+        # Label each old view-output axis by the corresponding axis before the
+        # incoming permutation. The outgoing permutation must restore those
+        # labels to identity order; inserted singleton axes carry no label.
+        labels: list[int | None] = list(start_permute)
+        for index in inserted:
+            labels.insert(index, None)
+        output_labels = [labels[index] for index in end_dims]
+        if [label for label in output_labels if label is not None] != list(
+            range(len(in_shape))
+        ):
+            return None
+
+        inverse = [start_permute.index(i) for i in range(len(start_permute))]
+        unpermuted_input = [in_shape[index] for index in inverse]
+        if self._find_extra_ones(end_shape, unpermuted_input) is None:
+            return None
+        return end_shape
 
     def _inserted_unit_dim(self, node: torch.fx.Node) -> int | None:
         """Position of the size-1 dim ``node`` inserts, else None.
@@ -484,7 +518,19 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         for user in users_source.users:
             if user.target in PERMUTE_COPY_TARGETS:
                 user_perm = self.get_permutation(user)
-                if user_perm == downstream_end:
+                boundary_shape = None
+                if (
+                    triple is None
+                    and self._is_squeeze_unsqueeze_view(node)
+                    and len(node.users) == 1
+                ):
+                    boundary_shape = self._singleton_view_boundary_shape(
+                        node, current_start_permute, user
+                    )
+                if boundary_shape is not None:
+                    subgraph.view_shape_overrides[node] = boundary_shape
+                    subgraph.edges_out.add((users_source, user))
+                elif user_perm == downstream_end:
                     subgraph.edges_out.add((users_source, user))
                 else:
                     # Non-matching permute: keep it and fold the start permute into it
@@ -501,10 +547,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             elif user.op == "output":
                 return False
             elif self._is_permutation_sink_view(user):
-                # The tensor's element order is invariant at this reshape, but
-                # its output shape can still carry broadcast-axis meaning.
-                if not self._sink_users_are_layout_invariant(user):
-                    return False
+                # A sink with no other path into this region can terminate it:
+                # its single non-unit run has layout-invariant element order.
+                # If a later consumer is reached through another region branch,
+                # upstream traversal records and remaps the sink via
+                # ``sink_edges_in`` before any boundary is removed.
                 continue
             elif not self.visit(
                 user, subgraph, processed_nodes, downstream_end, downstream_start
@@ -524,6 +571,15 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 # stays wired directly. Notably this keeps lifted per-tensor
                 # qparam placeholders as placeholders, which lowering requires.
                 continue
+            elif inp in subgraph.nodes:
+                # Already part of the region; it is rewritten as a region node.
+                continue
+            elif self._is_permutation_sink_view(inp):
+                remapped_shape = self._remapped_sink_shape(inp, current_start_permute)
+                if remapped_shape is None or len(inp.users) != 1:
+                    return False
+                subgraph.view_shape_overrides[inp] = remapped_shape
+                subgraph.sink_edges_in.add((inp, node))
             elif self._is_constant(inp):
                 const_rank = self._get_node_rank(inp)
                 permute_rank = len(current_end_permute)
@@ -603,6 +659,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return False
         if node.target in self._permutable_ops:
             if node.target in (
+                exir_ops.edge.aten.amax.default,
+                exir_ops.edge.aten.amin.default,
                 exir_ops.edge.aten.mean.dim,
                 exir_ops.edge.aten.sum.dim_IntList,
             ):
@@ -693,16 +751,24 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             if node.target == exir_ops.edge.aten.cat.default:
                 self.update_cat(node, node_start_perm)
             elif node.target in (
+                exir_ops.edge.aten.amax.default,
+                exir_ops.edge.aten.amin.default,
                 exir_ops.edge.aten.mean.dim,
                 exir_ops.edge.aten.sum.dim_IntList,
             ):
-                self.update_mean_dim(node, node_start_perm)
+                self.update_reduction_dim(node, node_start_perm)
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, node_start_perm)
             elif node.target in self._PAD_OPS:
                 self.update_pad(node, node_start_perm)
             elif node.target in self._VIEW_OPS:
-                self.update_view_copy(node, node_start_perm)
+                if node in subgraph.view_shape_overrides:
+                    node.update_arg(1, subgraph.view_shape_overrides[node])
+                else:
+                    self.update_view_copy(node, node_start_perm)
+
+        for sink, _ in subgraph.sink_edges_in:
+            sink.update_arg(1, subgraph.view_shape_overrides[sink])
 
         for head, triple in subgraph.interleaves.items():
             self.update_interleave(
@@ -769,25 +835,28 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def _subgraph_edges_are_current(self, subgraph: Subgraph) -> bool:
         """Return false if an earlier rewrite invalidated this candidate."""
         for inp, out in subgraph.edges_in:
-            if inp.target not in PERMUTE_COPY_TARGETS or inp not in out.all_input_nodes:
-                return False
-
-            # edges_out_to_update can rewrite a permute in place, leaving it wired.
-            if self.get_permutation(inp) != subgraph.node_start_permute.get(
-                out, subgraph.start_permute
+            if (
+                inp.target not in PERMUTE_COPY_TARGETS
+                or inp not in out.all_input_nodes
+                # edges_out_to_update can rewrite a permute in place, leaving it wired.
+                or self.get_permutation(inp)
+                != subgraph.node_start_permute.get(out, subgraph.start_permute)
             ):
                 return False
 
-        for inp, out in subgraph.edges_out:
-            if out.target not in PERMUTE_COPY_TARGETS or out not in inp.users:
-                return False
-
-        for inp, out, _ in subgraph.edges_out_to_update:
+        outgoing = list(subgraph.edges_out) + [
+            (inp, out) for inp, out, _ in subgraph.edges_out_to_update
+        ]
+        for inp, out in outgoing:
             if out.target not in PERMUTE_COPY_TARGETS or out not in inp.users:
                 return False
 
         for const_node, user_node in subgraph.constant_edges_in:
             if const_node not in user_node.all_input_nodes:
+                return False
+
+        for sink, user_node in subgraph.sink_edges_in:
+            if sink not in user_node.all_input_nodes or len(sink.users) != 1:
                 return False
 
         for head, (_, _, expand_node, view_node) in subgraph.interleaves.items():
@@ -839,9 +908,19 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         dim = get_arg(node, "dim", int)
         set_arg(node, "dim", start_permute[dim])
 
-    def update_mean_dim(self, node: torch.fx.Node, start_permute: list[int]) -> None:
+    def update_reduction_dim(
+        self, node: torch.fx.Node, start_permute: list[int]
+    ) -> None:
         dims = get_arg(node, "dim")
-        set_arg(node, "dim", [start_permute[d] for d in cast(list[int], dims)])
+        rank = len(start_permute)
+        if isinstance(dims, int):
+            set_arg(node, "dim", start_permute[dims % rank])
+        else:
+            set_arg(
+                node,
+                "dim",
+                [start_permute[d % rank] for d in cast(list[int], dims)],
+            )
 
     def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         dim = get_arg(node, "dim", int)

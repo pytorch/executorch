@@ -2265,6 +2265,38 @@ def rope_rotate_stacked_halves(
     return rotated.view(original_shape)
 
 
+@impl_tracked(m, "quantized_rope_rotate_stacked_halves")
+def quantized_rope_rotate_stacked_halves(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    dtype = input_tensor.dtype
+    dtype_limits = torch.iinfo(dtype)
+    dequantized = dequantize_per_tensor_common(
+        input_tensor,
+        in_scale,
+        in_zero_point,
+        dtype_limits.min,
+        dtype_limits.max,
+        dtype,
+    )
+    rotated = rope_rotate_stacked_halves(dequantized, sin_tensor, cos_tensor, pos)
+    return quantize_per_tensor_common(
+        rotated,
+        out_scale,
+        out_zero_point,
+        dtype_limits.min,
+        dtype_limits.max,
+        dtype,
+    )
+
+
 @impl_tracked(m, "im2row")
 def im2row(
     input_tensor: torch.Tensor,
