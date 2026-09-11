@@ -148,6 +148,24 @@ def test_explicit_layout_reuses_pad():
     assert _count(program, exir_ops.edge.cortex_m.pad.default) == 1
 
 
+@pytest.mark.parametrize("hardtanh", [False, True])
+def test_implementation_transpose_conv2d_strided_pointwise(hardtanh):
+    torch.manual_seed(0)
+    inputs = (torch.randn(2, 4, 9).unsqueeze(2),)
+    model = torch.nn.Sequential(
+        torch.nn.ConvTranspose2d(4, 4, (1, 1), stride=(1, 2)),
+        torch.nn.Hardtanh(-0.5, 0.5) if hardtanh else torch.nn.Identity(),
+    ).eval()
+    tester = _run_explicit_layout_passes(CortexMTester(model, inputs))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    assert (
+        _count(program, exir_ops.edge.cortex_m.quantized_transpose_conv2d_nhwc.default)
+        == 1
+    )
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+
+
 def test_explicit_layout_rejects_unsupported_spatial_operator():
     tester = CortexMTester(UnsupportedAvgPool(), (torch.randn(1, 3, 8, 8),))
 
