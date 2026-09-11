@@ -70,11 +70,16 @@ DEFINE_string(inputs, "", "Comma-separated list of input files");
 DEFINE_string(
     input_shapes,
     "",
-    "Comma-separated per-input shapes, dims joined by 'x' (e.g. "
-    "\"1x98,1x50x256,1x1x98\"). Inputs are resized to these shapes before "
-    "execute. This is the only way to run a model with dynamic shapes below "
-    "its upper bound from this runner; without it every execution uses the "
-    "bound. Input files are still upper-bound sized, the surplus is ignored.");
+    "Per-input shapes, one comma-separated entry per method input, dims joined "
+    "by 'x' (e.g. \"1x98,1x50x256,1x1x98\"). Inputs are resized to these "
+    "shapes before execute. An empty entry leaves that input alone, which is "
+    "how a non-tensor input, or a tensor to keep at its bound, is skipped (e.g. "
+    "\"1x98,,1x1x98\"). The entry count has to match the input count exactly. "
+    "This is the only way to run a model with dynamic shapes below its upper "
+    "bound from this runner; without it every execution uses the bound. Input "
+    "files are still upper-bound sized, the surplus is ignored. Not supported "
+    "for bundled programs, whose inputs and reference outputs are recorded "
+    "together.");
 DEFINE_string(
     output_file,
     "",
@@ -319,26 +324,47 @@ namespace {
  * bound recorded in the method metadata. Several classes of backend bug are
  * invisible at the bound and only appear below it, so being able to ask for a
  * smaller shape matters for debugging.
+ *
+ * The spec carries one entry per method input so that position is unambiguous.
+ * An empty entry leaves that input untouched, which is how a non-tensor input
+ * or a tensor to keep at its bound is skipped.
  */
 void resize_inputs_to(Method& method, const std::string& shapes_spec) {
+  std::vector<std::string> specs;
   std::stringstream shape_list(shapes_spec);
   std::string spec;
-  size_t input_idx = 0;
   while (std::getline(shape_list, spec, ',')) {
+    specs.push_back(spec);
+  }
+  // getline drops a trailing empty field, which is a legitimate "skip the last
+  // input" entry, so put it back.
+  if (!shapes_spec.empty() && shapes_spec.back() == ',') {
+    specs.emplace_back();
+  }
+
+  ET_CHECK_MSG(
+      specs.size() == method.inputs_size(),
+      "--input_shapes has %zu entries but the method has %zu inputs; pass one "
+      "entry per input and leave an entry empty to skip it",
+      specs.size(),
+      method.inputs_size());
+
+  for (size_t input_idx = 0; input_idx < specs.size(); ++input_idx) {
+    if (specs[input_idx].empty()) {
+      continue;
+    }
     std::vector<executorch::aten::SizesType> sizes;
-    std::stringstream dim_list(spec);
+    std::stringstream dim_list(specs[input_idx]);
     std::string dim;
     while (std::getline(dim_list, dim, 'x')) {
-      sizes.push_back(
-          static_cast<executorch::aten::SizesType>(std::stoi(dim)));
+      sizes.push_back(static_cast<executorch::aten::SizesType>(std::stoi(dim)));
     }
-    ET_CHECK_MSG(
-        input_idx < method.inputs_size(),
-        "--input_shapes lists more entries than the method has inputs (%zu)",
-        method.inputs_size());
     const auto& input = method.get_input(input_idx);
     ET_CHECK_MSG(
-        input.isTensor(), "input %zu is not a tensor", input_idx);
+        input.isTensor(),
+        "--input_shapes gives a shape for input %zu, which is not a tensor; "
+        "leave its entry empty to skip it",
+        input_idx);
     auto tensor = input.toTensor();
     const Error status = executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
         tensor,
@@ -348,9 +374,8 @@ void resize_inputs_to(Method& method, const std::string& shapes_spec) {
         status == Error::Ok,
         "Resizing input %zu to %s failed with 0x%" PRIx32,
         input_idx,
-        spec.c_str(),
+        specs[input_idx].c_str(),
         static_cast<uint32_t>(status));
-    ++input_idx;
   }
   ET_LOG(Info, "Inputs resized to %s", shapes_spec.c_str());
 }
@@ -442,6 +467,13 @@ int main(int argc, char** argv) {
 
   // Inputs can come from bundleio, as optional input file(s), or
   // everything hardcoded to ones.
+  // A bundled program carries its inputs and the reference outputs recorded
+  // for them, so resizing an input would leave the references describing a
+  // shape that was never run. Say so rather than ignoring the flag.
+  ET_CHECK_MSG(
+      !bundle_io || FLAGS_input_shapes.empty(),
+      "--input_shapes is not supported for bundled programs");
+
   std::vector<std::string> inputs_storage;
   std::vector<std::pair<char*, size_t>> input_buffers;
   std::vector<std::string> file_paths;
