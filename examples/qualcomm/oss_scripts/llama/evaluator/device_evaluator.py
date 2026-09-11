@@ -16,11 +16,7 @@ from typing import Any, Callable, Dict, final, List, Optional, Union
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.export_utils import (
-    generate_inputs,
-    QnnConfig,
-    SimpleADB,
-)
+from executorch.backends.qualcomm.export_utils import Device, generate_inputs, QnnConfig
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.dataset import (
@@ -94,7 +90,7 @@ def post_process_logits(
 
 
 class EvalBase(ABC):
-    _adb: Optional[SimpleADB] = None  # ADB shared across all instances
+    _device: Optional[Device] = None  # ADB shared across all instances
 
     def __init__(
         self,
@@ -117,7 +113,7 @@ class EvalBase(ABC):
         self.runner = (
             "qnn_multimodal_runner" if self.is_multimodal else "qnn_llama_runner"
         )
-        device_output_path = self._get_adb().output_folder
+        device_output_path = self._get_device().output_folder
         if args.enable_x86_64:
             logging.warning(
                 "x86 emulator is NOT recommended as it is for CI purpose, expect significance drop in performance."
@@ -261,19 +257,19 @@ class EvalBase(ABC):
         return modality_input_cmd, modality_input_files
 
     @final
-    def _get_adb(self):
+    def _get_device(self):
         args = self.args
         qnn_config = QnnConfig.load_config(
             args.config_file if args.config_file else args
         )
-        if EvalBase._adb is None:
-            EvalBase._adb = SimpleADB(
+        if EvalBase._device is None:
+            EvalBase._device = Device(
                 qnn_config=qnn_config,
                 pte_path=list(self.pte_paths.values()),
                 workspace=self.device_workspace,
                 runner=f"examples/qualcomm/oss_scripts/llama/{self.runner}",
             )
-        return EvalBase._adb
+        return EvalBase._device
 
     @abstractmethod
     def run(self) -> Any:
@@ -293,7 +289,7 @@ class DefaultEval(EvalBase):
         super().__init__(
             args, pte_paths, runtime_tokenizer_path, is_multimodal, dataset_builder
         )
-        self.adb = self._get_adb()
+        self.device = self._get_device()
         self.inference_speed = 0
         self.decoder_model_config = decoder_model_config
 
@@ -379,9 +375,9 @@ class DefaultEval(EvalBase):
             extra_files = [self.runtime_tokenizer_path]
             if self.is_multimodal:
                 extra_files.extend(self.modality_input_files)
-            self.adb.push(inputs=[], files=extra_files)
-            self.adb.execute(custom_runner_cmd=runner_cmd)
-            self.adb.pull(
+            self.device.push(inputs=[], files=extra_files)
+            self.device.execute(custom_runner_cmd=runner_cmd)
+            self.device.pull(
                 host_output_path=self.host_output_response_path,
                 device_output_path=self.device_output_response_path,
                 callback=partial(
@@ -390,7 +386,7 @@ class DefaultEval(EvalBase):
                     host_output_response_path=self.host_output_response_path,
                 ),
             )
-            self.adb.pull(
+            self.device.pull(
                 host_output_path=self.host_performance_path,
                 device_output_path=self.device_performance_path,
                 callback=partial(
@@ -431,7 +427,7 @@ class SqnrEval(EvalBase):
         self.inference_speed = 0
         self.source_model = source_model
         self.get_example_inputs = get_example_inputs
-        self.adb = self._get_adb()
+        self.device = self._get_device()
         self.tokenizer = tokenizer_wrapper.tokenizer
         self.enable_x86_64 = args.enable_x86_64
         self.max_seq_length = args.max_seq_len
@@ -579,12 +575,12 @@ class SqnrEval(EvalBase):
             extra_files = [input_file_name, self.runtime_tokenizer_path]
             if self.is_multimodal:
                 extra_files.extend(self.modality_input_files)
-            self.adb.push(
+            self.device.push(
                 inputs=[],
                 files=extra_files,
             )
-            self.adb.execute(custom_runner_cmd=runner_cmd)
-            self.adb.pull(
+            self.device.execute(custom_runner_cmd=runner_cmd)
+            self.device.pull(
                 host_output_path=self.host_logits_path,
                 device_output_path=self.device_logits_path,
                 callback=partial(
@@ -598,7 +594,7 @@ class SqnrEval(EvalBase):
                     logits_zero_point=self.logits_zero_point,
                 ),
             )
-            self.adb.pull(
+            self.device.pull(
                 host_output_path=self.host_performance_path,
                 device_output_path=self.device_performance_path,
                 callback=partial(
@@ -621,7 +617,7 @@ class TaskEval(EvalBase):
             self,
             args,
             runner_base_cmd: str,
-            adb: SimpleADB,
+            device: Device,
             pte_path: str,
             device_performance_path: str,
             device_logits_path: str,
@@ -636,7 +632,7 @@ class TaskEval(EvalBase):
 
             self.args = args
             self.runner_base_cmd = runner_base_cmd
-            self.adb = adb
+            self.device = device
             self.pte_path = pte_path
             self.runtime_tokenizer_path = runtime_tokenizer_path
 
@@ -674,7 +670,7 @@ class TaskEval(EvalBase):
                     self.max_seq_length = pte_max_context_len
 
             if not self.enable_x86_64:
-                self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
+                self.device.push(inputs=[], files=[self.runtime_tokenizer_path])
             # pyre-ignore
             super().__init__(None, tokenizer, self.max_seq_length - 1)
 
@@ -728,9 +724,9 @@ class TaskEval(EvalBase):
                         f"--tokenized_prompt {os.path.basename(input_file_name)}",
                     ]
                 )
-                self.adb.push(inputs=[], files=[input_file_name], init_env=False)
-                self.adb.execute(custom_runner_cmd=runner_cmd)
-                self.adb.pull(
+                self.device.push(inputs=[], files=[input_file_name], init_env=False)
+                self.device.execute(custom_runner_cmd=runner_cmd)
+                self.device.pull(
                     host_output_path=self.host_logits_path,
                     device_output_path=self.device_logits_path,
                     callback=partial(
@@ -744,7 +740,7 @@ class TaskEval(EvalBase):
                         logits_zero_point=self.logits_zero_point,
                     ),
                 )
-                self.adb.pull(
+                self.device.pull(
                     host_output_path=self.host_performance_path,
                     device_output_path=self.device_performance_path,
                     callback=partial(
@@ -769,11 +765,11 @@ class TaskEval(EvalBase):
         self.tasks = args.eval_tasks
         self.num_fewshot = args.eval_num_fewshot
         self.limit = args.eval_limit
-        adb = self._get_adb()
+        device = self._get_device()
         self.eval_wrapper = TaskEval.QnnRunnerEvalWrapper(
             args=args,
             runner_base_cmd=self.runner_base_cmd,
-            adb=adb,
+            device=device,
             pte_path=self.pte_paths[TEXT_DECODER],
             device_performance_path=self.device_performance_path,
             device_logits_path=self.device_logits_path,
