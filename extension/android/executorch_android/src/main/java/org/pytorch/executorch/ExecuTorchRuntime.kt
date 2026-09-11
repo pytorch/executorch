@@ -23,6 +23,30 @@ class ExecuTorchRuntime private constructor() {
       }
       // Loads libexecutorch.so from jniLibs
       NativeLoader.loadLibrary("executorch")
+      loadSplitBackends()
+    }
+
+    /**
+     * Loads the backends that were built as their own shared library.
+     *
+     * A split backend (EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED /
+     * EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED) carries its own statically linked copy of the backend
+     * registry, and its `register_backend` call binds to whichever definition the dynamic linker
+     * finds first. Loading it here, after libexecutorch.so and into the same namespace, is what
+     * makes that the runtime's registry rather than its own; the delegate would otherwise register
+     * somewhere the runtime never reads and fail to be found at execution.
+     *
+     * Each is absent in a build that linked the backend into libexecutorch.so, which is the
+     * default, so a missing library is not an error.
+     */
+    private fun loadSplitBackends() {
+      for (name in arrayOf("xnnpack_executorch_backend", "vulkan_executorch_backend")) {
+        try {
+          NativeLoader.loadLibrary(name)
+        } catch (_: UnsatisfiedLinkError) {
+          // Not part of this build.
+        }
+      }
     }
 
     private val sInstance = ExecuTorchRuntime()
