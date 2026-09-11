@@ -108,6 +108,11 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
+  if [[ "${MODEL_NAME}" == "yolo26" ]]; then
+    "${PYTHON_EXECUTABLE}" -m pip install --upgrade-strategy only-if-needed \
+      --extra-index-url https://download.pytorch.org/whl/cpu \
+      -r examples/models/yolo26/requirements.txt
+  fi
   if [[ "${MODEL_NAME}" == "qwen2_5_1_5b" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
