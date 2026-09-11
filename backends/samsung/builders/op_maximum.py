@@ -26,7 +26,7 @@ class MaximumVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         # inputs
         input_id_1 = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
         input_id_2 = self.define_tensor(node.args[1], enn_graph, vals_to_ids)
@@ -35,3 +35,5 @@ class MaximumVisitor(NodeVisitor):
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         enn_graph.define_op(node.name, "MAXIMUM", [input_id_1, input_id_2], [output_id])
+
+        return True

@@ -79,12 +79,34 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     }
   }
 
+  // A fork at an earlier position. Flat layers take a pool holding just the
+  // prefix; ring layers share the source's, whose wrapped slot mapping must
+  // not change. Precondition: other.can_rewind(upto), which seq_clone checks.
+  MLXSequenceCache(
+      const MLXSequenceCache& other,
+      int upto,
+      ::mlx::core::Stream s)
+      : cache::SequenceCache(other), window_(other.window_) {
+    if (upto <= 0 || !rewind(upto)) {
+      throw std::runtime_error("fork: position is not one this can rewind to");
+    }
+    kpool_.reserve(other.kpool_.size());
+    vpool_.reserve(other.vpool_.size());
+    for (size_t l = 0; l < window_.size(); ++l) {
+      const bool flat = window_[l] == 0;
+      kpool_.push_back(
+          flat ? other.kpool_[l].clone_prefix(upto, s) : other.kpool_[l]);
+      vpool_.push_back(
+          flat ? other.vpool_[l].clone_prefix(upto, s) : other.vpool_[l]);
+    }
+  }
+
   AttendSpec update_and_fetch(
       int layer,
       const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
-      StreamOrDevice s) override {
+      StreamOrDevice s) {
     if (layer < 0 || layer >= static_cast<int>(kpool_.size())) {
       throw std::out_of_range("update_and_fetch: layer out of range");
     }
@@ -123,6 +145,26 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     // MLX "causal" is lower-right aligned, so fresh and chunked prefill are
     // both correct with the new tokens at the tail.
     return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
+  }
+
+  Tensor attend(
+      int layer,
+      const std::vector<int32_t>& positions,
+      const Tensor& q,
+      const Tensor& k,
+      const Tensor& v,
+      float scale,
+      StreamOrDevice s) override {
+    return ::executorch::backends::mlx::attend(
+        update_and_fetch(layer, positions, k, v, s), q, scale, s);
+  }
+
+ protected:
+  void* face(cache::FaceId id) override {
+    if (void* p = cache::SequenceCache::face(id)) {
+      return p;
+    }
+    return cache::expose<MLXCache>(this, id);
   }
 
  private:

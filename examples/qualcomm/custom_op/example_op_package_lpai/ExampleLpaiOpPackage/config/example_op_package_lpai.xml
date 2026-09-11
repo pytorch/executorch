@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (c) Qualcomm Innovation Center, Inc.
+All rights reserved
+
+This source code is licensed under the BSD-style license found in the
+LICENSE file in the root directory of this source tree.
+-->
+<OpDefCollection
+        PackageName="ExampleLpaiOpPackage"
+        Domain="aisw"
+        Version="1.0"
+>
+    <OpDefList>
+        <OpDef>
+            <Name>ExampleCustomOp</Name>
+            <Description>
+                <Content>
+                    ExampleCustomOp for testing LPAI OP package registration
+                    functionality. Multiplies the input activation by 3.
+                </Content>
+            </Description>
+
+            <Input>
+                <Name>input</Name>
+                <Description>
+                    <Content>input activation</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <!--
+                    QNN_DATATYPE_UINT_8 is listed in addition to the fixed point
+                    type because the LPAI lowering validates op configs twice:
+                    once from LpaiPartitionFallbackSupport, while the graph still
+                    carries explicit quantize / dequantize nodes and the tensors
+                    are plain integers, and once after FoldQDQ has folded the
+                    quantization parameters into the tensors.
+
+                    Only 8 bit activations are declared: 16 bit ones do not work
+                    end to end on this backend yet, see the comment on
+                    g_ExampleCustomOpInput_0_DataTypes in
+                    src/ops/ExampleCustomOp_compiler.cpp.
+                -->
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_UINT_8</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                    <Text>a tensor of 4 dimension</Text>
+                </Shape>
+            </Input>
+
+            <Output>
+                <Name>output</Name>
+                <Description>
+                    <Content>output activation</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_UINT_8</Datatype>
+                <Shape>
+                    <Rank>4D</Rank>
+                    <Layout>NHWC</Layout>
+                    <Text>a tensor of 4 dimension</Text>
+                </Shape>
+            </Output>
+
+            <!--This Op is implemented on these Backends-->
+            <SupportedBackend>LPAI</SupportedBackend>
+        </OpDef>
+
+    </OpDefList>
+
+</OpDefCollection>

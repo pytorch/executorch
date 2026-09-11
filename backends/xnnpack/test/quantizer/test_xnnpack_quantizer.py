@@ -1122,6 +1122,30 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             node_list,
         )
 
+    def test_int64_scalar_add_used_as_index(self):
+        """Scalars lifted to attrs must keep the op's output dtype; an int64
+        add chain used as an index must not be promoted to float32."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return x[:, torch.arange(4) + 0]
+
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_global(quantization_config)
+        example_inputs = (torch.randn(1, 4, 5),)
+        m = export(M(), example_inputs, strict=True).module()
+        m = quantizer.transform_for_annotation(m)
+        lifted_constants = [
+            m.get_buffer(n.target)
+            for n in m.graph.nodes
+            if n.op == "get_attr" and n.target.startswith("_tensor_constant_")
+        ]
+        self.assertEqual(len(lifted_constants), 1)
+        self.assertEqual(lifted_constants[0].dtype, torch.int64)
+        m = prepare_pt2e(m, quantizer)
+        m(*example_inputs)
+
     def test_cat_same_node(self):
         """Ensure that concatenating the same node does not cause any unexpected behavior"""
 

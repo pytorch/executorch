@@ -1,9 +1,9 @@
-# Exynos backend Examples
+# Exynos Backend examples
 
 This directory contains examples for some AI models.
 
-Please make sure you have built the library and executable before
-you start, if you have no idea how to build, please refer to [backend README](../../backends/samsung/README.md).
+Please make sure you have built the library before you start,
+if you have no idea how to build, please refer to [backend README](../../backends/samsung/README.md).
 
 ## Environment
 We set up `PYTHONPATH` because it's easier to develop and import executorch Python APIs.
@@ -42,7 +42,18 @@ Examples use "PerformanceMode.HIGH_PERFORMANCE" mode, this mode is experimental.
 If you want to use this mode on your model, verify your model on devicefarm which can use samsung developer society site
 firstly for checking stability. (https://soc-developer.semiconductor.samsung.com/)
 
+## Building Executable
+### Prerequisites
+Please set up the backend before building the executable, See the [backend README](../../backends/samsung/README.md) for details.
+### Building 'enn_executor_runner' for Android
+```bash
+export EXYNOS_AI_LITECORE_ROOT=/path/to/enn_sdk
+export ANDROID_NDK_ROOT=/path/to/android_ndk
+${EXECUTORCH_ROOT}/examples/samsung/build.sh
+```
+After the build completes, `enn_executor_runner` can be found at `${EXECUTORCH_ROOT}/build_samsung_android/examples/samsung/`
 ## Execution
+
 
 After lowering, we could get a pte model and then run it on mobile phone.
 
@@ -50,7 +61,7 @@ After lowering, we could get a pte model and then run it on mobile phone.
 ```bash
 DEVICE_DIR=/data/local/tmp/executorch
 adb shell mkdir ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/cmake-android-out/backends/samsung/enn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build_samsung_android/examples/samsung/enn_executor_runner ${DEVICE_DIR}
 ```
 
 #### Step 2: Indicate dynamic linkers and execute model
