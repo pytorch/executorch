@@ -2109,9 +2109,9 @@ class _TopLevelEmitter(_Emitter):
                 self.module.meta["non_const_buffer_sizes"],
             ),
             container_meta_type=self.container_meta_type,
-            # non_const_buffer_device is set by apply_algo in memory_planning.py
-            # when device tensors are present. None for CPU-only programs.
-            non_const_buffer_device=self.module.meta.get(
-                "non_const_buffer_device", None
-            ),
+            # apply_algo always writes non_const_buffer_device, empty for a
+            # program with no device tensor in it; the field is left null in
+            # that case.
+            non_const_buffer_device=self.module.meta.get("non_const_buffer_device")
+            or None,
         )

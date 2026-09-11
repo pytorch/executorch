@@ -1714,6 +1714,28 @@ class EdgeProgramManager:
             after it has been transformed to the ExecuTorch backend.
         """
         config = config if config else ExecutorchBackendConfig()
+        if isinstance(config.memory_planning_pass, dict) and any(
+            getattr(per_method_pass, "shared_buffer_fqns", None)
+            or getattr(per_method_pass, "share_mutable_buffers", False)
+            for per_method_pass in config.memory_planning_pass.values()
+        ):
+            raise ValueError(
+                "share_mutable_buffers and shared_buffer_fqns each need one "
+                "memory planning pass instance for the whole program: both "
+                "agree a placement across methods, and a per-method dict of "
+                "passes gives each method its own instance that never sees "
+                "the others, so export succeeds and the buffer is not "
+                "shared. Pass a single MemoryPlanningPass instead."
+            )
+        # The config holds one pass instance across to_executorch calls, and
+        # what a pass records while planning one program has to be gone before
+        # it plans the next. The dedicated-arena path clears its own records at
+        # the end of run_multimethod(), which a per-method refusal raising from
+        # run() never reaches; the legacy sharing path never clears what it
+        # recorded at all. A dict of passes has no reset_multimethod_state of
+        # its own, and one that records anything is refused above.
+        if hasattr(config.memory_planning_pass, "reset_multimethod_state"):
+            config.memory_planning_pass.reset_multimethod_state()
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
             if config.do_quant_fusion_and_const_prop:
