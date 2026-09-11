@@ -88,12 +88,27 @@ probe() {
   echo "${out}" | grep -qE 'Checkout succeeded' && echo "      -> OK" || echo "      -> FAILED"
 }
 
-echo "--- feature name vs hostname"
-probe "real hostname (no shim)" ""
-probe "shim, real hostname"     "$(hostname)"
-probe "shim, short"             "shorty"
-probe "shim, 45ch (iamx-like)"  "mt-l-x86iamx-8-64-2lfxk-runner-4bg8n-workflow"
-probe "shim, 48ch (avx512-like)" "mt-l-x86iavx512-8-64-r6gdl-runner-6525q-workflow"
-probe "shim, 47ch"              "mt-l-x86iavx512-8-64-r6gdl-runner-6525-workflow"
-probe "shim, 64ch"              "mt-l-x86iavx512-8-64-r6gdl-runner-6525q-workflow-padding-xyz"
+echo "--- feature name vs hostname length (fixed filler, varying length)"
+for n in 38 42 44 45 46 47 48 52; do
+  hn=$(printf 'h%.0s' $(seq 1 "${n}"))
+  probe "filler x${n}" "${hn}"
+done
+
+echo "--- real label-shaped names"
+probe "iamx-like (45)"   "mt-l-x86iamx-8-64-2lfxk-runner-4bg8n-workflow"
+probe "avx512-like (48)" "mt-l-x86iavx512-8-64-r6gdl-runner-6525q-workflow"
+
+echo "--- can we control the hostname in the pod? (candidate fix)"
+echo "sudo hostname:     $(sudo hostname shorty 2>&1; hostname)"
+echo "unshare -u:        $(unshare -u bash -c 'hostname shorty && hostname' 2>&1)"
+echo "unshare -Uur:      $(unshare -Uur bash -c 'hostname shorty && hostname' 2>&1)"
+echo "unshare -u + 48ch compile (must FAIL if the namespace really applies):"
+unshare -u bash -c 'hostname mt-l-x86iavx512-8-64-r6gdl-runner-6525q-workflow 2>/dev/null; echo "  inside ns: $(hostname) (${#HOSTNAME})"; FLEXLM_DIAGNOSTICS=3 xt-clang -c /tmp/_lic_t.c -o /tmp/_lic_t.o 2>&1 | grep -oE "(Checkout succeeded: )?XT_XCC_TIE[A-Z0-9_]*" | head -1' 2>&1 | sed 's/^/  /'
+
+echo "--- does the simulator licence (XT_ISS_BASE) have the same bug?"
+xt-clang -o /tmp/_lic_hello /tmp/_lic_t.c 2>&1 | head -3
+for hn in shorty mt-l-x86iavx512-8-64-r6gdl-runner-6525q-workflow; do
+  out=$(FAKE_HOSTNAME="${hn}" LD_PRELOAD=/tmp/_hn.so FLEXLM_DIAGNOSTICS=3 xt-run /tmp/_lic_hello 2>&1)
+  printf '  xt-run len=%-3s %s\n' "${#hn}" "$(echo "${out}" | grep -oE '(Checkout succeeded: )?XT_ISS[A-Z0-9_]*' | head -1)"
+done
 echo "=== end flexnet diagnostic ==="
