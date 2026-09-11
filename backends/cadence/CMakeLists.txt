@@ -7,9 +7,8 @@
 # Set the minimum required version of CMake for this project.
 cmake_minimum_required(VERSION 3.10)
 
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
+# Pin to C++17 for embedded toolchain compatibility (not all support C++20).
+set(CMAKE_CXX_STANDARD 17)
 
 # Set the project name.
 project(cadence_backend)
