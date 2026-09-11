@@ -40,6 +40,7 @@ build_android_native_library() {
     -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" \
     --preset "android-${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
+    -DANDROID_STL=c++_shared \
     -DEXECUTORCH_ENABLE_EVENT_TRACER="${EXECUTORCH_ANDROID_PROFILING:-OFF}" \
     -DEXECUTORCH_ANDROID_PROFILING="${EXECUTORCH_ANDROID_PROFILING:-OFF}" \
     -DEXECUTORCH_BUILD_EXTENSION_LLM="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
@@ -69,6 +70,20 @@ build_android_native_library() {
   local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"
   mkdir -p ${SO_STAGE_DIR}
   cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
+
+  # libexecutorch.so links the NDK C++ runtime dynamically, so the AAR has to
+  # carry it. Apps that already ship libc++_shared.so collapse the two copies
+  # when they package their APK.
+  local ANDROID_TRIPLE
+  case "${ANDROID_ABI}" in
+    arm64-v8a)   ANDROID_TRIPLE=aarch64-linux-android ;;
+    armeabi-v7a) ANDROID_TRIPLE=arm-linux-androideabi ;;
+    x86)         ANDROID_TRIPLE=i686-linux-android ;;
+    x86_64)      ANDROID_TRIPLE=x86_64-linux-android ;;
+    *) echo "Unknown ANDROID_ABI ${ANDROID_ABI}" >&2; exit 1 ;;
+  esac
+  cp "${ANDROID_NDK}"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/"${ANDROID_TRIPLE}"/libc++_shared.so \
+    "${SO_STAGE_DIR}/"
 
   # Copy QNN related so library
   if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
