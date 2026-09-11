@@ -227,7 +227,7 @@ Mutable buffers have several limitations:
     - Consider explicitly calling `detach()` on tensors before assigning to a buffer if you encounter export-time errors related to gradients.
     - Ensure that any operations done on a mutable buffer are done with in-place operations (typipcally ending in `_`).
     - Do not reassign the buffer variable. Instead, use `copy_` to update the entire buffer content.
-- Mutable buffers are not shared between multiple methods within a .pte.
+- Mutable buffers are not shared between multiple methods within a .pte unless sharing is asked for. See [sharing a buffer across methods](compiler-memory-planning.md#sharing-a-buffer-across-methods).
 - In-place operations are replaced with non-in place variants, and the resulting tensor is written back at the end of the method execution. This can be a performance bottleneck when using `index_put_`.
 - Buffer mutations are not supported on all backends and may cause graph breaks and memory transfers back to CPU.
 
@@ -260,7 +260,7 @@ At runtime, the method name can be passed to `load_method` and `execute` on the 
 
 Multi-method .ptes have several caveats:
 - Methods are individually memory-planned. Activation memory is not current re-used between methods. For advanced use cases, a [custom memory plan](compiler-memory-planning.md) or [custom memory allocators](https://docs.pytorch.org/executorch/stable/runtime-overview.html#operating-system-considerations) can be used to overlap the allocations.
-- Mutable buffers are not shared between methods.
+- Mutable buffers are not shared between methods unless sharing is asked for. See [sharing a buffer across methods](compiler-memory-planning.md#sharing-a-buffer-across-methods).
 - PyTorch export does not currently allow for exporting methods on a module other than `forward`. To work around this, it is common to create wrapper `nn.Modules` for each method.
 
 ```python

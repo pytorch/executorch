@@ -282,6 +282,23 @@ class TestProgramManagers(unittest.TestCase):
                 evalue = method.values[output_val]
                 self.assertNotEqual(evalue.val.allocation_info, None)
 
+    def test_two_default_configs_do_not_share_a_memory_planning_pass(self):
+        """`memory_planning_pass` is a default_factory, not a class attribute.
+
+        A pass instance carries state: `to_executorch` writes
+        `enable_non_cpu_memory_planning` onto whichever instance it is handed,
+        and the mutable-buffer sharing paths record each method they plan on
+        it. One instance behind every default-built config in the process
+        makes those cross unrelated exports, in whichever order they happen to
+        run.
+        """
+        first = ExecutorchBackendConfig()
+        second = ExecutorchBackendConfig()
+        self.assertIsNot(first.memory_planning_pass, second.memory_planning_pass)
+
+        first.memory_planning_pass.alloc_graph_input = False
+        self.assertTrue(second.memory_planning_pass.alloc_graph_input)
+
     def test_no_getattr(self):
         class Mul(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -1467,6 +1467,19 @@ def _apply_algo_to_submodules(
 _CPU_KEY: tuple[DeviceType, int] = (DeviceType.CPU, 0)
 
 
+def _device_order_key(device: tuple[DeviceType, int]) -> tuple[int, int]:
+    """CPU:0 first, then by device type and index.
+
+    ``DeviceType.CPU`` is zero and a device index is non-negative, so CPU:0 is
+    already the minimum of this pair.
+
+    One definition because two places have to agree: ``apply_algo`` hands out
+    arena indices in this order, and MemoryPlanningPass lays its cross-method
+    numbering out in it.
+    """
+    return (device[0].value, device[1])
+
+
 def _partition_specs_by_device(
     all_specs: list[TensorSpec],
     enable_non_cpu_memory_planning: bool,
@@ -1520,14 +1533,16 @@ def _partition_specs_by_device(
 
 def _build_non_const_buffer_device(
     buffer_devices: list[tuple[DeviceType, int]],
-) -> Optional[list[NonConstBufferDevice]]:
+) -> list[NonConstBufferDevice]:
     """Build the non-CPU buffer device list for serialization.
 
-    Returns ``None`` when all buffers are CPU (the default), so that no
-    redundant device metadata is emitted.
+    Returns an empty list when every buffer is on a CPU device, so that no
+    redundant device metadata is emitted: the emitter turns the empty list into
+    a null field. It is a list rather than ``None`` because a later
+    cross-method pass rewrites it in place.
     """
     if not any(dk[0] != DeviceType.CPU for dk in buffer_devices):
-        return None
+        return []
     return [
         NonConstBufferDevice(buffer_idx=i, device_type=dt, device_index=di)
         for i, (dt, di) in enumerate(buffer_devices)
@@ -1544,6 +1559,7 @@ def apply_algo(
     alloc_graph_output: bool = True,
     alloc_mutable_buffers: bool = True,
     enable_non_cpu_memory_planning: bool = False,
+    exclude_spec_ids: Optional[Set[int]] = None,
 ) -> list[int]:
     """
     Recursively apply algo to graph_module and its submodules for control flow.
@@ -1563,6 +1579,11 @@ def apply_algo(
     2. non_const_buffer_sizes: List of bufsizes for planned memory in submodule.
        `algo` should reserve the space specified by this list for the lifetime
        of the submodule node (e.g. cond, while, map).
+
+    ``exclude_spec_ids`` holds ``id()`` of specs the caller places itself -- the
+    buffers named by ``MemoryPlanningPass.shared_buffer_fqns``. ``algo`` never
+    sees them, so it reserves no space for them and leaves their mem_id unset.
+    ``insert_calls_to_free`` is still given them, along with every other spec.
 
     TODO: Missing optimizations:
     1. To handle maps, we set `alloc_graph_input=True`, which allocates
@@ -1589,10 +1610,12 @@ def apply_algo(
 
     # Get temporary specs for submodules to set aside space during execution
     # of submodules.
-    # NOTE: submodule_bufsizes are currently applied only to the CPU partition.
-    # This assumes all control-flow submodule tensors (cond/while/map) live in
-    # CPU memory.  Today this is safe because on-device tensors only appear as
-    # delegate blob I/O, which never lives inside control-flow submodules.
+    # NOTE: submodule_bufsizes are applied only to the CPU partition, and with
+    # per-device planning on that partition exists only while the top-level
+    # graph has a CPU tensor of its own.  A method whose whole top level is on
+    # an accelerator therefore loses the reservation: the submodule's tensors
+    # keep arena indices the top-level plan has handed to live device tensors,
+    # which then overlap them with no error and no change in arena size.
     # If device tensors ever appear in submodules, _apply_algo_to_submodules
     # will need per-device partitioning as well.
     submodule_bufsizes = _apply_algo_to_submodules(
@@ -1605,7 +1628,12 @@ def apply_algo(
         extra_padding = 64
 
     specs_by_device = _partition_specs_by_device(
-        all_specs, enable_non_cpu_memory_planning
+        (
+            all_specs
+            if not exclude_spec_ids
+            else [spec for spec in all_specs if id(spec) not in exclude_spec_ids]
+        ),
+        enable_non_cpu_memory_planning,
     )
 
     # Plan each device independently
@@ -1614,10 +1642,7 @@ def apply_algo(
 
     # Process CPU:0 first (if present), then other devices sorted by
     # (type.value, index) so the ordering is deterministic.
-    device_order = sorted(
-        specs_by_device.keys(),
-        key=lambda dk: (dk != _CPU_KEY, dk[0].value, dk[1]),
-    )
+    device_order = sorted(specs_by_device.keys(), key=_device_order_key)
 
     for device_key in device_order:
         device_specs = specs_by_device[device_key]
@@ -1664,8 +1689,11 @@ def apply_algo(
     # Insert free calls and build device buffer mapping
     insert_calls_to_free(graph_module, all_specs)
 
-    non_const_buffer_device = _build_non_const_buffer_device(buffer_devices)
     graph_module.meta["non_const_buffer_sizes"] = global_bufsizes
-    if non_const_buffer_device is not None:
-        graph_module.meta["non_const_buffer_device"] = non_const_buffer_device
+    # Always present, so that a later cross-method pass can rewrite it in place.
+    # to_executorch copies this meta into the exported program by a shallow
+    # dict.update, after which a newly added key would never reach the emitter.
+    graph_module.meta["non_const_buffer_device"] = _build_non_const_buffer_device(
+        buffer_devices
+    )
     return global_bufsizes
