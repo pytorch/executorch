@@ -18,7 +18,7 @@ from executorch.backends.transforms.utils import is_param_node
 
 @register_node_visitor
 class CatVisitor(NodeVisitor):
-    target = ["aten.cat.default", "aten.stack.default"]
+    target = "aten.cat.default"
 
     def __init__(self, *args):
         super().__init__(*args)

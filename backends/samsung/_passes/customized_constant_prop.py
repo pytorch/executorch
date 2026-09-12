@@ -24,7 +24,7 @@ class _constant_prop_context:
 
     def __enter__(self):
         constant_prop_module._DEFAULT_SKIP_TARGETS = set()
-        constant_prop_module._DEFAULT_SKIP_TARGETS_NO_QUANT = {}
+        constant_prop_module._DEFAULT_SKIP_TARGETS_NO_QUANT = set()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         constant_prop_module._DEFAULT_SKIP_TARGETS = self.backup_skip_targets

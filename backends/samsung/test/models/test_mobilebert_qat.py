@@ -48,7 +48,7 @@ class TestMilestoneMobileBertQAT(unittest.TestCase):
         # Get the finetune model
         mobilebert_finetune = MobileBertFinetune(metric, args)
         model, tokenized_datasets = mobilebert_finetune.get_finetune_mobilebert(
-            self.artifact
+            args.artifact
         )
 
         # Configure QAT parameters

@@ -872,12 +872,10 @@ def annotate_getitem(node: Node, quant_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return
 
-    out_act_quantization_spec = quant_config.output_activation
     if node.args[0].target == torch.ops.aten.chunk.default:
         # need to support other op with getitem
-        out_act_quantization_spec = SharedQuantizationSpec(node.args[0])
         node.meta["quantization_annotation"] = QuantizationAnnotation(
-            output_qspec=out_act_quantization_spec,
+            output_qspec=SharedQuantizationSpec(node.args[0]),
             _annotated=True,
         )
 

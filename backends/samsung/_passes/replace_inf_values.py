@@ -48,10 +48,7 @@ class ReplaceInfValues(ExportPass):
 
             node.args = tuple(arg_list)
 
-            if node.target in [
-                torch.ops.aten.masked_fill.Tensor,
-                torch.ops.aten.masked_fill.Scalar,
-            ]:
+            if node.target == torch.ops.aten.masked_fill.Scalar:
                 assert (
                     len(node.args) == 3
                 ), f"Expecting {node.name} to have 3 arguments."

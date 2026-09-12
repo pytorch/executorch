@@ -48,12 +48,19 @@ class PadVisitor(NodeVisitor):
         ]
 
         mode = "constant"
-        constant_value = 0
         if len(node.args) > 2:
             mode = node.args[2]
+        value = node.args[3] if len(node.args) > 3 and node.args[3] is not None else 0
+        constant_value = value
         if mode == "constant":
             quant_attrs = node.meta.get("quantize_attrs")
             if quant_attrs is not None:
+                if value != 0:
+                    # Encoding an arbitrary fill value for a quantized tensor
+                    # needs mapping it through scale/zero_point, which this
+                    # builder does not implement; only the value=0 case
+                    # below (mapped to the zero point) is supported.
+                    return False
                 zero_points = EnnGraph._affine_meta_param(
                     quant_attrs[QuantConstants.QUANT_KEY.zero_point]
                 )

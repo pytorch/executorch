@@ -200,6 +200,5 @@ class EnnPartitioner(Partitioner):
             torch.ops.aten.hardsigmoid.default,
             torch.ops.aten.silu.default,
             torch.ops.aten.pad.default,
-            torch.ops.aten.stack.default,
         ]
         return (ops_not_to_decompose, None)
