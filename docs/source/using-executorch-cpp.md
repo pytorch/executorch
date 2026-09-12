@@ -178,7 +178,7 @@ These are the components the package provides:
 | `threadpool` | Multi-threaded execution. | Linux, macOS |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS |
-| `kernels_torchao` | The TorchAO low-bit quantized kernels | macOS, Apple Silicon |
+| `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
