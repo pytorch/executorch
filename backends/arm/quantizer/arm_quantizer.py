@@ -478,6 +478,8 @@ def get_symmetric_a16w8_quantization_config(
         is_per_channel=is_per_channel,
         is_qat=is_qat,
         is_dynamic=is_dynamic,
+        weight_qmin=weight_qmin,
+        weight_qmax=weight_qmax,
     )
 
     if is_dynamic:
