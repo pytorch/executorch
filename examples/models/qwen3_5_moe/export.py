@@ -1138,8 +1138,9 @@ def _export_cuda(model, config, args):
         "enable_dynamic_shape": True,
         "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
-    # PyTorch 2.14 autotuning can launch kernels against released low-memory
-    # KV-cache storage, poisoning the CUDA context. Disable it for this model.
+    # PyTorch 2.14 can launch generated kernels against the storage released by
+    # low-memory mode and poison the CUDA context. The default 4K cache is only
+    # about 112 MiB, so keep it resident and retain Triton-only GEMM lowering.
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
@@ -1147,9 +1148,9 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
-                        CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("low_memory_mode", b"OFF"),
                         CompileSpec("emulate_precision_casts", b"OFF"),
-                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("max_autotune", b"ON"),
                         CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
@@ -1158,9 +1159,9 @@ def _export_cuda(model, config, args):
                 CudaPartitioner(
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
-                        CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("low_memory_mode", b"OFF"),
                         CompileSpec("emulate_precision_casts", b"OFF"),
-                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("max_autotune", b"ON"),
                         CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
