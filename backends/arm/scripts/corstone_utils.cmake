@@ -25,8 +25,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  set(ethos_u_base_tag "26.05.1")
-  set(ethos_u_manifest_version "26.05")
+  # The umbrella repository has no 26.08 tag, so pin its release commit.
+  set(ethos_u_base_tag "5ae010a083c6fa9f3a4d1d71b90db5742c87cc08")
+  set(ethos_u_manifest_version "26.08")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY
@@ -37,9 +38,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     SOURCE_SUBDIR none
   )
   FetchContent_MakeAvailable(ethos_u)
-  # Patch manifest to remove unused projects.
+  # Remove projects not used by ExecuTorch from the manifest.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
-  set(ethos_u_base_rev "26.05.1")
+  set(ethos_u_base_rev "5ae010a083c6fa9f3a4d1d71b90db5742c87cc08")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}" "${ethos_u_base_rev}" "${patch_dir}" "${ET_DIR_PATH}"
   )
@@ -55,7 +56,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     )
   endif()
   # Patch core_software to remove unused projects.
-  set(core_software_base_rev "26.05")
+  set(core_software_base_rev "26.08")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_software" "${core_software_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
@@ -67,7 +68,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # Cortex-M cores. Once the equivalent guards land upstream in
   # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
   # commits, delete the 0002 and 0003 patches.
-  set(core_platform_base_rev "26.05")
+  set(core_platform_base_rev "26.08")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_platform" "${core_platform_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
