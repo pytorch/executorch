@@ -23,7 +23,10 @@ yields a program whose constants are simply absent -- see to_native.
 
 Graph cleanup (CSE, reinplace, view_copy collapsing) is expected to run before
 lowering via the ``transform_passes`` argument of
-``to_edge_transform_and_lower`` (see ``passes.get_default_passes``).
+``to_edge_transform_and_lower`` (see ``passes.get_default_passes``). Preprocess is
+otherwise a serialization step, except for ``ReplaceCopyWithAliasPass``, which
+must run here so aliasing view ops stay inside the delegate rather than leaking
+into the core graph.
 """
 
 from dataclasses import dataclass, field
@@ -36,6 +39,7 @@ from executorch.backends.native.partitioner import (
     PTN_SERIALIZATION_KEY,
 )
 
+from executorch.backends.native.passes import ReplaceCopyWithAliasPass
 from executorch.backends.native.serialization import serialize_graph
 
 from executorch.exir._serialize._named_data_store import NamedDataStore
@@ -46,6 +50,8 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
+
+from pyre_extensions import none_throws
 
 from torch._subclasses.fake_tensor import FakeTensor
 
@@ -107,8 +113,12 @@ class NativeBackend(BackendDetails):
         edge_program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
+        graph_module = none_throws(
+            ReplaceCopyWithAliasPass()(edge_program.graph_module)
+        ).graph_module
+
         flatbuffer_bytes, constant_data = serialize_graph(
-            edge_program.graph_module,
+            graph_module,
             edge_program.graph_signature,
             edge_program.state_dict,
             edge_program.constants,
