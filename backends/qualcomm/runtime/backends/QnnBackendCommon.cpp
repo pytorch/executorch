@@ -40,22 +40,33 @@ void QnnBackend::BackendRegisterOpPackage(
       QnnExecuTorchOpPackagePlatform::UNKNOWN;
 #if defined(__x86_64__)
   current_platform = QnnExecuTorchOpPackagePlatform::X86_64;
+#elif defined(__hexagon__)
+  current_platform = QnnExecuTorchOpPackagePlatform::HEXAGON;
 #elif defined(__ANDROID__)
   current_platform = QnnExecuTorchOpPackagePlatform::AARCH64_ANDROID;
 #endif
   if (current_platform == QnnExecuTorchOpPackagePlatform::UNKNOWN)
     QNN_EXECUTORCH_LOG_ERROR(
-        "Failed to detect the platform. Only support x86_64 or android.");
+        "Failed to detect the platform. Only support x86_64, hexagon, or android.");
   for (const auto op_package_info : *op_packages_infos) {
     if (current_platform != op_package_info->platform() ||
         op_package_manager_.Has(op_package_info->op_package_path()->c_str()))
       continue;
 
+    // The 4th argument of registerOpPackage is backend specific. For CPU / HTP
+    // it is the processor target name (e.g. "CPU", "HTP"). For LPAI it is an
+    // optional target memory pool string instead, so pass nullptr to let the
+    // backend pick its default pool.
+    const char* op_package_target =
+        op_package_info->target() == QnnExecuTorchOpPackageTarget::LPAI
+        ? nullptr
+        : EnumNameQnnExecuTorchOpPackageTarget(op_package_info->target());
+
     error = qnn_interface.qnn_backend_register_op_package(
         handle_,
         op_package_info->op_package_path()->c_str(),
         op_package_info->interface_provider()->c_str(),
-        EnumNameQnnExecuTorchOpPackageTarget(op_package_info->target()));
+        op_package_target);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Failed to register op package: "

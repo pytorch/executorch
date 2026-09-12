@@ -143,7 +143,7 @@ TEST_F(MLXCellCacheTest, FreedCellsRefillBelowLiveOnes) {
   array kb = randn(1), vb = randn(1);
   step(c, {b}, {0}, kb, vb); // cell 3
 
-  EXPECT_TRUE(c.seq_rm(a, 0, 2)); // frees cells 0 and 1
+  EXPECT_TRUE(c.seq_rm(a)); // frees cells 0, 1 and 2
   EXPECT_EQ(c.used_end(), 4);
 
   array kb1 = randn(1), vb1 = randn(1);
@@ -224,8 +224,9 @@ TEST_F(MLXCellCacheTest, StorageDtypeDiffersCastsOnWrite) {
   EXPECT_TRUE(allclose(spec.K, k, 1e-2f));
 }
 
-// The step verbs are a contract: no declaration, a miscounted call, a repeated
-// layer and a position a sequence already holds are all refused.
+// The step verbs are a contract: no declaration, a miscounted call, and a
+// position a sequence already holds are refused. A repeated layer with the same
+// tokens (a KV-shared donor re-serving) is served again idempotently.
 TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
   using namespace ::mlx::core;
   MLXCellCache c(flat_config(32, 1, H, D, kHalf));
@@ -239,8 +240,9 @@ TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
   EXPECT_ANY_THROW(c.update_and_fetch(1, {0, 1}, k, v, s)); // no such layer
 
   c.update_and_fetch(0, {0, 1}, k, v, s);
-  EXPECT_ANY_THROW(
-      c.update_and_fetch(0, {0, 1}, k, v, s)); // layer served twice
+  // A KV-shared layer re-serves its donor's id with the same tokens; the repeat
+  // is idempotent and returns the same step rather than throwing.
+  EXPECT_NO_THROW(c.update_and_fetch(0, {0, 1}, k, v, s));
 
   EXPECT_TRUE(c.declare_step({a}));
   array k1 = randn(1), v1 = randn(1);

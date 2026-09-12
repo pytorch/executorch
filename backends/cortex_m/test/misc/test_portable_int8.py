@@ -283,6 +283,12 @@ OP_CASES = {
         (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
         None,
     ),
+    "roll": OpCase(
+        torch.ops.aten.roll.default,
+        _build_module(lambda x, y: torch.ops.aten.roll.default(x, [1], [2])),
+        (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
+        None,
+    ),
     "index_select": OpCase(
         torch.ops.aten.index_select.default,
         _build_module(
@@ -708,6 +714,7 @@ xfails: dict[str, xfail_type] = {
     "where_default": "MLETORCH-1865: Properly support flaky scalar comparison ops.",
     "while_loop": "MLETORCH-1866: Support higher-order operators",
     "cond": "MLETORCH-1866: Support higher-order operators",
+    "roll": "MLETORCH-2563: Support roll operator",
 }
 
 
