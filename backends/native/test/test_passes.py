@@ -9,8 +9,18 @@ import unittest
 import torch
 import torch.nn as nn
 
+from executorch.backends.native import get_default_compile_config
+from executorch.backends.native.partitioner import NativePartitioner
+from executorch.backends.native.passes import get_default_passes
 from executorch.backends.native.passes.reinplace import NativeReinplacePass
-from executorch.backends.native.test.utils import _transformed
+from executorch.backends.native.serialization import deserialize_graph
+from executorch.backends.native.test.utils import (
+    _call_function_targets,
+    _get_delegate_blob,
+    _lower,
+    _transformed,
+)
+from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.passes.cse_pass import CSEPass
 
 
@@ -49,3 +59,54 @@ class NativeReinplacePassTest(unittest.TestCase):
             any("relu_" in t for t in targets),
             f"expected in-place relu_, got {targets}",
         )
+
+
+class ReplaceCopyWithAliasPassTest(unittest.TestCase):
+    def test_alias_ops_serialize_valid_targets(self):
+        # ReplaceCopyWithAliasPass rewrites *_copy view ops to plain aten
+        # OpOverloads (e.g. transpose_copy -> transpose). Those must serialize to
+        # real op names, not the bare "torch._ops.aten." from over-unwrapping.
+        class ViewModel(nn.Module):
+            def forward(self, x):
+                return x.transpose(0, 1).reshape(-1) + 1.0
+
+        blob = _get_delegate_blob(_lower(ViewModel(), (torch.randn(3, 4),)))
+        graph = deserialize_graph(blob)
+        targets = [t for t in _call_function_targets(graph) if t]
+        # The pass rewrites at least one *_copy view op to its aliasing form.
+        alias_names = ("transpose", "permute", "view", "slice", "unsqueeze", "expand")
+        self.assertTrue(
+            any(
+                any(f"aten.{a}." in t for a in alias_names) and "_copy." not in t
+                for t in targets
+            ),
+            f"expected an aliasing view op, got {targets}",
+        )
+        for t in targets:
+            self.assertFalse(
+                t.startswith("torch._ops.") or t.endswith("."),
+                f"malformed serialized target: {t!r}",
+            )
+
+    def test_dynamic_view_converts_to_alias(self):
+        # A view with a symbolic size (dynamic dim) on a contiguous input must be
+        # rewritten to a true aten.view, not conservatively left as view_copy.
+        class DynView(nn.Module):
+            def forward(self, x):
+                return x.reshape(x.shape[0], -1) + 1.0
+
+        ep = torch.export.export(
+            DynView(),
+            (torch.randn(4, 2, 3),),
+            dynamic_shapes={"x": {0: torch.export.Dim("b", max=1024)}},
+        )
+        edge = to_edge_transform_and_lower(
+            ep,
+            transform_passes=get_default_passes(),
+            partitioner=[NativePartitioner()],
+            compile_config=get_default_compile_config(),
+        )
+        graph = deserialize_graph(_get_delegate_blob(edge))
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.view.default", targets)
+        self.assertNotIn("torch.ops.aten.view_copy.default", targets)
