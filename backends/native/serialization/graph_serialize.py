@@ -203,7 +203,7 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     strides = tuple(t.stride())
     sizes = list(t.shape)
     # dim_order_from_stride handles symbolic strides and rejects stride-0 layouts.
-    dim_order = [int(d) for d in dim_order_from_stride(strides)]
+    dim_order = [int(d) for d in dim_order_from_stride(strides, tuple(sizes))]
     expected = stride_from_dim_order(sizes, dim_order)
     for i in range(ndim):
         # A size-1 dim only ever indexes 0, so its stride is arbitrary and need not

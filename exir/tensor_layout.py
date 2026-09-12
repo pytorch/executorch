@@ -35,5 +35,5 @@ class TensorLayout:
         return TensorLayout(
             scalar_type=scalar_type_enum(tensor.dtype),
             sizes=list(tensor.shape),
-            dim_order=list(dim_order_from_stride(tensor.stride())),
+            dim_order=list(dim_order_from_stride(tensor.stride(), tuple(tensor.shape))),
         )

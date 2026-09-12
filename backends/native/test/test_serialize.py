@@ -554,10 +554,9 @@ class DimOrderTest(unittest.TestCase):
         self.assertEqual(_dim_order(t), [0, 2, 1])
 
     def test_channels_last_with_size_one_channel(self):
-        # channels-last leaves the size-1 channel with an arbitrary stride, which
-        # must not be treated as a non-expressible layout.
+        # A size-1 channel must not make channels-last non-expressible.
         t = torch.randn(2, 1, 3, 4).to(memory_format=torch.channels_last)
-        self.assertEqual(_dim_order(t), [0, 2, 1, 3])
+        self.assertEqual(_dim_order(t), [0, 2, 3, 1])
 
     def test_sliced_layout_raises(self):
         t = torch.randn(4, 8)[:, :4]
