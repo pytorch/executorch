@@ -152,6 +152,11 @@ add_dependencies(
 )
 set_property(TEST method_meta_test PROPERTY ENVIRONMENT ${test_env})
 
+target_include_directories(
+  method_meta_test PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
+                           "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
+)
+
 et_cxx_test(
   program_test SOURCES program_test.cpp EXTRA_LIBS extension_data_loader
   program_schema
