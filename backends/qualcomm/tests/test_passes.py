@@ -44,6 +44,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
     QCOM_SCALE,
+    QCOM_ZERO_POINTS,
 )
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -310,7 +311,10 @@ class TestPasses(unittest.TestCase):
         )
 
         visitor = NodeVisitor({}, exported_program, enable_tensor_dump=False)
-        quant_attrs = {"zero_points": torch.tensor([0, 1, 0, 0])}
+        quant_attrs = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+            QCOM_ZERO_POINTS: torch.tensor([0, 1, 0, 0]),
+        }
         with self.assertRaisesRegex(ValueError, "symmetric"):
             visitor.make_qnn_per_block_config(parameter_node, quant_attrs)
 

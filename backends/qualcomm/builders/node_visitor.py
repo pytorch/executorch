@@ -189,14 +189,16 @@ class NodeVisitor:
 
         # blockwise expansion hardcodes a per-channel offset of 0, so an
         # asymmetric weight would silently lower to a symmetric encoding
-        zero_points = quant_attrs.get(QCOM_ZERO_POINTS)
-        if zero_points is None:
-            zero_points = quant_attrs.get(QCOM_ZERO_POINT)
-        if zero_points is not None and torch.any(torch.as_tensor(zero_points) != 0):
-            raise ValueError(
-                "per-block quantization with non-zero zero_points is not supported; "
-                "QNN blockwise expansion requires symmetric quantization"
-            )
+        if quant_attrs[QCOM_ENCODING] in PER_CHANNEL_GROUP_ENCODING:
+            zero_points = quant_attrs.get(QCOM_ZERO_POINTS)
+            if zero_points is None:
+                zero_points = quant_attrs.get(QCOM_ZERO_POINT)
+            if zero_points is not None and torch.any(torch.as_tensor(zero_points) != 0):
+                raise ValueError(
+                    "per-channel-group quantization with non-zero zero_points is "
+                    "not supported; QNN blockwise expansion requires symmetric "
+                    "quantization"
+                )
 
         quant_config = {
             QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
