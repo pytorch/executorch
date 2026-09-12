@@ -205,6 +205,10 @@ table QnnExecuTorchHtpBackendOptions {
   /// It will help the by reducing overall bandwith on the use case.
   /// The feature is only supported by specific SOCs.
   use_slc_allocator:bool;
+
+  /// When enabled, the compiled graph is split based on its structure and
+  /// each part is compiled as an independent subgraph.
+  use_graph_splitting:bool;
 }
 
 /// Real-time: Indicates that the model is intended for real-time use cases, where a specific performance threshold must be met.
