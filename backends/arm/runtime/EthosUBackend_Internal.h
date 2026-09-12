@@ -86,9 +86,10 @@ extern unsigned char* ethosu_fast_scratch;
 extern size_t ethosu_fast_scratch_size;
 }
 
-PlatformState* platform_init(
+executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> specs,
-    executorch::runtime::MemoryAllocator* allocator);
+    executorch::runtime::MemoryAllocator* allocator,
+    ExecutionHandle* handle);
 
 void platform_destroy(PlatformState* state);
 

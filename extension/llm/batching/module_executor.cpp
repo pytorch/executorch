@@ -139,7 +139,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
     const std::int64_t start = static_cast<std::int64_t>(input.position) +
         static_cast<std::int64_t>(input.offset);
     const auto [cursor_it, first_for_seq] =
-        cursor.try_emplace(seq_id, ctl_->next_pos(seq_id));
+        cursor.try_emplace(seq_id, ctl_->pos(seq_id));
     int& at = cursor_it->second;
     if (start > at) {
       // Positions nothing attended, and nothing later reaches back to fill.
@@ -200,7 +200,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
   }
 
   for (const auto& [seq_id, from] : rewinds) {
-    if (!ctl_->seq_rm(seq_id, from, std::nullopt)) {
+    if (!ctl_->rewind(seq_id, from)) {
       ET_LOG(Error, "build_step: sequence %d would not truncate", seq_id);
       return Error::Internal;
     }
@@ -416,9 +416,21 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return built.error();
   }
   std::shared_ptr<cache::Cache> cache = built.get();
-  if (cache->as<cache::BatchControl>() == nullptr) {
+  cache::BatchControl* const ctl = cache->as<cache::BatchControl>();
+  if (ctl == nullptr) {
     ET_LOG(Error, "ModuleExecutor: the cache carries no sequence identity");
     return Error::InvalidType;
+  }
+  // Refused here rather than at the session that would not open, so a caller
+  // asking for more than the layout holds hears about it once.
+  const std::optional<int> seq_limit = ctl->max_seqs();
+  if (seq_limit && max_sessions > *seq_limit) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %d sessions asked of a cache holding %d",
+        max_sessions,
+        *seq_limit);
+    return Error::InvalidArgument;
   }
 
   return std::unique_ptr<ModuleExecutor>(new ModuleExecutor(
@@ -473,7 +485,7 @@ void ModuleExecutor::close_session(SessionId session) {
     return;
   }
   // Frees the cells and hands the sequence id back. The session id is not.
-  ctl_->seq_rm(it->second.seq_id, 0, std::nullopt);
+  ctl_->seq_rm(it->second.seq_id);
   sessions_.erase(it);
 }
 

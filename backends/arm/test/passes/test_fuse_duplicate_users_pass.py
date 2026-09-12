@@ -8,6 +8,7 @@ from typing import Dict, Tuple
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes import (
+    DeduplicateConstShapesPass,
     EnsureUniqueOutputNodesPass,
     FuseDuplicateUsersPass,
     InsertRescalePass,
@@ -241,8 +242,9 @@ def test_fuse_duplicate_users_runs_after_tosa_transformations():
         for index, pass_type in enumerate(pass_types)
         if pass_type is RemoveNoopPass
     )
-    assert pass_types[post_noop_index + 1 : post_noop_index + 4] == [
+    assert pass_types[post_noop_index + 1 : post_noop_index + 5] == [
         FuseDuplicateUsersPass,
         InsertRescalePass,
+        DeduplicateConstShapesPass,
         EnsureUniqueOutputNodesPass,
     ]

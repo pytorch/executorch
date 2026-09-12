@@ -207,6 +207,7 @@ set(all_test_sources
     "op_exp_test.cpp"
     "op_expand_copy_test.cpp"
     "op_expm1_test.cpp"
+    "op_fft_r2c_test.cpp"
     "op_fill_test.cpp"
     "op_flip_test.cpp"
     "op_floor_divide_test.cpp"

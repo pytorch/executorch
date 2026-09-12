@@ -141,6 +141,7 @@ QnnExecuTorchIdlWrapper::QnnExecuTorchIdlWrapper(
   }
 
   output_tensors_.resize(method_->outputs_size());
+  output_is_preallocated_.assign(method_->outputs_size(), false);
   for (int i = 0; i < output_tensors_.size(); ++i) {
     Result<TensorInfo> tensor_info = method_meta_->output_tensor_meta(i);
     output_tensors_[i].resize(
@@ -148,8 +149,16 @@ QnnExecuTorchIdlWrapper::QnnExecuTorchIdlWrapper(
     Error ret = method_->set_output_data_ptr(
         align_ptr(output_tensors_[i].data()), tensor_info->nbytes(), i);
     if (ret != Error::Ok) {
-      FARF(RUNTIME_ERROR, "Failed to set output tensor: %d", (int)ret);
-      return;
+      // This fails when the output is memory planned or is a constant, in which
+      // case the data pointer cannot be overridden. That is not an error: the
+      // method already owns a buffer for this output, so remember to read the
+      // result back from the method instead of from output_tensors_[i].
+      FARF(
+          RUNTIME_HIGH,
+          "Output %d is pre-allocated, reading it back from the method: 0x%x",
+          i,
+          (int)ret);
+      output_is_preallocated_[i] = true;
     }
   }
 }
@@ -162,6 +171,16 @@ Error QnnExecuTorchIdlWrapper::execute_all(
     double& total_read_file_interval,
     double& total_save_file_interval) {
   Error status = Error::Ok;
+  // The constructor bails out early on any failure, which leaves method_ unset.
+  // Dereferencing it here would fault on the DSP and mask the original error,
+  // so report the bad state instead.
+  if (method_ == nullptr) {
+    FARF(
+        RUNTIME_ERROR,
+        "Model was not loaded successfully, unable to execute. "
+        "Please check the earlier errors reported during load.");
+    return Error::InvalidState;
+  }
   TimePoint execute_start, execute_end, read_start, read_end, save_start,
       save_end;
   std::ifstream input_list(input_list_path);
@@ -246,8 +265,20 @@ Error QnnExecuTorchIdlWrapper::execute_all(
         }
 
         size_t expected_bytes = method_meta_->output_tensor_meta(i)->nbytes();
-        ssize_t bytes =
-            write(fd, align_ptr(output_tensors_[i].data()), expected_bytes);
+        // Outputs whose data pointer could not be overridden live in the
+        // method's own memory, so read those back through get_output().
+        const void* output_data = align_ptr(output_tensors_[i].data());
+        if (output_is_preallocated_[i]) {
+          const auto& evalue = method_->get_output(i);
+          if (!evalue.isTensor()) {
+            FARF(RUNTIME_ERROR, "Output %zu is not a tensor.", i);
+            close(fd);
+            status = Error::Internal;
+            return status;
+          }
+          output_data = evalue.toTensor().const_data_ptr();
+        }
+        ssize_t bytes = write(fd, output_data, expected_bytes);
         if (bytes < 0) {
           FARF(RUNTIME_ERROR, "Failed to write data to output file.");
           close(fd);

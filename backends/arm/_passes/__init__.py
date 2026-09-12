@@ -20,6 +20,7 @@ from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
+from .convert_bool_sum_pass import ConvertBoolSumPass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
@@ -74,6 +75,7 @@ from .decompose_index_tensor_to_gather_pass import (  # noqa
     DecomposeIndexTensorToGatherPass,
 )
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
+from .decompose_isinf_isnan_pass import DecomposeIsInfAndIsNanPass  # noqa
 from .decompose_large_stride_maxpool2d_pass import (  # noqa
     DecomposeLargeStrideMaxPool2dForU55Pass,
 )
@@ -122,6 +124,7 @@ from .decompose_unsupported_bilinear_resize_pass import (  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
+from .deduplicate_const_shapes_pass import DeduplicateConstShapesPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa

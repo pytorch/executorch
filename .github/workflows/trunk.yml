@@ -326,6 +326,7 @@ jobs:
         include:
           - test_arm_backend: test_pytest_ops_vkml
           - test_arm_backend: test_pytest_models_vkml
+          - test_arm_backend: test_run_vkml
           - test_arm_backend: test_ootb_tests_vgf
           - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
@@ -1051,3 +1052,85 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_ops.yml
     with:
       targets: '["cortex-m7", "cortex-m0plus"]'
+
+  test-samsung-quantmodels-linux:
+    needs: docker-image
+    name: test-samsung-quantmodels-linux
+    # Skip this job if the pull request is from a fork (secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    with:
+      secrets-env: SAMSUNG_AI_LITECORE_KEY
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        set -ex
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup python
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # Setup Samsung SDK (AI Lite Core) and install enn backend
+        export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
+
+        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
+        source .ci/scripts/setup-samsung-linux-deps.sh --skip-device-connect
+
+        # Test quant models
+        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
+        for m_script in $model_scripts; do
+          python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
+        done
+
+  test-samsung-models-linux:
+    needs: docker-image
+    name: test-samsung-models-linux
+    # Skip this job if the pull request is from a fork (secrets are not available)
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    with:
+      secrets-env: SAMSUNG_AI_LITECORE_KEY
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 360
+      script: |
+        set -ex
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup python
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # Setup Samsung SDK (AI Lite Core) and install enn backend
+        export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
+        trap 'bash .ci/scripts/cleanup-samsung-linux-deps.sh' EXIT TERM INT
+        source .ci/scripts/setup-samsung-linux-deps.sh
+
+        # Check if device was reserved
+        if [[ "${DEVICE_ACQUIRED:-0}" != "1" ]]; then
+          echo "::warning::Skipping tests - no Samsung device available"
+          exit 0
+        fi
+
+        # Test models
+        # TODO: Switch to run_tests.py once CI device provisioning is stable
+        # python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
+        python -m unittest discover -s backends/samsung/test/models -p "test_*.py"

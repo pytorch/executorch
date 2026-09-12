@@ -1,0 +1,3 @@
+# Build artifacts produced by the Makefiles in makefiles/.
+obj/
+libs/
