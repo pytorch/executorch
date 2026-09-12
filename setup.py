@@ -650,7 +650,7 @@ def _package_relative_depth(library: Path) -> int:
 def _torchao_requirement() -> str:
     """The torchao dependency, pinned to the series install_requirements.py installs.
 
-    Derived from that module rather than written out, so a nightly bump cannot move the
+    Derived from that module rather than written out, so a pin bump cannot move the
     pin without moving this bound with it. A bump into the next series would otherwise
     silently stop satisfying the lower bound, and installing this package over a
     development checkout would replace the torchao that was just installed.
@@ -696,16 +696,17 @@ def _base_dependencies() -> List[str]:
         # scope. Neither is needed merely to import the backend.
         "py-cpuinfo",
         "requests",
-        "pytorch-tokenizers",
+        "pytorch-tokenizers>=1.4.1",
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
         # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
         # The MLX backend needs it too, though indirectly: it registers a torchao operator that
         # only exists once torchao has been imported.
         #
-        # The lower bound is the nightly install_requirements.py pins, so that installing this
-        # package over a development checkout leaves that pin in place. A bound at the stable
-        # release instead would evict it, because a dev release sorts below its own final.
+        # The lower bound is the version install_requirements.py pins, so that installing this
+        # package over a development checkout leaves that pin in place. When the pin is a
+        # development release, a bound at its eventual stable release would evict it because a
+        # dev release sorts below its own final.
         #
         # The upper bound is what makes naming a pre-release safe. A specifier that names one
         # accepts pre-releases for this requirement, so without the bound pip would resolve a
