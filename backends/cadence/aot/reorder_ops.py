@@ -1176,6 +1176,7 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         - add.Tensor: binary with broadcast — slices non-broadcasting inputs
         - mul.Tensor: binary with broadcast — slices non-broadcasting inputs
 
+    Callers can provide per-target filters for additional legality constraints.
     Handles any slice dim and any step size.
     """
 
@@ -1183,6 +1184,9 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         self,
         additional_unary_targets: Optional[list[EdgeOpOverload]] = None,
         additional_binary_targets: Optional[list[EdgeOpOverload]] = None,
+        target_filters: Optional[
+            dict[EdgeOpOverload, Callable[[torch.fx.Node], bool]]
+        ] = None,
     ) -> None:
         super().__init__()
         unary_targets = [
@@ -1204,6 +1208,7 @@ class PropagateSlice(RemoveOrReplacePassInterface):
                 Callable[[torch.fx.Node, torch.fx.Node], bool],
             ],
         ] = {}
+        self._target_filters = target_filters or {}
         for t in unary_targets:
             self._dispatch[t] = (
                 self._should_swap_elementwise,
@@ -1353,6 +1358,9 @@ class PropagateSlice(RemoveOrReplacePassInterface):
 
         entry = self._dispatch.get(parent.target)
         if entry is None:
+            return False
+        target_filter = self._target_filters.get(parent.target)
+        if target_filter is not None and not target_filter(parent):
             return False
 
         should_swap, do_swap = entry

@@ -147,9 +147,11 @@ class LowerableVisionModelWrapper(Qwen3VLModelTestModule):
 
         with torch.no_grad():
             grid_thw = _make_image_grid_thw(self.visual.pos_embed.weight.device)
-            pos_embeds = self.visual.fast_pos_embed_interpolate(grid_thw)
+            pos_embeds = self.visual.fast_pos_embed_interpolate(  # type: ignore[operator]
+                grid_thw
+            )
 
-            rotary_pos_emb = self.visual.rot_pos_emb(grid_thw)
+            rotary_pos_emb = self.visual.rot_pos_emb(grid_thw)  # type: ignore[operator]
             emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
             cos = emb.cos()
             sin = emb.sin()

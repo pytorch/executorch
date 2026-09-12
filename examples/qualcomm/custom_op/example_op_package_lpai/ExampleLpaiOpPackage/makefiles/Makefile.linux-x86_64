@@ -1,0 +1,150 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# ==============================================================================
+# Makefile.linux-x86_64
+# Builds libLpaiOpPackage.so for x86_64-linux-clang (compiler-side / host)
+#
+# This target is used by the QNN compiler/tools on the host machine.
+# It includes both compiler-side and inference-side op implementations.
+#
+# Required:
+#   QNN_SDK_ROOT  - Path to QNN SDK
+# ==============================================================================
+
+# define target
+QNN_TARGET := x86_64-linux-clang
+
+# define source directories
+SRC_DIR     ?= src
+SRC_DIR_OPS ?= src/ops
+INCLUDE_DIR ?= include
+
+# define output directories
+LIB_DIR     := libs/$(QNN_TARGET)
+OBJ_DIR     := obj/$(QNN_TARGET)
+OBJ_DIR_OPS := obj/$(QNN_TARGET)/ops
+
+# define library name
+LIBRARY_NAME ?= libLpaiOpPackage.so
+LIBRARY      := $(LIB_DIR)/$(LIBRARY_NAME)
+
+# ==============================================================================
+# Compiler setup
+# ==============================================================================
+
+# Prefer clang-9, fall back to clang
+CC ?= clang-9
+ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang version"), 0)
+  CC := clang
+endif
+
+CXX ?= clang++-9
+ifeq ($(shell $(CXX) -v 2>&1 | grep -c "clang version"), 0)
+  CXX := clang++
+endif
+
+# ==============================================================================
+# Include paths
+# ==============================================================================
+
+ifdef QNN_SDK_ROOT
+INCLUDES += -I$(QNN_SDK_ROOT)/include/QNN
+INCLUDES += -I$(QNN_SDK_ROOT)/include/QNN/LPAI
+else
+$(error ERROR: QNN_SDK_ROOT is not set.)
+endif
+
+INCLUDES += -I$(INCLUDE_DIR)
+
+# ==============================================================================
+# Compiler and linker flags
+# ==============================================================================
+
+COMMON_CFLAGS := -std=c11 -fPIC $(INCLUDES)
+COMMON_CFLAGS += -DQNN_API="__attribute__((visibility(\"default\")))"
+COMMON_CFLAGS += -D__QAIC_HEADER_EXPORT="__attribute__((visibility(\"default\")))"
+COMMON_CFLAGS += -march=x86-64
+
+COMMON_CXXFLAGS := -std=c++11 -fPIC $(INCLUDES)
+COMMON_CXXFLAGS += -DQNN_API="__attribute__((visibility(\"default\")))"
+COMMON_CXXFLAGS += -D__QAIC_HEADER_EXPORT="__attribute__((visibility(\"default\")))"
+COMMON_CXXFLAGS += -march=x86-64
+
+ifdef QNN_DEBUG_ENABLE
+CFLAGS   := $(COMMON_CFLAGS) -O0 -g
+CXXFLAGS := $(COMMON_CXXFLAGS) -O0 -g
+else
+CFLAGS   := $(COMMON_CFLAGS) -O2
+CXXFLAGS := $(COMMON_CXXFLAGS) -O2
+endif
+
+LDFLAGS := -shared -fPIC
+
+# ==============================================================================
+# Sources and objects
+# ==============================================================================
+
+SOURCES     := $(wildcard $(SRC_DIR)/*.c)
+SOURCES_OPS_C   := $(wildcard $(SRC_DIR_OPS)/*.c)
+SOURCES_OPS_CXX := $(wildcard $(SRC_DIR_OPS)/*.cpp)
+SOURCES_OPS     := $(SOURCES_OPS_C) $(SOURCES_OPS_CXX)
+
+OBJECTS     := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SOURCES))
+OBJECTS_OPS_C   := $(patsubst $(SRC_DIR_OPS)/%.c,$(OBJ_DIR_OPS)/%.o,$(SOURCES_OPS_C))
+OBJECTS_OPS_CXX := $(patsubst $(SRC_DIR_OPS)/%.cpp,$(OBJ_DIR_OPS)/%.o,$(SOURCES_OPS_CXX))
+OBJECTS_OPS     := $(OBJECTS_OPS_C) $(OBJECTS_OPS_CXX)
+
+ALL_OBJECTS := $(OBJECTS) $(OBJECTS_OPS)
+
+# ==============================================================================
+# Build rules
+# ==============================================================================
+
+.PHONY: library
+library: $(LIBRARY)
+
+$(LIBRARY): $(ALL_OBJECTS) | $(LIB_DIR)
+	@echo "Linking $(LIBRARY)..."
+	$(CXX) $(LDFLAGS) -o $@ $^
+	@echo "Build complete: $@"
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+$(OBJ_DIR_OPS)/%.o: $(SRC_DIR_OPS)/%.c | $(OBJ_DIR_OPS)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+$(OBJ_DIR_OPS)/%.o: $(SRC_DIR_OPS)/%.cpp | $(OBJ_DIR_OPS)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
+
+# ==============================================================================
+# Directory creation
+# ==============================================================================
+
+$(LIB_DIR) $(OBJ_DIR) $(OBJ_DIR_OPS):
+	@mkdir -p $@
+
+# ==============================================================================
+# Dependency files
+# ==============================================================================
+
+-include $(OBJECTS:.o=.d)
+-include $(OBJECTS_OPS_C:.o=.d)
+-include $(OBJECTS_OPS_CXX:.o=.d)
+
+# ==============================================================================
+# Clean
+# ==============================================================================
+
+.PHONY: clean
+clean:
+	@echo "Cleaning x86_64-linux-clang build artifacts..."
+	@rm -rf $(OBJ_DIR) $(LIB_DIR)
+	@echo "Clean complete"
