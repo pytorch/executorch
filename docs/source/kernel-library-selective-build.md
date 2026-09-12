@@ -58,14 +58,14 @@ For fine-grained control, we expose a CMake macro [gen_selected_ops](https://git
 gen_selected_ops(
   LIB_NAME              # the name of the selective build operator library to be generated
   OPS_SCHEMA_YAML       # path to a yaml file containing operators to be selected
-  ROOT_OPS              # comma separated operator names to be selected
+  SELECT_OPS_LIST       # comma separated operator names to be selected
   INCLUDE_ALL_OPS       # boolean flag to include all operators
   OPS_FROM_MODEL        # path to a pte file of model to select operators from
   DTYPE_SELECTIVE_BUILD # boolean flag to enable dtype selection
 )
 ```
 
-The macro makes a call to gen_oplist.py, which requires a [distinct selection](https://github.com/pytorch/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228) of API choice. `OPS_SCHEMA_YAML`, `ROOT_OPS`, `INCLUDE_ALL_OPS`, and `OPS_FROM_MODEL` are mutually exclusive options, and should not be used in conjunction.
+The macro makes a call to gen_oplist.py, which requires a [distinct selection](https://github.com/pytorch/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228) of API choice. `OPS_SCHEMA_YAML`, `SELECT_OPS_LIST`, `INCLUDE_ALL_OPS`, and `OPS_FROM_MODEL` are mutually exclusive options, and should not be used in conjunction.
 
 ### Select all ops
 
@@ -77,7 +77,7 @@ If this input is set to true, it means we are registering all the kernels from a
 Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see [Kernel Library Overview](kernel-library-overview.md). This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.
 
 
-### Select root ops from operator list
+### Select ops from operator list
 
 This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.
 

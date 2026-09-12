@@ -218,7 +218,7 @@ def et_operator_library(
             )
         if final_ops:
             genrule_cmd.append(
-                "--root_ops=" + ",".join(final_ops),
+                "--select_ops_list=" + ",".join(final_ops),
             )
         if final_ops_dict:
             ops_dict_json = struct_to_json(final_ops_dict)
