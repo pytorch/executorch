@@ -1133,4 +1133,5 @@ jobs:
         # Test models
         # TODO: Switch to run_tests.py once CI device provisioning is stable
         # python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
+        pip install evaluate
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"

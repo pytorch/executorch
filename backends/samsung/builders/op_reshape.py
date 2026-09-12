@@ -13,7 +13,7 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 @register_node_visitor
 class ReshapeVisitor(NodeVisitor):
-    target = "aten.view_copy.default"
+    target = ["aten.view_copy.default", "aten.copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -24,7 +24,13 @@ class ReshapeVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> bool:
-        input = node.args[0]
+        # aten.copy(dst, src) yields src's values in dst's shape, so the data
+        # source is args[1]. view_copy reshapes args[0] itself.
+        input = (
+            node.args[1]
+            if node.target.__name__ == "aten.copy.default"
+            else node.args[0]
+        )
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)

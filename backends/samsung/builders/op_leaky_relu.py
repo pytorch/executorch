@@ -11,13 +11,12 @@ from executorch.backends.samsung.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-from executorch.backends.samsung.builders.utils import get_map_dtype
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
 @register_node_visitor
 class LeakyReluVisitor(NodeVisitor):
-    target = ["aten.leaky_relu.default", "aten.prelu.default"]
+    target = ["aten.leaky_relu.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -32,29 +31,15 @@ class LeakyReluVisitor(NodeVisitor):
         input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
         all_input_tensors.append(input_id)
 
-        if node.target.__name__ == "aten.prelu.default":
-            negative_slope = node.args[1]
-            negative_slope_id = self.define_tensor(
-                negative_slope, enn_graph, vals_to_ids
-            )
-        else:
-            negative_slope = cast(float, node.args[1]) if len(node.args) > 1 else 0.01
-            negative_slope_tensor = torch.tensor(negative_slope).to(torch.float32)
-            negative_slope_node_name = node.name + "_slope"
-            dims = list(negative_slope_tensor.size())
-            data_type = get_map_dtype(negative_slope_tensor.dtype)
-            negative_slope_id = enn_graph.define_tensor(
-                negative_slope_node_name,
-                dims,
-                data_type,
-                "CONSTANT",
-                negative_slope_tensor.detach().numpy(),
-            )
+        negative_slope = cast(float, node.args[1]) if len(node.args) > 1 else 0.01
 
-        all_input_tensors.append(negative_slope_id)
+        params = {"alpha": negative_slope}
+        self._update_params_qdtype(node, params)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(node.name, "PRELU", all_input_tensors, [output_id])
+        enn_graph.define_op(
+            node.name, "LeakyRelu", all_input_tensors, [output_id], params
+        )
 
         return True

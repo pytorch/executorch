@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Samsung Electronics Co. LTD
+# Copyright (c) 2026 Samsung Electronics Co. LTD
 # All rights reserved
 #
 # This source code is licensed under the BSD-style license found in the
@@ -15,8 +15,11 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
 @register_node_visitor
-class SigmoidVisitor(NodeVisitor):
-    target = "aten.sigmoid.default"
+class FlipVisitor(NodeVisitor):
+    target = "aten.flip.default"
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
 
     def define_node(
         self,
@@ -26,12 +29,23 @@ class SigmoidVisitor(NodeVisitor):
     ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-
-        output_id = self.define_tensor(node, enn_graph, vals_to_ids)
+        axes = node.args[1]
+        # Convert list to tensor for axes parameter
+        axes_tensor = torch.tensor(axes, dtype=torch.int32)
+        axes_id = enn_graph.define_tensor(
+            f"{node.name}_axes",
+            list(axes_tensor.shape),
+            "INT32",
+            "CONSTANT",
+            data=axes_tensor,
+        )
 
         params = {}
         self._update_params_qdtype(node, params)
+        output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(node.name, "SIGMOID", [input_id], [output_id], params)
+        enn_graph.define_op(
+            node.name, "ReverseV2", [input_id, axes_id], [output_id], params
+        )
 
         return True
