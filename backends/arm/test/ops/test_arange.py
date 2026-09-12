@@ -272,6 +272,18 @@ def test_linspace_tosa_INT(test_data: test_data_t):
 
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
+@common.XfailIfNoCorstone300
+def test_linspace_u55_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = EthosU55PipelineINT[input_t](
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LinspaceAdd.test_data)
 @common.SkipIfNoModelConverter
 def test_linspace_vgf_no_quant(test_data: test_data_t):
     input_data, init_data = test_data

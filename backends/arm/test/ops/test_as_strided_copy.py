@@ -10,6 +10,7 @@ from executorch.backends.arm.common.as_strided_utils import contiguous_strides
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -88,6 +89,19 @@ def test_as_strided_tosa_INT(test_data):
     tensor, size, stride = test_data()
     module = AsStridedCopyModule(size, stride)
     pipeline = TosaPipelineINT[input_t](
+        module,
+        (tensor,),
+        aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", delegated_cases)
+@common.XfailIfNoCorstone300
+def test_as_strided_u55_INT(test_data):
+    tensor, size, stride = test_data()
+    module = AsStridedCopyModule(size, stride)
+    pipeline = EthosU55PipelineINT[input_t](
         module,
         (tensor,),
         aten_op,
