@@ -434,6 +434,7 @@ fbcode_target(_kind = python_unittest,
         "//executorch/backends/cadence/aot:compiler",
         "//executorch/backends/test:graph_builder",
         "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot/quantizer:utils",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:lib",
@@ -645,6 +646,7 @@ fbcode_target(_kind = python_unittest,
     deps = [
         ":typing_stubs",
         "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot/quantizer:utils",
         "//caffe2:torch",
     ]
 )
@@ -661,6 +663,21 @@ fbcode_target(_kind = python_unittest,
         "//executorch/backends/cadence/aot/quantizer:quantizer",
         "//executorch/exir:pass_base",
         "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_pattern_utils",
+    srcs = [
+        "tests/test_pattern_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/test:graph_builder",
+        "//executorch/backends/test:program_builder",
+        "//executorch/backends/cadence/aot:compiler_funcs",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
     ],
 )
 

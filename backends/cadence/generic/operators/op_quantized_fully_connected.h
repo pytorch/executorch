@@ -69,6 +69,7 @@ quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out(
     const std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
+
 } // namespace native
 } // namespace generic
 } // namespace impl
