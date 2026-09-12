@@ -80,16 +80,6 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         else None
     )
 
-    # This model does not work in channels-last format and QAT when running using portable kernels.
-    # See more information below.
-    # Github issue: https://github.com/pytorch/executorch/issues/22179
-    # NXP internal issue ID: EIEX-1065
-    ref_model = (
-        ReferenceModel.QUANTIZED_EDGE_PYTHON
-        if channels_last and use_qat
-        else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
-    )
-
     lower_run_compare(
         model,
         [input_spec],
@@ -97,7 +87,7 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         request,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
-        reference_model=ref_model,
+        reference_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
         mocker=mocker,
         use_qat=use_qat,
         train_fn=train_fn,
