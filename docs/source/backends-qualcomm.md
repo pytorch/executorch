@@ -189,6 +189,113 @@ cd $env:EXECUTORCH_ROOT
 > The script supports building both x64 and cross-compiling ARM64 target artifacts on Windows x64 host. After the build completes, the ARM64 libraries and executables can be copied to a Windows on Snapdragon (WoS) device using `scp`.
 > This allows a `.pte` generated on Windows x64 host to be executed on WoS device.
 
+## Flexible Context Binary for multiple HTP SoCs
+
+A normal offline QNN context binary is specific to one SoC. A Flexible Context
+Binary (FCB) is one offline-prepared HTP DLC containing one context for each
+specified SoC. Use FCB when the same model must ship as one artifact to a known
+set of HTP devices. The QNN runtime selects the device-compatible context from
+the DLC. FCB requires QNN SDK version 2.48 or later.
+
+FCB is created by passing paired lists to
+`generate_qnn_executorch_compiler_spec`. Each position describes one target:
+
+```python
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
+)
+
+compiler_specs = generate_qnn_executorch_compiler_spec(
+    soc_model=[QcomChipset.SM8650, QcomChipset.SM8750],
+    backend_options=[
+        generate_htp_compiler_spec(use_fp16=False),
+        generate_htp_compiler_spec(use_fp16=False),
+    ],
+)
+```
+
+The resulting compiler specs are used with the ordinary QNN lowering flow. For
+an end-to-end real-model example, including optional ADB execution and output
+comparison, run:
+
+```bash
+python -m examples.qualcomm.util_scripts.fcb_resnet50 \
+  --soc_models SM8650 SM8750 \
+  --devices <device-on-SM8650> <device-on-SM8750> \
+  --build_folder build-android
+```
+
+### Quantized FCB
+
+`QnnQuantizer` and `make_quantizer` accept either a single SoC or the FCB
+target list. For an FCB list, the quantizer validates annotations and loads
+backend operator constraints for the target with the lowest HTP architecture.
+This produces quantization valid for every requested target under HTP's
+backward-compatibility guarantee. The compiler still receives the complete list
+and creates one context per target.
+
+```python
+from executorch.backends.qualcomm.export_utils import make_quantizer
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
+)
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+soc_models = [QcomChipset.SM8550, QcomChipset.SM8750]
+quantizer = make_quantizer(
+    quant_dtype=QuantDtype.use_8a8w,
+    per_channel_conv=True,
+    soc_model=soc_models,
+)
+prepared_model = prepare_pt2e(
+    torch.export.export(model, example_inputs, strict=True).module(), quantizer
+)
+prepared_model(*example_inputs)  # Replace with representative calibration data.
+quantized_model = convert_pt2e(prepared_model)
+
+compiler_specs = generate_qnn_executorch_compiler_spec(
+    soc_model=soc_models,
+    backend_options=[
+        generate_htp_compiler_spec(use_fp16=False) for _ in soc_models
+    ],
+)
+```
+
+An end-to-end ResNet50 example uses this flow:
+
+```bash
+python -m examples.qualcomm.util_scripts.fcb_resnet50_quantized \
+  --soc_models SM8550 SM8750 \
+  --dataset /path/to/imagenet-mini-val/val \
+  --devices <device-on-SM8550> <device-on-SM8750> \
+  --build_folder build-android
+```
+
+### Restrictions
+
+- FCB requires at least two distinct targets; `soc_model` and `backend_options`
+  must be equal-length lists.
+- Every target must use the HTP backend. GPU, LPAI, and online preparation are
+  unsupported.
+- `fcb_reference_weight_sharing` is enabled by default. It deduplicates weights
+  only while host AOT appends contexts to the FCB DLC; it is not a runtime
+  setting. (Note that `use_weight_sharing` is a separate option for HTP,  addressing
+  different sharing scenarios. When FCB reference-weight sharing is enabled, the
+  incremental benefit of enabling `use_weight_sharing` may be limited.) 
+- Reference-weight sharing might conflict with DLBC. Set
+  `fcb_reference_weight_sharing=False` when any target enables `use_dlbc`.
+- A FCB DLC can contain only one context binary per target SoC. Including multiple 
+  backend option for same SoC in FCB is not supported 
+
+FCB has device coverage only for the requested SoCs. Deploying the artifact to
+an SoC omitted from the target list is unsupported.
+
+
 ## Deploying and running on device
 
 ### AOT compile a model

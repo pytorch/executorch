@@ -17,7 +17,6 @@
 
 #include "HTP/QnnHtpCommon.h"
 #include "QnnBackend.h"
-#include "QnnCommon.h"
 #include "QnnTypes.h"
 #include "Saver/QnnSaverCommon.h"
 

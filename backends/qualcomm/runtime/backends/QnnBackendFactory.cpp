@@ -63,7 +63,9 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       }
       backend_params->qnn_backend_cache_ptr_ =
           std::make_unique<HtpBackendCache>(
-              qnn_context_blob, system_implementation_ptr);
+              qnn_context_blob,
+              system_implementation_ptr,
+              options->fcb_options() != nullptr);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation_ptr,
@@ -72,6 +74,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           qnn_device_ptr,
           backend_params->qnn_backend_cache_ptr_.get(),
           htp_options,
+          options->fcb_options(),
           qnn_dlc_manager,
           get_option(options->profile_level(), QNN_RUNTIME_PROFILE_LEVEL));
 

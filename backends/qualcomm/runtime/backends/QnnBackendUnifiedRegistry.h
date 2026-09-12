@@ -17,6 +17,7 @@
 
 #include <pal/Path.h>
 
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -109,9 +110,9 @@ class QnnBackendUnifiedRegistry {
     }
   }
 
-  // Stores the collection of shared resources, with backend_type being used as
-  // the key.
-  std::unordered_map<QnnExecuTorchBackendType, std::weak_ptr<QnnBackendBundle>>
+  std::map<
+      std::pair<QnnExecuTorchBackendType, QcomChipset>,
+      std::weak_ptr<QnnBackendBundle>>
       qnn_backend_bundles_map_;
 
   std::mutex mutex_; // Protects access to resources and ensures atomic
