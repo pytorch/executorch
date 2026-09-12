@@ -528,9 +528,7 @@ _exp_reduce_sum_fusion_kernel(T1* a, const int& size, T2* out, T1& val) {
   for (int i = 0; i < vec_size * (size / vec_size); i += vec_size) {
     auto tmp0 = vec::VectorizedN<T1, 2>::loadu(a + i);
     auto tmp1 = tmp0 - vec_max;
-    // Replace with exp_u20 later
-    // auto tmp2 = tmp1.exp_u20();
-    auto tmp2 = tmp1.exp();
+    auto tmp2 = tmp1.exp_u20();
     vec_tmp_sum = vec_tmp_sum + tmp2;
     tmp2.store(out + i);
   }
