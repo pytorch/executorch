@@ -24,6 +24,7 @@ from executorch.backends.arm._passes.convert_squeezes_to_view import (
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
     ReplaceScalarWithTensorByProfilePass,
 )
+from executorch.backends.arm.constants import MAX_U55_INDEX_TENSOR_ELEMENTS
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -210,10 +211,15 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
     }
 
     def __init__(
-        self, exported_program: ExportedProgram | None = None, *args, **kwargs
+        self,
+        exported_program: ExportedProgram | None = None,
+        decompose_constant_indices: bool = False,
+        *args,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+        self.decompose_constant_indices = decompose_constant_indices
 
     @staticmethod
     def _shape_to_stride(
@@ -303,7 +309,8 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
             (dim, index) for dim, index in enumerate(indices) if index is not None
         ]
         if (
-            self.exported_program is None
+            not self.decompose_constant_indices
+            or self.exported_program is None
             or len(tensor_indices) != 1
             or any(not isinstance(size, int) for size in x.data.shape)
         ):
@@ -318,6 +325,7 @@ class DecomposeIndexTensorToGatherPass(ArmOpTargetedPass):
             constant_index is None
             or constant_index.dim() != 1
             or constant_index.numel() == 0
+            or constant_index.numel() > MAX_U55_INDEX_TENSOR_ELEMENTS
         ):
             return None
 

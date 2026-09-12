@@ -117,7 +117,6 @@ constexpr const char* kDFlashMinDraftPrefillChunk =
     "get_min_draft_prefill_chunk";
 constexpr const char* kDFlashMaxDraftPrefillChunk =
     "get_max_draft_prefill_chunk";
-constexpr const char* kActivationDtype = "get_activation_dtype";
 constexpr const char* kVisionHiddenSize = "get_vision_hidden_size";
 constexpr const char* kMaxVisionPatches = "get_max_vision_patches";
 constexpr int64_t kVisionDownsampleArea = 4;

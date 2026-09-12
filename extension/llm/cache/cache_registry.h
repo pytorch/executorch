@@ -70,8 +70,12 @@ class ET_EXPERIMENTAL CacheRegistry {
 namespace kind {
 // One sequence over per-layer runs.
 inline constexpr const char* kSingle = "single";
+// Whichever batch layout the backend serves as default.
+inline constexpr const char* kBatched = "batched";
 // Many sequences sharing one pool of per-token cells.
 inline constexpr const char* kBatchedCell = "batched-cell";
+// Many sequences, each over its own private history.
+inline constexpr const char* kBatchedSequence = "batched-sequence";
 } // namespace kind
 
 // Cache kind is expressed by which factory you call: backends register a

@@ -1425,6 +1425,35 @@ class TestPropagateSlice(unittest.TestCase):
         self.assertIs(sub_nodes[0].args[1], slice_nodes[0])
         self.assertEqual(list(sub_nodes[0].meta["val"].shape), [2, 60, 1, 1])
 
+    def test_additional_binary_target_filter_prevents_swap(self) -> None:
+        lhs_data = torch.randn(1, 60, 1, 1)
+        rhs_data = torch.randn(4, 60, 1, 1)
+        builder = GraphBuilder()
+        lhs = builder.placeholder("lhs", lhs_data)
+        rhs = builder.placeholder("rhs", rhs_data)
+        sub = builder.call_operator(
+            exir_ops.edge.aten.sub.Tensor,
+            args=(lhs, rhs),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(sub, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice(
+            additional_binary_targets=[exir_ops.edge.aten.sub.Tensor],
+            target_filters={exir_ops.edge.aten.sub.Tensor: lambda _: False},
+        ).call(gm)
+
+        self.assertFalse(result.modified)
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertIs(slice_nodes[0].args[0], sub.node)
+
     def test_swap_additional_binary_target_with_mismatched_ranks(self) -> None:
         lhs_data = torch.randn(2, 3, 4)
         rhs_data = torch.randn(3, 4)

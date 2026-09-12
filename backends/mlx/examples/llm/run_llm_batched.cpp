@@ -32,6 +32,7 @@
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/module_executor.h>
 #include <executorch/extension/llm/batching/runner.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/runner/text_stream.h>
@@ -46,6 +47,12 @@ DEFINE_string(
     "",
     "Override KV storage dtype with bf16, fp16, or fp32. Defaults to the PTE "
     "activation dtype, or bf16 when metadata is absent.");
+DEFINE_string(
+    cache_kind,
+    ::executorch::extension::llm::cache::kind::kBatched,
+    "Which cache layout backs the batch: batched takes the default; "
+    "batched-sequence gives each sequence its own history; batched-cell "
+    "shares one table of per-token cells.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -308,7 +315,8 @@ int main(int argc, char** argv) {
       static_cast<int>(prompts.size()),
       FLAGS_max_session_tokens,
       kv_dtype,
-      FLAGS_kv_initial_capacity);
+      FLAGS_kv_initial_capacity,
+      FLAGS_cache_kind);
   if (!executor.ok()) {
     std::cerr << "could not create executor: "
               << ::executorch::runtime::to_string(executor.error())

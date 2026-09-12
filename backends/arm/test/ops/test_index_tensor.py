@@ -109,6 +109,7 @@ def test_index_tensor_tosa_FP_int64_buffer_index():
         atol=IndexTensorTestCommon.atol,
         rtol=IndexTensorTestCommon.rtol,
     )
+    pipeline.count_tosa_ops({"GATHER": 1})
     pipeline.run()
 
 
@@ -896,9 +897,12 @@ def test_index_tensor_u55_INT_constant_multi_not_delegated():
     {
         "multidimensional": torch.tensor([[0, 1]], dtype=torch.int32),
         "boolean": torch.tensor([False, True, False, True, False]),
+        "too_many_elements": torch.tensor(
+            [value for _ in range(33) for value in (0, 2)], dtype=torch.int32
+        ),
     },
 )
-def test_index_tensor_u55_INT_constant_shape_or_dtype_not_delegated(index):
+def test_index_tensor_u55_INT_constant_unsupported_not_delegated(index):
     pipeline = OpNotSupportedPipeline[Tuple[torch.Tensor]](
         ConstantTensorIndex(index),
         (torch.rand(5, 2, 3),),

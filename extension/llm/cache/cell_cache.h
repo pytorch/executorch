@@ -68,19 +68,22 @@ class ET_EXPERIMENTAL CellCache : public Cache,
 
   // -- CacheControl ------------------------------------------------------
 
-  bool can_extend(int n = 1) const override;
   int capacity() const override;
   void clear() override;
 
   // -- BatchControl ------------------------------------------------------
 
   bool declare_step(const std::vector<int32_t>& seq_ids) override;
+  // kMaxSeqs: one bit each in the owner bitset.
+  std::optional<int> max_seqs() const override;
   std::optional<int32_t> seq_new() override;
   std::optional<int32_t> seq_clone(int32_t src, std::optional<int> upto)
       override;
-  bool seq_rm(int32_t seq_id, int p0, std::optional<int> p1) override;
-  int seq_len(int32_t seq_id) const override;
-  int next_pos(int32_t seq_id) const override;
+  bool seq_rm(int32_t seq_id) override;
+  // Always succeeds for a live sequence: a windowed layer here narrows the
+  // mask over cells that are still present, so no position is unrecoverable.
+  bool rewind(int32_t seq_id, int position) override;
+  int pos(int32_t seq_id) const override;
 
   int free_cells() const;
   int used_end() const;
@@ -108,10 +111,8 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   bool live(int32_t seq_id) const;
   static bool valid_seq(int32_t seq_id);
 
-  // Every position must be newer than what that sequence already holds, or it
-  // would own two cells for one token. Two cells with the same pos and owner
-  // are indistinguishable, so a branch is its own sequence.
-  bool extends(const int32_t* positions, int length) const;
+  // Whether every position is the next one for its sequence.
+  bool continues(const int32_t* positions, int length) const;
 
   // Placement policy: the lowest free cell, so freed cells refill before the
   // extent grows. The choice moves only the read window's width and how often a
@@ -126,6 +127,13 @@ class ET_EXPERIMENTAL CellCache : public Cache,
   void rescan(int32_t seq_id);
 
   void claim(int cell, int32_t pos, int32_t seq_id);
+
+  // Release the sequence's claim on every position from `from` on, freeing the
+  // cells no other sequence still owns.
+  void drop_from(int32_t seq_id, int from);
+
+  // Free cells for n more tokens, whoever they belong to.
+  bool has_room(int n) const;
 
   // Claim a cell per token, shared by every layer of the forward. False = the
   // pool cannot supply them; no cell is claimed until every one is found, so a

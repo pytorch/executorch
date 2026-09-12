@@ -238,7 +238,7 @@ Tensor& _fft_r2c_out(
         d);
   }
 
-  std::array<Tensor::SizesType, kTensorDimensionLimit> out_sizes_storage;
+  std::array<Tensor::SizesType, kTensorDimensionLimit> out_sizes_storage{};
   executorch::runtime::Span<Tensor::SizesType> out_sizes(
       out_sizes_storage.data(), in_sizes.size());
   std::copy(in_sizes.begin(), in_sizes.end(), out_sizes.begin());
