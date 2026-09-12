@@ -130,6 +130,12 @@ Key design choices:
 - **Shader code generation:** `gen_wgsl_headers.py` generates embedded
   `*_wgsl.h` headers; source/header drift fails validation.
 
+Check committed shader headers without regenerating them:
+
+```bash
+python backends/webgpu/scripts/gen_wgsl_headers.py --check
+```
+
 ## Linux Native Quick Start
 
 The `test_build_webgpu.sh` flow sources
@@ -212,4 +218,4 @@ backends/webgpu/
 - **Linux:** Vulkan-capable GPU and drivers
 - **Browser:** A WebGPU-enabled browser; the benchmark harness uses Chrome
   Canary
-- **Build:** CMake 3.19+ and a Python environment with ExecuTorch installed
+- **Build:** CMake 3.24+ and a Python environment with ExecuTorch installed

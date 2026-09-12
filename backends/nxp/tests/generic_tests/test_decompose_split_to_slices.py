@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 
@@ -12,16 +14,16 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
     SplitGRUBasedOnNumLayers,
 )
+from executorch.backends.nxp.backend.ops_aliases import SliceCopy
 from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
     GRUModel,
     SplitWithSections,
     SplitWithSize,
 )
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import SliceCopy
 
 
 @pytest.fixture(autouse=True)

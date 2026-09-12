@@ -77,7 +77,7 @@ from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 import os
 import random
 
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from typing import List
 
 from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
@@ -7787,6 +7787,32 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_compared_events=expected_compared_events,
         )
 
+    def test_qnn_backend_dump_intermediate_outputs_conv_relu(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=self.get_lpai_target_env()
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        sample_input = (torch.randn(1, 3, 8, 8),)
+        module = ConvRelu()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_compared_events=2,
+        )
+
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
         torch.manual_seed(8)
         backend_options = generate_htp_compiler_spec(use_fp16=False)
@@ -11570,6 +11596,130 @@ class TestUtilsScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
+    # Building an LPAI op package needs the LPAI op package headers and
+    # makefiles, which are only shipped by Qualcomm AI Engine Direct SDK >= 2.48.
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.48"),
+        "LPAI op package support requires QNN SDK >= 2.48",
+    )
+    def test_custom_op_lpai(self):
+        # Running the kernel on the DSP additionally requires direct mode, which
+        # in turn requires SDK >= 2.49. Registering an op package over FastRPC is
+        # not supported, so there is no non-direct on-device path to fall back to.
+        if not self.enable_x86_64:
+            if is_qnn_sdk_version_less_than("2.49"):
+                self.skipTest(
+                    "Running an LPAI op package on device requires QNN SDK >= 2.49"
+                )
+            if not self.direct_build_folder:
+                self.skipTest(
+                    "Running an LPAI op package on device requires direct mode; "
+                    "please provide --direct_build_folder"
+                )
+
+        self._run_custom_op_lpai()
+
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.48"),
+        "LPAI op package support requires QNN SDK >= 2.48",
+    )
+    def test_custom_op_lpai_requant_edge_cases(self):
+        # The kernel's requantization has two paths that the default run cannot
+        # reach, because it calibrates and infers with the same tensor and so
+        # always lands at the top of the calibrated range:
+        #   * a small input, whose code is biased into the upper half of the
+        #     stored byte and has to be un-biased modulo the storage width;
+        #   * an input above the calibrated range, which has to saturate.
+        # The arithmetic is identical in the x86 and the DSP build, so exercise
+        # it on the simulator rather than paying for a DSP rebuild and re-sign.
+        if not self.enable_x86_64:
+            self.skipTest(
+                "The requantization edge cases are checked on the x86 simulator; "
+                "please provide --enable_x86_64"
+            )
+
+        # expected=EXPECT_EAGER compares against the eager result, which is the
+        # right reference as long as the input is inside the calibrated range.
+        EXPECT_EAGER = None
+        RequantCase = namedtuple("RequantCase", "calibration inference expected")
+        cases = [
+            # code 64, stored as the byte 192 once biased by offset -128. A
+            # kernel that un-biases without wrapping reads this as code 320,
+            # saturates, and returns 3.0.
+            RequantCase(calibration=1.0, inference=0.25, expected=EXPECT_EAGER),
+            # Above the calibrated range: the graph's quantize node clamps the
+            # input to 1.0, so the correct answer is 3.0 rather than 6.0.
+            RequantCase(calibration=1.0, inference=2.0, expected=3.0),
+        ]
+        for index, case in enumerate(cases):
+            with self.subTest(calibration=case.calibration, inference=case.inference):
+                extra_args = [
+                    "--calibration_value",
+                    str(case.calibration),
+                    "--inference_value",
+                    str(case.inference),
+                ]
+                if case.expected is not EXPECT_EAGER:
+                    extra_args.extend(["--expected_value", str(case.expected)])
+                # The op package only has to be built once: the cases differ
+                # only in the values passed to the already built kernel, and a
+                # rebuild costs about as much as the run itself.
+                self._run_custom_op_lpai(
+                    extra_args=extra_args, build_op_package=index == 0
+                )
+
+    def _run_custom_op_lpai(self, extra_args=None, build_op_package=True):
+        op_package_dir = (
+            f"{self.executorch_root}/examples/qualcomm/custom_op/"
+            "example_op_package_lpai/ExampleLpaiOpPackage"
+        )
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_lpai.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--soc_model",
+            self.soc_model,
+            "--backend",
+            "lpai",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            op_package_dir,
+        ]
+        if build_op_package:
+            cmds.append("--build_op_package")
+        cmds.extend(extra_args or [])
+        # A device serial is only meaningful for an on-device run; the x86
+        # simulator is driven without one.
+        if self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        else:
+            # On device the op package is only reachable through direct mode,
+            # which also selects the direct runner and passes --domain_id.
+            cmds.extend(["--direct_build_folder", self.direct_build_folder])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            # Checked separately from the output: the eager fallback computes
+            # the same values, so a matching output does not by itself prove
+            # that the op package ran.
+            self.assertTrue(msg["is_delegated"])
             self.assertTrue(msg["is_close"])
 
     def test_debugger_generate_optrace(self):

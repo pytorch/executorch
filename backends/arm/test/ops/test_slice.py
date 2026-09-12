@@ -387,9 +387,12 @@ def test_slice_tensor_u85_INT_step(test_data: Tuple):
     "test_data",
     test_data_step_int | test_data_step_fp,
     xfails={
-        "arange_fp32_2d_step4": (
-            "MLCE-1969: Emlayer 0.10 Interval memory planner corrupts "
-            "multi-input CONCAT output"
+        "arange_fp32_2d_step4": common.xfail_if_model_converter_version(
+            ">=0.10.0",
+            reason=(
+                "MLCE-1969: Emlayer 0.10 Interval memory planner corrupts "
+                "multi-input CONCAT output"
+            ),
         ),
     },
 )

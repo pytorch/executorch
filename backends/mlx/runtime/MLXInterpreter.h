@@ -293,7 +293,15 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 
   array out = fast::scaled_dot_product_attention(
-      Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+      Q,
+      K,
+      V,
+      static_cast<float>(n.scale),
+      mask_mode,
+      mask_arr,
+      sinks,
+      false,
+      s);
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -310,8 +318,8 @@ inline void exec_update_and_attend(
   if (!n.scale) {
     throw std::runtime_error("update_and_attend: scale is not set");
   }
-  // The cache does the KV write + read and declares the mask; the handler owns
-  // the query side (q, scale) and calls SDPA.
+  // The cache places the step and attends over whatever storage its layout
+  // uses; the handler reads the query side off the graph.
   const array& q = st.const_tensor_ref(n.q);
   // One position per query token, read host-side so the cache stays pure graph
   // + integer bookkeeping. Every layer of a step reads the same position
@@ -347,41 +355,13 @@ inline void exec_update_and_attend(
           std::string("update_and_attend: position must be int32 or int64, ") +
           "got " + ExecutionState::dtype_str(pos.dtype()));
   }
-  AttendSpec spec = st.cache->update_and_fetch(
+  array out = st.cache->attend(
       *n.layer_id,
       positions,
+      q,
       st.const_tensor_ref(n.k),
       st.const_tensor_ref(n.v),
-      s);
-  // Match stored K/V to the query dtype before SDPA (no-op when equal; the
-  // storage precision may differ from the compute dtype).
-  array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
-  array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
-  // MLX takes the mask as a mode string plus an optional tensor. Switch: None
-  // and Explicit both map to "" and are told apart only by spec.mask, so an
-  // Explicit with no mask would silently attend unmasked.
-  std::string mask_mode;
-  switch (spec.kind) {
-    case AttendSpec::Mask::None:
-      break;
-    case AttendSpec::Mask::Causal:
-      mask_mode = "causal";
-      break;
-    case AttendSpec::Mask::Explicit:
-      if (!spec.mask) {
-        throw std::runtime_error(
-            "update_and_attend: Explicit mask kind with no mask tensor");
-      }
-      break;
-  }
-  array out = fast::scaled_dot_product_attention(
-      q,
-      K,
-      V,
       static_cast<float>(*n.scale),
-      mask_mode,
-      spec.mask,
-      std::nullopt,
       s);
   // Honor the op's output-dtype contract (unset -> SDPA's native output).
   if (n.out_dtype) {

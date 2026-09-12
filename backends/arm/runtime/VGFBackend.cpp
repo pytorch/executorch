@@ -58,6 +58,8 @@ using executorch::runtime::EventTracerEntry;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
+
 // Dependencies for processing VGF files into Vulkan calls
 #include <vgf/decoder.hpp>
 #include <vgf/vulkan_helpers.generated.hpp>
@@ -953,25 +955,31 @@ VkResult vkml_allocate_basics(
   };
 
   // Query features
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR available_bfloat16{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+      .pNext = nullptr,
+  };
   VkPhysicalDeviceVulkan12Features available_12 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-      .pNext = NULL,
+      .pNext = &available_bfloat16,
   };
   VkPhysicalDeviceVulkan11Features available_11 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
       .pNext = &available_12,
   };
+  VkPhysicalDeviceDataGraphFeaturesARM available_graph{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM, &available_11};
 #if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
       available_neural_statistics{
           .sType =
               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_FEATURES_ARM,
-          .pNext = &available_11,
+          .pNext = &available_graph,
           .dataGraphNeuralAcceleratorStatistics = VK_FALSE,
       };
   void* available_features_pnext = &available_neural_statistics;
 #else
-  void* available_features_pnext = &available_11;
+  void* available_features_pnext = &available_graph;
 #endif
   VkPhysicalDeviceFeatures2 available_2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
@@ -979,7 +987,23 @@ VkResult vkml_allocate_basics(
   };
   vkGetPhysicalDeviceFeatures2(*physical_device, &available_2);
 
+  if (!vgf_data_graph_features_supported(available_graph)) {
+    ET_LOG(
+        Error,
+        "VGF requires VK_ARM_data_graph features dataGraph and "
+        "dataGraphShaderModule (reported dataGraph=%u, "
+        "dataGraphShaderModule=%u)",
+        available_graph.dataGraph,
+        available_graph.dataGraphShaderModule);
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+  }
+
   // Select features
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR features_bfloat16{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+      .pNext = nullptr,
+      .shaderBFloat16Type = VK_FALSE,
+  };
   VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT features_c{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT,
       nullptr};
@@ -1013,10 +1037,8 @@ VkResult vkml_allocate_basics(
   features_tensor.shaderTensorAccess = true;
   features_tensor.tensors = true;
   features_tensor.pNext = &features_11;
-  VkPhysicalDeviceDataGraphFeaturesARM features_graph{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM, nullptr};
-  features_graph.dataGraph = true;
-  features_graph.pNext = &features_tensor;
+  VkPhysicalDeviceDataGraphFeaturesARM features_graph =
+      make_vgf_data_graph_features(&features_tensor);
 #if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
       features_neural_statistics{
@@ -1048,6 +1070,34 @@ VkResult vkml_allocate_basics(
       *physical_device, nullptr, &exts, available.data());
 
   vector<const char*> requested_exts;
+
+  const bool bfloat16_extension_available = std::any_of(
+      available.begin(), available.end(), [](const auto& ext_avail) {
+        return std::strcmp(
+                   VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME,
+                   ext_avail.extensionName) == 0;
+      });
+  const bool bfloat16_feature_available =
+      available_bfloat16.shaderBFloat16Type == VK_TRUE;
+
+  if (bfloat16_extension_available && bfloat16_feature_available) {
+    requested_exts.push_back(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+    features_bfloat16.shaderBFloat16Type = VK_TRUE;
+    features_c.pNext = &features_bfloat16;
+    ET_LOG(
+        Info,
+        "Enabled %s with shaderBFloat16Type",
+        VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+  } else if (!bfloat16_extension_available) {
+    ET_LOG(
+        Info,
+        "VGF BF16 shaders are unavailable: Vulkan device does not expose %s",
+        VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+  } else {
+    ET_LOG(
+        Info,
+        "VGF BF16 shaders are unavailable: shaderBFloat16Type is not supported");
+  }
 
 #if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   const bool neural_statistics_extension_available = std::any_of(

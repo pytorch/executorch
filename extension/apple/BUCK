@@ -8,11 +8,6 @@ oncall("executorch")
 
 non_fbcode_target(_kind = fb_apple_library,
     name = "ExecuTorch",
-    # The ETDump extension subclasses ExecuTorchEventTracer, which needs the C++
-    # tracer seam this header declares, so export it beyond the target.
-    autoglob_additional_exported_headers = [
-        "ExecuTorch/Internal/ExecuTorchEventTracer+Internal.h",
-    ],
     autoglob_mode = "EXPORT_UNLESS_INTERNAL",
     extension_api_only = True,
     frameworks = [

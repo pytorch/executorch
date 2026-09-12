@@ -400,6 +400,7 @@ exclude_patterns = [
     'backends/cadence/utils/FACTO',
     'examples/cuda',
     'examples/qualcomm',
+    'examples/nxp',
     'kernels/portable',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',

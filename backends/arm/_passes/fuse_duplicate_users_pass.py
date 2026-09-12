@@ -21,5 +21,7 @@ TOSA_EXCLUDED_TARGETS = frozenset({exir_ops.backend.tosa.RESCALE.default})
 class FuseDuplicateUsersPass(_FuseDuplicateUsersPass, ArmPass):
     """TOSA-aware configuration of the shared duplicate-user fusion."""
 
+    _recompile_before_retrace = False
+
     def __init__(self, excluded_targets: frozenset | None = None) -> None:
         super().__init__(excluded_targets or TOSA_EXCLUDED_TARGETS)

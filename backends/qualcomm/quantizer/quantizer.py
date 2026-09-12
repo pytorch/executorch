@@ -40,6 +40,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ANNOTATION_KEY
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import disable_mkldnn_on_amd
 from torch._ops import OpOverload
 
 from torch.fx import GraphModule
@@ -389,6 +390,11 @@ class QnnQuantizer(Quantizer):
         )
         self.supported_ops: Set[OpOverload] = set(self._rules_map.keys())
         self.quant_ops: Set[OpOverload] = self.supported_ops.copy()
+
+        # Applied when the quantizer is built, because that is upstream of calibration, and
+        # calibration runs the model eagerly. The AMD crash this prevents needs a real
+        # convolution, so a guard applied at lowering time comes after the risk has passed.
+        disable_mkldnn_on_amd()
 
         # Load backend_opinfo of current backend and soc_model
         self.backend_opinfo = get_backend_opinfo(str(backend), soc_model)
