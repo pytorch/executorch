@@ -50,6 +50,10 @@ void test_dtype() {
   EXPECT_TENSOR_EQ(zero_point_out, expected_zero_point);
 }
 
+TEST(OpChooseQparamsTensorOutTest, Byte) {
+  test_dtype<ScalarType::Byte>();
+}
+
 TEST(OpChooseQparamsPerTokenAsymmetricTensorOutTest, Float) {
   et_pal_init();
   TensorFactory<ScalarType::Float> tf_float;
