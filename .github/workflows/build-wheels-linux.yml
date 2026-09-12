@@ -35,12 +35,12 @@ concurrency:
 
 jobs:
   generate-matrix:
-    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@build-wheels-linux-osdc-workspace
     with:
       package-type: wheel
       os: linux
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      test-infra-ref: build-wheels-linux-osdc-workspace
       runner-fleet: osdc
       with-cuda: disabled
       with-rocm: disabled
@@ -61,12 +61,12 @@ jobs:
             smoke-test-script: .ci/scripts/wheel/test_linux.py
             package-name: executorch
     name: ${{ matrix.repository }}
-    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@main
+    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@build-wheels-linux-osdc-workspace
     with:
       repository: ${{ matrix.repository }}
       ref: ""
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      test-infra-ref: build-wheels-linux-osdc-workspace
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
       submodules: recursive
       env-var-script: .ci/scripts/wheel/envvar_linux.sh
