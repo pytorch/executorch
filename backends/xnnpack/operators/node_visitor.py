@@ -475,7 +475,10 @@ class NodeVisitor:
             elif quant_params.axis == 1:
                 quant_params.axis = 0
             else:
-                assert f"Unsupported weight per channel quantization axis for depthwise conv2d / conv_transpose2d : {quant_params.axis}, expecting 0 / 1."
+                check_or_raise(
+                    False,
+                    f"Unsupported weight per channel quantization axis for depthwise conv2d / conv_transpose2d : {quant_params.axis}, expecting 0 / 1.",
+                )
 
         # Serialize tensor value
         custom_meta = tensor.meta.get("custom", None)

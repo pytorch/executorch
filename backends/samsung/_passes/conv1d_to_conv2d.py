@@ -31,7 +31,9 @@ class Conv1dToConv2d(ExportPass):
         ):
             self.edge_program.constants[tensor_name] = torch.unsqueeze(weight_3d, -1)
         else:
-            RuntimeError("Weight of 1d conv should be constant tensor or Parameter obj")
+            raise RuntimeError(
+                "Weight of 1d conv should be constant tensor or Parameter obj"
+            )
         weight_node.meta["val"] = weight_node.meta["val"].data.unsqueeze(dim=-1)
 
     def call(self, graph_module: torch.fx.GraphModule):
