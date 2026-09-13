@@ -779,3 +779,74 @@ class TestVulkanPasses(unittest.TestCase):
 
         gm = ep.graph_module
         self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)
+
+    def test_rms_norm_fuses_only_prepackable_weight(self):
+        """et_vk.rms_norm prepacks its weight, so the fusion must only fold in a
+        multiplier that is an actual constant.
+
+        Folding in a computed multiplier - an adaptive norm whose scale comes
+        from a conditioning signal, or Gemma's `1.0 + weight` - produced an op
+        the runtime aborted on:
+
+          prepack_standard ... (graph.val_is_tref(tensor_data)) is false!
+
+        Leaving those unfused is correct; the norm and the multiply are both
+        supported on their own.
+        """
+        eps = 1e-6
+        dim = 64
+
+        def norm(x):
+            return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
+
+        class TimesParameter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.rand(dim) + 0.5)
+
+            def forward(self, x):
+                return norm(x) * self.w
+
+        class TimesComputedConstant(torch.nn.Module):
+            """Gemma's RMSNorm: constant valued, but an intermediate node."""
+
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.rand(dim) * 0.1)
+
+            def forward(self, x):
+                return norm(x) * (1.0 + self.w)
+
+        class TimesGraphInput(torch.nn.Module):
+            """Adaptive norm: the scale is a runtime value."""
+
+            def forward(self, x, scale):
+                return norm(x) * scale
+
+        x = torch.randn(1, 8, dim)
+
+        for model, inputs, expected, why in [
+            (TimesParameter(), (x,), 1, "a leaf parameter is prepackable"),
+            (TimesComputedConstant(), (x,), 0, "1.0 + w is an intermediate node"),
+            (
+                TimesGraphInput(),
+                (x, torch.rand(1, 1, dim)),
+                0,
+                "a graph input is not a constant",
+            ),
+        ]:
+            with self.subTest(model=type(model).__name__):
+                edge_program = to_edge(
+                    torch.export.export(model.eval(), inputs, strict=True),
+                    compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                )
+                ep = edge_program._edge_programs["forward"]
+                fuse_pass = FusePatternsPass()
+                fuse_pass._exported_program = ep
+                fuse_pass.call(ep.graph_module)
+
+                self.assertEqual(
+                    op_node_count(ep.graph_module, "rms_norm.default"),
+                    expected,
+                    f"expected {expected} fused rms_norm: {why}",
+                )
