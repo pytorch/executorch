@@ -190,13 +190,26 @@ Error XNNWeightsCache::initialize_for_runtime(
   return Error::Ok;
 }
 
-Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
+Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime(
+    std::vector<FreeableBuffer>* retained_unpacked) {
   is_finalized_ = true;
 
-  // All data has been packed by create_runtime
-  // so we clear the unpacked data as it is no longer needed
+  // Most of this data was packed by create_runtime, which copied it into the
+  // packed region, so the unpacked copies can go. Not all of it was: operators
+  // like PReLU take their constants unpacked, and the subgraph keeps a pointer
+  // into this memory for the life of the runtime. Freeing those here leaves
+  // the runtime reading freed memory, so hand them back to the caller to own
+  // instead. This mirrors the non-weight-cache path, which parks them in
+  // XNNExecutor::unpacked_buffers_.
   for (FreeableBuffer& buffer : unpacked_data_) {
-    buffer.Free();
+    auto name_entry = unpacked_data_to_name_.find(buffer.data());
+    const bool was_packed = name_entry != unpacked_data_to_name_.end() &&
+        name_to_packed_data_metadata_.count(name_entry->second) > 0;
+    if (was_packed || retained_unpacked == nullptr) {
+      buffer.Free();
+    } else {
+      retained_unpacked->push_back(std::move(buffer));
+    }
   }
   unpacked_data_.clear();
   unpacked_data_to_name_.clear();

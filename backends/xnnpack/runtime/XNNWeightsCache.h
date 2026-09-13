@@ -78,7 +78,8 @@ class XNNWeightsCache {
    * This should only be called after creating the runtime. Returns
    * the name of all the packed weights used by this runtime
    */
-  Result<std::vector<std::string>> finalize_for_runtime();
+  Result<std::vector<std::string>> finalize_for_runtime(
+      std::vector<FreeableBuffer>* retained_unpacked = nullptr);
 
   // Taken from XNN_ALLOCATION_ALIGNMENT in xnnpack/common.h
   static const size_t kPackedAllocationAlignment = 64;
