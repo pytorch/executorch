@@ -2310,7 +2310,14 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
   std::vector<std::string> packed_weights_names;
   if (use_weight_cache) {
-    auto packed_weights_names_result = weights_cache->finalize_for_runtime();
+    // Constants XNNPACK did not pack come back here: the subgraph still points
+    // into them, so the executor has to own them for as long as the runtime.
+    std::vector<FreeableBuffer> retained_unpacked;
+    auto packed_weights_names_result =
+        weights_cache->finalize_for_runtime(&retained_unpacked);
+    for (FreeableBuffer& buffer : retained_unpacked) {
+      executor->unpacked_buffers_.push_back(std::move(buffer));
+    }
     ET_CHECK_OR_RETURN_ERROR(
         packed_weights_names_result.ok(),
         Internal,
