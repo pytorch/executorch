@@ -188,6 +188,7 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/exir:lib",
+        "//executorch/exir/passes:lib",
         "//executorch/extension/pybindings:portable_lib",
         "//pytorch/ao:torchao",  # @manual
     ],

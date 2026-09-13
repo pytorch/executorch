@@ -13,11 +13,17 @@ import torch
 import torch.nn.functional as F
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.exir import (
+    ExecutorchBackendConfig,
+    to_edge,
+    to_edge_transform_and_lower,
+)
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from torch.export import export
+from torch.export.experimental import _export_forward_backward
 
 
 class TestXnnpackPartitioner(unittest.TestCase):
@@ -441,3 +447,127 @@ class TestXnnpackPartitioner(unittest.TestCase):
                     atol=1e-5,
                 )
             )
+
+    def test_pre_decomposition_folding_keeps_buffers_shared_across_methods(self):
+        """
+        A buffer one method only reads can be written by another method of
+        the same program. The hook sees one method at a time, so buffers stay
+        out of the fold and the reader keeps its shared allocation.
+        """
+
+        class Shared(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+        class Write(torch.nn.Module):
+            def __init__(self, shared):
+                super().__init__()
+                self.shared = shared
+
+            def forward(self, x):
+                self.shared.state.copy_(x)
+                return x
+
+        class Read(torch.nn.Module):
+            def __init__(self, shared):
+                super().__init__()
+                self.shared = shared
+
+            def forward(self, x):
+                return x + self.shared.state.sum()
+
+        shared = Shared()
+        x = torch.ones(4)
+        edge = to_edge_transform_and_lower(
+            {"write": export(Write(shared), (x,)), "read": export(Read(shared), (x,))},
+            partitioner={
+                "write": [XnnpackPartitioner()],
+                "read": [XnnpackPartitioner()],
+            },
+        )
+        read = edge.exported_program("read")
+        self.assertEqual(
+            list(read.graph_signature.inputs_to_buffers.values()), ["shared.state"]
+        )
+        self.assertEqual(len(read.constants), 0)
+
+        program = edge.to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(share_mutable_buffers=True),
+                emit_mutable_buffer_names=True,
+            )
+        ).executorch_program
+        for plan in program.execution_plan:
+            shared_names = [
+                value.val.extra_tensor_info.fully_qualified_name
+                for value in plan.values
+                if getattr(value.val, "allocation_info", None) is not None
+                and value.val.allocation_info.memory_id == 2
+            ]
+            self.assertEqual(shared_names, ["shared.state"], plan.name)
+
+    def test_pre_decomposition_folding_skips_training_graphs(self):
+        """
+        A training graph keeps its parameters as inputs: the runtime hands
+        them to the optimizer through the gradient and parameter outputs.
+        """
+
+        class Loss(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 8))
+
+            def forward(self, x):
+                return (x @ self.weight.t()).sum()
+
+        joint = _export_forward_backward(export(Loss(), (torch.randn(2, 8),)))
+        self.assertIs(
+            XnnpackPartitioner().transform_for_pre_decomposition(joint), joint
+        )
+
+        edge = to_edge_transform_and_lower(
+            joint,
+            partitioner=[
+                XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)
+            ],
+        )
+        self.assertEqual(
+            list(edge.exported_program().graph_signature.inputs_to_parameters.values()),
+            ["weight"],
+        )
+        methods = [
+            plan.name for plan in edge.to_executorch().executorch_program.execution_plan
+        ]
+        self.assertIn("__et_training_parameters_index_forward", methods)
+
+    def test_pre_decomposition_folding_keeps_scalar_item(self):
+        """
+        aten.item yields a Python float that its consumer takes directly, so
+        there is no tensor to lift. The op stays and the export goes through.
+        """
+
+        class ScaleByItem(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.scale = torch.nn.Parameter(torch.tensor(2.0))
+                self.register_buffer("offset", torch.tensor(1.0))
+
+            def forward(self, x):
+                return x * self.scale.item() + self.offset.item()
+
+        model = ScaleByItem().eval()
+        example_inputs = (torch.randn(4),)
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                model(*example_inputs),
+                rtol=1e-5,
+                atol=1e-5,
+            )
+        )
