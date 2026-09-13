@@ -339,7 +339,7 @@ Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examp
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require an arm64 machine, either an Arm-based Mac or an Arm64 Linux machine, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
 ```
 EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
 ```
