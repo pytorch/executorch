@@ -79,8 +79,8 @@ utils::uvec3 pick_conv2d_pw_tiled_global_wg_size(
   uint32_t C_out = graph->size_at<uint32_t>(-3, out);
   uint32_t M = H * W;
   uint32_t N4 = utils::div_up_4(C_out);
-  // TILE_N4=1, TILE_M=4
-  return {N4, utils::div_up(M, 4u), 1};
+  // Must match TILE_N4 and TILE_M in conv2d_pw_tiled.yaml.
+  return {N4, utils::div_up(M, 2u), 1};
 }
 
 //
