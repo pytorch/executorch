@@ -31,21 +31,25 @@ Select the scenario that most closely matches what you are trying to accomplish 
 
 **Fastest path: Download → Run**
 
-Pre-exported `.pte` files for Llama 3.2, MobileNet, and other models are available on [HuggingFace ExecuTorch Community](https://huggingface.co/executorch-community).
+Selected target-specific `.pte` files are available from the
+[ExecuTorch Community on Hugging Face](https://huggingface.co/executorch-community).
+Match the artifact's model configuration, precision, and backend to the runtime
+your application links.
 
 Skip export entirely and go directly to the runtime section of {doc}`getting-started`.
 
 **Time:** ~10 min
 :::
 
-:::{grid-item-card} 🤗 I have a HuggingFace model
+:::{grid-item-card} 🤗 I have a Hugging Face model
 :class-header: bg-primary text-white
 
-**Fastest path: Optimum ExecuTorch**
+**Fastest path: Choose an exporter**
 
-Use the `optimum-executorch` CLI for a one-command export of HuggingFace models.
-
-See {doc}`llm/export-llm-optimum` for installation and usage.
+Use the [experimental Transformers exporter](https://huggingface.co/docs/transformers/en/exporters)
+for programmatic XNNPACK or CUDA graph export. Use
+{doc}`llm/export-llm-optimum` for tested task workflows, quantization, and
+higher-level model wrappers.
 
 **Time:** ~20 min
 :::
@@ -72,19 +76,20 @@ If you have not yet installed ExecuTorch, run the following in a Python 3.10–3
 pip install executorch
 ```
 
-Then verify the installation with a minimal export:
+Then verify export, XNNPACK lowering, serialization, and host execution:
 
 ```python
 import torch
-from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import to_edge_transform_and_lower
+from executorch.runtime import Runtime
 
 # Define a simple model
 class Add(torch.nn.Module):
     def forward(self, x, y):
         return x + y
 
-model = Add()
+model = Add().eval()
 sample_inputs = (torch.ones(1), torch.ones(1))
 
 et_program = to_edge_transform_and_lower(
@@ -95,10 +100,21 @@ et_program = to_edge_transform_and_lower(
 with open("add.pte", "wb") as f:
     f.write(et_program.buffer)
 
-print("Export successful: add.pte created")
+runtime = Runtime.get()
+runtime_program = runtime.load_program("add.pte")
+method = runtime_program.load_method("forward")
+output = method.execute(sample_inputs)[0]
+
+torch.testing.assert_close(output, model(*sample_inputs))
+print("Output:", output)
 ```
 
-If this runs without error, your environment is correctly configured.
+Expected output: `Output: tensor([2.])`.
+
+This check runs through the host wheel's XNNPACK backend. It verifies the
+exported program's result, but it does not measure performance or prove that a
+different backend is available on the target device. Repeat accuracy and
+performance validation in the target application.
 
 ---
 
@@ -115,15 +131,17 @@ If this runs without error, your environment is correctly configured.
 * - Export with XNNPACK (mobile CPU)
   - `to_edge_transform_and_lower(torch.export.export(model, inputs), partitioner=[XnnpackPartitioner()])`
 * - Export with Core ML (iOS)
-  - Replace `XnnpackPartitioner` with `CoreMLPartitioner` — see {doc}`ios-coreml`
+  - Replace `XnnpackPartitioner` with `CoreMLPartitioner`; see {doc}`ios-coreml`
 * - Export with Qualcomm (Android NPU)
   - See {doc}`android-qualcomm` for QNN SDK setup and partitioner usage
 * - Run from Python
-  - `Runtime.get().load_program("model.pte").load_method("forward").execute([input])`
+  - Load a `Program`, retain it while its `Method` is in use, then call
+    `method.execute(inputs)` with one sequence containing all method inputs
 * - Run from C++
   - See {doc}`extension-module` for the high-level `Module` API
 * - Export an LLM
-  - `python -m executorch.examples.models.llama.export_llm ...` — see {doc}`llm/export-llm`
+  - `python -m extension.llm.export.export_llm --config path/to/config.yaml`;
+    see {doc}`llm/export-llm`
 ```
 
 ---
@@ -139,14 +157,16 @@ Jump directly to the platform-specific setup guide for your target.
 :link: android-section
 :link-type: doc
 
-Gradle dependency, Java `Module` API, and XNNPACK / Vulkan / Qualcomm backend selection for Android.
+Gradle dependency, experimental Java/Kotlin `Module` API, and XNNPACK / Vulkan /
+Qualcomm backend selection for Android.
 :::
 
 :::{grid-item-card} iOS Quick Start
 :link: ios-section
 :link-type: doc
 
-Swift Package Manager setup, Objective-C runtime API, and Core ML / XNNPACK backend selection for iOS.
+Swift Package Manager setup, experimental Swift/Objective-C `Module` APIs, C++,
+and Core ML / XNNPACK backend selection for iOS.
 :::
 
 :::{grid-item-card} Desktop / Linux / macOS

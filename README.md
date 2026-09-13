@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/source/_static/img/et-logo.png" alt="ExecuTorch logo mark" width="200">
   <h1>ExecuTorch</h1>
-  <p><strong>On-device AI inference powered by PyTorch</strong></p>
+  <p><strong>PyTorch-native AI inference from phones and laptops to microcontrollers</strong></p>
 </div>
 
 <div align="center">
@@ -12,238 +12,225 @@
   <a href="https://docs.pytorch.org/executorch/main/index.html"><img src="https://img.shields.io/badge/Documentation-blue?logo=googledocs&logoColor=white&style=for-the-badge" alt="Documentation"></a>
 </div>
 
-**ExecuTorch** is PyTorch's unified solution for deploying AI models on-device—from smartphones to microcontrollers—built for privacy, performance, and portability. It powers Meta's on-device AI across **Instagram, WhatsApp, Quest 3, Ray-Ban Meta Smart Glasses**, and [more](https://docs.pytorch.org/executorch/main/success-stories.html).
+**ExecuTorch** is PyTorch's open source stack for running AI locally on phones,
+wearables, laptops, browsers, embedded systems, and microcontrollers. Start with
+a PyTorch model, capture it with `torch.export`, optimize it for target hardware,
+and run it through C++, Python, Swift/Objective-C, Kotlin/Java, or JavaScript
+APIs.
 
-Deploy **LLMs, vision, speech, and multimodal models** with the same PyTorch APIs you already know—accelerating research to production with seamless model export, optimization, and deployment. No manual C++ rewrites. No format conversions. No vendor lock-in.
+ExecuTorch powers on-device experiences across **Instagram, WhatsApp, Facebook,
+and Messenger**, serving billions of people. It also runs AI features on
+**Meta Quest and Ray-Ban Meta devices**.
+[See where ExecuTorch is shipping.](https://docs.pytorch.org/executorch/main/success-stories.html)
 
-<details>
-  <summary><strong>📘 Table of Contents</strong></summary>
+> [!IMPORTANT]
+> **Release channels:** use the
+> [latest release](https://github.com/pytorch/executorch/releases/latest) with
+> the [stable documentation](https://docs.pytorch.org/executorch/stable/).
+> This README tracks `main`; features labeled **Main / nightly** may change
+> before release. Use the [main documentation](https://docs.pytorch.org/executorch/main/)
+> with a source checkout or nightly package.
 
-- [Why ExecuTorch?](#why-executorch)
-- [How It Works](#how-it-works)
-- [Quick Start](#quick-start)
-  - [Installation](#installation)
-  - [Export and Deploy in 3 Steps](#export-and-deploy-in-3-steps)
-  - [Run on Device](#run-on-device)
-  - [LLM Example: Llama](#llm-example-llama)
-- [Platform & Hardware Support](#platform--hardware-support)
-- [Production Deployments](#production-deployments)
-- [Examples & Models](#examples--models)
-- [Key Features](#key-features)
-- [Documentation](#documentation)
-- [Community & Contributing](#community--contributing)
-- [License](#license)
+## Built for current edge workloads
 
-</details>
+| Workload | Representative capabilities | Start here |
+|---|---|---|
+| **Local LLM and agent building blocks** | Quantized text models, long context, tool calling, speculative decoding, multi-session execution, and an experimental OpenAI-compatible local server | [Muse Glimmer](examples/models/muse-glimmer/README.md) · [LLM guide](https://docs.pytorch.org/executorch/main/llm/working-with-llms.html) · [LLM server](examples/llm_server/README.md) |
+| **Voice** | Streaming and offline speech recognition, speech synthesis, voice activity detection, and speaker diarization | [Voxtral Realtime](examples/models/voxtral_realtime/README.md) · [Parakeet](examples/models/parakeet/README.md) · [Sortformer diarization](examples/models/sortformer/README.md) · [Voxtral TTS](examples/models/voxtral_tts/README.md) |
+| **Multimodal** | Text, image, and audio runners; mobile vision-language models | [Gemma 4](examples/models/gemma4/README.md) · [Multimodal runner](extension/llm/runner/README.md) |
+| **Computer vision** | Image classification, object detection, semantic segmentation, and promptable segmentation | [MobileNet V2](docs/source/getting-started.md#preparing-the-model) · [YOLO26](examples/models/yolo26/README.md) · [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo) · [EfficientSAM](examples/models/efficient_sam/README.md) |
+| **Embedded AI** | Cortex-M CPU kernels, Ethos-U and NXP NPUs, Cadence DSPs, Zephyr, Arduino, and Raspberry Pi Pico workflows | [Embedded guide](https://docs.pytorch.org/executorch/main/embedded-section.html) · [Cortex-M](https://docs.pytorch.org/executorch/main/backends/arm-cortex-m/arm-cortex-m-overview.html) · [Arduino](examples/arduino/README.md) |
 
-## Why ExecuTorch?
+These are starting points, not a compatibility list. A model does not need to
+appear here to run with ExecuTorch: use the
+[standard export guide](https://docs.pytorch.org/executorch/main/using-executorch-export.html)
+or adapt the closest [model example](examples/models/). Deployment depends on
+`torch.export` capture plus operator, runtime, and selected-backend coverage;
+validate numerical accuracy, memory use, and performance on the target. For a
+new language-model architecture, see the
+[custom LLM guide](https://docs.pytorch.org/executorch/main/llm/export-custom-llm.html).
 
-- **🔒 Native PyTorch Export** — Direct export from PyTorch. No .onnx, .tflite, or intermediate format conversions. Preserve model semantics.
-- **⚡ Production-Proven** — Powers billions of users at [Meta with real-time on-device inference](https://engineering.fb.com/2025/07/28/android/executorch-on-device-ml-meta-family-of-apps/).
-- **💾 Tiny Runtime** — 50KB base footprint. Runs on microcontrollers to high-end smartphones.
-- **🚀 [12+ Hardware Backends](https://docs.pytorch.org/executorch/main/backends-overview.html)** — Open-source acceleration for Apple, Samsung, Qualcomm, ARM, MediaTek, Vulkan, and more.
-- **🎯 One Export, Multiple Backends** — Switch hardware targets with a single line change. Deploy the same model everywhere.
+## Why ExecuTorch
 
-## How It Works
+- **PyTorch-native workflow:** work directly from `torch.export`, with PyTorch
+  program metadata and source mappings available to export and debugging tools.
+- **Partitioned hardware acceleration:** delegate supported graph regions to
+  CPU, GPU, NPU, or DSP backends while retaining portable CPU kernels for
+  fallback.
+- **One source model, explicit targets:** reuse the PyTorch model and export
+  flow, while producing a backend-specific `.pte` for each target that needs
+  hardware specialization.
+- **A runtime you can right-size:** link only the operators, kernels, and
+  delegates a deployment needs;
+  [selective build](https://docs.pytorch.org/executorch/main/kernel-library-selective-build.html)
+  keeps only the required operator kernels.
+- **Inspect, profile, and extend:** use
+  [ETDump](https://docs.pytorch.org/executorch/main/etdump.html),
+  [ETRecord](https://docs.pytorch.org/executorch/main/etrecord.html), and
+  [numeric debugging](https://docs.pytorch.org/executorch/main/model-debugging.html),
+  or add custom operators and backends.
+- **Versioned deployment contract:** a `.pte` created with stable APIs is
+  guaranteed to load and execute for at least one following non-patch runtime
+  release; see the
+  [runtime compatibility](runtime/COMPATIBILITY.md) and
+  [API lifecycle](docs/source/api-life-cycle.md) policies.
 
-ExecuTorch uses **ahead-of-time (AOT) compilation** to prepare PyTorch models for edge deployment:
+## Install
 
-1. **🧩 Export** — Capture your PyTorch model graph with `torch.export()`
-2. **⚙️ Compile** — Quantize, optimize, and partition to hardware backends → `.pte`
-3. **🚀 Execute** — Load `.pte` on-device via lightweight C++ runtime
-
-Models use a standardized [Core ATen operator set](https://docs.pytorch.org/executorch/main/compiler-ir-advanced.html#intermediate-representation). [Partitioners](https://docs.pytorch.org/executorch/main/compiler-delegate-and-partitioner.html) delegate subgraphs to specialized hardware (NPU/GPU) with CPU fallback.
-
-Learn more: [How ExecuTorch Works](https://docs.pytorch.org/executorch/main/intro-how-it-works.html) • [Architecture Guide](https://docs.pytorch.org/executorch/main/getting-started-architecture.html)
-
-## Quick Start
-
-### Installation
+Install the latest stable Python package in a Python 3.10–3.14 environment:
 
 ```bash
 pip install executorch
 ```
 
+Install a nightly built from `main` to use the newest features:
+
+```bash
+pip install --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+```
+
+`torch` is explicit because nightly ExecuTorch wheels do not declare it as a
+dependency. This command installs a CPU-only PyTorch nightly. For an NVIDIA GPU,
+select the nightly command matching your CUDA version in the
+[PyTorch installation selector](https://pytorch.org/get-started/locally/) and
+use its `nightly/cu*` index instead; otherwise, pip can replace a CUDA-enabled
+PyTorch installation with the CPU build.
+
 Backend export tools can require optional dependencies. For example, use
 `pip install 'executorch[ethos_u]'` for Ethos-U AOT export. Embedded
 toolchains, simulators, and target runtimes are installed separately.
 
-For platform-specific setup (Android, iOS, embedded systems), see the [Quick Start](https://docs.pytorch.org/executorch/main/quick-start-section.html) documentation for additional info.
+For platform-specific setup (Android, iOS, embedded systems), see the
+[Quick Start](https://docs.pytorch.org/executorch/main/quick-start-section.html)
+documentation for additional information.
 
-### Export and Deploy in 3 Steps
+The prebuilt Python wheel is published for Linux x86-64, Linux AArch64, macOS
+arm64, and Windows x86-64. Build from source for other hosts or custom
+configurations. Native integration is also available through:
+
+- [Prebuilt C++ libraries, headers, and CMake package in current main/nightly Linux and macOS wheels](https://docs.pytorch.org/executorch/main/using-executorch-cpp.html#using-the-prebuilt-libraries-from-the-pip-package)
+- [Android AAR from Maven Central](https://docs.pytorch.org/executorch/main/using-executorch-android.html)
+- [Apple frameworks through Swift Package Manager](https://docs.pytorch.org/executorch/main/using-executorch-ios.html)
+- [Source builds and cross-compilation](https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html)
+
+## Five-minute export and run
+
+This complete example, from the
+[quick-start pathway](https://docs.pytorch.org/executorch/main/pathway-quickstart.html),
+exports a small model and lowers it to XNNPACK:
 
 ```python
 import torch
 from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.runtime import Runtime
 
-# 1. Export your PyTorch model
-model = MyModel().eval()
-example_inputs = (torch.randn(1, 3, 224, 224),)
-exported_program = torch.export.export(model, example_inputs)
+# Define a simple model
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
 
-# 2. Optimize for target hardware (switch backends with one line)
-program = to_edge_transform_and_lower(
-    exported_program,
-    partitioner=[XnnpackPartitioner()]  # CPU | CoreMLPartitioner() for iOS | QnnPartitioner() for Qualcomm
+model = Add().eval()
+sample_inputs = (torch.ones(1), torch.ones(1))
+
+et_program = to_edge_transform_and_lower(
+    torch.export.export(model, sample_inputs),
+    partitioner=[XnnpackPartitioner()]
 ).to_executorch()
 
-# 3. Save for deployment
-with open("model.pte", "wb") as f:
-    f.write(program.buffer)
+with open("add.pte", "wb") as f:
+    f.write(et_program.buffer)
 
-# Test locally via ExecuTorch runtime's pybind API (optional)
-from executorch.runtime import Runtime
 runtime = Runtime.get()
-method = runtime.load_program("model.pte").load_method("forward")
-outputs = method.execute([torch.randn(1, 3, 224, 224)])
+runtime_program = runtime.load_program("add.pte")
+method = runtime_program.load_method("forward")
+output = method.execute(sample_inputs)[0]
+
+torch.testing.assert_close(output, model(*sample_inputs))
+print("Output:", output)
 ```
 
-### Run on Device
+Expected output: `Output: tensor([2.])`. This verifies export, XNNPACK lowering,
+serialization, loading, and execution on the host; measure performance again on
+the target device.
 
-**[C++](https://docs.pytorch.org/executorch/main/using-executorch-cpp.html)**
-```cpp
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/tensor/tensor.h>
+The resulting `add.pte` is specialized for the selected backend. Targeting
+Core ML, Qualcomm, or another accelerator requires that backend's dependencies,
+configuration, and a separate export, not a blind partitioner substitution.
+Continue with the [Python runtime](https://docs.pytorch.org/executorch/main/getting-started.html#testing-the-model),
+[C++ Module API](https://docs.pytorch.org/executorch/main/using-executorch-cpp.html),
+[Android](https://docs.pytorch.org/executorch/main/android-section.html), or
+[iOS](https://docs.pytorch.org/executorch/main/ios-section.html).
 
-Module module("model.pte");
-auto tensor = make_tensor_ptr({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f});
-auto outputs = module.forward(tensor);
-```
+### Choose an export path
 
-**[Swift (iOS)](https://docs.pytorch.org/executorch/main/ios-section.html)**
-```swift
-import ExecuTorch
+| Starting point | Recommended path | Scope |
+|---|---|---|
+| PyTorch `nn.Module` | [Standard export and lowering](https://docs.pytorch.org/executorch/main/using-executorch-export.html) | Full backend choice; some models need decompositions or custom operators |
+| Hugging Face `PreTrainedModel` | [Transformers ExecuTorch exporter](https://huggingface.co/docs/transformers/en/exporters) | Experimental programmatic XNNPACK/CUDA export; generation components require application orchestration |
+| Optimized text or multimodal generation | [`export_llm`](https://docs.pytorch.org/executorch/main/llm/export-llm.html) or [Optimum ExecuTorch](https://huggingface.co/docs/optimum-executorch/) | Tested recipes, quantization, tokenizers, and runner-specific metadata |
 
-let module = Module(filePath: "model.pte")
-let input = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
-let outputs = try module.forward(input)
-```
+Already have a compatible `.pte`? Browse the
+[ExecuTorch Community](https://huggingface.co/executorch-community),
+[Arm AI model catalog filtered to ExecuTorch](https://developer.arm.com/ai/models?runtime=executorch),
+or, where available, the linked model pages above. Match the model
+configuration, precision, backend, and runtime; a `.pte` built for one hardware
+delegate is not a universal model file.
 
-**[Kotlin (Android)](https://docs.pytorch.org/executorch/main/android-section.html)**
-```kotlin
-val module = Module.load("model.pte")
-val inputTensor = Tensor.fromBlob(floatArrayOf(1.0f, 2.0f, 3.0f, 4.0f), longArrayOf(2, 2))
-val outputs = module.forward(EValue.from(inputTensor))
-```
+## Runtime and LLM APIs
 
-### LLM Example: Llama
+All language APIs load target-specific `.pte` programs. See the
+[API lifecycle policy](docs/source/api-life-cycle.md) for stability guarantees.
 
-Export Llama models using the [`export_llm`](https://docs.pytorch.org/executorch/main/llm/export-llm.html) script or [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch):
+| Language / platform | General `.pte` execution | Text and multimodal generation |
+|---|---|---|
+| C++ | [`Module`](docs/source/extension-module.md) and lower-level [`Program` / `Method`](docs/source/running-a-model-cpp-tutorial.md) | [`TextLLMRunner`](docs/source/llm/run-with-c-plus-plus.md) and [`MultimodalRunner`](extension/llm/runner/README.md#multimodalrunner) |
+| Python | [`Runtime` / `Program` / `Method`](docs/source/runtime-python-api-reference.rst) for desktop and host validation | [Runner bindings](extension/llm/runner/README.md#python-api), depending on the installed package or source build |
+| Android, Java / Kotlin | [`Module`, `Tensor`, and `EValue`](docs/source/using-executorch-android.md) | [`LlmModule`](docs/source/llm/run-on-android.md) |
+| Apple, Swift / Objective-C | [`Module`, `Tensor`, and `Value`](docs/source/using-executorch-ios.md) | [`TextRunner` and `MultimodalRunner`](docs/source/llm/run-on-ios.md) |
+| JavaScript / WebAssembly | [`Module` and `Tensor`](extension/wasm/README.md), built from source | No high-level LLM API |
 
-```bash
-# Using export_llm
-python -m executorch.extension.llm.export.export_llm --model llama3_2 --output llama.pte
+## Platforms and hardware backends
 
-# Using Optimum-ExecuTorch
-optimum-cli export executorch \
-  --model meta-llama/Llama-3.2-1B \
-  --task text-generation \
-  --recipe xnnpack \
-  --output_dir llama_model
-```
+Choose a backend based on target hardware, operator coverage, and deployment
+constraints. The linked guides document setup, supported hardware, and known
+limitations. These are representative paths; the
+[backend documentation](https://docs.pytorch.org/executorch/main/backends-overview.html)
+is authoritative.
 
-Run on-device with the LLM runner API:
-
-**[C++](https://docs.pytorch.org/executorch/main/llm/run-with-c-plus-plus.html)**
-```cpp
-#include <executorch/extension/llm/runner/text_llm_runner.h>
-
-auto runner = create_llama_runner("llama.pte", "tiktoken.bin");
-executorch::extension::llm::GenerationConfig config{
-    .seq_len = 128, .temperature = 0.8f};
-runner->generate("Hello, how are you?", config);
-```
-
-**[Swift (iOS)](https://docs.pytorch.org/executorch/main/llm/run-on-ios.html)**
-```swift
-import ExecuTorchLLM
-
-let runner = TextRunner(modelPath: "llama.pte", tokenizerPath: "tiktoken.bin")
-try runner.generate("Hello, how are you?", Config {
-    $0.sequenceLength = 128
-}) { token in
-    print(token, terminator: "")
-}
-```
-
-**Kotlin (Android)** — [API Docs](https://docs.pytorch.org/executorch/main/javadoc/org/pytorch/executorch/extension/llm/package-summary.html) • [Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo)
-```kotlin
-val llmModule = LlmModule("llama.pte", "tiktoken.bin", 0.8f)
-llmModule.load()
-llmModule.generate("Hello, how are you?", 128, object : LlmCallback {
-    override fun onResult(result: String) { print(result) }
-    override fun onStats(stats: String) { }
-})
-```
-
-For multimodal models (vision, audio), use the [MultiModal runner API](extension/llm/runner) which extends the LLM runner to handle image and audio inputs alongside text. See [Llava](examples/models/llava/README.md) and [Voxtral](examples/models/voxtral/README.md) examples.
-
-See [examples/models/llama](examples/models/llama/README.md) for complete workflow including quantization, mobile deployment, and advanced options.
-
-**Next Steps:**
-- 📖 [Step-by-step tutorial](https://docs.pytorch.org/executorch/main/getting-started.html) — Complete walkthrough for your first model
-- ⚡ [Colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) — Try ExecuTorch instantly in your browser
-- 🤖 [Deploy Llama models](examples/models/llama/README.md) — LLM workflow with quantization and mobile demos
-
-## Platform & Hardware Support
-
-| **Platform**     | **Supported Backends**                                   |
-|------------------|----------------------------------------------------------|
-| Android          | XNNPACK, Vulkan, Qualcomm, MediaTek, Samsung Exynos      |
-| iOS              | XNNPACK, CoreML (Neural Engine)                          |
-| Linux / Windows  | XNNPACK, OpenVINO, CUDA *(experimental)*                 |
-| macOS            | XNNPACK, Metal *(experimental)*, MLX *(experimental)*    |
-| Embedded / MCU   | XNNPACK, ARM Ethos-U, NXP, Cadence DSP                   |
-
-See [Backend Documentation](https://docs.pytorch.org/executorch/main/backends-overview.html) for detailed hardware requirements and optimization guides. For desktop/laptop GPU inference with CUDA and Metal, see the [Desktop Guide](desktop/README.md). For Zephyr RTOS integration, see the [Zephyr Guide](zephyr/README.md).
-
-## Production Deployments
-
-ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devices, and partner deployments. [View success stories →](https://docs.pytorch.org/executorch/main/success-stories.html)
-
-## Examples & Models
-
-**LLMs:** [Llama 3.2/3.1/3](examples/models/llama/README.md), [Qwen 3](examples/models/qwen3/README.md), [Phi-4-mini](examples/models/phi_4_mini/README.md), [LiquidAI LFM2](examples/models/lfm2/README.md)
-
-**Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language), [Gemma](examples/models/gemma3) (vision-language)
-
-**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [YOLO26](examples/models/yolo26/README.md), [Whisper](examples/models/whisper/README.md), [Supertonic](examples/models/supertonic/README.md) <!-- @lint-ignore -->
-
-**Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models • [Unsloth](https://docs.unsloth.ai/new/deploy-llms-phone) for fine-tuned LLM deployment <!-- @lint-ignore -->
-
-## Key Features
-
-ExecuTorch provides advanced capabilities for production deployment:
-
-- **Quantization** — Built-in support via [torchao](https://docs.pytorch.org/ao) for 8-bit, 4-bit, and dynamic quantization
-- **Memory Planning** — Optimize memory usage with ahead-of-time allocation strategies
-- **Developer Tools** — ETDump profiler, ETRecord inspector, and model debugger
-- **Selective Build** — Strip unused operators to minimize binary size
-- **Custom Operators** — Extend with domain-specific kernels
-- **Dynamic Shapes** — Support variable input sizes with bounded ranges
-
-See [Advanced Topics](https://docs.pytorch.org/executorch/main/advanced-topics-section.html) for quantization techniques, custom backends, and compiler passes.
+| Target | Backends and integrations |
+|---|---|
+| Android | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md) CPU; [Vulkan](docs/source/backends/vulkan/vulkan-overview.md) GPU; [Qualcomm](docs/source/backends-qualcomm.md), [MediaTek](docs/source/backends-mediatek.md), [Arm VGF](docs/source/backends/arm-vgf/arm-vgf-overview.md), and [Samsung Exynos](docs/source/backends/samsung/samsung-overview.md) accelerators |
+| iOS / iPadOS | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md) CPU; [Core ML](docs/source/backends/coreml/coreml-overview.md); [MLX](docs/source/backends/mlx/mlx-overview.md) on physical devices *(experimental)* |
+| macOS | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md); [Core ML](docs/source/backends/coreml/coreml-overview.md); experimental [MLX](docs/source/backends/mlx/mlx-overview.md), [Metal/AOTInductor](backends/apple/metal/README.md), and [WebGPU](docs/source/backends/webgpu/webgpu-overview.md) paths |
+| Linux | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md); [OpenVINO](docs/source/build-run-openvino.md); experimental [CUDA/AOTInductor](docs/source/backends/cuda/cuda-overview.md), [Vulkan](docs/source/backends/vulkan/vulkan-overview.md), and [WebGPU](docs/source/backends/webgpu/webgpu-overview.md) desktop paths |
+| Windows | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md); experimental [CUDA/AOTInductor](docs/source/backends/cuda/cuda-overview.md) and [Vulkan](docs/source/backends/vulkan/vulkan-overview.md) desktop paths |
+| Browser / WebAssembly | [Portable WebAssembly runtime](extension/wasm/README.md) and [WebGPU](docs/source/backends/webgpu/webgpu-overview.md) *(both experimental)* |
+| Embedded / MCU | [Arm Cortex-M with CMSIS-NN](docs/source/backends/arm-cortex-m/arm-cortex-m-overview.md) *(beta)*; [Arm Ethos-U](docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md); [NXP eIQ Neutron](docs/source/backends/nxp/nxp-overview.md); [Cadence DSP](docs/source/backends-cadence.md); [Zephyr](zephyr/README.md) and [Arduino](examples/arduino/README.md) integrations |
 
 ## Documentation
 
-- [**Documentation Home**](https://docs.pytorch.org/executorch/main/index.html) — Complete guides and tutorials
-- [**API Reference**](https://docs.pytorch.org/executorch/main/api-section.html) — Python, C++, Java/Kotlin APIs
-- [**Backend Integration**](https://docs.pytorch.org/executorch/main/backend-delegates-integration.html) — Build custom hardware backends
-- [**Troubleshooting**](https://docs.pytorch.org/executorch/main/support-section.html) — Common issues and solutions
+- [Get started](https://docs.pytorch.org/executorch/main/getting-started.html)
+- [Choose a platform](https://docs.pytorch.org/executorch/main/edge-platforms-section.html)
+- [Choose a backend](https://docs.pytorch.org/executorch/main/backends-overview.html)
+- [Export and lower a model](https://docs.pytorch.org/executorch/main/using-executorch-export.html)
+- [Work with LLMs](https://docs.pytorch.org/executorch/main/llm/working-with-llms.html)
+- [Profile and debug](https://docs.pytorch.org/executorch/main/tools-section.html)
+- [Runtime and LLM APIs](https://docs.pytorch.org/executorch/main/api-section.html)
+- [PTE/runtime compatibility policy](runtime/COMPATIBILITY.md)
+- [LLM benchmark dashboard](https://hud.pytorch.org/benchmark/llms?repoName=pytorch%2Fexecutorch) <!-- @lint-ignore -->
+- [Troubleshooting](https://docs.pytorch.org/executorch/main/support-section.html)
 
-## Community & Contributing
+## Community and contributing
 
-We welcome contributions from the community!
-
-- 💬 [**GitHub Discussions**](https://github.com/pytorch/executorch/discussions) — Ask questions and share ideas
-- 🎮 [**Discord**](https://discord.gg/Dh43CKSAdc) — Chat with the team and community
-- 🐛 [**Issues**](https://github.com/pytorch/executorch/issues) — Report bugs or request features
-- 🤝 [**Contributing Guide**](CONTRIBUTING.md) — Guidelines and codebase structure
+- [GitHub Discussions](https://github.com/pytorch/executorch/discussions): ask questions and share ideas
+- [Discord](https://discord.gg/Dh43CKSAdc): chat with maintainers and the community
+- [Issues](https://github.com/pytorch/executorch/issues): report bugs or request features
+- [Contributing guide](CONTRIBUTING.md): development setup, testing, and review guidelines
 
 ## Citing ExecuTorch
 
-If you found ExecuTorch helpful in your research and would like to acknowledge it, please cite us using the following BibTeX:
+If you use ExecuTorch in research, please cite:
 
 ```bibtex
 @article{executorch2026,
@@ -251,16 +238,14 @@ If you found ExecuTorch helpful in your research and would like to acknowledge i
     author={Nachin, Mergen and Desai, Digant and Jia, Sicheng Stephen and Lai, Chen and Liu, Mengwei and Szwejbka, Jacob and Alvarez, Raziel and Ascani, RJ and Bort, Dave and Candales, Manuel and
   others},
     journal={arXiv preprint arXiv:2605.08195},
-    url={https://github.com/pytorch/executorch},
+    url={https://arxiv.org/abs/2605.08195},
     year={2026}
   }
 ```
 
 ## License
 
-ExecuTorch is BSD licensed, as found in the [LICENSE](LICENSE) file.
-
-<br><br>
+ExecuTorch is BSD licensed. See [LICENSE](LICENSE).
 
 ---
 

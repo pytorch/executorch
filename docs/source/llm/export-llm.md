@@ -20,14 +20,18 @@ As of this doc, the list of supported LLMs include the following:
 
 The up-to-date list of supported LLMs can be found in the code [here](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L32).
 
-**Note:** If you need to export models that are not on this list or other model architectures (such as Gemma, Mistral, BERT, T5, Whisper, etc.), see [Exporting LLMs with Optimum](export-llm-optimum.md) which supports a much wider variety of models from Hugging Face Hub.
+**Note:** For a Hugging Face architecture not covered here, use the
+[experimental Transformers ExecuTorch exporter](https://huggingface.co/docs/transformers/en/exporters)
+for broad programmatic graph export, or [Optimum ExecuTorch](export-llm-optimum.md)
+for its tested task-level recipes, quantization, and higher-level APIs. Architectures
+that need model-specific changes can start with [Exporting custom LLMs](export-custom-llm.md).
 
 ## The export_llm API
 `export_llm` is ExecuTorch's high-level export API for LLMs. In this tutorial, we will focus on exporting Llama 3.2 1B using this API. `export_llm`'s arguments are specified either through CLI args or through a yaml configuration whose fields are defined in [`LlmConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py). To call `export_llm`:
 
 ```
-python -m executorch.extension.llm.export.export_llm
-  --config <path-to-config-yaml>
+python -m executorch.extension.llm.export.export_llm \
+  --config <path-to-config-yaml> \
   +base.<additional-CLI-overrides>
 ```
 
@@ -35,7 +39,7 @@ python -m executorch.extension.llm.export.export_llm
 
 To perform a basic export of Llama3.2, we will first need to download the checkpoint file (`consolidated.00.pth`) and params file (`params.json`). You can find these from the [Llama website](https://www.llama.com/llama-downloads/) or [Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-1B/tree/main/original).
 
-Then, we specify the `model_class`, `checkpoint` (path to checkpoint file), and `params` (path to params file) as arguments. Additionally, later when we run the exported .pte with our runner APIs, the runner will need to know about the bos and eos ids for this model to know when to terminate. These are exposed through bos and eos getter methods in the .pte, which we can add by specifying bos and eos ids in a `metadata` argument. The values for these tokens can usually be found in the model's `tokenizer_config.json` on HuggingFace.
+Then, we specify the `model_class`, `checkpoint` (path to checkpoint file), and `params` (path to params file) as arguments. Additionally, later when we run the exported .pte with our runner APIs, the runner will need to know about the bos and eos ids for this model to know when to terminate. These are exposed through bos and eos getter methods in the .pte, which we can add by specifying bos and eos ids in a `metadata` argument. The values for these tokens can usually be found in the model's `tokenizer_config.json` on Hugging Face.
 
 ```
 # path/to/config.yaml
@@ -52,7 +56,7 @@ python -m extension.llm.export.export_llm \
 
 We only require manually specifying a checkpoint path for the Llama model family, since it is our most optimized model and we have more advanced optimizations such as [SpinQuant](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md#spinquant) that require custom checkpoints.
 
-For the other supported LLMs, the checkpoint will be downloaded from HuggingFace automatically, and the param files can be found in their respective directories under `executorch/examples/models`, for instance `executorch/examples/models/qwen3/config/0_6b_config.json`.
+For the other supported LLMs, the checkpoint will be downloaded from Hugging Face automatically, and the param files can be found in their respective directories under `executorch/examples/models`, for instance `executorch/examples/models/qwen3/config/0_6b_config.json`.
 
 ## Export settings
 [ExportConfig](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py) contains settings for the exported `.pte`, such as `max_seq_length` (max length of the prompt) and `max_context_length` (max length of the model's memory/cache).
@@ -207,7 +211,7 @@ Number of non-delegated nodes: 2513 <br/>
 </details>
 <br/>
 
-To do further performance analysis, you can may opt to use [ExecuTorch's Developer Tools](getting-started.md#performance-analysis) to do things such as trace individual operator performance back to source code, view memory planning, and debug intermediate activations. To generate the ETRecord to link back `.pte` program to source code, you can use:
+For further performance analysis, use [ExecuTorch's Developer Tools](../devtools-overview.md) to trace individual operator performance back to source code, inspect memory planning, and debug intermediate activations. To generate an ETRecord that links the `.pte` program back to source code, use:
 
 ```
 # path/to/config.yaml
@@ -223,8 +227,7 @@ python -m extension.llm.export.export_llm \
 
 Other debug and profiling options can be found in [DebugConfig](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L228).
 
-A few examples ones:
-- `profile_memory`: Used to generate activation memory profile in chrome trace format. It allows one to visualize the lifetimes of different intermediate tensors of a model, how their lifetimes overlap, where these tensors come from, and how they impact the  memory footprint of the model during its execution. Click [here](https://github.com/pytorch/executorch/blob/dd4488d720d676a1227450e8ea0c0c97beed900c/docs/source/memory-planning-inspection.md?plain=1#L19) for more details on memory profiling.
-- `profile_path`: Used to generate time profile of various components of export_llm. Such components include `torch.export`, quantization, `to_edge`, delegation via to_backend APIs etc. This option generate a .html file that gives you time profile in flamegraph/icicle format. It is helpful to understand what part of `export_llm` takes the most time. Largely useful for developers and contributors of ExecuTorch. For more details on flamegraph one can checkout https://www.parca.dev/docs/icicle-graph-anatomy/
+For example:
 
-To learn more about ExecuTorch's Developer Tools, see the [Introduction to the ExecuTorch Developer Tools](../devtools-overview.md).
+- `profile_memory`: Generates an activation memory profile in Chrome trace format. Use it to visualize tensor lifetimes, overlap, provenance, and their effect on runtime memory use. See [Inspecting Memory Planning](../memory-planning-inspection.md) for details.
+- `profile_path`: Generates an HTML time profile of `export_llm` components such as `torch.export`, quantization, `to_edge`, and `to_backend` delegation. The flame graph or icicle view helps ExecuTorch developers identify expensive export stages. For background, see [Icicle graph anatomy](https://www.parca.dev/docs/icicle-graph-anatomy/).

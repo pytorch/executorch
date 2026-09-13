@@ -25,10 +25,10 @@ modes is on the way.
 
 ## Development Requirements
 
-To contribute to the Vulkan delegate, the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#android)
-must be installed on the development system. After installation, the `glslc` binary must
-be found in your `PATH` in order to compile Vulkan shaders. This can be checked by
-running
+To build the Vulkan delegate, install the
+[Vulkan SDK](https://vulkan.lunarg.com/sdk/home) 1.4.341.1 or newer.
+After installation, the `glslc` binary must be found in your `PATH` in order
+to compile Vulkan shaders. This can be checked by running
 
 ```sh
 glslc --version
@@ -47,8 +47,9 @@ or alternatively,
 python install_vulkan.py
 ```
 
-The [Android NDK](https://developer.android.com/ndk/downloads) must also be installed.
-Any NDK version past NDK r17c should suffice.
+To target Android, also install a current
+[Android NDK](https://developer.android.com/ndk/downloads). ExecuTorch CI uses
+NDK r28c.
 
 ----
 
@@ -85,7 +86,7 @@ with open("mv2_vulkan.pte", "wb") as file:
     etvk_program.write_to_file(file)
 ```
 
-See [Partitioner API](vulkan-partitioner.md)
+See {doc}`/backends/vulkan/vulkan-partitioner`
 for a reference on available partitioner options.
 
 ----
@@ -93,7 +94,7 @@ for a reference on available partitioner options.
 ## Quantization
 
 The Vulkan delegate currently supports execution of quantized linear layers.
-See [Vulkan Quantization](vulkan-quantization.md)
+See {doc}`/backends/vulkan/vulkan-quantization`
 for more information on available quantization schemes and APIs.
 
 ----
@@ -110,33 +111,19 @@ When building from source, pass `-DEXECUTORCH_BUILD_VULKAN=ON` when configuring
 the CMake build to compile the Vulkan backend. See [Running on Device](/getting-started.md#running-on-device)
 for more information.
 
-To link against the backend, add the `executorch_backends` CMake target as a
-build dependency, or link directly against `libvulkan_backend`. Due to the use
-of static initialization to register available compute shaders and operators,
-it is required to ensure that the library is linked with `--whole-archive`.
+To link against the backend, use the `vulkan_backend` CMake target. The target
+propagates the platform-specific linker options needed to retain the static
+initializers that register Vulkan compute shaders and operators.
 
 ```cmake
 # CMakeLists.txt
-find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend executorch_backends)
+find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend)
 
-...
 target_link_libraries(
     my_target
     PRIVATE
     executorch
-    executorch_backends
-    ...
-)
-
-# Ensure that unused code is not discarded. The required linker options may be
-# different depending on the target platform. Typically, the
-# executorch_target_link_options_shared_lib function from
-# executorch/tools/cmake/Utils.cmake can be used to set the required linker
-# options.
-target_link_options(
-    executorch_backends INTERFACE "SHELL:LINKER:--whole-archive \
-    $<TARGET_FILE:${target_name}> \
-    LINKER:--no-whole-archive"
+    vulkan_backend
 )
 ```
 
@@ -156,9 +143,9 @@ Any Vulkan-delegated .pte file will automatically run on the registered backend.
 :hidden:
 :caption: Vulkan Backend
 
-vulkan-partitioner
-vulkan-quantization
-vulkan-op-support
-vulkan-troubleshooting
+/backends/vulkan/vulkan-partitioner
+/backends/vulkan/vulkan-quantization
+/backends/vulkan/vulkan-op-support
+/backends/vulkan/vulkan-troubleshooting
 
-tutorials/vulkan-tutorials
+/backends/vulkan/tutorials/vulkan-tutorials

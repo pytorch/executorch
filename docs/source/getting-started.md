@@ -28,8 +28,11 @@ build instead. Nightly wheels are built from the `main` branch every day, so a
 change that has landed but is not yet in a stable release is available there first.
 
 ```
-pip install executorch --pre --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
+
+`torch` is explicit because nightly ExecuTorch wheels do not declare it as a
+dependency.
 
 To build the framework from source, see [Building From Source](using-executorch-building-from-source.md). Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
 
@@ -38,7 +41,12 @@ To build the framework from source, see [Building From Source](using-executorch-
 <hr/>
 
 ## Preparing the Model
-Exporting is the process of taking a PyTorch model and converting it to the .pte file format used by the ExecuTorch runtime. This is done using Python APIs. PTE files for common models, such as Llama 3.2, can be found on HuggingFace under [ExecuTorch Community](https://huggingface.co/executorch-community). These models have been exported and lowered for ExecuTorch, and can be directly deployed without needing to go through the lowering process.
+Exporting is the process of taking a PyTorch model and converting it to the
+`.pte` format used by the ExecuTorch runtime. This is done using Python APIs.
+Selected pre-exported artifacts are published by the
+[ExecuTorch Community on Hugging Face](https://huggingface.co/executorch-community).
+Use one only when its model configuration, precision, and target backend match
+the runtime your application links.
 
 A complete example of exporting, lowering, and verifying MobileNet V2 is available as a [Colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing).
 
@@ -53,8 +61,7 @@ ExecuTorch provides hardware acceleration for a wide variety of hardware. The mo
 For mobile use cases, consider using XNNPACK for Android and Core ML or XNNPACK for iOS as a first step. See [Hardware Backends](backends-overview.md) for more information.
 
 ### Exporting
-Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision, but the process supports any [export-compliant](https://pytorch.org/docs/stable/export.html) PyTorch model. For Hugging Face models,
-you can find a list of supported models in the [*huggingface/optimum-executorch*](https://github.com/huggingface/optimum-executorch) repo.
+Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision. Other models can follow the same flow when they are [export-compliant](https://pytorch.org/docs/stable/export.html) and their operators are available in the ExecuTorch runtime or selected backend. For Hugging Face `PreTrainedModel` architectures, choose between the [experimental Transformers ExecuTorch exporter](https://huggingface.co/docs/transformers/en/exporters) for broad programmatic XNNPACK or CUDA export and [Optimum ExecuTorch](llm/export-llm-optimum.md) for higher-level, tested task workflows.
 
 ```python
 import torch
@@ -114,12 +121,18 @@ print(torch.allclose(output[0], eager_reference_output, rtol=1e-3, atol=1e-5))
 
 For complete examples of exporting and running the model, please refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/python).
 
-Additionally, for Hugging Face models, the [*huggingface/optimum-executorch*](https://github.com/huggingface/optimum-executorch) library simplifies running these models end-to-end with ExecuTorch using familiar Hugging Face APIs. Visit the repository for specific examples and supported models.
+For generative models, Transformers' `export_for_generation` produces independent
+`.pte` graph components; applications still need the appropriate preprocessing,
+tokenization, generation loop, and runtime integration. Optimum ExecuTorch
+supplies more of that task-level integration for its tested model paths.
 
 <hr/>
 
 ## Running on Device
-ExecuTorch provides runtime APIs in Java, Objective-C, and C++.
+ExecuTorch provides a stable C++ runtime API and experimental managed-language
+`Module` APIs for Java/Kotlin on Android and Objective-C/Swift on Apple
+platforms. The experimental APIs may change without notice; see the
+[API lifecycle policy](api-life-cycle.md).
 
 Quick Links:
 - [Android](#android)
@@ -132,17 +145,20 @@ Quick Links:
 ExecuTorch provides Java bindings for Android usage, which can be consumed from both Java and Kotlin.
 To add the library to your app, add the following dependency to gradle build rule.
 
-```
-# app/build.gradle.kts
-dependencies {
-  implementation("org.pytorch:executorch-android:${executorch_version}")
-}
+```kotlin
+// app/build.gradle.kts
+val executorchVersion = "X.Y.Z" // Replace with a version from Maven Central.
 
-# See latest available versions in https://mvnrepository.com/artifact/org.pytorch/executorch-android
+dependencies {
+  implementation("org.pytorch:executorch-android:$executorchVersion")
+}
 ```
+
+[Choose an available version on Maven Central](https://central.sonatype.com/artifact/org.pytorch/executorch-android).
 
 #### Runtime APIs
-Models can be loaded and run from Java or Kotlin using the `Module` class.
+Models can be loaded and run from Java or Kotlin using the experimental
+`Module` class. For a stable native API on Android, use the C++ runtime.
 ```java
 import org.pytorch.executorch.EValue;
 import org.pytorch.executorch.Module;
@@ -166,12 +182,23 @@ For a full example of running a model on Android, see the [DeepLabV3AndroidDemo]
 ### iOS
 
 #### Installation
-ExecuTorch supports both iOS and macOS via C++, as well as hardware backends for CoreML and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
+ExecuTorch supports iOS and macOS through C++ and through experimental
+Objective-C APIs that bridge to Swift. Core ML and XNNPACK provide accelerated
+execution paths on Apple platforms. The runtime libraries are distributed as
+`.xcframework` targets through a Swift Package Manager package.
 
-To get started with Xcode, go to File > Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-”, (e.g. “swiftpm-0.6.0”).  The ExecuTorch dependency can also be added to the package file manually. See [Using ExecuTorch on iOS](using-executorch-ios.md) for more information.
+To get started with Xcode, go to File > Add Package Dependencies and paste the
+ExecuTorch repository URL into the search bar. For Dependency Rule, select
+**Branch** and enter the `swiftpm-X.Y.Z` branch that matches the ExecuTorch
+release used to export the model, for example `swiftpm-1.4.1`. The dependency
+can also be added to `Package.swift`; see
+[Using ExecuTorch on iOS](using-executorch-ios.md) for details.
 
 #### Runtime APIs
-Models can be loaded and run from Objective-C using the C++ APIs.
+Models can be loaded and run through the experimental Objective-C/Swift
+`Module`, `Tensor`, and `Value` APIs, or through the stable C++ runtime from
+Objective-C++. The managed APIs wrap the C++ `Module` and tensor extensions and
+are subject to change.
 
 For more information on iOS integration, including an API reference, logging setup, and building from source, see [Using ExecuTorch on iOS](using-executorch-ios.md).
 
@@ -179,11 +206,11 @@ For more information on iOS integration, including an API reference, logging set
 ExecuTorch provides C++ APIs, which can be used to target embedded or mobile devices. The C++ APIs provide a greater level of control compared to other language bindings, allowing for advanced memory management, data loading, and platform integration.
 
 #### Installation
-On Linux and macOS the quickest route is the pip package, which ships the runtime as prebuilt
+On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
 libraries with headers and a CMake package, so there is nothing to build:
 
 ```
-pip install executorch
+pip install --pre executorch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
 ```cmake

@@ -2,6 +2,11 @@
 
 This guide explains how to use ExecuTorch's C++ runner library to run LLM models that have been exported to the `.pte` format. The runner library provides a high-level API for text generation with LLMs, handling tokenization, inference, and token generation.
 
+```{warning}
+The C++ LLM runner APIs are experimental and may change or be removed without
+notice.
+```
+
 ## Prerequisites
 
 Before you begin, make sure you have:
@@ -9,7 +14,7 @@ Before you begin, make sure you have:
 1. A model exported to `.pte` format using the `export_llm` API as described in [Exporting popular LLMs out of the box](export-llm.md) or [Exporting custom LLMs](export-custom-llm.md).
    - Please also see [Model Metadata](#model-metadata) section for important metadata to be serialized into `.pte`.
 2. A tokenizer file compatible with your model
-   - For HuggingFace tokenizers, this is a JSON file `tokenizer.json`
+   - For Hugging Face tokenizers, this is a JSON file `tokenizer.json`
    - For SentencePiece tokenizers, this is a `tokenizer.model` file and normally lives alongside the weights file
 3. CMake and a C++ compiler installed
    - CMake version 3.26 or higher
@@ -23,8 +28,8 @@ The metadata includes several important configuration parameters to be included 
 2. **`max_seq_len`**: Maximum sequence length the model can handle
 3. **`max_context_len`**: Maximum context length for KV cache
 4. **`use_kv_cache`**: Whether the model uses KV cache for efficient generation
-6. **`get_bos_id`**: Beginning-of-sequence token ID
-7. **`get_eos_ids`**: End-of-sequence token IDs
+5. **`get_bos_id`**: Beginning-of-sequence token ID
+6. **`get_eos_ids`**: End-of-sequence token IDs
 
 ### Adding Metadata During Export
 
@@ -36,6 +41,7 @@ python -m extension.llm.export.export_llm \
   --config path/to/config.yaml \
   +base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_max_context_len":4096}'
 ```
+
 ## Building the Runner Library
 
 The ExecuTorch LLM runner library can be built using CMake. To integrate it into your project:
@@ -70,6 +76,9 @@ Please note that this runner library is not limited to Llama models and can be u
 Here's a simplified example of using the runner:
 
 ```cpp
+#include <iostream>
+
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 
 using namespace executorch::extension::llm;
@@ -105,14 +114,18 @@ The ExecuTorch LLM runner library is designed with a modular architecture that s
 The `IRunner` interface (`irunner.h`) defines the core functionality for LLM text generation. This interface serves as the primary abstraction for interacting with LLM models:
 
 ```cpp
-class IRunner {
-public:
+class ET_EXPERIMENTAL IRunner {
+ public:
   virtual ~IRunner() = default;
   virtual bool is_loaded() const = 0;
   virtual runtime::Error load() = 0;
   virtual runtime::Error generate(...) = 0;
-  virtual runtime::Error generate_from_pos(...) = 0;
+  virtual runtime::Result<uint64_t> prefill(
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0);
   virtual void stop() = 0;
+  virtual void reset() = 0;
 };
 ```
 
@@ -152,15 +165,16 @@ The primary method for text generation. It takes:
 The token callback is called for each token as it's generated, allowing for streaming output. The stats callback provides detailed performance metrics after generation completes.
 
 ```c++
-runtime::Error generate_from_pos(
-   const std::string& prompt,
-   int64_t start_pos,
-   const GenerationConfig& config,
-   std::function<void(const std::string&)> token_callback,
-   std::function<void(const Stats&)> stats_callback)
+runtime::Result<uint64_t> prefill(
+    const std::vector<MultimodalInput>& inputs,
+    int32_t num_bos = 0,
+    int32_t num_eos = 0)
 ```
 
-An advanced version of `generate()` that allows starting generation from a specific position in the KV cache. This is useful for continuing generation from a previous state.
+Prefills supported text, token, image, preprocessed-audio, or raw-audio inputs
+into the KV cache without running the generation loop. It returns the next
+predicted token. The default `IRunner` implementation returns
+`Error::NotSupported`; concrete runners expose the combinations they support.
 
 ```c++
 void stop()
@@ -168,24 +182,39 @@ void stop()
 
 Immediately stops the generation loop. This is typically called from another thread to interrupt a long-running generation.
 
+```c++
+void reset()
+```
+
+Clears the runner's prefilled tokens and resets its KV-cache position.
+
 ### GenerationConfig Structure
 
 The `GenerationConfig` struct controls various aspects of the generation process:
 
 ```cpp
 struct GenerationConfig {
-  bool echo = true;                // Whether to echo the input prompt in the output
-  int32_t max_new_tokens = -1;     // Maximum number of new tokens to generate
-  bool warming = false;            // Whether this is a warmup run
-  int32_t seq_len = -1;            // Maximum number of total tokens
-  float temperature = 0.8f;        // Temperature for sampling
-  int32_t num_bos = 0;             // Number of BOS tokens to add
-  int32_t num_eos = 0;             // Number of EOS tokens to add
+  bool echo = true;
+  std::string grammar;
+  std::string grammar_type;
+  bool ignore_eos = false;
+  int32_t max_new_tokens = -1;
+  bool warming = false;
+  int32_t seq_len = -1;
+  float temperature = 0.8f;
+  int32_t num_bos = 0;
+  int32_t num_eos = 0;
 
-  // Helper method to resolve the actual max_new_tokens based on constraints
-  int32_t resolve_max_new_tokens(int64_t max_context_len, int64_t num_tokens_occupied) const;
+  int32_t resolve_max_new_tokens(
+      int64_t max_context_len,
+      int64_t num_tokens_occupied) const;
 };
 ```
+
+`grammar` and `grammar_type` carry an optional constrained-decoding
+specification in `json_schema`, `regex`, `lark`, or `gbnf` format; support is
+runner-dependent. Setting `ignore_eos` continues generation past EOS until
+another limit is reached.
 
 The `resolve_max_new_tokens` method handles the logic of determining how many tokens can be generated based on:
 - The model's maximum context length
@@ -246,7 +275,7 @@ std::unique_ptr<tokenizers::Tokenizer> tokenizer = load_tokenizer(
 
 Supported tokenizer formats include:
 
-1. **HuggingFace Tokenizers**: JSON format tokenizers
+1. **Hugging Face Tokenizers**: JSON format tokenizers
 2. **SentencePiece**: `.model` format tokenizers
 3. **TikToken**: BPE tokenizers
 4. **Llama2c**: BPE tokenizers in the Llama2.c format

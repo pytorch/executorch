@@ -28,18 +28,23 @@ One of:
 ## Development Requirements
 
 - [macOS](https://developer.apple.com/macos) on Apple Silicon (M1 or later)
-- [Xcode](https://developer.apple.com/xcode/) (full installation, not just Command Line Tools — the Metal compiler is required)
+- [Xcode](https://developer.apple.com/xcode/) (full installation, not just Command Line Tools)
+- The Metal Toolchain component, installed separately with
+  `xcodebuild -downloadComponent MetalToolchain`
 
 Verify the Metal compiler is available:
 
 ```bash
-xcrun -sdk macosx --find metal
+xcrun -sdk macosx metal --version
 ```
 
-If this prints a path (e.g., `/Applications/Xcode.app/.../metal`), you're set. If it errors, install Xcode from [developer.apple.com](https://developer.apple.com/xcode/), then switch the active developer directory:
+If this prints version information, you're set. If it errors, install Xcode from
+[developer.apple.com](https://developer.apple.com/xcode/), select it as the active
+developer directory, and download the Metal Toolchain:
 
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+xcodebuild -downloadComponent MetalToolchain
 ```
 
 ----
@@ -54,7 +59,7 @@ import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.mlx import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
-from executorch.exir import to_edge_transform_and_lower
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
@@ -63,6 +68,10 @@ et_program = to_edge_transform_and_lower(
     torch.export.export(mobilenet_v2, sample_inputs),
     transform_passes=get_default_passes(),
     partitioner=[MLXPartitioner()],
+    compile_config=EdgeCompileConfig(
+        _check_ir_validity=False,
+        _skip_dim_order=True,
+    ),
 ).to_executorch()
 
 with open("mv2_mlx.pte", "wb") as file:
@@ -70,6 +79,9 @@ with open("mv2_mlx.pte", "wb") as file:
 ```
 
 `get_default_passes()` includes RMSNorm fusion, consecutive view/permute/dtype-cast collapsing, no-op removal, and common subexpression elimination. These are recommended for all models and required for optimal LLM performance.
+The accompanying `EdgeCompileConfig` disables generic edge IR validation and
+dimension-order conversion because the MLX reinplace pass introduces
+backend-specific in-place operators after export.
 
 ::::{note}
 The MLX backend is primarily designed for LLM and generative AI workloads on Apple Silicon. The MobileNet V2 example above is shown for simplicity, but in practice you would use this backend for models like Llama, Whisper, and other transformer-based architectures. See [LLM example](https://github.com/pytorch/executorch/tree/main/backends/mlx/examples/llm) for a more representative use case.

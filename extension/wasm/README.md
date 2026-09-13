@@ -2,6 +2,10 @@
 
 This directory contains the source code for the ExecuTorch Wasm extension. The extension is a C++ library that provides a JavaScript API for ExecuTorch models. The extension is compiled to WebAssembly and can be used in JavaScript applications.
 
+> [!WARNING]
+> The JavaScript/WebAssembly API is experimental and may change or be removed
+> without notice.
+
 ## Installing Emscripten
 
 [Emscripten](https://emscripten.org/index.html) is necessary to compile ExecuTorch for Wasm. You can install Emscripten with these commands:
@@ -81,14 +85,14 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 - `static load(data)`: Load a model from a file or a buffer.
 - `getMethods()`: Returns the list of methods in the model.
 - `loadMethod(methodName)`: Load a method from the model.
-- `getMethodMetadata(methodName)`: Get the metadata of a method.
+- `getMethodMeta(methodName)`: Get the metadata of a method.
 - `etdump()`: If enabled, flushes the etdump buffer and return the results.
 - `execute(methodName, inputs)`: Execute a method with the given inputs.
 - `forward(inputs)`: Execute the forward method with the given inputs.
 - `delete()`: Delete the model from memory.
 
 ### Tensor
-- `static zeroes(shape, dtype=ScalarType.Float)`: Create a tensor of zeros with the given shape and dtype.
+- `static zeros(shape, dtype=ScalarType.Float)`: Create a tensor of zeros with the given shape and dtype.
 - `static ones(shape, dtype=ScalarType.Float)`: Create a tensor of ones with the given shape and dtype.
 - `static full(shape, value, dtype=ScalarType.Float)`: Create a tensor of the given value with the given shape and dtype
 - `static fromArray(shape, array, dtype=ScalarType.Float, dimOrder=[], strides=[])`: Create a tensor from a JavaScript array.
@@ -115,7 +119,7 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 - `dimOrder`: The dimension order of the tensor.
 - `scalarType`: The scalar type of the tensor.
 - `isMemoryPlanned`: Whether the tensor is memory planned.
-- `nBytes`: The number of bytes in the tensor.
+- `nbytes`: The number of bytes in the tensor.
 - `name`: The name of the tensor.
 - These are value types and do not need to be manually deleted.
 
@@ -132,4 +136,4 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 - `value`: The int constant value of the enum.
 - `name`: The `Tag` as a string.
 
-Emscripten's JavaScript API is also avaiable, which you can find more information about it in their [API Reference](https://emscripten.org/docs/api_reference/index.html).
+Emscripten's JavaScript API is also available; see its [API Reference](https://emscripten.org/docs/api_reference/index.html) for more information.
