@@ -105,6 +105,7 @@ def is_constant_buffer(program: "ExportedProgram", node: torch.fx.Node) -> bool:
 
 def get_constant_placeholder_dict(
     exported_program: ExportedProgram,
+    fold_buffers: bool = True,
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
     """
     Returns a dictionary of placeholder node -> constant tensor.
@@ -115,7 +116,7 @@ def get_constant_placeholder_dict(
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_param(exported_program, node)
             )
-        elif is_constant_buffer(exported_program, node):
+        elif fold_buffers and is_constant_buffer(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_buffer(exported_program, node)
             )
@@ -129,12 +130,13 @@ def get_constant_placeholder_dict(
 def get_propagated_const_tensor_dict(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]],
+    fold_buffers: bool = True,
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
     """
     Propagates constants and returns a dictionary of node->constant tensors.
     """
     # Initialize dict with all constant placeholders.
-    const_node_to_tensor = get_constant_placeholder_dict(exported_program)
+    const_node_to_tensor = get_constant_placeholder_dict(exported_program, fold_buffers)
 
     if custom_skip_targets is not None:
         all_skip_targets = custom_skip_targets
@@ -182,6 +184,13 @@ def get_propagated_const_tensor_dict(
                 and 0 in prop_constant_tensor.stride()
             ):
                 prop_constant_tensor = prop_constant_tensor.contiguous()
+
+        # Only a tensor can become a constant placeholder. A Python scalar,
+        # such as the float from aten.item before decomposition, stays an op
+        # and its consumers are not folded.
+        leaves = pytree.tree_leaves(prop_constant_tensor)
+        if not leaves or not all(isinstance(leaf, torch.Tensor) for leaf in leaves):
+            continue
         const_node_to_tensor[node] = prop_constant_tensor
 
     return const_node_to_tensor
@@ -362,6 +371,7 @@ def constant_prop_pass(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]] = None,
     _skip_dim_order: bool = True,
+    fold_buffers: bool = True,
 ) -> ExportedProgram:
     """
     This pass is for constant propagation for Exported Program with lifted parameters,
@@ -370,6 +380,10 @@ def constant_prop_pass(
     Args:
         exported_program: The ExportedProgram to perform constant propagation on.
         custom_skip_targets: Optional set of EdgeOpOverload targets to skip during constant propagation.
+        fold_buffers: Whether buffers this program does not mutate count as constants.
+            The pass sees one method: a buffer this method only reads can be written
+            by another method of the same program. Pass False to fold only parameters
+            and lifted tensor constants.
 
     Returns:
         The modified ExportedProgram with constant propagation applied.
@@ -391,7 +405,7 @@ def constant_prop_pass(
         )
 
     const_node_to_tensor = get_propagated_const_tensor_dict(
-        exported_program, custom_skip_targets
+        exported_program, custom_skip_targets, fold_buffers
     )
 
     # Get old input specs.
