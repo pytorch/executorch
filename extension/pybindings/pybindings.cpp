@@ -798,22 +798,58 @@ struct PyModule final {
         input_strides.emplace_back(
             at_tensor.strides().begin(), at_tensor.strides().end());
 
-        // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
-        // inputs
+        auto method_meta_res = module_->method_meta(method_name);
+        if (!method_meta_res.ok()) {
+          throw std::runtime_error(
+              "Failed to get metadata for method " + method_name);
+        }
+        auto tensor_meta_res = method_meta_res.get().input_tensor_meta(i);
+        if (!tensor_meta_res.ok()) {
+          throw std::runtime_error(
+              "Failed to get tensor metadata for input " + std::to_string(i));
+        }
+        auto expected_dim_order = tensor_meta_res.get().dim_order();
+
+        // check if the model expects channel_last or contiguous 4d tensor
+        bool expected_channels_last =
+            (expected_dim_order.size() == 4 && expected_dim_order[0] == 0 &&
+             expected_dim_order[1] == 2 && expected_dim_order[2] == 3 &&
+             expected_dim_order[3] == 1);
+
+        bool expected_contiguous = true;
+        for (size_t d = 0; d < expected_dim_order.size(); ++d) {
+          if (expected_dim_order[d] != d) {
+            expected_contiguous = false;
+            break;
+          }
+        }
+
+        // validate the passed eager tensor matches the exported graph's
+        // expectations
         std::vector<torch::executor::Tensor::DimOrderType> dim_order;
-        if (at_tensor.is_contiguous()) {
+        if (expected_contiguous) {
+          if (!at_tensor.is_contiguous()) {
+            throw std::runtime_error(
+                "Input " + std::to_string(i) + " for method " + method_name +
+                " expected contiguous memory layout but received a different layout.");
+          }
           for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
             dim_order.push_back(cur_dim);
           }
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
-            at_tensor.dim() == 4) {
+        } else if (expected_channels_last) {
+          if (!at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) ||
+              dim != 4) {
+            throw std::runtime_error(
+                "Input " + std::to_string(i) + " for method " + method_name +
+                " expected channels-last memory layout but received a different layout.");
+          }
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + " for method " +
-              method_name + " should be contiguous or channels-last.";
-          throw std::runtime_error(error_msg);
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " + method_name +
+              " expects an unsupported memory format.");
         }
+
         input_dim_order.push_back(std::move(dim_order));
         // The runtime has two device types, so a device outside that pair
         // cannot be represented at all and the tensor would carry a label that
@@ -1305,22 +1341,52 @@ struct PyMethod final {
         std::vector<int> strides(
             at_tensor.strides().begin(), at_tensor.strides().end());
 
-        // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
-        // inputs
+        const std::string method_name = method_->method_meta().name();
+        auto tensor_meta_res = method_->method_meta().input_tensor_meta(i);
+        if (!tensor_meta_res.ok()) {
+          throw std::runtime_error(
+              "Failed to get tensor metadata for input " + std::to_string(i));
+        }
+        auto expected_dim_order = tensor_meta_res.get().dim_order();
+
+        // check if the model expects channel_last or contiguous 4d tensor
+        bool expected_channels_last =
+            (expected_dim_order.size() == 4 && expected_dim_order[0] == 0 &&
+             expected_dim_order[1] == 2 && expected_dim_order[2] == 3 &&
+             expected_dim_order[3] == 1);
+
+        bool expected_contiguous = true;
+        for (size_t d = 0; d < expected_dim_order.size(); ++d) {
+          if (expected_dim_order[d] != d) {
+            expected_contiguous = false;
+            break;
+          }
+        }
+
+        // validate the passed eager tensor matches the exported graph's
+        // expectations
         std::vector<torch::executor::Tensor::DimOrderType> dim_order;
-        if (at_tensor.is_contiguous()) {
+        if (expected_contiguous) {
+          if (!at_tensor.is_contiguous()) {
+            throw std::runtime_error(
+                "Input " + std::to_string(i) + " for method " + method_name +
+                " expected contiguous memory layout but received a different layout.");
+          }
           for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
             dim_order.push_back(cur_dim);
           }
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
-            at_tensor.dim() == 4) {
+        } else if (expected_channels_last) {
+          if (!at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) ||
+              dim != 4) {
+            throw std::runtime_error(
+                "Input " + std::to_string(i) + " for method " + method_name +
+                " expected channels-last memory layout but received a different layout.");
+          }
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + " for method " +
-              method_->method_meta().name() +
-              " should be contiguous or channels-last.";
-          throw std::runtime_error(error_msg);
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " + method_name +
+              " expects an unsupported memory format.");
         }
         // Record where the buffer actually lives. The conversion copied every
         // other property and left the device at CPU, so an accelerator buffer
