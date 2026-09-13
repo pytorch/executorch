@@ -34,6 +34,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
 from torch._dispatch.python import enable_python_dispatcher
+from torch._guards import detect_fake_mode
 from torch._subclasses import FakeTensorMode, UnsupportedFakeTensorException
 from torch._subclasses.fake_tensor import FakeTensor
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
@@ -863,6 +864,22 @@ class _ExportPassBase(PassBase):
                     fake_tensor_mode is None or fake_tensor_mode is i.fake_mode
                 ), "Multiple fake tensor mode detected."
                 fake_tensor_mode = i.fake_mode
+        if fake_tensor_mode is None:
+            # inputs() unwraps a constant-carrying FakeTensor to its real
+            # .constant tensor, so a graph whose placeholders are all lifted
+            # constants yields no FakeTensor above even though the graph itself
+            # is faked. Opening a fresh mode there leaves the retraced nodes in
+            # one mode and the untouched placeholders in another, and the mixed
+            # graph is rejected later by detect_fake_mode(). Recover the
+            # graph's own mode before falling back to a new one.
+            fake_tensor_mode = detect_fake_mode(
+                [
+                    node.meta["val"]
+                    for node in graph_module.graph.nodes
+                    if node.meta.get("val", None) is not None
+                ]
+            )
+
         if fake_tensor_mode is None:
             fake_tensor_mode = FakeTensorMode(allow_non_fake_inputs=True)
             dispatcher_mode = nullcontext()  # type: ignore[assignment]
