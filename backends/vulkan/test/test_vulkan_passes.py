@@ -779,3 +779,58 @@ class TestVulkanPasses(unittest.TestCase):
 
         gm = ep.graph_module
         self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)
+
+    def test_tag_memory_meta_pass_tags_tensor_in_mixed_none_list(self):
+        """TagMemoryMetaPass must tag tensor nodes that sit in a list argument
+        alongside None entries. Regression test for
+        https://github.com/pytorch/executorch/issues/22510: `aten.index.Tensor`
+        reaches the edge dialect as `index.Tensor(x, [None, idx])`, and the old
+        list checks only recognized a list when every entry was a tensor node,
+        so `idx` never got a storage/memory-layout representation.
+        """
+        import executorch.backends.vulkan.utils as vk_utils
+        from executorch.backends.vulkan._passes.tag_memory_meta_pass import (
+            TagMemoryMetaPass,
+        )
+        from executorch.exir.passes.spec_prop_pass import SpecPropPass
+
+        class IndexModule(torch.nn.Module):
+            def forward(self, x, idx):
+                return x[:, idx]
+
+        model = IndexModule().eval()
+        program = torch.export.export(
+            model, (torch.randn(2, 4), torch.tensor([0, 2, 1, 3])), strict=True
+        )
+        edge_program = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        gm = edge_program._edge_programs["forward"].graph_module
+
+        # Mirror vulkan_preprocess: SpecPropPass annotates TensorSpecs first.
+        gm = SpecPropPass()(gm).graph_module
+
+        index_node = next(
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function" and "index" in str(n.target)
+        )
+        index_list_arg = index_node.args[1]
+        self.assertIsInstance(index_list_arg, list)
+        self.assertTrue(any(a is None for a in index_list_arg))
+        idx_node = next(n for n in index_list_arg if isinstance(n, torch.fx.Node))
+
+        # The helper skips None entries but keeps tensor nodes.
+        self.assertEqual(vk_utils.tensor_nodes_in_arg(index_list_arg), [idx_node])
+        self.assertEqual(vk_utils.tensor_nodes_in_arg(idx_node), [idx_node])
+        self.assertEqual(vk_utils.tensor_nodes_in_arg([None, None]), [])
+        self.assertEqual(vk_utils.tensor_nodes_in_arg(5), [])
+
+        self.assertFalse(vk_utils.has_node_repr(idx_node))
+
+        TagMemoryMetaPass(vk_utils.DEFAULT_TEXTURE_LIMITS).call(gm)
+
+        self.assertTrue(
+            vk_utils.has_node_repr(idx_node),
+            "tensor node in a mixed None/tensor list arg was not tagged",
+        )
