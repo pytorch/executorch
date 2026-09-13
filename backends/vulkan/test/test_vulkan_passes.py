@@ -779,3 +779,67 @@ class TestVulkanPasses(unittest.TestCase):
 
         gm = ep.graph_module
         self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)
+
+    def test_normalize_convolution_args_broadcasts_single_element_lists(self):
+        """A 2D convolution written `padding="valid"` exports a one element
+        padding list, which the Vulkan convolution cannot read.
+
+        make_ivec2_from_list -> make_ivec2 requires exactly 2 elements, so such
+        a convolution aborted at the first inference with
+
+          make_ivec2 ... (ints.size() == 2) is false!
+
+        This is how torch.nn writes `padding="valid"`, and how HuggingFace
+        writes SigLIP/CLIP patch embeddings, so every vision tower of that shape
+        was affected.
+        """
+        from executorch.backends.vulkan._passes.normalize_convolution_args import (
+            NormalizeConvolutionArgs,
+        )
+        from executorch.exir.program._program import _transform
+
+        class Conv2dValid(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 16, kernel_size=3, padding="valid")
+
+            def forward(self, x):
+                return self.conv(x)
+
+        class Conv1dValid(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(3, 16, kernel_size=3, padding="valid")
+
+            def forward(self, x):
+                return self.conv(x)
+
+        def padding_of(program) -> list:
+            conv = next(
+                node
+                for node in program.graph_module.graph.nodes
+                if get_target_canonical_name(node) == "convolution.default"
+            )
+            return list(conv.args[4])
+
+        # 2D: one element padding must be broadcast to the two spatial dims.
+        edge_program = to_edge(
+            torch.export.export(Conv2dValid().eval(), (torch.randn(1, 3, 32, 32),)),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = edge_program._edge_programs["forward"]
+        self.assertEqual(padding_of(ep), [0], "expected export to emit a 1D padding")
+
+        ep = _transform(ep, NormalizeConvolutionArgs())
+        self.assertEqual(padding_of(ep), [0, 0])
+
+        # 1D: a one element list already matches the single spatial dim, so it
+        # must be left alone.
+        edge_program = to_edge(
+            torch.export.export(Conv1dValid().eval(), (torch.randn(1, 3, 32),)),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = _transform(
+            edge_program._edge_programs["forward"], NormalizeConvolutionArgs()
+        )
+        self.assertEqual(padding_of(ep), [0])
