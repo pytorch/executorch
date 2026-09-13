@@ -717,6 +717,18 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(TanhModule())
 
+    def test_vulkan_backend_logical_not(self):
+        class LogicalNotModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # logical_not produces a boolean tensor, which cannot be
+                # compared with torch.allclose, so select through it instead.
+                return torch.where(torch.logical_not(x > 0), x, torch.zeros_like(x))
+
+        self.lower_unary_module_and_test_output(LogicalNotModule())
+
     def test_vulkan_backend_linear(self):
         class LinearModule(torch.nn.Module):
             def __init__(self):

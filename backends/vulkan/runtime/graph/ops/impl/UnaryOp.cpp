@@ -181,6 +181,10 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
   VK_REGISTER_OP(aten.round.default, round);
   VK_REGISTER_OP(aten.bitwise_not.default, bitwise_not);
+  // Both ops are registered for boolean tensors only, where a bitwise
+  // negation and a logical negation are the same operation. This mirrors
+  // logical_and/logical_or, which reuse their bitwise counterparts.
+  VK_REGISTER_OP(aten.logical_not.default, bitwise_not);
 }
 
 } // namespace vkcompute
