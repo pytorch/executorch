@@ -27,6 +27,9 @@ from executorch.backends.vulkan._passes import (
 )
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
+from executorch.backends.vulkan._passes.replace_instance_norm import (
+    ReplaceInstanceNormPass,
+)
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -192,6 +195,7 @@ class VulkanBackend(BackendDetails):
                 FusePatternsPass(),
                 FuseClampPass(),
                 RemoveRedundantOpsTransform(),
+                ReplaceInstanceNormPass(),
                 FuseQuantizedOpsTransform(),
                 FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),

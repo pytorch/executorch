@@ -17,6 +17,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.tensor import TensorSpec
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
@@ -2054,3 +2055,46 @@ def align_width_and_update_state_dict(
         )
 
     return aligned_tensor
+
+
+def node_is_instance_norm(node: torch.fx.Node) -> bool:
+    """
+    Whether a node is an ``F.instance_norm`` that group norm can express.
+
+    ``F.instance_norm`` reshapes its input to ``[1, N * C, H, W]`` and lowers to
+    ``_native_batch_norm_legit.no_stats``, which normalizes using statistics taken
+    over the batch and spatial dims. When the batch dim is 1 that is exactly group
+    norm with one group per channel, so the existing group norm kernels cover it.
+    A batch dim above 1 is a different reduction and is left alone.
+    """
+    if node.target != exir_ops.edge.aten._native_batch_norm_legit.no_stats:
+        return False
+
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        return False
+
+    val = input_node.meta.get("val")
+    if val is None or val.dim() != 4 or val.shape[0] != 1:
+        return False
+
+    # Group norm always applies an affine transform, so both weight and bias must
+    # be present. add_native_group_norm_node() prepacks them, so both must also
+    # trace back to a constant rather than being computed at runtime.
+    for affine_arg in (node.args[1], node.args[2]):
+        if not isinstance(affine_arg, torch.fx.Node):
+            return False
+        placeholder, _ = trace_args_until_placeholder(affine_arg)
+        if placeholder is None:
+            return False
+
+    # Only the normalized output may be consumed. Group norm returns mean and rstd
+    # shaped [N, group] where batch norm saves them shaped [C], so the saved
+    # statistics are not drop-in replacements.
+    for user in node.users:
+        if user.op != "call_function" or user.target != operator.getitem:
+            return False
+        if user.args[1] != 0:
+            return False
+
+    return True
