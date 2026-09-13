@@ -30,11 +30,10 @@ class ExecuTorchRuntime private constructor() {
      * Loads the backends that were built as their own shared library.
      *
      * A split backend (EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED /
-     * EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED) carries its own statically linked copy of the backend
-     * registry, and its `register_backend` call binds to whichever definition the dynamic linker
-     * finds first. Loading it here, after libexecutorch.so and into the same namespace, is what
-     * makes that the runtime's registry rather than its own; the delegate would otherwise register
-     * somewhere the runtime never reads and fail to be found at execution.
+     * EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED) links the runtime dynamically, so loading it here
+     * pulls libexecutorch.so in through DT_NEEDED and its `register_backend` call resolves to the
+     * one registry the runtime reads. Nothing links to the backend itself, so it has to be named
+     * explicitly for it to be loaded at all.
      *
      * Each is absent in a build that linked the backend into libexecutorch.so, which is the
      * default, so a missing library is not an error.
