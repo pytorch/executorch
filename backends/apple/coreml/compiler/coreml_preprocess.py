@@ -655,7 +655,9 @@ class CoreMLBackend(BackendDetails):
             # it. It stays off by default: the table is the one weight an embedding model's
             # output quality rests on most directly, so opting in belongs with the caller
             # who can measure the result.
-            if CoreMLBackend.quantize_embedding_tables_from_compile_specs(compile_specs):
+            if CoreMLBackend.quantize_embedding_tables_from_compile_specs(
+                compile_specs
+            ):
                 config = cto.coreml.OptimizationConfig(
                     global_config=op_linear_quantizer_config,
                 )
