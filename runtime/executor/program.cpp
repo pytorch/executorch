@@ -445,13 +445,20 @@ Result<const void*> Program::get_constant_buffer_data(
   // Constant data is either in a separate segment (constant_segment_data) and
   // loaded during Program::load, or stored inside the flatbuffer data
   // (constant_buffer).
-  if (constant_segment_data_.data() != nullptr) {
-    const auto* constant_segment = internal_program->constant_segment();
-    size_t num_elems = constant_segment == nullptr
-        ? 0
-        : (constant_segment->offsets() == nullptr
-               ? 0
-               : constant_segment->offsets()->size());
+  //
+  // Decide which one by what the program declares, not by whether the loaded
+  // segment has a non-null pointer. A constant segment holding only
+  // zero-length tensors is itself zero bytes, and loading it yields a null
+  // pointer even though the program does use the segment path. Testing the
+  // pointer sends those programs down the deprecated constant_buffer path,
+  // which fails outright when it is compiled out.
+  const auto* constant_segment = internal_program->constant_segment();
+  const bool uses_constant_segment = constant_segment != nullptr &&
+      constant_segment->offsets() != nullptr &&
+      constant_segment->offsets()->size() > 0;
+
+  if (uses_constant_segment) {
+    size_t num_elems = constant_segment->offsets()->size();
     ET_CHECK_OR_RETURN_ERROR(
         buffer_index < num_elems,
         InvalidArgument,
@@ -477,10 +484,15 @@ Result<const void*> Program::get_constant_buffer_data(
         nbytes,
         size);
 
-    // Offset is wrt the beginning of the constant segment.
-    return static_cast<const void*>(
-        static_cast<const unsigned char*>(constant_segment_data_.data()) +
-        offset);
+    // Offset is wrt the beginning of the constant segment. An empty segment
+    // has a null base; the bounds check above has already established that
+    // nbytes is 0 in that case, so there is nothing to point at.
+    const auto* base =
+        static_cast<const unsigned char*>(constant_segment_data_.data());
+    if (base == nullptr) {
+      return static_cast<const void*>(nullptr);
+    }
+    return static_cast<const void*>(base + offset);
   } else {
 #if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     // Otherwise, the constant data is stored inside Program.constant_buffer.
