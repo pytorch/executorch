@@ -318,6 +318,16 @@ def register_bool_binary_ops():
 # =============================================================================
 
 
+@update_features(exir_ops.edge.aten.mul.Scalar)
+def register_mul_tensor_scalar():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 @update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
 def register_pow_tensor_scalar():
     return OpFeatures(

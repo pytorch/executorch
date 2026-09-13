@@ -732,6 +732,17 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(TanhModule())
 
+    def test_vulkan_backend_mul_scalar(self):
+        class MulScalarModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # The attention scale factor is the common source of this op.
+                return x * 0.3535533905932738
+
+        self.lower_unary_module_and_test_output(MulScalarModule())
+
     def test_vulkan_backend_linear(self):
         class LinearModule(torch.nn.Module):
             def __init__(self):
