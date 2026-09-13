@@ -116,6 +116,11 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         torch.nn.utils.parametrizations.weight_norm, would otherwise be left
         to the portable kernels together with the weight computation.
         """
+        # A training graph keeps its parameters as inputs: the runtime hands
+        # them to the optimizer through the gradient and parameter outputs.
+        if exported_program.graph_signature.backward_signature is not None:
+            return exported_program
+
         # The program is not functionalized yet at this point: a KV-cache
         # update is still an in-place index_put_ or copy_ on a view of the
         # buffer, and the graph signature lists no mutated buffers. The pass
@@ -136,7 +141,12 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                 in self._CONSTANT_PROP_SKIP_NAMESPACES
             ):
                 skip_targets.add(node.target)
-        return constant_prop_pass(exported_program, custom_skip_targets=skip_targets)
+        # Buffers stay out of the fold. This hook sees one method at a time,
+        # and a buffer this method only reads can be written by another
+        # method of the same program.
+        return constant_prop_pass(
+            exported_program, custom_skip_targets=skip_targets, fold_buffers=False
+        )
 
     def partition(self, exported_program):
         """
