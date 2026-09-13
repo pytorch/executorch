@@ -3,6 +3,8 @@ from typing import Optional, Tuple
 
 import torch
 
+import executorch.backends.vulkan.utils as utils
+
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
@@ -636,6 +638,100 @@ class TestVulkanPasses(unittest.TestCase):
                 q8ta_nodes[i + 1].args[2],
                 f"q8ta_linear[{i}].output_zero_point should equal q8ta_linear[{i + 1}].input_zero_point",
             )
+
+    def test_linear_q8ta_q8csw_takes_floating_point_input(self):
+        """et_vk.linear_q8ta_q8csw quantizes its activation itself, so it must be
+        given the floating point input rather than the quantized one.
+
+        QuantizedLinear.cpp names that argument fp_input and passes it to
+        add_quantize_and_pack_4h4w_node. Before this was fixed the fusion passed
+        the int8 output of the input quantize node instead, and the delegate
+        failed at inference looking for a shader variant that takes an already
+        quantized input, e.g. clone_buffer_to_image_int8_int32.
+        """
+        # The pattern is built directly rather than with a quantizer:
+        # XNNPACKQuantizer also quantizes the linear's output, which produces
+        # q8ta_linear instead, and VulkanQuantizer offers no static activation
+        # quantization mode.
+        qd = torch.ops.quantized_decomposed
+        in_features, out_features, batch = 256, 128, 4
+        act_scale = 0.05
+
+        weight = torch.randn(out_features, in_features)
+        weight_scales = weight.abs().amax(dim=1).clamp(min=1e-8) / 127.0
+        weight_zeros = torch.zeros(out_features, dtype=torch.int64)
+        weight_q = qd.quantize_per_channel.default(
+            weight, weight_scales, weight_zeros, 0, -127, 127, torch.int8
+        )
+
+        class StaticQuantLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight_q", weight_q)
+                self.register_buffer("weight_scales", weight_scales)
+                self.register_buffer("weight_zeros", weight_zeros)
+
+            def forward(self, x):
+                xq = qd.quantize_per_tensor.default(
+                    x, act_scale, 0, -128, 127, torch.int8
+                )
+                xdq = qd.dequantize_per_tensor.default(
+                    xq, act_scale, 0, -128, 127, torch.int8
+                )
+                wdq = qd.dequantize_per_channel.default(
+                    self.weight_q,
+                    self.weight_scales,
+                    self.weight_zeros,
+                    0,
+                    -127,
+                    127,
+                    torch.int8,
+                )
+                return torch.nn.functional.linear(xdq, wdq)
+
+        model = StaticQuantLinear().eval()
+        sample_inputs = (torch.randn(batch, in_features),)
+
+        edge_program = to_edge(
+            torch.export.export(model, sample_inputs, strict=True),
+            compile_config=EdgeCompileConfig(
+                _skip_dim_order=False,
+                _check_ir_validity=False,
+            ),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        self.assertTrue(fuse_pass.call(ep.graph_module).modified)
+
+        gm = ep.graph_module
+
+        # With no output quantization the linear becomes linear_q8ta_q8csw
+        # rather than q8ta_linear.
+        q8csw_nodes = [
+            node
+            for node in gm.graph.nodes
+            if get_target_canonical_name(node) == "linear_q8ta_q8csw.default"
+        ]
+        self.assertEqual(
+            len(q8csw_nodes),
+            1,
+            "Expected the output-unquantized linear to fuse to linear_q8ta_q8csw",
+        )
+
+        input_node = q8csw_nodes[0].args[0]
+        self.assertIsInstance(input_node, torch.fx.Node)
+        self.assertFalse(
+            utils.is_quant_node(input_node),
+            "linear_q8ta_q8csw was given the quantized activation; it expects the "
+            "floating point one",
+        )
+        self.assertNotEqual(
+            input_node.meta["val"].dtype,
+            torch.int8,
+            "linear_q8ta_q8csw input must not be int8",
+        )
 
     def test_fuse_q8ta_linear_gemv_non_aligned_oc(self):
         """Test that quantized linear with non-aligned output channels (not multiple of 4) fuses correctly."""
