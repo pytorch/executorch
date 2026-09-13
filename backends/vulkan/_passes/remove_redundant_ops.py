@@ -42,6 +42,9 @@ class RemoveRedundantOpsTransform(ExportPass):
         # that changes the rank must keep its node, because the ops downstream
         # read their argument's shape.
         exir_ops.edge.aten.view_copy.default,
+        # repeat.default: no-op when every repeat factor is 1, which the shape
+        # equality check below implies.
+        exir_ops.edge.aten.repeat.default,
     }
 
     # For these ops the meaningful input is args[1] (src), not args[0] (self).
