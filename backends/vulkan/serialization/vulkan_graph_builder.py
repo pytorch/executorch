@@ -491,7 +491,19 @@ class VkGraphBuilder:
         self.create_node_value(node)
 
     def process_output_node(self, node: Node) -> None:
-        for out_node in node.all_input_nodes:
+        # Iterate the output node's args rather than all_input_nodes, which
+        # deduplicates. A graph that returns the same value more than once
+        # still gets one delegate call argument per returned slot, and
+        # VulkanBackend::execute matches args to inputs and outputs by
+        # position, so collapsing the repeat makes the graph declare fewer
+        # outputs than the call supplies and the call is rejected outright.
+        out_args = node.args[0]
+        if not isinstance(out_args, (list, tuple)):
+            out_args = (out_args,)
+        for out_node in out_args:
+            # all_input_nodes yields only Nodes; keep ignoring anything else.
+            if not isinstance(out_node, Node):
+                continue
             if out_node not in self.node_to_value_ids:
                 raise AssertionError(
                     "Cannot find input to output node in node_to_value_ids. This means "
