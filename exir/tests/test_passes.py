@@ -2500,6 +2500,63 @@ class TestPasses(unittest.TestCase):
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
 
+    def test_constant_prop_pass_keeps_non_tensor_results(self) -> None:
+        """
+        aten.item yields a Python float. Before decomposition its consumer
+        takes that float directly, so there is no tensor to lift: the op and
+        its consumer have to stay in the graph.
+        """
+
+        class ScaleByItem(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.scale = torch.nn.Parameter(torch.tensor(2.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x * self.scale.item()
+
+        x = torch.ones(4)
+        new_ep = constant_prop_pass(export(ScaleByItem(), (x,), strict=True))
+
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertIn(torch.ops.aten.item.default, targets)
+        self.assertEqual(len(new_ep.constants), 0)
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_parameters.values()), ["scale"]
+        )
+        self.assertTrue(torch.equal(new_ep.module()(x), x * 2))
+
+    def test_constant_prop_pass_fold_buffers_false(self) -> None:
+        """
+        A buffer this program only reads can be written by another method of
+        the same program, which the pass cannot see. With fold_buffers=False
+        only parameters and lifted constants seed the fold.
+        """
+
+        class ParamAndBuffer(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.ones(4))
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.weight * 2 + self.state.sum()
+
+        x = torch.zeros(4)
+        new_ep = constant_prop_pass(
+            export(ParamAndBuffer(), (x,), strict=True), fold_buffers=False
+        )
+
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertNotIn(torch.ops.aten.mul.Tensor, targets)
+        self.assertIn(torch.ops.aten.sum.default, targets)
+        self.assertEqual(list(new_ep.graph_signature.inputs_to_parameters.values()), [])
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_buffers.values()), ["state"]
+        )
+        self.assertEqual(len(new_ep.constants), 1)
+        self.assertTrue(torch.equal(new_ep.module()(x), x + 2))
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides
