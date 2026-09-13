@@ -2011,3 +2011,27 @@ class TestInPlaceElemWise(unittest.TestCase):
             if node.op == "call_function"
         )
         self.assertFalse(has_inplace)
+
+
+class TestTensorlessGraphOutput(unittest.TestCase):
+    def test_verifier_accepts_output_carrying_no_tensors(self) -> None:
+        """An output node is allowed to carry no tensors at all.
+
+        A delegated subgraph whose only results are symints is shaped like
+        this, and there is nothing for the planner to allocate. The verifier
+        used to skip such a node without recording that it had seen an output,
+        then assert `graph_output_allocated not set` on a graph that was in
+        fact fully planned.
+        """
+        graph = Graph()
+        sym = graph.placeholder("sym")
+        graph.output((sym,))
+        graph_module = GraphModule({}, graph)
+
+        verifier = Verifier(
+            graph_module,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_graph_input_output()
