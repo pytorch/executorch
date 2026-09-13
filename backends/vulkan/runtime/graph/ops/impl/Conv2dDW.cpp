@@ -81,13 +81,13 @@ std::string pick_conv2d_dw_shader(
     kernel_name += "_sned";
   }
 
-  if (is_3x3) {
-    kernel_name += "_output_tile_3x3";
+  if (is_3x3 || is_5x5) {
+    kernel_name += is_3x3 ? "_output_tile_3x3" : "_output_tile_5x5";
+    // Mali spills with the default 4x2 output tile: each invocation holds 8
+    // accumulators and loads an overlapping input window for each of them.
     if (stride_equals_dilation && graph.device_is_mali()) {
       kernel_name += "_b1x1";
     }
-  } else if (is_5x5) {
-    kernel_name += "_output_tile_5x5";
   }
 
   if (clamp_out) {
