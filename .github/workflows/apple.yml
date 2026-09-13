@@ -16,6 +16,10 @@ on:
       - scripts/build_apple_frameworks.sh
       - scripts/build_apple_llm_demo.sh
       - scripts/create_frameworks.sh
+      - Package.swift
+      - CMakePresets.json
+      - third-party/CMakeLists.txt
+      - backends/mlx/**
       - .ci/scripts/test_ios_ci.sh
       - extension/apple/**
       - extension/benchmark/apple/**
@@ -191,8 +195,9 @@ jobs:
         FRAMEWORKS=(
           "executorch"
           "executorch_llm"
+          "executorch_dump"
           "backend_coreml"
-          "backend_mps"
+          "backend_mlx"
           "backend_xnnpack"
           "kernels_llm"
           "kernels_optimized"
@@ -220,6 +225,13 @@ jobs:
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}_debug-${VERSION}.zip" "${FRAMEWORK}_debug.xcframework"
         ) done
+
+        # MLX metallibs are data files, so carry them in the artifact for the SwiftPM job to commit.
+        if [ -d .Package.swift/backend_mlx_resources ]; then
+          mkdir -p "${RUNNER_TEMP}/artifacts/backend_mlx_resources"
+          cp .Package.swift/backend_mlx_resources/*.metallib \
+            "${RUNNER_TEMP}/artifacts/backend_mlx_resources/" 2>/dev/null || true
+        fi
 
   upload-frameworks-ios:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
@@ -291,7 +303,15 @@ jobs:
             git checkout -b "${BRANCH}"
           fi
 
-          [[ -f Package.swift ]] || mv Package.swift.template Package.swift
+          # Always substitute from the template on the swiftpm branch, never from
+          # a Package.swift left behind by an earlier run for this same version.
+          # Nightly versions carry a date, so two runs in one day land on the same
+          # branch, and a release re-run reuses the version exactly; reusing the
+          # old file there would publish a manifest missing whatever the template
+          # gained since, and the failure surfaces as a product that is built but
+          # has no entry, with nothing pointing at the stale file.
+          git checkout swiftpm -- Package.swift.template
+          mv -f Package.swift.template Package.swift
 
           sed -i "s/__VERSION__/${VERSION}/g" Package.swift
 
@@ -300,8 +320,71 @@ jobs:
           done < "${RUNNER_TEMP}/checksums.txt"
 
           if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            # The manifest and the built frameworks have to describe the same set,
+            # checked in both directions because each failure is silent on its own.
+            #
+            # A placeholder with no framework publishes literal text where a checksum
+            # belongs, which stops SwiftPM resolving the package for every consumer
+            # rather than only users of that product. Eight consecutive nightlies
+            # shipped that way in August 2025.
+            #
+            # A framework with no placeholder is the reverse: sed matches nothing, so
+            # the product silently disappears from the manifest while its archive is
+            # still uploaded. Release branches share this template, so a branch that
+            # still builds a removed framework lands here. Compared against the base
+            # name, because the manifest declares each product once and synthesises
+            # its debug variant.
+            #
+            # Gated on the upload, because only a run that publishes can do harm and a
+            # branch whose template is momentarily out of step should not redden every
+            # unrelated pull request.
+            if grep -q "__SHA256_" Package.swift; then
+              echo "::error::Package.swift still has unsubstituted checksums:"
+              grep -o "__SHA256_[A-Za-z_]*__" Package.swift | sort -u
+              exit 1
+            fi
+            while read -r FRAMEWORK CHECKSUM; do
+              if ! grep -q "\"${FRAMEWORK%_debug}\"" Package.swift; then
+                echo "::error::built framework ${FRAMEWORK} has no product in Package.swift"
+                exit 1
+              fi
+            done < "${RUNNER_TEMP}/checksums.txt"
+            # If MLX is being published, its Metal kernels have to come with it.
+            # The copy below is conditional and the capture upstream is best
+            # effort, so without this an incomplete set publishes a manifest
+            # declaring three resources that are not on the branch, and the
+            # consumer only finds out at Metal device init.
+            if grep -q "^backend_mlx " "${RUNNER_TEMP}/checksums.txt"; then
+              for SLICE in mlx-ios mlx-ios-simulator mlx-macos; do
+                METALLIB="${RUNNER_TEMP}/frameworks-ios/backend_mlx_resources/${SLICE}.metallib"
+                if [ ! -s "${METALLIB}" ]; then
+                  echo "::error::backend_mlx is being published but ${SLICE}.metallib is missing or empty"
+                  exit 1
+                fi
+              done
+            fi
+            # Nothing else evaluates this manifest before consumers do: the checks
+            # above are text greps, the swiftpm branch has no CI of its own, and a
+            # .template is not a manifest. Resolve it here so a Swift-level defect
+            # fails this run rather than every consumer of the published branch.
+            # Use describe, not dump-package: dump-package parses the manifest but
+            # returns 0 even when a target's directory is absent, while describe
+            # loads the package and fails, which is the case that reaches
+            # consumers when a stub directory is missed.
+            if ! swift package describe > /dev/null; then
+              echo "::error::the substituted Package.swift does not evaluate"
+              exit 1
+            fi
+
             git config --global user.name "PyTorch Bot"
             git config --global user.email "pytorchbot@users.noreply.github.com"
+            # Commit the MLX metallibs onto the package branch beside the manifest.
+            if [ -d "${RUNNER_TEMP}/frameworks-ios/backend_mlx_resources" ]; then
+              mkdir -p .Package.swift/backend_mlx_resources
+              cp "${RUNNER_TEMP}"/frameworks-ios/backend_mlx_resources/*.metallib \
+                .Package.swift/backend_mlx_resources/
+              git add -f .Package.swift/backend_mlx_resources/*.metallib
+            fi
             git add Package.swift
             git commit -am "${VERSION}"
             git push -f origin "${BRANCH}"

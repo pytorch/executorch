@@ -142,6 +142,59 @@ class AnnotateAvgPool1D:
         ), "avg_pool1d partition nodes should have QCOM_QUANT_ATTRS"
 
 
+class AnnotateGetAttr:
+    class _Conv1d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv1d(4, 8, kernel_size=3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        # Workflow:
+        # 1. CanonicalizeConv rewrites the conv1d weight into a new get_attr node
+        #    (dq_ops-consuming, in the quantized flow) with QCOM_QUANT_ATTRS set.
+        # 2. LayoutTransform rebuilds the GraphModule and drops the quant metadata.
+        # 3. AnnotateGetAttr repopulates it on the corresponding get_attr node.
+        # 4. lift_constant_tensor_pass converts get_attr node into a
+        #    "_lifted_tensor_constant*" placeholder while preserving its metadata.
+        module = AnnotateGetAttr._Conv1d()
+        inputs = (torch.randn(1, 4, 16),)
+        target_pass = _passes.AnnotateGetAttr
+        _ = assertions
+        gm = pass_pipeline.lower_edge_ep(
+            module=module,
+            sample_input=inputs,
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=target_pass,
+            quantizer=quantizer,
+        ).graph_module
+
+        lifted_constant_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "placeholder"
+            and n.name.startswith("_lifted_tensor_constant")
+            and list(n.users)[0].target in dq_ops
+        ]
+        assert (
+            len(lifted_constant_nodes) > 0
+        ), "expected at least one lifted tensor constant feeding a dequantize op"
+        assert all(
+            QCOM_QUANT_ATTRS in n.meta for n in lifted_constant_nodes
+        ), "lifted tensor constants feeding a dequantize op should have QCOM_QUANT_ATTRS after AnnotateGetAttr"
+
+
 class AnnotateQuantAttrs:
     class _Basic(torch.nn.Module):
         def forward(self, x):
@@ -313,7 +366,7 @@ class CanonicalizeConv:
         def forward(self, x):
             return self.conv(x)
 
-    # --- Group 2: transpose conv dilation (kernel dilated manually, dilation arg removed) ---
+    # --- Group 2: transpose conv dilation (kernel dilated manually, dilation arg calibrated) ---
     class _ConvTranspose1dDilation(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -339,13 +392,14 @@ class CanonicalizeConv:
             return self.conv(x)
 
     @staticmethod
-    def _assert_no_dilation(gm, targets):
-        """Assert dilation arg has been removed from all matching nodes."""
+    def _assert_no_dilation(gm):
+        """Assert dilation arg has been calibrated from edge convolution op."""
         for node in gm.graph.nodes:
-            if node.target in targets:
-                assert len(node.args) <= 7 or all(
-                    d == 1 for d in node.args[7]
-                ), f"{node.target} dilation arg (index 7) should be all ones"
+            if node.target is exir_ops.edge.aten.convolution.default:
+                dilation = node.args[5]
+                assert all(
+                    d == 1 for d in dilation
+                ), f"{node.target} dilation arg (index 5) should be all ones"
 
     @staticmethod
     @unpack_pass_fixtures
@@ -358,79 +412,77 @@ class CanonicalizeConv:
         pass_pipeline: PassPipeline,
     ):
         target_pass = _passes.CanonicalizeConv
-        _ = compile_spec
+        conv = exir_ops.edge.aten.convolution.default
 
         # --- Group 1: conv1d → unsqueeze_copy + conv2d + squeeze_copy ---
         with subtests.test(msg="conv1d"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._Conv1d(),
                 sample_input=(torch.randn(1, 4, 16),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            assertions.assert_target_count(
+                gm, exir_ops.edge.aten.unsqueeze_copy.default, 1
             )
-            assertions.assert_no_target(gm, torch.ops.aten.conv1d.default)
-            assertions.assert_target_count(gm, torch.ops.aten.conv2d.default, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.unsqueeze_copy.default, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.squeeze_copy.dims, 1)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.squeeze_copy.dims, 1)
 
         with subtests.test(msg="conv1d_transpose"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._ConvTranspose1d(),
                 sample_input=(torch.randn(1, 4, 8),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            assertions.assert_target_count(
+                gm, exir_ops.edge.aten.unsqueeze_copy.default, 1
             )
-            assertions.assert_no_target(gm, torch.ops.aten.conv_transpose1d.default)
-            assertions.assert_target_count(gm, torch.ops.aten.conv_transpose2d.input, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.unsqueeze_copy.default, 1)
-            assertions.assert_target_count(gm, torch.ops.aten.squeeze_copy.dims, 1)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.squeeze_copy.dims, 1)
 
-        # --- Group 2: transpose conv dilation — kernel dilated, dilation arg removed ---
+        # --- Group 2: transpose conv dilation — kernel dilated, dilation arg calibrated ---
         with subtests.test(msg="conv_transpose1d_dilation"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._ConvTranspose1dDilation(),
                 sample_input=(torch.randn(1, 4, 8),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
-            )
-            assertions.assert_no_target(gm, torch.ops.aten.conv_transpose1d.default)
-            assertions.assert_target_count(gm, torch.ops.aten.conv_transpose2d.input, 1)
-            CanonicalizeConv._assert_no_dilation(
-                gm, {torch.ops.aten.conv_transpose2d.input}
-            )
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            CanonicalizeConv._assert_no_dilation(gm)
 
         with subtests.test(msg="conv_transpose2d_dilation"):
-            gm = pass_pipeline.lower_export_gm(
+            gm = pass_pipeline.lower_edge_ep(
                 module=CanonicalizeConv._ConvTranspose2dDilation(),
                 sample_input=(torch.randn(1, 4, 8, 8),),
                 target_pass=target_pass,
                 backend_type=backend_type,
+                compile_spec=compile_spec,
                 quantizer=quantizer,
-            )
-            assertions.assert_target_count(gm, torch.ops.aten.conv_transpose2d.input, 1)
-            CanonicalizeConv._assert_no_dilation(
-                gm, {torch.ops.aten.conv_transpose2d.input}
-            )
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            CanonicalizeConv._assert_no_dilation(gm)
 
         # TODO: update this once lpai starts to support transpose_conv3d
         if backend_type != QnnExecuTorchBackendType.kLpaiBackend:
             with subtests.test(msg="conv_transpose3d_dilation"):
-                gm = pass_pipeline.lower_export_gm(
+                gm = pass_pipeline.lower_edge_ep(
                     module=CanonicalizeConv._ConvTranspose3dDilation(),
                     sample_input=(torch.randn(1, 4, 4, 4, 4),),
                     target_pass=target_pass,
                     backend_type=backend_type,
+                    compile_spec=compile_spec,
                     quantizer=quantizer,
-                )
-                assertions.assert_target_count(
-                    gm, torch.ops.aten.conv_transpose3d.input, 1
-                )
-                CanonicalizeConv._assert_no_dilation(
-                    gm, {torch.ops.aten.conv_transpose3d.input}
-                )
+                ).graph_module
+                assertions.assert_target_count(gm, conv, 1)
+                CanonicalizeConv._assert_no_dilation(gm)
 
 
 class ConvertBmmToMatmul:
@@ -478,32 +530,71 @@ class ConvertLinearToConv2d:
         def forward(self, x):
             return self.linear(x)
 
+    class _SharedWeight(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.randn(4, 8))
+
+        def forward(self, x, y):
+            return torch.nn.functional.linear(
+                x, self.weight
+            ) + torch.nn.functional.linear(y, self.weight)
+
     @staticmethod
     @unpack_pass_fixtures
     def test(
+        subtests,
         quantizer,
         compile_spec,
         backend_type: QnnExecuTorchBackendType,
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        module = ConvertLinearToConv2d._Basic()
-        inputs = (torch.randn(2, 8),)
         target_pass = _passes.ConvertLinearToConv2d
-        _ = compile_spec
-        gm = pass_pipeline.lower_export_gm(
-            module=module,
-            sample_input=inputs,
-            target_pass=target_pass,
-            backend_type=backend_type,
-            quantizer=quantizer,
-            convert_linear_to_conv2d=True,
-        )
-        assertions.assert_no_target(gm, torch.ops.aten.linear.default)
-        assertions.assert_target_count(gm, torch.ops.aten.conv2d.default, 1)
-        # rank-2 input: reshape×2 (input + output restore) + permute×2 (pre/post conv)
-        assertions.assert_target_count(gm, torch.ops.aten.reshape.default, 2)
-        assertions.assert_target_count(gm, torch.ops.aten.permute.default, 2)
+        conv = exir_ops.edge.aten.convolution.default
+
+        with subtests.test(msg="basic"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=ConvertLinearToConv2d._Basic(),
+                sample_input=(torch.randn(2, 8),),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+                convert_linear_to_conv2d=True,
+            ).graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.linear.default)
+            assertions.assert_target_count(gm, conv, 1)
+            # rank-2 input: reshape×2 (input + output restore) + permute×2 (pre/post conv)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.view_copy.default, 2)
+            assertions.assert_target_count(
+                gm, exir_ops.edge.aten.permute_copy.default, 2
+            )
+
+        with subtests.test(msg="shared_weight"):
+            gm = pass_pipeline.lower_edge_ep(
+                module=ConvertLinearToConv2d._SharedWeight(),
+                sample_input=(torch.randn(2, 8), torch.randn(2, 8)),
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=quantizer,
+                convert_linear_to_conv2d=True,
+            ).graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.linear.default)
+            assertions.assert_target_count(gm, conv, 2)
+            conv_weight_sources = set()
+            for node in gm.graph.nodes:
+                if node.target is conv:
+                    weight_arg = node.args[1]
+                    conv_weight_sources.add(
+                        weight_arg.args[0]
+                        if weight_arg.target in dq_ops
+                        else weight_arg
+                    )
+            assert (
+                len(conv_weight_sources) == 1
+            ), f"expected both convolution nodes to share one weight source, got {conv_weight_sources}"
 
 
 class ConvertMhaToSha:

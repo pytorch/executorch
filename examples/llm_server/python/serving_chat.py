@@ -101,6 +101,11 @@ class ServingChat:
         # clearing both on reset/close.
         self._transcript = OpenAITranscriptState(template)
 
+    @property
+    def healthy(self) -> bool:
+        """Whether the underlying model worker can accept new requests."""
+        return self._runtime.healthy
+
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
         """Map each defined tool name to its JSON-schema ``parameters`` object.

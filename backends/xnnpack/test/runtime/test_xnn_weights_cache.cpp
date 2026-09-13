@@ -226,6 +226,36 @@ class XNNWeightsCacheTest : public ::testing::Test {
     ASSERT_EQ(status, xnn_status_success);
   }
 
+  // One "app launch": a fresh cache instance bound to cache_path loads the
+  // file if it exists, packs-and-runs the graph, and persists the index.
+  void RunLaunchWithCacheFile(
+      const std::string& cache_path,
+      std::vector<float>& output) {
+    const std::vector<size_t> batches{1, 2, 3};
+    const size_t num_batches = 1 * 2 * 3;
+    const size_t padding = 32;
+    std::vector<float> input(
+        num_batches * kLaunchInputChannels + padding, 1.0f);
+    output.assign(num_batches * kLaunchOutputChannels, 0.0f);
+
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    ASSERT_EQ(
+        cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    BuildAndRunGraphWithWeightsCache(
+        cache,
+        batches,
+        kLaunchInputChannels,
+        kLaunchOutputChannels,
+        input.data(),
+        output.data());
+    ASSERT_EQ(cache.save_packed_index(), Error::Ok);
+  }
+
+  static constexpr size_t kLaunchInputChannels = 3;
+  static constexpr size_t kLaunchOutputChannels = 4;
+
   // Program builder constants.
   static constexpr int kSegmentAlignment = 16;
   static constexpr std::array<int, 2> kSegmentSizes{384, 128};
@@ -736,6 +766,57 @@ void write_le_u64(std::ostream& f, uint64_t v) {
   }
 }
 
+// Locate the 4-byte seed field of the first index entry by walking the
+// footer [index_start:u64][entry_count:u32][magic:u32][version:u32] at the
+// end of the file, then the entry record
+// [name_len:u32][name][file_offset:u64][data_size:u64][seed:u32].
+// Returns 0 when the file is too small or carries no entries.
+size_t find_first_entry_seed_offset(std::istream& f) {
+  f.seekg(0, std::ios::end);
+  const size_t file_size = f.tellg();
+  if (file_size < 24) {
+    return 0;
+  }
+  uint8_t footer[20];
+  f.seekg(file_size - 20);
+  f.read(reinterpret_cast<char*>(footer), 20);
+  if (read_le_u32(footer + 8) == 0) {
+    return 0;
+  }
+  const uint64_t index_start = read_le_u64(footer);
+  f.seekg(index_start);
+  uint8_t name_len_buf[4];
+  f.read(reinterpret_cast<char*>(name_len_buf), 4);
+  return index_start + 4 + read_le_u32(name_len_buf) + 8 + 8;
+}
+
+uint32_t read_first_entry_seed(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  const size_t seed_offset = find_first_entry_seed_offset(f);
+  if (seed_offset == 0) {
+    return 0;
+  }
+  uint8_t seed_buf[4];
+  f.seekg(seed_offset);
+  f.read(reinterpret_cast<char*>(seed_buf), 4);
+  return read_le_u32(seed_buf);
+}
+
+void write_first_entry_seed(const std::string& path, uint32_t seed) {
+  std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
+  const size_t seed_offset = find_first_entry_seed_offset(f);
+  if (seed_offset == 0) {
+    return;
+  }
+  f.seekp(seed_offset);
+  write_le_u32(f, seed);
+}
+
+off_t file_size_of(const std::string& path) {
+  struct stat st {};
+  return ::stat(path.c_str(), &st) == 0 ? st.st_size : -1;
+}
+
 } // namespace
 
 // A cache file written by older code (kCacheVersion=1) carries no per-entry
@@ -889,31 +970,8 @@ TEST_F(
 
   // Corrupt the seed field of the first entry to a value no real ukernel
   // would emit (0xDEADBEEF).
-  {
-    std::fstream f(cache_path, std::ios::binary | std::ios::in | std::ios::out);
-    ASSERT_TRUE(f.is_open());
-    f.seekg(0, std::ios::end);
-    size_t file_size = f.tellg();
-    ASSERT_GE(file_size, 24u);
-
-    uint8_t footer_buf[20];
-    f.seekg(file_size - 20);
-    f.read(reinterpret_cast<char*>(footer_buf), 20);
-    uint64_t index_start = read_le_u64(footer_buf);
-    uint32_t entry_count = read_le_u32(footer_buf + 8);
-    ASSERT_GT(entry_count, 0u);
-
-    f.seekg(index_start);
-    uint8_t name_len_buf[4];
-    f.read(reinterpret_cast<char*>(name_len_buf), 4);
-    uint32_t name_len = read_le_u32(name_len_buf);
-
-    size_t seed_offset = index_start + 4 + name_len + 8 + 8;
-    f.seekp(seed_offset);
-    uint32_t corrupted = 0xDEADBEEFu;
-    f.write(reinterpret_cast<const char*>(&corrupted), 4);
-    f.close();
-  }
+  write_first_entry_seed(cache_path, 0xDEADBEEFu);
+  ASSERT_EQ(read_first_entry_seed(cache_path), 0xDEADBEEFu);
 
   // Reload and run. Output must still match baseline.
   std::vector<float> after_corruption(num_batches * output_channels, 0.0f);
@@ -932,6 +990,76 @@ TEST_F(
   }
 
   EXPECT_EQ(after_corruption, baseline);
+
+  ::unlink(cache_path.c_str());
+}
+
+// An XNNPACK upgrade changes the per-ukernel seed, so every loaded entry
+// misses look_up and is re-packed. That re-pack must land in the cache file,
+// not on the heap: only the file-backed path lets save_packed_index write
+// back the refreshed seed. On the heap path the file keeps the stale seed
+// and the same re-pack repeats into anonymous dirty memory every launch.
+TEST_F(XNNWeightsCacheTest, SeedMismatch_RepackIsPersistedToFile) {
+  const std::string cache_path = std::string("/tmp/xnn_weights_cache_reseed_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  std::vector<float> output;
+  RunLaunchWithCacheFile(cache_path, output);
+  const off_t size_after_first_launch = file_size_of(cache_path);
+  ASSERT_GT(size_after_first_launch, 0);
+
+  const uint32_t real_seed = read_first_entry_seed(cache_path);
+  ASSERT_NE(real_seed, 0u);
+
+  // Simulate the upgrade: the persisted seed no longer matches what the
+  // current ukernel reports for the same weights.
+  write_first_entry_seed(cache_path, 0xDEADBEEFu);
+  ASSERT_EQ(read_first_entry_seed(cache_path), 0xDEADBEEFu);
+
+  std::vector<float> output_after_upgrade;
+  RunLaunchWithCacheFile(cache_path, output_after_upgrade);
+
+  EXPECT_EQ(read_first_entry_seed(cache_path), real_seed)
+      << "seed-mismatch re-pack must be written back to the cache file";
+  EXPECT_GT(file_size_of(cache_path), size_after_first_launch)
+      << "the re-packed weights must be appended to the file, not left on heap";
+  EXPECT_EQ(output_after_upgrade, output);
+
+  ::unlink(cache_path.c_str());
+}
+
+// The point of persisting the re-pack is convergence: exactly one launch
+// pays for the rebuild, and every launch after it is a plain cache hit —
+// no new packing, no file growth. Before the fix each launch re-packed into
+// heap and the file never stopped being stale.
+TEST_F(XNNWeightsCacheTest, SeedMismatch_CacheConvergesAfterOneRebuild) {
+  const std::string cache_path =
+      std::string("/tmp/xnn_weights_cache_converge_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  std::vector<float> baseline;
+  RunLaunchWithCacheFile(cache_path, baseline);
+  const uint32_t real_seed = read_first_entry_seed(cache_path);
+  ASSERT_NE(real_seed, 0u);
+
+  write_first_entry_seed(cache_path, 0xDEADBEEFu);
+
+  // Rebuild launch: absorbs the one-time re-pack.
+  std::vector<float> output;
+  RunLaunchWithCacheFile(cache_path, output);
+  const off_t size_after_rebuild = file_size_of(cache_path);
+  ASSERT_GT(size_after_rebuild, 0);
+
+  // Steady state: three more launches must be pure hits.
+  for (int launch = 0; launch < 3; ++launch) {
+    RunLaunchWithCacheFile(cache_path, output);
+    EXPECT_EQ(file_size_of(cache_path), size_after_rebuild)
+        << "cache did not converge; launch " << launch << " re-packed";
+    EXPECT_EQ(read_first_entry_seed(cache_path), real_seed);
+    EXPECT_EQ(output, baseline);
+  }
 
   ::unlink(cache_path.c_str());
 }

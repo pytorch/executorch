@@ -268,6 +268,17 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class AsStrided(torch.nn.Module):
+    def __init__(self, size, stride, storage_offset=0):
+        super().__init__()
+        self.size = size
+        self.stride = stride
+        self.storage_offset = storage_offset
+
+    def forward(self, x):
+        return torch.as_strided(x, self.size, self.stride, self.storage_offset)
+
+
 class Asinh(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -974,15 +985,26 @@ class ConvFullLike(torch.nn.Module):
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
-    def __init__(self, bias=True, dilation=1):
+    def __init__(
+        self,
+        bias=True,
+        in_channels=1,
+        out_channels=3,
+        kernel_size=3,
+        stride=2,
+        padding=1,
+        dilation=1,
+        groups=1,
+    ):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose1d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=3,
-            stride=2,
-            padding=1,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
             dilation=dilation,
+            groups=groups,
             bias=bias,
         )
 
@@ -1753,6 +1775,26 @@ class LinearNonConstantWeight(torch.nn.Module):
         return q * k * v
 
 
+class LinearSharedWeight(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.shared_weight_0 = torch.nn.Parameter(
+            torch.randn(out_features, in_features)
+        )
+        self.shared_weight_1 = torch.nn.Parameter(
+            torch.randn(out_features, in_features)
+        )
+
+    def forward(self, x, y):
+        x_0 = torch.nn.functional.linear(x, self.shared_weight_0)
+        y_0 = torch.nn.functional.linear(y, self.shared_weight_0)
+
+        x_1 = torch.nn.functional.linear(x, self.shared_weight_1)
+        y_1 = torch.nn.functional.linear(y, self.shared_weight_1)
+
+        return (x_0 + y_0) + (x_1 + y_1)
+
+
 class Log(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2382,6 +2424,25 @@ class ScaledDotProductAttention(torch.nn.Module):
         return attn_output
 
 
+class ScatterAdd(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter_add(data, self.dim, index, src)
+
+
+class ScatterReduce(torch.nn.Module):
+    def __init__(self, dim=1, reduce="sum"):
+        super().__init__()
+        self.dim = dim
+        self.reduce = reduce
+
+    def forward(self, data, index, src):
+        return data.scatter_reduce(self.dim, index, src, reduce=self.reduce)
+
+
 class ScatterSrc(torch.nn.Module):
     def __init__(self, dim=1):
         super().__init__()
@@ -2880,6 +2941,16 @@ class Threshold(torch.nn.Module):
         return torch.nn.functional.threshold(
             x, threshold=self.threshold, value=self.value, inplace=self.inplace
         )
+
+
+class ConvRelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.conv(x))
 
 
 class TopKandIndex(torch.nn.Module):

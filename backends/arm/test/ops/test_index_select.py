@@ -6,16 +6,28 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 
+from executorch.backends.arm._passes.decompose_index_select_to_gather_pass import (
+    DecomposeIndexSelectToGatherPass,
+)
+from executorch.backends.arm.operator_support.ethos_u55_support import (
+    EthosU55IndexSelectCheck,
+)
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+
+from executorch.exir.backend.utils import WhyNoPartitionReporter
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class IndexSelect(torch.nn.Module):
@@ -26,6 +38,17 @@ class IndexSelect(torch.nn.Module):
         return torch.index_select(input_, dim=dim, index=index_)
 
 
+class ConstantIndexSelect(torch.nn.Module):
+    def __init__(self, dim: int, indices: list[int], dtype: torch.dtype = torch.int32):
+        super().__init__()
+        self.dim = dim
+        self.register_buffer("indices", torch.tensor(indices, dtype=dtype))
+
+    def forward(self, input_: torch.Tensor):
+        return torch.index_select(input_, dim=self.dim, index=self.indices)
+
+
+input_t1 = Tuple[torch.Tensor]
 input_params = Tuple[torch.Tensor, int, torch.Tensor]
 
 # ---- FP profile: only float inputs ----
@@ -227,5 +250,143 @@ def test_index_select_vgf_quant(test_data: input_params):
         aten_op=IndexSelect.aten_op,
         exir_op=IndexSelect.exir_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+def test_index_select_u55_INT_constant_contiguous():
+    pipeline = EthosU55PipelineINT[input_t1](
+        ConstantIndexSelect(2, [1, 2, 3]),
+        (torch.rand(1, 2, 5, 3),),
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+def test_index_select_u55_INT_constant_contiguous_negative_dim():
+    pipeline = EthosU55PipelineINT[input_t1](
+        ConstantIndexSelect(-1, [1, 2]),
+        (torch.rand(1, 2, 4, 5),),
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "indices",
+    {
+        "noncontiguous": [1, 3],
+        "descending": [3, 1],
+        "duplicate": [1, 1],
+    },
+)
+@common.XfailIfNoCorstone300
+def test_index_select_u55_INT_constant_slices_concat(indices):
+    pipeline = EthosU55PipelineINT[input_t1](
+        ConstantIndexSelect(2, indices),
+        (torch.rand(1, 2, 5, 3),),
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
+def test_index_select_u55_INT_constant_contiguous_symbolic_dim_not_delegated():
+    selected_dim = torch.export.Dim("selected_dim", min=4, max=8)
+    tester = ArmTester(
+        ConstantIndexSelect(2, [1, 2, 3]),
+        (torch.rand(1, 2, 5, 3),),
+        common.get_u55_compile_spec(),
+        dynamic_shapes={"input_": {2: selected_dim}},
+    )
+    tester.quantize().export().to_edge().partition()
+
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+    assert exir_ops.edge.aten.index_select.default in targets
+    assert torch.ops.higher_order.executorch_call_delegate not in targets
+
+
+@common.parametrize(
+    "indices",
+    {
+        "negative_index": [-1],
+        "upper_bound_index": [5],
+    },
+)
+def test_index_select_u55_constant_out_of_bounds_raises(indices):
+    tester = ArmTester(
+        ConstantIndexSelect(2, indices),
+        (torch.rand(1, 2, 5, 3),),
+        common.get_u55_compile_spec(),
+    )
+    tester.export().to_edge()
+    exported_program = tester.stages[tester.cur].artifact.exported_program()
+
+    with pytest.raises(RuntimeError, match="index_select index out of range"):
+        DecomposeIndexSelectToGatherPass(exported_program).call(
+            exported_program.graph_module
+        )
+
+
+def test_index_select_u55_scalar_not_supported():
+    tester = ArmTester(
+        ConstantIndexSelect(0, [0]),
+        (torch.tensor(1.0),),
+        common.get_u55_compile_spec(),
+    )
+    tester.export().to_edge()
+    exported_program = tester.stages[tester.cur].artifact.exported_program()
+    index_select_node = next(
+        node
+        for node in exported_program.graph.nodes
+        if node.target == exir_ops.edge.aten.index_select.default
+    )
+
+    assert not EthosU55IndexSelectCheck(
+        exported_program, WhyNoPartitionReporter()
+    ).is_node_supported({}, index_select_node)
+
+
+def test_index_select_u55_INT_constant_int64_delegated():
+    tester = ArmTester(
+        ConstantIndexSelect(2, [1, 2, 3], torch.int64),
+        (torch.rand(1, 2, 5, 3),),
+        common.get_u55_compile_spec(),
+    )
+    tester.quantize().export().to_edge().partition()
+
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+    assert torch.ops.higher_order.executorch_call_delegate in targets
+
+
+@common.XfailIfNoCorstone300
+def test_index_select_u55_INT_constant_contiguous_a16w8():
+    pipeline = EthosU55PipelineINT[input_t1](
+        ConstantIndexSelect(2, [1, 2, 3]),
+        (torch.rand(1, 2, 5, 3),),
+        aten_ops=[],
+        exir_ops=[],
+        a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+def test_index_select_u55_INT_constant_empty_not_delegated():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        ConstantIndexSelect(2, []),
+        (torch.rand(1, 2, 5, 3),),
+        {IndexSelect.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()

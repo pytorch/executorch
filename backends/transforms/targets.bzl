@@ -89,6 +89,19 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "collapse_view_copy",
+        srcs = ["collapse_view_copy.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fuse_view_copy",
         srcs = ["fuse_view_copy.py"],
         visibility = [
@@ -192,6 +205,105 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "permute_view_meta",
+        srcs = [
+            "permute_view_meta.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":dim_maps",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_duplicate_users_pass",
+        srcs = ["fuse_duplicate_users_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_identical_input_transforms_pass",
+        srcs = ["fuse_identical_input_transforms_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            ":dim_maps",
+            ":permute_view_meta",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "propagate_view_copy_permute_pass",
+        srcs = ["propagate_view_copy_permute_pass.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            ":canonicalize_view_copy_permute_pass",
+            ":dim_maps",
+            ":fuse_duplicate_users_pass",
+            ":fuse_identical_input_transforms_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_propagate_view_copy_permute_pass",
+        srcs = [
+            "test/test_propagate_view_copy_permute_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":propagate_view_copy_permute_pass",
+            "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_library(
+        name = "canonicalize_view_copy_permute_pass",
+        srcs = [
+            "canonicalize_view_copy_permute_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":dim_maps",
+            ":permute_view_meta",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "dim_maps",
+        srcs = [
+            "dim_maps.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "channels_last_ops",
         srcs = [
             "channels_last_ops.py",
@@ -201,6 +313,38 @@ def define_common_targets():
         ],
         deps = [
             "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_library(
+        name = "convert_conv1d_to_conv2d_pass",
+        srcs = [
+            "convert_conv1d_to_conv2d_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":utils",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "channels_last_layout",
+        srcs = [
+            "channels_last_layout.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir/dialects:lib",
         ],
     )
 
@@ -326,6 +470,18 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_collapse_view_copy",
+        srcs = [
+            "test/test_collapse_view_copy.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":collapse_view_copy",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_rank_0_to_rank_1",
         srcs = [
             "test/test_rank_0_to_rank_1.py",
@@ -358,7 +514,32 @@ def define_common_targets():
             "//executorch/backends/...",
         ],
         deps = [
+            ":channels_last_layout",
             "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "merge_split_concat_chain",
+        srcs = ["merge_split_concat_chain.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            ":permute_pass_utils",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_merge_split_concat_chain",
+        srcs = ["test/test_merge_split_concat_chain.py"],
+        deps = [
+            ":merge_split_concat_chain",
+            "//caffe2:torch",
+            "//executorch/backends/test:graph_builder",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
         ],
@@ -371,6 +552,7 @@ def define_common_targets():
             "//executorch/backends/...",
         ],
         deps = [
+            ":channels_last_layout",
             "//caffe2:torch",
             "//executorch/exir/dialects:lib",
             ":permute_pass_utils",
@@ -397,6 +579,7 @@ def define_common_targets():
             "//executorch/backends/...",
         ],
         deps = [
+            ":channels_last_layout",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
@@ -412,8 +595,10 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
+            ":channels_last_layout",
             ":permute_pass_utils",
             "//caffe2:torch",
+            "//executorch/exir:lib",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
         ],
@@ -426,6 +611,7 @@ def define_common_targets():
             "//executorch/backends/...",
         ],
         deps = [
+            ":channels_last_layout",
             "//caffe2:torch",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
@@ -440,6 +626,7 @@ def define_common_targets():
             "//executorch/backends/...",
         ],
         deps = [
+            ":channels_last_layout",
             "//caffe2:torch",
             "//executorch/exir/dialects:lib",
             ":permute_pass_utils",
@@ -473,6 +660,7 @@ def define_common_targets():
             "//executorch/exir/dialects:lib",
             ":fuse_cascaded_transpose_or_permute_ops",
             ":fuse_cascaded_view_ops",
+            ":fuse_transpose_or_permute_op_pairs_pass",
             ":postpone_permute_below_squeeze_view",
             ":remove_permutes_around_elementwise_ops",
             ":replace_nop_transpose_or_permute_with_view",
@@ -490,6 +678,7 @@ def define_common_targets():
         ],
         deps = [
             "//caffe2:torch",
+            ":channels_last_layout",
             ":channels_last_ops",
             "//executorch/exir:pass_base",
             "//executorch/exir:lib",
@@ -504,8 +693,79 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":channels_last_ops",
+            ":remove_getitem_op",
             ":replace_ops_with_channels_last_variants",
             "//executorch/exir:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_convert_conv1d_to_conv2d_pass",
+        srcs = [
+            "test/test_convert_conv1d_to_conv2d_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":convert_conv1d_to_conv2d_pass",
+            ":utils",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_library(
+        name = "enforce_contiguous_dim_order",
+        srcs = ["enforce_contiguous_dim_order.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_enforce_contiguous_dim_order",
+        srcs = [
+            "test/test_enforce_contiguous_dim_order.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            ":enforce_contiguous_dim_order",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_channels_last_input_clones",
+        srcs = ["replace_channels_last_input_clones.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_replace_channels_last_input_clones",
+        srcs = [
+            "test/test_replace_channels_last_input_clones.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":channels_last_ops",
+            ":enforce_contiguous_dim_order",
+            ":replace_channels_last_input_clones",
             "fbsource//third-party/pypi/pytest:pytest",
         ],
     )

@@ -34,7 +34,7 @@ void resize_q4gsw_requant_node(
   graph->virtual_resize(packed, {K4 * N4_padded * 2});
 }
 
-utils::uvec3 q4gsw_requant_global_wg_size(
+GlobalWorkGrid q4gsw_requant_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -48,21 +48,21 @@ utils::uvec3 q4gsw_requant_global_wg_size(
   const uint32_t K4 = K / 4u;
   const uint32_t N4 = (N + 3u) / 4u;
   const uint32_t N8 = (N4 + 1u) / 2u;
-  return {K4, N8, 1u};
+  return GlobalWorkGrid({K4, N8, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 q4gsw_requant_local_wg_size(
+LocalWorkGroup q4gsw_requant_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {8u, 8u, 1u};
+  return LocalWorkGroup(8u, 8u, 1u);
 }
 
 void q4gsw_requant(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -108,8 +108,8 @@ void q4gsw_requant(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      q4gsw_requant_global_wg_size,
-      q4gsw_requant_local_wg_size,
+      q4gsw_requant_gwg,
+      q4gsw_requant_lwg,
       // Inputs and Outputs
       {{packed, vkapi::kWrite}, {{latent, packed_scales}, vkapi::kRead}},
       // Shader params buffers

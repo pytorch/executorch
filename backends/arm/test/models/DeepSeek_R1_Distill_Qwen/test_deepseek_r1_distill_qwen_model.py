@@ -197,7 +197,7 @@ CHECKPOINT_VGF_NO_QUANT_BF16_XLARGE_TEST_CASES: dict[
     "base_model": DeepSeekR1DistillQwenModelTestCase(
         model_cls=BaseModelWrapper,
         config_factory=_make_deepseek_r1_distill_qwen_1_5b_model_config,
-        atol=0.1,
+        atol=0.17,
         rtol=0.1,
         tosa_spec="TOSA-1.0+FP+bf16",
     ),

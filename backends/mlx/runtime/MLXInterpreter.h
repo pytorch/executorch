@@ -11,6 +11,9 @@
 #include "MLXCache.h"
 #include "MLXExecutor.h"
 
+#include <algorithm>
+#include <vector>
+
 #include <mlx/array.h>
 #include <mlx/fast.h>
 #include <mlx/mlx.h>
@@ -290,7 +293,15 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 
   array out = fast::scaled_dot_product_attention(
-      Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+      Q,
+      K,
+      V,
+      static_cast<float>(n.scale),
+      mask_mode,
+      mask_arr,
+      sinks,
+      false,
+      s);
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -307,65 +318,50 @@ inline void exec_update_and_attend(
   if (!n.scale) {
     throw std::runtime_error("update_and_attend: scale is not set");
   }
-  // The cache does the KV write + read and declares the mask; the handler owns
-  // the query side (q, scale) and calls SDPA.
+  // The cache places the step and attends over whatever storage its layout
+  // uses; the handler reads the query side off the graph.
   const array& q = st.const_tensor_ref(n.q);
-  // The run's start is position[0], read host-side so the cache stays pure
-  // graph + integer bookkeeping. Every layer of a step reads the same position
+  // One position per query token, read host-side so the cache stays pure graph
+  // + integer bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
-  // nothing for the rest -- casting first would instead build a fresh array per
-  // layer and sync on each one.
+  // nothing for the rest.
   auto pos = st.const_tensor_ref(n.position);
   eval(pos);
-  int position;
+  // The entries are read in order off the buffer, which a strided view would
+  // walk with the wrong stride.
+  if (!pos.flags().row_contiguous) {
+    throw std::runtime_error("update_and_attend: position must be contiguous");
+  }
+  const int length = static_cast<int>(pos.size());
+  if (length != static_cast<int>(q.shape(2))) {
+    throw std::runtime_error(
+        "update_and_attend: position must hold one entry per query token");
+  }
+  std::vector<int32_t> positions(static_cast<size_t>(length));
   switch (pos.dtype()) {
     case ::mlx::core::int32:
-      position = pos.data<int32_t>()[0];
+      std::copy(
+          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
       break;
     case ::mlx::core::int64:
-      position = static_cast<int>(pos.data<int64_t>()[0]);
+      std::transform(
+          pos.data<int64_t>(),
+          pos.data<int64_t>() + length,
+          positions.begin(),
+          [](int64_t p) { return static_cast<int32_t>(p); });
       break;
     default:
       throw std::runtime_error(
           std::string("update_and_attend: position must be int32 or int64, ") +
           "got " + ExecutionState::dtype_str(pos.dtype()));
   }
-  AttendSpec spec = st.cache->update_and_fetch(
+  array out = st.cache->attend(
       *n.layer_id,
-      position,
+      positions,
+      q,
       st.const_tensor_ref(n.k),
       st.const_tensor_ref(n.v),
-      s);
-  // Match stored K/V to the query dtype before SDPA (no-op when equal; the
-  // storage precision may differ from the compute dtype).
-  array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
-  array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
-  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
-  // than test for Causal: None and Explicit both map to "" and are told apart
-  // only by spec.mask, so an Explicit with no mask would silently attend
-  // unmasked.
-  std::string mask_mode;
-  switch (spec.kind) {
-    case AttendSpec::Mask::None:
-      break;
-    case AttendSpec::Mask::Causal:
-      mask_mode = "causal";
-      break;
-    case AttendSpec::Mask::Explicit:
-      if (!spec.mask) {
-        throw std::runtime_error(
-            "update_and_attend: Explicit mask kind with no mask tensor");
-      }
-      break;
-  }
-  array out = fast::scaled_dot_product_attention(
-      q,
-      K,
-      V,
       static_cast<float>(*n.scale),
-      mask_mode,
-      spec.mask,
-      std::nullopt,
       s);
   // Honor the op's output-dtype contract (unset -> SDPA's native output).
   if (n.out_dtype) {
@@ -819,6 +815,11 @@ exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
+}
+
+inline void exec_flip(const FlipNode& n, ExecutionState& st, StreamOrDevice s) {
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, flip(st.const_tensor_ref(n.x), axes, s));
 }
 
 inline void
@@ -1546,6 +1547,11 @@ inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_trunc(const TruncNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, trunc(st.const_tensor_ref(n.x), s));
+}
+
+inline void
 exec_square(const SquareNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, square(st.const_tensor_ref(n.x), s));
 }
@@ -2141,6 +2147,9 @@ class Interpreter {
       case OpCode::TRANSPOSE:
         ops::exec_transpose(std::get<TransposeNode>(instr.node), st, s);
         break;
+      case OpCode::FLIP:
+        ops::exec_flip(std::get<FlipNode>(instr.node), st, s);
+        break;
       case OpCode::AS_STRIDED:
         ops::exec_as_strided(std::get<AsStridedNode>(instr.node), st, s);
         break;
@@ -2235,6 +2244,9 @@ class Interpreter {
         break;
       case OpCode::CEIL:
         ops::exec_ceil(std::get<CeilNode>(instr.node), st, s);
+        break;
+      case OpCode::TRUNC:
+        ops::exec_trunc(std::get<TruncNode>(instr.node), st, s);
         break;
       case OpCode::SQUARE:
         ops::exec_square(std::get<SquareNode>(instr.node), st, s);

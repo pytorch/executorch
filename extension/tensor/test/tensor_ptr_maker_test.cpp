@@ -195,6 +195,7 @@ TEST_F(TensorPtrMakerTest, TensorDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {4, 5},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);

@@ -192,7 +192,6 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
-        compile_spec: Optional[ArmCompileSpec] = None,
     ):
         super().__init__(
             default_partitioner_cls=None,
@@ -232,18 +231,13 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
 class ToExecutorch(BaseStages.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
-            # Check if the model has mutable buffers. These are not delegated to the backend
-            # and are handled by core ExecuTorch as I/O. In other words, the mutable buffer
-            # is outputted and re-inputted into the model. As we are calling the graph module
-            # directly, we need to ensure we handle these extra mutable inputs.
-            if (
-                len(self.artifact.exported_program().graph_signature.buffers_to_mutate)
-                > 0
-            ):
-                buffers = list(self.artifact.exported_program().buffers())
-                buffers.extend(inputs)
-
-                return self.artifact.exported_program().graph_module(*buffers)
+            program = self.artifact.exported_program()
+            # Mutable inputs and other parameters become inputs to the graph
+            # so we need to input these in the correct order.
+            # Also, execute the raw graph to preserve mutation outputs for comparison.
+            if program.graph_signature.buffers_to_mutate:
+                flat_inputs = program._graph_module_flat_inputs(inputs, {})
+                return program.graph_module(*flat_inputs)
             else:
                 return super().run_artifact(inputs)
 
@@ -474,7 +468,6 @@ class ArmTester(tester.Tester):
                 edge_compile_config,
                 constant_methods=self.constant_methods,
                 transform_passes=self.transform_passes,
-                compile_spec=self.compile_spec,
             )
         else:
             if partitioners is not None:

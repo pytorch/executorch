@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
@@ -28,13 +29,16 @@ from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
 from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
     can_decompose_large_stride_maxpool2d,
 )
+from executorch.backends.arm._passes.decompose_roll_pass import can_decompose_roll
 from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
     is_exact_tosa_boundary_bilinear_downscale,
 )
 
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    is_quantized,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
@@ -50,6 +54,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -120,6 +125,51 @@ class DecomposableResizeSupported(OperatorSupportBase):
         return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
 
 
+def _is_decomposable_roll_node(
+    node: torch.fx.Node, tosa_spec: TosaSpecification
+) -> bool:
+    """Return whether backend preprocessing can decompose a roll node."""
+    if node.target not in {
+        torch.ops.aten.roll.default,
+        exir_ops.edge.aten.roll.default,
+    }:
+        return False
+    if (
+        tosa_spec.support_integer()
+        and not tosa_spec.support_float()
+        and not is_quantized(node)
+    ):
+        return False
+    input_node = ensure_type(torch.fx.Node, node.args[0])
+    input_tensor = get_first_fake_tensor(input_node)
+    if not 0 < len(input_tensor.shape) <= MAX_RANK:
+        return False
+    if input_tensor.dtype not in {torch.float16, torch.float32} and not (
+        input_tensor.dtype == torch.bfloat16 and tosa_spec.support_extension("bf16")
+    ):
+        return False
+
+    dims = node.args[2] if len(node.args) > 2 else ()
+    return can_decompose_roll(input_tensor.shape, node.args[1], dims)
+
+
+class DecomposableRollSupported(OperatorSupportBase):
+    """Accept static rolls that backend preprocessing can decompose."""
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        """Initialize the check with the active TOSA specification."""
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when backend preprocessing can decompose the roll."""
+        del submodules
+        return _is_decomposable_roll_node(node, self.tosa_spec)
+
+
 def _is_custom_partition_op(
     custom_ops: set[torch._ops.OpOverload], target: object
 ) -> bool:
@@ -151,10 +201,23 @@ def _is_noop_as_strided_copy(node: torch.fx.Node) -> bool:
     else:
         input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
         output_tensor = get_first_fake_tensor(node)
-        return (
-            input_tensor.shape == output_tensor.shape
-            and input_tensor.stride() == output_tensor.stride()
-            and input_tensor.storage_offset() == output_tensor.storage_offset()
+        return bool(
+            len(input_tensor.shape) == len(output_tensor.shape)
+            and all(
+                statically_known_true(input_dim == output_dim)
+                for input_dim, output_dim in zip(
+                    input_tensor.shape, output_tensor.shape
+                )
+            )
+            and all(
+                statically_known_true(input_stride == output_stride)
+                for input_stride, output_stride in zip(
+                    input_tensor.stride(), output_tensor.stride()
+                )
+            )
+            and statically_known_true(
+                input_tensor.storage_offset() == output_tensor.storage_offset()
+            )
         )
 
 
@@ -180,7 +243,7 @@ def _is_noop_squeeze(node: torch.fx.Node) -> bool:
     else:
         input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
         output_tensor = get_first_fake_tensor(node)
-        return input_tensor.shape == output_tensor.shape
+        return bool(input_tensor.shape == output_tensor.shape)
 
 
 def _is_noop_flip(node: torch.fx.node.Node) -> bool:
@@ -189,6 +252,41 @@ def _is_noop_flip(node: torch.fx.node.Node) -> bool:
         return False
     dims = node.args[1]
     return isinstance(dims, (list, tuple)) and len(dims) == 0
+
+
+def _is_noop_permute(node: torch.fx.Node) -> bool:
+    """Return whether a permute preserves the order of every dimension.
+
+    Quantized identity-permute models can produce a partition containing only
+    boundary Q/DQ nodes and the identity permute::
+
+        DQ -> PERMUTE([0, 1, ..., rank - 1]) -> Q
+
+    TOSA lowering removes the boundary Q/DQ nodes and canonicalization removes
+    the identity permute. Delegating that partition would therefore create an
+    empty TOSA graph whose declared output has no writer.
+
+    Args:
+        node (torch.fx.Node): FX node to classify.
+
+    Returns:
+        bool: True when the node is an identity ``permute_copy``.
+
+    """
+    if node.target != exir_ops.edge.aten.permute_copy.default:
+        return False
+
+    dims = node.args[1]
+    if not isinstance(dims, (list, tuple)) or not all(
+        isinstance(dim, int) for dim in dims
+    ):
+        return False
+
+    rank = len(dims)
+    normalized_dims = tuple(
+        dim if dim >= 0 else dim + rank for dim in cast(Sequence[int], dims)
+    )
+    return normalized_dims == tuple(range(rank))
 
 
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
@@ -312,6 +410,8 @@ class TOSAPartitioner(Partitioner):
 
     """
 
+    compile_spec: ArmCompileSpec
+
     def __init__(
         self,
         compile_spec: TosaCompileSpec,
@@ -332,11 +432,33 @@ class TOSAPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(
             TOSABackend.__name__, compile_spec._to_list()
         )
+        self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply required Arm passes before default ATen decompositions.
+
+        EXIR invokes this backend extension hook automatically through
+        ``to_edge_transform_and_lower``. Model export users should not call it
+        directly.
+
+        Args:
+            exported_program (ExportedProgram): The ATen-dialect program to
+                transform.
+
+        Returns:
+            ExportedProgram: The transformed ATen-dialect program.
+
+        """
+        return ArmPassManager(
+            self.compile_spec
+        ).transform_for_pre_decomposition_pipeline(exported_program)
 
     def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
         """Register a custom op to be considered supported."""
@@ -588,6 +710,7 @@ class TOSAPartitioner(Partitioner):
                     or _is_noop_to_dim_order_copy(node)
                     or _is_noop_squeeze(node)
                     or _is_noop_flip(node)
+                    or _is_noop_permute(node)
                     or _is_view_copy(node)
                     or _is_noop_as_strided_copy(node)
                     or node.target in Q_OPS
@@ -617,6 +740,7 @@ class TOSAPartitioner(Partitioner):
             additional_positive_checks=[
                 self._decomposable_resize_support,
                 DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
+                DecomposableRollSupported(self.tosa_spec),
             ],
         )
 
@@ -706,11 +830,31 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_always = {
             torch.ops.aten.logit.default,
         }
+        ops_to_not_decompose_conditionally = {
+            torch.ops.aten.roll.default,
+        }
         ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
         }
+        ops_to_not_decompose = (
+            ops_to_not_decompose_always
+            | ops_to_not_decompose_if_quant_op
+            | ops_to_not_decompose_if_fp
+            | ops_to_not_decompose_if_integer
+            | ops_to_not_decompose_conditionally
+        )
+
+        if not self.tosa_spec.is_U55_subset:
+            # Tosa operator "RESIZE" is not supported on U55. Since
+            # upsample_bilinear2d and upsample_nearest2d decompose into that it
+            # will not be possible to delegate those operators on U55. If we
+            # have said here to not decompose them there will be an error saying
+            # the operator was not decomposed. It will not be possible for it
+            # to end up on either CPU or NPU.
+            ops_to_not_decompose.add(torch.ops.aten.upsample_nearest2d.vec)
+            ops_to_not_decompose.add(torch.ops.aten.upsample_bilinear2d.vec)
 
         def filter_fn(node: torch.fx.Node) -> bool:
             """Return True if an op should not be decomposed.
@@ -727,6 +871,13 @@ class TOSAPartitioner(Partitioner):
             """
             if _is_custom_partition_op(self._custom_partition_ops, node.target):
                 return True
+            if (
+                node.target in ops_to_not_decompose
+                and get_first_fake_tensor(node).dtype == torch.float64
+            ):
+                return False
+            if node.target in ops_to_not_decompose_conditionally:
+                return _is_decomposable_roll_node(node, self.tosa_spec)
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp
@@ -797,21 +948,5 @@ class TOSAPartitioner(Partitioner):
                 return True
             return False
 
-        ops_to_not_decompose = list(
-            ops_to_not_decompose_always
-            | ops_to_not_decompose_if_quant_op
-            | ops_to_not_decompose_if_fp
-            | ops_to_not_decompose_if_integer
-        )
-        ops_to_not_decompose.extend(self._custom_partition_ops)
-
-        if not self.tosa_spec.is_U55_subset:
-            # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
-            # and upsample_nearest2d decompose into that it will not be possible to
-            # delegate those operators on U55. If we have said here to not decompose
-            # them there will be an error saying the operator was not decomposed. It
-            # will not be possible for it to end up on either CPU or NPU.
-            ops_to_not_decompose.append(torch.ops.aten.upsample_nearest2d.vec)
-            ops_to_not_decompose.append(torch.ops.aten.upsample_bilinear2d.vec)
-
-        return (ops_to_not_decompose, filter_fn)
+        ops_to_not_decompose.update(self._custom_partition_ops)
+        return (list(ops_to_not_decompose), filter_fn)

@@ -8,11 +8,11 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <optional>
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 

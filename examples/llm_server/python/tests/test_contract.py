@@ -32,7 +32,17 @@ def _sse_chunks(text):
 
 def test_health(make_client):
     client, _ = make_client()
-    assert client.get("/health").json() == {"status": "ok"}
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_health_reports_unavailable_worker(make_client):
+    client, worker = make_client()
+    worker.healthy = False
+    response = client.get("/health")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}
 
 
 def test_models_listing_shape(make_client):

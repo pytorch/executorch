@@ -165,6 +165,7 @@ def replace_hf_cache_with_mlx_ring_buffer(
     window_size: int = 512,
     max_cache_len: int | None = None,
     dtype: torch.dtype = torch.float32,
+    max_write_len: int | None = None,
 ) -> nn.Module:
     """
     Replace HuggingFace's StaticCache with RingBufferKVCache for sliding window models.
@@ -182,9 +183,13 @@ def replace_hf_cache_with_mlx_ring_buffer(
             ``window_size``, which is only correct for models with no
             full-attention layers
         dtype: Cache tensor dtype
+        max_write_len: Largest single write the sliding layers must accept;
+            sizes each ring as ``window_size + max_write_len - 1``. Defaults to
+            ``window_size``.
 
     Raises:
-        ValueError: If module has no recognized cache attribute
+        ValueError: If module has no recognized cache attribute, or if
+            ``max_write_len`` exceeds ``window_size``
     """
     from transformers.cache_utils import StaticCache
 
@@ -206,6 +211,15 @@ def replace_hf_cache_with_mlx_ring_buffer(
     layer_types, num_heads, head_dims = resolve_hf_cache_layout(config)
     num_cache_layers = len(mlx_cache.layers)
     num_ring_layers = 0
+    # Effective max write caps buffer slack: buffer = window + max_write -1
+    ring_max_write = max_write_len if max_write_len is not None else window_size
+    if ring_max_write > window_size:
+        raise ValueError(
+            f"max_write_len={ring_max_write} exceeds the sliding window "
+            f"{window_size}: a ring layer holds window + max_write - 1 slots, "
+            "so the write would dominate the window"
+        )
+
     for i, (layer_type, layer_num_heads, layer_head_dim) in enumerate(
         zip(layer_types, num_heads, head_dims)
     ):
@@ -217,6 +231,7 @@ def replace_hf_cache_with_mlx_ring_buffer(
             n_heads=layer_num_heads,
             head_dim=layer_head_dim,
             dtype=dtype,
+            max_write_len=ring_max_write,
         )
         num_ring_layers += 1
 
@@ -251,7 +266,8 @@ def replace_hf_cache_with_mlx_ring_buffer(
 
     logger.info(
         f"Installed hybrid MLX cache: {num_ring_layers} ring-buffer layers "
-        f"(window_size={window_size}) / {num_cache_layers} total cache layers "
+        f"(window_size={window_size}, max_write_len={ring_max_write}) / "
+        f"{num_cache_layers} total cache layers "
         f"(full-attention length {full_cache_len})"
     )
 

@@ -78,7 +78,7 @@ Tensor& custom_quantized_sdpa_out(
     const bool is_seq_at_dim_1,
     Tensor& output);
 
-std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
+std::tuple<Tensor&, Tensor&> gated_delta_rule_out(
     RuntimeContext& ctx,
     const Tensor& query,
     const Tensor& key,

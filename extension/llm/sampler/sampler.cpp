@@ -8,6 +8,7 @@
 
 // This is a modified version of https://github.com/karpathy/llama2.c.git
 // @lint-ignore-every LICENSELINT
+// @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
 /**
  * MIT License
  *
@@ -250,12 +251,21 @@ int32_t Sampler::sample(T* logits) {
   return next;
 }
 
+template <>
+int32_t Sampler::sample<executorch::aten::BFloat16>(
+    executorch::aten::BFloat16* logits) {
+  float_logits_buffer_.resize(vocab_size_);
+  for (int i = 0; i < vocab_size_; i++) {
+    float_logits_buffer_[i] = static_cast<float>(logits[i]);
+  }
+
+  return sample(float_logits_buffer_.data());
+}
+
 template int32_t Sampler::sample<float>(float* logits);
 template int32_t Sampler::sample<uint16_t>(uint16_t* logits);
 template int32_t Sampler::sample<executorch::aten::Half>(
     executorch::aten::Half* logits);
-template int32_t Sampler::sample<executorch::aten::BFloat16>(
-    executorch::aten::BFloat16* logits);
 
 } // namespace llm
 } // namespace extension

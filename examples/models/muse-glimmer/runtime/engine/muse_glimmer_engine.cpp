@@ -117,7 +117,6 @@ constexpr const char* kDFlashMinDraftPrefillChunk =
     "get_min_draft_prefill_chunk";
 constexpr const char* kDFlashMaxDraftPrefillChunk =
     "get_max_draft_prefill_chunk";
-constexpr const char* kActivationDtype = "get_activation_dtype";
 constexpr const char* kVisionHiddenSize = "get_vision_hidden_size";
 constexpr const char* kMaxVisionPatches = "get_max_vision_patches";
 constexpr int64_t kVisionDownsampleArea = 4;
@@ -297,9 +296,7 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       /*share_memory_arenas=*/share_memory_arenas);
 
 #ifdef EXECUTORCH_BUILD_CUDA
-  executorch::runtime::BackendOptions<3> cuda_opts;
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      cuda_opts.set_option("use_shared_cuda_stream", true));
+  executorch::runtime::BackendOptions<2> cuda_opts;
   ET_CHECK_OK_OR_RETURN_ERROR(
       cuda_opts.set_option("weight_sharing_across_methods", true));
   if (config.enable_cuda_graph) {

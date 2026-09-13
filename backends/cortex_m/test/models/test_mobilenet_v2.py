@@ -20,7 +20,6 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 35,
     "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 104,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 79,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 67,
@@ -28,21 +27,17 @@ ops_before_transforms: dict[str, int] = {
 
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 10,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_avg_pool2d_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 35,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 17,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
-    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
 }
 
 # Use larger sample set for calibration to get better quantization
-calibration_samples = [
-    (torch.randn(1, 3, 224, 224).to(memory_format=torch.channels_last),)
-    for _ in range(100)
-]
+calibration_samples = [(torch.randn(1, 3, 224, 224),) for _ in range(100)]
 
 test_cases = {
     "mobilenet_v2": McuTestCase(
@@ -54,6 +49,11 @@ test_cases = {
 }
 
 
+ops_absent_after_transforms: list[str] = [
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
+]
+
+
 @parametrize("test_case", test_cases)
 def test_dialect_mv2(test_case):
     inputs = test_case.get_example_inputs()
@@ -63,6 +63,7 @@ def test_dialect_mv2(test_case):
         ops_after_transforms,
         qtol=10,
         calibration_samples=calibration_samples,
+        ops_absent_after_transforms=ops_absent_after_transforms,
     )
 
     # assert that top 1 output matches

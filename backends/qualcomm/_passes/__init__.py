@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from .annotate_avg_pool1d import AnnotateAvgPool1D
+from .annotate_get_attr import AnnotateGetAttr
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
@@ -17,6 +18,7 @@ from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
 from .decompose_addmm import DecomposeAddmm
 from .decompose_any import DecomposeAny
+from .decompose_as_strided import DecomposeAsStrided
 from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -73,6 +75,7 @@ from .tag_quant_io import TagQuantIO
 
 __all__ = [
     AnnotateAvgPool1D,
+    AnnotateGetAttr,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -85,6 +88,7 @@ __all__ = [
     DecomposeAcos,
     DecomposeAddmm,
     DecomposeAny,
+    DecomposeAsStrided,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,

@@ -23,6 +23,10 @@ LAZY_IMPORTS = {
     "EthosUBackend": ("executorch.backends.arm.ethosu", "EthosUBackend"),
     "EthosUCompileSpec": ("executorch.backends.arm.ethosu", "EthosUCompileSpec"),
     "EthosUPartitioner": ("executorch.backends.arm.ethosu", "EthosUPartitioner"),
+    "VelaExternalBlockPlacements": (
+        "executorch.backends.arm.ethosu",
+        "VelaExternalBlockPlacements",
+    ),
     "VgfBackend": ("executorch.backends.arm.vgf", "VgfBackend"),
     "VgfCompileSpec": ("executorch.backends.arm.vgf", "VgfCompileSpec"),
     "VgfPartitioner": ("executorch.backends.arm.vgf", "VgfPartitioner"),

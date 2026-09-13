@@ -67,7 +67,7 @@ mkdir -p "$OUT_DIR/src" "$OUT_DIR/examples"
 # 1. Copy library metadata, wrapper header, and stubs
 # ─────────────────────────────────────────────────────────
 cp "$SCRIPT_DIR/library.properties" "$OUT_DIR/"
-cp "$SCRIPT_DIR/ExecuTorch.h" "$OUT_DIR/src/"
+cp "$SCRIPT_DIR/ExecuTorch.h" "$SCRIPT_DIR/ETModel.h" "$OUT_DIR/src/"
 cp "$SCRIPT_DIR/platform_stubs.c" "$OUT_DIR/src/"
 cp -r "$SCRIPT_DIR/examples/"* "$OUT_DIR/examples/"
 # Training checkpoints are how a model is regenerated, not something the
@@ -426,48 +426,15 @@ find "$OUT_DIR" -path "*test*" -name "*.cpp" -delete 2>/dev/null || true
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/android.cpp"
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/posix.cpp"
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/windows.cpp"
-# minimal.cpp and zephyr.cpp both define the et_pal_* backend, so shipping both
-# leaves the choice to link order. minimal's logger is an empty body and its
-# et_pal_allocate returns nullptr, which silently discards every ET_LOG.
+# Ship one platform layer, written against the Arduino API rather than any one
+# board core. Upstream's zephyr.cpp calls k_uptime_ticks and k_malloc, which
+# would pin the library to the single Arduino core built on Zephyr; minimal.cpp
+# has an empty logger and an allocator that returns nullptr. Both define the
+# same et_pal_* symbols, so keeping any of them alongside ours would leave the
+# choice to link order.
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/minimal.cpp"
-
-# zephyr.cpp logs through fprintf, and platform_stubs.c stubs fprintf out to
-# nothing, so runtime diagnostics never reach the user. Route them to a weak
-# hook a sketch can implement -- see the examples for a Serial implementation.
-ZEPHYR_PAL="$OUT_DIR/src/executorch/runtime/platform/default/zephyr.cpp"
-"$PYTHON" - "$ZEPHYR_PAL" << 'PATCH'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = """  fprintf(
-      stderr,
-      "%c [executorch:%s:%zu %s()] %s\\n",
-      level,
-      filename,
-      line,
-      function,
-      message);"""
-new = """  char et_log_buf[256];
-  snprintf(
-      et_log_buf,
-      sizeof(et_log_buf),
-      "%c [ET:%s:%zu] %s",
-      (char)level,
-      filename,
-      line,
-      message);
-  et_arduino_log(et_log_buf);"""
-if old not in s:
-    sys.exit("ERROR: zephyr.cpp log call not found; the PAL changed upstream.")
-s = s.replace(old, new)
-s = s.replace(
-    "void et_pal_emit_log_message(",
-    'extern "C" __attribute__((weak)) void et_arduino_log(const char*) {}\n\n'
-    "void et_pal_emit_log_message(",
-    1,
-)
-open(p, "w").write(s)
-PATCH
+rm -f "$OUT_DIR/src/executorch/runtime/platform/default/zephyr.cpp"
+cp "$SCRIPT_DIR/arduino_pal.cpp" "$OUT_DIR/src/executorch/runtime/platform/default/"
 
 # Regenerate schema headers if flatc is available
 FLATC=""

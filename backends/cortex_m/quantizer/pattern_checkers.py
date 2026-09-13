@@ -11,6 +11,7 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     coerce_int_pair,
     is_channel_broadcast,
     is_channels_last,
+    is_foldable_alpha,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
@@ -29,9 +30,12 @@ class CortexMAddMulCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
         """
-        Checks that the pattern does not perform unsupported broadcasting.
+        Checks that the pattern does not perform unsupported broadcasting, and
+        that any alpha on an add/sub is one quantized_add can fold.
         """
         for node in pattern:
+            if not is_foldable_alpha(node.kwargs.get("alpha", 1)):
+                return False
             if len(node.all_input_nodes) == 2:
                 t1 = get_first_fake_tensor(node.all_input_nodes[0])
                 t2 = get_first_fake_tensor(node.all_input_nodes[1])
@@ -127,6 +131,18 @@ class CortexMConv2DCheck(PatternCheck):
         return is_int8 and is_ch_axis_0
 
 
+class CortexMExplicitConv2DCheck(CortexMConv2DCheck):
+    @classmethod
+    def check_pattern(cls, pattern):
+        return all(get_first_fake_tensor(node).dim() == 4 for node in pattern)
+
+
+class CortexMExplicitConv1DCheck(CortexMConv2DCheck):
+    @classmethod
+    def check_pattern(cls, pattern):
+        return all(get_first_fake_tensor(node).dim() == 3 for node in pattern)
+
+
 class CortexMLinearCheck(PatternCheck):
     @classmethod
     def check_quantization_config(
@@ -140,8 +156,8 @@ class CortexMLinearCheck(PatternCheck):
 
 
 class CortexMActivationCheck(PatternCheck):
-    """Accept standalone elementwise activations (sigmoid / tanh / silu)
-    that the LUT-based cortex_m.quantized_activation op handles uniformly.
+    """Accept the standalone elementwise activations that the LUT-based
+    cortex_m.quantized_activation op handles uniformly.
 
     The kernel is shape-agnostic and the LUT is computed AoT from per-tensor
     qparams, so the only thing to enforce is int8 per-tensor quantization.
@@ -215,6 +231,8 @@ class CortexMSoftmaxCheck(PatternCheck):
 
 class CortexMConvTranspose2DCheck(PatternCheck):
 
+    require_channels_last = True
+
     @classmethod
     def _check_node(cls, node: Node) -> bool:
         if node is None:
@@ -224,8 +242,7 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         if tensor is None:
             return False  # Reject if no tensor found
 
-        # REJECT if using NCHW format (we need channels_last/NHWC)
-        if not is_channels_last(tensor):
+        if cls.require_channels_last and not is_channels_last(tensor):
             return False  # Reject NCHW
 
         # For aten.conv_transpose2d.input:
@@ -282,6 +299,10 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         is_ch_axis_1 = weight_qspec.ch_axis == 1 or weight_qspec.ch_axis is None
 
         return is_int8 and is_ch_axis_1
+
+
+class CortexMExplicitConvTranspose2DCheck(CortexMConvTranspose2DCheck):
+    require_channels_last = False
 
 
 class CortexMAvgPool2DCheck(PatternCheck):

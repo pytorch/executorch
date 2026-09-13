@@ -17,7 +17,7 @@ from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePas
 from executorch.backends.nxp.edge_passes.remove_as_strided_copy_nodes import (
     RemoveUselessAsStridedCopyNodes,
 )
-from torch.fx.passes.infra.pass_manager import PassManager
+from executorch.exir.pass_manager import PassManager
 
 
 class NeutronEdgePassManager(PassManager):

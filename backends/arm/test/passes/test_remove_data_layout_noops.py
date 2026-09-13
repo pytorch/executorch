@@ -8,6 +8,7 @@ import pytest
 import torch
 from executorch.backends.arm._passes import (
     CanonicalizeViewCopyPermutePass,
+    DeduplicateConstShapesPass,
     EnsureUniqueOutputNodesPass,
     ExirToTosaPass,
     FuseDuplicateUsersPass,
@@ -116,6 +117,89 @@ def test_keep_multi_input_concat():
     result = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
 
     assert _count_target(result, exir_ops.edge.aten.cat.default) == 1
+
+
+def test_remove_identity_bilinear_upsample():
+    graph = Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.ones(1, 4, 768, 384)
+    upsample = _call(
+        graph,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
+        (x, None, False, [1.0, 1.0]),
+        torch.ones(1, 4, 768, 384),
+    )
+    graph.output((upsample,))
+
+    result = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
+
+    assert _count_target(result, exir_ops.edge.aten.upsample_bilinear2d.vec) == 0
+    assert result.graph.output_node().args[0][0].op == "placeholder"
+
+
+def test_remove_identity_nearest_upsample():
+    graph = Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.ones(1, 4, 768, 384)
+    upsample = _call(
+        graph,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
+        (x, None, [1.0, 1.0]),
+        torch.ones(1, 4, 768, 384),
+    )
+    graph.output((upsample,))
+
+    result = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
+
+    assert _count_target(result, exir_ops.edge.aten.upsample_nearest2d.vec) == 0
+    assert result.graph.output_node().args[0][0].op == "placeholder"
+
+
+def test_keep_bilinear_upsample_with_rounded_identity_shape():
+    graph = Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.ones(1, 4, 3, 3)
+    upsample = _call(
+        graph,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
+        (x, None, False, [1.1, 1.1]),
+        torch.ones(1, 4, 3, 3),
+    )
+    graph.output((upsample,))
+
+    result = _run_remove_noop(GraphModule(torch.nn.Module(), graph))
+
+    assert _count_target(result, exir_ops.edge.aten.upsample_bilinear2d.vec) == 1
+
+
+class _IdentityUpsampleModule(torch.nn.Module):
+    def forward(self, x):
+        return torch.nn.functional.interpolate(
+            x, scale_factor=1.0, mode="bilinear", align_corners=False
+        )
+
+
+def test_remove_identity_bilinear_upsample_backend_pipeline():
+    exported_program = export(
+        _IdentityUpsampleModule(), (torch.ones(1, 4, 768, 384),), strict=True
+    )
+    edge_program = to_edge(
+        exported_program,
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+
+    assert (
+        _count_target(
+            edge_program.graph_module, exir_ops.edge.aten.upsample_bilinear2d.vec
+        )
+        == 1
+    )
+
+    graph_module = ArmPassManager(
+        TosaCompileSpec("TOSA-1.0+FP")
+    ).transform_to_backend_pipeline(edge_program, edge_program.graph_module)
+
+    assert _count_target(graph_module, exir_ops.backend.tosa.RESIZE.default) == 0
 
 
 def test_remove_full_slice_and_unused_shape_constants():
@@ -416,4 +500,5 @@ def test_data_layout_noop_cleanup_pipeline_order():
     assert pass_types[pre_tosa_cleanup + 1] is CanonicalizeViewCopyPermutePass
     assert pass_types[post_tosa_cleanup + 1] is FuseDuplicateUsersPass
     assert pass_types[post_tosa_cleanup + 2] is InsertRescalePass
-    assert pass_types[post_tosa_cleanup + 3] is EnsureUniqueOutputNodesPass
+    assert pass_types[post_tosa_cleanup + 3] is DeduplicateConstShapesPass
+    assert pass_types[post_tosa_cleanup + 4] is EnsureUniqueOutputNodesPass

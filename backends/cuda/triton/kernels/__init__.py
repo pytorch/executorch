@@ -11,10 +11,10 @@ from executorch.backends.cuda.triton.kernels.fused_moe import (
     fused_moe_batched_gemm_int8,
     moe_align_block_size,
 )
-
 from executorch.backends.cuda.triton.kernels.int4_matmul import (
     dequant_w4_to_bf16,
     int4_matvec,
+    int4_matvec_bf16,
 )
 from executorch.backends.cuda.triton.kernels.sdpa import (
     sdpa,
@@ -30,6 +30,7 @@ __all__ = [
     "fused_moe_batched_gemm",
     "fused_moe_batched_gemm_int8",
     "int4_matvec",
+    "int4_matvec_bf16",
     "moe_align_block_size",
     "sdpa",
     "sdpa_decode_splitk",

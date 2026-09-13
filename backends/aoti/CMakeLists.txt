@@ -83,8 +83,12 @@ target_compile_definitions(
   slimtensor INTERFACE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-# Add CUDA support for SlimTensor when building with CUDA
-if(EXECUTORCH_BUILD_CUDA)
+# Add GPU support for SlimTensor when building with CUDA or ROCm.
+if(EXECUTORCH_BUILD_ROCM)
+  find_package(hip CONFIG REQUIRED)
+  target_link_libraries(slimtensor INTERFACE hip::host extension_cuda)
+  target_compile_definitions(slimtensor INTERFACE EXECUTORCH_USE_HIP=1)
+elseif(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
   target_include_directories(slimtensor INTERFACE ${CUDAToolkit_INCLUDE_DIRS})
   target_link_libraries(slimtensor INTERFACE CUDA::cudart extension_cuda)
@@ -102,7 +106,7 @@ install(
 # TODO(gasoonjia): Replace aoti_common with this one after metal migration
 # ==============================================================================
 set(_aoti_common_shims_slim_sources common_shims_slim.cpp)
-if(EXECUTORCH_BUILD_CUDA)
+if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
   list(APPEND _aoti_common_shims_slim_sources slim/cuda/guard.cpp)
 endif()
 

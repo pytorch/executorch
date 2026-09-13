@@ -270,6 +270,7 @@ fbcode_target(_kind = runtime.python_test,
         ":sdpa",
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
     ],
 )
 

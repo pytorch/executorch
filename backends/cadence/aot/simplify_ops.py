@@ -17,8 +17,9 @@ from executorch.backends.cadence.aot.pass_utils import RemoveOrReplacePassInterf
 from executorch.backends.cadence.aot.utils import rebind
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 from torch.fx import Node
+from torch.fx.passes.infra.pass_base import PassBase
 
 
 class SimplifySliceOpPass(RemoveOrReplacePassInterface):
@@ -169,7 +170,7 @@ class SimplifySliceOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-class BindOptionalArgsPass(ExportPass):
+class BindOptionalArgsPass(PassBase):
     """Bind all optional args and kwargs."""
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -181,7 +182,9 @@ class BindOptionalArgsPass(ExportPass):
         for module in filter(
             lambda m: isinstance(m, torch.fx.GraphModule), graph_module.modules()
         ):
-            for node in cast(torch.fx.GraphModule, module).graph.nodes:
+            graph_module_to_update = cast(torch.fx.GraphModule, module)
+            module_modified = False
+            for node in graph_module_to_update.graph.nodes:
                 if node.op != "call_function":
                     continue
                 if not isinstance(node.target, EdgeOpOverload):
@@ -198,11 +201,11 @@ class BindOptionalArgsPass(ExportPass):
                 if new_args != node.args or new_kwargs != node.kwargs:
                     node.args = new_args
                     node.kwargs = new_kwargs
-                    modified = True
+                    module_modified = True
 
-        if modified:
-            graph_module.recompile()
-            return super().call(graph_module)
+            if module_modified:
+                graph_module_to_update.recompile()
+                modified = True
 
         return PassResult(graph_module, modified)
 

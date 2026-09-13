@@ -69,6 +69,8 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.rms_norm.default,
         torch.ops.aten._safe_softmax.default,
         torch.ops.aten.scatter.src,
+        torch.ops.aten.scatter_add.default,
+        torch.ops.aten.scatter_reduce.two,
         torch.ops.aten.stack.default,
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py

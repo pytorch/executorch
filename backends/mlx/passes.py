@@ -19,6 +19,7 @@ from executorch.backends.mlx.pattern_utils import (
     PatternMatch,
     walk_back,
 )
+from executorch.backends.transforms.collapse_view_copy import CollapseViewCopyPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
     ExportedProgramPassBase,
@@ -318,68 +319,6 @@ class CanonicalizePermutePass(ExportPass):
             modified = True
 
         if modified:
-            graph.lint()
-
-        return PassResult(graph_module, modified)
-
-
-class CollapseViewCopyPass(ExportPass):
-    """
-    Collapses consecutive view_copy nodes into a single view_copy.
-
-    view_copy(view_copy(x, shape1), shape2) → view_copy(x, shape2)
-
-    Only the final shape matters, so intermediate view_copys can be removed.
-    """
-
-    def call(self, graph_module: GraphModule) -> PassResult:
-        graph = graph_module.graph
-        modified = False
-        view_copy_target = exir_ops.edge.aten.view_copy.default
-
-        for node in list(graph.nodes):
-            if node.op != "call_function" or node.target != view_copy_target:
-                continue
-
-            parent = node.args[0]
-            if (
-                isinstance(parent, Node)
-                and parent.op == "call_function"
-                and parent.target == view_copy_target
-                and len(parent.users) == 1
-            ):
-                original_input = parent.args[0]
-                target_shape = node.args[1]
-
-                # Check if final shape matches original input shape (identity).
-                # Compare meta shapes (not args) so SymInt dims are handled.
-                # Use try/except because shapes may contain unbacked SymInts
-                # (e.g. from .item() calls) that can't be guarded on.
-                original_val = (
-                    original_input.meta.get("val")
-                    if isinstance(original_input, Node)
-                    else None
-                )
-                output_val = node.meta.get("val")
-                is_identity = False
-                if original_val is not None and output_val is not None:
-                    try:
-                        is_identity = original_val.shape == output_val.shape
-                    except Exception:
-                        is_identity = False
-                if is_identity:
-                    # Identity — remove both view_copys
-                    node.replace_all_uses_with(original_input)
-                    graph.erase_node(node)
-                    graph.erase_node(parent)
-                else:
-                    # Collapse: view_copy(view_copy(x, s1), s2) → view_copy(x, s2)
-                    node.args = (original_input, target_shape)
-                    graph.erase_node(parent)
-                modified = True
-
-        if modified:
-            graph.eliminate_dead_code()
             graph.lint()
 
         return PassResult(graph_module, modified)

@@ -144,6 +144,10 @@ if [ "$perf_overlay" = true ] && [ "$model_explorer" != true ]; then
     echo "Error: --perf_overlay requires --model_explorer" >&2
     exit 1
 fi
+if [ "$perf_overlay" = true ] && [ "$visualize_tosa" != true ]; then
+    echo "Error: --perf_overlay requires --visualize_tosa" >&2
+    exit 1
+fi
 
 # Cortex-M backend is an operator-library, not a delegate; force-disable
 # --delegate when targeting cortex-m so users don't need --no_delegate.

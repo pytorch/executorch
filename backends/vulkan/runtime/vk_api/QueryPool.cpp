@@ -40,7 +40,7 @@ QueryPool::QueryPool(const QueryPoolConfig& config, const Adapter* adapter_p)
       device_(VK_NULL_HANDLE),
       querypool_(VK_NULL_HANDLE),
       num_queries_(0u),
-      shader_durations_(0),
+      shader_durations_{},
       mutex_{} {
   initialize(adapter_p);
 }
@@ -104,8 +104,8 @@ void QueryPool::shader_profile_begin(
     const CommandBuffer& cmd,
     const uint32_t dispatch_id,
     const std::string& kernel_name,
-    const VkExtent3D global_workgroup_size,
-    const VkExtent3D local_workgroup_size) {
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg) {
   EARLY_RETURN_IF_UNINITIALIZED();
   std::lock_guard<std::mutex> lock(mutex_);
 
@@ -116,8 +116,8 @@ void QueryPool::shader_profile_begin(
       // Execution Properties
       dispatch_id,
       kernel_name,
-      global_workgroup_size,
-      local_workgroup_size,
+      gwg,
+      lwg,
       // Query indexes
       query_idx, // start query idx
       UINT32_MAX, // end query idx
@@ -164,16 +164,14 @@ void QueryPool::extract_results() {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, const VkExtent3D& extents) {
-  os << "{" << extents.width << ", " << extents.height << ", " << extents.depth
-     << "}";
+std::ostream& operator<<(std::ostream& os, const utils::uvec3& extents) {
+  os << "{" << extents[0] << ", " << extents[1] << ", " << extents[2] << "}";
   return os;
 }
 
-std::string stringize(const VkExtent3D& extents) {
+std::string stringize(const utils::uvec3& extents) {
   std::stringstream ss;
-  ss << "{" << extents.width << ", " << extents.height << ", " << extents.depth
-     << "}";
+  ss << extents;
   return ss.str();
 }
 
@@ -191,14 +189,10 @@ std::vector<ShaderResult> QueryPool::get_shader_timestamp_data() {
         /* .end_time_ns = */ entry.end_time_ns,
         /* .metadata = */
         ShaderMetadata{
-            /* .global_workgroup_size = */
-            {entry.global_workgroup_size.width,
-             entry.global_workgroup_size.height,
-             entry.global_workgroup_size.depth},
-            /* .local_workgroup_size = */
-            {entry.local_workgroup_size.width,
-             entry.local_workgroup_size.height,
-             entry.local_workgroup_size.depth},
+            /* .gwg = */
+            {entry.gwg[0u], entry.gwg[1u], entry.gwg[2u]},
+            /* .lwg = */
+            {entry.lwg.x(), entry.lwg.y(), entry.lwg.z()},
         }});
   }
   return shader_result;
@@ -234,8 +228,9 @@ std::string QueryPool::generate_string_report() {
 
     ss << std::left;
     ss << std::setw(kernel_name_w) << entry.kernel_name;
-    ss << std::setw(global_size_w) << stringize(entry.global_workgroup_size);
-    ss << std::setw(local_size_w) << stringize(entry.local_workgroup_size);
+    ss << std::setw(global_size_w) << stringize(entry.gwg.extents());
+    ss << std::setw(local_size_w)
+       << stringize(static_cast<utils::uvec3>(entry.lwg));
     ss << std::right << std::setw(duration_w) << exec_duration_ns.count();
     ss << std::endl;
   }
@@ -265,8 +260,8 @@ std::string QueryPool::generate_tsv_string_report() {
         entry.execution_duration_ns);
 
     ss << entry.kernel_name << "\t";
-    ss << stringize(entry.global_workgroup_size) << "\t";
-    ss << stringize(entry.local_workgroup_size) << "\t";
+    ss << stringize(entry.gwg.extents()) << "\t";
+    ss << stringize(static_cast<utils::uvec3>(entry.lwg)) << "\t";
     ss << exec_duration_ns.count() << "\t";
     ss << std::endl;
   }

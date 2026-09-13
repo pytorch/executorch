@@ -300,38 +300,33 @@ int main(int argc, char* argv[]) {
 
     namespace cache = ::executorch::extension::llm::cache;
 
-    // Build and install the off-graph KV cache before the Module, so the
-    // registry entry exists by the time the delegate's init() looks it up.
-    // Declared here so the session outlives the module.
-    std::optional<cache::CacheSession> cache_session;
+    // Publish the off-graph KV cache until the delegate resolves its key while
+    // loading the method.
+    std::optional<cache::InstallGuard> cache_install_guard;
     if (!kv_cache_spec.empty()) {
       cache::CacheConfig cfg{};
       if (!parse_kv_cache_spec(kv_cache_spec, cfg)) {
         std::cerr << "Invalid --kv-cache spec: " << kv_cache_spec << std::endl;
         return 1;
       }
-      auto built = cache::CacheBuilderRegistry::global().build(
-          ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
+      auto built = cache::CacheFactory::global().build(
+          ::executorch::backends::mlx::kMLXBackendId,
+          cache::kind::kSingle,
+          cfg);
       if (!built.ok()) {
         std::cerr << "Failed to build KV cache: "
                   << static_cast<int>(built.error()) << std::endl;
         return 1;
       }
-      cache_session.emplace(cache::make_unique_key(), built.get());
-      if (verbose) {
-        std::cout << "Installed KV cache under key " << cache_session->key()
-                  << std::endl;
-      }
+      cache_install_guard.emplace(built.get());
     }
 
     Module module(pte_path);
     Error load_error = Error::Ok;
-    if (cache_session) {
+    if (cache_install_guard) {
       ::executorch::runtime::BackendOptions<1> mlx_opts;
       ::executorch::runtime::LoadBackendOptionsMap options_map;
-      if (mlx_opts.set_option(
-              ::executorch::backends::mlx::kCacheKeyKey,
-              cache_session->key().c_str()) != Error::Ok ||
+      if (cache_install_guard->set_option(mlx_opts) != Error::Ok ||
           options_map.set_options(
               ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=
               Error::Ok) {
@@ -358,6 +353,7 @@ int main(int argc, char* argv[]) {
                 << static_cast<int>(load_method_error) << std::endl;
       return 1;
     }
+    cache_install_guard.reset();
 
     if (verbose) {
       std::cout << "Reading inputs from: " << input_path << std::endl;

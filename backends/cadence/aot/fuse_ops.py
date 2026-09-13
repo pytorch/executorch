@@ -712,6 +712,16 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
                 out_dtype=out_dtype,
                 graph=graph_module.graph,
             )
+            requantize_node.meta = consumer.meta.copy()
+            requantize_node.meta["val"] = exir_ops.edge.cadence.requantize.per_tensor(
+                cast(torch.fx.Node, consumer.args[0]).meta["val"],
+                cast(float, in_scale),
+                cast(int, in_zero_point),
+                cast(float, out_scale),
+                cast(int, out_zero_point),
+                cast(torch.dtype, out_dtype),
+            )
+            requantize_node.meta["tensor_meta"] = None
         return requantize_node
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -737,7 +747,9 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
             ),
         )
         if modified:
-            return super().call(graph_module)
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return PassResult(graph_module, True)
         return PassResult(graph_module, False)
 
 

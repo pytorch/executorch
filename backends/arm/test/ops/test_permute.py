@@ -46,6 +46,11 @@ test_data_suite_u55_reject = {
     "rank2_bool": lambda: (torch.randint(0, 2, (5, 5), dtype=torch.bool), [1, 0]),
 }
 
+identity_test_data = {
+    "rank_1": lambda: (torch.rand(512), [0]),
+    "rank_2": lambda: (torch.rand(20, 32), [0, 1]),
+}
+
 
 test_data_suite_bf16 = {
     "rank_2_bf16": lambda: (torch.rand(6, 4, dtype=torch.bfloat16), [1, 0]),
@@ -144,6 +149,27 @@ def test_permute_u55_INT_not_delegated(test_data: torch.Tensor):
         non_delegated_ops={exir_op: 1},
         quantize=True,
         u55_subset=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", identity_test_data)
+def test_permute_tosa_INT_identity_not_delegated(test_data: torch.Tensor):
+    """Keep quantized identity permutes outside TOSA delegation.
+
+    Rank-1 ``[0]`` and rank-2 ``[0, 1]`` permutes leave both tensor shape and
+    dimension order unchanged. Together with their boundary Q/DQ nodes, they
+    would be removed completely during TOSA lowering. This test verifies that
+    the partitioner keeps the permute on the portable path instead of creating
+    a TOSA output tensor with no producing operator.
+
+    """
+    test_data, dims = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        non_delegated_ops={exir_op: 1},
+        quantize=True,
     )
     pipeline.run()
 

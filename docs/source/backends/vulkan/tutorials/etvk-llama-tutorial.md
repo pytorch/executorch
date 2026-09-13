@@ -93,7 +93,7 @@ cmake . \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_TESTS=OFF \
     -Bcmake-out-android-so && \
-cmake --build cmake-out-android-so -j16 --target install --config Release
+cmake --build cmake-out-android-so -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 ## Build and push the llama runner binary to Android
@@ -111,7 +111,7 @@ cmake examples/models/llama \
     -DCMAKE_BUILD_TYPE=Release \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-out-android-so/examples/models/llama && \
-cmake --build cmake-out-android-so/examples/models/llama -j16 --config Release
+cmake --build cmake-out-android-so/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 Once the binary is built, it can be pushed to your Android device.

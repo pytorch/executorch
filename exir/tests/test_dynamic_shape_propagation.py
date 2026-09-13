@@ -115,7 +115,7 @@ class TestSymIntViewArgs(TestCase):
                 x = args[0]
                 x = super().call_operator(
                     exir_ops.edge.aten.view_copy.default,
-                    (x, list(x.data.shape) + [1]),
+                    (x, self.call_size_operator_all(x, meta) + [1]),
                     {},
                     meta,
                 )
@@ -123,7 +123,7 @@ class TestSymIntViewArgs(TestCase):
                 w = args[1]
                 w = super().call_operator(
                     exir_ops.edge.aten.view_copy.default,
-                    (w, list(w.data.shape) + [1]),
+                    (w, self.call_size_operator_all(w, meta) + [1]),
                     {},
                     meta,
                 )
@@ -144,7 +144,7 @@ class TestSymIntViewArgs(TestCase):
                 )
                 x = super().call_operator(
                     exir_ops.edge.aten.view_copy.default,
-                    (x, list(x.data.shape)[:-1]),
+                    (x, self.call_size_operator_all(x, meta)[:-1]),
                     {},
                     meta,
                 )

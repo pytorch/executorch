@@ -32,7 +32,7 @@ void resize_linear_q4gsw_backward_node(
   graph->virtual_resize(d_x, new_sizes);
 }
 
-utils::uvec3 linear_q4gsw_backward_global_wg_size(
+GlobalWorkGrid linear_q4gsw_backward_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -43,21 +43,21 @@ utils::uvec3 linear_q4gsw_backward_global_wg_size(
   const uint32_t K = graph->size_at<uint32_t>(-1, d_x);
   const uint32_t M = utils::safe_downcast<uint32_t>(graph->numel_of(d_x) / K);
   const uint32_t tiles = utils::div_up_4(M) * utils::div_up_4(K);
-  return {tiles, 1u, 1u};
+  return graph->create_linear_gwg(tiles);
 }
 
-utils::uvec3 linear_q4gsw_backward_local_wg_size(
+LocalWorkGroup linear_q4gsw_backward_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
-  (void)global_workgroup_size;
+  (void)gwg;
   (void)args;
   (void)resize_args;
-  return {64u, 1u, 1u};
+  return LocalWorkGroup(64u, 1u, 1u);
 }
 
 void linear_q4gsw_backward(
@@ -106,8 +106,8 @@ void linear_q4gsw_backward(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      linear_q4gsw_backward_global_wg_size,
-      linear_q4gsw_backward_local_wg_size,
+      linear_q4gsw_backward_gwg,
+      linear_q4gsw_backward_lwg,
       // Inputs and Outputs
       {{d_x, vkapi::kWrite},
        {{d_out, packed_weight, packed_scales}, vkapi::kRead}},

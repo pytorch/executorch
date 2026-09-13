@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		03F814712E729261002D91CC /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814702E729261002D91CC /* backend_coreml */; };
-		03F814732E729261002D91CC /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814722E729261002D91CC /* backend_mps */; };
 		03F814752E729261002D91CC /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814742E729261002D91CC /* backend_xnnpack */; };
 		03F814772E729261002D91CC /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814762E729261002D91CC /* executorch_debug */; };
 		03F814792E729261002D91CC /* executorch_llm_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814782E729261002D91CC /* executorch_llm_debug */; };
@@ -74,7 +73,6 @@
 				96905EF65AED1B983A6B3ABC /* libPods-rnllama.a in Frameworks */,
 				03F814752E729261002D91CC /* backend_xnnpack in Frameworks */,
 				03F814812E729261002D91CC /* kernels_torchao in Frameworks */,
-				03F814732E729261002D91CC /* backend_mps in Frameworks */,
 				03F8147B2E729261002D91CC /* kernels_llm in Frameworks */,
 				03F814712E729261002D91CC /* backend_coreml in Frameworks */,
 			);
@@ -607,11 +605,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = backend_coreml;
-		};
-		03F814722E729261002D91CC /* backend_mps */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = backend_mps;
 		};
 		03F814742E729261002D91CC /* backend_xnnpack */ = {
 			isa = XCSwiftPackageProductDependency;

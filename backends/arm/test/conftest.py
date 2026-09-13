@@ -10,11 +10,13 @@ import logging
 import os
 import random
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 logger: logging.Logger = logging.getLogger(__name__)
+_expected_xfail_nodeids: set[str] = set()
 
 
 # ==== Pytest hooks ====
@@ -25,6 +27,8 @@ def pytest_configure(config):
 
     if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+    if getattr(config.option, "dump_artifacts", False) and config.option.dump_artifacts:
+        pytest._test_options["dump_artifacts"] = config.option.dump_artifacts  # type: ignore[attr-defined]
 
     logging.basicConfig(stream=sys.stdout)
     seed, seed_label = _setup_random_seed()
@@ -40,6 +44,34 @@ def pytest_configure(config):
 
 def pytest_report_header(config):
     return config._test_seed_label
+
+
+def pytest_runtest_logreport(report) -> None:
+    if report.when in ("setup", "call"):
+        wasxfail = getattr(report, "wasxfail", "")
+        if (
+            report.outcome == "skipped"
+            and wasxfail
+            and not wasxfail.startswith("[NOTRUN]")
+        ):
+            _expected_xfail_nodeids.add(report.nodeid)
+        return
+
+    if report.when != "teardown" or report.nodeid not in _expected_xfail_nodeids:
+        return
+
+    _expected_xfail_nodeids.remove(report.nodeid)
+    if report.outcome != "passed":
+        return
+
+    dump_artifacts = getattr(pytest, "_test_options", {}).get("dump_artifacts")
+    if not dump_artifacts:
+        return
+
+    test_name = report.nodeid.rsplit("::", 1)[-1].replace(",", "_").replace(" ", "")
+    artifact_dir = Path(dump_artifacts) / test_name
+    if artifact_dir.is_dir():
+        (artifact_dir / "_xfailed_test").touch()
 
 
 def _mark_rife_vgf_xfails_for_model_converter_below_minimum_version(
@@ -98,12 +130,16 @@ def pytest_addoption(parser):
         except Exception:  # nosec B110 - pytest redefines options, safe to ignore
             pass
 
-    try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
-    try_addoption("--arm_run_corstoneFVP", action="store_true", help="Deprecated.")
     try_addoption(
         "--llama_inputs",
         nargs="+",
         help="List of two files. Firstly .pt file. Secondly .json",
+    )
+    try_addoption(
+        "--dump_artifacts",
+        dest="dump_artifacts",
+        metavar="DIR",
+        help="Dump Arm test artifacts into DIR/<test-name>.",
     )
 
 

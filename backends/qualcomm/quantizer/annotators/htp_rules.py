@@ -1444,7 +1444,12 @@ class ScaledDotProductAttention(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.scatter.src, torch.ops.aten.scatter.value],
+    [
+        torch.ops.aten.scatter.src,
+        torch.ops.aten.scatter.value,
+        torch.ops.aten.scatter_add.default,
+        torch.ops.aten.scatter_reduce.two,
+    ],
     qnn_op=None,
 )
 class ScatterElements(GeneralOpDef):

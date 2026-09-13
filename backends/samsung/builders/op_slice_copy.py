@@ -27,7 +27,7 @@ class SliceCopyVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ):
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
@@ -38,10 +38,14 @@ class SliceCopyVisitor(NodeVisitor):
         dim = cast(int, node.args[1])
         if dim < 0:
             dim = dim + len(in_shape)
-        start_val = cast(int, node.args[2])
+        start_val = cast(int, node.args[2]) if node.args[2] else 0
         if start_val < 0:
             start_val = start_val + in_shape[dim]
-        end_val = min(cast(int, node.args[3]), in_shape[dim])
+        end_val = (
+            in_shape[dim]
+            if len(node.args) < 4
+            else min(cast(int, node.args[3]), in_shape[dim])
+        )
         if end_val < 0:
             end_val = end_val + in_shape[dim]
 
@@ -57,3 +61,5 @@ class SliceCopyVisitor(NodeVisitor):
         params = {"begin": begin, "end": end, "strides": strides}
 
         enn_graph.define_op(node.name, "STRIDEDSLICE", [input_id], [output_id], params)
+
+        return True

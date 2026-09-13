@@ -104,6 +104,47 @@ class MergeTwosOfTwoBN(torch.nn.Module):
         return x
 
 
+class MergeConvTransposeBN(torch.nn.Module):
+    ops_before_pass: ClassVar[Dict[str, int]] = {
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+    ops_after_pass: ClassVar[Dict[str, int]] = {
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+
+    def __init__(
+        self,
+        groups: int = 1,
+        bias: bool = False,
+        affine: bool = True,
+        in_channels: int = 4,
+        out_channels: int = 6,
+    ) -> None:
+        super().__init__()
+        self.conv_transpose2d = torch.nn.ConvTranspose2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=2,
+            stride=2,
+            groups=groups,
+            bias=bias,
+        )
+        self.batch_norm2d = torch.nn.BatchNorm2d(out_channels, affine=affine)
+        self.batch_norm2d.running_mean = torch.rand(out_channels)
+        self.batch_norm2d.running_var = torch.rand(out_channels)
+        if affine:
+            self.batch_norm2d.weight = torch.nn.Parameter(torch.rand(out_channels))
+            self.batch_norm2d.bias = torch.nn.Parameter(torch.rand(out_channels))
+
+    def get_inputs(self) -> input_t:
+        return (torch.randn(1, self.conv_transpose2d.in_channels, 8, 8),)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.batch_norm2d(self.conv_transpose2d(x))
+
+
 class MergeMultipleUsersBN(torch.nn.Module):
     ops_before_pass: ClassVar[Dict[str, int]] = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 2,
@@ -153,6 +194,20 @@ modules: Dict[str, ModuleWithBatchNormAttrs] = {
     "merge_one_of_two_bn": cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBN(False)),
     "merge_two_of_two_bn_affine": cast(
         ModuleWithBatchNormAttrs, MergeTwosOfTwoBN(True)
+    ),
+    "merge_conv_transpose_bn": cast(ModuleWithBatchNormAttrs, MergeConvTransposeBN()),
+    "merge_grouped_conv_transpose_bn": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2)
+    ),
+    "merge_grouped_conv_transpose_bn_bias": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2, bias=True)
+    ),
+    "merge_grouped_conv_transpose_bn_no_affine": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2, affine=False)
+    ),
+    "merge_grouped_conv_transpose_bn_equal_channels": cast(
+        ModuleWithBatchNormAttrs,
+        MergeConvTransposeBN(groups=2, in_channels=4, out_channels=4),
     ),
     "merge_multiple_users_bn_affine": cast(
         ModuleWithBatchNormAttrs, MergeMultipleUsersBN(True)
