@@ -1784,6 +1784,26 @@ def register_native_batch_norm_legit_no_training():
     )
 
 
+@update_features(exir_ops.edge.aten._native_batch_norm_legit.no_stats)
+def register_native_batch_norm_legit_no_stats():
+    """Instance norm, which ReplaceInstanceNormPass rewrites into group norm.
+
+    ``F.instance_norm`` lowers to this overload. The pass only handles the cases
+    node_is_instance_norm() accepts, so gate partitioning on the same predicate.
+    """
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_T,
+        outputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CONTIGUOUS_BUFFER,
+            utils.CONTIGUOUS_BUFFER,
+        ],
+        supports_prepacking=True,
+        are_node_inputs_supported_fn=utils.node_is_instance_norm,
+    )
+
+
 # =============================================================================
 # GroupNorm.cpp
 # =============================================================================
