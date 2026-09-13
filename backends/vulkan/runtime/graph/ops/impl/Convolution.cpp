@@ -312,8 +312,8 @@ Conv2dMethod get_conv2d_method(
 //   - groups == 1
 //   - dilation == 1 (all dims)
 //
-// Selection rule: use im2col on Mali universally, or once the output channel
-// count is large enough to amortize the fixed ~N*K_total im2col gather cost.
+// Selection rule: use im2col once the output channel count is large enough to
+// amortize the fixed ~N*K_total im2col gather cost.
 constexpr int64_t kIm2colMinCOut = 128;
 
 bool should_use_conv2d_im2col(
@@ -329,7 +329,7 @@ bool should_use_conv2d_im2col(
   }
   const auto weight_sizes = graph.sizes_of(weight_data);
   const int64_t c_out = weight_sizes.at(0);
-  return graph.device_is_mali() || c_out >= kIm2colMinCOut;
+  return c_out >= kIm2colMinCOut;
 }
 
 GlobalWorkGrid create_conv2d_gwg(
