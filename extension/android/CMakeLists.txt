@@ -115,25 +115,89 @@ if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
 endif()
 
+# EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED /
+# EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED emit a backend as its own .so so a
+# consumer can drop the ones it does not use.
+#
+# A split backend links the runtime dynamically rather than statically, so it
+# holds no copy of its own of the backend registry
+# (registered_backends[] in runtime/backend/interface.cpp) or of the thread pool
+# singleton behind get_pthreadpool(). Both are undefined in the backend .so and
+# resolve through DT_NEEDED to libexecutorch_jni.so, which is the only copy the
+# runtime ever reads.
+#
+# Resolving them this way, rather than by letting each library carry its own
+# definition and relying on the dynamic linker to prefer one, is what makes the
+# split safe to load from anywhere. A backend that defines the symbols itself
+# binds to its own definitions whenever it is the root of the dlopen -- which is
+# exactly what System.loadLibrary does, since it opens with RTLD_LOCAL and never
+# places the runtime in the backend's lookup scope. The backend would then
+# register into a table nothing reads and the runtime would report
+# DelegateNotFound.
+#
+# Two things follow, both handled below:
+#
+# * libexecutorch_jni.so has to export the runtime ABI the backend now imports.
+#   The default version script hides everything but JNI_OnLoad/Java_*, so
+#   jni/version_script.txt is swapped for
+#   jni/version_script_shared_backends.txt whenever a backend is split out.
+# * Its SONAME has to match the file name it is packaged under. The AAR ships it
+#   as libexecutorch.so, so that is what the backend's DT_NEEDED has to name.
 if(TARGET xnnpack_backend)
-  executorch_target_link_options_shared_lib(xnnpack_backend)
-  list(
-    APPEND
-    link_libraries
-    xnnpack_backend
-    XNNPACK
-    pthreadpool
-    cpuinfo
-    xnnpack-microkernels-prod
+  set(_xnnpack_so_link_libs xnnpack_backend XNNPACK pthreadpool cpuinfo
+                            xnnpack-microkernels-prod
   )
   if(TARGET kleidiai)
-    list(APPEND link_libraries kleidiai)
+    list(APPEND _xnnpack_so_link_libs kleidiai)
+  endif()
+
+  if(EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED)
+    # Whole-archive the backend so its register_backend static initializer
+    # fires, and take only the XNNPACK third-party libs with it. The kernel
+    # registration archives stay in libexecutorch_jni.so, so loading both
+    # libraries together does not register a kernel twice
+    # (Error::RegistrationAlreadyRegistered, 0x16).
+    add_library(
+      xnnpack_executorch_backend SHARED
+      ${EXECUTORCH_ROOT}/extension/android/jni/jni_noop.cpp
+    )
+    executorch_target_link_options_shared_lib(xnnpack_backend)
+    target_link_options_gc_sections(xnnpack_executorch_backend)
+    # executorch_jni first, so the runtime symbols the backend imports are
+    # already resolved by the time the linker reaches executorch_core.a and it
+    # has no reason to pull a second definition out of the archive.
+    target_link_libraries(
+      xnnpack_executorch_backend PRIVATE executorch_jni
+                                         ${_xnnpack_so_link_libs} log
+    )
+    # executorch_jni still needs cpuinfo headers / lib for thread count
+    # detection.
+    list(APPEND link_libraries cpuinfo)
+  else()
+    executorch_target_link_options_shared_lib(xnnpack_backend)
+    list(APPEND link_libraries ${_xnnpack_so_link_libs})
   endif()
 endif()
 
 if(TARGET vulkan_backend)
-  executorch_target_link_options_shared_lib(vulkan_backend)
-  list(APPEND link_libraries vulkan_backend)
+  if(EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED)
+    # Same shape as the XNNPACK split above: whole-archive vulkan_backend and
+    # take only vulkan_schema with it, leaving the kernel registration archives
+    # in libexecutorch_jni.so.
+    add_library(
+      vulkan_executorch_backend SHARED
+      ${EXECUTORCH_ROOT}/extension/android/jni/jni_noop.cpp
+    )
+    executorch_target_link_options_shared_lib(vulkan_backend)
+    target_link_options_gc_sections(vulkan_executorch_backend)
+    target_link_libraries(
+      vulkan_executorch_backend PRIVATE executorch_jni vulkan_backend
+                                        vulkan_schema log
+    )
+  else()
+    executorch_target_link_options_shared_lib(vulkan_backend)
+    list(APPEND link_libraries vulkan_backend)
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
@@ -251,10 +315,31 @@ target_include_directories(
 
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
+if(EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED
+   OR EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED
+)
+  set(_executorch_jni_version_script
+      "${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script_shared_backends.txt"
+  )
+else()
+  set(_executorch_jni_version_script
+      "${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script.txt"
+  )
+endif()
+
 target_link_options(
   executorch_jni PRIVATE
-  "LINKER:--version-script,${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script.txt"
+  "LINKER:--version-script,${_executorch_jni_version_script}"
 )
+
+if(EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED
+   OR EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED
+)
+  # The AAR packages this library as libexecutorch.so, so a backend's DT_NEEDED
+  # entry names libexecutorch.so. Without this the SONAME stays
+  # libexecutorch_jni.so and the loader looks for a file the APK does not carry.
+  target_link_options(executorch_jni PRIVATE "LINKER:-soname,libexecutorch.so")
+endif()
 target_link_options_gc_sections(executorch_jni)
 
 target_link_libraries(executorch_jni ${link_libraries} log)

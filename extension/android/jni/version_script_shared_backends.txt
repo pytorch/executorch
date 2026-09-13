@@ -1,0 +1,23 @@
+{
+  global:
+    JNI_OnLoad;
+    Java_*;
+    # A backend built as its own .so (EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED /
+    # EXECUTORCH_BUILD_VULKAN_BACKEND_SHARED) links the runtime dynamically and
+    # imports it from here, so the runtime ABI it uses has to stay visible. That
+    # is wider than the registry alone: the backend calls into Error handling,
+    # EValue, Tensor and the rest of executorch_core the same way, and anything
+    # left hidden turns into an unresolved symbol at load.
+    #
+    # The registry is the reason the split works at all. registered_backends[]
+    # in runtime/backend/interface.cpp is the table the runtime reads, and
+    # exporting register_backend is what lets the backend's constructor write
+    # into that one rather than into a copy of its own. get_pthreadpool() is the
+    # same story for the thread pool the JNI layer configures.
+    extern "C++" {
+      executorch::*;
+    };
+    pthreadpool_*;
+  local:
+    *;
+};

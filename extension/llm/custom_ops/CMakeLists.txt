@@ -67,7 +67,11 @@ endif()
 
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
-if(NOT EXECUTORCH_BUILD_XNNPACK)
+if(NOT EXECUTORCH_BUILD_XNNPACK OR EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED)
+  # custom_ops doesn't actually call into xnnpack_backend (no XNNPACK refs in
+  # its sources). The transitive PUBLIC link is what was previously dragging
+  # XNNCompiler/XNNExecutor into libexecutorch_jni.so via the WHOLE_ARCHIVE on
+  # custom_ops, which defeats EXECUTORCH_BUILD_XNNPACK_BACKEND_SHARED. Drop it.
   list(APPEND custom_ops_libs extension_threadpool)
 else()
   list(APPEND custom_ops_libs extension_threadpool xnnpack_backend)
