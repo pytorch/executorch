@@ -12,6 +12,9 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <vector>
+
+#include <executorch/extension/llm/cache/cache.h>
 
 #include <executorch/extension/llm/runner/constants.h>
 #include <executorch/extension/module/module.h>
@@ -61,6 +64,32 @@ inline runtime::Result<std::optional<std::int64_t>> read_int_method(
   return std::optional<std::int64_t>{result->at(0).toInt()};
 }
 
+// Read a required int32 tensor constant.
+inline runtime::Result<std::vector<int>> read_int_tensor_method(
+    Module& module,
+    const char* name) {
+  const auto names = ET_UNWRAP(module.method_names());
+  ET_CHECK_OR_RETURN_ERROR(
+      names.count(name) != 0, InvalidProgram, "metadata %s is required", name);
+  const auto result = module.execute(name);
+  if (!result.ok()) {
+    return result.error();
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      result->size() == 1 && result->at(0).isTensor(),
+      InvalidProgram,
+      "metadata %s must evaluate to a single tensor",
+      name);
+  const auto tensor = result->at(0).toTensor();
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor.scalar_type() == aten::ScalarType::Int,
+      InvalidProgram,
+      "metadata %s must be an int32 tensor",
+      name);
+  const std::int32_t* data = tensor.const_data_ptr<std::int32_t>();
+  return std::vector<int>(data, data + tensor.numel());
+}
+
 // A required int constant that must be present and positive.
 inline runtime::Result<std::int64_t> read_required_positive_int(
     Module& module,
@@ -81,6 +110,47 @@ inline runtime::Result<std::int64_t> read_required_positive_int(
 
 // One reader per constant: the name, its encoding, and its validation together.
 // Each rejection logs which constant method was at fault.
+
+inline runtime::Result<cache::CacheGeometry> read_cache_geometry(
+    Module& module) {
+  const std::int64_t n_caches =
+      ET_UNWRAP(detail::read_required_positive_int(module, kNumCaches));
+  ET_CHECK_OR_RETURN_ERROR(
+      n_caches <= std::numeric_limits<int>::max(),
+      InvalidProgram,
+      "metadata %s exceeds the supported layer count",
+      kNumCaches);
+  const auto kv_heads =
+      ET_UNWRAP(detail::read_int_tensor_method(module, kKVHeads));
+  const auto head_dims =
+      ET_UNWRAP(detail::read_int_tensor_method(module, kHeadDims));
+  const auto windows =
+      ET_UNWRAP(detail::read_int_tensor_method(module, kWindows));
+  const std::size_t size = static_cast<std::size_t>(n_caches);
+  ET_CHECK_OR_RETURN_ERROR(
+      kv_heads.size() == size && head_dims.size() == size &&
+          windows.size() == size,
+      InvalidProgram,
+      "cache geometry vectors must each contain %zu entries",
+      size);
+
+  cache::CacheGeometry geometry;
+  geometry.layers.reserve(size);
+  for (std::size_t layer = 0; layer < size; ++layer) {
+    ET_CHECK_OR_RETURN_ERROR(
+        kv_heads[layer] > 0 && head_dims[layer] > 0 && windows[layer] >= 0,
+        InvalidProgram,
+        "cache geometry layer %zu has invalid heads, dimension, or window",
+        layer);
+    const int window = windows[layer];
+    geometry.layers.push_back(cache::LayerGeometry{
+        window > 0 ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, window}
+                   : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0},
+        kv_heads[layer],
+        head_dims[layer]});
+  }
+  return geometry;
+}
 
 inline runtime::Result<std::int64_t> read_max_context_length(Module& module) {
   return detail::read_required_positive_int(module, kMaxContextLen);

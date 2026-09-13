@@ -16,19 +16,16 @@ namespace extension {
 namespace llm {
 namespace cache {
 
-CellCache::CellCache(const CacheConfig& cfg)
+CellCache::CellCache(const CacheGeometry& geometry, const CacheConfig& cfg)
     : capacity_(cfg.capacity),
       pos_(cfg.capacity, -1),
       owners_(cfg.capacity, 0) {
-  assert(valid(cfg));
-  // One window per layer, from the same per-layer config the sequence cache
-  // reads. Layers agreeing on a window share a step.
-  windows_.reserve(cfg.n_layers);
-  for (int l = 0; l < cfg.n_layers; ++l) {
-    const LayerConfig& lc =
-        cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+  assert(valid(geometry, cfg));
+  // One window per layer. Layers agreeing on a window share a step.
+  windows_.reserve(geometry.layers.size());
+  for (const LayerGeometry& layer : geometry.layers) {
     windows_.push_back(
-        lc.policy.kind == LayerPolicy::Kind::Ring ? lc.policy.window : 0);
+        layer.policy.kind == LayerPolicy::Kind::Ring ? layer.policy.window : 0);
   }
 }
 

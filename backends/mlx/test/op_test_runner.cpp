@@ -220,12 +220,11 @@ void print_usage(const char* prog_name) {
       << std::endl;
 }
 
-// Parse "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]" into a uniform-layer
-// CacheConfig. Sizing is on the command line because the architecture facts are
-// not yet published in .pte metadata; a runner that reads them lands with the
-// metadata writer.
+// Parse "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]" into cache
+// geometry and runtime configuration for this low-level test runner.
 bool parse_kv_cache_spec(
     const std::string& spec,
+    executorch::extension::llm::cache::CacheGeometry& geometry,
     executorch::extension::llm::cache::CacheConfig& cfg) {
   std::vector<int> fields;
   size_t pos = 0;
@@ -249,13 +248,20 @@ bool parse_kv_cache_spec(
   if (fields.size() < 4 || fields.size() > 5) {
     return false;
   }
+  // The layer count sizes an allocation, so it is refused here rather than by
+  // valid() below: a negative one would first wrap to a huge size_type.
+  if (fields[1] <= 0) {
+    return false;
+  }
   cfg.capacity = fields[0];
-  cfg.n_layers = fields[1];
-  cfg.layers = {{{}, /*n_kv_heads=*/fields[2], /*head_dim=*/fields[3]}};
+  geometry.layers.assign(
+      fields[1],
+      executorch::extension::llm::cache::LayerGeometry{
+          {}, /*n_kv_heads=*/fields[2], /*head_dim=*/fields[3]});
   cfg.kv_dtype = fields.size() == 5
       ? fields[4]
       : static_cast<int>(executorch::runtime::etensor::ScalarType::Float);
-  return executorch::extension::llm::cache::valid(cfg);
+  return executorch::extension::llm::cache::valid(geometry, cfg);
 }
 
 int main(int argc, char* argv[]) {
@@ -304,14 +310,16 @@ int main(int argc, char* argv[]) {
     // loading the method.
     std::optional<cache::InstallGuard> cache_install_guard;
     if (!kv_cache_spec.empty()) {
+      cache::CacheGeometry geometry;
       cache::CacheConfig cfg{};
-      if (!parse_kv_cache_spec(kv_cache_spec, cfg)) {
+      if (!parse_kv_cache_spec(kv_cache_spec, geometry, cfg)) {
         std::cerr << "Invalid --kv-cache spec: " << kv_cache_spec << std::endl;
         return 1;
       }
       auto built = cache::CacheFactory::global().build(
           ::executorch::backends::mlx::kMLXBackendId,
           cache::kind::kSingle,
+          geometry,
           cfg);
       if (!built.ok()) {
         std::cerr << "Failed to build KV cache: "

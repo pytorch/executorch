@@ -45,6 +45,7 @@ import torch
 from executorch.extension.llm.export.model_metadata import (
     model_vocab_size,
     write_activation_dtype,
+    write_cache_geometry,
     write_logits_to_keep_mode,
     write_max_context_len,
     write_max_seq_len,
@@ -522,12 +523,7 @@ def _export_with_offgraph_cache(
         max_seq_len=prefill_chunk_size,
     )
     kv_metadata.update(
-        {
-            "get_n_caches": len(layer_types),
-            "get_kv_heads": torch.tensor(cache_kv_heads, dtype=torch.int32),
-            "get_head_dims": torch.tensor(cache_head_dims, dtype=torch.int32),
-            "get_windows": torch.tensor(cache_windows, dtype=torch.int32),
-        }
+        write_cache_geometry(cache_kv_heads, cache_head_dims, cache_windows)
     )
     logger.info(
         f"KV cache layout: {len(layer_types)} caches, "

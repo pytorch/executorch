@@ -75,7 +75,8 @@ class MLXCellCacheTest : public ::testing::Test {
 // and the mask is lower-triangular.
 TEST_F(MLXCellCacheTest, PrefillClaimsCellsInOrder) {
   using namespace ::mlx::core;
-  MLXCellCache c(flat_config(/*capacity=*/32, /*n_layers=*/1, H, D, kHalf));
+  auto c = make_cache<MLXCellCache>(
+      flat_config(/*capacity=*/32, /*n_layers=*/1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   array k = randn(4), v = randn(4);
 
@@ -95,7 +96,7 @@ TEST_F(MLXCellCacheTest, PrefillClaimsCellsInOrder) {
 // Decode appends one cell and reads the whole prefix back.
 TEST_F(MLXCellCacheTest, DecodeExtendsTheWindow) {
   using namespace ::mlx::core;
-  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXCellCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   array k0 = randn(2), v0 = randn(2);
   step(c, {a, a}, {0, 1}, k0, v0);
@@ -115,7 +116,7 @@ TEST_F(MLXCellCacheTest, DecodeExtendsTheWindow) {
 // the querying sequence's cells.
 TEST_F(MLXCellCacheTest, MaskIsolatesSequences) {
   using namespace ::mlx::core;
-  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXCellCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
   EXPECT_NE(a, b);
@@ -135,7 +136,7 @@ TEST_F(MLXCellCacheTest, MaskIsolatesSequences) {
 // skip the cell still free.
 TEST_F(MLXCellCacheTest, FreedCellsRefillBelowLiveOnes) {
   using namespace ::mlx::core;
-  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXCellCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   const int32_t b = *c.seq_new();
 
@@ -162,13 +163,10 @@ TEST_F(MLXCellCacheTest, FreedCellsRefillBelowLiveOnes) {
 // A windowed layer hides cells older than its window; a flat layer keeps them.
 TEST_F(MLXCellCacheTest, WindowHidesOlderCells) {
   using namespace ::mlx::core;
-  cache::CacheConfig cfg = flat_config(32, /*n_layers=*/2, H, D, kHalf);
-  cfg.layers = {
-      cache::LayerConfig{
-          cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0}, H, D},
-      cache::LayerConfig{
-          cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, 2}, H, D}};
-  MLXCellCache c(cfg);
+  CacheArgs args = flat_config(32, /*n_layers=*/2, H, D, kHalf);
+  args.geometry.layers[1].policy =
+      cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, 2};
+  MLXCellCache c(args.geometry, args.config);
   const int32_t a = *c.seq_new();
 
   EXPECT_TRUE(c.declare_step({a, a, a, a}));
@@ -195,7 +193,8 @@ TEST_F(MLXCellCacheTest, WindowHidesOlderCells) {
 // cells written before growth survive it.
 TEST_F(MLXCellCacheTest, GrowthPreservesExistingCells) {
   using namespace ::mlx::core;
-  MLXCellCache c(flat_config(32, 1, H, D, kHalf, /*initial_capacity=*/2));
+  auto c = make_cache<MLXCellCache>(
+      flat_config(32, 1, H, D, kHalf, /*initial_capacity=*/2));
   const int32_t a = *c.seq_new();
   array k0 = randn(2), v0 = randn(2);
   step(c, {a, a}, {0, 1}, k0, v0);
@@ -213,7 +212,7 @@ TEST_F(MLXCellCacheTest, GrowthPreservesExistingCells) {
 // K/V are cast to the configured storage dtype on the way in.
 TEST_F(MLXCellCacheTest, StorageDtypeDiffersCastsOnWrite) {
   using namespace ::mlx::core;
-  MLXCellCache c(
+  auto c = make_cache<MLXCellCache>(
       flat_config(32, 1, H, D, static_cast<int>(ScalarType::BFloat16)));
   const int32_t a = *c.seq_new();
   array k = randn(2, float32), v = randn(2, float32);
@@ -229,7 +228,7 @@ TEST_F(MLXCellCacheTest, StorageDtypeDiffersCastsOnWrite) {
 // tokens (a KV-shared donor re-serving) is served again idempotently.
 TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
   using namespace ::mlx::core;
-  MLXCellCache c(flat_config(32, 1, H, D, kHalf));
+  auto c = make_cache<MLXCellCache>(flat_config(32, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   array k = randn(2), v = randn(2);
 
@@ -251,7 +250,8 @@ TEST_F(MLXCellCacheTest, IllFormedStepsThrow) {
 
 // A step wider than the free cells is refused, and refusing claims nothing.
 TEST_F(MLXCellCacheTest, StepPastCapacityIsRefused) {
-  MLXCellCache c(flat_config(/*capacity=*/2, 1, H, D, kHalf));
+  auto c =
+      make_cache<MLXCellCache>(flat_config(/*capacity=*/2, 1, H, D, kHalf));
   const int32_t a = *c.seq_new();
   step(c, {a, a}, {0, 1}, randn(2), randn(2));
 
@@ -260,20 +260,17 @@ TEST_F(MLXCellCacheTest, StepPastCapacityIsRefused) {
 }
 
 TEST_F(MLXCellCacheTest, InvalidConfigThrows) {
-  cache::CacheConfig cfg = flat_config(32, /*n_layers=*/2, H, D, kHalf);
-  cfg.layers.resize(1);
-  cfg.layers.push_back(cache::LayerConfig{{}, H, D});
-  cfg.capacity = 0;
-  EXPECT_ANY_THROW(MLXCellCache{cfg});
+  CacheArgs args = flat_config(32, /*n_layers=*/2, H, D, kHalf);
+  args.config.capacity = 0;
+  EXPECT_ANY_THROW(MLXCellCache(args.geometry, args.config));
 }
 
 // A runner reaches a layout by (backend_id, kind), so the builder registration
 // is as much a part of the layout as the class.
 TEST_F(MLXCellCacheTest, RegistryBuildsCellLayout) {
+  CacheArgs args = flat_config(32, 1, H, D, kHalf);
   auto built = cache::CacheFactory::global().build(
-      kMLXBackendId,
-      cache::kind::kBatchedCell,
-      flat_config(32, 1, H, D, kHalf));
+      kMLXBackendId, cache::kind::kBatchedCell, args.geometry, args.config);
   ASSERT_TRUE(built.ok());
   const std::shared_ptr<cache::Cache>& c = *built;
   EXPECT_NE(c->as<cache::BatchControl>(), nullptr);
