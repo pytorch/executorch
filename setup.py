@@ -167,6 +167,7 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF",
         "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF",
         "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF",
         "-DEXECUTORCH_BUILD_MLX=OFF",
         "-DEXECUTORCH_BUILD_OPENVINO=OFF",
         "-DEXECUTORCH_BUILD_PORTABLE_OPS=OFF",
@@ -1138,6 +1139,7 @@ def _base_dependencies() -> List[str]:
         # scope. Neither is needed merely to import the backend.
         "py-cpuinfo",
         "requests",
+        "pyre-extensions",
         "pytorch-tokenizers",
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses

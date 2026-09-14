@@ -30,6 +30,7 @@ fbcode_target(
     visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
+        "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         "//caffe2:torch",
         "//executorch/backends/transforms:collapse_view_copy",
         "//executorch/exir:lib",

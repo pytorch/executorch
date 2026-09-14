@@ -486,6 +486,7 @@ def tosa_support_factory(
     reporter: WhyNoPartitionReporter,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
     additional_positive_checks: Optional[Sequence[OperatorSupportBase]] = None,
+    additional_positive_overrides: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
     """Create an OperatorSupport composite for a TOSA spec.
 
@@ -500,6 +501,9 @@ def tosa_support_factory(
             negative checks to apply.
         additional_positive_checks (Optional[Sequence[OperatorSupportBase]]):
             Extra positive checks to add to the support list.
+        additional_positive_overrides (Optional[Sequence[OperatorSupportBase]]):
+            Extra positive checks, overriding any later negative checks. Use with
+            caution!
 
     Returns:
         OperatorSupportBase: Composite checker for the given spec.
@@ -512,13 +516,18 @@ def tosa_support_factory(
         tosa_spec, exported_program, reporter, additional_checks
     )
 
-    return chain(
+    # An op must be accepted by at least one postitive check, and not rejected by any
+    # negative checks
+    default_checks = chain(
         reporter.wrap_check(
             any_chain(*positive_checks),
             "Not included in BaseTOSASupportList or a registered tosa_support_check",
         ),
         *negative_checks,
     )
+
+    # Let postitive overrides accept an op regardless of regular checks
+    return any_chain(*additional_positive_overrides or (), default_checks)
 
 
 class SymbolicShapeSupportCheck(OperatorSupportBase):
