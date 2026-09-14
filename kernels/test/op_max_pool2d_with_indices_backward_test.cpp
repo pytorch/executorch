@@ -222,11 +222,11 @@ class OpMaxPool2DWithIndicesBackwardOutTest : public OperatorTest {
     // input (1,1,4,4) = 1..16, max_pool2d with kernel 2x2, stride 2x2 gives
     // output (1,1,2,2) whose argmax flat indices are {5, 7, 13, 15}.
     executorch::aten::Tensor input = tf.make(
-        {1, 1, 4, 4},
-        {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
+        {1, 1, 4, 4}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
     executorch::aten::Tensor grad_output =
         tf.make({1, 1, 2, 2}, {100, 200, 300, 400});
-    executorch::aten::Tensor indices = tfLong.make({1, 1, 2, 2}, {5, 7, 13, 15});
+    executorch::aten::Tensor indices =
+        tfLong.make({1, 1, 2, 2}, {5, 7, 13, 15});
 
     ::std::vector<int64_t> kernel_size_vec = {2, 2};
     executorch::aten::ArrayRef<int64_t> kernel_size =
@@ -234,7 +234,8 @@ class OpMaxPool2DWithIndicesBackwardOutTest : public OperatorTest {
             kernel_size_vec.data(), kernel_size_vec.size());
     ::std::vector<int64_t> stride_vec = {2, 2};
     executorch::aten::ArrayRef<int64_t> stride =
-        executorch::aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
+        executorch::aten::ArrayRef<int64_t>(
+            stride_vec.data(), stride_vec.size());
     ::std::vector<int64_t> padding_vec = {0, 0};
     executorch::aten::ArrayRef<int64_t> padding =
         executorch::aten::ArrayRef<int64_t>(
@@ -250,8 +251,7 @@ class OpMaxPool2DWithIndicesBackwardOutTest : public OperatorTest {
     executorch::aten::Tensor grad_input = tf.full({1, 1, 4, 4}, 999.0);
 
     executorch::aten::Tensor grad_input_expected = tf.make(
-        {1, 1, 4, 4},
-        {0, 0, 0, 0, 0, 100, 0, 200, 0, 0, 0, 0, 0, 300, 0, 400});
+        {1, 1, 4, 4}, {0, 0, 0, 0, 0, 100, 0, 200, 0, 0, 0, 0, 0, 300, 0, 400});
 
     op_max_pool2d_with_indices_backward_out(
         grad_output,
@@ -281,7 +281,7 @@ TEST_F(OpMaxPool2DWithIndicesBackwardOutTest, SanityTest3D) {
 #undef TEST_ENTRY
 }
 
-// Regression test for https://github.com/pytorch/executorch/issues/21686
+// Regression test for grad_input not being zeroed before accumulation.
 //
 // The kernel scatter-accumulates gradients into the argmax positions only, so
 // every other element of grad_input must be zeroed first. At runtime the out
