@@ -82,6 +82,8 @@ with open("mv2_mlx.pte", "wb") as file:
 The accompanying `EdgeCompileConfig` disables generic edge IR validation and
 dimension-order conversion because the MLX reinplace pass introduces
 backend-specific in-place operators after export.
+The `_check_ir_validity` and `_skip_dim_order` fields are internal and may change
+between ExecuTorch versions.
 
 ::::{note}
 The MLX backend is primarily designed for LLM and generative AI workloads on Apple Silicon. The MobileNet V2 example above is shown for simplicity, but in practice you would use this backend for models like Llama, Whisper, and other transformer-based architectures. See [LLM example](https://github.com/pytorch/executorch/tree/main/backends/mlx/examples/llm) for a more representative use case.
