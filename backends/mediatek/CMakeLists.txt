@@ -8,6 +8,9 @@
 */
 ]]
 
+# Pin to C++17 for embedded toolchain compatibility (not all support C++20).
+set(CMAKE_CXX_STANDARD 17)
+
 # Let include directory as "executorch/..."
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
