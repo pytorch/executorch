@@ -5,38 +5,38 @@
 
 /backends/apple @shoumikhin
 /backends/arm @digantdesai
-/backends/cadence
+/backends/cadence @JakeStevens
 /backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
 /backends/mediatek @neuropilot-captain
-/backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
-/backends/test
-/backends/transforms @kimishpatel
+/backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
+/backends/test @digantdesai
+/backends/transforms @digantdesai
 /backends/vulkan @SS-JIA
-/backends/xnnpack @digantdesai @mcr229
-/backends/nxp @robert-kalmar
+/backends/xnnpack @JakeStevens
+/backends/nxp @robert-kalmar @JakeStevens
 
 /devtools @Gasoonjia
 
-/docs @mergennachin @AlannaBurke
+/docs @mergennachin
 
 /examples/apple @shoumikhin
 /examples/apple/coreml @metascroy @cymbalrush @YifanShenSZ
 /examples/arm @digantdesai
-/examples/cadence
+/examples/cadence @JakeStevens
 /examples/demo-apps @shoumikhin @kirklandsign
 /examples/devtools @Gasoonjia
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
-/examples/mediatek
-/examples/models @lucylq @jackzhxng
-/examples/portable @larryliu0820 @manuelcandales
+/examples/mediatek @psiddh
+/examples/models @JacobSzwejbka
+/examples/portable @JakeStevens @larryliu0820
 /examples/qualcomm @abhinaykukkadapu @psiddh
-/examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
-/examples/xnnpack @digantdesai @mcr229
+/examples/selective_build @larryliu0820 @JacobSzwejbka
+/examples/xnnpack @JakeStevens @digantdesai
 /examples/nxp @robert-kalmar
 
-/exir/backend @kimishpatel @JacobSzwejbka
+/exir/backend @JacobSzwejbka @digantdesai
 /exir @JacobSzwejbka @larryliu0820
 
 /extension/android @kirklandsign @psiddh
@@ -44,38 +44,38 @@
 /extension/apple @shoumikhin
 /extension/aten_util @JacobSzwejbka
 /extension/benchmark @Gasoonjia
-/extension/data_loader @JacobSzwejbka @lucylq
-/extension/evalue_util @GregoryComer
-/extension/export_util @kimishpatel
-/extension/flat_tensor @lucylq
+/extension/data_loader @JacobSzwejbka
+/extension/evalue_util @Gasoonjia
+/extension/export_util @digantdesai
+/extension/flat_tensor @JacobSzwejbka
 /extension/gguf_util @larryliu0820
-/extension/kernel_util @kimishpatel @manuelcandales
-/extension/llm @jackzhxng @larryliu0820 @mergennachin
+/extension/kernel_util @JakeStevens
+/extension/llm @larryliu0820 @mergennachin
 /extension/memory_allocator @JacobSzwejbka
 /extension/module @shoumikhin
-/extension/parallel @kimishpatel
+/extension/parallel @digantdesai
 /extension/pybindings @JacobSzwejbka @larryliu0820
 /extension/pytree @JacobSzwejbka
-/extension/runner_util
+/extension/runner_util @shoumikhin
 /extension/tensor @shoumikhin
-/extension/testing_util
-/extension/threadpool @kimishpatel
+/extension/testing_util @JacobSzwejbka
+/extension/threadpool @digantdesai
 /extension/training @JacobSzwejbka
 
-/kernels @manuelcandales
+/kernels @JakeStevens
 
 /profiler @Gasoonjia
 
-/runtime @JacobSzwejbka @lucylq
-/runtime/backend
+/runtime @JacobSzwejbka
+/runtime/backend @JacobSzwejbka @digantdesai
 
-/schema @JacobSzwejbka @lucylq
+/schema @JacobSzwejbka
 
-/scripts @GregoryComer
+/scripts @digantdesai
 
-/shim @larryliu0820 @GregoryComer
+/shim @larryliu0820
 
-/third-party @GregoryComer
+/third-party @larryliu0820
 
 /test @larryliu0820 @kirklandsign
 
@@ -86,9 +86,9 @@
 CMakeLists.txt @larryliu0820 @kirklandsign
 CMakePresets.json @larryliu0820 @kirklandsign
 
-/codegen @larryliu0820 @lucylq
+/codegen @larryliu0820
 /tools/cmake @larryliu0820 @kirklandsign
 
 # Tribal knowledge base ---------------------------------------------------------
-/.wiki/ @abhinaykukkadapu
+/.wiki/ @mergennachin
 /.claude/skills/ @abhinaykukkadapu @psiddh
