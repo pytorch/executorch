@@ -314,17 +314,18 @@ class TestTritonSdpaSplitK(unittest.TestCase):
     def test_large_positive_logits_stable(self):
         """Large logits stay finite in both split-K kernel families."""
         B, H_q, H_kv, Lk, D = 1, 32, 8, 512, 128
-        num_splits, chunk_size = self.splitk_config(Lk)
+        num_splits, chunk_size = self.splitk_config(Lk, B * H_kv, torch.device("cuda"))
         self.assertGreater(num_splits, 1)
-        self.assertNotEqual(0 // chunk_size, 300 // chunk_size)
+        second_key = chunk_size
+        self.assertLess(second_key, Lk)
 
         k = torch.zeros(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
 
-        # Put nearly equal high scores in separate 256-token splits. The old
-        # fixed-phi path overflowed both partial softmaxes, and their proximity
-        # makes the result sensitive to correct cross-split rescaling.
+        # Put nearly equal high scores in separate splits. The old fixed-phi
+        # path overflowed both partial softmaxes, and their proximity makes the
+        # result sensitive to correct cross-split rescaling.
         k[:, :, 0, :] = 3.0
-        k[:, :, 300, :] = 2.96875
+        k[:, :, second_key, :] = 2.96875
         torch.manual_seed(42)
         v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
 
@@ -343,7 +344,7 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 high_scores = torch.stack(
                     [
                         (q[0, 0, 0].float() * k[0, 0, pos].float()).sum() / D**0.5
-                        for pos in (0, 300)
+                        for pos in (0, second_key)
                     ]
                 )
                 self.assertTrue(
@@ -389,10 +390,15 @@ class TestTritonSdpaSplitK(unittest.TestCase):
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
     def test_non_power_of_two_split_count(self):
-        """Reduction masks lanes beyond the runtime split count."""
+        """Reduction masks lanes beyond a non-power-of-two split count."""
         B, H_q, H_kv, Lk, D = 1, 8, 2, 768, 128
-        num_splits, _ = self.splitk_config(Lk)
-        self.assertEqual(num_splits, 3)
+        sm_count_patch = mock.patch.object(
+            self.sdpa_module, "_device_sm_count", return_value=80
+        )
+        sm_count_patch.start()
+        self.addCleanup(sm_count_patch.stop)
+        num_splits, _ = self.splitk_config(Lk, B * H_kv, torch.device("cuda"))
+        self.assertEqual(num_splits, 6)
 
         torch.manual_seed(42)
         k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
@@ -409,6 +415,25 @@ class TestTritonSdpaSplitK(unittest.TestCase):
 
                 self.assertTrue(torch.isfinite(out).all())
                 self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
+
+    def test_split_count_scales_with_sm_count_and_buffer_size(self):
+        """The scheduling policy adapts without depending on the test GPU."""
+        device = torch.device("cuda")
+        cases = [
+            # (SM count, L_kv, grid_y, expected splits)
+            (80, 128, 2, 1),
+            (80, 2048, 2, 16),
+            (108, 131072, 4, 48),
+            (170, 131072, 4, 76),
+            (1024, 131072, 1, 128),
+        ]
+        for n_sm, L_kv, grid_y, expected in cases:
+            with self.subTest(n_sm=n_sm, L_kv=L_kv, grid_y=grid_y), mock.patch.object(
+                self.sdpa_module, "_device_sm_count", return_value=n_sm
+            ):
+                num_splits, chunk_size = self.splitk_config(L_kv, grid_y, device)
+                self.assertEqual(num_splits, expected)
+                self.assertEqual(chunk_size, math.ceil(L_kv / expected))
 
     def test_custom_scale(self):
         """Non-default attention scale."""
