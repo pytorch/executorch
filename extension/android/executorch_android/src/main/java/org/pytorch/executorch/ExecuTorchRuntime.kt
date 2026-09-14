@@ -8,9 +8,11 @@
 
 package org.pytorch.executorch
 
+import android.util.Log
 import com.facebook.jni.annotations.DoNotStrip
 import com.facebook.soloader.nativeloader.NativeLoader
 import com.facebook.soloader.nativeloader.SystemDelegate
+import dalvik.system.BaseDexClassLoader
 import java.io.File
 
 /** Class for entire ExecuTorch Runtime related functions. */
@@ -26,6 +28,11 @@ class ExecuTorchRuntime private constructor() {
       loadSplitBackends()
     }
 
+    private const val TAG = "ExecuTorchRuntime"
+
+    private val SPLIT_BACKEND_LIBRARIES =
+        arrayOf("xnnpack_executorch_backend", "vulkan_executorch_backend")
+
     /**
      * Loads the backends that were built as their own shared library.
      *
@@ -35,18 +42,40 @@ class ExecuTorchRuntime private constructor() {
      * one registry the runtime reads. Nothing links to the backend itself, so it has to be named
      * explicitly for it to be loaded at all.
      *
-     * Each is absent in a build that linked the backend into libexecutorch.so, which is the
-     * default, so a missing library is not an error.
+     * A library that is not packaged is the normal case and not an error: the default build links
+     * the backend into libexecutorch.so instead. A library that is packaged but fails to load is a
+     * different thing entirely, so the two are distinguished rather than both being swallowed.
      */
     private fun loadSplitBackends() {
-      for (name in arrayOf("xnnpack_executorch_backend", "vulkan_executorch_backend")) {
+      for (name in SPLIT_BACKEND_LIBRARIES) {
         try {
           NativeLoader.loadLibrary(name)
-        } catch (_: UnsatisfiedLinkError) {
-          // Not part of this build.
+        } catch (e: UnsatisfiedLinkError) {
+          val path = packagedLibraryPath(name)
+          if (path == null) {
+            Log.d(
+                TAG,
+                "No lib$name.so in this build; the backend it provides is either linked into " +
+                    "libexecutorch.so or not included",
+            )
+          } else {
+            // Packaged but unloadable, typically an unresolved symbol or a
+            // dependency mismatch. Swallowing this would leave the delegate
+            // unavailable at run time with nothing to point at.
+            Log.e(TAG, "Failed to load $path; the backend it provides will be unavailable", e)
+          }
         }
       }
     }
+
+    /**
+     * The path of lib[name].so in this APK, or null when it is not packaged.
+     *
+     * Returns null for a class loader that cannot be asked, which no Android application has, so an
+     * unexpected loader reports "not packaged" rather than failing the load.
+     */
+    private fun packagedLibraryPath(name: String): String? =
+        (ExecuTorchRuntime::class.java.classLoader as? BaseDexClassLoader)?.findLibrary(name)
 
     private val sInstance = ExecuTorchRuntime()
 
