@@ -1139,7 +1139,6 @@ def _base_dependencies() -> List[str]:
         # scope. Neither is needed merely to import the backend.
         "py-cpuinfo",
         "requests",
-        "pyre-extensions",
         "pytorch-tokenizers",
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
