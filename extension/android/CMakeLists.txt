@@ -120,11 +120,11 @@ endif()
 # consumer can drop the ones it does not use.
 #
 # A split backend links the runtime dynamically rather than statically, so it
-# holds no copy of its own of the backend registry
-# (registered_backends[] in runtime/backend/interface.cpp) or of the thread pool
-# singleton behind get_pthreadpool(). Both are undefined in the backend .so and
-# resolve through DT_NEEDED to libexecutorch_jni.so, which is the only copy the
-# runtime ever reads.
+# holds no copy of its own of the backend registry (registered_backends[] in
+# runtime/backend/interface.cpp) or of the thread pool singleton behind
+# get_pthreadpool(). Both are undefined in the backend .so and resolve through
+# DT_NEEDED to libexecutorch_jni.so, which is the only copy the runtime ever
+# reads.
 #
 # Resolving them this way, rather than by letting each library carry its own
 # definition and relying on the dynamic linker to prefer one, is what makes the
@@ -139,8 +139,8 @@ endif()
 #
 # * libexecutorch_jni.so has to export the runtime ABI the backend now imports.
 #   The default version script hides everything but JNI_OnLoad/Java_*, so
-#   jni/version_script.txt is swapped for
-#   jni/version_script_shared_backends.txt whenever a backend is split out.
+#   jni/version_script.txt is swapped for jni/version_script_shared_backends.txt
+#   whenever a backend is split out.
 # * Its SONAME has to match the file name it is packaged under. The AAR ships it
 #   as libexecutorch.so, so that is what the backend's DT_NEEDED has to name.
 if(TARGET xnnpack_backend)
