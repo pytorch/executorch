@@ -732,6 +732,21 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(TanhModule())
 
+    def test_vulkan_backend_repeated_output(self):
+        class RepeatedOutputModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # The same value returned twice: the graph must declare two
+                # outputs, because the delegate call passes two arguments.
+                y = x + x
+                return y, y
+
+        self.lower_module_and_test_output(
+            RepeatedOutputModule(), (torch.rand(size=(2, 3, 4)),)
+        )
+
     def test_vulkan_backend_linear(self):
         class LinearModule(torch.nn.Module):
             def __init__(self):
