@@ -230,6 +230,8 @@ is authoritative.
 
 ## Citing ExecuTorch
 
+Read the [MLSys 2026 paper (PDF)](https://proceedings.mlsys.org/paper_files/paper/2026/file/236f915dd02af4f11927f67330b21d4b-Paper-Conference.pdf).
+
 If you use ExecuTorch in research, please cite:
 
 ```bibtex
