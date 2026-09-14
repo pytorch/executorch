@@ -34,10 +34,6 @@ CellCache::CellCache(const CacheConfig& cfg)
 
 // -- CacheControl ------------------------------------------------------------
 
-bool CellCache::can_extend(int n) const {
-  return capacity_ - used_count_ >= n;
-}
-
 int CellCache::capacity() const {
   return capacity_;
 }
@@ -58,7 +54,7 @@ void CellCache::clear() {
 // -- BatchControl ------------------------------------------------------------
 
 bool CellCache::declare_step(const std::vector<int32_t>& seq_ids) {
-  if (seq_ids.empty() || !can_extend(static_cast<int>(seq_ids.size()))) {
+  if (seq_ids.empty() || !has_room(static_cast<int>(seq_ids.size()))) {
     return false;
   }
   for (int32_t seq_id : seq_ids) {
@@ -74,6 +70,10 @@ bool CellCache::declare_step(const std::vector<int32_t>& seq_ids) {
 
 bool CellCache::live(int32_t seq_id) const {
   return (reserved_ & bit(seq_id)) != 0;
+}
+
+std::optional<int> CellCache::max_seqs() const {
+  return kMaxSeqs;
 }
 
 std::optional<int32_t> CellCache::seq_new() {
@@ -107,13 +107,30 @@ std::optional<int32_t> CellCache::seq_clone(
   return dst;
 }
 
-bool CellCache::seq_rm(int32_t seq_id, int p0, std::optional<int> p1) {
-  if (!valid_seq(seq_id)) {
+bool CellCache::seq_rm(int32_t seq_id) {
+  if (!valid_seq(seq_id) || !live(seq_id)) {
     return false;
   }
+  drop_from(seq_id, 0);
+  reserved_ &= ~bit(seq_id); // the last slot went, so the id is free again
+  invalidate_steps();
+  return true;
+}
+
+bool CellCache::rewind(int32_t seq_id, int position) {
+  if (!valid_seq(seq_id) || !live(seq_id) || position < 0 ||
+      position > pos(seq_id)) {
+    return false;
+  }
+  drop_from(seq_id, position);
+  invalidate_steps();
+  return true;
+}
+
+void CellCache::drop_from(int32_t seq_id, int from) {
   const uint64_t b = bit(seq_id);
   for (int i = 0; i < used_end_; ++i) {
-    if ((owners_[i] & b) && pos_[i] >= p0 && (!p1 || pos_[i] < *p1)) {
+    if ((owners_[i] & b) && pos_[i] >= from) {
       owners_[i] &= ~b;
       if (owners_[i] == 0) {
         pos_[i] = -1;
@@ -125,23 +142,18 @@ bool CellCache::seq_rm(int32_t seq_id, int p0, std::optional<int> p1) {
     --used_end_;
   }
   rescan(seq_id);
-  if (info_[seq_id].count == 0) {
-    reserved_ &= ~bit(seq_id); // the last slot went, so the id is free again
-  }
-  invalidate_steps();
-  return true;
 }
 
-int CellCache::seq_len(int32_t seq_id) const {
-  return valid_seq(seq_id) ? info_[seq_id].count : 0;
-}
-
-int CellCache::next_pos(int32_t seq_id) const {
+int CellCache::pos(int32_t seq_id) const {
   return valid_seq(seq_id) ? info_[seq_id].max_pos + 1 : 0;
 }
 
 int CellCache::free_cells() const {
   return capacity_ - used_count_;
+}
+
+bool CellCache::has_room(int n) const {
+  return capacity_ - used_count_ >= n;
 }
 
 int CellCache::used_end() const {
@@ -169,7 +181,7 @@ CellCache::place_step(int layer, const int32_t* positions, int length) {
   if (!declared_ || length != static_cast<int>(step_seq_ids_.size())) {
     return nullptr; // no declaration, or a token count disagreeing with it
   }
-  if (!extends(positions, length)) {
+  if (!continues(positions, length)) {
     return nullptr; // a position a sequence already holds
   }
   step_pos_.assign(positions, positions + length);
@@ -191,17 +203,17 @@ bool CellCache::valid_seq(int32_t seq_id) {
   return seq_id >= 0 && seq_id < kMaxSeqs;
 }
 
-bool CellCache::extends(const int32_t* positions, int length) const {
-  std::array<int32_t, kMaxSeqs> newest{};
+bool CellCache::continues(const int32_t* positions, int length) const {
+  std::array<int32_t, kMaxSeqs> next{};
   for (int s = 0; s < kMaxSeqs; ++s) {
-    newest[s] = info_[s].max_pos;
+    next[s] = info_[s].max_pos + 1;
   }
   for (int i = 0; i < length; ++i) {
     const int32_t seq_id = step_seq_ids_[i];
-    if (positions[i] <= newest[seq_id]) {
+    if (positions[i] != next[seq_id]) {
       return false;
     }
-    newest[seq_id] = positions[i];
+    ++next[seq_id];
   }
   return true;
 }

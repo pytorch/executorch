@@ -58,7 +58,7 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
       const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
-      StreamOrDevice s) override {
+      StreamOrDevice s) {
     if (layer < 0 || layer >= static_cast<int>(kpool_.size())) {
       throw std::out_of_range("update_and_fetch: layer out of range");
     }
@@ -82,6 +82,18 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
         vpool_[l].read(0, step->read_len, s),
         AttendSpec::Mask::Explicit,
         mask(*step)};
+  }
+
+  Tensor attend(
+      int layer,
+      const std::vector<int32_t>& positions,
+      const Tensor& q,
+      const Tensor& k,
+      const Tensor& v,
+      float scale,
+      StreamOrDevice s) override {
+    return ::executorch::backends::mlx::attend(
+        update_and_fetch(layer, positions, k, v, s), q, scale, s);
   }
 
  protected:

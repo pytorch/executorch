@@ -74,6 +74,8 @@ run_docgen_check() {
 }
 
 run_vgf_op_support_checks() {
+    local coverage_output
+
     echo -e "${INFO} Generating VGF operator support documentation"
 
     if ! python "$VGF_OP_SUPPORT_SCRIPT"; then
@@ -90,7 +92,8 @@ run_vgf_op_support_checks() {
 
     echo -e "${INFO} Checking VGF operator support coverage"
 
-    if ! python "$VGF_OP_SUPPORT_SCRIPT" --check; then
+    if ! coverage_output=$(python "$VGF_OP_SUPPORT_SCRIPT" --check 2>&1); then
+        echo "$coverage_output" >&2
         echo -e "${ERROR} VGF operator support coverage check failed" >&2
         FAILED=1
     else

@@ -112,6 +112,8 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
   BundleIO, ETDump, profiling, semihosted files, and backend regression tests.
 - [ethos-u-porting-guide.md](ethos-u-porting-guide.md) - Notes for adapting
   the example Ethos-U runtime integration to another target.
+- [model-explorer.md](model-explorer.md) - Visualize PTE and TOSA graphs and
+  overlay per-operator Ethos-U cycle data collected from an FVP PMU trace.
 - [export_standalone_tosa_graph.py](export_standalone_tosa_graph.py) -
   Example of exporting a standalone TOSA graph with multiple outputs.
 - [visualize.py](visualize.py) - Helper used by `run.sh --model_explorer` to

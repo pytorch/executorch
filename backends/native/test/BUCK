@@ -32,6 +32,18 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",
+        "//executorch/backends/native/test:utils",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
         "//executorch/exir:lib",
     ],
 )

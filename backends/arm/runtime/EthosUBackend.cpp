@@ -60,6 +60,10 @@ void __attribute__((weak)) EthosUBackend_execute_end() {}
 void __attribute__((weak)) EthosUBackend_delegate_begin(const void*) {}
 void __attribute__((weak)) EthosUBackend_delegate_end() {}
 #endif
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void __attribute__((weak)) EthosUBackend_input_memcpy(size_t) {}
+void __attribute__((weak)) EthosUBackend_output_memcpy(size_t) {}
+#endif
 __attribute__((weak)) unsigned char* ethosu_fast_scratch = nullptr;
 __attribute__((weak)) size_t ethosu_fast_scratch_size = 0;
 }
@@ -121,10 +125,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
-    ExecutionHandle* handle = new (std::nothrow) ExecutionHandle();
+    ExecutionHandle* handle = allocator->allocateInstance<ExecutionHandle>();
     if (handle == nullptr) {
       return Error::MemoryAllocationFailed;
     }
+    new (handle) ExecutionHandle();
 
     EXECUTORCH_PROF_START(
         event_tracer,
@@ -134,11 +139,16 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         data, size, context.get_named_data_map(), &handle->handles);
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
     if (read_status != Error::Ok) {
-      delete handle;
+      handle->~ExecutionHandle();
       return read_status;
     }
 
-    handle->platform_state = platform_init(compile_specs, allocator);
+    const Error platform_status =
+        platform_init(compile_specs, allocator, handle);
+    if (platform_status != Error::Ok) {
+      delete handle;
+      return platform_status;
+    }
 
     // Return the same buffer we were passed - this data will be
     // executed directly
@@ -268,6 +278,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
               event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
           // Sizes match and elt size matches so memcpy.
           // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+          EthosUBackend_input_memcpy(tensor_in.nbytes());
+#endif
           arm_ethos_io_memcpy(
               scratch_addr,
               tensor_in.mutable_data_ptr<char>(),
@@ -317,7 +330,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       platform_destroy(exec_handle->platform_state);
     }
 
-    delete exec_handle;
+    exec_handle->~ExecutionHandle();
   }
 
  private:
@@ -422,6 +435,9 @@ Error copy_with_layout_adjustment(
   const char* src_bytes = src;
   for (size_t chunk_idx = 0; chunk_idx < chunk_count; ++chunk_idx) {
     // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+    EthosUBackend_output_memcpy(chunk_size);
+#endif
     arm_ethos_io_memcpy(dest, src_bytes, chunk_size);
     src_bytes += vela_chunk_size;
     dest += chunk_size;

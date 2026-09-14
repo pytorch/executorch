@@ -96,7 +96,7 @@ pip install -U "transformers @ git+https://github.com/huggingface/transformers.g
 | `--use-custom-sdpa` | `False` | Use MLX custom SDPA (`mlx::custom_sdpa`) |
 | `--use-custom-kv-cache` | `False` | Use MLX custom KV cache (`mlx::kv_cache_update`) |
 | `--use-offgraph-cache` | `False` | Use the off-graph KV cache (`kvcache::update_and_attend`); replaces the two flags above |
-| `--prefill-chunk-size` | `512` | Max tokens per forward step. Bounds the traced `seq_len` dimension and is published as `get_prefill_chunk_size` for the runner. It is also the largest single cache write, so a ring layer is sized `window + chunk - 1`; it may not exceed the sliding window or the context length. Ignored on the optimum-executorch path, which owns its own `seq_len` bound |
+| `--prefill-chunk-size` | `512` | Max tokens per forward step. Bounds the traced `seq_len` dimension and is published as `get_max_seq_len` for the runner. It is also the largest single cache write, so a ring layer is sized `window + chunk - 1`; it may not exceed the sliding window or the context length. Ignored on the optimum-executorch path, which owns its own `seq_len` bound |
 
 Off-graph exports keep no cache in the `.pte`, so the pybindings `run_llm_hf`
 cannot run them — use [`mlx_run_llm_hf`](#mlx_run_llm_hf-c) below, which builds
@@ -231,7 +231,7 @@ default.
 | `--temperature` | `0` | Sampling temperature; 0 is greedy argmax, which is what makes two `.pte` files comparable |
 | `--chat` | `llama3` | Chat template: `llama3`, `gemma`, `gemma4`, or `0` to disable |
 | `--kv-max-capacity` | `0` | Off-graph: history the cache may hold. Setting it selects the off-graph path |
-| `--kv-storage-dtype` | `bf16` | Off-graph: KV storage dtype (`bf16`, `fp16`, `fp32`) |
+| `--kv-storage-dtype` | PTE activation dtype | Off-graph: optional KV storage override (`bf16`, `fp16`, `fp32`); defaults to the PTE's `get_activation_dtype`, which is required, so a `.pte` exported before this metadata must be re-exported |
 | `--kv-initial-capacity` | `-1` | Off-graph: starting pool size; grows by doubling up to capacity |
 | `--kv-windows` | *(model's own)* | Off-graph: attention pattern override, e.g. `512` |
 | `--interactive` | `false` | Multi-turn chat on stdin; off-graph only |

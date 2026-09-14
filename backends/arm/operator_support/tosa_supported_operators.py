@@ -40,6 +40,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
     EthosU55IndexSelectCheck,
+    EthosU55IndexTensorCheck,
     EthosU55NotSupported,
     EthosU55ResizeCheck,
     EthosU55ReverseCheck,
@@ -414,6 +415,7 @@ def _negative_checks(
         checks.append(EthosU55ResizeCheck(reporter))
         checks.append(EthosU55ReverseCheck(reporter))
         checks.append(EthosU55UnfoldCopyCheck(reporter))
+        checks.append(EthosU55IndexTensorCheck(exported_program, reporter))
         checks.append(EthosU55IndexSelectCheck(exported_program, reporter))
         checks.append(EthosU55DtypeSupport(reporter))
         checks.append(EthosU55CastCheck(reporter))
@@ -484,6 +486,7 @@ def tosa_support_factory(
     reporter: WhyNoPartitionReporter,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
     additional_positive_checks: Optional[Sequence[OperatorSupportBase]] = None,
+    additional_positive_overrides: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
     """Create an OperatorSupport composite for a TOSA spec.
 
@@ -498,6 +501,9 @@ def tosa_support_factory(
             negative checks to apply.
         additional_positive_checks (Optional[Sequence[OperatorSupportBase]]):
             Extra positive checks to add to the support list.
+        additional_positive_overrides (Optional[Sequence[OperatorSupportBase]]):
+            Extra positive checks, overriding any later negative checks. Use with
+            caution!
 
     Returns:
         OperatorSupportBase: Composite checker for the given spec.
@@ -510,13 +516,18 @@ def tosa_support_factory(
         tosa_spec, exported_program, reporter, additional_checks
     )
 
-    return chain(
+    # An op must be accepted by at least one postitive check, and not rejected by any
+    # negative checks
+    default_checks = chain(
         reporter.wrap_check(
             any_chain(*positive_checks),
             "Not included in BaseTOSASupportList or a registered tosa_support_check",
         ),
         *negative_checks,
     )
+
+    # Let postitive overrides accept an op regardless of regular checks
+    return any_chain(*additional_positive_overrides or (), default_checks)
 
 
 class SymbolicShapeSupportCheck(OperatorSupportBase):
@@ -1151,7 +1162,7 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
 class CheckFPComparisonInputs(OperatorSupportBase):
     """Reject unsupported comparison inputs under the FP profile."""
 
-    target_ops = {
+    comparison_ops = {
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.eq.Scalar,
         exir_ops.edge.aten.ne.Tensor,
@@ -1164,6 +1175,10 @@ class CheckFPComparisonInputs(OperatorSupportBase):
         exir_ops.edge.aten.le.Scalar,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.lt.Scalar,
+    }
+    target_ops = comparison_ops | {
+        exir_ops.edge.aten.isinf.default,
+        exir_ops.edge.aten.isnan.default,
     }
     supported_dtypes = {torch.float16, torch.float32, torch.bfloat16}
     castable_comparison_dtypes = {torch.int8, torch.int16}
@@ -1186,7 +1201,9 @@ class CheckFPComparisonInputs(OperatorSupportBase):
         if all(dtype in self.supported_dtypes for dtype in input_dtypes):
             return True
 
-        if all(dtype in self.castable_comparison_dtypes for dtype in input_dtypes):
+        if node.target in self.comparison_ops and all(
+            dtype in self.castable_comparison_dtypes for dtype in input_dtypes
+        ):
             return True
 
         unsupported_dtype = next(

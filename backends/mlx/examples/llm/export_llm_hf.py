@@ -42,10 +42,41 @@ import os
 from typing import Optional
 
 import torch
+from executorch.extension.llm.export.model_metadata import (
+    model_vocab_size,
+    write_activation_dtype,
+    write_logits_to_keep_mode,
+    write_max_context_len,
+    write_max_seq_len,
+    write_vocab_size,
+)
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
+
+
+def model_constant_methods(
+    *,
+    max_context_len: int,
+    logits_to_keep: str,
+    activation_dtype: str,
+    vocab_size: int,
+    max_seq_len: Optional[int] = None,
+) -> dict[str, int]:
+    """Build the full metadata set an MLX HF export publishes.
+
+    ``max_seq_len`` is the largest single forward step this export traces
+    (serialized as ``get_max_seq_len``); ``max_context_len`` is the KV-cache
+    capacity (``get_max_context_len``). Composes the shared per-constant writers.
+    """
+    return {
+        **write_max_context_len(max_context_len),
+        **write_vocab_size(vocab_size),
+        **write_activation_dtype(activation_dtype),
+        **write_logits_to_keep_mode(logits_to_keep),
+        **write_max_seq_len(max_seq_len),
+    }
 
 
 def resolve_prefill_chunk_size(
@@ -108,6 +139,7 @@ def _export_with_optimum(
         dtype=dtype_str,
         max_seq_len=max_ctx_len,
     )
+    vocab_size = model_vocab_size(exportable.model)
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
@@ -137,7 +169,15 @@ def _export_with_optimum(
 
     # optimum drives its own torch.export call, so it owns the seq-len bound.
     constant_methods = dict(exportable.metadata)
-    constant_methods["get_max_ctx_len"] = max_ctx_len
+    constant_methods.update(
+        model_constant_methods(
+            max_context_len=max_ctx_len,
+            logits_to_keep="full",
+            activation_dtype=dtype,
+            vocab_size=vocab_size,
+            max_seq_len=max_ctx_len,
+        )
+    )
 
     edge_program = exir.to_edge_transform_and_lower(
         exported_progs,
@@ -172,15 +212,18 @@ def build_hf_exported_program(
     qembedding_group_size: Optional[int] = None,
     tap_layers: Optional[list[int]] = None,
     prefill_chunk_size: Optional[int] = None,
+    logits_to_keep: str = "full",
 ):
     """Build the torch.export program for an HF model with custom MLX components.
 
-    Returns ``(exported_program, resolved_prefill_chunk_size)``. The resolved chunk
+    Returns ``(exported_program, resolved_prefill_chunk_size, vocab_size)``. The resolved chunk
     is the traced ``seq_len`` upper bound and is what callers should publish as
-    ``get_prefill_chunk_size``.
+    ``get_max_seq_len``.
     """
+    from executorch.backends.mlx.llm.exportable import LogitsToKeepMode
     from transformers import AutoModelForCausalLM
 
+    logits_to_keep_mode = int(LogitsToKeepMode.from_value(logits_to_keep))
     torch_dtype_map = {
         "fp32": torch.float32,
         "fp16": torch.float16,
@@ -206,6 +249,7 @@ def build_hf_exported_program(
     if attn_implementation:
         load_kwargs["attn_implementation"] = attn_implementation
     model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+    vocab_size = model_vocab_size(model)
 
     # Check if model uses sliding window attention. Multimodal configs like
     # Gemma 4 keep transformer attributes under text_config.
@@ -240,6 +284,7 @@ def build_hf_exported_program(
         model=model,
         max_cache_len=effective_cache_len,
         tap_layers=tap_layers,
+        logits_to_keep_mode=logits_to_keep_mode,
     )
 
     if use_custom_kv_cache:
@@ -283,19 +328,30 @@ def build_hf_exported_program(
     # prefill_chunk_size is the largest single step: it bounds the traced seq_len
     # and sizes the ring buffer as window + chunk - 1.
     seq_len_dim = torch.export.Dim("seq_length_dim", max=prefill_chunk_size)
+    export_kwargs = {
+        "input_ids": example_input_ids,
+        "cache_position": example_cache_position,
+    }
     dynamic_shapes = {
         "input_ids": {1: seq_len_dim},
         "cache_position": {0: seq_len_dim},
     }
+    if logits_to_keep == "selected":
+        logits_example_length = min(seq_length, prefill_chunk_size)
+        export_kwargs["logits_to_keep"] = torch.arange(
+            logits_example_length, dtype=torch.int64
+        )
+        dynamic_shapes["logits_to_keep"] = (
+            {0: torch.export.Dim("logits_to_keep_dim", min=1, max=prefill_chunk_size)}
+            if prefill_chunk_size > 1
+            else None
+        )
 
     with torch.no_grad():
         exported_program = torch.export.export(
             exportable,
             args=(),
-            kwargs={
-                "input_ids": example_input_ids,
-                "cache_position": example_cache_position,
-            },
+            kwargs=export_kwargs,
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
@@ -304,7 +360,7 @@ def build_hf_exported_program(
     for sym, constraint in exported_program.range_constraints.items():
         logger.info(f"  Range constraint: {sym}: {constraint}")
 
-    return exported_program, prefill_chunk_size
+    return exported_program, prefill_chunk_size, vocab_size
 
 
 def _export_with_custom_components(
@@ -322,6 +378,7 @@ def _export_with_custom_components(
     qembedding_group_size: Optional[int] = None,
     tap_layers: Optional[list[int]] = None,
     prefill_chunk_size: Optional[int] = None,
+    logits_to_keep: str = "full",
 ) -> None:
     """Export using direct HF model with custom MLX components."""
     import executorch.exir as exir
@@ -331,7 +388,7 @@ def _export_with_custom_components(
     from executorch.exir.capture._config import ExecutorchBackendConfig
     from executorch.exir.passes import MemoryPlanningPass
 
-    exported_program, prefill_chunk_size = build_hf_exported_program(
+    exported_program, prefill_chunk_size, vocab_size = build_hf_exported_program(
         model_id=model_id,
         revision=revision,
         max_ctx_len=max_ctx_len,
@@ -345,6 +402,7 @@ def _export_with_custom_components(
         qembedding_group_size=qembedding_group_size,
         tap_layers=tap_layers,
         prefill_chunk_size=prefill_chunk_size,
+        logits_to_keep=logits_to_keep,
     )
 
     logger.info("Delegating to MLX backend...")
@@ -353,10 +411,13 @@ def _export_with_custom_components(
         _skip_dim_order=True,
     )
 
-    constant_methods = {
-        "get_max_ctx_len": max_ctx_len,
-        "get_prefill_chunk_size": prefill_chunk_size,
-    }
+    constant_methods = model_constant_methods(
+        max_context_len=max_ctx_len,
+        logits_to_keep=logits_to_keep,
+        activation_dtype=dtype,
+        vocab_size=vocab_size,
+        max_seq_len=prefill_chunk_size,
+    )
 
     edge_program = exir.to_edge_transform_and_lower(
         {"forward": exported_program},
@@ -389,6 +450,7 @@ def _export_with_offgraph_cache(
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
     prefill_chunk_size: Optional[int] = None,
+    logits_to_keep: str = "full",
 ) -> None:
     """Export using the off-graph KV cache op (kvcache::update_and_attend)."""
     import executorch.exir as exir
@@ -422,6 +484,7 @@ def _export_with_offgraph_cache(
     if revision is not None:
         load_kwargs["revision"] = revision
     model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+    vocab_size = model_vocab_size(model)
     model.eval()
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
@@ -436,7 +499,7 @@ def _export_with_offgraph_cache(
         and not no_tie_word_embeddings,
     )
 
-    exportable = OffGraphExportWrapper(model)
+    exportable = OffGraphExportWrapper(model, logits_to_keep)
 
     from executorch.backends.mlx.llm.cache import resolve_hf_cache_layout
 
@@ -451,14 +514,21 @@ def _export_with_offgraph_cache(
         prefill_chunk_size, max_ctx_len, min(sliding) if sliding else None
     )
 
-    kv_metadata = {
-        "get_n_caches": len(layer_types),
-        "get_kv_heads": torch.tensor(cache_kv_heads, dtype=torch.int32),
-        "get_head_dims": torch.tensor(cache_head_dims, dtype=torch.int32),
-        "get_windows": torch.tensor(cache_windows, dtype=torch.int32),
-        "get_prefill_chunk_size": prefill_chunk_size,
-        "get_max_ctx_len": max_ctx_len,
-    }
+    kv_metadata = model_constant_methods(
+        max_context_len=max_ctx_len,
+        logits_to_keep=logits_to_keep,
+        activation_dtype=dtype,
+        vocab_size=vocab_size,
+        max_seq_len=prefill_chunk_size,
+    )
+    kv_metadata.update(
+        {
+            "get_n_caches": len(layer_types),
+            "get_kv_heads": torch.tensor(cache_kv_heads, dtype=torch.int32),
+            "get_head_dims": torch.tensor(cache_head_dims, dtype=torch.int32),
+            "get_windows": torch.tensor(cache_windows, dtype=torch.int32),
+        }
+    )
     logger.info(
         f"KV cache layout: {len(layer_types)} caches, "
         f"{sum(1 for w in cache_windows if w)} sliding (window {sliding_window})"
@@ -470,19 +540,30 @@ def _export_with_offgraph_cache(
     example_cache_position = torch.arange(seq_length, dtype=torch.long)
 
     seq_len_dim = torch.export.Dim("seq_length_dim", max=prefill_chunk_size)
+    export_kwargs = {
+        "input_ids": example_input_ids,
+        "cache_position": example_cache_position,
+    }
     dynamic_shapes = {
         "input_ids": {1: seq_len_dim},
         "cache_position": {0: seq_len_dim},
     }
+    if logits_to_keep == "selected":
+        logits_example_length = min(seq_length, prefill_chunk_size)
+        export_kwargs["logits_to_keep"] = torch.arange(
+            logits_example_length, dtype=torch.int64
+        )
+        dynamic_shapes["logits_to_keep"] = (
+            {0: torch.export.Dim("logits_to_keep_dim", min=1, max=prefill_chunk_size)}
+            if prefill_chunk_size > 1
+            else None
+        )
 
     with torch.no_grad():
         exported_program = torch.export.export(
             exportable,
             args=(),
-            kwargs={
-                "input_ids": example_input_ids,
-                "cache_position": example_cache_position,
-            },
+            kwargs=export_kwargs,
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
@@ -534,6 +615,7 @@ def export_llama_hf(
     qembedding_group_size: Optional[int] = None,
     tap_layers: Optional[list[int]] = None,
     prefill_chunk_size: Optional[int] = None,
+    logits_to_keep: str = "full",
 ) -> None:
     if use_offgraph_cache:
         if use_custom_sdpa or use_custom_kv_cache:
@@ -554,12 +636,19 @@ def export_llama_hf(
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
             prefill_chunk_size=prefill_chunk_size,
+            logits_to_keep=logits_to_keep,
         )
-    elif use_custom_sdpa or use_custom_kv_cache or tap_layers is not None:
+    elif (
+        use_custom_sdpa
+        or use_custom_kv_cache
+        or tap_layers is not None
+        or logits_to_keep != "full"
+    ):
         logger.info(
             f"Using custom components: sdpa={use_custom_sdpa}, "
             f"kv_cache={use_custom_kv_cache}, tap_layers={tap_layers}, "
-            f"prefill_chunk_size={prefill_chunk_size}"
+            f"prefill_chunk_size={prefill_chunk_size}, "
+            f"logits_to_keep={logits_to_keep}"
         )
         _export_with_custom_components(
             model_id=model_id,
@@ -576,6 +665,7 @@ def export_llama_hf(
             qembedding_group_size=qembedding_group_size,
             tap_layers=tap_layers,
             prefill_chunk_size=prefill_chunk_size,
+            logits_to_keep=logits_to_keep,
         )
     else:
         logger.info("Using optimum-executorch pipeline (no custom components)")
@@ -629,6 +719,12 @@ def main():
     )
     parser.add_argument("--use-offgraph-cache", action="store_true", default=False)
     parser.add_argument(
+        "--logits-to-keep",
+        choices=("full", "last", "selected"),
+        default="full",
+        help="Logits output: full sequence, last token, or runtime-selected positions.",
+    )
+    parser.add_argument(
         "--prefill-chunk-size",
         type=int,
         default=512,
@@ -658,6 +754,7 @@ def main():
         qembedding_group_size=args.qembedding_group_size,
         tap_layers=tap_layers,
         prefill_chunk_size=args.prefill_chunk_size,
+        logits_to_keep=args.logits_to_keep,
     )
 
 

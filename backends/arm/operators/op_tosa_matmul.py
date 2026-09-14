@@ -76,8 +76,12 @@ class MatmulVisitor(NodeVisitor):
 
         input_A_ZP_name = f"{output.name}_A_ZP"
         input_B_ZP_name = f"{output.name}_B_ZP"
-        tosa_graph.addConst([1], inputs[0].dtype, [input0_zp], name=input_A_ZP_name)
-        tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=input_B_ZP_name)
+        input_A_ZP = tosa_graph.addConst(
+            [1], inputs[0].dtype, [input0_zp], name=input_A_ZP_name
+        )
+        input_B_ZP = tosa_graph.addConst(
+            [1], inputs[1].dtype, [input1_zp], name=input_B_ZP_name
+        )
 
         # Add the MATMUL to the TOSA graph.
         attr = ts.TosaSerializerAttribute()
@@ -90,8 +94,8 @@ class MatmulVisitor(NodeVisitor):
             [
                 inputs[0].name,
                 inputs[1].name,
-                input_A_ZP_name,
-                input_B_ZP_name,
+                input_A_ZP.name,
+                input_B_ZP.name,
             ],
             [output.name],
             attr,

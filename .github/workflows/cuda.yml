@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 13.0) using the command:
+# across different CUDA versions (12.6, 13.0, 13.4) using the command:
 #   ./install_executorch.sh
 # 
 # Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
@@ -64,10 +64,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "13.0"]
+        cuda-version: ["12.6", "13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@c3c4c4d48e97dbaaabd9b65496afd8c8d8dad713
     permissions:
       id-token: write
       contents: read
@@ -76,14 +76,19 @@ jobs:
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: ${{ matrix.cuda-version }}
+      test-infra-ref: c3c4c4d48e97dbaaabd9b65496afd8c8d8dad713
+      driver-version: ${{ matrix.cuda-version == '13.4' && '615.71.09' || '580.65.06' }}
+      driver-download-url: ${{ matrix.cuda-version == '13.4' && 'https://download.nvidia.com/XFree86/Linux-x86_64/615.71.09/NVIDIA-Linux-x86_64-615.71.09.run' || '' }}
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
-        # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
-        # and install the appropriate PyTorch wheel
+        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
+          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
+          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        fi
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -112,7 +117,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 13.0) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds completed successfully!"
           fi
 
   test-models-cuda:

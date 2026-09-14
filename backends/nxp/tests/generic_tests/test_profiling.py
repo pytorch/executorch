@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import ast
 import logging
 import os
@@ -9,13 +10,14 @@ import re
 from typing import Any, Union
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     NumericalStatsOutputComparator,
 )
-from executorch.backends.nxp.tests.models import AvgPool2dModule, SoftmaxModule
 from executorch.backends.nxp.tests.nsys_testing import (
     get_test_name,
     lower_run_compare,
@@ -27,6 +29,7 @@ from executorch.backends.nxp.tests.profiling_utils import (
     get_neutron_driver_version,
     get_neutron_kernel_kinds,
 )
+from executorch.backends.nxp.tests.simple_models import AvgPool2dModule, SoftmaxModule
 from executorch.devtools.inspector._inspector import Inspector
 from executorch.examples.models.mlperf_tiny import (
     DeepAutoEncoder,
