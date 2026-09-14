@@ -634,23 +634,6 @@ def _get_args():
             "operators. This is an experimental Cortex-M-only option."
         ),
     )
-    # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
-    # They are deprecated and no longer functional in this script.
-    parser.add_argument(
-        "-e",
-        "--evaluate",
-        required=False,
-        nargs="?",
-        const="generic",
-        choices=["generic", "mv2", "deit_tiny", "resnet18"],
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "-c",
-        "--evaluate_config",
-        required=False,
-        help=argparse.SUPPRESS,
-    )
     parser.add_argument(
         "-q",
         "--quantize",
@@ -757,12 +740,6 @@ def _get_args():
         and MODELS[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
-
-    if args.evaluate is not None or args.evaluate_config is not None:
-        logging.error(
-            "Model evaluation is no longer supported in this script."
-            " Use evaluate_model.py instead. Ignore and continue."
-        )
 
     return args
 
