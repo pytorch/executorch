@@ -36,6 +36,9 @@ class RemoveRedundantOpsTransform(ExportPass):
         exir_ops.edge.aten.expand_copy.default,
         # copy.default(self, src): no-op when src dtype/shape matches self.
         exir_ops.edge.aten.copy.default,
+        # repeat.default: no-op when every repeat factor is 1, which the shape
+        # equality check below implies.
+        exir_ops.edge.aten.repeat.default,
     }
 
     # For these ops the meaningful input is args[1] (src), not args[0] (self).
