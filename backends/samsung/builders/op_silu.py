@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Samsung Electronics Co. LTD
+# Copyright (c) 2026 Samsung Electronics Co. LTD
 # All rights reserved
 #
 # This source code is licensed under the BSD-style license found in the
@@ -15,8 +15,8 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
 @register_node_visitor
-class SigmoidVisitor(NodeVisitor):
-    target = "aten.sigmoid.default"
+class SiluVisitor(NodeVisitor):
+    target = "aten.silu.default"
 
     def define_node(
         self,
@@ -24,14 +24,13 @@ class SigmoidVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> bool:
-        input = node.args[0]
-        input_id = self.define_tensor(input, enn_graph, vals_to_ids)
+        input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         params = {}
         self._update_params_qdtype(node, params)
 
-        enn_graph.define_op(node.name, "SIGMOID", [input_id], [output_id], params)
+        enn_graph.define_op(node.name, "Silu", [input_id], [output_id], params)
 
         return True
