@@ -15,6 +15,13 @@ from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
+class AttentionModel(torch.nn.Module):
+    """Minimal SDPA model used to isolate attention-scale MUL lowering."""
+
+    def forward(self, q, k, v):
+        return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+
+
 class TransformerModel(torch.nn.Module):
     """Small Transformer used to exercise decomposed attention lowering."""
 
@@ -64,6 +71,49 @@ class TransformerDecompositionQuantize(CortexMQuantize):
             prepared,
             fold_quantize=self.fold_quantize,
         )
+
+
+def test_decomposed_attention_scale_mul_lowering(cortex_m_target):
+    """The two SDPA scaling MULs should lower to Cortex-M quantized MUL."""
+
+    torch.manual_seed(0)
+
+    model = AttentionModel().eval()
+    inputs = (
+        torch.randn(1, 2, 4, 16),
+        torch.randn(1, 2, 4, 16),
+        torch.randn(1, 2, 4, 16),
+    )
+
+    tester = CortexMTester(
+        model,
+        inputs,
+        target_config=cortex_m_target,
+    )
+
+    tester.quantize(TransformerDecompositionQuantize())
+    tester.export()
+    tester.to_edge()
+    tester.run_passes()
+
+    tester.check_count(
+        {
+            "executorch_exir_dialects_edge__ops_cortex_m_quantized_mul_default": 2,
+            "executorch_exir_dialects_edge__ops_cortex_m_quantized_batch_matmul_default": 2,
+            "executorch_exir_dialects_edge__ops_cortex_m_softmax_default": 1,
+        }
+    )
+
+    tester.check_not(
+        [
+            "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+        ]
+    )
+
+    tester.run_method_and_compare_outputs(
+        inputs=inputs,
+        qtol=2,
+    )
 
 
 def test_transformer_decomposed_attention_lowering(cortex_m_target):

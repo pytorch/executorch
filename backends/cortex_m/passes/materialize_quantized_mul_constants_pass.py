@@ -25,14 +25,18 @@ class MaterializeQuantizedMulConstantsPass(ComputeConstantOpsAOTPass):
     }
 
     @classmethod
-    def _feeds_quantized_mul(cls, node: Node) -> bool:
-        worklist = list(node.users)
+    def _feeds_single_quantized_mul(cls, node: Node) -> bool:
+        current = node
         visited: set[Node] = set()
 
-        while worklist:
-            user = worklist.pop()
+        while True:
+            users = list(current.users)
+            if len(users) != 1:
+                return False
+
+            user = users[0]
             if user in visited:
-                continue
+                return False
             visited.add(user)
 
             if user.target == exir_ops.edge.aten.mul.Tensor:
@@ -40,14 +44,15 @@ class MaterializeQuantizedMulConstantsPass(ComputeConstantOpsAOTPass):
                     user.meta.get("output_qparams")
                 )
 
-            if user.target in cls._passthrough_ops:
-                worklist.extend(user.users)
+            if user.target not in cls._passthrough_ops:
+                return False
 
-        return False
+            current = user
 
     def compute_node_aot(self, node: Node) -> bool:
-        if not node.meta.get("output_qparams"):
+        output_qparams = node.meta.get("output_qparams", {})
+        if set(output_qparams) != {0}:
             return False
-        if not self._feeds_quantized_mul(node):
+        if not self._feeds_single_quantized_mul(node):
             return False
         return super().compute_node_aot(node)
