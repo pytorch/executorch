@@ -80,7 +80,15 @@ def _strip_muse_glimmer_header(text: str) -> str:
 
 
 def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
-    """Split a Harmony turn into private `to=self` and remaining messages."""
+    """Split a Harmony turn into private `to=self` bodies and visible messages.
+
+    The returned reasoning is client-facing text: multiple thinking blocks are
+    joined with a newline (matching SGLang's reasoning parser) so no protocol
+    framing leaks to clients. Replay fidelity does NOT come from this text --
+    the transcript fingerprint covers content + tool calls (not reasoning),
+    and warm resume splices the stored generated token ids over whatever
+    reasoning the client echoes back.
+    """
     matches = list(_MUSE_GLIMMER_ADDRESSED_HEADER_RE.finditer(text))
     if not matches:
         return None, text
@@ -94,15 +102,15 @@ def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         body = text[match.end() : end]
-        body = re.sub(r"(?:<\|eom\|>|<\|eot\|>)\s*$", "", body).strip()
+        body = re.sub(r"(?:<\|eom\|>|<\|eot\|>)\s*$", "", body)
         if not body:
             continue
         if match.group(1) == "self":
             reasoning.append(body)
         else:
-            visible.append(body)
+            visible.append(body.strip())
 
-    return "\n\n".join(reasoning) or None, "\n\n".join(visible)
+    return "\n".join(reasoning) or None, "\n\n".join(visible)
 
 
 def _repo_root() -> Path:

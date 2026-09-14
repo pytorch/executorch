@@ -34,6 +34,18 @@ from .session_runtime import PromptInput
 
 # The assistant header that precedes a turn's generation scaffold + content.
 _ASSIST_HDR = "<|im_start|>assistant\n"
+# A tail past an assistant-header match is template framing only if it is
+# positively recognized: empty, or a recipient line closed by the message
+# marker (e.g. ` to=user<|message|>`). Templates terminate turns in
+# unbounded ways (`[/INST]`, `<|eot|>`, `<|im_end|>`, ...), so no blocklist
+# of delimiters can enumerate turn structure exhaustively -- and anything
+# unrecognized means the match sits inside message content (e.g. a user
+# message quoting a header literal), where truncating would delete real
+# conversation text. Unknown framing falls back to plain text (correct
+# output, just no reuse).
+_FRAMING_RE = re.compile(
+    r"\A ?to=[A-Za-z0-9_.]{1,64}(?: constrain=[A-Za-z0-9_]+)?<\|message\|>\Z"
+)
 # A scaffold region is exactly empty (history strips it before the last user) or
 # one of the Qwen3 think scaffolds (history preserves the empty block after the
 # last user; the open form is the think-mode generation preamble). Anything else
@@ -92,11 +104,13 @@ def _find_gemma_tool_call_span(rendered: str, search_pos: int):
 class OpenAITranscriptState:
     def __init__(self, template: ChatTemplate):
         self._template = template
-        self._assist_hdr = (
-            template.assistant_header()
-            if hasattr(template, "assistant_header")
-            else _ASSIST_HDR
-        )
+        # Note: the method's mere presence says nothing about whether the
+        # header is right for the template -- production adapters always
+        # provide it, even when it returns the default for a template that
+        # renders different framing. The tail-shape check below is the only
+        # boundary verification.
+        _header_fn = getattr(template, "assistant_header", None)
+        self._assist_hdr = _header_fn() if _header_fn else _ASSIST_HDR
         # session_id -> [{"fp": str, "ids": list[int] | None}, ...] (one per
         # assistant turn we produced, in order). Cleared on reset/close.
         self._turns: dict[str, list[dict]] = {}
@@ -127,22 +141,49 @@ class OpenAITranscriptState:
         the exact resident scaffold. The region is empty (history stripped it ->
         insert) or a think scaffold (history preserved it -> replace). Returns the
         adjusted text, or None if it isn't a recognized scaffold (-> text fallback)."""
-        # No scaffold for this turn's mode/template: nothing to reproduce, so
-        # leave the chunk untouched -- and don't require the Qwen/ChatML header,
-        # so token-id splicing still works for templates with a different
-        # assistant header (the fix stays a true no-op for non-think models).
-        if not preamble:
-            return text_chunk
         h = text_chunk.rfind(self._assist_hdr)
         if h == -1:
-            return None
+            # No assistant header: with a scaffold to reproduce this is
+            # ambiguous (-> text fallback); without one there is nothing to
+            # normalize, so splicing still works for templates with a different
+            # assistant header.
+            return None if preamble else text_chunk
         base = h + len(self._assist_hdr)
+        if not preamble:
+            # No generation scaffold: the worker prefills nothing ahead of the
+            # turn's raw tokens, so the spliced ids begin immediately after the
+            # header. Drop the template's re-rendered framing (recipient /
+            # message markers), which describes the echoed message rather than
+            # the raw generation -- e.g. a thinking turn was generated as
+            # ` to=self<|message|>...` but re-renders as ` to=user<|message|>`,
+            # and keeping that framing shifts every later token id (worker
+            # "mismatch" -> full re-prefill). Also exact for non-thinking
+            # turns, whose raw opening the spliced ids reproduce verbatim.
+            tail = text_chunk[base:]
+            if tail and not self._is_template_framing(tail):
+                # Unverifiable boundary: the header match sits inside message
+                # content (e.g. a user message quoting a header literal), so
+                # truncating here would delete real conversation text while
+                # splicing proceeds on the corrupted prompt. Fall back to
+                # plain text (correct output, just no reuse).
+                return None
+            return text_chunk[:base]
         region = text_chunk[base:]
         if region == preamble:
             return text_chunk
         if not _THINK_SCAFFOLD_RE.match(region):
             return None
         return text_chunk[:base] + preamble
+
+    def _is_template_framing(self, tail: str) -> bool:
+        """Whether `tail` (text between an assistant-header match and the
+        sentinel) is positively recognized template framing: empty, or a
+        recipient line closed by the message marker. Anything else --
+        message content after a quoted header literal, a second header,
+        turn terminators of any shape -- falls back to plain text."""
+        if not tail:
+            return True
+        return _FRAMING_RE.match(tail) is not None
 
     def _split_on_sentinels(
         self, rendered: str, sub: dict[str, dict]
