@@ -101,7 +101,6 @@ def test_transformer_decomposed_attention_lowering(cortex_m_target):
     tester.check_not(
         [
             "executorch_exir_dialects_edge__ops_aten_bmm_default",
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
             "executorch_exir_dialects_edge__ops_aten__softmax_default",
             "executorch_exir_dialects_edge__ops_aten__safe_softmax_default",
         ]

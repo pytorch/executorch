@@ -8,7 +8,6 @@ import inspect
 from typing import Any, Optional, Type
 
 from executorch.backends.arm._passes import (
-    ComputeConstantOpsAOTPass,
     DeduplicateGetAttrPass,
     FoldAndAnnotateQParamsPass,
     ScalarsToAttributePass,
@@ -43,6 +42,9 @@ from .explicit_layout_pass import (
     ValidateCortexMExplicitLayoutPass,
 )
 from .materialize_mul_broadcast_pass import MaterializeMulBroadcastPass
+from .materialize_quantized_mul_constants_pass import (
+    MaterializeQuantizedMulConstantsPass,
+)
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
@@ -56,9 +58,8 @@ class CortexMPassManager(PassManager):
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
-        # Materialize constant ops after qparams are attached so quantized
-        # scalar constants use the Cortex-M input dtype instead of remaining float.
-        ComputeConstantOpsAOTPass,
+        # Materialize only quantized MUL constants after qparams are attached.
+        MaterializeQuantizedMulConstantsPass,
         CortexMReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         ActivationFusionPass,
