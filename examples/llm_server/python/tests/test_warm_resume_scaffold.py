@@ -782,8 +782,7 @@ def test_thinking_turn_splice_reproduces_resident_prefix():
     fake = _FakeHarmony()
     st = OpenAITranscriptState(fake)
     raw = (
-        " to=self<|message|>\nthink\n<|eom|>"
-        "<|start|>assistant to=user<|message|>a1"
+        " to=self<|message|>\nthink\n<|eom|>" "<|start|>assistant to=user<|message|>a1"
     )
     resident, gen_ids = _harmony_resident(fake, raw)
     st.record_assistant_turn(

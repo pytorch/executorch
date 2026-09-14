@@ -238,19 +238,13 @@ def _reasoning_serving():
         def special_tokens(self):
             return []
 
-    return ServingChat(
-        None, _FakeTemplate(), "m", reasoning_extractor=_split
-    )
+    return ServingChat(None, _FakeTemplate(), "m", reasoning_extractor=_split)
 
 
 def _reasoning_req(**kw):
-    from executorch.examples.llm_server.python.protocol import (
-        ChatCompletionRequest,
-    )
+    from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 
-    return ChatCompletionRequest(
-        messages=[{"role": "user", "content": "hi"}], **kw
-    )
+    return ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], **kw)
 
 
 def test_reasoning_returned_by_default():
