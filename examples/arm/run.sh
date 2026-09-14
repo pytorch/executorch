@@ -168,10 +168,6 @@ arm_scratch_dir=$(realpath "${arm_scratch_dir}")
 ethos_u_root_dir="${arm_scratch_dir}/ethos-u"
 mkdir -p "${ethos_u_root_dir}"
 ethos_u_root_dir=$(realpath "${ethos_u_root_dir}")
-cmsis_nn_local_path=""
-if [[ -d "${ethos_u_root_dir}/core_software/cmsis-nn" ]]; then
-    cmsis_nn_local_path=$(realpath "${ethos_u_root_dir}/core_software/cmsis-nn")
-fi
 setup_path_script=${arm_scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
@@ -335,9 +331,6 @@ configure_runner_build_dir() {
         -DETHOS_SDK_PATH:PATH="${ethos_u_root_dir}"
         -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}"
     )
-    if [[ -n "${cmsis_nn_local_path}" ]]; then
-        cmake_cmd+=(-DCMSIS_NN_LOCAL_PATH:PATH="${cmsis_nn_local_path}")
-    fi
     cmake_cmd+=(-DET_PTE_FILE_PATH:PATH="${pte_source}")
     if [[ "${pte_placement}" == "elf" ]]; then
         cmake_cmd+=(-DET_MODEL_PTE_ADDR=)
