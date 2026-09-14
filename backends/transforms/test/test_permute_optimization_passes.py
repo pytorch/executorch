@@ -22,6 +22,9 @@ from executorch.backends.transforms.fuse_cascaded_view_ops import FuseCascadedVi
 from executorch.backends.transforms.fuse_transpose_or_permute_op_pairs_pass import (
     FuseTransposeOrPermuteOpPairsPass,
 )
+from executorch.backends.transforms.minimize_layout_permutes import (
+    MinimizeLayoutPermutes,
+)
 from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
 )
@@ -885,7 +888,339 @@ def _canonicalize_and_remove_permutes(
     return cast(PassResult, RemovePermutesAroundElementwiseOps()(canonical))
 
 
+class MinimizeLayoutPermutesTest(unittest.TestCase):
+    def test_min_cut_moves_boundary_for_open_region(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        y_data = torch.randn(1, 2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        px = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        py = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(y, [0, 3, 1, 2])
+        )
+        add = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(px, py))
+        relu = builder.call_operator(op=exir_ops.edge.aten.relu.default, args=(add,))
+        restored = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(add, [0, 2, 3, 1]),
+        )
+        builder.output([restored, relu])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data],
+            "MinimizeLayoutPermutes",
+        )
+
+    def test_missing_input_metadata_skips_min_cut(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        direct_data = torch.randn(1, 4, 2, 3)
+        x = builder.placeholder("x", x_data)
+        direct = builder.placeholder("direct", direct_data)
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(permuted, direct)
+        )
+        restored = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(add, [0, 2, 3, 1]),
+        )
+        builder.output([restored])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+        direct_node = next(
+            node for node in original.graph.nodes if node.target == "direct"
+        )
+        direct_node.meta.pop("val")
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, direct_data],
+            "MinCutMissingInputMetadata",
+        )
+
+    def test_shared_constant_uses_one_boundary_permute(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        constant_data = torch.randn(1, 4, 2, 3)
+        x = builder.placeholder("x", x_data)
+        constant = builder.placeholder("p_constant", constant_data)
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(permuted, constant)
+        )
+        sub = builder.call_operator(
+            op=exir_ops.edge.aten.sub.Tensor, args=(add, constant)
+        )
+        restored_sub = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(sub, [0, 2, 3, 1]),
+        )
+        builder.output([restored_sub])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            1,
+            str(result.graph_module.graph),
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, constant_data],
+            "MinCutSharedConstant",
+        )
+
+    def test_min_cut_and_legacy_view_regions_run_in_one_call(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        y_data = torch.randn(1, 2, 3, 4)
+        view_data = torch.randn(1, 128, 16)
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        view_input = builder.placeholder("view_input", view_data)
+
+        px = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        py = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(y, [0, 3, 1, 2])
+        )
+        add = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(px, py))
+        open_output = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(add,)
+        )
+        restored = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(add, [0, 2, 3, 1]),
+        )
+
+        view_permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(view_input, [0, 2, 1]),
+        )
+        unsqueezed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(view_permute, [1, 16, 1, 128]),
+        )
+        multiplied = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(unsqueezed, unsqueezed)
+        )
+        squeezed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(multiplied, [1, 16, 128]),
+        )
+        view_output = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(squeezed, [0, 2, 1]),
+        )
+        builder.output([restored, open_output, view_output])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data, view_data],
+            "MinCutAndLegacyViewRegions",
+        )
+
+    def test_operand_consumed_permuted_and_raw(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 3)
+        x = builder.placeholder("x", x_data)
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 1, 3, 2])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(permuted, x)
+        )
+        restored = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(add, [0, 1, 3, 2]),
+        )
+        builder.output([restored])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            1,
+            str(result.graph_module.graph),
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "MinCutAliasedRawAndPermutedOperand",
+        )
+
+    def test_lower_rank_broadcast_operand_skips_min_cut(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        bias_data = torch.randn(2, 3)
+        x = builder.placeholder("x", x_data)
+        bias = builder.placeholder("bias", bias_data)
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(permuted, bias)
+        )
+        restored = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(add, [0, 2, 3, 1]),
+        )
+        builder.output([restored])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, bias_data],
+            "MinCutLowerRankBroadcastOperand",
+        )
+
+    def test_region_output_consumed_directly_and_through_permute(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 1, 3, 2])
+        )
+        relu = builder.call_operator(
+            op=exir_ops.edge.aten.relu.default, args=(permuted,)
+        )
+        restored = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(relu, [0, 1, 3, 2]),
+        )
+        builder.output([relu, restored])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            1,
+            str(result.graph_module.graph),
+        )
+        outputs = result.graph_module(x_data)
+        self.assertEqual(list(outputs[0].shape), [1, 2, 4, 3])
+        self.assertEqual(list(outputs[1].shape), [1, 2, 3, 4])
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "MinCutRegionOutputAliasedWithPermute",
+        )
+
+    def test_boundary_permute_on_nested_cat_operand(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        direct_data = torch.randn(1, 5, 2, 3)
+        x = builder.placeholder("x", x_data)
+        direct = builder.placeholder("direct", direct_data)
+        permuted = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        concatenated = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default, args=([permuted, direct], 1)
+        )
+        restored = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(concatenated, [0, 2, 3, 1]),
+        )
+        builder.output([restored])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(
+            PassResult,
+            MinimizeLayoutPermutes()(original),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            1,
+            str(result.graph_module.graph),
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, direct_data],
+            "MinCutNestedCatOperand",
+        )
+
+
 class RemovePermutesAcrossViewTest(unittest.TestCase):
+
     def test_permute_view_squeeze_elementwise_view_unsqueeze_permute(self) -> None:
         """permute(3D) → view(unsqueeze) → mul(4D) → view(squeeze) → permute(3D)
         should have both permutes removed."""

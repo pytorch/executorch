@@ -605,6 +605,22 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "minimize_layout_permutes",
+        srcs = ["minimize_layout_permutes.py"],
+        visibility = [
+            "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            ":channels_last_layout",
+            ":remove_permutes_around_elementwise_ops",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "postpone_permute_below_squeeze_view",
         srcs = ["postpone_permute_below_squeeze_view.py"],
         visibility = [
@@ -661,6 +677,7 @@ def define_common_targets():
             ":fuse_cascaded_transpose_or_permute_ops",
             ":fuse_cascaded_view_ops",
             ":fuse_transpose_or_permute_op_pairs_pass",
+            ":minimize_layout_permutes",
             ":postpone_permute_below_squeeze_view",
             ":remove_permutes_around_elementwise_ops",
             ":replace_nop_transpose_or_permute_with_view",
