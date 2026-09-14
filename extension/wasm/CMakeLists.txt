@@ -9,7 +9,7 @@
 # cmake-format -i CMakeLists.txt
 # ~~~
 
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.26)
 
 project(executorch_wasm)
 

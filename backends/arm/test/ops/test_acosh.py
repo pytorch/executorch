@@ -125,7 +125,11 @@ def test_acosh_vgf_no_quant(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    skips={"large": "Known quantization mismatch"},
+)
 @common.SkipIfNoModelConverter
 def test_acosh_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t](

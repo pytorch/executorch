@@ -21,10 +21,7 @@ from typing import Optional
 from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
-from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.repack_mlx import (
-    _BITS,
-    repack_mlx,
-)
+from executorch.backends.mlx.custom_kernel_ops.gguf.repack_mlx import Q5_K, repack_mlx
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddNode,
     AsTypeNode,
@@ -46,7 +43,9 @@ def emit_linear(
     node. The blob is repacked into MLX qparams at export time, so only the
     MLX-format constants are serialized.
     """
-    w_slot, scales_slot, biases_slot, group_size = repack_mlx(P, weight_node)
+    w_slot, scales_slot, biases_slot, group_size = repack_mlx(
+        P, weight_node, Q5_K, scale_dtype=x_node.meta["val"].dtype
+    )
     x_slot, bias_slot = P.slot_map([x_node, bias_node])
 
     out = P.make_or_get_slot(head)
@@ -58,7 +57,7 @@ def emit_linear(
             biases=P.slot_to_tid(biases_slot),
             out=P.slot_to_tid(out),
             group_size=group_size,
-            bits=_BITS,
+            bits=Q5_K.bits,
             mode="affine",
             transpose=True,
         )

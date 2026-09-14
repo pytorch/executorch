@@ -71,14 +71,18 @@ ivec4 quantize(const vec4 texel, const float inv_scale, const int zp) {
 
 void main() {
   const int c4 = int(gl_GlobalInvocationID.z);
+  const int H = int(outp.sizes[0][1]);
+  const int hn = int(gl_GlobalInvocationID.y);
+  const int n = hn / H;
+  const int h = hn % H;
 
   // Initialize output tensor index (WHCN order)
   // Each thread handles 4 adjacent widths starting at base_out_w
   TensorIndex4D outp_tidx;
   outp_tidx.data[0] = int(gl_GlobalInvocationID.x) * 4;
-  outp_tidx.data[1] = int(gl_GlobalInvocationID.y);
+  outp_tidx.data[1] = h;
   outp_tidx.data[2] = c4 * 4;
-  outp_tidx.data[3] = 0;
+  outp_tidx.data[3] = n;
 
   const int W = int(outp.sizes[0][0]);
   const int C4 = int(div_up_4(outp.sizes[0][2]));
@@ -94,6 +98,7 @@ void main() {
   // Get strides for width and height dimensions (in texel space)
   const int w_stride = int(inp.strides[0][0]);
   const int h_stride = int(inp.strides[0][1]);
+  const int n_stride = int(inp.strides[0][3]);
 
   // Pre-compute step sizes for efficient indexing
   const int w_texel_step = conv2d_params.dilation.x * w_stride;
@@ -106,7 +111,7 @@ void main() {
   inp_tidx.data[0] = outp_tidx.data[0] * conv2d_params.stride.x - conv2d_params.padding.x;
   inp_tidx.data[1] = outp_tidx.data[1] * conv2d_params.stride.y - conv2d_params.padding.y;
   inp_tidx.data[2] = outp_tidx.data[2];
-  inp_tidx.data[3] = 0;  // batch = 0 since N == 1
+  inp_tidx.data[3] = n;
 
   int base_inp_texel_idx;
   if (get_outer_packed_dim_block_size(inp_layout) == 1) {
@@ -152,7 +157,11 @@ void main() {
             // inp_texel_idx = base_inp_texel_idx + div_4(w_offset) * w_stride + mod_4(w_offset);
             // inp_texel_idx = tensor4d_idx_to_texel_idx(inp, inp_tidx, inp_layout);
             const int w4 = div_4(inp_tidx.data[0]);
-            inp_texel_idx = (inp_tidx.data[1] * h_stride + w4 * w_stride + c4) * 4 + mod_4(inp_tidx.data[0]);
+            inp_texel_idx =
+                (n * n_stride + inp_tidx.data[1] * h_stride +
+                 w4 * w_stride + c4) *
+                    4 +
+                mod_4(inp_tidx.data[0]);
           }
           const int packed_input = t_packed_int8_input[inp_texel_idx];
           input_4c = unpack_int8x4(packed_input);

@@ -48,6 +48,13 @@ aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel);
+
+// Undefined means either a null handle or a tensor whose storage was released.
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_is_defined(Tensor* tensor, bool* ret_is_defined);
+
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
 
 // ============================================================

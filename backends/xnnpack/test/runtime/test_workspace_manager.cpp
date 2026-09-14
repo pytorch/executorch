@@ -21,7 +21,6 @@ using executorch::backends::xnnpack::WorkspaceSharingMode;
 using executorch::backends::xnnpack::XNNWorkspace;
 using executorch::backends::xnnpack::XNNWorkspaceManager;
 using executorch::runtime::Error;
-using executorch::runtime::Result;
 
 class XNNWorkspaceManagerTest : public ::testing::Test {
  protected:

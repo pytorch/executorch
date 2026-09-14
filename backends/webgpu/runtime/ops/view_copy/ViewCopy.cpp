@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy.h>
 #include <executorch/backends/webgpu/runtime/ops/view_copy/view_copy.h>
 
 #include <stdexcept>
@@ -98,11 +99,23 @@ void clone_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_flat_copy(graph, args.at(0), args.at(args.size() - 1));
 }
 
+// dim_order copies may change dtype -> convert-aware add_to_copy_node.
+void clone_dim_order_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // args: [self, non_blocking?, dim_order?, out]; out = last value id.
+  add_to_copy_node(graph, args.at(0), args.at(args.size() - 1));
+}
+
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.view_copy.default, view_copy_impl);
   WEBGPU_REGISTER_OP(aten.clone.default, clone_impl);
+  WEBGPU_REGISTER_OP(aten.alias_copy.default, clone_impl);
+  // dim_order_ops._clone_dim_order.default is owned by DimOrder.cpp
+  // (numel-preserving flat copy); do NOT re-register it here (first-wins
+  // OperatorRegistry would nondeterministically shadow that impl).
+  WEBGPU_REGISTER_OP(
+      dim_order_ops._to_dim_order_copy.default, clone_dim_order_impl);
 }
 
 } // namespace executorch::backends::webgpu

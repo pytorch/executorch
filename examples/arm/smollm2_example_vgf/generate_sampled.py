@@ -34,15 +34,18 @@ class RunnerSession:
         extra_args: List[str],
         *,
         persistent: bool,
+        input_names: Optional[List[str]] = None,
     ) -> None:
         self._runner = runner
         self._pte = pte
         self._extra_args = extra_args
         self._persistent = persistent
+        self._input_names = input_names or ["tokens.bin"]
 
         self._tmpdir: Optional[tempfile.TemporaryDirectory[str]] = None
         self._tmpdir_path: Optional[Path] = None
         self._input_path: Optional[Path] = None
+        self._input_paths: List[Path] = []
         self._output_prefix: Optional[Path] = None
 
         self._proc: Optional[subprocess.Popen[str]] = None
@@ -55,18 +58,19 @@ class RunnerSession:
     def _init_paths(self) -> None:
         self._tmpdir = tempfile.TemporaryDirectory()
         self._tmpdir_path = Path(self._tmpdir.name)
-        self._input_path = self._tmpdir_path / "tokens.bin"
+        self._input_paths = [self._tmpdir_path / name for name in self._input_names]
+        self._input_path = self._input_paths[0]
         self._output_prefix = self._tmpdir_path / "logits"
 
     def _base_cmd(self) -> List[str]:
-        assert self._input_path is not None
+        assert self._input_paths
         assert self._output_prefix is not None
         return [
             self._runner,
             "--model_path",
             self._pte,
             "--inputs",
-            str(self._input_path),
+            ",".join(str(path) for path in self._input_paths),
             "--output_file",
             str(self._output_prefix),
         ] + self._extra_args
@@ -130,8 +134,17 @@ class RunnerSession:
     def run(self, tokens: np.ndarray) -> np.ndarray:
         """Run executor_runner once and return output logits as float32."""
 
-        assert self._input_path is not None
-        tokens.tofile(self._input_path)
+        return self.run_inputs([tokens])
+
+    def run_inputs(self, inputs: List[np.ndarray]) -> np.ndarray:
+        """Run executor_runner once with one or more input tensor files."""
+
+        if len(inputs) != len(self._input_paths):
+            raise ValueError(
+                f"Expected {len(self._input_paths)} inputs, got {len(inputs)}."
+            )
+        for input_array, input_path in zip(inputs, self._input_paths):
+            input_array.tofile(input_path)
         output_path = self._output_path()
         output_path.unlink(missing_ok=True)
 
@@ -179,6 +192,44 @@ class RunnerSession:
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError("executor_runner did not write logits output")
         return self._read_logits()
+
+
+class KvRunnerSession:
+    """Step-wise runner for KV-cache exports."""
+
+    def __init__(
+        self,
+        runner: str,
+        pte: str,
+        extra_args: List[str],
+        *,
+        persistent: bool,
+    ) -> None:
+        self._runner = RunnerSession(
+            runner=runner,
+            pte=pte,
+            extra_args=extra_args,
+            persistent=persistent,
+            input_names=["token.bin", "input_pos.bin"],
+        )
+
+    def close(self) -> None:
+        self._runner.close()
+
+    def __enter__(self) -> "KvRunnerSession":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+        self.close()
+
+    def run(self, token_id: int, input_pos: int) -> np.ndarray:
+        logits = self._runner.run_inputs(
+            [
+                np.array([[token_id]], dtype=np.int64),
+                np.array([input_pos], dtype=np.int64),
+            ]
+        )
+        return logits.reshape(1, -1)[0]
 
 
 def prepare_input(
@@ -594,6 +645,98 @@ def run_one_prompt(
         )
 
 
+def run_one_prompt_kv(
+    *,
+    runner: KvRunnerSession,
+    tokenizer,
+    prompt: str,
+    prompt_no: int,
+    vocab_size: Optional[int],
+    eos_id: int,
+    max_context_length: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    repetition_penalty: float,
+    save_generations_path: Optional[Path],
+    topk_print: bool,
+) -> None:
+    ids = tokenizer.encode(prompt, bos=True, eos=False)
+    if not ids:
+        raise RuntimeError("Tokenizer returned no prompt tokens")
+    if len(ids) >= max_context_length:
+        ids = ids[: max_context_length - 1]
+    max_new_tokens = min(max_new_tokens, max_context_length - len(ids))
+
+    print(
+        f"\n==================== Prompt {prompt_no} ====================\n{prompt}",
+        end="",
+        flush=True,
+    )
+
+    logits_0: Optional[np.ndarray] = None
+    input_pos = 0
+    for token_id in ids:
+        logits_0 = runner.run(token_id, input_pos)
+        input_pos += 1
+
+    generated = 0
+    while generated < max_new_tokens and input_pos <= max_context_length:
+        if logits_0 is None:
+            raise RuntimeError("KV decode did not produce logits")
+
+        if topk_print:
+            print_topk_candidates(
+                logits=logits_0,
+                tokenizer=tokenizer,
+                step=generated,
+                k=5,
+            )
+
+        logits_for_sampling = apply_repetition_penalty(
+            logits_0.copy(),
+            generated_ids=ids,
+            penalty=repetition_penalty,
+        )
+        next_id = sample_token_topk_topp(
+            logits_for_sampling,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+        )
+        if vocab_size is not None and next_id >= vocab_size:
+            raise RuntimeError(
+                f"Sampled token id {next_id} out of vocab_size {vocab_size}."
+            )
+
+        ids.append(next_id)
+        generated += 1
+        token_text = tokenizer.decode_token(next_id)
+        print("Chosen token:", token_text)
+        print(token_text, end="", flush=True)
+
+        if next_id == eos_id or generated >= max_new_tokens:
+            break
+        if input_pos >= max_context_length:
+            break
+
+        logits_0 = runner.run(next_id, input_pos)
+        input_pos += 1
+
+    print("\n=== Generation complete ===")
+    decoded = tokenizer.decode(ids)
+    print(decoded)
+
+    if save_generations_path is not None:
+        append_generation(
+            path=save_generations_path,
+            prompt=prompt,
+            prompt_no=prompt_no,
+            decoded=decoded,
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Temperature sampling via executor_runner"
@@ -660,6 +803,17 @@ def main() -> None:
         help="Assume the export produces full logits and select the last valid token row.",
     )
     parser.add_argument(
+        "--use-kv-cache",
+        action="store_true",
+        help="Run a KV-cache export that takes token and input_pos inputs.",
+    )
+    parser.add_argument(
+        "--max-context-length",
+        type=int,
+        default=None,
+        help="KV-cache context length. Defaults to --max-seq-length/--window.",
+    )
+    parser.add_argument(
         "--input-dtype",
         choices=("int32", "int64"),
         default="int32",
@@ -724,6 +878,33 @@ def main() -> None:
         prompt_index=args.prompt_index,
         prompt_limit=args.prompt_limit,
     )
+
+    if args.use_kv_cache:
+        max_context_length = args.max_context_length or args.window
+        with KvRunnerSession(
+            args.runner,
+            args.pte,
+            args.runner_args,
+            persistent=True,
+        ) as runner:
+            for i, prompt in enumerate(prompts):
+                run_one_prompt_kv(
+                    runner=runner,
+                    tokenizer=tokenizer,
+                    prompt=prompt,
+                    prompt_no=i,
+                    vocab_size=vocab_size,
+                    eos_id=eos_id,
+                    max_context_length=max_context_length,
+                    max_new_tokens=args.max_new_tokens,
+                    temperature=args.temperature,
+                    top_k=args.topk,
+                    top_p=args.top_p,
+                    repetition_penalty=args.repetition_penalty,
+                    save_generations_path=args.save_generations,
+                    topk_print=not args.no_topk_print,
+                )
+        return
 
     with RunnerSession(
         args.runner,

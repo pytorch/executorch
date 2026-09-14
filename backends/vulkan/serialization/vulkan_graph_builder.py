@@ -9,7 +9,7 @@ import hashlib
 import logging
 import operator
 from types import NoneType
-from typing import cast, List, Optional, Union
+from typing import cast, Dict, List, Optional, Union
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 import torch
@@ -28,6 +28,7 @@ from executorch.backends.vulkan.utils import (
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.utils import DelegateMappingBuilder
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.tensor import TensorSpec
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch.export import ExportedProgram
@@ -49,11 +50,41 @@ class VkGraphBuilder:
         delegate_mapping_builder: DelegateMappingBuilder,
         downcast_64_bit: bool = True,
         force_fp16: bool = False,
+        alias_buffer_mutations: bool = False,
     ) -> None:
         self.program = program
         self.delegate_mapping_builder = delegate_mapping_builder
         self.downcast_64_bit = downcast_64_bit
         self.force_fp16 = force_fp16
+        self.buffer_mutation_inputs: Dict[str, Node] = {}
+        self.buffer_mutation_user_outputs: set[str] = set()
+        if alias_buffer_mutations:
+            nodes_by_name = {
+                node.name: node for node in program.graph_module.graph.nodes
+            }
+            buffer_inputs_by_target: Dict[str, Node] = {}
+            for name, target in program.graph_signature.inputs_to_buffers.items():
+                if name not in nodes_by_name:
+                    continue
+                buffer_input = nodes_by_name[name]
+                prepack = next(
+                    (
+                        user
+                        for user in buffer_input.users
+                        if user.op == "call_function"
+                        and user.target == exir_ops.edge.et_vk.prepack.default
+                    ),
+                    None,
+                )
+                buffer_inputs_by_target[target] = prepack or buffer_input
+            self.buffer_mutation_inputs = {
+                output_name: buffer_inputs_by_target[target]
+                for output_name, target in program.graph_signature.buffers_to_mutate.items()
+                if target in buffer_inputs_by_target
+            }
+            self.buffer_mutation_user_outputs = set(
+                program.graph_signature.user_outputs
+            )
         self.chain = []
         self.values = []
         self.input_ids = []
@@ -160,6 +191,16 @@ class VkGraphBuilder:
         return constant_id
 
     def create_node_value(self, node: Node) -> int:
+        if node.name in self.buffer_mutation_inputs:
+            input_node = self.buffer_mutation_inputs[node.name]
+            if input_node not in self.node_to_value_ids:
+                raise AssertionError(
+                    "Cannot alias a buffer mutation before its input is serialized"
+                )
+            value_id = self.node_to_value_ids[input_node]
+            self.node_to_value_ids[node] = value_id
+            return value_id
+
         # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
         if is_symint_node(node) or node.meta.get("etvk_is_scalar_tensor", False):
             new_id = self.create_symint_value()
@@ -377,15 +418,26 @@ class VkGraphBuilder:
             raise RuntimeError(f"Cannot create value for arg of type {type(arg)}")
 
     def process_placeholder_node(self, node: Node) -> None:
-        # ignores any tensors that don't get used in any ops
-        if len(node.users) == 0:
+        # A non-param placeholder occupies a slot in the delegate call's
+        # argument list whether or not this graph goes on to use it, and
+        # VulkanBackend::execute matches `args` to graph inputs positionally.
+        # Dropping an unused one from input_ids desynchronises the two, and the
+        # runtime then rejects the call because it was handed more arguments
+        # than the graph declares inputs and outputs. That happens in practice
+        # when a placeholder's only consumers are folded away by the passes
+        # that run after partitioning, so the graph the partitioner tagged and
+        # the graph serialized here disagree about which inputs are live.
+        if is_param_node(self.program, node):
+            # Params are serialized into the blob rather than passed at call
+            # time, so an unused one costs nothing to skip.
+            if len(node.users) > 0:
+                self.create_node_value(node)
             return None
         ids = self.create_node_value(node)
-        if not is_param_node(self.program, node):
-            if isinstance(ids, int):
-                self.input_ids.append(ids)
-            else:
-                self.input_ids += ids
+        if isinstance(ids, int):
+            self.input_ids.append(ids)
+        else:
+            self.input_ids += ids
 
     def process_getitem_node(self, node: Node) -> None:
         # Find ValueList id from the collection node.
@@ -448,7 +500,10 @@ class VkGraphBuilder:
                 )
             # Mutable buffers outputs are not included as an output to the
             # delegate call. Skip marking them as an output.
-            if is_mutable_buffer_node(out_node, self.program):
+            if out_node.name in self.buffer_mutation_inputs:
+                if out_node.name not in self.buffer_mutation_user_outputs:
+                    continue
+            elif is_mutable_buffer_node(out_node, self.program):
                 continue
 
             self.output_ids.append(self.node_to_value_ids[out_node])

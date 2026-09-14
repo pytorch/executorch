@@ -474,8 +474,12 @@ _fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
         8: _QParams((0.999 - (-0.999)) / (1 << 8), 0),
         16: _QParams((0.99999 - (-0.99999)) / (1 << 16), 0),
     },
-    # grid_sampler image input/output use SNORM-compatible qparams. The grid
-    # coordinate tensor is intentionally left unquantized.
+    # grid_sampler image input/output use SNORM-compatible qparams. Input 1
+    # follows the standard activation qspec, but the supported VGF lowering
+    # modes are still only:
+    # - float image / float grid / float output
+    # - int8 image / int8 grid / int8 output
+    # Mixed int8-image / float-grid shader lowering is not supported.
     torch.ops.aten.grid_sampler.default: {
         8: _QParams(1.0 / 127.0, 0, -127, 127),
     },
@@ -552,6 +556,7 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
     torch.ops.aten.silu.default,
+    torch.ops.aten.silu_.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
     torch.ops.aten.log1p.default,
@@ -599,9 +604,14 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.split_copy.Tensor,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
+    torch.ops.aten.moveaxis.int,
+    torch.ops.aten.moveaxis.intlist,
+    torch.ops.aten.movedim.int,
+    torch.ops.aten.movedim.intlist,
     torch.ops.aten.t_copy.default,
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
+    torch.ops.aten.roll.default,
     torch.ops.aten.chunk.default,
     torch.ops.aten.contiguous.default,
     torch.ops.aten.upsample_bilinear2d.vec,
@@ -624,25 +634,6 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.detach_copy.default,
 }
 
-# Dimname has been removed from upstream PyTorch, but there may be a window
-# where developers in this backend are using a mainline build of this backend
-# with an older version of PyTorch.
-# TODO: remove this once the build has time to be propagated and majority of
-# dev expected to be unimpacted
-_transpose_dimname = getattr(torch.ops.aten.transpose, "Dimname", None)
-if _transpose_dimname is not None:
-    _one_to_one_shared_input_qspec.add(_transpose_dimname)
-
-for _op in (
-    getattr(torch.ops.aten.moveaxis, "int", None),
-    getattr(torch.ops.aten.moveaxis, "intlist", None),
-    getattr(torch.ops.aten.movedim, "int", None),
-    getattr(torch.ops.aten.movedim, "intlist", None),
-):
-    if _op is not None:
-        _one_to_one_shared_input_qspec.add(_op)
-
-
 _one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.alias.default,
     torch.ops.aten.clone.default,
@@ -650,7 +641,6 @@ _one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.hardtanh_.default,
     torch.ops.aten.relu.default,
     torch.ops.aten.relu_.default,
-    torch.ops.aten.silu_.default,
     torch.ops.aten.mean.default,
     torch.ops.aten.mean.dim,
     torch.ops.aten.permute.default,
@@ -824,13 +814,21 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target == torch.ops.aten.grid_sampler.default:
         image_node = ensure_type(Node, node.args[0])
+        grid_node = ensure_type(Node, node.args[1])
         grid_sampler_image_qspec = quantization_config.get_input_act_qspec(
             node, image_node
+        )
+        grid_sampler_grid_qspec = quantization_config.get_input_act_qspec(
+            node, grid_node
         )
         grid_sampler_output_qspec = quantization_config.get_output_act_qspec(node)
         if grid_sampler_image_qspec is None or grid_sampler_output_qspec is None:
             return None
         quant_properties.quant_inputs = [_QuantProperty(0, grid_sampler_image_qspec)]
+        if grid_sampler_grid_qspec is not None:
+            quant_properties.quant_inputs.append(
+                _QuantProperty(1, grid_sampler_grid_qspec)
+            )
         quant_properties.quant_output = _QuantProperty(0, grid_sampler_output_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         true_node = ensure_type(Node, node.args[1])

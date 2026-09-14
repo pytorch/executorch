@@ -15,17 +15,20 @@ them to optimized MLX operations.
 
 from __future__ import annotations
 
-import os
 from typing import Any, List, Optional, Tuple
 
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_quantized_biases,
     emit_quantized_gather,
+    emit_shape,
     emit_stop_position,
+    mlx_qparams_supported,
     parse_dequant_int4_node,
+    parse_dequant_mx_node,
     parse_dequant_node,
     parse_dequant_nvfp4_node,
+    regroup_affine_scales,
     to_mlx_qparams,
     torch_dtype_to_scalar_type,
 )
@@ -40,10 +43,9 @@ from executorch.backends.mlx.pattern_utils import (
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
-    AddmmNode,
     AddNode,
     AsTypeNode,
-    DequantizeNode,
+    ExpandDimsNode,
     IndexCopyNode,
     IntOrVid,
     ModIntNode,
@@ -52,11 +54,12 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     SdpaNode,
     SliceNode,
     SliceUpdateNode,
+    SqueezeNode,
     SubtractIntNode,
     SymSizeNode,
-    TransposeNode,
 )
 from torch.export.exported_program import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.node import Node
 
 
@@ -86,6 +89,44 @@ def _unpack_int4_to_intx_fields(
     scale_nk = scale.t().contiguous()
     zero_point_nk = zero_point.t().contiguous() - 8
     return q, scale_nk, zero_point_nk
+
+
+def _affine_qparams_lower(
+    qdata_node: Node, scale_node: Node, group_size: int, bits: int
+) -> bool:
+    """Whether the affine handlers can repack these params, from meta alone.
+
+    ``qdata`` is ``(rows, in_features)`` int8 and ``scale`` is
+    ``[..., in_features // weight_group_size]``.
+    """
+    qdata = qdata_node.meta.get("val", None)
+    scale = scale_node.meta.get("val", None)
+    if qdata is None or scale is None:
+        return False
+    if qdata.dim() != 2 or qdata.dtype != torch.int8:
+        return False
+    in_features, num_groups = qdata.shape[-1], scale.shape[-1]
+    if not isinstance(in_features, int) or not isinstance(num_groups, int):
+        return False
+    return mlx_qparams_supported(in_features, num_groups, group_size, bits)
+
+
+def _int4_qparams_lower(qdata_node: Node, scale_node: Node, group_size: int) -> bool:
+    """Same, for the ``Int4Tensor`` layout that _unpack_int4_to_intx_fields reads.
+
+    ``qdata`` is ``(N, K//2)`` nibble-packed single-byte values and ``scale`` is
+    ``(K // weight_group_size, N)`` -- note the transpose relative to affine.
+    """
+    qdata = qdata_node.meta.get("val", None)
+    scale = scale_node.meta.get("val", None)
+    if qdata is None or scale is None:
+        return False
+    if qdata.dim() != 2 or qdata.element_size() != 1 or scale.dim() != 2:
+        return False
+    packed_cols, num_groups = qdata.shape[-1], scale.shape[0]
+    if not isinstance(packed_cols, int) or not isinstance(num_groups, int):
+        return False
+    return mlx_qparams_supported(2 * packed_cols, num_groups, group_size, 4)
 
 
 @REGISTRY.register_pattern(name="INDEX_COPY")
@@ -491,6 +532,71 @@ class SDPAHandler(PatternHandler):
         return base, body
 
     @classmethod
+    def _kernel_can_compute(cls, sdpa_node: Node) -> bool:
+        """Whether the fused kernel can compute this call faithfully.
+
+        Its preconditions are narrower than what PyTorch accepts, and a claimed call
+        that the kernel cannot compute fails loudly at execute rather than falling
+        back, so declining it here is what sends it to decomposition instead.
+        """
+        q, k, v, attn_mask, _, is_causal, _, _ = cls._parse_sdpa_args_and_kwargs(
+            sdpa_node
+        )
+        operand_vals = [
+            operand.meta.get("val") if isinstance(operand, Node) else None
+            for operand in (q, k, v)
+        ]
+        if any(val is None for val in operand_vals):
+            return False
+
+        # Ranks 2 and 3 are lifted to 4 on emission. Beyond 4 the leading dimensions
+        # would have to fold together, and a fold pairs the wrong operands as soon as
+        # one of them broadcasts a batch the others do not.
+        ranks = {val.dim() for val in operand_vals}
+        if len(ranks) != 1 or not 2 <= next(iter(ranks)) <= 4:
+            return False
+
+        # Torch anchors a causal mask at the top left and MLX at the bottom right, so
+        # the two agree only when the query and key lengths are equal. Rank 4 already
+        # reaches the kernel today and is left alone; the lower ranks are newly lifted
+        # here, so do not open a path that returns wrong values with no error.
+        if (
+            next(iter(ranks)) < 4
+            and is_causal
+            and not statically_known_true(
+                operand_vals[0].shape[-2] == operand_vals[1].shape[-2]
+            )
+        ):
+            return False
+
+        # The kernel requires the batch sizes to match and rejects the call otherwise,
+        # so a broadcast batch has to be decomposed rather than fused.
+        if next(iter(ranks)) == 4 and any(
+            not statically_known_true(val.shape[0] == operand_vals[0].shape[0])
+            for val in operand_vals[1:]
+        ):
+            return False
+
+        if attn_mask is not None:
+            mask_val = (
+                attn_mask.meta.get("val") if isinstance(attn_mask, Node) else None
+            )
+            if mask_val is None or mask_val.dim() > 4:
+                return False
+
+        # Causal attention is only taken when the query is known to be no longer than
+        # the keys. Torch clamps a longer query to the keys that exist, and neither the
+        # kernel's own mask nor slicing the keys reproduces that. A query length that
+        # cannot be compared at build time, two unrelated dynamic dimensions for
+        # instance, is also declined, because the relation has to hold for every call.
+        if is_causal and not statically_known_true(
+            operand_vals[0].shape[-2] <= operand_vals[1].shape[-2]
+        ):
+            return False
+
+        return True
+
+    @classmethod
     def maybe_create(cls, ep: ExportedProgram, head: Node) -> Optional["SDPAHandler"]:
         sdpa_node = head
         if not match_target(
@@ -498,15 +604,23 @@ class SDPAHandler(PatternHandler):
         ):
             return None
 
+        if not cls._kernel_can_compute(sdpa_node):
+            return None
+
         q, k, v, _, _, _, _, _ = cls._parse_sdpa_args_and_kwargs(sdpa_node)
 
-        # Detect grouped kv attention pattern with repeat_interleave before SDPA
+        # Detect grouped kv attention pattern with repeat_interleave before SDPA.
+        # Both unwraps below key on dim 1, which is the head dimension only at rank 4.
+        # At a lower rank dim 1 is the key sequence, and absorbing a repeat there
+        # drops keys, which a causal mask then turns into a wrong answer.
+        is_rank4 = q.meta["val"].dim() == 4 if isinstance(q, Node) else False
         is_grouped_kv = False
         k_base = k
         v_base = v
         body: List[Node] = []
         if (
-            match_target(k, torch.ops.aten.repeat_interleave.self_int)
+            is_rank4
+            and match_target(k, torch.ops.aten.repeat_interleave.self_int)
             and has_single_user(k)
             and (len(k.args) == 3)
             and (len(k.kwargs) == 0)
@@ -526,7 +640,7 @@ class SDPAHandler(PatternHandler):
 
         # Detect HuggingFace repeat_kv pattern:
         # unsqueeze(dim=2) → expand → clone → view
-        if not is_grouped_kv:
+        if is_rank4 and not is_grouped_kv:
             k_unwrap = cls._try_unwrap_repeat_kv(k)
             v_unwrap = cls._try_unwrap_repeat_kv(v)
             if k_unwrap is not None and v_unwrap is not None:
@@ -534,6 +648,27 @@ class SDPAHandler(PatternHandler):
                 v_base, v_body = v_unwrap
                 is_grouped_kv = True
                 body = k_body + v_body
+
+        # Checked after the unwrapping above, because grouped-query attention reaches
+        # the kernel with its original head counts. MLX pairs heads only when the key
+        # and value agree and the query is a whole multiple of them.
+        kernel_vals = [
+            node.meta.get("val") if isinstance(node, Node) else None
+            for node in (q, k_base, v_base)
+        ]
+        if any(val is None for val in kernel_vals):
+            return None
+        q_heads, k_heads, v_heads = (
+            1 if val.dim() == 2 else val.shape[-3] for val in kernel_vals
+        )
+        # A zero head count would make the multiple test below divide by zero, and a
+        # raise here aborts the whole export rather than declining this one node.
+        if not statically_known_true(k_heads > 0):
+            return None
+        if not statically_known_true(k_heads == v_heads):
+            return None
+        if not statically_known_true(q_heads % k_heads == 0):
+            return None
 
         head = sdpa_node
         if not is_grouped_kv:
@@ -556,19 +691,73 @@ class SDPAHandler(PatternHandler):
         assert dropout_p == 0.0, "SDPA with dropout is not supported"
 
         q, k, v, attn_mask = P.slot_map([q, k, v, attn_mask])
+        # Add the dimensions the kernel is missing at the front, never in the middle.
+        # For a rank-3 input the first dimension is already the head one, so inserting
+        # there would move it into the batch slot and misalign masks and grouped heads.
+        input_nodes = (self.q_node, self.k_node, self.v_node)
+        inputs = [q, k, v]
+        for i, input_node in enumerate(input_nodes):
+            for _ in range(4 - input_node.meta["val"].dim()):
+                _, expanded = P.make_tmp_slot()
+                P.emit(
+                    ExpandDimsNode(
+                        x=P.slot_to_tid(inputs[i]),
+                        out=P.slot_to_tid(expanded),
+                        axis=0,
+                    )
+                )
+                inputs[i] = expanded
+
+        output_rank = n.meta["val"].dim()
+
         out = P.make_or_get_slot(n)
+        sdpa_out = out
+        if output_rank < 4:
+            _, sdpa_out = P.make_tmp_slot()
+
+        # MLX anchors its causal mask at the bottom right and torch at the top left, so
+        # the flag alone only means the same thing when the lengths are equal. Slicing
+        # the keys and values to the query length makes the problem square, where the
+        # two conventions agree, and it is what torch computes: a query at row i attends
+        # to keys 0..i, so keys past the last query row are never read.
+        q_len = self.q_node.meta["val"].shape[-2]
+        k_len = self.k_node.meta["val"].shape[-2]
+        if is_causal and not statically_known_true(q_len == k_len):
+            # A literal when the query length is known at build time, which is the
+            # decode case this exists for, and a size node only when it is symbolic.
+            rows = emit_shape(P, self.q_node, inputs[0])[-2]
+            for i in (1, 2):
+                _, sliced = P.make_tmp_slot()
+                P.emit(
+                    SliceNode(
+                        x=P.slot_to_tid(inputs[i]),
+                        out=P.slot_to_tid(sliced),
+                        axis=IntOrVid.from_literal(2),
+                        start=IntOrVid.from_literal(0),
+                        stop=rows,
+                    )
+                )
+                inputs[i] = sliced
 
         P.emit(
             SdpaNode(
-                q=P.slot_to_tid(q),
-                k=P.slot_to_tid(k),
-                v=P.slot_to_tid(v),
-                out=P.slot_to_tid(out),
+                q=P.slot_to_tid(inputs[0]),
+                k=P.slot_to_tid(inputs[1]),
+                v=P.slot_to_tid(inputs[2]),
+                out=P.slot_to_tid(sdpa_out),
                 scale=scale,
                 mask=P.slot_to_tid(attn_mask) if attn_mask else None,
                 causal=is_causal,
             )
         )
+        if output_rank < 4:
+            P.emit(
+                SqueezeNode(
+                    x=P.slot_to_tid(sdpa_out),
+                    out=P.slot_to_tid(out),
+                    dims=list(range(4 - output_rank)),
+                )
+            )
         return out
 
 
@@ -874,6 +1063,11 @@ class QuantizedLinearHandler(PatternHandler):
         if parsed is None:
             return None
         qdata, scale, zero_point, group_size, bits, out_dtype, _quantized_dim = parsed
+        # MLX's fused quantized_matmul Metal kernels only exist for group_size
+        # in {32, 64, 128}. group_size=16 can't be regrouped up (regrouping only
+        # splits groups finer), so it isn't lowerable as a fused quantized linear.
+        if group_size < 32:
+            return None
         out_dtype = x.meta["val"].dtype if out_dtype is None else out_dtype
 
         head = linear_node
@@ -889,17 +1083,8 @@ class QuantizedLinearHandler(PatternHandler):
             out_dtype=out_dtype,
         )
 
-    # MLX's quantized_matmul Metal kernels are only instantiated for
-    # group_size in {32, 64, 128}. For smaller group sizes (e.g. GGUF
-    # Q6_K with group_size=16), emit DequantizeNode + matmul instead.
-    # Weights stay packed in the .pte file; dequantized on-device.
-    # This non-fused path is significantly slower and must be opted in
-    # via ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1.
-    _MIN_FUSED_GROUP_SIZE = 32
-
-    @staticmethod
-    def _allow_non_fused() -> bool:
-        return os.environ.get("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", "0") == "1"
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _affine_qparams_lower(self.qdata, self.scale, self.group_size, self.bits)
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
@@ -911,9 +1096,19 @@ class QuantizedLinearHandler(PatternHandler):
         zero_point_target, zero_point = P.get_placeholder_target_and_tensor(
             self.zero_point
         )
-        _, scale = P.get_placeholder_target_and_tensor(self.scale)
+        scale_target, scale = P.get_placeholder_target_and_tensor(self.scale)
 
-        x_slot, scale_slot, b_slot = P.slot_map([x_node, self.scale, b_node])
+        # torchao may quantize with a coarser group_size than MLX supports;
+        # repeat scale/zero_point to the MLX-legal group_size (self.group_size).
+        scale, zero_point, regrouped = regroup_affine_scales(
+            scale, zero_point, qdata.shape[-1], self.group_size
+        )
+
+        x_slot, b_slot = P.slot_map([x_node, b_node])
+        if regrouped:
+            scale_slot = P.make_or_get_constant(f"{scale_target}_regrouped", scale)
+        else:
+            (scale_slot,) = P.slot_map([self.scale])
 
         Q, B = to_mlx_qparams(qdata, scale, zero_point, self.bits)
         w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
@@ -926,59 +1121,19 @@ class QuantizedLinearHandler(PatternHandler):
         x_dtype = x_node.meta["val"].dtype
         needs_cast = self.out_dtype != x_dtype
 
-        if self.group_size >= self._MIN_FUSED_GROUP_SIZE:
-            P.emit(
-                QuantizedMatmulNode(
-                    x=P.slot_to_tid(x_slot),
-                    w=P.slot_to_tid(w),
-                    scales=P.slot_to_tid(scale_slot),
-                    out=P.slot_to_tid(out),
-                    biases=P.slot_to_tid(biases),
-                    group_size=self.group_size,
-                    bits=self.bits,
-                    mode="affine",
-                    transpose=True,
-                )
+        P.emit(
+            QuantizedMatmulNode(
+                x=P.slot_to_tid(x_slot),
+                w=P.slot_to_tid(w),
+                scales=P.slot_to_tid(scale_slot),
+                out=P.slot_to_tid(out),
+                biases=P.slot_to_tid(biases),
+                group_size=self.group_size,
+                bits=self.bits,
+                mode="affine",
+                transpose=True,
             )
-        else:
-            if not self._allow_non_fused():
-                raise ValueError(
-                    f"Quantized linear with group_size={self.group_size} requires "
-                    f"the non-fused dequantize+matmul path, which is significantly "
-                    f"slower than the fused QuantizedMatmulNode (group_size >= 32). "
-                    f"Set ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1 to allow this."
-                )
-            out_scalar_type = torch_dtype_to_scalar_type(self.out_dtype)
-            _, w_deq = P.make_tmp_slot()
-            P.emit(
-                DequantizeNode(
-                    w=P.slot_to_tid(w),
-                    scales=P.slot_to_tid(scale_slot),
-                    out=P.slot_to_tid(w_deq),
-                    biases=P.slot_to_tid(biases),
-                    group_size=self.group_size,
-                    bits=self.bits,
-                    mode="affine",
-                    dtype=out_scalar_type,
-                )
-            )
-            _, w_t = P.make_tmp_slot()
-            P.emit(
-                TransposeNode(
-                    x=P.slot_to_tid(w_deq),
-                    out=P.slot_to_tid(w_t),
-                    perm=[1, 0],
-                )
-            )
-            P.emit(
-                AddmmNode(
-                    mat1=P.slot_to_tid(x_slot),
-                    mat2=P.slot_to_tid(w_t),
-                    out=P.slot_to_tid(out),
-                )
-            )
-            # DequantizeNode already produces the correct dtype.
-            needs_cast = False
+        )
 
         if has_bias:
             P.emit(
@@ -1061,6 +1216,9 @@ class QuantizedEmbeddingHandler(PatternHandler):
             out_dtype=out_dtype,
         )
 
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _affine_qparams_lower(self.qdata, self.scale, self.group_size, self.bits)
+
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
         indices_node = n.args[1]
@@ -1069,12 +1227,22 @@ class QuantizedEmbeddingHandler(PatternHandler):
         zero_point_target, zero_point = P.get_placeholder_target_and_tensor(
             self.zero_point
         )
-        _, scale = P.get_placeholder_target_and_tensor(self.scale)
+        scale_target, scale = P.get_placeholder_target_and_tensor(self.scale)
+
+        # torchao may quantize with a coarser group_size than MLX supports;
+        # repeat scale/zero_point to the MLX-legal group_size (self.group_size).
+        scale, zero_point, regrouped = regroup_affine_scales(
+            scale, zero_point, qdata.shape[-1], self.group_size
+        )
 
         Q, B = to_mlx_qparams(qdata, scale, zero_point, self.bits)
         w = P.make_or_get_constant(f"{qdata_target}_to_packed", Q)
 
-        indices_slot, scale_slot = P.slot_map([indices_node, self.scale])
+        if regrouped:
+            (indices_slot,) = P.slot_map([indices_node])
+            scale_slot = P.make_or_get_constant(f"{scale_target}_regrouped", scale)
+        else:
+            indices_slot, scale_slot = P.slot_map([indices_node, self.scale])
         biases = emit_quantized_biases(
             P, zero_point_target, scale, zero_point, self.bits, B, scale_slot
         )
@@ -1196,6 +1364,196 @@ class NVFP4QuantizedLinearHandler(PatternHandler):
         return out
 
 
+def _mx_mlx_mode_bits(elem_dtype: torch.dtype):
+    """Map an MX element dtype to the MLX (mode, bits). Rejects unsupported formats.
+
+    MLX's block-scaled kernels only implement E4M3 elements (mxfp8). Other MX
+    element encodings (e5m2, fp4/fp6, ...) are rejected rather than silently
+    mis-lowered.
+    """
+    if elem_dtype == torch.float8_e4m3fn:
+        return "mxfp8", 8
+    raise ValueError(
+        f"MLX backend does not support MX element dtype {elem_dtype}; "
+        "only float8_e4m3fn (mxfp8) is supported."
+    )
+
+
+def _mx_pack_for_mlx(P, qdata_node, scale_node):
+    """Reinterpret ExportableMXTensor's native FP8/E8M0 storage to MLX layout.
+
+    ExportableMXTensor stores ``qdata`` as native FP8 (one value per byte) and
+    ``scale`` as ``float8_e8m0fnu``; MLX's kernel wants ``qdata`` as uint32
+    (4 FP8 codes per word) and ``scale`` as uint8. Both conversions are pure bit
+    reinterpretations (``view``), registered as MLX constants.
+    """
+    qdata_target, qdata = P.get_placeholder_target_and_tensor(qdata_node)
+    scale_target, scale = P.get_placeholder_target_and_tensor(scale_node)
+    w = qdata.contiguous().view(torch.uint8).view(torch.uint32)
+    sc = scale.contiguous().view(torch.uint8)
+    w_slot = P.make_or_get_constant(f"{qdata_target}_mx_packed", w)
+    scale_slot = P.make_or_get_constant(f"{scale_target}_mx_u8", sc)
+    return w_slot, scale_slot
+
+
+@REGISTRY.register_pattern(name="MX_QUANTIZED_LINEAR")
+class MXQuantizedLinearHandler(PatternHandler):
+    """Fuse dequantize_mx + linear into QuantizedMatmulNode for the MX format.
+
+    Matches:
+        linear(x, dequantize_mx(qdata, scale, elem_dtype, block_size), bias)
+
+    Emits:
+        QuantizedMatmulNode [→ AddNode(bias)] [→ AsTypeNode]
+
+    The element dtype is mapped to the MLX ``mode``/``bits`` (rejecting formats
+    MLX can't lower). MX has no per-tensor scale, so no MultiplyNode is emitted.
+    """
+
+    def __init__(self, head, body, qdata, scale, elem_dtype, block_size, output_dtype):
+        super().__init__(head, body)
+        self.qdata = qdata
+        self.scale = scale
+        self.elem_dtype = elem_dtype
+        self.block_size = block_size
+        self.output_dtype = output_dtype
+
+    @classmethod
+    def maybe_create(cls, ep, head):
+        if not match_target(head, torch.ops.aten.linear.default):
+            return None
+        x, dequant = head.args[0:2]
+        if not isinstance(dequant, Node):
+            return None
+        if not has_single_user(dequant):
+            return None
+        parsed = parse_dequant_mx_node(dequant)
+        if parsed is None:
+            return None
+        qdata, scale, elem_dtype, block_size, output_dtype = parsed
+        return cls(head, [dequant], qdata, scale, elem_dtype, block_size, output_dtype)
+
+    def __call__(self, P, n):
+        assert n == self.head
+
+        x_node, w_node = n.args[0:2]
+        b_node = n.args[2] if len(n.args) > 2 else None
+
+        mode, bits = _mx_mlx_mode_bits(self.elem_dtype)
+        needs_cast = x_node.meta["val"].dtype != self.output_dtype
+        has_bias = b_node is not None
+
+        w, scales = _mx_pack_for_mlx(P, self.qdata, self.scale)
+        x, bias = P.slot_map([x_node, b_node])
+
+        out = P.make_or_get_slot(n)
+        P.emit(
+            QuantizedMatmulNode(
+                x=P.slot_to_tid(x),
+                w=P.slot_to_tid(w),
+                scales=P.slot_to_tid(scales),
+                out=P.slot_to_tid(out),
+                biases=None,
+                group_size=self.block_size,
+                bits=bits,
+                mode=mode,
+                transpose=True,
+            )
+        )
+
+        if has_bias:
+            P.emit(
+                AddNode(
+                    a=P.slot_to_tid(out),
+                    b=P.slot_to_tid(bias),
+                    out=P.slot_to_tid(out),
+                )
+            )
+
+        if needs_cast:
+            P.emit(
+                AsTypeNode(
+                    x=P.slot_to_tid(out),
+                    out=P.slot_to_tid(out),
+                    scalar_type=torch_dtype_to_scalar_type(self.output_dtype),
+                )
+            )
+
+        return out
+
+
+@REGISTRY.register_pattern(name="MX_QUANTIZED_EMBEDDING")
+class MXQuantizedEmbeddingHandler(PatternHandler):
+    """Fuse dequantize_mx + embedding into gather + DequantizeNode for the MX format.
+
+    Matches:
+        embedding(dequantize_mx(qdata, scale, elem_dtype, block_size), indices)
+
+    Emits:
+        TakeNode(qdata) → TakeNode(scales) → DequantizeNode [→ AsTypeNode]
+    """
+
+    def __init__(self, head, body, qdata, scale, elem_dtype, block_size, output_dtype):
+        super().__init__(head, body)
+        self.qdata = qdata
+        self.scale = scale
+        self.elem_dtype = elem_dtype
+        self.block_size = block_size
+        self.output_dtype = output_dtype
+
+    @classmethod
+    def maybe_create(cls, ep, head):
+        if not match_target(head, torch.ops.aten.embedding.default):
+            return None
+
+        w, x = head.args[0:2]
+        if not isinstance(w, Node):
+            return None
+        if not has_single_user(w):
+            return None
+        parsed = parse_dequant_mx_node(w)
+        if parsed is None:
+            return None
+        qdata, scale, elem_dtype, block_size, output_dtype = parsed
+        return cls(head, [w], qdata, scale, elem_dtype, block_size, output_dtype)
+
+    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
+        assert n == self.head
+        w_node, x_node = n.args[0:2]
+
+        mode, bits = _mx_mlx_mode_bits(self.elem_dtype)
+        x_dtype = x_node.meta["val"].dtype
+        needs_cast = self.output_dtype != x_dtype
+
+        qdata_slot, scales_slot = _mx_pack_for_mlx(P, self.qdata, self.scale)
+        (x,) = P.slot_map([x_node])
+
+        out = P.make_or_get_slot(n)
+        emit_quantized_gather(
+            P,
+            out,
+            x,
+            qdata_slot,
+            scales_slot,
+            None,
+            group_size=self.block_size,
+            bits=bits,
+            mode=mode,
+            out_dtype=self.output_dtype,
+        )
+
+        if needs_cast:
+            P.emit(
+                AsTypeNode(
+                    x=P.slot_to_tid(out),
+                    out=P.slot_to_tid(out),
+                    scalar_type=torch_dtype_to_scalar_type(self.output_dtype),
+                )
+            )
+
+        return out
+
+
 @REGISTRY.register_pattern(name="INT4_QUANTIZED_LINEAR")
 class Int4QuantizedLinearHandler(PatternHandler):
     """Fuse dequantize_int4_tensor + linear into QuantizedMatmulNode(mode="affine").
@@ -1216,12 +1574,6 @@ class Int4QuantizedLinearHandler(PatternHandler):
         self.group_size = group_size
         self.out_dtype = out_dtype
 
-    _MIN_FUSED_GROUP_SIZE = 32
-
-    @staticmethod
-    def _allow_non_fused() -> bool:
-        return os.environ.get("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", "0") == "1"
-
     @classmethod
     def maybe_create(cls, ep, head):
         if not match_target(head, torch.ops.aten.linear.default):
@@ -1235,7 +1587,14 @@ class Int4QuantizedLinearHandler(PatternHandler):
         if parsed is None:
             return None
         qdata, scale, zero_point, group_size, out_dtype = parsed
+        # MLX's fused quantized_matmul kernels only exist for group_size in
+        # {32, 64, 128}; smaller groups aren't lowerable as a fused linear.
+        if group_size < 32:
+            return None
         return cls(head, [dequant], qdata, scale, zero_point, group_size, out_dtype)
+
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _int4_qparams_lower(self.qdata, self.scale, self.group_size)
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
@@ -1247,6 +1606,11 @@ class Int4QuantizedLinearHandler(PatternHandler):
         _, scale = P.get_placeholder_target_and_tensor(self.scale)
 
         q, scale_nk, zp = _unpack_int4_to_intx_fields(qdata_packed, scale, zero_point)
+        # int4 may use a coarser group_size than MLX supports (e.g. 256); repeat
+        # scale/zero_point to the MLX-legal group_size (self.group_size).
+        scale_nk, zp, _ = regroup_affine_scales(
+            scale_nk, zp, q.shape[-1], self.group_size
+        )
         Q, B = to_mlx_qparams(q, scale_nk, zp, 4)
 
         w = P.make_or_get_constant(f"{qdata_target}_int4_to_packed", Q)
@@ -1258,12 +1622,6 @@ class Int4QuantizedLinearHandler(PatternHandler):
             x_node.meta["val"].dtype if self.out_dtype is None else self.out_dtype
         )
         needs_cast = out_dtype != x_node.meta["val"].dtype
-
-        if self.group_size < self._MIN_FUSED_GROUP_SIZE and not self._allow_non_fused():
-            raise ValueError(
-                f"Int4 quantized linear with group_size={self.group_size} requires "
-                f"the non-fused path; set ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1."
-            )
 
         out = P.make_or_get_slot(n)
         P.emit(
@@ -1333,6 +1691,9 @@ class Int4QuantizedEmbeddingHandler(PatternHandler):
         qdata, scale, zero_point, group_size, out_dtype = parsed
         return cls(head, [dequant], qdata, scale, zero_point, group_size, out_dtype)
 
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _int4_qparams_lower(self.qdata, self.scale, self.group_size)
+
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
         indices_node = n.args[1]
@@ -1342,6 +1703,11 @@ class Int4QuantizedEmbeddingHandler(PatternHandler):
         _, scale = P.get_placeholder_target_and_tensor(self.scale)
 
         q, scale_nk, zp = _unpack_int4_to_intx_fields(qdata_packed, scale, zero_point)
+        # int4 may use a coarser group_size than MLX supports (e.g. 256); repeat
+        # scale/zero_point to the MLX-legal group_size (self.group_size).
+        scale_nk, zp, _ = regroup_affine_scales(
+            scale_nk, zp, q.shape[-1], self.group_size
+        )
         Q, B = to_mlx_qparams(q, scale_nk, zp, 4)
 
         w = P.make_or_get_constant(f"{qdata_target}_int4_to_packed", Q)

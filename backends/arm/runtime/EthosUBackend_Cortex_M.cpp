@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <new>
 
 #include <ethosu_driver.h>
 
@@ -54,14 +53,17 @@ namespace arm {
 
 struct PlatformState {};
 
-PlatformState* platform_init(
+executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
-    executorch::runtime::MemoryAllocator* /*allocator*/) {
-  return nullptr;
+    executorch::runtime::MemoryAllocator* /*allocator*/,
+    ExecutionHandle* /*handle*/) {
+  return executorch::runtime::Error::Ok;
 }
 
-void platform_destroy(PlatformState* state) {
-  delete state;
+void platform_destroy(PlatformState* /*state*/) {}
+
+bool needs_scratch_allocation() {
+  return true;
 }
 
 Error platform_execute(
@@ -72,6 +74,11 @@ Error platform_execute(
     int output_count,
     Span<executorch::runtime::EValue*> args,
     char* ethosu_scratch) {
+  if (handles.scratch_data_size > 0 && ethosu_scratch == nullptr) {
+    ET_LOG(Error, "Ethos-U scratch buffer is missing");
+    return Error::InvalidState;
+  }
+
   // Parse product config from command stream to reserve the correct driver
   uint32_t product, log2_macs;
   // The weak fallback below always returns 0, but some builds replace it
@@ -143,6 +150,9 @@ Error platform_execute(
       io_bytes_total += tensor_bytes;
     } else {
       // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+      EthosUBackend_output_memcpy(tensor_bytes);
+#endif
       arm_ethos_io_memcpy(
           tensor_out.mutable_data_ptr<char>(),
           static_cast<const char*>(output_addr),

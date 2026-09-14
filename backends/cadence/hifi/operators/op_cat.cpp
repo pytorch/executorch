@@ -18,7 +18,6 @@ using executorch::aten::Tensor;
 using executorch::runtime::getLeadingDims;
 using executorch::runtime::getTrailingDims;
 using executorch::runtime::resize_tensor;
-using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::check_cat_args;
 using torch::executor::Error;
 using torch::executor::get_cat_out_target_size;

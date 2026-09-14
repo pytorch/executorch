@@ -106,6 +106,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_batch_matmul.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_div.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_max_pool2d.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
@@ -127,7 +128,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   target_link_libraries(
     cortex_m_kernels
     PRIVATE cmsis-nn
-    PRIVATE executorch
+    PRIVATE executorch_core
     PRIVATE kernels_util_all_deps
   )
   target_compile_definitions(
@@ -142,7 +143,8 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   )
 
   gen_operators_lib(
-    LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS executorch
+    LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS
+    executorch_core
   )
 
   install(

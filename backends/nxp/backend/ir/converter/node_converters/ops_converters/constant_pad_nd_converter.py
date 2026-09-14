@@ -33,8 +33,9 @@ from torch.nn import Parameter
 
 
 class ConstantPadNDConverter(NodeConverter):
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],

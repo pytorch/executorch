@@ -26,11 +26,13 @@ TextDecoderRunner::TextDecoderRunner(
     Module* module,
     IOManager* io_manager,
     std::string method_name,
-    std::unique_ptr<Sampler> sampler)
+    std::unique_ptr<Sampler> sampler,
+    Stats* stats)
     : module_(module),
       io_manager_(io_manager),
       method_name_(std::move(method_name)),
-      sampler_(std::move(sampler)) {}
+      sampler_(std::move(sampler)),
+      stats_(stats) {}
 
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The
@@ -66,7 +68,13 @@ TextDecoderRunner::TextDecoderRunner(
         io_manager_->prepare_decode(tokens, start_pos_tensor, method_name_);
     ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
     inputs = inputs_res.get();
+    if (stats_ != nullptr) {
+      stats_->on_model_execution_begin();
+    }
     auto outputs_res = module_->execute(method_name_, inputs);
+    if (stats_ != nullptr) {
+      stats_->on_model_execution_end();
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
 
     auto update_err =
@@ -86,7 +94,13 @@ TextDecoderRunner::TextDecoderRunner(
     (void)start_pos; // unused
 
     std::vector<runtime::EValue> inputs{tokens};
+    if (stats_ != nullptr) {
+      stats_->on_model_execution_begin();
+    }
     auto outputs_res = module_->execute(method_name_, inputs);
+    if (stats_ != nullptr) {
+      stats_->on_model_execution_end();
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,

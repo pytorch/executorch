@@ -18,13 +18,16 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
+struct Stats;
+
 class ET_EXPERIMENTAL TextDecoderRunner {
  public:
   explicit TextDecoderRunner(
       Module* module,
       IOManager* io_manager,
       std::string method_name = "forward",
-      std::unique_ptr<Sampler> sampler = nullptr);
+      std::unique_ptr<Sampler> sampler = nullptr,
+      Stats* stats = nullptr);
 
   virtual ~TextDecoderRunner() = default;
 
@@ -102,6 +105,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   IOManager* io_manager_;
   std::string method_name_;
   std::unique_ptr<Sampler> sampler_;
+  Stats* stats_;
 };
 
 } // namespace llm

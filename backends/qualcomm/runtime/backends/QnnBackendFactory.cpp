@@ -13,8 +13,6 @@ namespace executorch {
 namespace backends {
 namespace qnn {
 
-using executorch::runtime::Error;
-
 std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     QnnImplementation* implementation_ptr,
     QnnSystemImplementation* system_implementation_ptr,

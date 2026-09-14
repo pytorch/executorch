@@ -8,7 +8,11 @@ index_tensor_buffer:
   parameter_names_with_default_values:
     DTYPE: float
     STORAGE: buffer
+    INDEX_STORAGE: buffer
   generate_variant_forall:
+    INDEX_STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
     DTYPE:
       - VALUE: half
       - VALUE: float

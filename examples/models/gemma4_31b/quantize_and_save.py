@@ -6,9 +6,12 @@
 
 """Quantize Gemma 4 31B-IT and save as a quantized checkpoint.
 
-Produces a safetensors file containing torchao tensor subclasses
-(``Int4Tensor``, ``IntxUnpackedToInt8Tensor``) that can be loaded and
-packed for any backend via ``load_and_pack_for_cuda`` or ``pack_model``.
+Streams the HF checkpoint shard-by-shard via ``iter_checkpoint`` and quantizes
+each weight with ``quantize_stream`` -- the full model is never instantiated
+(model-free). Produces a safetensors file containing torchao tensor subclasses
+(``Int4Tensor``, ``IntxUnpackedToInt8Tensor``) that can be loaded and converted
+for any backend via ``load_checkpoint`` (from disk) or ``assign_state_dict``
+(in memory).
 
 The default recipe runs on CPU. The sensitive recipe requires CUDA for
 HQQ asymmetric quantization.
@@ -24,12 +27,13 @@ import argparse
 import os
 import shutil
 
-import torch.nn as nn
+import torch
 
-from executorch.examples.models.gemma4_31b.model import Gemma4_31B
-from executorch.examples.models.gemma4_31b.quant import (
+from executorch.extension.llm.export.load import iter_checkpoint
+from executorch.extension.llm.export.quant import (
+    identity,
     QuantConfig,
-    quantize_model,
+    quantize_stream,
     QuantRecipe,
     QuantRule,
 )
@@ -107,15 +111,26 @@ def main() -> None:
 
     recipe = _RECIPES[args.quant_recipe]
 
-    print("Loading checkpoint (lazy, shard-by-shard)...")
-    model, _ = Gemma4_31B.from_hf_checkpoint(args.model_dir)
+    print(
+        f"Streaming + quantizing checkpoint (model-free) with '{args.quant_recipe}'..."
+    )
+    from executorch.examples.models.gemma4_31b.model import _hf_to_model_key
 
-    if model.lm_head.weight.data_ptr() == model.embed_tokens.weight.data_ptr():
-        print("Untying embed_tokens / lm_head...")
-        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-
-    print(f"Quantizing with recipe '{args.quant_recipe}'...")
-    state_dict = quantize_model(model, recipe, verbose=True)
+    # Stream raw HF weights, remap to model FQNs, fill the tied lm_head from the
+    # embedding (clone=True so it quantizes independently), and quantize per
+    # recipe. Only one logical weight is materialized at a time -- the full model
+    # is never instantiated.
+    pairs = iter_checkpoint(
+        args.model_dir,
+        key_map=_hf_to_model_key,
+        convert=identity,
+        tie_map={"embed_tokens.weight": ("lm_head.weight", True)},
+    )
+    state_dict = {}
+    for fqn, value in quantize_stream(pairs, recipe, dtype=torch.bfloat16):
+        state_dict[fqn] = value
+        print(f"  Quantized: {fqn}", end="\r")
+    print()
 
     os.makedirs(args.output, exist_ok=True)
     safetensors_path = os.path.join(args.output, "model.safetensors")

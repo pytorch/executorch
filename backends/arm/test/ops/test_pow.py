@@ -57,6 +57,21 @@ class Pow_TensorTensor(torch.nn.Module):
         ),
     }
 
+    test_data_quant = {
+        "positive_base_positive_exp": lambda: (
+            torch.rand(2, 3, 4) * 1.5 + 0.25,
+            torch.rand(2, 3, 4) * 1.5 + 0.25,
+        ),
+        "broadcast_exp": lambda: (
+            torch.rand(1, 3, 4, 4) * 1.5 + 0.25,
+            torch.rand(1, 3, 1, 1) * 1.5 + 0.25,
+        ),
+        "integer_valued_exp": lambda: (
+            torch.rand(2, 4) * 1.5 + 0.25,
+            torch.full((2, 4), 2.0),
+        ),
+    }
+
     def forward(self, x: torch.Tensor | float, y: torch.Tensor | float):
         return torch.pow(x, y)
 
@@ -237,4 +252,25 @@ def test_pow_tensor_scalar_vgf_quant(test_data: Pow_TensorScalar.input_t):
         Pow_TensorScalar.exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Pow_TensorTensor.test_data_quant)
+@common.SkipIfNoModelConverter
+def test_pow_tensor_tensor_vgf_quant(
+    test_data: Pow_TensorTensor.input_t,
+):
+    pipeline = VgfPipeline[Pow_TensorTensor.input_t](
+        Pow_TensorTensor(),
+        test_data(),
+        Pow_TensorTensor.aten_op,
+        Pow_TensorTensor.exir_op,
+        quantize=True,
+    )
+
+    pipeline.run_and_compare_to_initial_model(
+        frobenius_threshold=0.3,
+        cosine_threshold=0.9,
+    )
+
     pipeline.run()

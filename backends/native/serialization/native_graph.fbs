@@ -1,0 +1,430 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// FlatBuffer schema for the ExecuTorch native backend. This is the source of truth.
+//
+// A generic representation of an fx graph: a topological list of nodes, each with an
+// op-kind, a target op-name string, and generic arguments encoded through a tagged
+// Argument union. Modeled on torch._export.serde
+// (caffe2/torch/_export/serde/schema.py). Nodes and tensors are referenced by name;
+// tensor metadata lives in a side table. Constant tensor data is not stored here; it
+// is shipped separately in an external constant file, keyed by NamedTensorRef.data_key.
+//
+// BACKWARD COMPATIBILITY RULES:
+//   - New fields in tables: APPEND ONLY (add at the end, with a default value)
+//   - New union members:    APPEND ONLY (add at the end of the union)
+//   - New tables:           Safe to add freely
+//   - New enum values:      APPEND ONLY
+//   - NEVER remove, reorder, or change the type of existing fields/members
+//
+// NAME SCOPING. Which namespace each name/reference field belongs to:
+//   (1) SSA value names: scoped to a SINGLE Graph body. The method's top-level
+//       Graph and each HOP subgraph each have their OWN independent namespace;
+//       references resolve only within the enclosing Graph. Fields: Node.name,
+//       Output.name, Output.alias_of, TensorArg.name, TensorListArg.names,
+//       OptionalTensorListArg.names, TensorValue.name, Graph.inputs, Graph.outputs.
+//   (2) Method-level bindings into the METHOD's top-level Graph (never a subgraph):
+//       NamedTensorRef.name, MutableBufferSpec.name, OutputSpec.name.
+//   (3) Data keys / fqns, the program-wide external-constant / cross-method
+//       namespace: NamedTensorRef.data_key, AffineGroup.scale_data_key /
+//       zero_point_data_key, MutableBufferSpec.fqn.
+//   Not value references: NamedArgument.name (operator-schema parameter name),
+//   GraphArg.name (submodule attr label, debug only), Method.name (program-level).
+//   OutputSpec.target is dual-namespace by kind: an fqn (3) for BUFFER_MUTATION,
+//   a user-input SSA name (2) for USER_INPUT_MUTATION.
+
+namespace native_backend;
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+// Mirrors ExecuTorch's ScalarType ordering (runtime/core/portable_type/scalar_type.h).
+enum ScalarType : byte {
+    BYTE = 0,
+    CHAR = 1,
+    SHORT = 2,
+    INT = 3,
+    LONG = 4,
+    HALF = 5,
+    FLOAT = 6,
+    DOUBLE = 7,
+    BOOL = 11,
+    BFLOAT16 = 15,
+    UINT16 = 16,
+    UINT32 = 17,
+    UINT64 = 18,
+    // Values are pinned to ExecuTorch's ScalarType ids; gaps (complex/qint) are
+    // reserved and may be filled later at their canonical id (append-only).
+}
+
+// fx node kind (node.op).
+enum OpKind : byte {
+    CALL_FUNCTION = 0,
+    PLACEHOLDER = 1,
+    OUTPUT = 2,
+}
+
+// Classifies a graph input placeholder. Mirrors torch.export InputKind for the
+// subset the native backend serializes. USER_INPUT placeholders are also listed
+// by name in Graph.inputs; PARAMETER/BUFFER/CONSTANT_TENSOR placeholders each
+// additionally get a NamedTensorRef carrying this kind.
+enum InputKind : byte {
+    USER_INPUT = 0,
+    PARAMETER = 1,
+    BUFFER = 2,
+    CONSTANT_TENSOR = 3,
+}
+
+// Classifies a graph output. USER_OUTPUT is a real result; the mutation kinds
+// mark an output value that writes back into a persistent buffer or a user input
+// (its OutputSpec.target names the mutated buffer fqn / user-input name). A
+// runtime returns USER_OUTPUTs and applies the mutations as state updates.
+enum OutputKind : byte {
+    USER_OUTPUT = 0,
+    BUFFER_MUTATION = 1,
+    USER_INPUT_MUTATION = 2,
+}
+
+// Discriminates what a Node's Output produces. TENSOR (default) is the legacy
+// single-tensor shape (name + optional alias_of). TENSOR_LIST is a `Tensor[]`
+// return whose element SSA names are in Output.names (name empty). INT/BOOL/FLOAT
+// are scalar returns named by Output.name. Append-only.
+enum OutputValueKind : byte {
+    TENSOR = 0,
+    TENSOR_LIST = 1,
+    INT = 2,
+    BOOL = 3,
+    FLOAT = 4,
+}
+
+// =============================================================================
+// Quantization
+// =============================================================================
+// A tensor's quant scheme rides on its TensorMeta, so it applies uniformly to graph
+// I/O, intermediates (tensor_values), and constants (NamedTensorRef.meta). Absent
+// means not quantized. dtype stays the storage dtype; the scheme says how to
+// interpret it. The scheme set is append-only.
+
+// Affine group-wise quant along the last (reduction) axis:
+//   value = scale * ((qdata + quant_min) - zero_point)
+// qdata is stored unsigned in [0, quant_max - quant_min], LSB-first when packed
+// sub-byte (two int4 nibbles per byte), so quant_min is also the unsigned-to-logical
+// storage offset (logical q = qdata + quant_min, e.g. -8 for int4). quant_min and
+// quant_max give the logical range, hence the bitwidth and signedness. group_size is
+// the block length along the last axis; 0 means per-channel (one group over the whole
+// axis). Scales (and, if asymmetric, zero-points) are shipped out-of-line via the
+// external constant file, keyed by data_key (empty zero_point_data_key means symmetric).
+// Their shapes derive from the weight shape and group_size, but their dtypes do not,
+// so they are recorded here. The dequant result dtype is the op output value's
+// TensorMeta.dtype, not part of this scheme. The qdata itself (the enclosing
+// TensorMeta) uses dtype=BYTE with logical sizes; its packed byte length follows from
+// the logical shape and bitwidth, not prod(sizes).
+table AffineGroup {
+    scale_data_key: string (required);
+    scale_dtype: ScalarType;        // FLOAT, HALF, or BFLOAT16; not derivable
+    quant_min: int;
+    quant_max: int;
+    group_size: int;                // 0 means per-channel (one group over the last axis)
+    zero_point_data_key: string;    // empty means symmetric
+    zero_point_dtype: ScalarType;   // meaningful only when zero_point_data_key is set
+}
+
+// Opaque codec-defined packed layout (e.g. "gguf:q4k", "mxfp4", "nvfp4"). Block size,
+// bit width, and scales are all implied by codec. The enclosing TensorMeta uses
+// dtype=BYTE with logical sizes; the packed byte length is defined by codec and the
+// logical shape and carried by the external constant blob (NamedTensorRef.data_key),
+// never prod(sizes).
+table PackedQuant {
+    codec: string (required);
+}
+
+// Append-only; new schemes go at the end.
+union QuantScheme {
+    AffineGroup,
+    PackedQuant,
+}
+
+// Wrapper so the scheme union can be an optional field on TensorMeta (an optional
+// union cannot be expressed directly, so it is nested in an optional table).
+table QuantSpec {
+    scheme: QuantScheme;
+}
+
+// =============================================================================
+// Tensor metadata
+// =============================================================================
+
+// A tensor dimension as a range. Static: min == max. Dynamic: min < max, or max < 0
+// for unbounded. No symbols; the runtime uses concrete shapes at invocation and
+// plans memory from max.
+table Dim {
+    min: long;
+    max: long = -1;
+}
+
+// sizes is the logical shape and dtype the element type. When quant is set the tensor
+// is stored packed: dtype is BYTE and the physical layout and byte length come from
+// the quant scheme and its external constant blob, not prod(sizes).
+table TensorMeta {
+    dtype: ScalarType;
+    sizes: [Dim];
+    // Memory layout as a permutation of dim indices, outermost first (contiguous is
+    // [0, 1, ..., n-1]). Independent of the sizes. Empty means contiguous.
+    dim_order: [int];
+    // Absent means the tensor is not quantized.
+    quant: QuantSpec;
+}
+
+// Side-table entry: maps an fx value name (SSA, this graph) to its tensor metadata.
+table TensorValue {
+    name: string (required);
+    meta: TensorMeta (required);
+}
+
+// =============================================================================
+// Argument union: one variant per kind of value an fx arg/kwarg can hold.
+// Each variant is a table so the union can be nested inside other tables.
+// =============================================================================
+
+// Reference to another value by its fx SSA name (in the same graph).
+table TensorArg {
+    name: string (required);
+}
+
+table NoneArg {}
+
+// A scalar int operand: the literal value, or (when ref is non-empty) a reference to
+// an in-graph int value by SSA name (a sym_size or arith node), with value ignored.
+table IntArg {
+    value: long;
+    ref: string;
+}
+
+table FloatArg {
+    value: double;
+    // Non-empty ref references an in-graph float value by SSA name; value is ignored.
+    ref: string;
+}
+
+table BoolArg {
+    value: bool;
+    // Non-empty ref references an in-graph bool value by SSA name; value is ignored.
+    ref: string;
+}
+
+table StringArg {
+    value: string (required);
+}
+
+table ScalarTypeArg {
+    value: ScalarType;
+}
+
+// A list of ints. Element i is a literal (values[i]), or a reference to an in-graph
+// int value by SSA name when the parallel refs array is present and refs[i] is
+// non-empty (a sym_size or arith node; values[i] ignored). Empty refs means all
+// literal; when present, len(refs) == len(values). Example: a dynamic view size
+// [s0, -1] is values=[0, -1], refs=["<sym_size>", ""].
+table IntListArg {
+    values: [long] (required);
+    refs: [string];
+}
+
+table FloatListArg {
+    values: [double] (required);
+}
+
+table BoolListArg {
+    values: [bool] (required);
+}
+
+// A list of tensor references by SSA name (same graph; e.g. cat's input list).
+table TensorListArg {
+    names: [string] (required);
+}
+
+// A list of optional tensor references (Tensor?[]) by SSA name (same graph).
+// names[i] is only meaningful when has_value[i] is true; otherwise None.
+table OptionalTensorListArg {
+    names: [string] (required);
+    has_value: [bool] (required);
+}
+
+// A subgraph passed to a higher-order op (torch.cond / torch.while_loop / map).
+// name is the original submodule attr label (debug only, not a value reference);
+// graph is the inlined branch/body, with its own SSA namespace, which makes Graph
+// recursive (mirrors torch._export.serde's GraphArgument).
+table GraphArg {
+    name: string (required);
+    graph: Graph (required);
+}
+
+// Append-only; new members go at the end.
+union ArgumentValue {
+    TensorArg,
+    NoneArg,
+    IntArg,
+    FloatArg,
+    BoolArg,
+    StringArg,
+    ScalarTypeArg,
+    IntListArg,
+    FloatListArg,
+    BoolListArg,
+    TensorListArg,
+    OptionalTensorListArg,
+    GraphArg,
+}
+
+table Argument {
+    value: ArgumentValue;
+}
+
+// A positional or keyword argument. `name` is the operator-schema parameter name
+// (NOT a value reference; empty for positional-only where a name is unavailable).
+table NamedArgument {
+    name: string;
+    arg: Argument (required);
+    // True if the op writes this input in-place (op-schema alias annotation
+    // Tensor(a!), e.g. self in scatter_add_). The op schema is the source of truth
+    // for mutation; the op-name '_' suffix is only a convention and cannot say which
+    // args are written.
+    mutated: bool = false;
+}
+
+table KeyValue {
+    key: string (required);
+    value: string (required);
+}
+
+// =============================================================================
+// Node
+// =============================================================================
+
+// A value produced by a node.
+table Output {
+    // fx SSA name of the produced value (this graph). Empty for a TENSOR_LIST output
+    // (the element names live in `names`).
+    name: string (required);
+    // If non-empty, the SSA name (same graph) of an input this output shares storage
+    // with (op-schema view annotation, e.g. aten.view/slice/transpose returning
+    // Tensor(a)). Whether the sharing is a write is given by the aliased input's
+    // NamedArgument.mutated, so it is not duplicated here. Empty means fresh storage.
+    alias_of: string;
+    // What this output produces. TENSOR (default) uses `name` (+ optional alias_of).
+    // TENSOR_LIST uses `names`. INT/BOOL/FLOAT are scalar returns named by `name`.
+    kind: OutputValueKind;
+    // Element SSA names for a TENSOR_LIST (`Tensor[]`) return, in order.
+    names: [string];
+}
+
+table Node {
+    // fx node name (SSA name of this node's output).
+    name: string (required);
+    op_kind: OpKind;
+    // Fully-qualified op name, e.g. "torch.ops.aten.add.Tensor". Empty for
+    // placeholder/output nodes.
+    target: string;
+    inputs: [NamedArgument];
+    // Output value(s) produced by this node (usually a single entry; multiple for
+    // tuple-returning ops).
+    outputs: [Output];
+    metadata: [KeyValue];
+}
+
+// =============================================================================
+// Constants: data shipped separately in an external constant file, keyed by data_key.
+// =============================================================================
+
+table NamedTensorRef {
+    // SSA placeholder name in the method's graph (namespace 2).
+    name: string (required);
+    // Key into the external constant file (the tensor's fully-qualified name). Shared
+    // across methods: the same data_key means the same blob (see serialize_program).
+    data_key: string (required);
+    meta: TensorMeta (required);
+    // Whether this input is a parameter, buffer, or constant tensor. Never
+    // USER_INPUT (those are listed by name in Graph.inputs instead).
+    kind: InputKind;
+    // True for buffers the graph mutates in-place whose initial values are saved
+    // (persistent buffers). Their updated values are state that must persist across
+    // executions; unlike parameters and frozen constants they are not read-only.
+    // Non-persistent mutable buffers (e.g. zero-initialized KV caches) carry no
+    // data and are listed in Method.mutable_buffers instead.
+    mutated: bool = false;
+}
+
+// Classifies a graph-level output value (by SSA name), so a runtime can tell a
+// real result from a buffer/user-input mutation writeback.
+table OutputSpec {
+    // SSA name of the output value (matches an entry in the method's Graph.outputs).
+    name: string (required);
+    kind: OutputKind;
+    // For BUFFER_MUTATION: the mutated buffer's fqn (data namespace 3). For
+    // USER_INPUT_MUTATION: the mutated user input's SSA name (method graph,
+    // namespace 2). Empty for USER_OUTPUT.
+    target: string;
+}
+
+// Graph state that is not data-backed: a non-persistent buffer (e.g. a
+// zero-initialized KV cache) not saved in the state dict. It is neither a user input
+// nor a NamedTensorRef. Shape and dtype live in tensor_values (keyed by name); no
+// bytes are shipped (zero-initialized at load). Cross-method sharing is by fqn, a
+// validated contract (bundled methods must come from one model namespace; see
+// serialize_program), not inferred from name equality alone.
+table MutableBufferSpec {
+    // SSA placeholder name in the method's graph (namespace 2).
+    name: string (required);
+    // Stable cross-method identity (data namespace 3) correlating the same buffer.
+    fqn: string (required);
+}
+
+// =============================================================================
+// Root type: Program (one or more named methods)
+// =============================================================================
+
+// A pure function body (fx graph in topological order). Used identically for a
+// top-level method body and, recursively, for higher-order-op subgraphs (see
+// GraphArg). Stateful method-level bindings (constants, output_specs,
+// mutable_buffers) live on Method, not here.
+table Graph {
+    // All nodes, in topological order (fx graph iteration order).
+    nodes: [Node] (required);
+    // Names of graph-level input placeholders (user inputs at the top level;
+    // operands for a subgraph), in order.
+    inputs: [string];
+    // Names of graph-level outputs, in order.
+    outputs: [string];
+    // Side table: value name to tensor metadata.
+    tensor_values: [TensorValue];
+}
+
+// A named method within a program (e.g. "forward", "encode", "decode"). Carries
+// the pure graph body plus its stateful signature bindings.
+table Method {
+    name: string (required);
+    graph: Graph (required);
+    // Constant/parameter/buffer references binding a method-graph placeholder to a
+    // data_key (external constant file, shared across methods). A subgraph has none; its
+    // params are lifted here and passed into the op as operands.
+    constants: [NamedTensorRef];
+    // Per-output classification (user output vs buffer/user-input mutation),
+    // parallel to graph.outputs by name.
+    output_specs: [OutputSpec];
+    // Non-persistent mutable buffers (e.g. KV caches): graph state with no shipped
+    // data, zero-initialized at load. See MutableBufferSpec.
+    mutable_buffers: [MutableBufferSpec];
+}
+
+// Root: a program bundling one or more methods. Methods share constant data
+// (an external constant file keyed by data_key); each Method carries its own NamedTensorRef
+// bindings.
+table Program {
+    // Schema version for compatibility.
+    version: string;
+    methods: [Method] (required);
+}
+
+root_type Program;
+
+file_identifier "NPTG";

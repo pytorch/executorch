@@ -24,8 +24,7 @@ For Apple, please refer to the [iOS documentation](docs/source/using-executorch-
 executorch
 ├── <a href="backends">backends</a> - Backend delegate implementations for various hardware targets. Each backend uses partitioner to split the graph into subgraphs that can be executed on specific hardware, quantizer to optimize model precision, and runtime components to execute the graph on target hardware. For details refer to the <a href="docs/source/backend-delegates-integration.md">backend documentation</a> and the <a href="docs/source/using-executorch-export.md">Export and Lowering tutorial</a> for more information.
 │   ├── <a href="backends/apple">apple</a> - Apple-specific backends.
-│   │   ├── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends/coreml/coreml-overview.md">doc</a>.
-│   │   └── <a href="backends/apple/mps">mps</a> - Metal Performance Shaders backend for Apple devices. See <a href="docs/source/backends/mps/mps-overview.md">doc</a>.
+│   │   └── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends/coreml/coreml-overview.md">doc</a>.
 │   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md">doc</a>.
 │   ├── <a href="backends/cadence">cadence</a> - Cadence-specific backends. See <a href="docs/source/backends-cadence.md">doc</a>.
 │   ├── <a href="backends/example">example</a> - Example backend implementations.
@@ -325,7 +324,7 @@ To build C++ tests manually with CMake, run the following from the repository ro
 
 ```bash
 cmake . -Bcmake-out -DCMAKE_INSTALL_PREFIX=cmake-out -DEXECUTORCH_BUILD_TESTS=ON
-cmake --build cmake-out -j9 --target install
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
 ```
 
 You can then use `ctest` to list or run individual C++ tests directly:

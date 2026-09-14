@@ -12,6 +12,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 from executorch.examples.models.edsr import EdsrModel
 
 
@@ -20,7 +21,7 @@ class TestMilestoneEdsr(unittest.TestCase):
         model = EdsrModel().get_eager_model()
         example_input = EdsrModel().get_example_inputs()
         tester = SamsungTester(
-            model, example_input, [gen_samsung_backend_compile_spec("E9955")]
+            model, example_input, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
         )
         (
             tester.export()

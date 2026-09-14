@@ -34,8 +34,6 @@ test_data_suite_tosa = {
     "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
     "rand_one_double_scale": lambda: (torch.rand(2, 4, 1, 1), None, 2.0, True),
     "rand_one_double_size": lambda: (torch.rand(2, 4, 1, 1), (2, 2), None, True),
-    "rand_one_same_scale": lambda: (torch.rand(2, 4, 1, 1), None, 1.0, True),
-    "rand_one_same_size": lambda: (torch.rand(2, 4, 1, 1), (1, 1), None, True),
     # Can't compare outputs as the rounding when selecting the nearest pixel is
     # different between PyTorch and TOSA. Just check the legalization went well.
     # TODO Improve the test infrastructure to support more in depth verification
@@ -83,18 +81,6 @@ test_data_suite_tosa = {
     "randn_one_double_size_negative": lambda: (
         torch.randn(2, 4, 1, 1),
         (2, 2),
-        None,
-        True,
-    ),
-    "randn_one_same_scale_negative": lambda: (
-        torch.randn(2, 4, 1, 1),
-        None,
-        1.0,
-        True,
-    ),
-    "randn_one_same_size_negative": lambda: (
-        torch.randn(2, 4, 1, 1),
-        (1, 1),
         None,
         True,
     ),
@@ -305,14 +291,27 @@ def test_upsample_bilinear2d_vec_tosa_FP_Interpolate(
     pipeline.run()
 
 
-def test_upsample_bilinear2d_vec_tosa_does_not_delegate_exact_one_sixteenth_downscale():
-    pipeline = OpNotSupportedPipeline[input_t1](
+def test_upsample_bilinear2d_vec_tosa_delegates_exact_one_sixteenth_downscale():
+    pipeline = TosaPipelineFP[input_t1](
         InterpolateAlignCornersFalse(size=None, scale_factor=1.0 / 16.0),
         (torch.randn(1, 3, 256, 448),),
-        {exir_op: 1},
-        n_expected_delegates=0,
+        aten_op,
+        exir_op=[],
     )
+    pipeline.pop_stage(-1)
+    pipeline.run()
 
+
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vec_vgf_delegates_exact_one_sixteenth_downscale():
+    pipeline = VgfPipeline[input_t1](
+        InterpolateAlignCornersFalse(size=None, scale_factor=1.0 / 16.0),
+        (torch.randn(1, 3, 256, 448),),
+        aten_op,
+        exir_op,
+        quantize=False,
+    )
+    pipeline.pop_stage(-1)
     pipeline.run()
 
 

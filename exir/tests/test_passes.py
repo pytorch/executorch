@@ -894,6 +894,47 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
         self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
 
+    def test_eval_upper_bound_int_oo_falls_back_to_hint(self) -> None:
+        """When bound_sympy returns int_oo (no finite upper bound from
+        constraints), eval_upper_bound should fall back to the trace hint
+        for backed symbols rather than returning int_oo."""
+
+        class SimpleModel(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        m = SimpleModel()
+        dim0 = torch.export.Dim("batch", min=1)
+        ep = export(
+            m,
+            (torch.randn(4, 8),),
+            dynamic_shapes={"x": {0: dim0}},
+        )
+        edge = to_edge(ep)
+
+        gm = edge.exported_program().graph_module
+        x_node = next(
+            n for n in gm.graph.nodes if n.op == "placeholder" and n.name == "x"
+        )
+        sym_dim = x_node.meta["val"].shape[0]
+        self.assertIsInstance(sym_dim, torch.SymInt)
+
+        try:
+            from torch.utils._sympy.numbers import int_oo
+        except ImportError:
+            self.skipTest("int_oo not available in this torch version")
+        from torch.utils._sympy.value_ranges import bound_sympy
+
+        raw_upper = bound_sympy(
+            sym_dim.node.expr, sym_dim.node.shape_env.var_to_range
+        ).upper
+        self.assertIs(raw_upper, int_oo)
+
+        self.assertEqual(eval_upper_bound(sym_dim), 4)
+
+        et = edge.to_executorch()
+        self.assertIsNotNone(et)
+
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
             def __init__(self, hidden_size, out_channels):
@@ -1579,6 +1620,42 @@ class TestPasses(unittest.TestCase):
         # Validate that the program successfully passes validation to executorch:
         edge.exported_program()._validate()
         edge.to_executorch()
+
+    def test_constant_prop_preserves_memory_alloc(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        for custom_skip_targets in (None, set()):
+            with self.subTest(custom_skip_targets=custom_skip_targets):
+                edge = to_edge(
+                    export(Add(), (torch.ones(1),), strict=True),
+                    compile_config=EdgeCompileConfig(_skip_dim_order=False),
+                )
+                exported_program = edge.exported_program()
+                [add] = exported_program.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+                with exported_program.graph.inserting_before(add):
+                    alloc = exported_program.graph.call_function(
+                        memory.alloc, args=(((1,), torch.float32),)
+                    )
+                alloc.meta["val"] = torch.empty(1, dtype=torch.float32, device="meta")
+                add.args = (add.args[0], alloc)
+                exported_program.graph_module.recompile()
+
+                new_ep = constant_prop_pass(
+                    exported_program, custom_skip_targets=custom_skip_targets
+                )
+
+                self.assertEqual(
+                    new_ep.graph.find_nodes(op="call_function", target=memory.alloc),
+                    [alloc],
+                )
+                self.assertNotIn(alloc.name, new_ep.constants)
+                FileCheck().check("executorch_exir_memory_alloc").check_not(
+                    "_prop_tensor_constant"
+                ).run(new_ep.graph_module.code)
 
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
@@ -2397,6 +2474,31 @@ class TestPasses(unittest.TestCase):
         pass_result = constant_prop_pass(edge.exported_program())
         # 1 constant: a (= self.w @ self.cst)
         self.assertEqual(1, len(pass_result.constants))
+
+    def test_constant_prop_pass_skips_nondeterministic_ops(self) -> None:
+        """
+        Ops that draw from the RNG take no tensor inputs, so they look constant
+        to the pass. They have to stay in the graph: folding one would freeze a
+        single random draw into the program.
+        """
+
+        class RandomAdd(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + torch.rand(4)
+
+        x = torch.zeros(4)
+        edge = to_edge(export(RandomAdd(), (x,), strict=True))
+        new_ep = constant_prop_pass(edge.exported_program())
+
+        rand_nodes = [
+            node
+            for node in new_ep.graph.nodes
+            if node.target == exir_ops.edge.aten.rand.default
+        ]
+        self.assertEqual(len(rand_nodes), 1)
+        self.assertEqual(len(new_ep.constants), 0)
+        module = new_ep.module()
+        self.assertFalse(torch.equal(module(x), module(x)))
 
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """

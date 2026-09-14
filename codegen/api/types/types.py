@@ -18,14 +18,14 @@ from torchgen.model import BaseTy
 
 halfT = BaseCppType("torch::executor", "Half")
 bfloat16T = BaseCppType("torch::executor", "BFloat16")
-stringT = BaseCppType("torch::executor", "string_view")
+stringT = BaseCppType("std", "string_view")
 scalarTypeT = BaseCppType("torch::executor", "ScalarType")
 tensorT = BaseCppType("torch::executor", "Tensor")
 tensorListT = BaseCppType("torch::executor", "TensorList")
 scalarT = BaseCppType("torch::executor", "Scalar")
 memoryFormatT = BaseCppType("torch::executor", "MemoryFormat")
 intArrayRefT = BaseCppType("torch::executor", "IntArrayRef")
-optionalT = BaseCppType("torch::executor", "optional")
+optionalT = BaseCppType("std", "optional")
 contextT = BaseCppType("torch::executor", "KernelRuntimeContext")
 
 contextExpr = Expr(

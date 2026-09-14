@@ -104,8 +104,10 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         L_q, D = q_shape[2], q_shape[3]
         L_kv = k_shape[2]
 
+        # TODO: Re-enable split-K after validating ROCm Voxtral decode numerics.
         if (
-            isinstance(L_q, int)
+            torch.version.hip is None
+            and isinstance(L_q, int)
             and L_q == 1
             and isinstance(L_kv, int)
             and L_kv >= _SPLITK_LKV_THRESHOLD

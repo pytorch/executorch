@@ -93,7 +93,7 @@ int32_t BlockConfig::outer_dim_from_packed_int(int32_t packed_int) {
 // Default workgroup size functions
 //
 
-utils::uvec3 default_pick_global_wg_size(
+GlobalWorkGrid default_pick_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -101,65 +101,82 @@ utils::uvec3 default_pick_global_wg_size(
   (void)shader;
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  return graph->create_global_wg_size(out);
+  return graph->create_gwg(out);
 }
 
-utils::uvec3 default_pick_local_wg_size(
+LocalWorkGroup default_pick_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
   (void)args;
   (void)resize_args;
-  return graph->create_local_wg_size(global_workgroup_size);
+  return graph->create_lwg(gwg);
 }
 
-utils::uvec3 pick_hw_square_wg_size(
+LocalWorkGroup pick_required_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)args;
-  (void)resize_args;
-  // Some inactive invocations are okay; set 6 as the threshold to use the
-  // a square wg size.
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[1u] >= 6) {
-    return {8u, 8u, 1u};
-  }
-  // If width dim is sufficiently small, then bias towards height dim to reduce
-  // the number of inactive invocations.
-  if (global_workgroup_size[0u] < 6u) {
-    return {4u, 16u, 1u};
-  }
-  return {16u, 4u, 1u};
-}
-
-utils::uvec3 pick_wc_square_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)shader;
   (void)args;
   (void)resize_args;
-  // Some inactive invocations are okay; set 6 as the threshold to use the
-  // a square wg size.
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
-  }
-  // If channels dim is sufficiently small, then bias towards width dim to
-  // reduce the number of inactive invocations.
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
-  }
-  return {16u, 1u, 4u};
+  VK_CHECK_COND(
+      gwg.required_lwg_size().is_valid(),
+      "Dispatch requires a valid local workgroup");
+  return gwg.required_lwg_size();
+}
+
+LocalWorkGroup pick_xy_square_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)args;
+  (void)resize_args;
+  LocalWorkGroup lwg(
+      kSquareLwg, graph->context()->adapter_ptr()->recommended_lwg_nthreads());
+  lwg.fit_to_global(gwg);
+  return lwg;
+}
+
+LocalWorkGroup pick_xz_square_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)args;
+  (void)resize_args;
+  LocalWorkGroup lwg(
+      LwgShape(1u, 0u, 1u),
+      graph->context()->adapter_ptr()->recommended_lwg_nthreads());
+  lwg.fit_to_global(gwg);
+  return lwg;
+}
+
+LocalWorkGroup pick_120shape_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)args;
+  (void)resize_args;
+  LocalWorkGroup lwg(
+      LwgShape(1u, 2u, 0u),
+      graph->context()->adapter_ptr()->recommended_lwg_nthreads());
+  lwg.fit_to_global(gwg);
+  return lwg;
 }
 
 BlockConfig create_block_config_from_io_packed_dims(
@@ -213,7 +230,7 @@ BlockConfig create_block_config_from_other(
       other.inner_dim_block_size};
 }
 
-utils::uvec3 pick_linear_global_wg_with_block_config(
+GlobalWorkGrid pick_linear_gwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -260,10 +277,10 @@ utils::uvec3 pick_linear_global_wg_with_block_config(
   // Return linear workgroup size: {total_blocks, 1u, 1u}
   const uint32_t total_blocks =
       num_inner_blocks * num_outer_blocks * num_planes;
-  return {total_blocks, 1u, 1u};
+  return graph->create_linear_gwg(total_blocks);
 }
 
-utils::uvec3 pick_extents_global_wg_with_block_config(
+GlobalWorkGrid pick_extents_gwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -328,22 +345,22 @@ utils::uvec3 pick_extents_global_wg_with_block_config(
   }
   const uint32_t z_threads = utils::safe_downcast<uint32_t>(C_for_z * N);
 
-  return {x_threads, y_threads, z_threads};
+  return GlobalWorkGrid({x_threads, y_threads, z_threads}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_square_local_wg_with_block_config(
+LocalWorkGroup pick_square_lwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)graph;
   (void)shader;
   (void)args;
 
-  // Detect linear dispatch pattern: global_wg = {total_blocks, 1, 1}
-  if (global_workgroup_size[1u] == 1u && global_workgroup_size[2u] == 1u) {
-    return {64u, 1u, 1u};
+  // Detect linear dispatch pattern: gwg = {total_blocks, 1, 1}
+  if (gwg[1u] == 1u && gwg[2u] == 1u) {
+    return LocalWorkGroup(64u, 1u, 1u);
   }
 
   // Extents dispatch: use 8x8 square on inner_dim and outer_dim axes
@@ -366,7 +383,7 @@ utils::uvec3 pick_square_local_wg_with_block_config(
   uint32_t local_y = (inner_dim == 1 || outer_dim == 1) ? 8u : 1u;
   uint32_t local_z = (inner_dim == 2 || outer_dim == 2) ? 8u : 1u;
 
-  return {local_x, local_y, local_z};
+  return LocalWorkGroup(local_x, local_y, local_z);
 }
 
 } // namespace vkcompute

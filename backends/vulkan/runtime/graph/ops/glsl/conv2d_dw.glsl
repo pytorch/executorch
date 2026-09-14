@@ -30,6 +30,8 @@ ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "ngroups", "1")}
 
 /*
@@ -37,9 +39,10 @@ ${layout_declare_spec_const(C, "int", "ngroups", "1")}
  * output at a single output location.
  */
 void main() {
-  const uint div_by_x = gl_GlobalInvocationID.x / out_limits.x;
+  const uint linear_idx = linear_idx_from_gid();
+  const uint div_by_x = linear_idx / out_limits.x;
   const ivec3 pos = ivec3(
-    gl_GlobalInvocationID.x % out_limits.x,
+    linear_idx % out_limits.x,
     div_by_x % out_limits.y,
     div_by_x / out_limits.y);
 

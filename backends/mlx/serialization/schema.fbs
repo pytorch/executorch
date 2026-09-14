@@ -153,6 +153,19 @@ table SdpaNode {
     causal: bool = false;
 }
 
+table UpdateAndAttendNode {
+    q: Tid (required);
+    k: Tid (required);
+    v: Tid (required);
+    position: Tid (required);
+    out: Tid (required);
+    // Required, but FlatBuffers cannot mark a scalar (required): null-defaulted
+    // so an omitted field is distinguishable from 0 and the handler rejects it.
+    layer_id: int32 = null;
+    scale: float = null;
+    out_dtype: int8 = null;  // ET ScalarType; null = keep SDPA's native output
+}
+
 table AddNode {
     a: Tid (required);
     b: Tid (required);
@@ -832,6 +845,11 @@ table NegNode {
     out: Tid (required);
 }
 
+table TruncNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
 // =============================================================================
 // Math ops - Binary element-wise
 // =============================================================================
@@ -949,6 +967,11 @@ table GatherMmNode {
     lhs_indices: Tid;           // optional - LHS gather indices
     rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
     sorted_indices: bool = false;
+    // Runtime (possibly data-dependent) override of `sorted_indices` above.
+    // Appended last to preserve wire compatibility with existing .pte files:
+    // when absent, deserializers fall back to the static `sorted_indices`
+    // bool. When present, it takes precedence.
+    sorted_indices_flag: IntOrVid;
 }
 
 table GatherQmmNode {
@@ -964,6 +987,8 @@ table GatherQmmNode {
     group_size: int32;
     bits: int32;
     sorted_indices: bool = false;
+    // See GatherMmNode.sorted_indices_flag.
+    sorted_indices_flag: IntOrVid;
 }
 
 table ScanNode {
@@ -1029,6 +1054,12 @@ table MetalKernelNode {
     template_arg_kinds: [int8];      // 0=int, 1=bool, 2=dtype (ScalarType)
     template_arg_values: [int32];    // int value, bool as 0/1, or ScalarType enum
     init_value: float = null;
+}
+
+table FlipNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32] (required);
 }
 
 // =============================================================================
@@ -1170,7 +1201,10 @@ union OpNode {
     BitwiseOrNode,
     BitwiseXorNode,
     IfNode,
-    RandomBitsNode
+    RandomBitsNode,
+    UpdateAndAttendNode,
+    TruncNode,
+    FlipNode
     // BC: Add new op nodes here (append only)
 }
 

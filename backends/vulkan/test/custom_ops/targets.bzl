@@ -1,4 +1,4 @@
-load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
     "@fbsource//xplat/executorch/backends/vulkan:targets.bzl",
@@ -85,6 +85,39 @@ def define_common_targets(is_fbcode = False):
         link_whole = True,
     )
 
+    runtime.cxx_test(
+        name = "utils_test",
+        srcs = [
+            "utils_test.cpp",
+        ],
+        contacts = ["oncall+ai_infra_mobile_platform@xmail.facebook.com"],
+        platforms = [CXX],
+        deps = [
+            ":prototyping_utils",
+            "//third-party/googletest:gtest_main",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "q8ta_conv2d_stream_plan_test",
+        srcs = ["q8ta_conv2d_stream_plan_test.cpp"],
+        platforms = get_platforms(),
+        deps = [
+            "//third-party/googletest:gtest_main",
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "q8ta_conv2d_route_test",
+        srcs = ["q8ta_conv2d_route_test.cpp"],
+        platforms = get_platforms(),
+        deps = [
+            "//third-party/googletest:gtest_main",
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+        ],
+    )
+
     define_custom_op_test_binary("test_add")
     define_custom_op_test_binary("test_q8csw_linear")
     define_custom_op_test_binary("test_q8csw_conv2d")
@@ -108,3 +141,4 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("test_conv1d_pw")
     define_custom_op_test_binary("test_conv1d_dw")
     define_custom_op_test_binary("test_fpa_q4gsw_linear")
+    define_custom_op_test_binary("test_sdpa")

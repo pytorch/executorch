@@ -17,18 +17,20 @@ of language and engine.
 ## `POST /v1/chat/completions`
 
 OpenAI Chat Completions subset. **Honored** request fields: `model`, `messages`,
-`stream`, `temperature`, `max_tokens` / `max_completion_tokens`, `stop`, `tools`,
-`tool_choice` (only `"none"` to disable tools, or `"auto"`/unset for default
-parsing), `stream_options.include_usage`, and `chat_template_kwargs` (e.g.
-`enable_thinking`).
+`stream`, `temperature`, `top_p`, `top_k`, `seed`, `max_tokens` /
+`max_completion_tokens`, `stop`, `tools`, `tool_choice` (only `"none"` to disable
+tools, or `"auto"`/unset for default parsing), `stream_options.include_usage`, and
+`chat_template_kwargs` (e.g. `enable_thinking`). `top_p` defaults to `1.0`, `top_k`
+defaults to `0` (disabled), and an explicit `seed` must be positive; omitted seed
+uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
 
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
-wrong behavior: `top_p` (anything other than `1.0`), `seed`, `n` (> 1),
-`reasoning_effort`, `frequency_penalty`/`presence_penalty` (nonzero), `top_k`,
-`logit_bias`, `tool_choice` = `"required"` or a specific-function choice
+wrong behavior: `n` (> 1), `reasoning_effort`,
+`frequency_penalty`/`presence_penalty` (nonzero), `logit_bias`, `tool_choice` =
+`"required"` or a specific-function choice
 (forcing/restricting a call needs constrained decoding, not implemented),
 `response_format` other than `{"type": "text"}` (no constrained JSON),
 `logprobs`/`top_logprobs` (not returned), and `parallel_tool_calls: false`

@@ -60,6 +60,22 @@ AOTITorchError aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim) {
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel) {
+  if (tensor == nullptr || ret_numel == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_numel = static_cast<int64_t>(tensor->numel());
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_is_defined(Tensor* tensor, bool* ret_is_defined) {
+  if (ret_is_defined == nullptr) {
+    return Error::InvalidArgument;
+  }
+  *ret_is_defined = tensor != nullptr && tensor->defined();
+  return Error::Ok;
+}
+
 int32_t aoti_torch_layout_strided() {
   // Slimtensor only support strided layout, the return value will always be 0,
   // a.k.a at::Layout::Strided;

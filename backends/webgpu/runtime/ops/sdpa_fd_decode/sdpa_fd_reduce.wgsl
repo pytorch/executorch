@@ -19,6 +19,7 @@ const NEG_INF: f32 = -1.0e30;
 var<workgroup> sh_w: array<f32, MAX_SPLITS>;
 
 // FlashDecoding pass 2: online-softmax merge of the per-split partials, then normalize.
+// 64 bound to MAX_D_PER_LANE output coverage (D<=WG_SIZE*2=128); not a knob.
 @compute @workgroup_size(64, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,

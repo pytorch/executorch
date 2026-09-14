@@ -38,7 +38,6 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
-  set_overridable_option(EXECUTORCH_BUILD_MPS ON)
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     set_overridable_option(EXECUTORCH_BUILD_KERNELS_TORCHAO ON)
   endif()

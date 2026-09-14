@@ -25,16 +25,16 @@ def get_vec_preprocessor_flags():
         # various ovr_configs are not available in oss
         preprocessor_flags = select({
             "ovr_config//os:linux-x86_64": [
-                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+                "-DAT_BUILD_ARM_VEC256_WITH_SLEEF",
             ] if not runtime.is_oss else [],
             "ovr_config//os:iphoneos-arm64": [
-                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+                "-DAT_BUILD_ARM_VEC256_WITH_SLEEF",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
-                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+                "-DAT_BUILD_ARM_VEC256_WITH_SLEEF",
             ] if not runtime.is_oss else [],
             "ovr_config//os:android-arm64": [
-                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+                "-DAT_BUILD_ARM_VEC256_WITH_SLEEF",
             ] if not runtime.is_oss else [],
             "DEFAULT": [],
         })
@@ -214,6 +214,15 @@ def define_libs(is_fbcode=False):
                 # TODO: replace with get_compiler_optimization_flags from op_registration_util.bzl when that
                 # is re-enabled.
                 "DEFAULT": ["-Os"],
+            }) + select({
+                "DEFAULT": [],
+                # ATen vec headers trip -Werror warnings on the Windows clang
+                # host; MSVC cl.exe rejects the gcc-style flag. OSS buck2 has no
+                # compiler constraint, so guard the MSVC branch to non-OSS.
+                "ovr_config//os:windows": select({
+                    "DEFAULT": ["-Wno-error"],
+                    "ovr_config//compiler:msvc": [],
+                }) if not runtime.is_oss else ["-Wno-error"],
             }),
             header_namespace = "executorch/kernels/optimized",
             visibility = ["PUBLIC"],

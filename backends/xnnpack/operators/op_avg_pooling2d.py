@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict, List
+from typing import cast, Dict
 
 import torch
 from executorch.backends.xnnpack.operators.node_visitor import (
@@ -16,6 +16,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,
     XNode,
 )
+from executorch.backends.xnnpack.utils.utils import normalize_pool2d_args
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_KEEP_DIMS
 
 
@@ -43,16 +44,10 @@ class AveragePooling2d(NodeVisitor):
         # output
         output_id = vals_to_ids[node]
 
-        # kernel_size
-        pooling_height, pooling_width = cast(List, node.args[1])
-
-        # stride
-        stride_height, stride_width = cast(List, node.args[2])
-
-        # padding
-        padding_height, padding_width = 0, 0
-        if node.args[3] is not None:
-            padding_height, padding_width = cast(List[int], node.args[3])
+        kernel, stride, padding, _ = normalize_pool2d_args(node, has_dilation=False)
+        pooling_height, pooling_width = kernel
+        stride_height, stride_width = stride
+        padding_height, padding_width = padding
 
         ser_node = XNode(
             xnode_union=XNNAvgPooling2d(

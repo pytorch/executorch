@@ -1,5 +1,7 @@
 /*
  * Copyright 2025-2026 Arm Limited and/or its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -12,17 +14,72 @@ namespace native {
 
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+namespace {
+
+int32_t pooling_output_size(
+    int32_t input,
+    int32_t kernel,
+    int32_t stride,
+    int32_t padding,
+    bool ceil_mode) {
+  const int32_t numerator = input + 2 * padding - kernel;
+  int32_t output = numerator / stride + 1;
+  if (ceil_mode && numerator % stride != 0) {
+    output += 1;
+  }
+  if (ceil_mode && (output - 1) * stride >= input + padding) {
+    output -= 1;
+  }
+  return output;
+}
+
+bool validate_avg_pool2d_output_size(
+    KernelRuntimeContext& context,
+    const CmsisPool2DConfig& pool_config,
+    bool ceil_mode) {
+  const int32_t expected_h = pooling_output_size(
+      pool_config.input_dims.h,
+      pool_config.filter_dims.h,
+      pool_config.pool_params.stride.h,
+      pool_config.pool_params.padding.h,
+      ceil_mode);
+  const int32_t expected_w = pooling_output_size(
+      pool_config.input_dims.w,
+      pool_config.filter_dims.w,
+      pool_config.pool_params.stride.w,
+      pool_config.pool_params.padding.w,
+      ceil_mode);
+
+  if (pool_config.output_dims.h != expected_h ||
+      pool_config.output_dims.w != expected_w) {
+    ET_LOG(
+        Error,
+        "quantized_avg_pool2d_out: output shape mismatch - actual: (%d, %d) expected: (%d, %d)",
+        pool_config.output_dims.h,
+        pool_config.output_dims.w,
+        expected_h,
+        expected_w);
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+  return true;
+}
+
+} // namespace
+
 // cppcheck-suppress unusedFunction
-Tensor& quantized_avg_pool2d_out(
+static Tensor& quantized_avg_pool2d_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Int64ArrayRef kernel_size,
     const Int64ArrayRef stride,
     const Int64ArrayRef padding,
+    const bool ceil_mode,
     const int64_t zero_point,
     const int64_t multiplier,
     const int64_t shift,
     const Tensor& scratch,
+    ActivationLayout layout,
     Tensor& out) {
   constexpr int32_t activation_min = std::numeric_limits<int8_t>::min();
   constexpr int32_t activation_max = std::numeric_limits<int8_t>::max();
@@ -39,10 +96,16 @@ Tensor& quantized_avg_pool2d_out(
           stride,
           padding,
           dilation,
-          false,
+          ceil_mode,
           activation_min,
           activation_max,
-          pool_config)) {
+          pool_config,
+          layout,
+          true)) {
+    return out;
+  }
+
+  if (!validate_avg_pool2d_output_size(context, pool_config, ceil_mode)) {
     return out;
   }
 
@@ -91,6 +154,62 @@ Tensor& quantized_avg_pool2d_out(
   (void)shift;
 
   return out;
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_avg_pool2d_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef kernel_size,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const bool ceil_mode,
+    const int64_t zero_point,
+    const int64_t multiplier,
+    const int64_t shift,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_avg_pool2d_out_impl(
+      context,
+      input,
+      kernel_size,
+      stride,
+      padding,
+      ceil_mode,
+      zero_point,
+      multiplier,
+      shift,
+      scratch,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_avg_pool2d_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef kernel_size,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const bool ceil_mode,
+    const int64_t zero_point,
+    const int64_t multiplier,
+    const int64_t shift,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_avg_pool2d_out_impl(
+      context,
+      input,
+      kernel_size,
+      stride,
+      padding,
+      ceil_mode,
+      zero_point,
+      multiplier,
+      shift,
+      scratch,
+      ActivationLayout::NHWCLogical,
+      out);
 }
 
 } // namespace native

@@ -28,7 +28,7 @@ void resize_rms_norm_node(
   graph->virtual_resize(out, graph->sizes_of(in));
 }
 
-utils::uvec3 rms_norm_global_wg_size(
+GlobalWorkGrid rms_norm_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -40,21 +40,8 @@ utils::uvec3 rms_norm_global_wg_size(
   const int64_t hidden = sizes.back();
   const int64_t numel = graph->numel_of(in);
   const uint32_t num_rows = utils::safe_downcast<uint32_t>(numel / hidden);
-  return {1u, num_rows, 1u};
-}
-
-utils::uvec3 rms_norm_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {64u, 1u, 1u};
+  return GlobalWorkGrid(
+      {1u, num_rows, 1u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
 }
 
 void add_rms_norm_node(
@@ -87,8 +74,8 @@ void add_rms_norm_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      rms_norm_global_wg_size,
-      rms_norm_local_wg_size,
+      rms_norm_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight}, vkapi::kRead}},
       // Shader params buffers

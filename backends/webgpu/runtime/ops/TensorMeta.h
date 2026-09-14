@@ -16,9 +16,9 @@
 
 namespace executorch::backends::webgpu {
 
-constexpr uint32_t kTensorMetaMaxNdim = 4;
+constexpr uint32_t kTensorMetaMaxNdim = 8;
 
-// Per-tensor metadata UBO; mirrors Vulkan BufferMetadata (4-dim NCHW, std140).
+// Per-tensor metadata UBO; mirrors Vulkan BufferMetadata (8-dim NCHW, std140).
 struct TensorMeta {
   uint32_t ndim;
   uint32_t numel;
@@ -28,19 +28,19 @@ struct TensorMeta {
 };
 
 static_assert(
-    sizeof(TensorMeta) == 48,
-    "TensorMeta std140 layout must be 48 bytes to match the WGSL uniform");
+    sizeof(TensorMeta) == 80,
+    "TensorMeta std140 layout must be 80 bytes to match the WGSL uniform");
 // Lock the std140 field offsets the WGSL uniform reads, not just total size.
 static_assert(offsetof(TensorMeta, ndim) == 0);
 static_assert(offsetof(TensorMeta, numel) == 4);
 static_assert(offsetof(TensorMeta, sizes) == 16);
-static_assert(offsetof(TensorMeta, strides) == 32);
+static_assert(offsetof(TensorMeta, strides) == 48);
 
 // Fill TensorMeta from NCHW dims: contiguous strides, padded trailing slots.
 inline void fill_tensor_meta(const WebGPUTensor& t, TensorMeta* m) {
   const uint32_t ndim = static_cast<uint32_t>(t.dims.size());
   if (ndim > kTensorMetaMaxNdim) {
-    throw std::runtime_error("TensorMeta: tensor rank exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("TensorMeta: tensor rank exceeds 8 (MAX_NDIM)");
   }
   *m = {};
   for (uint32_t d = 0; d < kTensorMetaMaxNdim; d++) {
@@ -67,7 +67,7 @@ inline void fill_tensor_meta_broadcast(
     TensorMeta* m) {
   const uint32_t rank = static_cast<uint32_t>(t.dims.size());
   if (out_ndim > kTensorMetaMaxNdim) {
-    throw std::runtime_error("TensorMeta: out_ndim exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("TensorMeta: out_ndim exceeds 8 (MAX_NDIM)");
   }
   if (rank > out_ndim) {
     throw std::runtime_error("TensorMeta: operand rank exceeds out_ndim");

@@ -525,7 +525,9 @@ class HFStaticCache(StaticCache):
             # Current HF ExecuTorch wrappers copy the requested cache position
             # into each StaticCache layer's cumulative_length before forward().
             if hasattr(self.layers[layer_idx], "cumulative_length"):
-                cache_position = self.layers[layer_idx].cumulative_length
+                # cumulative_length is a scalar; KVCache.update indexes [0], so
+                # give it the 1-D shape a cache_kwargs caller would have passed.
+                cache_position = self.layers[layer_idx].cumulative_length.reshape(1)
             else:
                 raise RuntimeError(
                     "cache_position was not provided and the pinned "

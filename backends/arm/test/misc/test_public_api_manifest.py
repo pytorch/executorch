@@ -3,11 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import shutil
+import subprocess  # nosec B404
 from pathlib import Path
 
 import executorch.backends.arm as arm
 from executorch.backends.arm import LAZY_IMPORTS
 from executorch.backends.arm.scripts.public_api_manifest.generate_public_api_manifest import (
+    _collect_cmake_public_api,
     _collect_entry,
     _collect_public_api,
     _is_unstable_api,
@@ -15,6 +18,7 @@ from executorch.backends.arm.scripts.public_api_manifest.generate_public_api_man
 )
 from executorch.exir._warnings import deprecated
 
+REPO_PATH = Path(__file__).resolve().parents[4]
 RUNNING_MANIFEST_PATH = (
     Path(__file__).resolve().parents[2]
     / "public_api_manifests"
@@ -53,16 +57,70 @@ def test_public_api_manifest_entries_are_well_formed():
 
 def test_public_api_manifest_matches_generator():
     entries = _collect_public_api()
-    manifest = _render_manifest(entries)
+    cmake_entries = _collect_cmake_public_api(REPO_PATH)
+    manifest = _render_manifest(entries, cmake_entries)
 
-    assert manifest == _render_manifest(entries)
+    assert manifest == _render_manifest(entries, cmake_entries)
     assert manifest.startswith("# Copyright ")
     assert "[python]" in manifest
+    assert "[cmake]" in manifest
 
     for path, entry in entries.items():
         assert _entry_block(path, entry) in manifest
 
+    for path, entry in cmake_entries.items():
+        assert entry["kind"] in {"function", "macro"}
+        assert entry["signature"].startswith(f"{path}(")
+        assert (
+            "\n".join(
+                [
+                    f"[cmake.{path}]",
+                    f'kind = "{entry["kind"]}"',
+                    f'signature = "{entry["signature"]}"',
+                ]
+            )
+            in manifest
+        )
+
     assert manifest == Path(RUNNING_MANIFEST_PATH).read_text(encoding="utf-8")
+
+
+def test_cmake_public_api_uses_explicit_repo_path(tmp_path):
+    facade = tmp_path / "backends" / "arm" / "cmake" / "ArmRunnerUtils.cmake"
+    facade.parent.mkdir(parents=True)
+    facade.write_text(
+        'message("ARM_RUNNER_UTILS_API|arm_runner_foo|function|arm_runner_foo()")',
+        encoding="utf-8",
+    )
+
+    assert _collect_cmake_public_api(tmp_path) == {
+        "arm_runner_foo": {
+            "kind": "function",
+            "signature": "arm_runner_foo()",
+        }
+    }
+
+
+def test_cmake_facade_ignores_consumer_commands(tmp_path):
+    cmake = shutil.which("cmake")
+    assert cmake is not None
+    facade = REPO_PATH / "backends" / "arm" / "cmake" / "ArmRunnerUtils.cmake"
+    script = tmp_path / "consumer.cmake"
+    script.write_text(
+        "cmake_minimum_required(VERSION 3.24)\n"
+        "function(arm_runner_consumer_helper)\n"
+        "endfunction()\n"
+        'include("{}")\n'.format(facade),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(  # nosec B603
+        [cmake, "-P", str(script)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_public_api_manifest_collection_handles_deprecated_symbols():

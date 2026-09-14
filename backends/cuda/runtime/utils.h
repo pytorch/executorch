@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>

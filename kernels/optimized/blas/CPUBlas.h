@@ -43,6 +43,25 @@ inline char to_blas(TransposeType trans) {
   return 'N';
 }
 
+// Whether gemm() dispatches to a BLAS implementation rather than the portable
+// fallback. Callers that can restructure a shape BLAS handles better -- by
+// widening a reduced-precision operand, say -- need this to know whether that
+// is worth doing. Answered here because the build flag is only visible inside
+// this library.
+bool gemm_uses_blas();
+
+// Column-major c = beta * c + alpha * (a @ b), where a is BFloat16 and b and
+// c are float.
+void gemv(
+    int64_t m,
+    int64_t k,
+    const float alpha,
+    const executorch::aten::BFloat16* a,
+    int64_t lda,
+    const float* b,
+    const float beta,
+    float* c);
+
 // clang-format off
 template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
 void gemm_impl(

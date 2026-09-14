@@ -5,21 +5,30 @@
 
 #version 450
 #extension GL_ARM_tensors : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 
 layout(set = 0, binding = 0) uniform sampler2D inputImage;
-layout(set = 0, binding = 1) uniform tensorARM<float, 4> grid;
+layout(set = 0, binding = 1) uniform tensorARM<int8_t, 4> grid;
 layout(set = 0, binding = 2, rgba8_snorm) uniform writeonly image2D outImage;
+layout(set = 0, binding = 3) readonly buffer GridScaleBuffer {
+  float gridScale[];
+};
+layout(set = 0, binding = 4) readonly buffer GridZeroPointBuffer {
+  int gridZeroPoint[];
+};
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 vec2 readGridXY(ivec2 p) {
   uint xCoords[4] = uint[](0u, uint(p.y), uint(p.x), 0u);
   uint yCoords[4] = uint[](0u, uint(p.y), uint(p.x), 1u);
-  float xVal[1];
-  float yVal[1];
+  int8_t xVal[1];
+  int8_t yVal[1];
   tensorReadARM(grid, xCoords, xVal);
   tensorReadARM(grid, yCoords, yVal);
-  return vec2(xVal[0], yVal[0]);
+  return vec2(
+      (float(xVal[0]) - float(gridZeroPoint[0])) * gridScale[0],
+      (float(yVal[0]) - float(gridZeroPoint[0])) * gridScale[0]);
 }
 
 vec2 alignCornersUv(vec2 gridXY) {

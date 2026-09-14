@@ -60,7 +60,7 @@ For minimal install (skip example deps): `./install_executorch.sh --minimal`
 
 Enable additional backends:
 ```bash
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh --editable
+CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh --editable
 ```
 
 Verify: `python -c "from executorch.exir import to_edge_transform_and_lower; print('OK')"`
@@ -140,7 +140,7 @@ Run `cmake --list-presets` to see all available presets.
 
 **iOS/macOS frameworks:**
 ```bash
-./scripts/build_apple_frameworks.sh --coreml --mps --xnnpack
+./scripts/build_apple_frameworks.sh --coreml --xnnpack
 ```
 Link in Xcode with `-all_load` linker flag.
 
@@ -162,7 +162,6 @@ Most commonly needed flags (full list: `CMakeLists.txt`):
 |------|-----------------|
 | `EXECUTORCH_BUILD_XNNPACK` | XNNPACK CPU backend |
 | `EXECUTORCH_BUILD_COREML` | Core ML (macOS/iOS) |
-| `EXECUTORCH_BUILD_MPS` | MPS GPU (macOS/iOS) |
 | `EXECUTORCH_BUILD_METAL` | Metal compute (macOS, requires EXTENSION_TENSOR) |
 | `EXECUTORCH_BUILD_CUDA` | CUDA GPU (Linux/Windows, requires EXTENSION_TENSOR) |
 | `EXECUTORCH_BUILD_KERNELS_OPTIMIZED` | Optimized kernels |

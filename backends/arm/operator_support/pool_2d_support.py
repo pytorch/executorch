@@ -228,6 +228,14 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
         """
 
         shape = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
+        if len(shape) == 3:
+            shape = torch.Size((1, *shape))
+        elif len(shape) != 4:
+            self.reporter.report_reject(
+                node, f"Maxpool2d needs rank 3 or 4 input, got shape {list(shape)}"
+            )
+            return False
+
         kernel = cast(tuple[int, int], node.args[1])
         stride = cast(tuple[int, int], node.args[2])
         padding = cast(tuple[int, int], node.args[3]) if len(node.args) >= 4 else (0, 0)

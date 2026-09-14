@@ -16,7 +16,6 @@
 		03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3792C8A515C0046936E /* GenericTests.mm */; };
 		03E7E6792CBDCAE900205E71 /* CoreMLTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */; };
 		03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814D2D7262FC0058BDF9 /* backend_coreml */; };
-		03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814F2D7262FC0058BDF9 /* backend_mps */; };
 		03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181512D7262FC0058BDF9 /* backend_xnnpack */; };
 		03F181542D7262FC0058BDF9 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181532D7262FC0058BDF9 /* executorch */; };
 		03F181562D7262FC0058BDF9 /* kernels_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181552D7262FC0058BDF9 /* kernels_llm */; };
@@ -65,7 +64,6 @@
 				03F181542D7262FC0058BDF9 /* executorch in Frameworks */,
 				0314AE3A2E2AAEE700DDE821 /* executorch_llm in Frameworks */,
 				03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */,
-				03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */,
 				03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */,
 				03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */,
 				03F181562D7262FC0058BDF9 /* kernels_llm in Frameworks */,
@@ -535,10 +533,6 @@
 		03F1814D2D7262FC0058BDF9 /* backend_coreml */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = backend_coreml;
-		};
-		03F1814F2D7262FC0058BDF9 /* backend_mps */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = backend_mps;
 		};
 		03F181512D7262FC0058BDF9 /* backend_xnnpack */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -587,7 +587,14 @@ def rebuild_op_test_runner(verbose: bool = False) -> bool:
 
     print(f"Rebuilding op_test_runner in {build_dir}...")
 
-    cmd = ["cmake", "--build", str(build_dir), "--target", "op_test_runner", "-j8"]
+    cmd = [
+        "cmake",
+        "--build",
+        str(build_dir),
+        "--target",
+        "op_test_runner",
+        f"-j{(os.cpu_count() or 1) + 1}",
+    ]
 
     if verbose:
         print(f"Running: {' '.join(cmd)}")
@@ -616,6 +623,7 @@ def run_cpp_test_runner(
     output_path: Path,
     verbose: bool = False,
     timeout: Optional[int] = None,
+    kv_cache: Optional[str] = None,
 ) -> bool:
     """
     Run the C++ op_test_runner binary.
@@ -626,6 +634,10 @@ def run_cpp_test_runner(
         output_path: Path to write output .bin file.
         verbose: Whether to print verbose output.
         timeout: Timeout in seconds. None means use DEFAULT_TEST_TIMEOUT.
+        kv_cache: Optional off-graph KV cache spec,
+            "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]". Required by
+            models containing kvcache::update_and_attend, which fail at
+            execute() with no cache installed.
 
     Returns:
         True if execution succeeded, False otherwise.
@@ -644,6 +656,8 @@ def run_cpp_test_runner(
         "--output",
         str(output_path),
     ]
+    if kv_cache:
+        cmd += ["--kv-cache", kv_cache]
     if verbose:
         cmd.append("--verbose")
 
@@ -860,6 +874,9 @@ class OpTestCase:
     expected_node_counts: Optional[Dict[str, int]] = (
         None  # Expected serialized node counts
     )
+    # Off-graph KV cache spec "capacity,n_layers,n_kv_heads,head_dim[,kv_dtype]"
+    # installed for the run; required by models using update_and_attend.
+    kv_cache: Optional[str] = None
 
     def _set_seed(self) -> None:
         """Set random seed for reproducibility."""
@@ -1064,7 +1081,12 @@ class OpTestCase:
         print("\nStep 3: Running C++ binary...")
         actual_path = self.get_test_dir() / "actual_output.bin"
         if not run_cpp_test_runner(
-            pte_path, input_path, actual_path, verbose=verbose, timeout=timeout
+            pte_path,
+            input_path,
+            actual_path,
+            verbose=verbose,
+            timeout=timeout,
+            kv_cache=self.kv_cache,
         ):
             return False
 

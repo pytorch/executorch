@@ -813,21 +813,41 @@ def get_8a8w_qnn_qat_config(
 ) -> QuantizationConfig:
     # the smallest scale defaults to DEFAULT_EPS_8BIT
     extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
-    act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
-        dtype=torch.uint8,
-        qscheme=(
-            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
-        ),
-        observer=act_observer.with_args(**extra_args),
-    )
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.uint8,
-        qscheme=(
-            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
-        ),
-        ch_axis=0,
-        observer_or_fake_quant_ctr=act_fake_quant_ctr,
-    )
+    # These must match get_qat_per_channel_quant_config attribute for attribute.
+    # PT2E merges the observer on a per-channel conv output with the observer on
+    # its consumer's input edge only when dtype, quant_min, quant_max, qscheme and
+    # ch_axis all agree (_union_input_edge_with in torchao pt2e/prepare.py). Any
+    # drift leaves two observers on one edge, i.e. a redundant dequantize-requantize
+    # at every conv boundary.
+    if act_symmetric:
+        # If we keep quant_min and quant_max none, observer will default use 128 as zero_point.
+        # If we provide uint8 quant_min/max, it will use 127 as zero_point, which is undesired.
+        act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+            dtype=torch.uint8,
+            qscheme=torch.per_tensor_symmetric,
+            observer=act_observer.with_args(**extra_args),
+        )
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            qscheme=torch.per_tensor_symmetric,
+            ch_axis=0,
+            observer_or_fake_quant_ctr=act_fake_quant_ctr,
+        )
+    else:
+        act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+            dtype=torch.uint8,
+            quant_min=torch.iinfo(torch.uint8).min,
+            quant_max=torch.iinfo(torch.uint8).max,
+            qscheme=torch.per_tensor_affine,
+            observer=act_observer.with_args(**extra_args),
+        )
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.uint8,
+            quant_min=torch.iinfo(torch.uint8).min,
+            quant_max=torch.iinfo(torch.uint8).max,
+            qscheme=torch.per_tensor_affine,
+            observer_or_fake_quant_ctr=act_fake_quant_ctr,
+        )
 
     weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.int8,
@@ -998,7 +1018,7 @@ def get_qat_per_channel_quant_config(
             observer_or_fake_quant_ctr=act_fake_quant_ctr,
         )
 
-    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+    weight_fake_quant_ctr = FakeQuantize.with_args(
         dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
         quant_min=(
             -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
@@ -1006,7 +1026,7 @@ def get_qat_per_channel_quant_config(
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
-        observer=MovingAveragePerChannelMinMaxObserver.with_args(**extra_args),
+        observer=PerChannelParamObserver.with_args(**extra_args),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,

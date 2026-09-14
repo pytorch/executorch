@@ -38,8 +38,6 @@ class CaptureConfig:
 class EdgeCompileConfig:
     # TODO(qihan): remove ability to opt out
     _check_ir_validity: bool = True
-    # TODO(larryliu): remove this
-    _use_edge_ops: bool = True
     # TODO(gasoonjia): remove this
     _skip_dim_order: bool = False
     # Allow core ATen ops check to be skipped for certain ops, but continue with the rest of the checks.

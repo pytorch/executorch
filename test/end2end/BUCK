@@ -1,5 +1,9 @@
-# @noautodeps
-# add this empty BUCK file to unblock landing. Without this, we get land error like:
-#   "No build file at xplat/executorch/exir/BUCK when resolving target fbsource//xplat/executorch/exir:."
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl.
+
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
+
+define_common_targets(is_fbcode = is_fbcode())

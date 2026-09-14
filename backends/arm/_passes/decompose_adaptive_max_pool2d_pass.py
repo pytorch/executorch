@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.tosa.dialect.ops.max_pool2d import (
     compute_max_pool2d_output_shape,
@@ -16,7 +16,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata
 
 
-class DecomposeAdaptiveMaxPool2dPass(ArmPass):
+class DecomposeAdaptiveMaxPool2dPass(ArmOpTargetedPass):
     """Decompose irregular TOSA MAX_POOL2D_ADAPTIVE into per-bin slices.
 
     For dynamic-shape cases where ``MAX_POOL2D_ADAPTIVE`` cannot directly map
@@ -27,6 +27,7 @@ class DecomposeAdaptiveMaxPool2dPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = {exir_ops.backend.tosa.MAX_POOL2D_ADAPTIVE.default}
 
     @staticmethod
     def _is_static_dim(dim) -> bool:

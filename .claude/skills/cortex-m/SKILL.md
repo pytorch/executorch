@@ -16,9 +16,10 @@ Uses standard PT2E quantization (`prepare_pt2e` / `convert_pt2e`), then `CortexM
 ```python
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
+from executorch.backends.cortex_m.edge_compile_config import cortex_m_edge_compile_config
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from executorch.exir import to_edge_transform_and_lower, EdgeCompileConfig
+from executorch.exir import to_edge_transform_and_lower
 
 quantizer = CortexMQuantizer()
 captured = export(model, example_inputs).module()
@@ -27,9 +28,11 @@ prepared(*example_inputs)  # calibration
 quantized = convert_pt2e(prepared)
 
 exported = export(quantized, example_inputs)
+# The backend's own config: linear and the activations must survive to_edge or the
+# lowering either fails or silently falls back to portable float kernels.
 edge = to_edge_transform_and_lower(
     exported,
-    compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    compile_config=cortex_m_edge_compile_config(),
 )
 edge._edge_programs["forward"] = CortexMPassManager(
     edge.exported_program(), CortexMPassManager.pass_list

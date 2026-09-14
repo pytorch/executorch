@@ -32,10 +32,9 @@ std::optional<BroadcastElementwisePlan> plan_broadcast_elementwise(
     plan.lhs = &a;
     plan.rhs = &b;
   }
-  auto error = resize_tensor(out, plan.lhs->sizes());
   ET_KERNEL_CHECK_MSG(
       ctx,
-      error == Error::Ok,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       std::nullopt,
       "Failed to resize output tensor.");

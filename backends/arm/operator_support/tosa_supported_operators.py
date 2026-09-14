@@ -39,7 +39,12 @@ from executorch.backends.arm.operator_support.control_flow_support import (
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
+    EthosU55IndexSelectCheck,
+    EthosU55IndexTensorCheck,
     EthosU55NotSupported,
+    EthosU55ResizeCheck,
+    EthosU55ReverseCheck,
+    EthosU55UnfoldCopyCheck,
 )
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_PRO_FP_SupportList,
@@ -149,6 +154,48 @@ def _is_integer_dtype(dtype: torch.dtype) -> bool:
     return not dtype.is_floating_point and not dtype.is_complex
 
 
+@register_tosa_support_check
+class ProductSupported(SupportedTOSAOperatorCheck):
+    """Provide TOSA support check for product reductions."""
+
+    targets = [exir_ops.edge.aten.prod.dim_int]
+
+    @staticmethod
+    def _supported_dtypes(tosa_spec: TosaSpecification) -> list[torch.dtype]:
+        if not tosa_spec.support_float():
+            return []
+
+        supported_dtypes = [torch.float16, torch.float32]
+        if tosa_spec.support_extension("bf16"):
+            supported_dtypes.append(torch.bfloat16)
+        return supported_dtypes
+
+    def is_node_tosa_supported(
+        self, node: fx.Node, tosa_spec: TosaSpecification
+    ) -> bool:
+        """Return True if product reduction input dtype is supported."""
+        supported_dtypes = self._supported_dtypes(tosa_spec)
+        if not supported_dtypes:
+            self.reporter.report_reject(
+                node,
+                f"TOSA spec {tosa_spec} does not support REDUCE_PRODUCT.",
+            )
+            return False
+
+        input_dtype = get_first_fake_tensor(node.all_input_nodes[0]).dtype
+        if input_dtype in supported_dtypes:
+            return True
+
+        self.reporter.report_reject(
+            node,
+            (
+                f"Input dtype {input_dtype} is not supported for {node.target}; "
+                f"expected one of {supported_dtypes}."
+            ),
+        )
+        return False
+
+
 def _is_quantized_constant(node: torch.fx.Node) -> bool:
     if node.target not in (
         exir_ops.edge.aten.full_like.default,
@@ -177,7 +224,7 @@ def _floating_profile_negative_checks(
 ) -> list[OperatorSupportBase]:
     checks: list[OperatorSupportBase] = [CheckMixedFloatingInputs(reporter)]
     if not tosa_spec.support_integer():
-        checks.append(CheckInt32ComparisonInputs(reporter))
+        checks.append(CheckFPComparisonInputs(reporter))
     return checks
 
 
@@ -307,7 +354,7 @@ def _positive_checks(
 
 
 def _disallowed_dtypes(tosa_spec: TosaSpecification) -> list[torch.dtype]:
-    dtypes = [torch.float64]
+    dtypes = [torch.float64, torch.complex32, torch.complex64, torch.complex128]
     if not tosa_spec.support_extension("bf16"):
         dtypes.append(torch.bfloat16)
     if not (
@@ -347,6 +394,8 @@ def _negative_checks(
     if not tosa_spec.support_extension("int64"):
         checks.append(CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec))
 
+    checks.append(CheckScalarReductionInputs(reporter))
+
     checks.extend(_wrapped_additional_checks(additional_checks, reporter))
 
     if tosa_spec.support_float():
@@ -363,6 +412,11 @@ def _negative_checks(
 
     if tosa_spec.is_U55_subset:
         checks.append(EthosU55NotSupported(reporter))
+        checks.append(EthosU55ResizeCheck(reporter))
+        checks.append(EthosU55ReverseCheck(reporter))
+        checks.append(EthosU55UnfoldCopyCheck(reporter))
+        checks.append(EthosU55IndexTensorCheck(exported_program, reporter))
+        checks.append(EthosU55IndexSelectCheck(exported_program, reporter))
         checks.append(EthosU55DtypeSupport(reporter))
         checks.append(EthosU55CastCheck(reporter))
 
@@ -372,37 +426,45 @@ def _negative_checks(
     return checks
 
 
+_ARGMAX_OPS = (
+    torch.ops.aten.argmax.default,
+    exir_ops.edge.aten.argmax.default,
+)
+
+_TO_DIM_ORDER_COPY_OPS = (
+    torch.ops.dim_order_ops._to_dim_order_copy.default,
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+)
+
+
+def _argmax_all_users_cast_to_int32(node: fx.Node) -> bool:
+    # TOSA ARGMAX produces int32 indices. This is only a faithful lowering
+    # when every user immediately narrows aten.argmax's int64 result:
+    #
+    #   aten.argmax -> _to_dim_order_copy(dtype=int32) -> users
+    if node.target not in _ARGMAX_OPS or not node.users:
+        return False
+
+    return all(
+        user.target in _TO_DIM_ORDER_COPY_OPS
+        and user.kwargs.get("dtype") == torch.int32
+        for user in node.users
+    )
+
+
 class CheckKnownUnsupportedTOSASemantics(OperatorSupportBase):
     """Reject ops whose TOSA lowering is known to differ from PyTorch."""
 
     def __init__(self, reporter: WhyNoPartitionReporter):
         self.reporter = reporter
 
-    def _argmax_all_users_cast_to_int32(self, node: fx.Node) -> bool:
-        # TOSA ARGMAX produces int32 indices. This is only a faithful lowering
-        # when every user immediately narrows aten.argmax's int64 result:
-        #
-        #   aten.argmax -> _to_dim_order_copy(dtype=int32) -> users
-        cast_ops = (
-            torch.ops.dim_order_ops._to_dim_order_copy.default,
-            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-        )
-        # A live argmax should normally have users. Treat a no-user node as not
-        # proving the int64 result is intentionally narrowed to int32.
-        if not node.users:
-            return False
-        for user in node.users:
-            if user.target not in cast_ops:
-                return False
-            if user.kwargs.get("dtype") != torch.int32:
-                return False
-        return True
-
     def _check_argmax(self, node: fx.Node) -> bool:
-        if self._argmax_all_users_cast_to_int32(node):
+        if _argmax_all_users_cast_to_int32(node):
             return True
+
         self.reporter.report_reject(
-            node, "TOSA ARGMAX produces int32 but aten.argmax returns int64."
+            node,
+            "TOSA ARGMAX produces int32 but aten.argmax returns int64.",
         )
         return False
 
@@ -423,6 +485,8 @@ def tosa_support_factory(
     exported_program: ExportedProgram,
     reporter: WhyNoPartitionReporter,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
+    additional_positive_checks: Optional[Sequence[OperatorSupportBase]] = None,
+    additional_positive_overrides: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
     """Create an OperatorSupport composite for a TOSA spec.
 
@@ -435,23 +499,35 @@ def tosa_support_factory(
         reporter (WhyNoPartitionReporter): Reporter for rejections.
         additional_checks (Optional[Sequence[OperatorSupportBase]]): Extra
             negative checks to apply.
+        additional_positive_checks (Optional[Sequence[OperatorSupportBase]]):
+            Extra positive checks to add to the support list.
+        additional_positive_overrides (Optional[Sequence[OperatorSupportBase]]):
+            Extra positive checks, overriding any later negative checks. Use with
+            caution!
 
     Returns:
         OperatorSupportBase: Composite checker for the given spec.
 
     """
     positive_checks = _positive_checks(tosa_spec, exported_program, reporter)
+    if additional_positive_checks:
+        positive_checks.extend(additional_positive_checks)
     negative_checks = _negative_checks(
         tosa_spec, exported_program, reporter, additional_checks
     )
 
-    return chain(
+    # An op must be accepted by at least one postitive check, and not rejected by any
+    # negative checks
+    default_checks = chain(
         reporter.wrap_check(
             any_chain(*positive_checks),
             "Not included in BaseTOSASupportList or a registered tosa_support_check",
         ),
         *negative_checks,
     )
+
+    # Let postitive overrides accept an op regardless of regular checks
+    return any_chain(*additional_positive_overrides or (), default_checks)
 
 
 class SymbolicShapeSupportCheck(OperatorSupportBase):
@@ -699,6 +775,15 @@ class CheckProperQuantization(OperatorSupportBase):
             input_node = node.all_input_nodes[0]
             input_quantized = FuseQuantizedActivationPass._is_fuseable_input(input_node)
 
+        if any(
+            isinstance(input_node.meta["val"], torch.SymInt)
+            for input_node in node.all_input_nodes
+        ):
+            self.reporter.report_reject(
+                node, "Symbolic scalar inputs cannot be delegated."
+            )
+            return False
+
         input_quantized = input_quantized or all(
             (input_node.target in DQ_OPS)
             or _is_integer_dtype(get_first_fake_tensor(input_node).dtype)
@@ -766,16 +851,33 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     def has_rejected_int64_output(
         self, node: torch.fx.Node, tensor_list: Sequence[typing.Any]
     ) -> bool:
-        if node.target in (
-            torch.ops.aten.argmax.default,
-            exir_ops.edge.aten.argmax.default,
-        ):
+        if node.target in _ARGMAX_OPS:
             return not self._is_tosa_argmax_supported(node)
+
         return any(
             tensor.dtype == torch.int64
             for tensor in tensor_list
             if isinstance(tensor, FakeTensor)
         )
+
+    def _is_argmax_int32_cast(
+        self,
+        node: torch.fx.Node,
+        input_node: torch.fx.Node,
+    ) -> bool:
+        if node.target not in _TO_DIM_ORDER_COPY_OPS:
+            return False
+
+        if node.kwargs.get("dtype") != torch.int32:
+            return False
+
+        if input_node.target not in _ARGMAX_OPS:
+            return False
+
+        if not _argmax_all_users_cast_to_int32(input_node):
+            return False
+
+        return self._is_tosa_argmax_supported(input_node)
 
     def _is_tosa_argmax_dtype_supported(
         self, node: torch.fx.Node, input_dtype: torch.dtype
@@ -875,6 +977,13 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             tensor_in = get_first_fake_tensor(input_node)
             if tensor_in.dtype != torch.int64:
                 continue
+
+            # aten.argmax is nominally int64, but TOSA ARGMAX produces int32.
+            # Allow the explicit argmax -> int32 narrowing pattern so both nodes
+            # can be placed in the same delegate.
+            if self._is_argmax_int32_cast(node, input_node):
+                continue
+
             # Constant placeholder
             if (
                 input_node.op != "call_function"
@@ -1050,12 +1159,14 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
         return True
 
 
-class CheckInt32ComparisonInputs(OperatorSupportBase):
-    """Reject int32 comparisons under the FP profile."""
+class CheckFPComparisonInputs(OperatorSupportBase):
+    """Reject unsupported comparison inputs under the FP profile."""
 
-    target_ops = {
+    comparison_ops = {
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.ne.Tensor,
+        exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.ge.Scalar,
         exir_ops.edge.aten.gt.Tensor,
@@ -1065,6 +1176,12 @@ class CheckInt32ComparisonInputs(OperatorSupportBase):
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.lt.Scalar,
     }
+    target_ops = comparison_ops | {
+        exir_ops.edge.aten.isinf.default,
+        exir_ops.edge.aten.isnan.default,
+    }
+    supported_dtypes = {torch.float16, torch.float32, torch.bfloat16}
+    castable_comparison_dtypes = {torch.int8, torch.int16}
 
     def __init__(self, reporter: WhyNoPartitionReporter) -> None:
         self.reporter = reporter
@@ -1076,19 +1193,64 @@ class CheckInt32ComparisonInputs(OperatorSupportBase):
         if node.target not in self.target_ops:
             return True
 
-        for input_node in (
-            input_node
+        input_dtypes = [
+            get_first_fake_tensor(input_node).dtype
             for input_node in node.all_input_nodes
             if input_node.op != "get_attr"
-        ):
-            if get_first_fake_tensor(input_node).dtype == torch.int32:
-                self.reporter.report_reject(
-                    node,
-                    "FP profile does not support int32 comparison inputs.",
-                )
-                return False
+        ]
+        if all(dtype in self.supported_dtypes for dtype in input_dtypes):
+            return True
 
-        return True
+        if node.target in self.comparison_ops and all(
+            dtype in self.castable_comparison_dtypes for dtype in input_dtypes
+        ):
+            return True
+
+        unsupported_dtype = next(
+            dtype for dtype in input_dtypes if dtype not in self.supported_dtypes
+        )
+        self.reporter.report_reject(
+            node,
+            f"FP profile does not support {unsupported_dtype} comparison inputs.",
+        )
+        return False
+
+
+class CheckScalarReductionInputs(OperatorSupportBase):
+    """Reject scalar inputs for reductions that require a TOSA axis."""
+
+    reduction_targets = {
+        exir_ops.edge.aten.all.dim,
+        exir_ops.edge.aten.all.dims,
+        exir_ops.edge.aten.amax.default,
+        exir_ops.edge.aten.amin.default,
+        exir_ops.edge.aten.any.dim,
+        exir_ops.edge.aten.any.dims,
+        exir_ops.edge.aten.prod.dim_int,
+        exir_ops.edge.aten.sum.dim_IntList,
+    }
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        """Initialize the check with a reporter."""
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Return False for scalar inputs to axis-based reductions."""
+        if node.target not in self.reduction_targets:
+            return True
+        if not node.all_input_nodes:
+            return True
+        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+        if len(input_shape) != 0:
+            return True
+        self.reporter.report_reject(
+            node,
+            f"{node.name} reduces a scalar input, but TOSA reduction ops "
+            "require a valid input axis.",
+        )
+        return False
 
 
 class RankCheck(OperatorSupportBase):

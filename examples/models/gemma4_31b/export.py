@@ -40,27 +40,98 @@ from executorch.examples.models.gemma4_31b.model import (
 # Load paths
 
 
-def load_prequantized_model(
-    prequantized_dir: str,
-    max_seq_len: int = 4096,
-    backend: str = "cuda",
-) -> tuple[Gemma4_31B, Gemma4_31BConfig]:
-    """Load a quantized checkpoint and pack for the target backend."""
-    config = Gemma4_31BConfig.from_hf_config(
-        os.path.join(prequantized_dir, "config.json")
-    )
-    config.max_seq_len = max_seq_len
+def _build_and_pack(
+    config: Gemma4_31BConfig,
+    path: str,
+    backend: str,
+    *,
+    key_map=None,
+    tie_map=None,
+) -> Gemma4_31B:
+    """Build a meta-device model, stream ``path`` into it, and finalize.
+
+    Shared by ``load_prequantized_model`` (safetensors) and ``load_gguf_model``
+    (GGUF). ``load_checkpoint`` picks the reader by ``path`` and asserts every
+    parameter is materialized; we then fill runtime buffers left on meta (RoPE
+    tables, KV caches, scalar constants) and switch to eval. Pass ``key_map`` /
+    ``tie_map`` for formats whose tensor names differ from the model's or that
+    tie weights (GGUF).
+    """
+    from executorch.extension.llm.export.load import load_checkpoint
+
+    # Validate the backend before any file I/O so an unknown backend fails fast
+    # rather than erroring later on a missing/large checkpoint.
+    if backend not in _SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
+        )
 
     print("Building model on meta device...")
     with torch.device("meta"):
         model = Gemma4_31B(config)
 
-    safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
-    print(f"Loading quantized checkpoint from {safetensors_path}...")
-    _pack_for_backend(model, safetensors_path, backend)
+    load_checkpoint(
+        path,
+        model,
+        key_map=key_map,
+        tie_map=tie_map,
+        dtype=torch.bfloat16,
+    )
+    materialize_runtime_buffers(model, dtype=torch.bfloat16)
+    _apply_backend_pass(model, backend)
     model.eval()
 
     print(f"Model: {config.num_hidden_layers} layers, hidden={config.hidden_size}")
+    return model
+
+
+def load_prequantized_model(
+    prequantized_dir: str,
+    max_seq_len: int = 4096,
+    backend: str = "cuda",
+) -> tuple[Gemma4_31B, Gemma4_31BConfig]:
+    """Load a quantized safetensors checkpoint and pack for the target backend."""
+    config = Gemma4_31BConfig.from_hf_config(
+        os.path.join(prequantized_dir, "config.json")
+    )
+    config.max_seq_len = max_seq_len
+
+    safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
+    print(f"Loading quantized checkpoint from {safetensors_path}...")
+    model = _build_and_pack(config, safetensors_path, backend)
+    return model, config
+
+
+def load_gguf_model(
+    gguf_path: str,
+    max_seq_len: int = 4096,
+    backend: str = "cuda",
+    config: Gemma4_31BConfig | None = None,
+) -> tuple[Gemma4_31B, Gemma4_31BConfig]:
+    """Load a GGUF file and pack for the target backend.
+
+    ``key_map`` (``gguf_to_model_key``) remaps GGUF tensor names to model FQNs.
+    GGUF ties the token embedding and lm_head into one tensor; ``tie_map`` fans
+    it out to ``lm_head`` -- untied on CUDA (``clone=True``: ``lm_head`` keeps a
+    packed matmul weight while ``pack_embedding_for_cuda`` decodes a gatherable
+    int8 copy) and kept tied on MLX (``clone=False``: both share one quantized
+    tensor). ``config`` defaults to the full Gemma 4 31B config; pass a smaller
+    one (e.g. in tests) to load a GGUF for a tiny model.
+    """
+    from executorch.examples.models.gemma4_31b.gguf_loader import gguf_to_model_key
+
+    if config is None:
+        config = Gemma4_31BConfig(max_seq_len=max_seq_len)
+
+    tie_map = {"embed_tokens.weight": ("lm_head.weight", backend == "cuda")}
+    print(f"Loading GGUF from {gguf_path}...")
+    model = _build_and_pack(
+        config,
+        gguf_path,
+        backend,
+        key_map=gguf_to_model_key,
+        tie_map=tie_map,
+    )
     return model, config
 
 
@@ -71,8 +142,9 @@ def load_and_quantize(
     backend: str = "cuda",
 ) -> tuple[Gemma4_31B, Gemma4_31BConfig]:
     """Load bf16 checkpoint, quantize, pack — one shot."""
-    from executorch.examples.models.gemma4_31b.quant import pack_model, quantize_model
     from executorch.examples.models.gemma4_31b.quantize_and_save import _RECIPES
+    from executorch.extension.llm.export.load import assign_state_dict
+    from executorch.extension.llm.export.quant import quantize_model
 
     recipe = _RECIPES[recipe_name]
 
@@ -89,7 +161,8 @@ def load_and_quantize(
     print(f"Packing for {backend}...")
     with torch.device("meta"):
         model = Gemma4_31B(config)
-    pack_model(model, state_dict, packers=_get_packers(backend))
+    assign_state_dict(model, state_dict)
+    _apply_backend_pass(model, backend)
     model.eval()
 
     print(f"Model: {config.num_hidden_layers} layers, hidden={config.hidden_size}")
@@ -103,33 +176,25 @@ def load_and_quantize(
 _SUPPORTED_BACKENDS = ("cuda", "mlx")
 
 
-def _get_packers(backend: str) -> dict:
-    if backend == "cuda":
-        from executorch.examples.models.gemma4_31b.quant import DEFAULT_CUDA_PACKERS
+def _apply_backend_pass(model: nn.Module, backend: str) -> None:
+    """Run the backend's terminal layout-conversion pass over a loaded model.
 
-        return DEFAULT_CUDA_PACKERS
+    CUDA repacks quantized weights into the coalesced/planar decode layouts; MLX
+    (gemma4 is dense — no switch linears) needs no extra pass, the portable forms
+    export directly.
+    """
     if backend == "mlx":
-        from executorch.examples.models.gemma4_31b.quant import DEFAULT_MLX_PACKERS
+        return
+    if backend == "cuda":
+        from executorch.examples.models.gemma4_31b.cuda_packers import (
+            convert_quantized_tensors_for_cuda,
+        )
 
-        return DEFAULT_MLX_PACKERS
+        convert_quantized_tensors_for_cuda(model)
+        return
     raise ValueError(
         f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
     )
-
-
-def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
-    if backend == "cuda":
-        from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_cuda
-
-        load_and_pack_for_cuda(path, model)
-    elif backend == "mlx":
-        from executorch.examples.models.gemma4_31b.quant import load_and_pack_for_mlx
-
-        load_and_pack_for_mlx(path, model)
-    else:
-        raise ValueError(
-            f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -522,8 +587,6 @@ def main() -> None:
             backend=args.backend,
         )
     elif args.gguf:
-        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
-
         model, config = load_gguf_model(
             args.gguf, max_seq_len=args.max_seq_len, backend=args.backend
         )

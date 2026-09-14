@@ -11,6 +11,8 @@ from executorch.backends.cortex_m.test.tester import (
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class CortexMConv1D(torch.nn.Module):
@@ -181,10 +183,21 @@ test_cases = {
             ramp_tensor(0, 10, (3, 1, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
+    # A bias-less grouped convolution is what needs a bias synthesized for it, so
+    # keep this case bias-less, keep groups > 1, and keep the reference output
+    # away from saturation: the previous 1x1-output version summed an
+    # all-positive ramp straight to qmax, where a wrong result is
+    # indistinguishable from the correct one.
     "conv2d_groups": McuTestCase(
-        model=CortexMConv2D(4, 4, 1, groups=2),
+        model=CortexMConv2D(4, 4, 3, padding=1, groups=2),
         example_inputs=(
-            ramp_tensor(0, 10, (1, 4, 1, 1)).to(memory_format=torch.channels_last),
+            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "conv2d_groups_bias": McuTestCase(
+        model=CortexMConv2DBias(4, 4, 3, padding=1, groups=2),
+        example_inputs=(
+            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
     "conv2d_bias_ch_out_1": McuTestCase(
@@ -343,3 +356,36 @@ def test_implementation_conv2d(test_case, cortex_m_target):
         test_case.model, test_case.example_inputs, target_config=cortex_m_target
     )
     tester.test_implementation(qtol=2)
+
+
+@parametrize(
+    "test_case",
+    {name: test_cases[name] for name in ("conv2d_groups", "depthwise_conv2d")},
+)
+def test_grouped_conv2d_bias_is_populated(test_case, cortex_m_target):
+    """Assert a bias-less grouped convolution reaches the kernel with a bias.
+
+    The numeric cases only cover this on the FVP leg and only while their
+    reference output stays clear of saturation, and the depthwise kernel
+    offsets the bias by whole channel blocks, so it takes hundreds of channels
+    before a missing bias shows up at all -- far more than any case here.
+    """
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
+    tester.quantize()
+    tester.export()
+    tester.to_edge()
+    tester.run_passes()
+
+    module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
+    grouped_convs = (
+        exir_ops.edge.cortex_m.quantized_conv2d.default,
+        exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
+    )
+    [conv_node] = [
+        n
+        for n in module.graph.nodes
+        if n.op == "call_function" and n.target in grouped_convs
+    ]
+    assert conv_node.args[2] is not None

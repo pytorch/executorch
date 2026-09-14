@@ -31,8 +31,8 @@ void scalar_tensor(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      graph.create_gwg(out),
+      graph.create_lwg(out),
       // Inputs and Outputs
       {{out, vkapi::kWrite}},
       // Shader params buffers

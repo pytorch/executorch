@@ -27,6 +27,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceConvWithChannelLastConvPass,
     ReplaceConvWithIm2RowAndLinear,
     ReplaceEmptyTensorsWithFullPass,
+    ReplaceFullLikeWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
@@ -121,6 +122,43 @@ class TestReplaceOpsPasses(unittest.TestCase):
         """Helper function to check the number of nodes of all types for a given target."""
         for target, expected_count in targets_and_counts:
             self.assertTargetCountEqual(graph_module, target, expected_count)
+
+    @torch.no_grad()
+    def test_replace_full_like_preserves_output_dtype(self) -> None:
+        builder = GraphBuilder()
+        x_tensor = torch.randn(2, 3, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        full_like = builder.call_operator(
+            op=exir_ops.edge.aten.full_like.default,
+            args=(x, 0),
+        )
+        builder.output([full_like])
+        original_gm = builder.get_graph_module()
+
+        gm_before = copy.deepcopy(original_gm)
+        result = cast(PassResult, ReplaceFullLikeWithFullPass()(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        self.assertTargetCountsEqual(
+            graph_after_passes,
+            [
+                (exir_ops.edge.aten.full_like.default, 0),
+                (exir_ops.edge.aten.full.default, 1),
+            ],
+        )
+        full_node = next(
+            node
+            for node in graph_after_passes.graph.nodes
+            if node.target == exir_ops.edge.aten.full.default
+        )
+        self.assertEqual(full_node.kwargs["dtype"], torch.float32)
+        validate(
+            gm_before,
+            graph_after_passes,
+            (x_tensor,),
+            "ReplaceFullLikeWithFullPass",
+        )
 
     @expand(
         [
@@ -2192,29 +2230,30 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             args=args,
         )
 
-    def create_convolution_graph_module(
-        self, channels_last: Optional[bool] = None
-    ) -> torch.fx.GraphModule:
-        """Helper to create a convolution node.
-
-        convolution(
-            Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding,"
-            int[] dilation, int groups, bool channel_last=False) -> (Tensor Y)"
-        """
-        if channels_last:
-            x = torch.randn(1, 224, 224, 3)
-            w = torch.randn(16, 16, 16, 3)
-        else:
-            x = torch.randn(1, 3, 224, 224)
-            w = torch.randn(16, 3, 16, 16)
+    def create_convolution_graph_module(self) -> torch.fx.GraphModule:
+        """Helper to create an FP32 NCHW convolution node."""
+        x = torch.randn(1, 3, 224, 224)
+        w = torch.randn(16, 3, 16, 16)
         b = torch.randn(16)
         args = (x, w, b, (2, 2), (1, 1), (0, 0), 1)
-        if channels_last is not None:
-            args = args + (channels_last,)
         return single_op_builder(
             placeholders=(x, w, b),
             op=exir_ops.edge.cadence.conv2d.default,
             args=args,
+        )
+
+    def test_fp32_convolution_is_not_replaced(self) -> None:
+        gm = self.create_convolution_graph_module()
+
+        result = ReplaceConvWithChannelLastConvPass().call(gm)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.cadence.conv2d.default), 1
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            0,
         )
 
     def create_quantized_convolution_graph_module(
@@ -3140,10 +3179,32 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
 
         # Deepcopy before the pass
         gm_before = copy.deepcopy(gm)
+        original_graph_module = gm
+        original_nodes = list(gm.graph.nodes)
+        empty_slice = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )[0]
+        empty_slice.meta["replace_empty_test"] = "preserved"
+        empty_slice_meta = empty_slice.meta
+        unchanged_slice = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )[1]
+        unchanged_slice_meta = unchanged_slice.meta
 
         result = ReplaceEmptyTensorsWithFullPass().call(gm)
         self.assertTrue(result.modified)
         updated_gm = result.graph_module
+        self.assertIs(updated_gm, original_graph_module)
+        self.assertIs(unchanged_slice.meta, unchanged_slice_meta)
+        self.assertIn(unchanged_slice, updated_gm.graph.nodes)
+        self.assertNotIn(empty_slice, updated_gm.graph.nodes)
+        full = updated_gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.full.default
+        )[0]
+        self.assertIsNot(full.meta, empty_slice_meta)
+        self.assertEqual(full.meta, empty_slice_meta)
+        self.assertEqual(full.meta["replace_empty_test"], "preserved")
+        self.assertEqual(len(list(updated_gm.graph.nodes)), len(original_nodes))
 
         # Validate numerical accuracy
         inputs = [x_input]

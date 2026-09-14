@@ -18,6 +18,7 @@ from typing import cast, List, Optional, Type, TypeVar, Union
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import PERMUTE_COPY_TARGETS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -76,7 +77,7 @@ def get_transposed_dims(
 
 def get_permuted_dims(node: torch.fx.Node, dims: List[int]) -> List[int]:
     """Applies the permutation as given by node onto the dimensions given in input."""
-    assert node.target == exir_ops.edge.aten.permute_copy.default
+    assert node.target in PERMUTE_COPY_TARGETS
     # pyre-fixme[6]: This combined typecheck isn't supported yet.
     permute_dims: List[int] = list(node.args[1])
     assert all(isinstance(x, int) for x in permute_dims)
@@ -157,8 +158,11 @@ class HierarchicalInplacePassInterface(ExportPass):
             modified |= self._apply_flat_inplace(module)
         return modified
 
+    def apply_inplace(self, graph_module: torch.fx.GraphModule) -> bool:
+        return self._apply_hierarchical_inplace(graph_module)
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        modified = self._apply_hierarchical_inplace(graph_module)
+        modified = self.apply_inplace(graph_module)
         if modified:
             graph_module.graph.eliminate_dead_code()
             graph_module.recompile()

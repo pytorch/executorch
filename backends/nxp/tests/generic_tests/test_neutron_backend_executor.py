@@ -21,7 +21,10 @@ from executorch.backends.nxp.tests.executors import (
     TFLiteExecutor,
     ToNHWCPreprocess,
 )
-from executorch.backends.nxp.tests.models import Conv2dModule, ConvFCSoftmaxModule
+from executorch.backends.nxp.tests.simple_models import (
+    Conv2dModule,
+    ConvFCSoftmaxModule,
+)
 from torch.export import ExportedProgram
 
 
@@ -89,7 +92,7 @@ def test_conv_fc__lowered_program_and_tflite_output_match(mocker):
     # No Transpose ops in produced TFLite model
     tflite_subgraph = Model.GetRootAs(tflite_flatbuffers_model).Subgraphs(0)
 
-    assert tflite_subgraph.OperatorsLength() == 3
+    assert tflite_subgraph.OperatorsLength() == 4
     assert (
         tflite_subgraph.Operators(0).BuiltinOptionsType()
         == BuiltinOptions.Conv2DOptions
@@ -101,6 +104,10 @@ def test_conv_fc__lowered_program_and_tflite_output_match(mocker):
     assert (
         tflite_subgraph.Operators(2).BuiltinOptionsType()
         == BuiltinOptions.FullyConnectedOptions
+    )
+    assert (
+        tflite_subgraph.Operators(3).BuiltinOptionsType()
+        == BuiltinOptions.SoftmaxOptions
     )
 
     # Verify outputs of program and TFLite model

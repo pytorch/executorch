@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from slice.wgsl - DO NOT EDIT.
-// wgsl-sha256: 6639d985420d43a67de0847749918ab6216e0785399bdcae737d49b81c773526
+// wgsl-sha256: 6a895a8c321cd3ddaffc468d7843c9dea3eaeb9d3de0088a1a09419b3ccfd10b
 inline constexpr const char* kSliceWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -21,8 +21,8 @@ inline constexpr const char* kSliceWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(2) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(3) var<uniform> in_meta: TensorMeta;
@@ -47,13 +47,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var rem = out_bufi;
     var in_bufi: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
         var in_coord = coord;
         if (d == params.dim) {
             in_coord = params.start + coord * params.step;
         }
-        in_bufi = in_bufi + in_coord * in_meta.strides[d];
+        in_bufi = in_bufi + in_coord * in_meta.strides[d >> 2u][d & 3u];
     }
     output[out_bufi] = input[in_bufi];
 }

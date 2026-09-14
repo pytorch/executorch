@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_fd_split.wgsl - DO NOT EDIT.
-// wgsl-sha256: 147fc5775b76f3626dc934b2df5e34148bef12c345789332f098d13143bb646e
+// wgsl-sha256: 596f7376a2f15f788827b921b293de91541f53758d5ee7fe858bf4a72ab102df
 inline constexpr const char* kSdpaFdSplitHalfWGSL = R"(
 enable f16;
 @group(0) @binding(0) var<storage, read_write> t_part_o: array<f32>;
@@ -44,6 +44,7 @@ var<workgroup> sh_s: array<f32, WG_SIZE>;
 var<workgroup> sh_red: array<f32, WG_SIZE>;
 
 // FlashDecoding pass 1: per-(head,split) unnormalized softmax partial.
+// 64 sizes sh_s/sh_red + MAX_D_PER_LANE output coverage (D<=128); not a knob.
 @compute @workgroup_size(64, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
