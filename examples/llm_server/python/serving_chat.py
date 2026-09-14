@@ -33,6 +33,7 @@ from .protocol import (
     ChunkChoice,
     DeltaMessage,
     FunctionCall,
+    PromptTokensDetails,
     ResponseMessage,
     ToolCall,
     Usage,
@@ -580,6 +581,9 @@ class ServingChat:
                 prompt_tokens=stats.prompt_tokens,
                 completion_tokens=stats.completion_tokens,
                 total_tokens=stats.prompt_tokens + stats.completion_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=stats.reused_prompt_tokens
+                ),
             ),
         )
 
@@ -763,6 +767,9 @@ class ServingChat:
                     prompt_tokens=stats.prompt_tokens,
                     completion_tokens=stats.completion_tokens,
                     total_tokens=stats.prompt_tokens + stats.completion_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=stats.reused_prompt_tokens
+                    ),
                 ),
             )
             yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
