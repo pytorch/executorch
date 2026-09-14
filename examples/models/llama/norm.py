@@ -103,19 +103,30 @@ class RMSNormCoreML(torch.nn.Module):
 
 
 class RMSNormWithInputScale(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-5):
+    def __init__(
+        self, dim: int, eps: float = 1e-5, zero_centered_gamma: bool = False
+    ):
+        """RMSNorm with gamma applied to the input: ``rms_norm(gamma * x)``.
+
+        ``zero_centered_gamma``: the checkpoint stores gamma offset by -1, so the
+        effective scale is ``weight + 1``.
+        """
         super().__init__()
         self.eps = eps
         self.dim = dim
+        self.zero_centered_gamma = zero_centered_gamma
         self.weight = torch.nn.Parameter(torch.ones(dim))
 
     def forward(self, x):
-        scaled = self.weight * x
+        w = self.weight + 1.0 if self.zero_centered_gamma else self.weight
+        scaled = w * x
         return F.rms_norm(scaled, (self.dim,), None, self.eps)
 
 
 class RMSNormWithInputScaleCoreML(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-5):
+    def __init__(
+        self, dim: int, eps: float = 1e-5, zero_centered_gamma: bool = False
+    ):
         """
         CoreML-friendly RMSNormWithInputScale.
 
@@ -131,6 +142,8 @@ class RMSNormWithInputScaleCoreML(torch.nn.Module):
             dim (int): The dimension of the input tensor.
             eps (float, optional): Floor on the L2-norm denominator
                 (`clamp_min(‖x‖₂, √(dim·eps))`), matching RMSNormCoreML. Must be > 0.
+            zero_centered_gamma (bool, optional): checkpoint stores gamma offset
+                by -1, so the effective scale is `weight + 1`.
         """
         super().__init__()
         assert eps > 0, (
@@ -139,6 +152,7 @@ class RMSNormWithInputScaleCoreML(torch.nn.Module):
         )
         self.eps = eps
         self.dim = dim
+        self.zero_centered_gamma = zero_centered_gamma
         self.weight = torch.nn.Parameter(torch.ones(dim))
 
     def _norm(self, x):
@@ -153,7 +167,8 @@ class RMSNormWithInputScaleCoreML(torch.nn.Module):
         )
 
     def forward(self, x):
-        scaled = self.weight * x
+        w = self.weight + 1.0 if self.zero_centered_gamma else self.weight
+        scaled = w * x
         return self._norm(scaled)
 
 
@@ -197,7 +212,11 @@ def replace_rms_norm_for_coreml_(model: torch.nn.Module) -> torch.nn.Module:
             # applies its scale post-norm, which would change the math here).
             dim = getattr(mod, "dim", None) or mod.normalized_shape[-1]
             eps = getattr(mod, "eps", 1e-6) or 1e-6
-            new = RMSNormWithInputScaleCoreML(dim, eps=eps)
+            new = RMSNormWithInputScaleCoreML(
+                dim,
+                eps=eps,
+                zero_centered_gamma=getattr(mod, "zero_centered_gamma", False),
+            )
             new.weight = mod.weight
         elif isinstance(mod, (RMSNorm, ScalelessRMSNorm, torch.nn.RMSNorm)):
             # All three carry the normalized dim either as `dim` or in `normalized_shape[-1]`.
