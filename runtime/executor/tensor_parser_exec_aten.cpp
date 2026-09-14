@@ -34,45 +34,6 @@ class TensorParser final {
   }
 };
 
-namespace {
-
-// Retrieve the buffer specified by the allocation_info
-ET_NODISCARD Result<void*> getMemPlannedPtr(
-    const executorch_flatbuffer::AllocationDetails* allocation_info,
-    size_t nbytes,
-    HierarchicalAllocator* allocator) {
-  ET_CHECK_OR_RETURN_ERROR(
-      allocator != nullptr,
-      InvalidState,
-      "HierarchicalAllocator must not be null for memory-planned tensor");
-  // Normal non-constant Tensor. Allocate data using mem_id and offset.
-
-  // TODO(T142455629): make the allocator actually id based and not indexed
-  // based. -1 is a hack to get the memory ids 0 aligned because previously
-  // 0 was reserved
-  const uint32_t memory_id = allocation_info->memory_id() - 1;
-
-  // Originally this field was a single uint32_t, but we need 64 bits for
-  // larger models. To preserve backwards compatibility, the high bits are
-  // managed in a separate uint32_t field.
-  const uint32_t memory_offset_low = allocation_info->memory_offset_low();
-  const uint32_t memory_offset_high = allocation_info->memory_offset_high();
-
-  size_t memory_offset = memory_offset_low;
-  if constexpr (sizeof(size_t) > sizeof(uint32_t)) {
-    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
-  } else {
-    ET_CHECK_OR_RETURN_ERROR(
-        memory_offset_high == 0,
-        NotSupported,
-        "size_t cannot hold memory offset 0x%08" PRIx32 "%08" PRIx32,
-        memory_offset_high,
-        memory_offset_low);
-  }
-  return allocator->get_offset_address(memory_id, memory_offset, nbytes);
-}
-} // namespace
-
 ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values,
@@ -187,6 +148,41 @@ NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstringop-overread"
 #endif
+
+// Retrieve the buffer specified by the allocation_info
+ET_NODISCARD Result<void*> getMemPlannedPtr(
+    const executorch_flatbuffer::AllocationDetails* allocation_info,
+    size_t nbytes,
+    HierarchicalAllocator* allocator) {
+  ET_CHECK_OR_RETURN_ERROR(
+      allocator != nullptr,
+      InvalidState,
+      "HierarchicalAllocator must not be null to resolve a planned allocation");
+
+  // TODO(T142455629): make the allocator actually id based and not indexed
+  // based. -1 is a hack to get the memory ids 0 aligned because previously
+  // 0 was reserved
+  const uint32_t memory_id = allocation_info->memory_id() - 1;
+
+  // Originally this field was a single uint32_t, but we need 64 bits for
+  // larger models. To preserve backwards compatibility, the high bits are
+  // managed in a separate uint32_t field.
+  const uint32_t memory_offset_low = allocation_info->memory_offset_low();
+  const uint32_t memory_offset_high = allocation_info->memory_offset_high();
+
+  size_t memory_offset = memory_offset_low;
+  if constexpr (sizeof(size_t) > sizeof(uint32_t)) {
+    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
+  } else {
+    ET_CHECK_OR_RETURN_ERROR(
+        memory_offset_high == 0,
+        NotSupported,
+        "size_t cannot hold memory offset 0x%08" PRIx32 "%08" PRIx32,
+        memory_offset_high,
+        memory_offset_low);
+  }
+  return allocator->get_offset_address(memory_id, memory_offset, nbytes);
+}
 
 ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,

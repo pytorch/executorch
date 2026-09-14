@@ -250,12 +250,29 @@ table KernelCall {
   args: [int];
 }
 
+// A memory-planned scratch buffer that a delegate declared when it was
+// lowered. Described directly rather than as a Tensor value, because the
+// delegate receives raw bytes.
+table DelegateScratch {
+  // Where the memory planner placed this buffer.
+  allocation: AllocationDetails;
+
+  // Size in bytes. AllocationDetails carries only a location.
+  size: uint64;
+}
+
 table DelegateCall {
   // Index to the delegates table in the program.
   delegate_index: int;
 
   // Indexes to the (values) required by the delegates (in and out).
   args: [int];
+
+  // Scratch buffers the delegate declared at AOT time, in declaration order.
+  // Not part of `args`: the runtime resolves them and hands the backend raw
+  // byte ranges through BackendExecutionContext, so they are never delegate
+  // inputs or outputs. Absent in programs exported before this field existed.
+  scratch: [DelegateScratch];
 }
 
 table MoveCall {
