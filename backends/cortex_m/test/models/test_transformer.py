@@ -9,8 +9,16 @@ from executorch.backends.arm._passes import (
     ConstantFoldingPass,
     DecomposeLayerNormPass,
     DecomposeSDPAWithRegularSoftmaxPass,
+    FoldAndAnnotateQParamsPass,
+)
+from executorch.backends.cortex_m.passes.replace_scalar_with_tensor_pass import (
+    CortexMReplaceScalarWithTensorArgPass,
 )
 from executorch.backends.cortex_m.test.tester import CortexMQuantize, CortexMTester
+from executorch.backends.test.harness.stages import StageType
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.program._program import _transform
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -71,6 +79,56 @@ class TransformerDecompositionQuantize(CortexMQuantize):
             prepared,
             fold_quantize=self.fold_quantize,
         )
+
+
+def test_quantized_bmm_retrace_preserves_output_dtype(cortex_m_target):
+    """Retracing folded quantized BMM must preserve its requantized dtype."""
+
+    torch.manual_seed(0)
+
+    model = AttentionModel().eval()
+    inputs = (
+        torch.randn(1, 2, 4, 16),
+        torch.randn(1, 2, 4, 16),
+        torch.randn(1, 2, 4, 16),
+    )
+
+    tester = CortexMTester(
+        model,
+        inputs,
+        target_config=cortex_m_target,
+    )
+
+    tester.quantize(TransformerDecompositionQuantize())
+    tester.export()
+    tester.to_edge()
+
+    exported_program = tester.get_artifact(StageType.TO_EDGE).exported_program()
+
+    exported_program = _transform(
+        exported_program,
+        RemoveGetItemPass(),
+    )
+    exported_program = _transform(
+        exported_program,
+        FoldAndAnnotateQParamsPass(exported_program),
+    )
+    exported_program = _transform(
+        exported_program,
+        CortexMReplaceScalarWithTensorArgPass(),
+    )
+
+    bmm_nodes = [
+        node
+        for node in exported_program.graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.bmm.default
+    ]
+
+    assert len(bmm_nodes) == 2
+
+    for node in bmm_nodes:
+        output_qparams = node.meta["output_qparams"]
+        assert node.meta["val"].dtype == output_qparams[0].dtype
 
 
 def test_decomposed_attention_scale_mul_lowering(cortex_m_target):

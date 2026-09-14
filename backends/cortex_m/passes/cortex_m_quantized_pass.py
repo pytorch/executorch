@@ -65,7 +65,11 @@ class CortexMQuantizedPass(ExportPass):
 
     def call_operator(self, op, args, kwargs, meta):
         if (
-            op == exir_ops.edge.aten.linear.default
+            op
+            in {
+                exir_ops.edge.aten.linear.default,
+                exir_ops.edge.aten.bmm.default,
+            }
             and isinstance(meta, NodeMetadata)
             and self._is_quantized_meta(meta)
         ):
