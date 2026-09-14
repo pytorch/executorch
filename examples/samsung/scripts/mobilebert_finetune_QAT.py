@@ -417,9 +417,9 @@ def build_aten_to_qat_mobilebert(
         inputs[1].size(2),
         inputs[1].size(3),
     )
-    vector_input_ids = torch.randint(0, 256, size_input_ids).to(device)
-    vector_attention_mask = torch.zeros(size_attention_mask, dtype=torch.float32).to(
-        device
+    vector_input_ids = torch.randint(0, 256, size_input_ids, device=device)
+    vector_attention_mask = torch.zeros(
+        size_attention_mask, dtype=torch.float32, device=device
     )
     example_inputs = (
         vector_input_ids,
@@ -474,9 +474,9 @@ def build_aten_to_qat_mobilebert(
         inputs[1].size(2),
         inputs[1].size(3),
     )
-    vector_input_ids = torch.randint(0, 256, size_input_ids).to(device)
-    vector_attention_mask = torch.zeros(size_attention_mask, dtype=torch.float32).to(
-        device
+    vector_input_ids = torch.randint(0, 256, size_input_ids, device=device)
+    vector_attention_mask = torch.zeros(
+        size_attention_mask, dtype=torch.float32, device=device
     )
     example_inputs = (
         vector_input_ids,
@@ -491,10 +491,10 @@ def build_aten_to_qat_mobilebert(
     device_cpu = torch.device(type="cpu")
     quantized_model = quantized_model.to(device_cpu)
     quantized_model = removing_gpu_node_in_graph(quantized_model)
-    cpu_vector_input_ids = torch.randint(0, 256, size_input_ids).to(device_cpu)
+    cpu_vector_input_ids = torch.randint(0, 256, size_input_ids, device=device_cpu)
     cpu_vector_attention_mask = torch.zeros(
-        size_attention_mask, dtype=torch.float32
-    ).to(device_cpu)
+        size_attention_mask, dtype=torch.float32, device=device_cpu
+    )
     example_inputs_cpu = (
         cpu_vector_input_ids,
         cpu_vector_attention_mask,
