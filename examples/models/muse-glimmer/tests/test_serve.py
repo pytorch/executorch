@@ -24,9 +24,7 @@ from executorch.examples.llm_server.python.protocol import (  # noqa: E402
     ChatCompletionRequest,
     ChatMessage,
 )
-from executorch.examples.llm_server.python.serving_chat import (  # noqa: E402
-    ServingChat,
-)
+from executorch.examples.llm_server.python.serving_chat import ServingChat  # noqa: E402
 from executorch.examples.llm_server.python.session_runtime import (  # noqa: E402
     PromptInput,
 )
