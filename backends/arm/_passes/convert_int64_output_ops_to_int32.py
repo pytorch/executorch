@@ -148,11 +148,8 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
         if input_dtype == torch.int32:
             users = [user for user in node.users if node != user]
             for user in users:
-                logger.warning(
-                    f"Removing int32->int64 casting node {node.name} defined in"
-                    f" {node.meta.get('stack_trace','[no stack trace found]')}"
-                )
                 user.replace_input_with(node, input_node)
+            self._removed_casts += 1
         # Case 2: other types -> int64 - rewrites to cast to int32
         else:
             if node.target in self.cast_ops_kwargs:
@@ -161,11 +158,7 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
                 set_node_arg(node, 1, torch.int32)
             else:
                 raise RuntimeError(f"Unexpected target {node.target} in {node.name}")
-            output_dtype = get_first_fake_tensor(node).dtype
-            logger.warning(
-                f"Converting casting node {node.name} from {input_dtype}->{output_dtype} to"
-                f" {input_dtype}->torch.int32 defined in {node.meta.get('stack_trace','[no stack trace found]')}"
-            )
+            self._converted_casts += 1
 
     def _range_fits_int32(self, value_range: Tuple[int, int]) -> bool:
         return -self._INT32_MAX - 1 <= value_range[0] and (
@@ -471,15 +464,25 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
                     )
                     user.replace_input_with(node, boundary)
 
-        logger.warning(
-            f"Inserting a casting node {cast_to_int32.name} after "
-            f"{source.name} for range-safe index consumers defined in "
-            f"{source.meta.get('stack_trace','[no stack trace found]')}"
-        )
+        self._safe_index_casts += 1
         return True
+
+    def _log_summary(self) -> None:
+        if self._removed_casts or self._converted_casts or self._safe_index_casts:
+            logger.warning(
+                "ConvertInt64OutputOpsToInt32Pass: removed %d int32-to-int64 "
+                "cast(s), rewrote %d cast(s) to int32, and inserted %d "
+                "range-safe index cast(s).",
+                self._removed_casts,
+                self._converted_casts,
+                self._safe_index_casts,
+            )
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
+        self._removed_casts = 0
+        self._converted_casts = 0
+        self._safe_index_casts = 0
         graph = graph_module.graph
         for node in list(graph.nodes):
             if node.op != "call_function":
@@ -522,5 +525,7 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
             graph_module.graph.eliminate_dead_code()
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
+
+        self._log_summary()
 
         return PassResult(graph_module, modified)
