@@ -18,6 +18,11 @@ CPU export is not supported. For general environment setup, follow the
 
 ## Model assets
 
+The GGUF checkpoints below are the inputs to [Export](#export). To run a
+published export instead, skip to
+[Prebuilt PTE artifacts](#prebuilt-pte-artifacts); that download is
+self-contained and needs nothing else from this section.
+
 Download the GGUF checkpoints and Hugging Face tokenizer metadata from the
 [`meta-models/Muse-Glimmer-30B-GGUF`](https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF)
 and [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B),
@@ -62,23 +67,46 @@ BACKEND=cuda  # use mlx on macOS
 
 Ready-to-run exports for Apple silicon and NVIDIA GPUs are published in
 [`meta-models/Muse-Glimmer-30B-ExecuTorch-PTE`](https://huggingface.co/meta-models/Muse-Glimmer-30B-ExecuTorch-PTE).
+A prebuilt export needs neither the GGUF checkpoints nor the [Export](#export)
+step, and the repository serves the tokenizer metadata and chat template at its
+root, so it is the only download required.
+
 Each subdirectory is one export, named after its quantization, context length,
-modalities, decoding mode (`solo` or `dflash`), and target hardware, for example
-`muse_glimmer_k_quant_17G_128K_text_solo_metal`. Browse the repository, pick the
-subdirectory that matches your setup, and download only that one:
+modalities, decoding mode (`solo` or `dflash`), and target backend (`metal` for
+Apple silicon, `sm80+ptx` for NVIDIA), for example
+`muse-glimmer-k-quant-17G-128K-text-solo-metal`. Its artifacts repeat that
+directory name rather than the `model.pte` and `aoti_cuda_blob.ptd` filenames a
+local export writes:
+
+| Artifact | Present |
+|---|---|
+| `<subdirectory>.pte` | Always |
+| `<subdirectory>.ptd` | `sm80+ptx` only, and it holds the weights, so a CUDA export needs both files |
+| `pos_embed.bin` | `text-image` only |
+
+Browse the repository, pick the subdirectory that matches your setup, and
+download just that one alongside the shared tokenizer metadata:
 
 ```bash
-EXPORT_DIR=<subdirectory from the repository>
+PTE_REPO=meta-models/Muse-Glimmer-30B-ExecuTorch-PTE
+EXPORT_DIR=muse-glimmer-k-quant-17G-128K-text-solo-metal
 
-hf download meta-models/Muse-Glimmer-30B-ExecuTorch-PTE \
+hf download "$PTE_REPO" \
   --include "$EXPORT_DIR/*" \
+  --include tokenizer.json \
+  --include tokenizer_config.json \
+  --include chat_template.jinja \
   --local-dir exports
 ```
 
-The repository holds many exports, so avoid downloading it in full.
+`--include` takes one pattern per flag, and adding positional filenames makes
+`hf` ignore every `--include`. The repository holds many exports, so avoid
+downloading it in full; `--dry-run` reports the file list and total size before
+the transfer starts.
 
 With a prebuilt export, skip the [Export](#export) section and use
-`exports/$EXPORT_DIR` as the artifact directory in the sections below.
+`exports/$EXPORT_DIR` as the artifact directory and `exports` as the tokenizer
+directory in the sections below.
 
 ## Export
 
@@ -185,6 +213,31 @@ For MLX, use the MLX `model.pte` and omit `--data-path`. For DFlash, replace
 `exports/solo` with `exports/dflash` in both artifact paths; the server detects
 the exported method contract. For vision, also pass
 `--pos-embed-path <export-dir>/pos_embed.bin`.
+
+Serving a prebuilt export instead follows the same shape, with both artifacts
+named after their subdirectory and the tokenizer metadata taken from the
+download root:
+
+```bash
+EXPORT_DIR=muse-glimmer-k-quant-17G-128K-text-solo-sm80+ptx
+
+python -m executorch.examples.models.muse_glimmer.serving.serve \
+  --model-path "exports/$EXPORT_DIR/$EXPORT_DIR.pte" \
+  --data-path "exports/$EXPORT_DIR/$EXPORT_DIR.ptd" \
+  --tokenizer-path exports/tokenizer.json \
+  --hf-tokenizer exports \
+  --worker-bin cmake-out/examples/models/muse-glimmer/muse_glimmer_worker \
+  --model-id muse-glimmer-30B \
+  --tool-parser atem \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+`--dflash-block-length` defaults to 4, the largest block the CUDA export
+supports. The MLX export carries the drafter's native block size of 16, so pass
+`--dflash-block-length 0` there to select the exported maximum; `0` for
+`--dflash-n-draft` likewise resolves to `block_length - 1`. On `sm80+ptx`,
+`--dflash-n-draft` must stay at 3 or below.
 
 Smoke test:
 
