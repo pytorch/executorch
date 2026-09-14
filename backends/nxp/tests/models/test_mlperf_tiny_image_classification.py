@@ -80,12 +80,13 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         else None
     )
 
-    # This model does not work in channels-last format and QAT. See more information below.
+    # Portable constant_pad_nd does not support channels-last tensors.
+    # Channels-last QAT also has the portable-runtime issue tracked below.
     # Github issue: https://github.com/pytorch/executorch/issues/22179
     # NXP internal issue ID: EIEX-1065
     ref_model = (
         ReferenceModel.QUANTIZED_EDGE_PYTHON
-        if channels_last and use_qat
+        if channels_last
         else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
     )
 
