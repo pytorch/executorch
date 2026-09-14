@@ -267,6 +267,7 @@ class QnnExecuTorchOpPackageTarget(IntEnum):
     UNKNOWN = 0
     CPU = 1
     HTP = 2
+    LPAI = 3
 
 
 @unique
@@ -274,6 +275,7 @@ class QnnExecuTorchOpPackagePlatform(IntEnum):
     UNKNOWN = 0
     X86_64 = 1
     AARCH64_ANDROID = 2
+    HEXAGON = 3
 
 
 @dataclass

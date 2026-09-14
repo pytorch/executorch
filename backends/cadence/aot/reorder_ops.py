@@ -1176,6 +1176,7 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         - add.Tensor: binary with broadcast — slices non-broadcasting inputs
         - mul.Tensor: binary with broadcast — slices non-broadcasting inputs
 
+    Callers can provide per-target filters for additional legality constraints.
     Handles any slice dim and any step size.
     """
 
@@ -1183,6 +1184,9 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         self,
         additional_unary_targets: Optional[list[EdgeOpOverload]] = None,
         additional_binary_targets: Optional[list[EdgeOpOverload]] = None,
+        target_filters: Optional[
+            dict[EdgeOpOverload, Callable[[torch.fx.Node], bool]]
+        ] = None,
     ) -> None:
         super().__init__()
         unary_targets = [
@@ -1204,6 +1208,7 @@ class PropagateSlice(RemoveOrReplacePassInterface):
                 Callable[[torch.fx.Node, torch.fx.Node], bool],
             ],
         ] = {}
+        self._target_filters = target_filters or {}
         for t in unary_targets:
             self._dispatch[t] = (
                 self._should_swap_elementwise,
@@ -1297,17 +1302,28 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         slice_step = get_arg(slice_node, "step", int)
 
         output_shape = op_node.meta["val"].shape
+        output_dim = slice_dim % len(output_shape)
 
         new_args = list(op_node.args)
         with graph.inserting_before(op_node):
             for i, inp in enumerate([lhs, rhs]):
-                if inp.meta["val"].shape[slice_dim] == output_shape[slice_dim]:
+                input_shape = inp.meta["val"].shape
+                # Broadcasting aligns operand dimensions to the right of the output.
+                input_dim = output_dim - (len(output_shape) - len(input_shape))
+                if (
+                    input_dim >= 0
+                    and input_shape[input_dim] == output_shape[output_dim]
+                ):
                     new_slice = graph.call_function(
                         exir_ops.edge.aten.slice_copy.Tensor,
-                        args=(inp, slice_dim, slice_start, slice_end, slice_step),
+                        args=(inp, input_dim, slice_start, slice_end, slice_step),
                     )
                     new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
-                        inp.meta["val"], slice_dim, slice_start, slice_end, slice_step
+                        inp.meta["val"],
+                        input_dim,
+                        slice_start,
+                        slice_end,
+                        slice_step,
                     )
                     new_args[i] = new_slice
 
@@ -1342,6 +1358,9 @@ class PropagateSlice(RemoveOrReplacePassInterface):
 
         entry = self._dispatch.get(parent.target)
         if entry is None:
+            return False
+        target_filter = self._target_filters.get(parent.target)
+        if target_filter is not None and not target_filter(parent):
             return False
 
         should_swap, do_swap = entry

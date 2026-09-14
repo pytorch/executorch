@@ -67,9 +67,9 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         input_spec.dim_order = torch.channels_last
 
     quant_type_key = "QAT" if use_qat else "PTQ"
-    dim_order_key = "channels-last" if channels_last else "channels-first"
+    format_key = "channels-last" if channels_last else "channels-first"
 
-    mse = BOUNDS_MSE[quant_type_key][dim_order_key]
+    mse = BOUNDS_MSE[quant_type_key][format_key]
     comparator = NumericalStatsOutputComparator(
         max_mse_error=mse, use_softmax=True, is_classification_task=True
     )

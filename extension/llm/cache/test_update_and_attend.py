@@ -428,17 +428,17 @@ class BatchedSequenceCacheTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, r"declares \[1, 2\], not \[0, 1\]"):
             self._attend(cache, (q, k, v, _positions(1, 2)))
-        self.assertEqual(cache.seq_len(5), 0)  # a refusal writes nothing
+        self.assertEqual(cache.pos(5), 0)  # a refusal writes nothing
 
         # Ascending is not enough; a span is a consecutive run.
         gapped = torch.tensor([[0], [2]], dtype=torch.long)
         with self.assertRaisesRegex(ValueError, r"declares \[0, 2\], not \[0, 1\]"):
             self._attend(cache, (q, k, v, gapped))
-        self.assertEqual(cache.seq_len(5), 0)
+        self.assertEqual(cache.pos(5), 0)
 
         # The declaration still stands, so the same layer can be retried.
         self._attend(cache, (q, k, v, _positions(0, 2)))
-        self.assertEqual(cache.seq_len(5), 2)
+        self.assertEqual(cache.pos(5), 2)
 
     def test_a_sequence_spanned_twice_continues_across_both(self):
         cache = self._cache()
@@ -448,16 +448,16 @@ class BatchedSequenceCacheTest(unittest.TestCase):
         # up where its first left off rather than at its prior length.
         cache.declare_step([4, 9, 4])
         self._attend(cache, (q, k, v, torch.tensor([[0], [0], [1]])))
-        self.assertEqual(cache.seq_len(4), 2)
-        self.assertEqual(cache.seq_len(9), 1)
+        self.assertEqual(cache.pos(4), 2)
+        self.assertEqual(cache.pos(9), 1)
 
         # The bad position is in the last span, so a per-span check would have
         # written the first two before refusing.
         cache.declare_step([4, 9, 4])
         with self.assertRaisesRegex(ValueError, r"holds 3 .*declares \[4\], not \[3\]"):
             self._attend(cache, (q, k, v, torch.tensor([[2], [1], [4]])))
-        self.assertEqual(cache.seq_len(4), 2)
-        self.assertEqual(cache.seq_len(9), 1)
+        self.assertEqual(cache.pos(4), 2)
+        self.assertEqual(cache.pos(9), 1)
 
     def test_requires_one_declared_step_per_forward(self):
         cache = self._cache()
@@ -479,34 +479,34 @@ class BatchedSequenceCacheTest(unittest.TestCase):
         for call in (
             lambda: cache.declare_step([-1]),
             lambda: cache.seq_rm(-1),
-            lambda: cache.seq_len(-1),
+            lambda: cache.pos(-1),
         ):
             with self.subTest(call=call), self.assertRaises(ValueError):
                 call()
 
         # Private histories are dict entries, so nothing caps the id.
         cache.declare_step([9999])
-        self.assertEqual(cache.seq_len(9999), 0)
+        self.assertEqual(cache.pos(9999), 0)
 
     def test_capacity_is_the_pool_total_and_refusal_changes_nothing(self):
         cache = self._cache(capacity=4)
         with self.assertRaisesRegex(RuntimeError, "exceeds capacity"):
             cache.declare_step([2] * 5)
-        self.assertEqual(cache.seq_len(2), 0)
+        self.assertEqual(cache.pos(2), 0)
 
         # Two sequences share the budget rather than each getting one.
         a = torch.randn(1, 2, self.hidden)
         b = torch.randn(1, 2, self.hidden)
         tokens, positions, seq_ids, _ = flatten_step({2: (a, 0), 7: (b, 0)})
         self._step(cache, tokens, positions, seq_ids)
-        self.assertEqual(cache.seq_len(2), 2)
-        self.assertEqual(cache.seq_len(7), 2)
+        self.assertEqual(cache.pos(2), 2)
+        self.assertEqual(cache.pos(7), 2)
 
         # Either sequence is now blocked by what the other holds.
         with self.assertRaisesRegex(RuntimeError, "exceeds capacity"):
             cache.declare_step([2])
-        self.assertEqual(cache.seq_len(2), 2)
-        self.assertEqual(cache.seq_len(7), 2)
+        self.assertEqual(cache.pos(2), 2)
+        self.assertEqual(cache.pos(7), 2)
 
     def test_forward_width_must_match_tensors_and_declaration(self):
         one = self._attention_inputs(1)
@@ -529,26 +529,22 @@ class BatchedSequenceCacheTest(unittest.TestCase):
         cache.declare_step([2])
         cache.seq_rm(2)
 
-        self.assertEqual(cache.seq_len(2), 0)
+        self.assertEqual(cache.pos(2), 0)
         with self.assertRaisesRegex(RuntimeError, "no step declared"):
             self._attend(cache, self._attention_inputs(1))
 
-    def test_seq_rm_truncates_or_drops_and_refuses_a_bounded_range(self):
+    def test_rewind_truncates_and_seq_rm_drops_the_sequence(self):
         cache = self._cache()
         self._step(cache, torch.randn(1, 4, self.hidden), _positions(0, 4), [1] * 4)
         self._step(cache, torch.randn(1, 2, self.hidden), _positions(0, 2), [6] * 2)
 
-        with self.assertRaises(NotImplementedError):
-            cache.seq_rm(1, 0, 2)
-        self.assertEqual(cache.seq_len(1), 4)
-
-        cache.seq_rm(1, 2)  # keep positions 0..1
-        self.assertEqual(cache.seq_len(1), 2)
-        self.assertEqual(cache.seq_len(6), 2)  # its neighbour is untouched
+        cache.rewind(1, 2)  # keep positions 0..1
+        self.assertEqual(cache.pos(1), 2)
+        self.assertEqual(cache.pos(6), 2)  # its neighbour is untouched
 
         cache.seq_rm(1)  # the whole sequence
-        self.assertEqual(cache.seq_len(1), 0)
-        self.assertEqual(cache.seq_len(6), 2)
+        self.assertEqual(cache.pos(1), 0)
+        self.assertEqual(cache.pos(6), 2)
 
     def test_rewinding_then_continuing_matches_an_unbroken_run(self):
         x = torch.randn(1, 5, self.hidden)
@@ -556,7 +552,7 @@ class BatchedSequenceCacheTest(unittest.TestCase):
 
         cache = self._cache()
         self._step(cache, x[:, :4], _positions(0, 4), [3] * 4)
-        cache.seq_rm(3, 2)  # discard positions 2..3
+        cache.rewind(3, 2)  # discard positions 2..3
         out = self._step(cache, x[:, 2:], _positions(2, 3), [3] * 3)
 
         torch.testing.assert_close(out, ref[:, 2:], atol=1e-4, rtol=1e-4)
@@ -566,13 +562,13 @@ class BatchedSequenceCacheTest(unittest.TestCase):
         self._step(cache, torch.randn(1, 5, self.hidden), _positions(0, 5), [0] * 5)
 
         with self.assertRaisesRegex(ValueError, "the history holds 5"):
-            cache.seq_rm(0, 6)
+            cache.rewind(0, 6)
         # A windowed layer keeps only its last two positions, so 3 is the floor
         # even though this reference still holds the older ones.
         with self.assertRaisesRegex(ValueError, "retains only from 3"):
-            cache.seq_rm(0, 1)
-        cache.seq_rm(0, 3)
-        self.assertEqual(cache.seq_len(0), 3)
+            cache.rewind(0, 1)
+        cache.rewind(0, 3)
+        self.assertEqual(cache.pos(0), 3)
 
 
 class CellCacheTest(unittest.TestCase):
@@ -600,7 +596,11 @@ class CellCacheTest(unittest.TestCase):
         REGISTRY.uninstall(self.cache_key)
 
     def _cache(
-        self, capacity=CAPACITY, sizing=CacheSizing.DYNAMIC, layers=None, n_layers=None
+        self,
+        capacity=CAPACITY,
+        sizing=CacheSizing.DYNAMIC,
+        layers=None,
+        n_layers=None,
     ):
         cache = CellReferenceCache(
             CacheConfig(
@@ -696,7 +696,7 @@ class CellCacheTest(unittest.TestCase):
         free_before = cache.free_cells()
         cache.seq_cp(0, 1)
         self.assertEqual(cache.free_cells(), free_before)  # no cell, no byte copied
-        self.assertEqual(cache.seq_len(1), 4)
+        self.assertEqual(cache.pos(1), 4)
 
         out = self._step(cache, tail, [4], [1])  # the branch continues the trunk
         torch.testing.assert_close(
@@ -714,8 +714,8 @@ class CellCacheTest(unittest.TestCase):
         cache.seq_cp(0, 1)
 
         cache.seq_rm(0)
-        self.assertEqual(cache.seq_len(0), 0)
-        self.assertEqual(cache.seq_len(1), 3)  # the fork still owns them
+        self.assertEqual(cache.pos(0), 0)
+        self.assertEqual(cache.pos(1), 3)  # the fork still owns them
         self.assertEqual(cache.free_cells(), self.CAPACITY - 3)
 
         cache.seq_rm(1)
@@ -738,9 +738,30 @@ class CellCacheTest(unittest.TestCase):
         self._step(cache, torch.randn(1, 4, self.hidden), [0, 1, 2, 3], [0] * 4)
 
         cache.seq_cp(0, 1, upto=2)
-        self.assertEqual(cache.seq_len(0), 4)
-        self.assertEqual(cache.seq_len(1), 2)  # only positions 0 and 1
+        self.assertEqual(cache.pos(0), 4)
+        self.assertEqual(cache.pos(1), 2)  # only positions 0 and 1
         self.assertEqual(cache.free_cells(), self.CAPACITY - 4)  # still no copy
+
+    def test_a_span_is_a_consecutive_run(self):
+        cache = self._cache()
+        self._step(cache, torch.randn(1, 2, self.hidden), [0, 1], [0] * 2)
+
+        # Ascending is not enough, within a span as well as across steps, and
+        # nothing is claimed by a refusal.
+        for positions, message in (([3], "continues at 2"), ([2, 4], "continues at 3")):
+            with self.subTest(positions=positions):
+                with self.assertRaisesRegex(ValueError, message):
+                    self._step(
+                        cache,
+                        torch.randn(1, len(positions), self.hidden),
+                        positions,
+                        [0] * len(positions),
+                    )
+                self.assertEqual(cache.pos(0), 2)
+                self.assertEqual(cache.free_cells(), self.CAPACITY - 2)
+
+        self._step(cache, torch.randn(1, 2, self.hidden), [2, 3], [0] * 2)
+        self.assertEqual(cache.pos(0), 4)
 
     def test_freeing_the_tail_shrinks_the_read_window(self):
         cache = self._cache()
@@ -759,16 +780,16 @@ class CellCacheTest(unittest.TestCase):
         self.assertEqual(spec.k.shape[2], 1)  # the window length is 1, not the old 4
         self.assertEqual(spec.mask.shape[-1], 1)
 
-    def test_seq_rm_over_a_range_frees_only_that_window(self):
+    def test_rewind_frees_only_the_tail(self):
         cache = self._cache()
         self._step(cache, torch.randn(1, 5, self.hidden), [0, 1, 2, 3, 4], [0] * 5)
 
-        cache.seq_rm(0, 0, 2)  # sliding window: drop the oldest two
-        self.assertEqual(cache.seq_len(0), 3)
-        self.assertEqual(cache.free_cells(), self.CAPACITY - 3)
+        cache.rewind(0, 4)  # backtrack: drop position 4 onwards
+        self.assertEqual(cache.pos(0), 4)
+        self.assertEqual(cache.free_cells(), self.CAPACITY - 4)
 
-        cache.seq_rm(0, 4)  # backtrack: drop position 4 onwards
-        self.assertEqual(cache.seq_len(0), 2)
+        cache.rewind(0, 2)
+        self.assertEqual(cache.pos(0), 2)
         self.assertEqual(cache.free_cells(), self.CAPACITY - 2)
 
     def test_every_verb_range_checks_the_seq_id(self):
@@ -780,8 +801,8 @@ class CellCacheTest(unittest.TestCase):
             lambda: cache.seq_cp(0, MAX_SEQS),
             lambda: cache.seq_cp(MAX_SEQS, 0),
             lambda: cache.seq_rm(MAX_SEQS),
-            lambda: cache.seq_len(MAX_SEQS),
-            lambda: cache.seq_len(-1),
+            lambda: cache.pos(MAX_SEQS),
+            lambda: cache.pos(-1),
         ):
             with self.assertRaises(ValueError):
                 call()
@@ -881,7 +902,7 @@ class CellCacheTest(unittest.TestCase):
 
     def test_admission_fails_before_the_forward(self):
         cache = self._cache(capacity=4)
-        self.assertFalse(cache.can_extend(5))
+        self.assertEqual(cache.free_cells(), 4)
         with self.assertRaises(RuntimeError):
             cache.declare_step([0] * 5)
 

@@ -143,7 +143,7 @@ TEST_F(MLXCellCacheTest, FreedCellsRefillBelowLiveOnes) {
   array kb = randn(1), vb = randn(1);
   step(c, {b}, {0}, kb, vb); // cell 3
 
-  EXPECT_TRUE(c.seq_rm(a, 0, 2)); // frees cells 0 and 1
+  EXPECT_TRUE(c.seq_rm(a)); // frees cells 0, 1 and 2
   EXPECT_EQ(c.used_end(), 4);
 
   array kb1 = randn(1), vb1 = randn(1);

@@ -34,6 +34,9 @@ from executorch.backends.native.passes.reinplace import (
     BACKEND_INPLACE_OPS,
     NativeReinplacePass,
 )
+from executorch.backends.native.passes.replace_copy_with_alias import (
+    ReplaceCopyWithAliasPass,
+)
 
 from executorch.backends.transforms.collapse_view_copy import CollapseViewCopyPass
 
@@ -46,6 +49,7 @@ __all__ = [
     "CollapseViewCopyPass",
     "get_default_passes",
     "NativeReinplacePass",
+    "ReplaceCopyWithAliasPass",
 ]
 
 

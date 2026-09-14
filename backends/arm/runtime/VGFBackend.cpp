@@ -955,9 +955,13 @@ VkResult vkml_allocate_basics(
   };
 
   // Query features
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR available_bfloat16{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+      .pNext = nullptr,
+  };
   VkPhysicalDeviceVulkan12Features available_12 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-      .pNext = NULL,
+      .pNext = &available_bfloat16,
   };
   VkPhysicalDeviceVulkan11Features available_11 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -995,6 +999,11 @@ VkResult vkml_allocate_basics(
   }
 
   // Select features
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR features_bfloat16{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+      .pNext = nullptr,
+      .shaderBFloat16Type = VK_FALSE,
+  };
   VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT features_c{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT,
       nullptr};
@@ -1061,6 +1070,34 @@ VkResult vkml_allocate_basics(
       *physical_device, nullptr, &exts, available.data());
 
   vector<const char*> requested_exts;
+
+  const bool bfloat16_extension_available = std::any_of(
+      available.begin(), available.end(), [](const auto& ext_avail) {
+        return std::strcmp(
+                   VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME,
+                   ext_avail.extensionName) == 0;
+      });
+  const bool bfloat16_feature_available =
+      available_bfloat16.shaderBFloat16Type == VK_TRUE;
+
+  if (bfloat16_extension_available && bfloat16_feature_available) {
+    requested_exts.push_back(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+    features_bfloat16.shaderBFloat16Type = VK_TRUE;
+    features_c.pNext = &features_bfloat16;
+    ET_LOG(
+        Info,
+        "Enabled %s with shaderBFloat16Type",
+        VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+  } else if (!bfloat16_extension_available) {
+    ET_LOG(
+        Info,
+        "VGF BF16 shaders are unavailable: Vulkan device does not expose %s",
+        VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+  } else {
+    ET_LOG(
+        Info,
+        "VGF BF16 shaders are unavailable: shaderBFloat16Type is not supported");
+  }
 
 #if defined(VK_ARM_data_graph_neural_accelerator_statistics)
   const bool neural_statistics_extension_available = std::any_of(

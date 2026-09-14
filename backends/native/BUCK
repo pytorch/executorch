@@ -18,6 +18,7 @@ fbcode_target(
         "partitioner.py",
         "passes/__init__.py",
         "passes/reinplace.py",
+        "passes/replace_copy_with_alias.py",
         "preprocess.py",
         "serialization/__init__.py",
         "serialization/graph_serialize.py",

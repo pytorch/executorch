@@ -33,6 +33,7 @@ fbcode_target(
         "fbsource//third-party/tosa_tools:tosa",
         ":node_visitor",
         ":operator_validation_utils",
+        "//executorch/backends/arm/tosa:constant_pool",
         "//executorch/backends/arm/tosa:mapping",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/_passes:passes",
