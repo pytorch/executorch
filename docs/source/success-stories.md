@@ -115,6 +115,15 @@ PyTorch-native quantization recipes and kernels used throughout ExecuTorch.
 [torchao →](https://docs.pytorch.org/ao/)
 :::
 
+:::{grid-item-card} **Unsloth**
+:class-header: bg-secondary text-white
+
+Unsloth documents a workflow for fine-tuning LLMs with torchao quantization-aware
+training, then exporting them to ExecuTorch for local Android and iOS inference.
+
+[Phone deployment guide →](https://unsloth.ai/docs/basics/inference-and-deployment/deploy-llms-phone)
+:::
+
 :::{grid-item-card} **React Native ExecuTorch**
 :class-header: bg-secondary text-white
 
@@ -134,6 +143,16 @@ seven vision tasks, targeting mobile and edge applications.
 [Integration guide →](https://docs.ultralytics.com/integrations/executorch/)
 :::
 
+:::{grid-item-card} **Digica AI SDK**
+:class-header: bg-secondary text-white
+
+Digica's AI SDK automates model conversion and generates C++, Java, and
+Objective-C++ interfaces for ExecuTorch. Its published mobile demo combines
+face detection, alignment, recognition, and emotion classification.
+
+[SDK and computer vision demo →](https://www.edge-ai-vision.com/2025/05/effortless-edge-deployment-of-ai-models-with-digicas-ai-sdk-featuring-executorch/)
+:::
+
 :::{grid-item-card} **NimbleEdge DeliteAI**
 :class-header: bg-secondary text-white
 
@@ -141,6 +160,16 @@ The open-source DeliteAI SDK offers ExecuTorch as one of its model runtimes for
 Python-orchestrated agent workflows in Android and iOS applications.
 
 [Source →](https://github.com/NimbleEdge/deliteAI)
+:::
+
+:::{grid-item-card} **NVIDIA FLARE**
+:class-header: bg-secondary text-white
+
+NVIDIA FLARE uses ExecuTorch for local training in federated-learning workflows,
+with Android and iOS SDK examples and real-device and simulated setups.
+
+[Integration overview →](https://developer.nvidia.com/blog/effortless-federated-learning-on-mobile-with-nvidia-flare-and-meta-executorch/) •
+[Examples →](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge)
 :::
 
 :::{grid-item-card} **Arm, Alif, and Arduino**
@@ -273,6 +302,18 @@ navigation for blind and low-vision users, and private gait analysis. These are
 community prototypes, not production deployments.
 
 [See the hackathon projects →](https://pytorch.org/blog/building-the-future-of-on-device-ai-at-the-executorch-hackathon/)
+
+**NoemaAI**
+
+**Status:** Community app; not yet vetted by the ExecuTorch team.
+
+NoemaAI's documentation and App Store release notes list ExecuTorch as one of
+the runtimes available in its Apple-platform AI app.
+
+[Runtime documentation →](https://noemaai.com/docs/running-llms) •
+[App Store →](https://apps.apple.com/us/app/noemaai/id6751169935)
+
+---
 
 Want your project considered for this page? [Submit a success story](https://github.com/pytorch/executorch/issues/new?title=%5BSuccess%20story%5D%20)
 with its deployment status, model, device and backend, reproducible measurements
