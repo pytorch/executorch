@@ -56,6 +56,7 @@ class LlamaRunner(ABC):
         max_batch_size: int,
         use_kv_cache: bool,
         vocab_size: int,
+        enable_dynamic_shape: bool = True,
         device: str = "cpu",
     ):
         """
@@ -67,11 +68,13 @@ class LlamaRunner(ABC):
             max_batch_size: max batch size.
             use_kv_cache: whether to use a KV cache.
             vocab_size: number of items in the vocab.
+            enable_dynamic_shape: whether the model accepts multi-token prefill.
             device: device to run the runner on.
         """
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
         self.use_kv_cache = use_kv_cache
+        self.enable_dynamic_shape = enable_dynamic_shape
         self.tokenizer = get_tokenizer(tokenizer_path, tokenizer_config_path)
         self.device = device
         # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen3/issues/466#issuecomment-2146759706
@@ -88,6 +91,50 @@ class LlamaRunner(ABC):
     ) -> torch.Tensor:
         pass
 
+    def _prefill_chunk(
+        self,
+        prompt_tokens: List[int],
+        start_pos: int,
+    ) -> torch.Tensor:
+        # Parallel prefill processes the whole prompt chunk in one call when dynamic
+        # shapes are enabled or the KV cache is disabled.
+        if self.enable_dynamic_shape or not self.use_kv_cache:
+            return self.forward(
+                tokens=torch.tensor(
+                    [prompt_tokens], dtype=torch.long, device=self.device
+                ),
+                input_pos=(
+                    torch.tensor([start_pos], dtype=torch.long, device=self.device)
+                    if self.use_kv_cache
+                    else None
+                ),
+            )
+        else:
+            # Sequential prefill processes one token per call and uses the KV cache
+            # to preserve context across calls.
+            logits = self.forward(
+                tokens=torch.tensor(
+                    [[prompt_tokens[0]]], dtype=torch.long, device=self.device
+                ),
+                input_pos=torch.tensor(
+                    [start_pos],
+                    dtype=torch.long,
+                    device=self.device,
+                ),
+            )
+            for prompt_pos, prompt_token in enumerate(prompt_tokens[1:], start=1):
+                logits = self.forward(
+                    tokens=torch.tensor(
+                        [[prompt_token]], dtype=torch.long, device=self.device
+                    ),
+                    input_pos=torch.tensor(
+                        [start_pos + prompt_pos],
+                        dtype=torch.long,
+                        device=self.device,
+                    ),
+                )
+            return logits
+
     def generate(  # noqa: C901
         self,
         prompt_tokens: List[int],
@@ -99,14 +146,7 @@ class LlamaRunner(ABC):
     ) -> List[int]:
         # Prefill
         prefill_start = time.time()
-        logits = self.forward(
-            tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
-            input_pos=(
-                torch.tensor([pos_base], dtype=torch.long, device=self.device)
-                if self.use_kv_cache
-                else None
-            ),
-        )
+        logits = self._prefill_chunk(prompt_tokens, pos_base)
         prefill_time = time.time() - prefill_start
 
         current_token = next_token(logits, temperature, top_p)
