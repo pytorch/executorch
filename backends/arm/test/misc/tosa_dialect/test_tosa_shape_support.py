@@ -72,6 +72,20 @@ def test_shape_extension_does_not_accept_unsupported_static_op():
     assert "Not included in BaseTOSASupportList" in reporter.get_table_report()
 
 
+def test_registered_custom_op_overrides_tosa_support_checks():
+    inputs = (torch.randn(2, 3), torch.randn(2, 3))
+    exported_program = _exported_program(Atan2(), inputs)
+    partitioner = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP"))
+    partitioner.register_custom_partition_op(torch.ops.aten.atan2.default)
+
+    partition_result = partitioner.partition(exported_program)
+    atan2_node = _find_node(
+        partition_result.tagged_exported_program, exir_ops.edge.aten.atan2.default
+    )
+
+    assert atan2_node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
 def test_shape_extension_accepts_supported_symbolic_tensor_op():
     inputs = (torch.randn(2, 3), torch.randn(2, 3))
     batch = Dim("batch", min=1, max=4)
