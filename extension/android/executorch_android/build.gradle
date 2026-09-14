@@ -16,7 +16,11 @@ plugins {
 
 spotless {
     kotlin {
-        target '**/*.kt', '../../java/src/main/java/**/*.kt'
+        // Scoped to this module's sources only: Spotless refuses targets
+        // outside the project directory ("All target files must be within
+        // the project dir"), so the shared sources in extension/java cannot
+        // be listed here. They are kept ktfmt-clean per extension/java/README.md.
+        target '**/*.kt'
         ktfmt()
     }
 }

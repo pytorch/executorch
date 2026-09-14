@@ -21,8 +21,13 @@ package org.pytorch.executorch
  *
  * The shared source set itself contains no [Log] definition, so there is exactly one implementation
  * per artifact and no duplicate-class collision.
+ *
+ * Note: this is public (not `internal`) because the shared sources are compiled by several Buck
+ * targets (executorch, executorch_llama, executorch_training), and `internal` visibility is scoped
+ * to a single Kotlin compilation module — a shared source in another target calling [Log] would
+ * fail to compile. It is nevertheless an implementation detail and not part of the public API.
  */
-internal object Log {
+object Log {
   @JvmStatic fun v(tag: String, msg: String): Int = android.util.Log.v(tag, msg)
 
   @JvmStatic fun d(tag: String, msg: String): Int = android.util.Log.d(tag, msg)

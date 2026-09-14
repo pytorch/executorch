@@ -35,8 +35,14 @@ referencing this directory as an additional source root:
 
 ## Adding a source here
 
-Gradle (`extension/android/executorch_android/build.gradle`) globs this whole
-directory, but `extension/android/BUCK` lists each shared file explicitly.
-**Update the matching BUCK target's `srcs` in the same change** whenever you
-add or remove a file here — otherwise the OSS AAR picks it up while the Buck
-build silently omits it.
+Both consumers pick up new files automatically — Gradle
+(`extension/android/executorch_android/build.gradle`) globs this directory via
+`java.srcDirs`, and the Buck side globs it via the filegroups in
+`extension/java/BUCK` (`core_sources`, `training_sources`, `llm_sources`), so
+no per-file lists need updating. Keep every file ktfmt-formatted (the Android
+module's Spotless cannot target this directory — Spotless requires all target
+files to live under the module's project dir).
+
+The ASR (`extension/asr/`) sources and the Android-only `ImageProcessor` are
+Gradle/AAR-only today and intentionally have no Buck targets, matching the
+pre-move state; add Buck targets for them when an internal build needs them.
