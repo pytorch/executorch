@@ -28,7 +28,7 @@ not imply that every backend or configuration is supported.
 |---|---|---|
 | Text generation | [Llama](models/llama/), [Qwen3.5](models/qwen3_5/), [Qwen3.5 MoE](models/qwen3_5_moe/), [Gemma 4 31B](models/gemma4_31b/) | Released; consult each backend matrix |
 | Multimodal generation | [Gemma 4](models/gemma4/), [Voxtral](models/voxtral/) | Released |
-| Streaming speech recognition | [Voxtral Realtime](models/voxtral_realtime/), [Parakeet](models/parakeet/) | Released |
+| Speech recognition | [Voxtral Realtime](models/voxtral_realtime/) (streaming), [Parakeet](models/parakeet/) (offline) | Released |
 | Speaker and speech detection | [Sortformer](models/sortformer/), [Silero VAD](models/silero_vad/) | Released |
 | Text-to-speech | [Voxtral TTS](models/voxtral_tts/), [Supertonic](models/supertonic/) | Voxtral TTS released; Supertonic is on main/nightly |
 | Computer vision | [DINOv2](models/dinov2/), [EfficientSAM](models/efficient_sam/), [YOLO26](models/yolo26/) | Model-specific |

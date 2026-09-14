@@ -86,7 +86,7 @@ pip install executorch
 Install a nightly built from `main` to use the newest features:
 
 ```bash
-pip install --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install --upgrade --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
 `torch` is explicit because nightly ExecuTorch wheels do not declare it as a

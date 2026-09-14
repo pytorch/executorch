@@ -59,7 +59,7 @@ Copy these three files into an empty folder and follow along. No prior CMake kno
 **1. Install, and make a model file.**
 
 ```
-pip install --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install --upgrade --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
 `torch` is installed explicitly because nightly ExecuTorch wheels do not declare

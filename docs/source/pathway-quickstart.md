@@ -140,7 +140,7 @@ performance validation in the target application.
 * - Run from C++
   - See {doc}`extension-module` for the high-level `Module` API
 * - Export an LLM
-  - `python -m extension.llm.export.export_llm --config path/to/config.yaml`;
+  - `python -m executorch.extension.llm.export.export_llm --config path/to/config.yaml`;
     see {doc}`llm/export-llm`
 ```
 

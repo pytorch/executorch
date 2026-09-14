@@ -28,7 +28,7 @@ build instead. Nightly wheels are built from the `main` branch every day, so a
 change that has landed but is not yet in a stable release is available there first.
 
 ```
-pip install --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install --upgrade --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
 `torch` is explicit because nightly ExecuTorch wheels do not declare it as a
@@ -210,7 +210,7 @@ On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
 libraries with headers and a CMake package, so there is nothing to build:
 
 ```
-pip install --pre executorch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install --upgrade --pre executorch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
 ```cmake

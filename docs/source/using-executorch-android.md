@@ -150,17 +150,16 @@ Now you can compile your app with the ExecuTorch Android library.
 
 is a helper script to build the Java library, native library, and packaged AAR.
 Install JDK 17, Android SDK Platform 34, and Android NDK r28c (the version used
-in ExecuTorch CI). Set `ANDROID_HOME` or `ANDROID_SDK_ROOT` to the SDK and
+in ExecuTorch CI). Set `ANDROID_SDK` to the SDK and
 `ANDROID_NDK` to the NDK root (the directory containing `NOTICE`).
 
 ```sh
-export ANDROID_HOME=/path/to/android/sdk
+export ANDROID_SDK=/path/to/android/sdk
 export ANDROID_NDK=/path/to/android/sdk/ndk/28.2.13676358
 ./scripts/build_android_library.sh
 ```
 
-The build script also accepts `ANDROID_SDK` for backward compatibility; it
-takes precedence when more than one SDK variable is set.
+The build script passes `ANDROID_SDK` to Gradle as `ANDROID_HOME`.
 
 NOTE: Currently, XNNPACK backend is always built with the script.
 

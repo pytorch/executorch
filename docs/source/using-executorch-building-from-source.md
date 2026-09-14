@@ -377,7 +377,7 @@ OutputX 0: tensor(sizes=[1, 1000], [
 With the NDK installed, the `build_android_library.sh` script will build the ExecuTorch Java AAR, which contains ExecuTorch Java bindings. See [Using the AAR File](using-executorch-android.md#using-aar-file) for usage.
 
 ```bash
-export ANDROID_HOME=/path/to/android/sdk
+export ANDROID_SDK=/path/to/android/sdk
 export ANDROID_NDK=/path/to/android/sdk/ndk/28.2.13676358
 export ANDROID_ABIS=arm64-v8a
 export BUILD_AAR_DIR=aar-out
@@ -385,10 +385,8 @@ mkdir -p "$BUILD_AAR_DIR"
 ./scripts/build_android_library.sh
 ```
 
-`ANDROID_SDK_ROOT` can be used instead of `ANDROID_HOME`. The build script also
-accepts `ANDROID_SDK` for backward compatibility; it takes precedence when
-more than one SDK variable is set. The resulting AAR is
-`aar-out/executorch.aar`.
+The build script passes `ANDROID_SDK` to Gradle as `ANDROID_HOME`. The resulting
+AAR is `aar-out/executorch.aar`.
 
 ### Android Native
 
