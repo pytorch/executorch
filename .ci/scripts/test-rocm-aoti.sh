@@ -9,8 +9,8 @@ set -euo pipefail
 
 ROCM_VERSION="${ROCM_VERSION:-7.2}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
-PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
-TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
+PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/rocm${ROCM_VERSION}}"
+TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/rocm${ROCM_VERSION}}"
 ROCM_CI_TMP_ROOT="${RUNNER_TEMP:-/tmp}"
 mkdir -p "${ROCM_CI_TMP_ROOT}" 2>/dev/null || ROCM_CI_TMP_ROOT=/tmp
 ROCM_CI_TMPDIR="$(mktemp -d "${ROCM_CI_TMP_ROOT}/executorch-rocm-ci.XXXXXX")"
