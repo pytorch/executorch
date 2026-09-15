@@ -6,7 +6,9 @@
 
 # pyre-unsafe
 
+import itertools
 import logging
+import re
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
@@ -104,6 +106,7 @@ def is_constant_buffer(program: "ExportedProgram", node: torch.fx.Node) -> bool:
 
 def get_constant_placeholder_dict(
     exported_program: ExportedProgram,
+    fold_buffers: bool = True,
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
     """
     Returns a dictionary of placeholder node -> constant tensor.
@@ -114,7 +117,7 @@ def get_constant_placeholder_dict(
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_param(exported_program, node)
             )
-        elif is_constant_buffer(exported_program, node):
+        elif fold_buffers and is_constant_buffer(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_buffer(exported_program, node)
             )
@@ -128,12 +131,13 @@ def get_constant_placeholder_dict(
 def get_propagated_const_tensor_dict(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]],
+    fold_buffers: bool = True,
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
     """
     Propagates constants and returns a dictionary of node->constant tensors.
     """
     # Initialize dict with all constant placeholders.
-    const_node_to_tensor = get_constant_placeholder_dict(exported_program)
+    const_node_to_tensor = get_constant_placeholder_dict(exported_program, fold_buffers)
 
     if custom_skip_targets is not None:
         all_skip_targets = custom_skip_targets
@@ -181,7 +185,21 @@ def get_propagated_const_tensor_dict(
                 and 0 in prop_constant_tensor.stride()
             ):
                 prop_constant_tensor = prop_constant_tensor.contiguous()
-        const_node_to_tensor[node] = prop_constant_tensor
+
+        # Only a tensor can become a constant placeholder. A Python scalar,
+        # such as the float from aten.item before decomposition, stays an op
+        # and its consumers are not folded.
+        leaves = pytree.tree_leaves(prop_constant_tensor)
+        if not leaves or not all(isinstance(leaf, torch.Tensor) for leaf in leaves):
+            continue
+        # Before decomposition a view op such as aten.t returns a view of the
+        # parameter, and a view keeps requires_grad even under no_grad. A
+        # later retrace clones such a constant outside no_grad, which leaves
+        # a non-leaf tensor that cannot be deep-copied. Detach so the
+        # constant is a plain leaf.
+        const_node_to_tensor[node] = pytree.tree_map(
+            lambda leaf: leaf.detach(), prop_constant_tensor
+        )
 
     return const_node_to_tensor
 
@@ -199,41 +217,118 @@ def get_first_user_input(exported_program: ExportedProgram) -> torch.fx.Node:
     return first_user_input
 
 
+def _source_placeholders(
+    exported_program: ExportedProgram, node: torch.fx.Node
+) -> list[torch.fx.Node]:
+    """Returns the placeholders `node` is computed from, in graph order."""
+    seen: set[torch.fx.Node] = set()
+    stack = [node]
+    while stack:
+        for input_node in stack.pop().all_input_nodes:
+            if input_node not in seen:
+                seen.add(input_node)
+                if input_node.op != "placeholder":
+                    stack.append(input_node)
+    return [
+        placeholder
+        for placeholder in exported_program.graph.find_nodes(op="placeholder")
+        if placeholder in seen
+    ]
+
+
+def _source_spec(
+    exported_program: ExportedProgram, source: Optional[torch.fx.Node]
+) -> tuple[Optional[str], InputKind]:
+    """Returns the fully qualified name and the kind of a source placeholder."""
+    signature = exported_program.graph_signature
+    if source is not None:
+        for mapping, kind in (
+            (signature.inputs_to_parameters, InputKind.PARAMETER),
+            (signature.inputs_to_buffers, InputKind.BUFFER),
+            (signature.inputs_to_lifted_tensor_constants, InputKind.CONSTANT_TENSOR),
+        ):
+            if source.name in mapping:
+                return mapping[source.name], kind
+    return None, InputKind.CONSTANT_TENSOR
+
+
+def _folded_name(exported_program: ExportedProgram, source_fqn: Optional[str]) -> str:
+    """
+    Returns the fully qualified name for a folded value.
+
+    The name derives from the source placeholder, `w_prop` for a value computed
+    from the parameter `w`, so that it is the same in every method and export
+    that folds the same expression, and so that a tag function keyed on the
+    name (the lora / foundation split for external weights) routes the folded
+    value with its source. A value with no source placeholder falls back to
+    `_prop_tensor_constant{N}`.
+    """
+    signature = exported_program.graph_signature
+    taken = (
+        set(exported_program.constants)
+        | set(exported_program.state_dict)
+        | set(signature.inputs_to_parameters.values())
+        | set(signature.inputs_to_buffers.values())
+        | set(signature.inputs_to_lifted_tensor_constants.values())
+    )
+    if source_fqn is not None:
+        candidates = itertools.chain(
+            [f"{source_fqn}_prop"],
+            (f"{source_fqn}_prop{i}" for i in itertools.count(1)),
+        )
+    else:
+        candidates = (f"_prop_tensor_constant{i}" for i in itertools.count())
+    return next(fqn for fqn in candidates if fqn not in taken)
+
+
 def replace_with_constant_node(
     node: torch.fx.Node,
     prop_constant_tensor: torch.Tensor,
     first_user_input: torch.fx.Node,
     fake_mode,
     exported_program: ExportedProgram,
-) -> tuple[torch.fx.Node, str]:
-    # Add `prop_constant_tensor` to program.state_dict.
-    prefix = "_prop_tensor_constant"
-    prop_constant_tensor_fqn = f"{prefix}{len(exported_program.constants)}"
-    # If prop_constant_tensor_fqn already exists in the state dict, we need
-    # to create a new name. Find the largest suffix of "_prop_tensor_constant",
-    # and increment it by 1 to form the new name.
-    if prop_constant_tensor_fqn in exported_program.constants:
-        suffix = 1 + max(
-            (
-                int(name[len(prefix) :])
-                for name in exported_program.constants.keys()
-                if name.startswith(prefix) and name[len(prefix) :].isdigit()
-            ),
-            default=-1,
+) -> tuple[torch.fx.Node, InputSpec]:
+    sources = _source_placeholders(exported_program, node)
+    source = sources[0] if sources else None
+    source_fqn, kind = _source_spec(exported_program, source)
+    fqn = _folded_name(exported_program, source_fqn)
+
+    # Register the value like its source. torch.export carries the meta of
+    # parameters and buffers through run_decompositions, but rebuilds lifted
+    # tensor constants without it, so a parameter's fold lifted as a constant
+    # would lose the source's custom meta at the next decomposition.
+    if kind == InputKind.PARAMETER:
+        exported_program.state_dict[fqn] = torch.nn.Parameter(
+            prop_constant_tensor, requires_grad=False
         )
-        prop_constant_tensor_fqn = f"{prefix}{suffix}"
+    elif kind == InputKind.BUFFER:
+        exported_program.state_dict[fqn] = prop_constant_tensor
+    else:
+        exported_program.constants[fqn] = prop_constant_tensor
 
-    exported_program.constants[prop_constant_tensor_fqn] = prop_constant_tensor
-
-    # Insert a new placeholder node for the propagated constant tensor.
-    with exported_program.graph.inserting_before(first_user_input):
+    # Insert a new placeholder node for the folded value, next to its source
+    # so that the placeholders stay grouped by kind.
+    insert = (
+        exported_program.graph.inserting_after(source)
+        if source is not None
+        else exported_program.graph.inserting_before(first_user_input)
+    )
+    with insert:
         const_placeholder_node = exported_program.graph.placeholder(
-            prop_constant_tensor_fqn
+            re.sub(r"[^0-9a-zA-Z_]+", "_", fqn)
         )
+    # The graph signature and the emitter look a placeholder up by its node
+    # name, so the target has to be the name the graph settled on.
+    const_placeholder_node.target = const_placeholder_node.name
 
-    # Update the meta data of the new placeholder (buffer) node.
+    # Update the meta data of the new placeholder node.
     for k, v in node.meta.items():
         const_placeholder_node.meta[k] = v
+    # The custom meta of the source placeholder, such as the external file a
+    # weight is tagged for, describes the data. Carry it forward from the
+    # source rather than from the arithmetic node.
+    if source is not None and "custom" in source.meta:
+        const_placeholder_node.meta["custom"] = dict(source.meta["custom"])
     const_placeholder_node.meta["val"] = fake_mode.from_tensor(
         prop_constant_tensor, static_shapes=True
     )
@@ -243,7 +338,13 @@ def replace_with_constant_node(
     node.replace_all_uses_with(const_placeholder_node)
     exported_program.graph.erase_node(node)
 
-    return const_placeholder_node, prop_constant_tensor_fqn
+    spec = InputSpec(
+        kind=kind,
+        arg=TensorArgument(name=const_placeholder_node.name),
+        target=fqn,
+        persistent=None if kind == InputKind.PARAMETER else True,
+    )
+    return const_placeholder_node, spec
 
 
 def get_fake_mode(exported_program: ExportedProgram):
@@ -298,17 +399,10 @@ def create_constant_nodes_and_return_specs(
         if node.op == "placeholder":
             continue
 
-        const_placeholder_node, prop_constant_tensor_fqn = replace_with_constant_node(
+        const_placeholder_node, spec = replace_with_constant_node(
             node, prop_constant_tensor, first_user_input, fake_mode, exported_program
         )
-
-        # Create input spec for lifted constant.
-        name_to_spec_dict[const_placeholder_node.name] = InputSpec(
-            kind=InputKind.CONSTANT_TENSOR,
-            arg=TensorArgument(name=const_placeholder_node.name),
-            target=prop_constant_tensor_fqn,
-            persistent=True,
-        )
+        name_to_spec_dict[const_placeholder_node.name] = spec
     return name_to_spec_dict
 
 
@@ -355,14 +449,24 @@ def constant_prop_pass(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]] = None,
     _skip_dim_order: bool = True,
+    fold_buffers: bool = True,
 ) -> ExportedProgram:
     """
     This pass is for constant propagation for Exported Program with lifted parameters,
     as the parameters will not be shown up as `get_attr` but as `placeholder` to the graph.
 
+    A folded value is registered like the first placeholder it is computed from,
+    under the name `{source}_prop` and with the source's custom meta: a parameter's
+    fold is a parameter, a buffer's a buffer, a lifted tensor constant's a lifted
+    tensor constant.
+
     Args:
         exported_program: The ExportedProgram to perform constant propagation on.
         custom_skip_targets: Optional set of EdgeOpOverload targets to skip during constant propagation.
+        fold_buffers: Whether buffers this program does not mutate count as constants.
+            The pass sees one method: a buffer this method only reads can be written
+            by another method of the same program. Pass False to fold only parameters
+            and lifted tensor constants.
 
     Returns:
         The modified ExportedProgram with constant propagation applied.
@@ -384,7 +488,7 @@ def constant_prop_pass(
         )
 
     const_node_to_tensor = get_propagated_const_tensor_dict(
-        exported_program, custom_skip_targets
+        exported_program, custom_skip_targets, fold_buffers
     )
 
     # Get old input specs.

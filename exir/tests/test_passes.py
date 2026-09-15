@@ -1613,8 +1613,9 @@ class TestPasses(unittest.TestCase):
             edge.exported_program("forward"), _skip_dim_order=False
         )
 
-        # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.
-        FileCheck().check_not("c_lifted_tensor_").check("_prop_tensor_constant").run(
+        # Check (c_lifted_tensor_*) nodes are all replaced by a prop tensor
+        # named after the first lifted tensor.
+        FileCheck().check_not("c_lifted_tensor_").check("lifted_tensor_0_prop").run(
             edge.exported_program().graph_module.code
         )
         # Validate that the program successfully passes validation to executorch:
@@ -1678,13 +1679,16 @@ class TestPasses(unittest.TestCase):
 
         new_ep = constant_prop_pass(exported_program)
 
-        # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
-        FileCheck().check_not("_lifted_tensor_constant").check(
-            "_prop_tensor_constant0"
-        ).check_not(
+        # Check (_lifted_tensor_constant + to_copy) node is replaced by a prop
+        # tensor named after the lifted constant.
+        FileCheck().check("_lifted_tensor_constant0_prop").check_not(
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
-        ).run(
-            new_ep.graph_module.code
+        ).run(new_ep.graph_module.code)
+        # lift_constant_tensor_pass registers the scalar as a buffer, and so
+        # is its fold.
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_buffers.values()),
+            ["_lifted_tensor_constant0_prop"],
         )
 
     def test_pass_no_user_inputs(self) -> None:
@@ -1759,16 +1763,16 @@ class TestPasses(unittest.TestCase):
         # (1) parameter `a` and (2) user input `x`.
         self.assertEqual(len(aten.graph_signature.input_specs), 2)
         new_ep = constant_prop_pass(aten)
-        # Check that there are exactly two propagated tensors - (1) propagated
-        # constant and (2) user input.
+        # Check that there are exactly two inputs - (1) the propagated value,
+        # a parameter named after `a` and (2) user input.
         self.assertEqual(
             new_ep.graph_signature.input_specs,
             [
                 InputSpec(
-                    kind=InputKind.CONSTANT_TENSOR,
-                    arg=TensorArgument(name="_prop_tensor_constant0"),
-                    target="_prop_tensor_constant0",
-                    persistent=True,
+                    kind=InputKind.PARAMETER,
+                    arg=TensorArgument(name="a_prop"),
+                    target="a_prop",
+                    persistent=None,
                 ),
                 # User input graph signature.
                 aten.graph_signature.input_specs[-1],
@@ -1866,9 +1870,9 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(count_slice(aten.graph_module), 1)
 
         new_ep = constant_prop_pass(aten)
-        # Check there is a propagated tensor.
-        FileCheck().check("_prop_tensor_constant0").run(aten.graph_module.code)
-        self.assertIn("_prop_tensor_constant0", new_ep.constants)
+        # Check there is a propagated tensor, a parameter named after `a`.
+        FileCheck().check("a_prop").run(aten.graph_module.code)
+        self.assertIn("a_prop", new_ep.state_dict)
         self.assertNotIn("a", new_ep.state_dict)
         # No more slice copy.
         self.assertEqual(count_slice(new_ep.graph_module), 0)
@@ -1943,7 +1947,7 @@ class TestPasses(unittest.TestCase):
 
         # dtype casts in parent module are const propagated
         FileCheck().check(
-            "executorch_exir_dialects_edge__ops_aten_mm_default(x, _prop_tensor_constant"
+            "executorch_exir_dialects_edge__ops_aten_mm_default(x, w_prop"
         ).run(program.graph_module.code)
 
     def test_constant_prop_pass_quant_primitives(self) -> None:
@@ -2500,6 +2504,129 @@ class TestPasses(unittest.TestCase):
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
 
+    def test_constant_prop_pass_keeps_non_tensor_results(self) -> None:
+        """
+        aten.item yields a Python float. Before decomposition its consumer
+        takes that float directly, so there is no tensor to lift: the op and
+        its consumer have to stay in the graph.
+        """
+
+        class ScaleByItem(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.scale = torch.nn.Parameter(torch.tensor(2.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x * self.scale.item()
+
+        x = torch.ones(4)
+        new_ep = constant_prop_pass(export(ScaleByItem(), (x,), strict=True))
+
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertIn(torch.ops.aten.item.default, targets)
+        self.assertEqual(len(new_ep.constants), 0)
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_parameters.values()), ["scale"]
+        )
+        self.assertTrue(torch.equal(new_ep.module()(x), x * 2))
+
+    def test_constant_prop_pass_fold_buffers_false(self) -> None:
+        """
+        A buffer this program only reads can be written by another method of
+        the same program, which the pass cannot see. With fold_buffers=False
+        only parameters and lifted constants seed the fold.
+        """
+
+        class ParamAndBuffer(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.ones(4))
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.weight * 2 + self.state.sum()
+
+        x = torch.zeros(4)
+        new_ep = constant_prop_pass(
+            export(ParamAndBuffer(), (x,), strict=True), fold_buffers=False
+        )
+
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertNotIn(torch.ops.aten.mul.Tensor, targets)
+        self.assertIn(torch.ops.aten.sum.default, targets)
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_parameters.values()),
+            ["weight_prop"],
+        )
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_buffers.values()), ["state"]
+        )
+        self.assertEqual(len(new_ep.constants), 0)
+        self.assertTrue(torch.equal(new_ep.module()(x), x + 2))
+
+    def test_constant_prop_pass_registers_fold_like_its_source(self) -> None:
+        """
+        A folded value takes the name, the kind and the custom meta of the
+        placeholder it is computed from. Before decomposition aten.t returns
+        a view of the parameter, which keeps requires_grad: the registered
+        value has to be a detached leaf.
+        """
+
+        class MatmulT(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(3, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x @ self.w.t() + x @ (self.w * 2).t()
+
+        x = torch.randn(2, 4)
+        ep = export(MatmulT(), (x,), strict=True)
+        expected = ep.module()(x)
+        ep.graph.find_nodes(op="placeholder", target="p_w")[0].meta["custom"] = {
+            "delegate_constant_tag": "w.ptd"
+        }
+
+        new_ep = constant_prop_pass(ep)
+        new_ep._validate()
+
+        self.assertEqual(
+            set(new_ep.graph_signature.inputs_to_parameters.values()),
+            {"w_prop", "w_prop1"},
+        )
+        self.assertNotIn("w", new_ep.state_dict)
+        self.assertEqual(len(new_ep.constants), 0)
+        for name in ("w_prop", "w_prop1"):
+            folded = new_ep.state_dict[name]
+            self.assertIsInstance(folded, torch.nn.Parameter)
+            self.assertFalse(folded.requires_grad)
+            self.assertTrue(folded.is_leaf)
+        for node in new_ep.graph.find_nodes(op="placeholder"):
+            if node.name != "x":
+                self.assertEqual(
+                    node.meta["custom"], {"delegate_constant_tag": "w.ptd"}
+                )
+        self.assertTrue(torch.allclose(new_ep.module()(x), expected))
+
+    def test_constant_prop_pass_registers_buffer_fold_as_buffer(self) -> None:
+        class ScaledBuffer(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("scale", torch.tensor([1.0, 2.0]))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x * (self.scale * 2)
+
+        x = torch.ones(2)
+        new_ep = constant_prop_pass(export(ScaledBuffer(), (x,), strict=True))
+        new_ep._validate()
+
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_buffers.values()), ["scale_prop"]
+        )
+        self.assertEqual(len(new_ep.constants), 0)
+        self.assertTrue(torch.equal(new_ep.module()(x), torch.tensor([2.0, 4.0])))
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides
@@ -2538,14 +2665,8 @@ class TestPasses(unittest.TestCase):
 
         # Should go through
         lowered.to_executorch(get_xnnpack_executorch_backend_config([SpecPropPass()]))
-        self.assertGreater(len(const_prop_result.constants), 0)
-
-        # Find the propagated constant tensor
-        prop_tensor = None
-        for constant_name, constant_tensor in const_prop_result.constants.items():
-            if constant_name.startswith("_prop_tensor_constant"):
-                prop_tensor = constant_tensor
-                break
+        # The propagated tensor is a parameter named after its source.
+        prop_tensor = const_prop_result.state_dict.get("const_param_prop")
 
         # Verify the propagated tensor exists and has no zero strides
         self.assertIsNotNone(prop_tensor)
