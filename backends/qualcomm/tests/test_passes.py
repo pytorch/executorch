@@ -15,11 +15,17 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
+from executorch.backends.qualcomm.builders.node_visitor import (
+    NodeVisitor,
+    to_dq_op,
+    to_q_op,
+)
 from executorch.backends.qualcomm.builders.op_custom_op import (
     _resolve_qnn_data_type,
     CustomOp,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
@@ -33,6 +39,12 @@ from executorch.backends.qualcomm.tests.models import (
     HardSigmoid,
     Reciprocal,
     TopKandIndex,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_ENCODING,
+    QCOM_QUANT_ATTRS,
+    QCOM_SCALE,
+    QCOM_ZERO_POINTS,
 )
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -211,6 +223,100 @@ class TestPasses(unittest.TestCase):
         # AddModule with one input and one output should insert exactly
         # one quantize (input) and one dequantize (output) = +2 nodes.
         self.assertEqual(node_count_after, node_count_before + 2)
+
+    def test_q_dq_map_pins_per_channel_group_pairs(self):
+        """to_q_op / to_dq_op must map per_channel_group q<->dq to each other.
+
+        ``to_dq_op`` short-circuits for targets already in ``dq_ops``, so the
+        map is only consulted when converting across the pair; a wrong entry
+        here would surface later as an assertion in ``insert_quant_node``.
+        """
+        quantize_per_channel_group = (
+            exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default
+        )
+        dequantize_per_channel_group = (
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+        )
+        self.assertIs(to_q_op(dequantize_per_channel_group), quantize_per_channel_group)
+        self.assertIs(
+            to_dq_op(quantize_per_channel_group), dequantize_per_channel_group
+        )
+        self.assertIs(to_q_op(quantize_per_channel_group), quantize_per_channel_group)
+        self.assertIs(
+            to_dq_op(dequantize_per_channel_group), dequantize_per_channel_group
+        )
+
+    def test_insert_io_qdq_per_channel_group_dequantizes_output(self):
+        """InsertIOQDQ must insert a dequantize_per_channel_group before output.
+
+        A pre-quantized group-wise (e.g. int4 LLM) weight parameter that feeds
+        the graph output takes the dequantize-before-output branch. The
+        insert-quantize-after-input branch is skipped for parameters, so the
+        output branch is the only place the encoding is resolved.
+        """
+        graph_module, exported_program = self._build_quantized_graph()
+
+        parameter_node = next(
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder" and is_parameter(node, exported_program)
+        )
+        output_node = next(
+            node for node in graph_module.graph.nodes if node.op == "output"
+        )
+
+        # Annotate the parameter as a group-wise quantized weight.
+        scales = torch.ones(4, 1)
+        parameter_node.meta[QCOM_QUANT_ATTRS] = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+            QCOM_SCALE: scales,
+            "scales": scales,
+            "zero_points": None,
+            "quant_min": -8,
+            "quant_max": 7,
+            "dtype": torch.int8,
+            "group_size": 1,
+            "output_dtype": torch.float32,
+        }
+
+        existing_outputs = output_node.args[0]
+        if not isinstance(existing_outputs, tuple):
+            existing_outputs = (existing_outputs,)
+        output_node.args = (existing_outputs + (parameter_node,),)
+        graph_module.graph.lint()
+        graph_module.recompile()
+
+        InsertIOQDQ(exported_program)._insert(graph_module)
+
+        dequantize_target = (
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+        )
+        dequantize_nodes_feeding_output = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "call_function"
+            and node.target == dequantize_target
+            and any(user.op == "output" for user in node.users.keys())
+        ]
+        self.assertEqual(len(dequantize_nodes_feeding_output), 1)
+
+    def test_make_qnn_per_block_config_rejects_asymmetric(self):
+        """QNN blockwise expansion is symmetric-only; non-zero zero_points must
+        raise instead of silently lowering to a symmetric encoding."""
+        graph_module, exported_program = self._build_quantized_graph()
+        parameter_node = next(
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder" and is_parameter(node, exported_program)
+        )
+
+        visitor = NodeVisitor({}, exported_program, enable_tensor_dump=False)
+        quant_attrs = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+            QCOM_ZERO_POINTS: torch.tensor([0, 1, 0, 0]),
+        }
+        with self.assertRaisesRegex(ValueError, "symmetric"):
+            visitor.make_qnn_per_block_config(parameter_node, quant_attrs)
 
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):

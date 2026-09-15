@@ -288,6 +288,30 @@ class TestReorderPasses(unittest.TestCase):
             1,
         )
 
+    def test_does_not_advance_quantize_for_half_size_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 0, 0, 4, 2),
+        )
+        quantized = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(sliced, 0.1, 0, -32768, 32767, torch.int16),
+        )
+        builder.output([quantized])
+        graph_module = builder.get_graph_module()
+
+        result = cast(PassResult, AdvanceQuantizeOpAboveDefInBranchPass()(graph_module))
+
+        self.assertTrue(
+            get_node_pos(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor)
+            < get_node_pos(
+                result.graph_module,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            )
+        )
+
     @torch.no_grad()
     def test_advance_quantize(self) -> None:
         builder = GraphBuilder()
