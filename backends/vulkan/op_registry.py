@@ -1412,6 +1412,7 @@ def register_index_select():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
@@ -1507,12 +1508,34 @@ def register_arange():
 # =============================================================================
 
 
+def _check_pad_is_static(node: torch.fx.Node) -> bool:
+    """Only support constant_pad_nd when the pad amounts are static.
+
+    A symbolic pad list is serialized as a VALUELIST rather than an INTLIST, and
+    Pad.cpp reads it with get_int_list(), which throws "Expected value to have
+    type IntList, got VALUELIST instead".
+
+    Supporting it properly is more than swapping in
+    extract_int_or_symint_list(), the way Split.cpp, View.cpp and Expand.cpp
+    read their symbolic lists: add_constant_pad_nd_node() folds the amounts into
+    a per-dim offset and bakes that into a params buffer at BUILD time, so the
+    dispatch would still use stale offsets even if the list were read
+    symbolically. The buffer has to be refreshed on resize first. Decline the
+    node until then.
+    """
+    pad = node.args[1]
+    if not isinstance(pad, (list, tuple)):
+        return False
+    return all(isinstance(p, int) for p in pad)
+
+
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=_check_pad_is_static,
     )
 
 
@@ -1734,6 +1757,22 @@ def register_embedding_q4gsw():
 # =============================================================================
 
 
+def _check_batch_norm_is_4d(node: torch.fx.Node) -> bool:
+    """Only support batch norm on a 4d input.
+
+    add_native_batch_norm_node() asserts
+    VK_CHECK_COND(in_sizes.size() == 4, "BatchNorm only support 4d tensor") on
+    both the input and the output, so partitioning a batch norm whose input is
+    not 4d yields a .pte that lowers cleanly and then aborts at execute time.
+    Any conv1d model reaches here with rank-3 activations.
+    """
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        return False
+    val = input_node.meta.get("val")
+    return val is not None and val.dim() == 4
+
+
 @update_features(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
 def register_native_batch_norm_legit_no_training():
     return OpFeatures(
@@ -1741,6 +1780,7 @@ def register_native_batch_norm_legit_no_training():
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
+        are_node_inputs_supported_fn=_check_batch_norm_is_4d,
     )
 
 

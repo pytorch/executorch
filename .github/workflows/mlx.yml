@@ -853,7 +853,7 @@ jobs:
 
   # DFlash speculative decoding: target and draft exported as two methods of one
   # .pte. Also the only coverage that the constants the export publishes
-  # (get_max_ctx_len / get_prefill_chunk_size / get_max_block_len /
+  # (get_max_context_len / get_max_seq_len / get_max_block_len /
   # get_mask_token_id) match what
   # the runner derives from them -- the runner takes no capacity or block flags.
   test-mlx-dflash:
@@ -919,7 +919,7 @@ jobs:
         BLOCK_SIZE=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).block_size)")
         MASK_TOKEN_ID=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).mask_token_id)")
         echo "draft checkpoint block_size: ${BLOCK_SIZE} mask_token_id: ${MASK_TOKEN_ID}"
-        ${CONDA_RUN} python -c "from executorch.runtime import Runtime, Verification; from executorch.backends.mlx.examples.llm.runtime_meta import read_const_int as r; p = Runtime.get().load_program('${PTE}', verification=Verification.Minimal); got = {n: r(p, n) for n in ['get_max_ctx_len', 'get_prefill_chunk_size', 'get_max_block_len', 'get_mask_token_id']}; want = {'get_max_ctx_len': ${MAX_CTX_LEN}, 'get_prefill_chunk_size': ${PREFILL_CHUNK_SIZE}, 'get_max_block_len': ${BLOCK_SIZE}, 'get_mask_token_id': ${MASK_TOKEN_ID}}; print('published:', got); assert got == want, f'mismatch: {got} != {want}'; assert {'draft', 'target'} <= set(p.method_names), p.method_names; print('Success: constants match and both methods present')"
+        ${CONDA_RUN} python -c "from executorch.runtime import Runtime, Verification; from executorch.backends.mlx.examples.llm.runtime_meta import read_const_int as r; p = Runtime.get().load_program('${PTE}', verification=Verification.Minimal); got = {n: r(p, n) for n in ['get_max_context_len', 'get_max_seq_len', 'get_max_block_len', 'get_mask_token_id']}; want = {'get_max_context_len': ${MAX_CTX_LEN}, 'get_max_seq_len': ${PREFILL_CHUNK_SIZE}, 'get_max_block_len': ${BLOCK_SIZE}, 'get_mask_token_id': ${MASK_TOKEN_ID}}; print('published:', got); assert got == want, f'mismatch: {got} != {want}'; assert {'draft', 'target'} <= set(p.method_names), p.method_names; print('Success: constants match and both methods present')"
         echo "::endgroup::"
 
         echo "::group::Run DFlash speculative decoding"
@@ -1037,10 +1037,13 @@ jobs:
         ${CONDA_RUN} cmake --build cmake-out/backends/mlx/examples/llm \
           -j$(( $(sysctl -n hw.ncpu) - 1 ))
         RUNNER=cmake-out/backends/mlx/examples/llm/mlx_run_llm_hf
-        if [ ! -x "${RUNNER}" ]; then
-          echo "Failed: runner not found at ${RUNNER}"
-          exit 1
-        fi
+        BATCHED_RUNNER=cmake-out/backends/mlx/examples/llm/mlx_run_llm_batched
+        for binary in "${RUNNER}" "${BATCHED_RUNNER}"; do
+          if [ ! -x "${binary}" ]; then
+            echo "Failed: runner not found at ${binary}"
+            exit 1
+          fi
+        done
         echo "::endgroup::"
 
         echo "::group::Install LLM requirements"
@@ -1061,6 +1064,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}_offgraph.pte \
           --use-offgraph-cache \
+          --logits-to-keep selected \
           --max-ctx-len 1024 \
           --dtype bf16 \
           --qlinear 4w
@@ -1084,4 +1088,29 @@ jobs:
           echo "Failed: Expected 'Paris' not found in output"
           exit 1
         fi
+        echo "::endgroup::"
+
+        echo "::group::Run ${MODEL_NAME} batched off-graph inference"
+        ${BATCHED_RUNNER} \
+          --pte /tmp/${MODEL_NAME}_offgraph.pte \
+          --tokenizer "${TOKENIZER}" \
+          --chat "${CHAT}" \
+          --max-session-tokens 1024 \
+          --max-new-tokens 50 \
+          --max-decode-sequences 2 \
+          --out-prefix /tmp/${MODEL_NAME}_batched \
+          "What is the capital of France?" \
+          "What color is grass?"
+        for check in "0:Paris" "1:green"; do
+          index="${check%%:*}"
+          expected="${check#*:}"
+          output="/tmp/${MODEL_NAME}_batched_${index}.txt"
+          if grep -iq "${expected}" "${output}"; then
+            echo "Success: '${expected}' found in ${output}"
+          else
+            echo "Failed: Expected '${expected}' not found in ${output}"
+            cat "${output}"
+            exit 1
+          fi
+        done
         echo "::endgroup::"

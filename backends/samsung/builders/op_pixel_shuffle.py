@@ -25,7 +25,7 @@ class PixelShuffleVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
 
         scale_factor = cast(int, node.args[1])
@@ -36,3 +36,5 @@ class PixelShuffleVisitor(NodeVisitor):
         enn_graph.define_op(
             node.name, "DEPTH_TO_SPACE", [input_id], [output_id], params
         )
+
+        return True

@@ -8598,14 +8598,14 @@ class UpdateAndAttendTest(OpTestCase):
         # an oracle cache installed for its duration.
         from executorch.extension.llm.cache.reference_cache import (
             CacheConfig,
-            ContiguousReferenceCache,
+            SequenceReferenceCache,
         )
         from executorch.extension.llm.cache.update_and_attend import REGISTRY
 
         key = f"{self.name}-oracle"
         REGISTRY.install(
             key,
-            ContiguousReferenceCache(
+            SequenceReferenceCache(
                 CacheConfig(
                     n_layers=self.n_layers,
                     n_kv_heads=self.n_kv_heads,

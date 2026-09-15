@@ -17,6 +17,7 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
 )
 from executorch.backends.arm.test.runner_utils import TosaReferenceModelDispatch
+from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
@@ -75,7 +76,7 @@ def _shape_spec() -> TosaSpecification:
 
 
 def _serializer() -> ts.TosaSerializer:
-    return ts.TosaSerializer(
+    return TosaSerializerWithConstantPool(
         "",
         targetMajor=1,
         targetMinor=1,
@@ -287,6 +288,22 @@ def test_const_shape_node_visitor_serializes_const_operator() -> None:
     )
 
     assert _serialized_op_codes(tosa_graph) == [ts.Op.CONST_SHAPE]
+
+
+def test_const_shape_node_visitor_preserves_output_name() -> None:
+    visitor = get_node_visitors(_shape_spec())["tosa.CONST_SHAPE.default"]
+    tosa_graph = _serializer()
+    tosa_graph.addConst([2], ts.DType.SHAPE, [2, 3], name="helper")
+
+    _define_node(
+        visitor,
+        SimpleNamespace(name="node", meta={"val": [2, 3]}, kwargs={}),
+        tosa_graph,
+        [SimpleNamespace(special=[2, 3])],
+        SimpleNamespace(name="output", shape=(2,)),
+    )
+
+    assert list(tosa_graph.currRegion.currBasicBlock.shapes) == ["helper", "output"]
 
 
 def test_dim_shape_node_visitor_serializes_operator() -> None:

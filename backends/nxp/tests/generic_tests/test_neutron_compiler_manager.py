@@ -10,7 +10,7 @@ from executorch.backends.nxp.backend.neutron_compiler_manager import (
     NeutronCompilerManager,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.models import LinearModule
+from executorch.backends.nxp.tests.simple_models import LinearModule
 
 
 def test_conv2d_neutron_conversion__prefetching(mocker):

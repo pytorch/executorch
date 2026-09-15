@@ -23,6 +23,7 @@
 #include <executorch/extension/llm/batching/executor.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
@@ -63,7 +64,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
       int max_session_tokens,
       int kv_dtype,
       int initial_capacity = -1,
-      std::string cache_kind = cache::kind::kBatchedCell,
+      std::string cache_kind = cache::kind::kBatched,
       std::string method = "forward");
 
   // The widest step this method takes, from the shape its token input was
@@ -108,7 +109,8 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
       std::string backend_id,
       std::string method,
       std::int32_t vocab_size,
-      int max_step_tokens);
+      int max_step_tokens,
+      LogitsToKeepMode logits_to_keep_mode);
 
   // Draw the token an input produced from its row of `logits`, which the
   // session's sampler consumes in place.
@@ -127,6 +129,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   // The method's logits width, so a sampler can be built by its policy.
   std::int32_t vocab_size_;
   int max_step_tokens_;
+  LogitsToKeepMode logits_to_keep_mode_;
 
   SessionId next_session_ = 1; // never reused, unlike the cache's sequence ids
   std::unordered_map<SessionId, SessionState> sessions_;

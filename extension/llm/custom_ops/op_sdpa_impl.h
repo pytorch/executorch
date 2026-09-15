@@ -62,6 +62,22 @@ struct MaybeQuantizedMatrixData {
         dtype(dtype_) {}
 };
 
+void dequantize_per_channel_optimized(
+    const int8_t* in_data,
+    const float* scales_data,
+    const int8_t* zero_points_data,
+    float* out_data,
+    int64_t quant_min,
+    int64_t quant_max,
+    size_t outer_size,
+    size_t in_outer_stride,
+    size_t out_outer_stride,
+    size_t num_channels,
+    size_t in_channel_stride,
+    size_t out_channel_stride,
+    size_t channel_size,
+    size_t qparams_stride);
+
 template <typename accum_t>
 void _q_at_k_gemm(
     const int64_t q_m,
@@ -81,6 +97,55 @@ void _q_at_k_gemm(
       "q and k must be int8, float, half, or bfloat16");
   if (q_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
+      if (widen_scratch != nullptr) {
+        accum_t* k_f32 = widen_scratch;
+        accum_t* q_f32 = widen_scratch + k_n * qk_k;
+        dequantize_per_channel_optimized(
+            static_cast<const int8_t*>(k_data.data),
+            k_data.scales,
+            k_data.zero_points,
+            k_f32,
+            -128,
+            127,
+            1,
+            0,
+            0,
+            k_n,
+            k_stride_n,
+            qk_k,
+            qk_k,
+            k_data.scales_stride);
+        dequantize_per_channel_optimized(
+            static_cast<const int8_t*>(q_data.data),
+            q_data.scales,
+            q_data.zero_points,
+            q_f32,
+            -128,
+            127,
+            1,
+            0,
+            0,
+            q_m,
+            q_stride_m,
+            qk_k,
+            qk_k,
+            q_data.scales_stride);
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::Transpose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            k_n,
+            q_m,
+            qk_k,
+            static_cast<accum_t>(1),
+            k_f32,
+            qk_k,
+            q_f32,
+            qk_k,
+            static_cast<accum_t>(0),
+            qk_data,
+            k_n);
+        return;
+      }
       int a_stride_m_tmp, b_stride_n_tmp;
       auto kernel = torchao::kernels::cpu::quantized_matmul::
           get_int8_a_int8_b_channelwise_qmatmul(
@@ -940,16 +1005,23 @@ void cpu_flash_attention(
   // Scratch for widening q@K.T to fp32 (see _q_at_k_gemm): one K block plus one
   // q block. qBlockSize cannot exceed qSplitSize, so include the runtime bounds
   // that determine whether any block can use the widened path.
-  const bool widen_qk =
+  const bool widen_reduced_qk =
       std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
       ::executorch::cpublas::gemm_uses_blas() &&
       headSize <= kMaxHeadSizeForWidenedQK &&
       qSplitSize >= kMinQBlockForWidenedQK;
+#if defined(__APPLE__)
+  const bool dequantize_qk = is_quantized_sdpa &&
+      ::executorch::cpublas::gemm_uses_blas() && qSplitSize > 4;
+#else
+  const bool dequantize_qk = false;
+#endif
+  const bool use_qk_conversion_scratch = widen_reduced_qk || dequantize_qk;
   int64_t size_per_thread_widen =
-      widen_qk ? (kvSplitSize + qSplitSize) * headSize : 0;
+      use_qk_conversion_scratch ? (kvSplitSize + qSplitSize) * headSize : 0;
   std::unique_ptr<char[]> allocated_buf_widen;
   accum_t* widen_buf = nullptr;
-  if (widen_qk) {
+  if (use_qk_conversion_scratch) {
     int64_t size_widen_bytes =
         size_per_thread_widen * num_thread * sizeof(accum_t);
     Result<void*> scratch_widen = ctx.allocate_temp(size_widen_bytes, 64);
@@ -1045,11 +1117,17 @@ void cpu_flash_attention(
           is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
-      fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
+      fill_stub(dst_data, static_cast<accum_t>(0), qBlockSize * headSize);
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
-        int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
+        // Only the first num_keys columns are causally attendable; the rest
+        // would be masked to -inf and contribute exactly zero, so clamping
+        // here skips their gemm, softmax and v-multiply. This matters for the
+        // leading query blocks of a prefill, where num_keys is much smaller
+        // than the key-cache extent. Not bit-exact: shortening the reduction
+        // moves the vector-lane partition, so the accumulation order changes.
+        int64_t kvBlockSize = std::min(kvSplitSize, num_keys - n);
         // Calculate scale * q @ k.T
-        fill_stub(qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
+        fill_stub(qk_data, static_cast<accum_t>(0), qBlockSize * kvBlockSize);
 
         const void* q_sub_matrix_data_ptr;
         const void* k_sub_matrix_data_ptr;
@@ -1103,8 +1181,10 @@ void cpu_flash_attention(
             k_sub_matrix_data,
             kStrideN,
             qk_data,
-            (widen_qk && qBlockSize >= kMinQBlockForWidenedQK) ? widen_ptr
-                                                               : nullptr);
+            ((widen_reduced_qk && qBlockSize >= kMinQBlockForWidenedQK) ||
+             (dequantize_qk && qBlockSize > 4))
+                ? widen_ptr
+                : nullptr);
 
         // There are 4 cases that is_causal has to cover to fill
         // not-attendable-position with -inf
@@ -1147,10 +1227,10 @@ void cpu_flash_attention(
         take care of this case because the loop for (int64_t n = 0; n <
         num_keys; n += kvSplitSize) will exit before that.
         */
-        if (is_causal && m_start_pos <= n + kvSplitSize) {
+        if (is_causal && m_start_pos <= n + kvBlockSize) {
           // For this fn to work k_split_size > q_split_size
           for (int32_t row = 0;
-               row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1));
+               row < qBlockSize && (m_start_pos + row < n + (kvBlockSize - 1));
                ++row) {
             // When last_col is 0, it means that the entire row is not attended
             // to because m_pos is smaller than n_pos. So everything in n is for

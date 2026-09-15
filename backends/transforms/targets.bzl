@@ -522,6 +522,30 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "merge_split_concat_chain",
+        srcs = ["merge_split_concat_chain.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            ":permute_pass_utils",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_merge_split_concat_chain",
+        srcs = ["test/test_merge_split_concat_chain.py"],
+        deps = [
+            ":merge_split_concat_chain",
+            "//caffe2:torch",
+            "//executorch/backends/test:graph_builder",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fuse_cascaded_transpose_or_permute_ops",
         srcs = ["fuse_cascaded_transpose_or_permute_ops.py"],
         visibility = [

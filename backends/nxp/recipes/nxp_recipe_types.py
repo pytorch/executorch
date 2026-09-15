@@ -15,6 +15,8 @@ class NXPRecipeType(RecipeType):
     Choose the recipe that matches your intended export configuration:
       - INT8_PTQ_NEUTRON: standard post-training quantization, delegates to Neutron NPU.
       - INT8_PTQ_NO_DELEGATE: PTQ without NPU delegation (useful for debugging or CPU-only deployment).
+      - INT8_QAT_NEUTRON: quantization-aware training, delegates to Neutron NPU.
+      - INT8_QAT_NO_DELEGATE: QAT without NPU delegation (useful for accuracy evaluation).
     """
 
     # INT8 static PTQ (weights + activations). Calibration dataset required.
@@ -24,6 +26,14 @@ class NXPRecipeType(RecipeType):
     # INT8 PTQ without NPU delegation. Produces a quantized graph that runs on CPU.
     # Useful for accuracy evaluation or debugging before enabling delegation.
     INT8_PTQ_NO_DELEGATE = "nxp_int8_ptq_no_delegate"
+
+    # INT8 QAT (weights + activations). A train_fn must be provided in NeutronRecipeConfig.
+    # Applicable operators are delegated to the Neutron NPU.
+    INT8_QAT_NEUTRON = "nxp_int8_qat_neutron"
+
+    # INT8 QAT without NPU delegation. Produces a quantized graph that runs on CPU.
+    # Useful for accuracy evaluation or debugging before enabling delegation.
+    INT8_QAT_NO_DELEGATE = "nxp_int8_qat_no_delegate"
 
     @classmethod
     def get_backend_name(cls) -> str:

@@ -3,12 +3,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import executorch.backends.arm.operator_support.convolution_support  # noqa: F401
+import executorch.backends.arm.operator_support.pool_2d_support  # noqa: F401
+import executorch.backends.arm.operator_support.reduce_sum_support  # noqa: F401
 import executorch.backends.arm.operator_support.sym_size_int_support  # noqa: F401
+import pytest
 import torch
 
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -28,9 +34,58 @@ class Atan2(torch.nn.Module):
         return torch.atan2(x, y)
 
 
+class Conv2d(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 4, 3, padding=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
+class AvgPool2d(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
+
+
+class MeanDim(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean(dim=2)
+
+
+class MeanDefault(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean()
+
+
+class Squeeze(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.squeeze(2)
+
+
+class Unsqueeze(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.unsqueeze(2)
+
+
+class Slice(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x[:, :, 1:, :]
+
+
+class ScalarTensor(torch.nn.Module):
+    def forward(self) -> torch.Tensor:
+        return torch.scalar_tensor(1.0)
+
+
 class ReturnSymSize(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, int]:
         return x, x.shape[0]
+
+
+class ReshapeWithSymSize(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.reshape(x.shape[0], 6)
 
 
 def _exported_program(
@@ -72,6 +127,20 @@ def test_shape_extension_does_not_accept_unsupported_static_op():
     assert "Not included in BaseTOSASupportList" in reporter.get_table_report()
 
 
+def test_registered_custom_op_overrides_tosa_support_checks():
+    inputs = (torch.randn(2, 3), torch.randn(2, 3))
+    exported_program = _exported_program(Atan2(), inputs)
+    partitioner = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP"))
+    partitioner.register_custom_partition_op(torch.ops.aten.atan2.default)
+
+    partition_result = partitioner.partition(exported_program)
+    atan2_node = _find_node(
+        partition_result.tagged_exported_program, exir_ops.edge.aten.atan2.default
+    )
+
+    assert atan2_node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
 def test_shape_extension_accepts_supported_symbolic_tensor_op():
     inputs = (torch.randn(2, 3), torch.randn(2, 3))
     batch = Dim("batch", min=1, max=4)
@@ -86,7 +155,7 @@ def test_shape_extension_accepts_supported_symbolic_tensor_op():
     assert support.is_node_supported(exported_program.graph_module, add_node) is True
 
 
-def test_without_shape_extension_rejects_supported_symbolic_tensor_op():
+def test_without_shape_extension_accepts_supported_symbolic_tensor_op():
     inputs = (torch.randn(2, 3), torch.randn(2, 3))
     batch = Dim("batch", min=1, max=4)
     exported_program = _exported_program(
@@ -94,11 +163,177 @@ def test_without_shape_extension_rejects_supported_symbolic_tensor_op():
         inputs,
         dynamic_shapes=({0: batch}, {0: batch}),
     )
-    support, reporter = _support("TOSA-1.0+FP", exported_program)
+    support, _ = _support("TOSA-1.0+FP", exported_program)
     add_node = _find_node(exported_program, exir_ops.edge.aten.add.Tensor)
 
-    assert support.is_node_supported(exported_program.graph_module, add_node) is False
-    assert "Node has symbolic shape" in reporter.get_table_report()
+    assert support.is_node_supported(exported_program.graph_module, add_node) is True
+
+
+def _assert_rejected_with_reason(exported_program, target, reason: str) -> None:
+    support, reporter = _support("TOSA-1.0+FP", exported_program)
+    node = _find_node(exported_program, target)
+
+    assert support.is_node_supported(exported_program.graph_module, node) is False
+    assert reason in reporter.get_table_report()
+
+
+@pytest.mark.parametrize(
+    "compile_spec",
+    (common.get_u55_compile_spec(), common.get_u85_compile_spec()),
+)
+def test_ethos_rejects_unresolved_tensor_shapes(compile_spec):
+    inputs = (torch.randn(2, 3), torch.randn(2, 3))
+    batch = Dim("batch", min=1, max=4)
+    tester = ArmTester(
+        Add(),
+        inputs,
+        compile_spec,
+        dynamic_shapes=({0: batch}, {0: batch}),
+    )
+
+    tester.quantize().export().to_edge().partition()
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+
+    assert exir_ops.edge.aten.add.Tensor in targets
+    assert torch.ops.higher_order.executorch_call_delegate not in targets
+
+
+def test_without_shape_extension_rejects_symbolic_spatial_conv2d():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=4, max=10)
+    exported_program = _exported_program(
+        Conv2d(),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    _assert_rejected_with_reason(
+        exported_program,
+        exir_ops.edge.aten.convolution.default,
+        "Symbolic spatial dims unsupported",
+    )
+
+
+def test_without_shape_extension_rejects_symbolic_spatial_pooling():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=2, max=5) * 2
+    exported_program = _exported_program(
+        AvgPool2d(),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    _assert_rejected_with_reason(
+        exported_program,
+        exir_ops.edge.aten.avg_pool2d.default,
+        "Symbolic spatial dims unsupported",
+    )
+
+
+def test_without_shape_extension_rejects_symbolic_mean_reduction_dim():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=4, max=10)
+    exported_program = _exported_program(
+        MeanDim(),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    _assert_rejected_with_reason(
+        exported_program,
+        exir_ops.edge.aten.mean.dim,
+        "Symbolic mean dims unsupported",
+    )
+
+
+def test_without_shape_extension_rejects_symbolic_full_tensor_mean():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=4, max=10)
+    exported_program = _exported_program(
+        MeanDefault(),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    _assert_rejected_with_reason(
+        exported_program,
+        exir_ops.edge.aten.mean.default,
+        "Symbolic mean dims unsupported",
+    )
+
+
+def test_without_shape_extension_rejects_symbolic_squeeze():
+    inputs = (torch.randn(2, 3, 1, 8),)
+    batch = Dim("batch", min=1, max=4)
+    exported_program = _exported_program(
+        Squeeze(),
+        inputs,
+        dynamic_shapes=({0: batch},),
+    )
+
+    _assert_rejected_with_reason(
+        exported_program,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        "Symbolic view dims unsupported",
+    )
+
+
+def test_without_shape_extension_rejects_symbolic_unsqueeze():
+    inputs = (torch.randn(2, 3, 8),)
+    batch = Dim("batch", min=1, max=4)
+    exported_program = _exported_program(
+        Unsqueeze(),
+        inputs,
+        dynamic_shapes=({0: batch},),
+    )
+
+    _assert_rejected_with_reason(
+        exported_program,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        "Symbolic view dims unsupported",
+    )
+
+
+def test_without_shape_extension_rejects_symbolic_slice():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=4, max=10)
+    exported_program = _exported_program(
+        Slice(),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    _assert_rejected_with_reason(
+        exported_program,
+        exir_ops.edge.aten.slice_copy.Tensor,
+        "Symbolic slices unsupported",
+    )
+
+
+def test_without_shape_extension_accepts_zero_input_supported_op():
+    exported_program = _exported_program(ScalarTensor(), ())
+    support, _ = _support("TOSA-1.0+FP", exported_program)
+    scalar_node = _find_node(exported_program, torch.ops.aten.scalar_tensor.default)
+
+    assert support.is_node_supported(exported_program.graph_module, scalar_node) is True
+
+
+def test_without_shape_extension_rejects_symbolic_shape_argument():
+    inputs = (torch.randn(2, 2, 3),)
+    batch = Dim("batch", min=1, max=4)
+    exported_program = _exported_program(
+        ReshapeWithSymSize(),
+        inputs,
+        dynamic_shapes=({0: batch},),
+    )
+    support, reporter = _support("TOSA-1.0+FP", exported_program)
+    view_node = _find_node(exported_program, exir_ops.edge.aten.view_copy.default)
+
+    assert support.is_node_supported(exported_program.graph_module, view_node) is False
+    assert "Node has symbolic shape arguments" in reporter.get_table_report()
 
 
 def test_without_shape_extension_rejects_sym_size_int():

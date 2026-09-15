@@ -11,6 +11,7 @@
 #include <tuple>
 
 #include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/threadpool_guard.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 #include <executorch/runtime/platform/assert.h>
@@ -61,6 +62,13 @@ bool parallel_for(
       begin,
       end);
   ET_CHECK_OR_RETURN_FALSE(grain_size > 0, "grain_size = %" PRId64, grain_size);
+  if (NoThreadPoolGuard::is_enabled()) {
+    // Querying the pool's size would lock the mutex held by the outer call.
+    if (begin < end) {
+      f(begin, end);
+    }
+    return true;
+  }
   int64_t num_tasks = 0, chunk_size = 0;
   std::tie(num_tasks, chunk_size) =
       calc_num_tasks_and_chunk_size(begin, end, grain_size);
