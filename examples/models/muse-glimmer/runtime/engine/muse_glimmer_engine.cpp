@@ -117,6 +117,9 @@ constexpr const char* kDFlashMinDraftPrefillChunk =
     "get_min_draft_prefill_chunk";
 constexpr const char* kDFlashMaxDraftPrefillChunk =
     "get_max_draft_prefill_chunk";
+constexpr const char* kActivationDtype = "get_activation_dtype";
+constexpr const char* kOffGraphKVCacheMetadata =
+    "get_offgraph_kv_cache_metadata";
 constexpr const char* kVisionHiddenSize = "get_vision_hidden_size";
 constexpr const char* kMaxVisionPatches = "get_max_vision_patches";
 constexpr int64_t kVisionDownsampleArea = 4;
@@ -449,6 +452,78 @@ Error register_mutable_fqns(
   return Error::Ok;
 }
 
+Result<::executorch::backends::cuda::OffGraphKVConfig>
+read_offgraph_kv_config(Module* module, int64_t initial_capacity) {
+  auto result = module->execute(kOffGraphKVCacheMetadata);
+  ET_CHECK_OK_OR_RETURN_ERROR(result.error());
+  const auto& outputs = result.get();
+  ET_CHECK_OR_RETURN_ERROR(
+      !outputs.empty() && outputs[0].isString(),
+      InvalidProgram,
+      "%s must return a string",
+      kOffGraphKVCacheMetadata);
+  auto json = nlohmann::json::parse(
+      std::string(outputs[0].toString()), nullptr, /*allow_exceptions=*/false);
+  ET_CHECK_OR_RETURN_ERROR(
+      json.is_object() && json.contains("version") &&
+          json["version"].is_number_integer() &&
+          json["version"].get<int64_t>() == 1 &&
+          json.contains("dtype") && json["dtype"].is_string() &&
+          json["dtype"].get<std::string>() == "bfloat16" &&
+          json.contains("maximum_capacity") &&
+          json["maximum_capacity"].is_number_integer() &&
+          json.contains("layers") && json["layers"].is_array() &&
+          !json["layers"].empty(),
+      InvalidProgram,
+      "invalid off-graph KV cache metadata");
+
+  ::executorch::backends::cuda::OffGraphKVConfig config;
+  config.maximum_capacity = json["maximum_capacity"].get<int64_t>();
+  config.initial_capacity = initial_capacity;
+  ET_CHECK_OR_RETURN_ERROR(
+      config.maximum_capacity > 0 && config.initial_capacity > 0 &&
+          config.initial_capacity <= config.maximum_capacity,
+      InvalidProgram,
+      "invalid off-graph KV cache capacities");
+
+  std::unordered_set<int64_t> layer_ids;
+  for (const auto& item : json["layers"]) {
+    ET_CHECK_OR_RETURN_ERROR(
+        item.is_object() && item.contains("layer_id") &&
+            item["layer_id"].is_number_integer() && item.contains("policy") &&
+            item["policy"].is_string() && item.contains("num_kv_heads") &&
+            item["num_kv_heads"].is_number_integer() &&
+            item.contains("head_dim") && item["head_dim"].is_number_integer() &&
+            (!item.contains("window") || item["window"].is_number_integer()),
+        InvalidProgram,
+        "invalid off-graph KV layer metadata");
+    ::executorch::backends::cuda::OffGraphKVLayerConfig layer;
+    layer.layer_id = item["layer_id"].get<int64_t>();
+    layer.num_kv_heads = item["num_kv_heads"].get<int64_t>();
+    layer.head_dim = item["head_dim"].get<int64_t>();
+    layer.window = item.value("window", 0);
+    const std::string policy = item["policy"].get<std::string>();
+    if (policy == "flat") {
+      layer.policy = ::executorch::backends::cuda::OffGraphKVPolicy::Flat;
+    } else if (policy == "ring") {
+      layer.policy = ::executorch::backends::cuda::OffGraphKVPolicy::Ring;
+    } else {
+      ET_LOG(Error, "invalid off-graph KV policy '%s'", policy.c_str());
+      return Error::InvalidProgram;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        layer.layer_id >= 0 && layer.num_kv_heads > 0 && layer.head_dim > 0 &&
+            (layer.policy ==
+                     ::executorch::backends::cuda::OffGraphKVPolicy::Flat ||
+             layer.window > 0) &&
+            layer_ids.insert(layer.layer_id).second,
+        InvalidProgram,
+        "invalid or duplicate off-graph KV layer");
+    config.layers.push_back(layer);
+  }
+  return config;
+}
+
 TensorPtr build_decode_pos_table(
     const std::unordered_map<std::string, int64_t>& metadata) {
   auto ctx_it = metadata.find(kMaxContextLen);
@@ -482,6 +557,7 @@ class MuseGlimmerSession : public LLMSession,
       int64_t min_prefill_chunk,
       TensorPtr decode_pos_table_dev,
       MuseGlimmerMutableStateContextOwner* mutable_state,
+      MuseGlimmerOffGraphKVCacheContextOwner* offgraph_kv,
       int session_token)
       : module_(module),
         exec_mutex_(exec_mutex),
@@ -495,6 +571,7 @@ class MuseGlimmerSession : public LLMSession,
         decode_pos_table_dev_(std::move(decode_pos_table_dev)),
 #endif
         mutable_state_(mutable_state),
+        offgraph_kv_(offgraph_kv),
         session_token_(session_token) {
     if (auto it = metadata_.find(kUseSampling); it != metadata_.end()) {
       use_sampling_ = it->second != 0;
@@ -745,6 +822,11 @@ class MuseGlimmerSession : public LLMSession,
 
   Error reset() override {
     pos_ = 0;
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (offgraph_kv_ != nullptr) {
+      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->reset());
+    }
+#endif
     pending_.reset();
     prev_decode_token_.reset();
     if (preserve_staged_image_on_next_reset_) {
@@ -996,6 +1078,11 @@ class MuseGlimmerSession : public LLMSession,
       const PreparedMuseGlimmerImage* image,
       int64_t* next_image_row) {
     std::lock_guard<std::mutex> guard(*exec_mutex_);
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (offgraph_kv_ != nullptr) {
+      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->prepare(token_count));
+    }
+#endif
     auto execute_contract = [&]() -> Result<std::vector<EValue>> {
       auto embed_outputs = module_->execute(kEmbedTextMethod, {inputs[0]});
       ET_CHECK_OK_OR_RETURN_ERROR(embed_outputs.error());
@@ -1059,6 +1146,11 @@ class MuseGlimmerSession : public LLMSession,
         ? mutable_state_->with_active_session(session_token_, execute_contract)
         : execute_contract();
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (offgraph_kv_ != nullptr) {
+      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->commit(token_count));
+    }
+#endif
     const auto& out_tensor = res.get()[0].toTensor();
     auto sampled = read_sampled_token(out_tensor, temperature, use_sampling_);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
@@ -1107,6 +1199,7 @@ class MuseGlimmerSession : public LLMSession,
   TensorPtr decode_pos_table_dev_;
 #endif
   MuseGlimmerMutableStateContextOwner* mutable_state_ = nullptr;
+  MuseGlimmerOffGraphKVCacheContextOwner* offgraph_kv_ = nullptr;
   int session_token_ = kMuseGlimmerNoMutableSession;
 #ifdef EXECUTORCH_BUILD_CUDA
   float temp_val_ = 1e-6f;
@@ -1391,9 +1484,29 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
     metadata[kMaxVisionPatches] = max_vision_patches;
   }
 
+  std::unique_ptr<MuseGlimmerOffGraphKVCacheContextOwner> offgraph_kv;
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state;
 #ifdef EXECUTORCH_BUILD_CUDA
-  if (config.enable_cuda_graph) {
+  if (method_names.count(kOffGraphKVCacheMetadata) != 0) {
+    ET_CHECK_OR_RETURN_ERROR(
+        !config.enable_cuda_graph,
+        NotSupported,
+        "off-graph KV cache does not support CUDA graph");
+    ET_CHECK_OR_RETURN_ERROR(
+        artifact_mode == MuseGlimmerArtifactMode::Autoregressive,
+        NotSupported,
+        "off-graph KV cache currently supports autoregressive artifacts only");
+    ET_CHECK_OR_RETURN_ERROR(
+        config.max_sessions == 1,
+        NotSupported,
+        "off-graph KV cache currently supports one session");
+    auto offgraph_config = read_offgraph_kv_config(
+        meta_module.get(), config.offgraph_initial_capacity);
+    ET_CHECK_OK_OR_RETURN_ERROR(offgraph_config.error());
+    offgraph_kv = std::make_unique<MuseGlimmerOffGraphKVCacheContextOwner>(
+        std::move(offgraph_config.get()));
+    ET_LOG(Info, "MuseGlimmerEngine: dynamic off-graph KV cache enabled");
+  } else if (config.enable_cuda_graph) {
     ET_LOG(
         Info,
         "MuseGlimmerEngine: CUDA graph requested; per-session rebinding "
@@ -1426,17 +1539,23 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
   // skip_mutable_buffer_init, so the skip flag can never diverge from the
   // owner.
   const bool multi_session = mutable_state != nullptr;
-  auto module_res = multi_session
-      ? mutable_state->with_load_scope([&]() {
-          return build_muse_glimmer_module(
-              config, artifact_mode, has_vision, multi_session);
-        })
-      : build_muse_glimmer_module(
-            config, artifact_mode, has_vision, multi_session);
+  auto build_module = [&]() {
+    return build_muse_glimmer_module(
+        config, artifact_mode, has_vision, multi_session);
+  };
+  auto module_res = offgraph_kv
+      ? offgraph_kv->with_load_scope(build_module)
+      : (multi_session ? mutable_state->with_load_scope(build_module)
+                       : build_module());
   if (module_res.error() != Error::Ok) {
     return module_res.error();
   }
   std::unique_ptr<Module> shared_module = std::move(module_res.get());
+#ifdef EXECUTORCH_BUILD_CUDA
+  if (offgraph_kv != nullptr) {
+    ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv->validate());
+  }
+#endif
 
   bool rebind_available = false;
   rebind_available = mutable_state != nullptr && mutable_state->available();
@@ -1485,7 +1604,8 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       std::move(decode_pos_table_dev),
       /*vision_runtime=*/nullptr,
       rebind_available,
-      std::move(mutable_state)));
+      std::move(mutable_state),
+      std::move(offgraph_kv)));
   if (has_vision) {
     MuseGlimmerVisionRuntimeConfig vision_config;
     vision_config.module = engine->shared_module_.get();
@@ -1616,6 +1736,7 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
       min_prefill_chunk_,
       decode_pos_table_dev_,
       rebind_available_ ? mutable_state_.get() : nullptr,
+      offgraph_kv_.get(),
       token));
 }
 

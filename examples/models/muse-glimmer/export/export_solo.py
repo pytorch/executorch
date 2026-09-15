@@ -78,6 +78,7 @@ def export_and_lower(
     backend: str = "cuda",
     sample: bool = True,
     use_turboquant: bool = False,
+    use_offgraph_kv_cache: bool = False,
     activation_dtype: torch.dtype = torch.bfloat16,
     max_prefill_chunk: int = 512,
     vision_model: nn.Module | None = None,
@@ -92,6 +93,7 @@ def export_and_lower(
             output_dir,
             sample=sample,
             use_turboquant=use_turboquant,
+            use_offgraph_kv_cache=use_offgraph_kv_cache,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
@@ -119,7 +121,7 @@ def _solo_constant_methods(
     config: MuseGlimmerConfig,
     max_prefill: int,
     activation_dtype: torch.dtype,
-    mutable_buffer_metadata: str,
+    mutable_buffer_metadata: str | None,
     has_vision: bool,
     max_vision_patches: int,
 ) -> dict[str, object]:
@@ -136,12 +138,13 @@ def _solo_constant_methods(
         "get_vocab_size": config.vocab_size,
         "get_max_prefill_chunk": max_prefill,
         "get_activation_dtype": common.activation_dtype_tag(activation_dtype),
-        "get_mutable_buffer_metadata": mutable_buffer_metadata,
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
         "has_vision_encoder": bool(has_vision),
     }
+    if mutable_buffer_metadata is not None:
+        constant_methods["get_mutable_buffer_metadata"] = mutable_buffer_metadata
     if has_vision:
         constant_methods["get_vision_hidden_size"] = config.dim
         constant_methods["get_max_vision_patches"] = int(max_vision_patches)
@@ -154,6 +157,7 @@ def _export_cuda(
     output_dir: str,
     sample: bool = True,
     use_turboquant: bool = False,
+    use_offgraph_kv_cache: bool = False,
     vision_model: nn.Module | None = None,
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
@@ -191,13 +195,20 @@ def _export_cuda(
     from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
         add_on_device_sampler,
         cuda_source_transformations,
+        enable_offgraph_kv_cache,
         vision_cuda_source_transformations,
     )
 
     # Always applied: bounds global-attention SDPA to the valid context via a
     # runtime kv_len (O(context) decode). With use_turboquant=True it also swaps
     # the global KV caches for TurboQuant TQ4.
-    cuda_source_transformations(model, use_turboquant=use_turboquant)
+    if use_offgraph_kv_cache and use_turboquant:
+        raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
+    offgraph_manifest = None
+    if use_offgraph_kv_cache:
+        offgraph_manifest = enable_offgraph_kv_cache(model)
+    else:
+        cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     # Max prefill chunk must fit in the ring buffer (2 * sliding_window)
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
@@ -267,7 +278,9 @@ def _export_cuda(
             vision_model, pos_embed_table, max_vision_patches
         )
 
-    mutable_buffer_metadata = common.mutable_buffer_metadata(model)
+    mutable_buffer_metadata = (
+        None if offgraph_manifest else common.mutable_buffer_metadata(model)
+    )
     del model
     if has_vision:
         del vision_model
@@ -275,12 +288,20 @@ def _export_cuda(
     torch.cuda.empty_cache()
 
     def _partitioner_for(name: str) -> "CudaPartitioner":
-        return CudaPartitioner(
-            [
-                CudaBackend.generate_method_name_compile_spec(name),
-                CompileSpec("low_memory_mode", b"ON"),
-            ]
-        )
+        compile_specs = [
+            CudaBackend.generate_method_name_compile_spec(name),
+            CompileSpec("low_memory_mode", b"ON"),
+        ]
+        if offgraph_manifest is not None:
+            compile_specs.extend(
+                (
+                    CompileSpec(
+                        "offgraph_kv_manifest", offgraph_manifest.encode()
+                    ),
+                    CompileSpec("autotune_at_compile_time", b"OFF"),
+                )
+            )
+        return CudaPartitioner(compile_specs)
 
     constant_methods = _solo_constant_methods(
         config=config,
@@ -292,6 +313,8 @@ def _export_cuda(
     )
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = sample
+    if offgraph_manifest is not None:
+        constant_methods["get_offgraph_kv_cache_metadata"] = offgraph_manifest
 
     print(
         f"Lowering {len(programs)} methods to ExecuTorch (CUDA): "
@@ -571,6 +594,11 @@ def main() -> None:
         help="Use TurboQuant TQ4 KV cache on global (NoPE) layers (CUDA).",
     )
     parser.add_argument(
+        "--use-offgraph-kv-cache",
+        action="store_true",
+        help="Allocate CUDA KV cache at runtime instead of storing it in the PTE/PTD.",
+    )
+    parser.add_argument(
         "--activation-dtype",
         default=None,
         choices=list(common.ACTIVATION_DTYPES),
@@ -623,6 +651,10 @@ def main() -> None:
         parser.error("--activation-dtype is only supported with --backend mlx.")
     if args.backend != "mlx" and args.max_prefill_chunk != 512:
         parser.error("--max-prefill-chunk is only supported with --backend mlx.")
+    if args.use_offgraph_kv_cache and args.backend != "cuda":
+        parser.error("--use-offgraph-kv-cache requires --backend cuda.")
+    if args.use_offgraph_kv_cache and args.turboquant:
+        parser.error("--use-offgraph-kv-cache cannot be combined with --turboquant.")
     if args.gguf:
         from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
             load_gguf_model,
@@ -679,6 +711,7 @@ def main() -> None:
         backend=args.backend,
         sample=not args.logits,
         use_turboquant=args.turboquant,
+        use_offgraph_kv_cache=args.use_offgraph_kv_cache,
         activation_dtype=activation_dtype,
         max_prefill_chunk=args.max_prefill_chunk,
         vision_model=vision_model,
