@@ -31,6 +31,7 @@ namespace slimc10 = ::executorch::backends::aoti::slim::c10;
 using ::executorch::backends::aoti::slim::from_blob;
 using ::executorch::backends::aoti::slim::SlimTensor;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
 
 struct Allocation {
   void* k{nullptr};
@@ -56,18 +57,24 @@ struct Bound {
   std::vector<aoti::AOTInductorConstantMapEntry> pairs;
 };
 
+struct SessionState {
+  OffGraphKVMetrics metrics;
+  std::unordered_map<int64_t, Allocation> allocations;
+  std::unordered_map<CudaDelegateHandle*, Bound> bound;
+};
+
 struct Context {
   OffGraphKVConfig config;
   int device{0};
   bool device_known{false};
   bool handles_associated{false};
   Error error{Error::Ok};
-  OffGraphKVMetrics metrics;
-  std::unordered_map<int64_t, Allocation> allocations;
   std::unordered_map<CudaDelegateHandle*, std::unordered_map<std::string, Descriptor>>
       descriptors;
-  std::unordered_map<CudaDelegateHandle*, Bound> bound;
   std::unordered_set<std::string> discovered_fqns;
+  int next_session_token{0};
+  std::unordered_map<int, SessionState> sessions;
+  std::unordered_map<CudaDelegateHandle*, int> bound_session;
 };
 
 struct Manager {
@@ -83,6 +90,8 @@ Manager& manager() {
 }
 
 thread_local OffGraphKVContext loading_context = kInvalidOffGraphKVContext;
+thread_local OffGraphKVContext active_context = kInvalidOffGraphKVContext;
+thread_local int active_session_token = kNoOffGraphKVSession;
 
 std::string fqn(int64_t layer_id, const char* suffix) {
   return "__et_offgraph_kv_layer_" + std::to_string(layer_id) + "_" + suffix;
@@ -99,6 +108,7 @@ size_t storage_bytes(
 
 Error allocate_layer(
     Context& context,
+    SessionState& session,
     const OffGraphKVLayerConfig& layer,
     int64_t capacity,
     cudaStream_t stream) {
@@ -139,31 +149,35 @@ Error allocate_layer(
         cudaGetErrorString(copy_error));
     return Error::Internal;
   }
-  context.metrics.allocated_bytes += static_cast<int64_t>(2 * bytes + sizeof(int64_t));
-  context.allocations.emplace(layer.layer_id, allocation);
+  session.metrics.allocated_bytes +=
+      static_cast<int64_t>(2 * bytes + sizeof(int64_t));
+  session.allocations.emplace(layer.layer_id, allocation);
   return Error::Ok;
 }
 
-Error ensure_initial_allocations(Context& context, cudaStream_t stream) {
+Error ensure_initial_allocations(
+    Context& context,
+    SessionState& session,
+    cudaStream_t stream) {
   bool allocated = false;
   for (const auto& layer : context.config.layers) {
-    if (context.allocations.find(layer.layer_id) != context.allocations.end()) {
+    if (session.allocations.find(layer.layer_id) != session.allocations.end()) {
       continue;
     }
     const int64_t capacity = layer.policy == OffGraphKVPolicy::Ring
         ? layer.window * 2
         : context.config.initial_capacity;
     ET_CHECK_OK_OR_RETURN_ERROR(
-        allocate_layer(context, layer, capacity, stream));
+        allocate_layer(context, session, layer, capacity, stream));
     allocated = true;
   }
   if (allocated) {
-    context.metrics.flat_capacity = context.config.initial_capacity;
+    session.metrics.flat_capacity = context.config.initial_capacity;
     ET_LOG(
         Info,
         "offgraph_kv: initialized flat_capacity=%lld allocated_bytes=%lld",
-        static_cast<long long>(context.metrics.flat_capacity),
-        static_cast<long long>(context.metrics.allocated_bytes));
+        static_cast<long long>(session.metrics.flat_capacity),
+        static_cast<long long>(session.metrics.allocated_bytes));
   }
   return Error::Ok;
 }
@@ -180,31 +194,39 @@ void release_allocation(Context& context, Allocation& allocation) {
       allocation.capacity_device, context.device, cudaStreamPerThread);
 }
 
-Error grow_flat(Context& context, int64_t new_capacity, cudaStream_t stream) {
-  const int64_t old_capacity = context.metrics.flat_capacity;
+void reset_cuda_graphs(Context& context) {
   for (const auto& item : context.descriptors) {
     if (item.first->cuda_graph_state.phase != CudaGraphPhase::Disabled) {
       item.first->cuda_graph_state.reset_for_recapture();
     }
   }
+}
+
+Error grow_flat(
+    Context& context,
+    SessionState& session,
+    int64_t new_capacity,
+    cudaStream_t stream) {
+  const int64_t old_capacity = session.metrics.flat_capacity;
+  reset_cuda_graphs(context);
   for (const auto& layer : context.config.layers) {
     if (layer.policy != OffGraphKVPolicy::Flat) {
       continue;
     }
-    auto old_it = context.allocations.find(layer.layer_id);
+    auto old_it = session.allocations.find(layer.layer_id);
     ET_CHECK_OR_RETURN_ERROR(
-        old_it != context.allocations.end(),
+        old_it != session.allocations.end(),
         InvalidState,
         "offgraph_kv: layer allocation is missing");
     Allocation old = old_it->second;
-    context.allocations.erase(old_it);
+    session.allocations.erase(old_it);
     const Error allocation_error =
-        allocate_layer(context, layer, new_capacity, stream);
+        allocate_layer(context, session, layer, new_capacity, stream);
     if (allocation_error != Error::Ok) {
-      context.allocations.emplace(layer.layer_id, old);
+      session.allocations.emplace(layer.layer_id, old);
       return allocation_error;
     }
-    Allocation& replacement = context.allocations.at(layer.layer_id);
+    Allocation& replacement = session.allocations.at(layer.layer_id);
     const size_t row_bytes = static_cast<size_t>(old.capacity) *
         static_cast<size_t>(layer.head_dim) * context.config.element_size();
     const size_t new_pitch = static_cast<size_t>(new_capacity) *
@@ -221,7 +243,7 @@ Error grow_flat(Context& context, int64_t new_capacity, cudaStream_t stream) {
           cudaMemcpyDeviceToDevice,
           stream));
     }
-    context.metrics.allocated_bytes -= static_cast<int64_t>(
+    session.metrics.allocated_bytes -= static_cast<int64_t>(
         2 * storage_bytes(context.config, layer, old.capacity) +
         sizeof(int64_t));
     CudaAllocator::deallocate_async(old.k, context.device, stream);
@@ -229,17 +251,18 @@ Error grow_flat(Context& context, int64_t new_capacity, cudaStream_t stream) {
     CudaAllocator::deallocate_async(
         old.capacity_device, context.device, stream);
   }
-  context.metrics.flat_capacity = new_capacity;
-  context.metrics.growth_count++;
-  context.bound.clear();
+  session.metrics.flat_capacity = new_capacity;
+  session.metrics.growth_count++;
+  session.bound.clear();
+  context.bound_session.clear();
   ET_LOG(
       Info,
       "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
       "growth_count=%lld",
       static_cast<long long>(old_capacity),
       static_cast<long long>(new_capacity),
-      static_cast<long long>(context.metrics.allocated_bytes),
-      static_cast<long long>(context.metrics.growth_count));
+      static_cast<long long>(session.metrics.allocated_bytes),
+      static_cast<long long>(session.metrics.growth_count));
   return Error::Ok;
 }
 
@@ -310,47 +333,55 @@ Error build_descriptors(Context& context, CudaDelegateHandle* handle) {
   return Error::Ok;
 }
 
-Error bind(Context& context, CudaDelegateHandle* handle) {
-  auto existing = context.bound.find(handle);
-  if (existing != context.bound.end()) {
+Error bind(
+    Context& context,
+    SessionState& session,
+    int token,
+    CudaDelegateHandle* handle) {
+  auto existing = session.bound.find(handle);
+  if (existing == session.bound.end()) {
+    Bound bound;
+    for (const auto& item : context.descriptors[handle]) {
+      const Descriptor& descriptor = item.second;
+      auto allocation = session.allocations.find(descriptor.layer_id);
+      ET_CHECK_OR_RETURN_ERROR(
+          allocation != session.allocations.end(),
+          InvalidState,
+          "offgraph_kv: allocation for layer %lld is missing",
+          static_cast<long long>(descriptor.layer_id));
+      void* pointer = descriptor.kind == Descriptor::Kind::Capacity
+          ? allocation->second.capacity_device
+          : (descriptor.kind == Descriptor::Kind::Key ? allocation->second.k
+                                                      : allocation->second.v);
+      auto tensor = std::make_unique<SlimTensor>(from_blob(
+          pointer,
+          ::executorch::runtime::makeArrayRef(
+              descriptor.sizes.data(), descriptor.sizes.size()),
+          ::executorch::runtime::makeArrayRef(
+              descriptor.strides.data(), descriptor.strides.size()),
+          descriptor.dtype,
+          descriptor.device));
+      bound.pairs.push_back(
+          {descriptor.internal_name.c_str(),
+           reinterpret_cast<aoti::AtenTensorHandle>(tensor.get())});
+      bound.tensors.push_back(std::move(tensor));
+    }
+    existing = session.bound.emplace(handle, std::move(bound)).first;
+  }
+  const auto active = context.bound_session.find(handle);
+  if (active != context.bound_session.end() && active->second == token) {
     return Error::Ok;
   }
-  Bound bound;
-  for (const auto& item : context.descriptors[handle]) {
-    const Descriptor& descriptor = item.second;
-    auto allocation = context.allocations.find(descriptor.layer_id);
-    ET_CHECK_OR_RETURN_ERROR(
-        allocation != context.allocations.end(),
-        InvalidState,
-        "offgraph_kv: allocation for layer %lld is missing",
-        static_cast<long long>(descriptor.layer_id));
-    void* pointer = descriptor.kind == Descriptor::Kind::Capacity
-        ? allocation->second.capacity_device
-        : (descriptor.kind == Descriptor::Kind::Key ? allocation->second.k
-                                                    : allocation->second.v);
-    auto tensor = std::make_unique<SlimTensor>(from_blob(
-        pointer,
-        ::executorch::runtime::makeArrayRef(
-            descriptor.sizes.data(), descriptor.sizes.size()),
-        ::executorch::runtime::makeArrayRef(
-            descriptor.strides.data(), descriptor.strides.size()),
-        descriptor.dtype,
-        descriptor.device));
-    bound.pairs.push_back(
-        {descriptor.internal_name.c_str(),
-         reinterpret_cast<aoti::AtenTensorHandle>(tensor.get())});
-    bound.tensors.push_back(std::move(tensor));
-  }
-  if (!bound.pairs.empty()) {
+  if (!existing->second.pairs.empty()) {
     ET_CHECK_OK_OR_RETURN_ERROR(
         handle->update_user_managed_constant_buffer_pairs(
             handle->container_handle,
-            bound.pairs.data(),
-            bound.pairs.size(),
+            existing->second.pairs.data(),
+            existing->second.pairs.size(),
             false,
             false));
   }
-  context.bound.emplace(handle, std::move(bound));
+  context.bound_session[handle] = token;
   return Error::Ok;
 }
 
@@ -375,8 +406,10 @@ void offgraph_kv_destroy_context(OffGraphKVContext id) {
   if (found == state.contexts.end()) {
     return;
   }
-  for (auto& allocation : found->second.allocations) {
-    release_allocation(found->second, allocation.second);
+  for (auto& session : found->second.sessions) {
+    for (auto& allocation : session.second.allocations) {
+      release_allocation(found->second, allocation.second);
+    }
   }
   (void)cudaStreamSynchronize(cudaStreamPerThread);
   for (auto it = state.handle_contexts.begin();
@@ -392,6 +425,46 @@ void offgraph_kv_begin_load(OffGraphKVContext context) {
 
 void offgraph_kv_end_load() {
   loading_context = kInvalidOffGraphKVContext;
+}
+
+Result<int> offgraph_kv_create_session(OffGraphKVContext id) {
+  auto& state = manager();
+  std::lock_guard<std::mutex> guard(state.mutex);
+  auto found = state.contexts.find(id);
+  ET_CHECK_OR_RETURN_ERROR(
+      found != state.contexts.end(), InvalidArgument, "invalid offgraph KV context");
+  const int token = found->second.next_session_token++;
+  found->second.sessions.emplace(token, SessionState{});
+  return token;
+}
+
+void offgraph_kv_destroy_session(OffGraphKVContext id, int token) {
+  auto& state = manager();
+  std::lock_guard<std::mutex> guard(state.mutex);
+  auto found = state.contexts.find(id);
+  if (found == state.contexts.end()) {
+    return;
+  }
+  auto session = found->second.sessions.find(token);
+  if (session == found->second.sessions.end()) {
+    return;
+  }
+  reset_cuda_graphs(found->second);
+  for (auto& allocation : session->second.allocations) {
+    release_allocation(found->second, allocation.second);
+  }
+  (void)cudaStreamSynchronize(cudaStreamPerThread);
+  for (auto it = found->second.bound_session.begin();
+       it != found->second.bound_session.end();) {
+    it = it->second == token ? found->second.bound_session.erase(it)
+                             : std::next(it);
+  }
+  found->second.sessions.erase(session);
+}
+
+void offgraph_kv_set_active(OffGraphKVContext id, int token) {
+  active_context = id;
+  active_session_token = token;
 }
 
 Error offgraph_kv_validate(OffGraphKVContext id) {
@@ -435,56 +508,77 @@ Error offgraph_kv_validate(OffGraphKVContext id) {
   return context.handles_associated ? Error::Ok : Error::InvalidState;
 }
 
-Error offgraph_kv_prepare(OffGraphKVContext id, int64_t write_length) {
+Error offgraph_kv_prepare(
+    OffGraphKVContext id,
+    int token,
+    int64_t write_length) {
   auto& state = manager();
   std::lock_guard<std::mutex> guard(state.mutex);
   auto found = state.contexts.find(id);
   ET_CHECK_OR_RETURN_ERROR(
       found != state.contexts.end(), InvalidArgument, "invalid offgraph KV context");
   Context& context = found->second;
+  auto session = context.sessions.find(token);
+  ET_CHECK_OR_RETURN_ERROR(
+      session != context.sessions.end(), InvalidArgument, "invalid offgraph KV session");
   ET_CHECK_OR_RETURN_ERROR(write_length > 0, InvalidArgument, "write length must be positive");
-  const int64_t required = context.metrics.logical_length + write_length;
+  const int64_t required = session->second.metrics.logical_length + write_length;
   ET_CHECK_OR_RETURN_ERROR(
       required <= context.config.maximum_capacity,
       InvalidArgument,
       "offgraph_kv: required capacity %lld exceeds maximum %lld",
       static_cast<long long>(required),
       static_cast<long long>(context.config.maximum_capacity));
-  ET_CHECK_OK_OR_RETURN_ERROR(ensure_initial_allocations(context, cudaStreamPerThread));
-  if (required > context.metrics.flat_capacity) {
-    const int64_t doubled = context.metrics.flat_capacity * 2;
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      ensure_initial_allocations(context, session->second, cudaStreamPerThread));
+  if (required > session->second.metrics.flat_capacity) {
+    const int64_t doubled = session->second.metrics.flat_capacity * 2;
     const int64_t next = std::min(
         context.config.maximum_capacity,
         std::max(required, std::max(context.config.initial_capacity, doubled)));
-    ET_CHECK_OK_OR_RETURN_ERROR(grow_flat(context, next, cudaStreamPerThread));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        grow_flat(context, session->second, next, cudaStreamPerThread));
   }
   return Error::Ok;
 }
 
-Error offgraph_kv_commit(OffGraphKVContext id, int64_t write_length) {
+Error offgraph_kv_commit(
+    OffGraphKVContext id,
+    int token,
+    int64_t write_length) {
   auto& state = manager();
   std::lock_guard<std::mutex> guard(state.mutex);
   auto found = state.contexts.find(id);
   ET_CHECK_OR_RETURN_ERROR(
       found != state.contexts.end(), InvalidArgument, "invalid offgraph KV context");
+  auto session = found->second.sessions.find(token);
+  ET_CHECK_OR_RETURN_ERROR(
+      session != found->second.sessions.end(),
+      InvalidArgument,
+      "invalid offgraph KV session");
   ET_CHECK_OR_RETURN_ERROR(
       write_length > 0, InvalidArgument, "write length must be positive");
-  found->second.metrics.logical_length += write_length;
+  session->second.metrics.logical_length += write_length;
   return Error::Ok;
 }
 
-Error offgraph_kv_reset(OffGraphKVContext id) {
+Error offgraph_kv_reset(OffGraphKVContext id, int token) {
   auto& state = manager();
   std::lock_guard<std::mutex> guard(state.mutex);
   auto found = state.contexts.find(id);
   ET_CHECK_OR_RETURN_ERROR(
       found != state.contexts.end(), InvalidArgument, "invalid offgraph KV context");
-  found->second.metrics.logical_length = 0;
+  auto session = found->second.sessions.find(token);
+  ET_CHECK_OR_RETURN_ERROR(
+      session != found->second.sessions.end(),
+      InvalidArgument,
+      "invalid offgraph KV session");
+  session->second.metrics.logical_length = 0;
   ET_LOG(
       Info,
       "offgraph_kv: reset flat_capacity=%lld allocated_bytes=%lld",
-      static_cast<long long>(found->second.metrics.flat_capacity),
-      static_cast<long long>(found->second.metrics.allocated_bytes));
+      static_cast<long long>(session->second.metrics.flat_capacity),
+      static_cast<long long>(session->second.metrics.allocated_bytes));
   return Error::Ok;
 }
 
@@ -492,7 +586,38 @@ OffGraphKVMetrics offgraph_kv_metrics(OffGraphKVContext id) {
   auto& state = manager();
   std::lock_guard<std::mutex> guard(state.mutex);
   auto found = state.contexts.find(id);
-  return found == state.contexts.end() ? OffGraphKVMetrics{} : found->second.metrics;
+  OffGraphKVMetrics metrics;
+  if (found == state.contexts.end()) {
+    return metrics;
+  }
+  for (const auto& session : found->second.sessions) {
+    metrics.logical_length =
+        std::max(metrics.logical_length, session.second.metrics.logical_length);
+    metrics.flat_capacity =
+        std::max(metrics.flat_capacity, session.second.metrics.flat_capacity);
+    metrics.growth_count += session.second.metrics.growth_count;
+    metrics.allocated_bytes += session.second.metrics.allocated_bytes;
+  }
+  return metrics;
+}
+
+int64_t offgraph_kv_initial_bytes_per_session(OffGraphKVContext id) {
+  auto& state = manager();
+  std::lock_guard<std::mutex> guard(state.mutex);
+  auto found = state.contexts.find(id);
+  if (found == state.contexts.end()) {
+    return 0;
+  }
+  int64_t bytes = 0;
+  for (const auto& layer : found->second.config.layers) {
+    const int64_t capacity = layer.policy == OffGraphKVPolicy::Ring
+        ? layer.window * 2
+        : found->second.config.initial_capacity;
+    bytes += static_cast<int64_t>(
+        2 * storage_bytes(found->second.config, layer, capacity) +
+        sizeof(int64_t));
+  }
+  return bytes;
 }
 
 } // namespace detail
@@ -533,7 +658,10 @@ void offgraph_kv_forget_handle(CudaDelegateHandle* handle) {
   auto context = state.contexts.find(found->second);
   if (context != state.contexts.end()) {
     context->second.descriptors.erase(handle);
-    context->second.bound.erase(handle);
+    context->second.bound_session.erase(handle);
+    for (auto& session : context->second.sessions) {
+      session.second.bound.erase(handle);
+    }
   }
   state.handle_contexts.erase(found);
 }
@@ -546,14 +674,28 @@ Error offgraph_kv_rebind_for_execute(CudaDelegateHandle* handle) {
     return Error::Ok;
   }
   Context& context = state.contexts.at(found->second);
+  const auto descriptors = context.descriptors.find(handle);
+  if (descriptors != context.descriptors.end() && descriptors->second.empty()) {
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      found->second == active_context &&
+          active_session_token != kNoOffGraphKVSession,
+      InvalidState,
+      "offgraph_kv: active session is required for execute");
   if (context.error != Error::Ok) {
     return context.error;
   }
+  auto session = context.sessions.find(active_session_token);
   ET_CHECK_OR_RETURN_ERROR(
-      !context.allocations.empty(),
+      session != context.sessions.end(),
+      InvalidArgument,
+      "offgraph_kv: active session was not created");
+  ET_CHECK_OR_RETURN_ERROR(
+      !session->second.allocations.empty(),
       InvalidState,
       "offgraph_kv: prepare must run before execute");
-  return bind(context, handle);
+  return bind(context, session->second, active_session_token, handle);
 }
 
 } // namespace executorch::backends::cuda
