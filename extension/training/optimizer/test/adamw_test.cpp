@@ -110,6 +110,51 @@ TEST_F(AdamWOptimizerTest, AdamWOptimizerDecoupledWeightDecay) {
   EXPECT_NEAR(p1[0], 0.95, 1e-5);
 }
 
+TEST_F(AdamWOptimizerTest, AdamWOptimizerVaryingGradient) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // A constant gradient makes Adam's normalized update very nearly sign-only,
+  // so the tests above would still pass with a broken moment recurrence or
+  // bias correction. A varying gradient exercises both, and the expected
+  // values are taken from torch.optim.AdamW run on the same sequence.
+  const std::vector<float> grads = {
+      0.5, -1.5, 2.0, -0.25, 1.0, 0.75, -2.5, 0.1};
+
+  {
+    std::map<std::string_view, executorch::aten::Tensor> named_parameters;
+    named_parameters.insert({"param1", tf.make({1, 1}, {1.0})});
+    AdamW optimizer(named_parameters, AdamWOptions{0.1, 0.9, 0.999, 1e-8, 0.0});
+
+    for (float g : grads) {
+      std::map<std::string_view, executorch::aten::Tensor> named_gradients;
+      named_gradients.insert({"param1", tf.make({1, 1}, {g})});
+      optimizer.step(named_gradients);
+    }
+    auto p = static_cast<const float*>(
+        named_parameters.at("param1").const_data_ptr());
+    EXPECT_NEAR(p[0], 0.84547687, 1e-6);
+  }
+
+  {
+    // Same sequence with decoupled weight decay active, so the decay and the
+    // moment update interact. Adam with coupled L2 lands on 0.79996 here, well
+    // outside the tolerance, so this also pins the AdamW-vs-Adam distinction
+    // under a non-trivial gradient.
+    std::map<std::string_view, executorch::aten::Tensor> named_parameters;
+    named_parameters.insert({"param1", tf.make({1, 1}, {1.0})});
+    AdamW optimizer(named_parameters, AdamWOptions{0.1, 0.9, 0.999, 1e-8, 0.1});
+
+    for (float g : grads) {
+      std::map<std::string_view, executorch::aten::Tensor> named_gradients;
+      named_gradients.insert({"param1", tf.make({1, 1}, {g})});
+      optimizer.step(named_gradients);
+    }
+    auto p = static_cast<const float*>(
+        named_parameters.at("param1").const_data_ptr());
+    EXPECT_NEAR(p[0], 0.77574724, 1e-6);
+  }
+}
+
 TEST_F(AdamWOptimizerTest, AdamWOptimizerMultipleParams) {
   TensorFactory<ScalarType::Float> tf;
 
