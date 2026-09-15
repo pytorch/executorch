@@ -338,7 +338,7 @@ install(
 
 # CUDA backend implementation
 set(_aoti_cuda_backend_sources
-    runtime/cuda_backend.cpp runtime/cuda_mutable_state.cpp
+    runtime/cuda_backend.cpp runtime/cuda_kv_cache.cpp runtime/cuda_mutable_state.cpp
     runtime/cuda_weight_cache.cpp
 )
 if(_cuda_is_msvc_toolchain)
