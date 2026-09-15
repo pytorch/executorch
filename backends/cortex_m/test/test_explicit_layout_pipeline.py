@@ -8,11 +8,18 @@ from functools import partial
 
 import pytest
 import torch
-from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
+    CortexMPassManager,
+    LiftConstantTensorsPass,
+)
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import CortexMTester
 from executorch.backends.test.harness.stages import Quantize, RunPasses, StageType
+from executorch.backends.transforms.remove_unused_constants_pass import (
+    RemoveUnusedConstantsPass,
+)
+from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 
@@ -107,6 +114,11 @@ def test_layout_pipelines_select_distinct_spatial_operators():
     )
     explicit_program = explicit.get_artifact(StageType.RUN_PASSES).exported_program()
 
+    for program in (legacy_program, explicit_program):
+        assert all(
+            node.users for node in program.graph.nodes if node.op == "placeholder"
+        )
+
     assert _count(legacy_program, exir_ops.edge.cortex_m.quantized_conv2d.default) == 1
     assert (
         _count(
@@ -126,6 +138,58 @@ def test_layout_pipelines_select_distinct_spatial_operators():
         == 1
     )
     assert _count(explicit_program, exir_ops.edge.cortex_m.transpose.default) == 2
+
+
+@pytest.mark.parametrize(
+    "passes,lifted,pruned",
+    [
+        pytest.param([], False, False, id="empty"),
+        pytest.param([LiftConstantTensorsPass], True, False, id="lift"),
+        pytest.param(
+            [LiftConstantTensorsPass, RemoveUnusedConstantsPass],
+            True,
+            True,
+            id="lift_and_prune",
+        ),
+    ],
+)
+def test_constant_cleanup_respects_pass_list_and_lift_order(passes, lifted, pruned):
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("_lifted_tensor_constant0", torch.tensor([1.0]))
+            self.register_buffer("_lifted_tensor_constant1", torch.tensor([2.0]))
+
+        def forward(self, x):
+            return x + self._lifted_tensor_constant1
+
+    inputs = (torch.zeros(1),)
+    program = to_edge(torch.export.export(Model(), inputs)).exported_program()
+    assert "_lifted_tensor_constant0" in program.graph_signature.buffers
+    program.graph_module.register_buffer("new_tensor", torch.tensor([3.0]))
+    output = next(node for node in program.graph.nodes if node.op == "output")
+    original = output.args[0][0]
+    with program.graph.inserting_before(original):
+        constant = program.graph.get_attr("new_tensor")
+        constant.meta = original.meta.copy()
+        result = program.graph.call_function(
+            exir_ops.edge.aten.add.Tensor, (original.args[1], constant)
+        )
+        result.meta = original.meta.copy()
+    original.replace_input_with(original.args[1], result)
+    program.graph_module.recompile()
+    program.validate()
+
+    program = CortexMPassManager(program, passes=passes).transform()
+    program.validate()
+    assert ("_lifted_tensor_constant0" in program.graph_signature.buffers) == (
+        not pruned
+    )
+    assert sum(node.op == "get_attr" for node in program.graph.nodes) == (not lifted)
+    torch.testing.assert_close(program.module()(*inputs), torch.tensor([5.0]))
+    torch.testing.assert_close(
+        program.state_dict["_lifted_tensor_constant1"], torch.tensor([2.0])
+    )
 
 
 def test_conv1d_is_quantized_before_layout_conversion():
