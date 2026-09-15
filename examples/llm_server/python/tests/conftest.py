@@ -40,12 +40,19 @@ class FakeRunner:
     matching the real worker's contract."""
 
     def __init__(
-        self, tokens, fail=False, finish_reason=None, max_named_sessions=0, gen_ids=None
+        self,
+        tokens,
+        fail=False,
+        finish_reason=None,
+        max_named_sessions=0,
+        gen_ids=None,
+        reuse=0,
     ):
         self._tokens = list(tokens)
         self._fail = fail
         self._finish_reason = finish_reason  # worker-reported stop reason, if any
         self._gen_ids = list(gen_ids or [])  # ids reported per turn
+        self._reuse = reuse  # reused_prompt_tokens reported in done stats
         self.captured_config = None
         self.stopped = False
         self.reset_count = 0
@@ -89,6 +96,7 @@ class FakeRunner:
             stats.num_generated_tokens = len(self._tokens)
             stats.finish_reason = self._finish_reason
             stats.generated_token_ids = list(self._gen_ids)
+            stats.reused_prompt_tokens = self._reuse
             stats_callback(stats)
 
 
@@ -119,6 +127,7 @@ def make_client():
         finish_reason=None,
         max_named_sessions=0,
         gen_ids=None,
+        reuse=0,
     ):
         fake = FakeRunner(
             tokens,
@@ -126,6 +135,7 @@ def make_client():
             finish_reason=finish_reason,
             max_named_sessions=max_named_sessions,
             gen_ids=gen_ids,
+            reuse=reuse,
         )
         runtime = SessionRuntime(fake)  # one fake worker
         template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)

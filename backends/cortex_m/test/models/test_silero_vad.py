@@ -36,8 +36,8 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
     "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 16,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 15,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 14,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 13,
 }
 # The final `sigmoid(final_conv(x))` and the STFT magnitude's sqrt now lower to
 # cortex_m.quantized_activation. The 3 remaining sigmoids and 2 tanhs are LSTMCell gates: PyTorch export
@@ -70,8 +70,8 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
     "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 7,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 7,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 5,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 5,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_activation_default": 2,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
 }

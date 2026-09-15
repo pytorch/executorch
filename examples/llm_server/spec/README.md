@@ -41,6 +41,9 @@ ignored.
 Non-streaming response: `chat.completion` with one `choice`
 (`message.role = "assistant"`, string `content` or `tool_calls`, `finish_reason`
 ∈ `stop` | `length` | `tool_calls`) and a `usage` block.
+`usage.prompt_tokens_details.cached_tokens` reports prompt tokens served from
+the session's resident state instead of prefetched this request (0 when the
+turn fully prefilled); the streaming usage chunk carries the same field.
 
 Streaming response: `text/event-stream` of `chat.completion.chunk` objects —
 first chunk carries `delta.role = "assistant"`, subsequent chunks carry

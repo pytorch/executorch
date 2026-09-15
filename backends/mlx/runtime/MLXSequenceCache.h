@@ -55,17 +55,16 @@ inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
 // holds and whether a step's runs wrap.
 class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
  public:
-  explicit MLXSequenceCache(const cache::CacheConfig& cfg)
-      : cache::SequenceCache(checked(cfg)) {
+  MLXSequenceCache(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg)
+      : cache::SequenceCache(checked(geometry, cfg), cfg) {
     const ::mlx::core::Dtype dt =
         resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
-    kpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    vpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    window_.reserve(static_cast<size_t>(cfg.n_layers));
-    for (int l = 0; l < cfg.n_layers; ++l) {
-      // layers size 1 = one config broadcast to every layer, else per-layer.
-      const cache::LayerConfig& lc =
-          cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+    kpool_.reserve(geometry.layers.size());
+    vpool_.reserve(geometry.layers.size());
+    window_.reserve(geometry.layers.size());
+    for (const cache::LayerGeometry& lc : geometry.layers) {
       const bool ring = lc.policy.kind == cache::LayerPolicy::Kind::Ring;
       window_.push_back(ring ? lc.policy.window : 0);
       // Flat retains all history, so its pool may reach the full cap and starts
@@ -233,12 +232,14 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
 
   // Enforce the neutral contract as an exception, the failure mode this layer
   // already uses. Runs as the base initializer's argument because
-  // SequenceCache's own ctor indexes `layers` before this class's body does.
-  static const cache::CacheConfig& checked(const cache::CacheConfig& cfg) {
-    if (!cache::valid(cfg)) {
-      throw std::runtime_error("MLXSequenceCache: invalid CacheConfig");
+  // SequenceCache's constructor reads the geometry before this body runs.
+  static const cache::CacheGeometry& checked(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg) {
+    if (!cache::valid(geometry, cfg)) {
+      throw std::runtime_error("MLXSequenceCache: invalid geometry or config");
     }
-    return cfg;
+    return geometry;
   }
 
   std::vector<Pool> kpool_;

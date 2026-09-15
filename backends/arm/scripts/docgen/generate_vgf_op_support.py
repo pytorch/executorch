@@ -121,12 +121,6 @@ OVERLOADLESS_OP_ALIASES: dict[str, str] = {
     "torch.ops.aten.amin": "torch.ops.aten.amin.default",
 }
 
-# Some legacy tests contain malformed namespaces. Keep the scanner resilient,
-# but emit a diagnostic so the test can be corrected.
-KNOWN_NAMESPACE_ALIASES = {
-    "torch.aten.ops.": "torch.ops.aten.",
-}
-
 # Generated EdgeIR spellings are not always reversible by splitting on
 # underscores. Check exact aliases before the generic conversion.
 GENERATED_EDGE_OP_ALIASES: dict[str, str] = {
@@ -845,13 +839,6 @@ def _normalize_pytorch_op_name(  # noqa: C901
         return None
     if text.startswith("tosa.") or ".tosa." in text:
         return None
-
-    for bad_prefix, good_prefix in KNOWN_NAMESPACE_ALIASES.items():
-        if text.startswith(bad_prefix):
-            if diagnostics is not None:
-                diagnostics.append(f"normalised malformed namespace: {text}")
-            text = good_prefix + text.removeprefix(bad_prefix)
-            break
 
     generated_prefix = "executorch_exir_dialects_edge__ops_aten_"
     recognized = (

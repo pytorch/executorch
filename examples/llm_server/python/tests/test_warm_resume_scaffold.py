@@ -714,6 +714,275 @@ def test_token_level_exact_prefix_toolloop_think():
     assert assembled[: len(resident)] == resident
 
 
+# --- Harmony/ATEM thinking turns (no generation scaffold) ------------------
+
+
+class _FakeHarmony:
+    """Mimics a Harmony/ATEM template: the generation prompt ends at the bare
+    assistant header (preamble ''), and an echoed thinking turn re-renders its
+    reasoning block first. The raw generation opened with the thinking
+    recipient (` to=self...`), but the sentinel substitution drops
+    reasoning_content, so its re-render frames the turn as `to=user` -- the
+    splice must drop that framing for the stored raw ids to extend the
+    resident prefix exactly."""
+
+    HDR = "<|start|>assistant"
+
+    def assistant_header(self):
+        return self.HDR
+
+    def render(self, messages, tools=None, template_kwargs=None):
+        out = ["<bos>"]
+        for m in messages:
+            c = m.content if isinstance(m.content, str) else ""
+            if m.role == "assistant":
+                r = m.reasoning_content
+                if r:
+                    out.append(f"{self.HDR} to=self<|message|>{r}<|eom|>")
+                out.append(f"{self.HDR} to=user<|message|>{c}<|eot|>")
+            else:
+                out.append(f"<|start|>{m.role}<|message|>{c}<|eot|>")
+        out.append(self.HDR)
+        return "".join(out)
+
+
+class _ByteTokenizer:
+    """Deterministic encoding for assembly assertions: distinct strings get
+    distinct id sequences, so id equality implies string equality."""
+
+    @staticmethod
+    def encode(text):
+        return [ord(c) for c in text]
+
+
+def _assemble_ids(segments):
+    out = []
+    for seg in segments:
+        out += _ByteTokenizer.encode(seg["text"]) if "text" in seg else list(seg["ids"])
+    return out
+
+
+def _harmony_resident(fake, raw):
+    # What the worker holds after turn 1: the rendered prompt plus the exact
+    # raw turn bytes, as token ids. The test double's render is the setup;
+    # assertions below compare id sequences only.
+    first = fake.render(_msgs(("user", "u1")))
+    gen_ids = _ByteTokenizer.encode(raw)
+    return _ByteTokenizer.encode(first) + gen_ids, gen_ids
+
+
+def test_thinking_turn_splice_reproduces_resident_prefix():
+    # The raw turn opened with ` to=self...` while the sentinel re-render
+    # frames as `to=user`; the assembled prompt must still reproduce the
+    # resident prefix exactly (no segment peeking -- pure id equality).
+    # The recorded ids are the worker's non-terminal generated ids (the
+    # terminal <|eot|> is NOT generated -- worker_loop.h); the trailing
+    # turn-2 text supplies the terminator. Full-prompt equality (not just
+    # a prefix check) so a duplicated/missing terminator fails loudly.
+    fake = _FakeHarmony()
+    st = OpenAITranscriptState(fake)
+    raw = (
+        " to=self<|message|>\nthink\n<|eom|>" "<|start|>assistant to=user<|message|>a1"
+    )
+    resident, gen_ids = _harmony_resident(fake, raw)
+    st.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=gen_ids,
+        prior_turns=0,
+        preamble="",
+    )
+    msgs = [
+        ChatMessage(role="user", content="u1"),
+        ChatMessage(role="assistant", content="a1", reasoning_content="\nthink\n"),
+        ChatMessage(role="user", content="u2"),
+    ]
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=fake.render(msgs),
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    trailing = "<|eot|><|start|>user<|message|>u2<|eot|><|start|>assistant"
+    assert _assemble_ids(pi.segments) == resident + _ByteTokenizer.encode(trailing)
+    # Realism pins (worker_loop.h: generated ids exclude the terminal EOS):
+    # the recorded raw carries no terminator; the trailing text supplies it.
+    # Without these, eot-including test data would bless a duplicated <|eot|>.
+    assert not raw.endswith("<|eot|>")
+    assert trailing.startswith("<|eot|>")
+
+
+def test_plain_turn_splice_reproduces_resident_prefix():
+    # A non-thinking turn's raw opening matches the template framing; same
+    # assembly assertion as above, proving the framing drop is a no-op there.
+    # Realistic non-terminal ids + full-prompt equality, as above.
+    fake = _FakeHarmony()
+    st = OpenAITranscriptState(fake)
+    raw = " to=user<|message|>a1"
+    resident, gen_ids = _harmony_resident(fake, raw)
+    st.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=gen_ids,
+        prior_turns=0,
+        preamble="",
+    )
+    msgs = _msgs(("user", "u1"), ("assistant", "a1"), ("user", "u2"))
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=fake.render(msgs),
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    trailing = "<|eot|><|start|>user<|message|>u2<|eot|><|start|>assistant"
+    assert _assemble_ids(pi.segments) == resident + _ByteTokenizer.encode(trailing)
+    # Realism pins (worker_loop.h: generated ids exclude the terminal EOS):
+    # the recorded raw carries no terminator; the trailing text supplies it.
+    # Without these, eot-including test data would bless a duplicated <|eot|>.
+    assert not raw.endswith("<|eot|>")
+    assert trailing.startswith("<|eot|>")
+
+
+class _FakeMismatchedHeader:
+    """Mirrors the production failure mode: the adapter provides
+    assistant_header() (production adapters always do) but it returns the
+    default ChatML header while the template renders Harmony-style framing.
+    A header-like literal inside *message content* must never be treated as
+    the turn boundary.
+    """
+
+    # The default header: correct for ChatML, wrong for this template.
+    HDR = "<|im_start|>assistant\n"
+
+    def assistant_header(self):
+        return self.HDR
+
+    def render(self, messages, tools=None, template_kwargs=None):
+        out = ["<bos>"]
+        for m in messages:
+            c = m.content if isinstance(m.content, str) else ""
+            if m.role == "assistant":
+                out.append(f"<|start|>assistant to=user<|message|>{c}<|eot|>")
+            else:
+                out.append(f"<|start|>user<|message|>{c}<|eot|>")
+        out.append("<|start|>assistant")
+        return "".join(out)
+
+
+class _FakeMistralNemo:
+    """Mistral-Nemo-style template (cf. llama.cpp's
+    mistralai-Mistral-Nemo-Instruct-2407.jinja): user turns render as
+    `[INST]{content}[/INST]`, assistant turns as `{content}</s>` -- there is
+    no assistant header at all. With the default ChatML header configured, a
+    quoted header literal leaves a `KEEP[/INST]` tail that must fall back
+    rather than delete KEEP and the instruction boundary.
+    """
+
+    HDR = "<|im_start|>assistant\n"  # default, wrong for this template
+
+    def assistant_header(self):
+        return self.HDR
+
+    def render(self, messages, tools=None, template_kwargs=None):
+        out = ["<bos>"]
+        for m in messages:
+            c = m.content if isinstance(m.content, str) else ""
+            if m.role == "assistant":
+                out.append(f"{c}</s>")
+            else:
+                out.append(f"[INST]{c}[/INST]")
+        return "".join(out)
+
+
+def test_user_header_literal_does_not_truncate_conversation():
+    # A user message quoting the literal '<|im_start|>assistant\n' matches
+    # rfind() on the default header; the remainder after it --
+    # `KEEP<|eot|><|start|>assistant to=user<|message|>` -- is short and
+    # single-line, so length/newline guards pass. It still must not truncate:
+    # the remainder carries real turn structure (terminator + role boundary),
+    # so the splice falls back to plain text (correct output, no reuse)
+    # instead of deleting KEEP and the role boundary while splicing.
+    st = OpenAITranscriptState(_FakeMismatchedHeader())
+    st.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=[5, 6],
+        prior_turns=0,
+        preamble="",
+    )
+    u1 = "Explain <|im_start|>assistant\nKEEP"
+    msgs = _msgs(("user", u1), ("assistant", "a1"), ("user", "u2"))
+    rendered = st._template.render(msgs)
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=rendered,
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is None and pi.text == rendered
+    assert "KEEP" in pi.text
+
+
+def test_mismatched_header_without_literal_still_splices():
+    # Positive control: without a confusing literal, the default header never
+    # matches (h == -1, nothing to normalize) and splicing proceeds normally
+    # for the mismatched-header template.
+    st = OpenAITranscriptState(_FakeMismatchedHeader())
+    st.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=[5, 6],
+        prior_turns=0,
+        preamble="",
+    )
+    msgs = _msgs(("user", "plain question"), ("assistant", "a1"), ("user", "u2"))
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=st._template.render(msgs),
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    assert any(s.get("ids") == [5, 6] for s in pi.segments)
+
+
+def test_mistral_bracket_terminator_tail_falls_back():
+    # Nemo-style `[/INST]` terminators are turn structure no blocklist can
+    # enumerate exhaustively: the `KEEP[/INST]` tail is short and single-line
+    # yet must fall back, preserving KEEP and the instruction boundary.
+    st = OpenAITranscriptState(_FakeMistralNemo())
+    st.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=[5, 6],
+        prior_turns=0,
+        preamble="",
+    )
+    u1 = "Explain <|im_start|>assistant\nKEEP"
+    msgs = _msgs(("user", u1), ("assistant", "a1"), ("user", "u2"))
+    rendered = st._template.render(msgs)
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=rendered,
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is None and pi.text == rendered
+    assert "KEEP[/INST]" in pi.text
+
+
 # --- generation_preamble threads tools ------------------------------------
 
 
@@ -743,3 +1012,98 @@ def test_generation_preamble_threads_tools():
     )
     # cached separately -> the no-tool value is not shadowed by the tool one
     assert t.generation_preamble(tools=None) == "<tools-off>"
+
+
+# --- Muse Glimmer real-template thinking-turn prefix (gated/skipped) --------
+
+_GLIMMER_MODEL = os.environ.get(
+    "GLIMMER_HF_DIR",
+    "/data/users/mnachin/scripts/agent-runtime-bench/data/executorch/hf",
+)
+_HAVE_GLIMMER = os.path.isdir(_GLIMMER_MODEL)
+_skip_glimmer = pytest.mark.skipif(
+    not _HAVE_GLIMMER,
+    reason=f"real Muse Glimmer tokenizer dir not present: {_GLIMMER_MODEL}",
+)
+
+
+def _real_glimmer_template_and_enc():
+    pytest.importorskip("transformers")
+    from transformers import AutoTokenizer
+
+    tmpl = ChatTemplate(
+        hf_tokenizer_path=_GLIMMER_MODEL,
+        assistant_header="<|start|>assistant",
+        strip_rendered_bos=True,
+    )
+    tok = AutoTokenizer.from_pretrained(_GLIMMER_MODEL)
+    return tmpl, tok, (lambda s: tok.encode(s, add_special_tokens=False))
+
+
+@_skip_glimmer
+def test_glimmer_real_template_thinking_turn_splice_reproduces_resident():
+    # End-to-end warm-resume contract for a thinking turn with the real ATEM
+    # template + tokenizer: the spliced segments must assemble to the exact
+    # resident prompt plus the trailing turn-2 text. Pins the framing fix:
+    # the raw turn opened with ` to=self` while the sentinel re-render
+    # frames as `to=user`; dropping that framing lets the stored raw ids
+    # extend the resident prefix exactly. Before, the worker reported
+    # "mismatch" and re-prefilled every turn. The recorded ids are the
+    # worker's non-terminal generated ids (no terminal <|eot|>); full-prompt
+    # equality so a duplicated/missing terminator fails loudly.
+    tmpl, tok, enc = _real_glimmer_template_and_enc()
+    assert tmpl.generation_preamble() == ""
+    st = OpenAITranscriptState(tmpl)
+    u1 = "What is 12*13?"
+    first_prompt = tmpl.render(_msgs(("user", u1)))
+    assert first_prompt.endswith("<|start|>assistant")
+    reasoning = "\nLet me think.\n"
+    visible = "156"
+    raw = (
+        " to=self<|message|>" + reasoning + "<|eom|>"
+        "<|start|>assistant to=user<|message|>" + visible
+    )
+    gen_ids = enc(raw)
+    st.record_assistant_turn(
+        session_id="s",
+        content=visible,
+        tool_calls=None,
+        generated_token_ids=gen_ids,
+        prior_turns=0,
+        preamble=tmpl.generation_preamble(),
+    )
+    msgs = [
+        ChatMessage(role="user", content=u1),
+        ChatMessage(role="assistant", content=visible, reasoning_content=reasoning),
+        ChatMessage(role="user", content="And 14*15?"),
+    ]
+    rendered = tmpl.render(msgs)
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=rendered,
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    # Full-prompt assertion using the worker's segment encoding: each text
+    # segment encoded standalone, id runs spliced verbatim -- exactly how the
+    # worker assembles segments before its exact-prefix check. This verifies
+    # token ordering and splice placement, not just bag-of-segments: moving
+    # the generated ids elsewhere in the prompt fails loudly.
+    # The trailing text (terminator + turn 2 + generation header) is whatever
+    # follows the echoed a1 turn's visible content in the template's own
+    # render. The anchor is unique in this render (verified); the slice keeps
+    # the terminator so a missing/duplicated <|eot|> fails the comparison.
+    anchor = visible + "<|eot|>"
+    assert rendered.count(anchor) == 1
+    trailing = "<|eot|>" + rendered.split(anchor, 1)[1]
+    assembled = [tok.bos_token_id] + _assemble(pi.segments, enc)
+    expected = [tok.bos_token_id] + enc(first_prompt) + gen_ids + enc(trailing)
+    assert assembled == expected
+    # Test-data realism pin: the worker reports non-terminal generated ids
+    # (worker_loop.h), so the recorded raw must not end with the terminator
+    # the trailing text already supplies -- otherwise the test would bless a
+    # duplicated <|eot|> in the resident prefix.
+    assert not raw.endswith("<|eot|>")
+    assert trailing.startswith("<|eot|>")

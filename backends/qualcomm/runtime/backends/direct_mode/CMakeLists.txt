@@ -33,7 +33,13 @@ add_library(
 )
 
 target_include_directories(
-  qnn_executorch_skel PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
+  qnn_executorch_skel
+  PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
+          # For <flatcc/...>, used directly by the wrapper to free etdump's
+          # aligned buffer. It also arrives transitively through the etdump
+          # target, but name it here so the dependency is explicit and does not
+          # rely on that export.
+          ${EXECUTORCH_ROOT}/third-party/flatcc/include
 )
 # aDSP will also use cDSP c/c++ library since aDSP does not have these
 # libraries.
