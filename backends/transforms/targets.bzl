@@ -44,6 +44,52 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "fuse_gqa_with_sdpa",
+        srcs = ["fuse_gqa_with_sdpa.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_fuse_gqa_with_sdpa",
+        srcs = ["test/test_fuse_gqa_with_sdpa.py"],
+        deps = [
+            ":fuse_gqa_with_sdpa",
+            ":normalize_sdpa_input_rank",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "normalize_sdpa_input_rank",
+        srcs = ["normalize_sdpa_input_rank.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_normalize_sdpa_input_rank",
+        srcs = ["test/test_normalize_sdpa_input_rank.py"],
+        deps = [
+            ":normalize_sdpa_input_rank",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fuse_batch_norm_with_conv",
         srcs = ["fuse_batch_norm_with_conv.py"],
         visibility = [
