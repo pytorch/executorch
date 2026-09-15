@@ -451,6 +451,12 @@ if(BUILD_TESTING)
   target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
 
   et_cxx_test(
+    test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS
+    aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_kv_cache PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
     test_cuda_weight_cache SOURCES runtime/test/test_cuda_weight_cache.cpp
     EXTRA_LIBS aoti_cuda_backend
   )

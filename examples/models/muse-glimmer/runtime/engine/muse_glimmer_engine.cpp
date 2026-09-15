@@ -600,9 +600,15 @@ class MuseGlimmerSession : public LLMSession,
   }
 
   ~MuseGlimmerSession() override {
-    if (mutable_state_ != nullptr &&
-        session_token_ != kMuseGlimmerNoMutableSession) {
-      mutable_state_->destroy_session(session_token_);
+    if (session_token_ != kMuseGlimmerNoMutableSession) {
+#ifdef EXECUTORCH_BUILD_CUDA
+      if (offgraph_kv_ != nullptr) {
+        offgraph_kv_->destroy_session(session_token_);
+      } else
+#endif
+          if (mutable_state_ != nullptr) {
+        mutable_state_->destroy_session(session_token_);
+      }
     }
     if (live_sessions_ != nullptr) {
       live_sessions_->fetch_sub(1);
@@ -824,7 +830,7 @@ class MuseGlimmerSession : public LLMSession,
     pos_ = 0;
 #ifdef EXECUTORCH_BUILD_CUDA
     if (offgraph_kv_ != nullptr) {
-      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->reset());
+      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->reset(session_token_));
     }
 #endif
     pending_.reset();
@@ -1078,11 +1084,6 @@ class MuseGlimmerSession : public LLMSession,
       const PreparedMuseGlimmerImage* image,
       int64_t* next_image_row) {
     std::lock_guard<std::mutex> guard(*exec_mutex_);
-#ifdef EXECUTORCH_BUILD_CUDA
-    if (offgraph_kv_ != nullptr) {
-      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->prepare(token_count));
-    }
-#endif
     auto execute_contract = [&]() -> Result<std::vector<EValue>> {
       auto embed_outputs = module_->execute(kEmbedTextMethod, {inputs[0]});
       ET_CHECK_OK_OR_RETURN_ERROR(embed_outputs.error());
@@ -1142,15 +1143,28 @@ class MuseGlimmerSession : public LLMSession,
       }
       return module_->execute(method, forward_inputs);
     };
+#ifdef EXECUTORCH_BUILD_CUDA
+    auto execute_offgraph = [&]() -> Result<std::vector<EValue>> {
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          offgraph_kv_->prepare(session_token_, token_count));
+      auto result = execute_contract();
+      ET_CHECK_OK_OR_RETURN_ERROR(result.error());
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          offgraph_kv_->commit(session_token_, token_count));
+      return result;
+    };
+    auto res = offgraph_kv_ != nullptr
+        ? offgraph_kv_->with_active_session(session_token_, execute_offgraph)
+        : (mutable_state_ != nullptr
+               ? mutable_state_->with_active_session(
+                     session_token_, execute_contract)
+               : execute_contract());
+#else
     auto res = mutable_state_ != nullptr
         ? mutable_state_->with_active_session(session_token_, execute_contract)
         : execute_contract();
-    ET_CHECK_OK_OR_RETURN_ERROR(res.error());
-#ifdef EXECUTORCH_BUILD_CUDA
-    if (offgraph_kv_ != nullptr) {
-      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->commit(token_count));
-    }
 #endif
+    ET_CHECK_OK_OR_RETURN_ERROR(res.error());
     const auto& out_tensor = res.get()[0].toTensor();
     auto sampled = read_sampled_token(out_tensor, temperature, use_sampling_);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
@@ -1493,9 +1507,9 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
         NotSupported,
         "off-graph KV cache currently supports autoregressive artifacts only");
     ET_CHECK_OR_RETURN_ERROR(
-        config.max_sessions == 1,
+        !config.enable_cuda_graph || config.max_sessions == 1,
         NotSupported,
-        "off-graph KV cache currently supports one session");
+        "off-graph KV CUDA graph currently supports one session");
     auto offgraph_config = read_offgraph_kv_config(
         meta_module.get(), config.offgraph_initial_capacity);
     ET_CHECK_OK_OR_RETURN_ERROR(offgraph_config.error());
@@ -1663,7 +1677,17 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
   }
 
   int token = -1;
-  if (rebind_available_) {
+#ifdef EXECUTORCH_BUILD_CUDA
+  if (offgraph_kv_ != nullptr) {
+    auto t = offgraph_kv_->create_session();
+    if (t.error() != Error::Ok) {
+      live_sessions_.fetch_sub(1);
+      return t.error();
+    }
+    token = t.get();
+  } else
+#endif
+      if (rebind_available_) {
     auto t = mutable_state_->create_session();
     if (t.error() != Error::Ok) {
       live_sessions_.fetch_sub(1);
@@ -1738,7 +1762,15 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
 
 LLMServingCapacity MuseGlimmerEngine::serving_capacity() const {
   LLMServingCapacity cap;
-  if (rebind_available_) {
+#ifdef EXECUTORCH_BUILD_CUDA
+  if (offgraph_kv_ != nullptr) {
+    cap.max_physical_sessions_without_weight_duplication =
+        config_.max_sessions > 1 ? config_.max_sessions : 1;
+    cap.estimated_bytes_per_session =
+        offgraph_kv_->initial_bytes_per_session();
+  } else
+#endif
+      if (rebind_available_) {
     cap.max_physical_sessions_without_weight_duplication =
         config_.max_sessions > 1 ? config_.max_sessions : 1;
     cap.estimated_bytes_per_session = mutable_state_->bytes_per_session();
