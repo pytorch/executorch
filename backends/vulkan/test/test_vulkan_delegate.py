@@ -1713,6 +1713,23 @@ class TestVulkanBackend(unittest.TestCase):
             (torch.tensor([[0, 1, 0], [4, 2, 0]]),),
         )
 
+    def test_vulkan_backend_embedding_large_vocab(self):
+        # Past 16384 entries the output of the embedding is laid out as a height
+        # packed texture, so each texel holds 4 different weight rows instead of
+        # 4 elements of the same row. See #22333.
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(torch.nn.Embedding(16385, 4)),
+            (torch.tensor([[0, 1, 16384], [7, 16000, 12345]]),),
+        )
+
     def test_vulkan_backend_embedding_3d(self):
         class EmbeddingModule(torch.nn.Module):
             def __init__(self, embedding):
