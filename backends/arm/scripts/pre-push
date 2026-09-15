@@ -32,8 +32,9 @@ DOCGEN_OUTPUTS=(
     "docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md"
 )
 
-VGF_OP_SUPPORT_SCRIPT="backends/arm/scripts/docgen/generate_vgf_op_support.py"
+OP_SUPPORT_SCRIPT="backends/arm/scripts/docgen/generate_op_support.py"
 VGF_OP_SUPPORT_OUTPUT="docs/source/backends/arm-vgf/VGF_op_support.md"
+U55_OP_SUPPORT_OUTPUT="docs/source/backends/arm-ethos-u/U55_op_support.md"
 
 RUN_DOCGEN=0
 
@@ -73,31 +74,32 @@ run_docgen_check() {
     fi
 }
 
-run_vgf_op_support_checks() {
-    local coverage_output
+run_op_support_checks() {
+    local backend="$1"
+    local backend_name="$2"
+    local output="$3"
 
-    echo -e "${INFO} Generating VGF operator support documentation"
+    echo -e "${INFO} Generating ${backend_name} operator support documentation"
 
-    if ! python "$VGF_OP_SUPPORT_SCRIPT"; then
-        echo -e "${ERROR} Failed to generate VGF operator support documentation"
+    if ! python "$OP_SUPPORT_SCRIPT" --backend "$backend"; then
+        echo -e "${ERROR} Failed to generate ${backend_name} operator support documentation"
         FAILED=1
-    elif ! git diff --quiet HEAD -- "$VGF_OP_SUPPORT_OUTPUT"; then
-        echo -e "${ERROR} VGF operator support documentation is out of date." >&2
+    elif ! git diff --quiet HEAD -- "$output"; then
+        echo -e "${ERROR} ${backend_name} operator support documentation is out of date." >&2
         echo -e "${INFO} Review and commit the regenerated operator support list before pushing."
-        git diff HEAD -- "$VGF_OP_SUPPORT_OUTPUT"
+        git diff HEAD -- "$output"
         FAILED=1
     else
-        echo -e "${SUCCESS} VGF operator support documentation OK"
+        echo -e "${SUCCESS} ${backend_name} operator support documentation OK"
     fi
 
-    echo -e "${INFO} Checking VGF operator support coverage"
+    echo -e "${INFO} Checking ${backend_name} operator support coverage"
 
-    if ! coverage_output=$(python "$VGF_OP_SUPPORT_SCRIPT" --check 2>&1); then
-        echo "$coverage_output" >&2
-        echo -e "${ERROR} VGF operator support coverage check failed" >&2
+    if ! python "$OP_SUPPORT_SCRIPT" --backend "$backend" --check; then
+        echo -e "${ERROR} ${backend_name} operator support coverage check failed" >&2
         FAILED=1
     else
-        echo -e "${SUCCESS} VGF operator support coverage OK"
+        echo -e "${SUCCESS} ${backend_name} operator support coverage OK"
     fi
 }
 
@@ -349,7 +351,8 @@ else
     echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
 fi
 
-run_vgf_op_support_checks
+run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT"
+run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT"
 run_public_api_validator
 
 if [[ $FAILED ]]; then

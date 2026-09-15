@@ -7,9 +7,13 @@ import ast
 from pathlib import Path
 from textwrap import dedent
 
+import executorch.backends.arm.scripts.docgen.generate_op_support as docgen
+
 import pytest
 
-from executorch.backends.arm.scripts.docgen import generate_vgf_op_support as docgen
+from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    ProductSupported,
+)
 
 
 @pytest.mark.parametrize(
@@ -100,6 +104,153 @@ def test_scan_backend_pipeline_tests_uses_configured_pipeline_name(
     assert unresolved == []
     assert diagnostics == []
     assert rows["torch.ops.aten.relu.default"].support_profiles == {"FP"}
+
+
+def test_u55_backend_configuration_and_profile() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        config = docgen._activate_backend("u55")
+        assert config.pipeline_class_names == frozenset({"EthosU55PipelineINT"})
+        assert docgen.BACKEND_NAME == "Ethos-U55"
+        assert docgen.BACKEND_TOSA_SPEC == "TOSA-1.0+INT+int16+int4+u55"
+        assert docgen.DEFAULT_OUTPUT == Path(
+            "docs/source/backends/arm-ethos-u/U55_op_support.md"
+        )
+        assert docgen.SUPPORT_PROFILE_ORDER == ["INT"]
+
+        stmt = ast.parse("EthosU55PipelineINT(quantize=False)").body[0]
+        assert isinstance(stmt, ast.Expr)
+        call = stmt.value
+        assert isinstance(call, ast.Call)
+        # U55 is integer-only; an irrelevant quantize kwarg cannot turn it FP.
+        assert docgen._pipeline_profile(call) == "INT"
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_u55_infrastructure_xfail_is_not_treated_as_unsupported() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("u55")
+        tree = ast.parse(
+            "@common.XfailIfNoCorstone300\n" "def test_u55():\n" "    pass\n"
+        )
+        function = tree.body[0]
+        assert isinstance(function, ast.FunctionDef)
+        assert not docgen._function_is_skipped_or_xfailed(function)
+
+        semantic_tree = ast.parse(
+            "@pytest.mark.xfail(reason='unsupported')\n"
+            "def test_u55():\n"
+            "    pass\n"
+        )
+        semantic_function = semantic_tree.body[0]
+        assert isinstance(semantic_function, ast.FunctionDef)
+        assert docgen._function_is_skipped_or_xfailed(semantic_function)
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_backend_registry_filter_removes_unconditional_rejections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rejected = "torch.ops.aten.where.self"
+    kept = "torch.ops.aten.add.Tensor"
+    expected = {
+        rejected: docgen.SupportedOperatorEvidence(
+            exported_op=rejected,
+            pytorch_apis=("torch.where",),
+            support_profiles={"INT"},
+        ),
+        kept: docgen.SupportedOperatorEvidence(
+            exported_op=kept, pytorch_apis=("torch.add",), support_profiles={"INT"}
+        ),
+    }
+    monkeypatch.setattr(
+        docgen,
+        "_unconditionally_unsupported_backend_ops",
+        lambda _spec: {rejected},
+    )
+
+    filtered = docgen._filter_backend_supported_ops(expected, object())  # type: ignore[arg-type]
+
+    assert set(filtered) == {kept}
+
+
+def test_u55_explicit_coverage_attribution() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("u55")
+        coverage = docgen._active_explicit_backend_coverage()
+
+        assert coverage[
+            (
+                "backends/arm/test/ops/test_div_tensor_mode.py",
+                "test_div_tensor_mode_u55_INT",
+            )
+        ]["INT"] == {"torch.ops.aten.div.Tensor_mode"}
+        assert coverage[
+            (
+                "backends/arm/test/ops/test_index_select.py",
+                "test_index_select_u55_INT_constant_contiguous",
+            )
+        ]["INT"] == {"torch.ops.aten.index_select.default"}
+        assert coverage[("backends/arm/test/ops/test_silu.py", "test_silu_u55_INT")][
+            "INT"
+        ] == {"torch.ops.aten.silu.default"}
+        assert coverage[
+            (
+                "backends/arm/test/ops/test_unfold_copy.py",
+                "test_unfold_copy_u55_INT",
+            )
+        ]["INT"] == {"torch.ops.aten.unfold_copy.default"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_u55_exported_op_exclusions_are_backend_specific() -> None:
+    exclusions = docgen.BACKEND_EXPORTED_OP_EXCLUSIONS["u55"]
+    assert exclusions == frozenset(
+        {
+            "torch.ops.aten.masked_fill.Scalar",
+            "torch.ops.aten.embedding.default",
+            "torch.ops.aten.sign.default",
+        }
+    )
+
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        rejected = "torch.ops.aten.masked_fill.Scalar"
+        kept = "torch.ops.aten.add.Tensor"
+
+        def make_expected():
+            return {
+                rejected: docgen.SupportedOperatorEvidence(
+                    exported_op=rejected,
+                    pytorch_apis=("torch.masked_fill",),
+                    support_profiles={"INT"},
+                ),
+                kept: docgen.SupportedOperatorEvidence(
+                    exported_op=kept,
+                    pytorch_apis=("torch.add",),
+                    support_profiles={"INT"},
+                ),
+            }
+
+        docgen._activate_backend("u55")
+        filtered_u55 = docgen._filter_backend_supported_ops(make_expected(), object())  # type: ignore[arg-type]
+        assert set(filtered_u55) == {kept}
+
+        docgen._activate_backend("vgf")
+        filtered_vgf = docgen._filter_backend_supported_ops(make_expected(), object())  # type: ignore[arg-type]
+        assert set(filtered_vgf) == {rejected, kept}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_product_supported_is_registered_only_for_float_specs() -> None:
+    assert ProductSupported.tosa_specs
+    assert all(spec.support_float() for spec in ProductSupported.tosa_specs)
 
 
 def test_pipeline_profile_uses_configured_quantize_keyword(
