@@ -114,7 +114,7 @@ Two layers, both contract-focused (assert on the wire, not internals):
 
 ```bash
 # 1. Model-free tests — unit coverage plus loopback disconnect integration.
-pip install pytest httpx
+pip install pytest httpx tokenizers
 pytest tests/
 
 # 2. Conformance — black-box, against a LIVE server (real model, or llama.cpp/mlx-lm).
@@ -126,6 +126,9 @@ real server/protocol/streaming code is tested over HTTP without a `.pte`. The
 worker JSONL protocol is covered separately by `tests/test_worker_client.py`,
 and `tests/test_stream_disconnect.py` uses real loopback Uvicorn/TCP plus a
 model-free subprocess to verify disconnect cancellation end to end.
+The BPE splice tests use an in-memory tokenizer with no model downloads. Optional
+integration tests use local tokenizer directories set with `QWEN_HF_DIR`,
+`GEMMA_HF_DIR`, or `MUSE_GLIMMER_HF_DIR` and require `transformers`.
 
 ## Architecture
 

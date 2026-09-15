@@ -26,6 +26,11 @@ uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
 
+For models with a reasoning extractor, `chat_template_kwargs.return_reasoning`
+defaults to `true`. Set it to the boolean `false` to omit reasoning from the
+response; this does not disable the model's reasoning computation. Non-boolean
+values return `400 invalid_request_error` (`code: "invalid_value"`).
+
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
 wrong behavior: `n` (> 1), `reasoning_effort`,
@@ -41,6 +46,8 @@ ignored.
 Non-streaming response: `chat.completion` with one `choice`
 (`message.role = "assistant"`, string `content` or `tool_calls`, `finish_reason`
 ∈ `stop` | `length` | `tool_calls`) and a `usage` block.
+When reasoning is returned, `message.reasoning_content` contains the extracted
+reasoning text separately from visible `content` and `tool_calls`.
 `usage.prompt_tokens_details.cached_tokens` reports prompt tokens served from
 the session's resident state instead of prefetched this request (0 when the
 turn fully prefilled); the streaming usage chunk carries the same field.
@@ -50,6 +57,8 @@ first chunk carries `delta.role = "assistant"`, subsequent chunks carry
 `delta.content` (or buffered `delta.tool_calls`), a final chunk carries
 `finish_reason`, optionally a usage-only chunk (with
 `stream_options.include_usage`), terminated by `data: [DONE]`.
+For models with a reasoning extractor, output is buffered and returned reasoning
+is emitted as `delta.reasoning_content` before visible content or tool calls.
 
 ### Tool calling
 
@@ -84,3 +93,11 @@ implemented worker-side for engines that support it — a named session whose ne
 request is an exact-token extension of its resident context prefills only the new
 suffix. All KV/resident state lives inside the worker/session, never the control
 plane.
+
+For named sessions, an unchanged assistant reply can reuse its original generated
+token IDs. Clients may omit `reasoning_content` when echoing a reply. If the field
+is supplied, it must match the value returned to that client; a changed value
+(including explicit `null` or `""`) invalidates that turn's stored IDs and later
+records. The updated history is then rendered normally. If an assistant boundary
+cannot be verified, the server also uses the rendered text. The worker checks
+the resulting token sequence before reusing KV state in either case.
