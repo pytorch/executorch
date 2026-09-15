@@ -55,6 +55,19 @@ class UnsupportedAvgPool(torch.nn.Module):
         )
 
 
+class NHWCPaddedConv(torch.nn.Module):
+    def __init__(self, channels, shared_pad):
+        super().__init__()
+        out_channels = 64 if channels == 1 else 8
+        self.conv = torch.nn.Conv2d(channels, out_channels, (10, 4), stride=2)
+        self.shared_pad = shared_pad
+
+    def forward(self, x):
+        padded = torch.nn.functional.pad(x.permute(0, 3, 1, 2), (1, 1, 4, 5))
+        output = self.conv(padded).permute(0, 2, 3, 1)
+        return (output, padded) if self.shared_pad else output
+
+
 def _count(exported_program, target) -> int:
     return sum(node.target == target for node in exported_program.graph.nodes)
 
@@ -146,6 +159,37 @@ def test_explicit_layout_reuses_pad():
     program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
 
     assert _count(program, exir_ops.edge.cortex_m.pad.default) == 1
+
+
+def _lower_nhwc_padded_conv(channels, shared_pad):
+    torch.manual_seed(7)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(
+            NHWCPaddedConv(channels, shared_pad).eval(),
+            (torch.randn(1, 49, 10, channels),),
+        )
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.pad.default) == int(shared_pad)
+    if not shared_pad:
+        assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
+    return tester
+
+
+@pytest.mark.parametrize("channels", [1, 3])
+@pytest.mark.parametrize("shared_pad", [False, True])
+def test_explicit_layout_fuses_same_padding(channels, shared_pad):
+    tester = _lower_nhwc_padded_conv(channels, shared_pad)
+    tester.run_method_and_compare_outputs(inputs=tester.example_inputs, qtol=1)
+
+
+@pytest.mark.parametrize("channels", [1, 3])
+@pytest.mark.parametrize("shared_pad", [False, True])
+def test_implementation_explicit_layout_fuses_same_padding(channels, shared_pad):
+    tester = _lower_nhwc_padded_conv(channels, shared_pad)
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=tester.example_inputs, qtol=1)
 
 
 @pytest.mark.parametrize("hardtanh", [False, True])

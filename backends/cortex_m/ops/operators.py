@@ -769,6 +769,37 @@ lib.define(
 )
 
 
+def _conv2d_padding(
+    padding: Sequence[int],
+    input_shape: torch.Size,
+    weight_shape: torch.Size,
+    stride: Sequence[int],
+    dilation: Sequence[int],
+) -> tuple[int, int, int, int]:
+    # Four values mean top/left/bottom/right for supported SAME convolutions.
+    if len(padding) not in (2, 4) or any(p < 0 for p in padding):
+        raise ValueError(f"Expected 2 or 4 nonnegative padding values, got {padding}")
+    top, left = padding[:2]
+    bottom, right = padding[2:] if len(padding) == 4 else padding
+    if len(padding) == 4:
+        height, width = input_shape[2:4]
+        kernel = weight_shape[1:3]
+        if height == 1 and kernel[0] == 1:
+            raise ValueError("Four-value padding is unsupported for 1xN convolution")
+        total = [
+            max(((size + step - 1) // step - 1) * step + dil * (k - 1) + 1 - size, 0)
+            for size, step, dil, k in zip((height, width), stride, dilation, kernel)
+        ]
+        if (top, left, bottom, right) != (
+            total[0] // 2,
+            total[1] // 2,
+            total[0] - total[0] // 2,
+            total[1] - total[1] // 2,
+        ):
+            raise ValueError("Four-value padding must match SAME convolution geometry")
+    return top, left, bottom, right
+
+
 def _compute_conv2d_output_shape(
     input_shape: torch.Size,
     weight_shape: torch.Size,
@@ -784,15 +815,17 @@ def _compute_conv2d_output_shape(
     kernel_width = weight_shape[2]
 
     stride_h, stride_w = stride
-    pad_h, pad_w = padding
+    pad_h, pad_w, pad_bottom, pad_right = _conv2d_padding(
+        padding, input_shape, weight_shape, stride, dilation
+    )
     dilation_h, dilation_w = dilation
 
     out_channels = weight_shape[0]
     out_height = (
-        in_height + 2 * pad_h - dilation_h * (kernel_height - 1) - 1
+        in_height + pad_h + pad_bottom - dilation_h * (kernel_height - 1) - 1
     ) // stride_h + 1
     out_width = (
-        in_width + 2 * pad_w - dilation_w * (kernel_width - 1) - 1
+        in_width + pad_w + pad_right - dilation_w * (kernel_width - 1) - 1
     ) // stride_w + 1
     return torch.Size([batch, out_channels, out_height, out_width])
 
@@ -813,15 +846,17 @@ def _compute_depthwise_conv2d_output_shape(
     kernel_width = weight_shape[2]
 
     stride_h, stride_w = stride
-    pad_h, pad_w = padding
+    pad_h, pad_w, pad_bottom, pad_right = _conv2d_padding(
+        padding, input_shape, weight_shape, stride, dilation
+    )
     dilation_h, dilation_w = dilation
 
     out_channels = weight_shape[3]  # IHWO format: output channels at dimension 3
     out_height = (
-        in_height + 2 * pad_h - dilation_h * (kernel_height - 1) - 1
+        in_height + pad_h + pad_bottom - dilation_h * (kernel_height - 1) - 1
     ) // stride_h + 1
     out_width = (
-        in_width + 2 * pad_w - dilation_w * (kernel_width - 1) - 1
+        in_width + pad_w + pad_right - dilation_w * (kernel_width - 1) - 1
     ) // stride_w + 1
     return torch.Size([batch, out_channels, out_height, out_width])
 
@@ -876,6 +911,12 @@ def quantized_conv2d_impl(
         raise RuntimeError("quantized_conv2d expects 4D input and weight tensors")
     # Convert to int32 for accumulation and apply offsets
     input_int32 = input.to(torch.int32) + int(input_offset)
+    if len(padding) == 4:
+        top, left, bottom, right = _conv2d_padding(
+            padding, input.shape, weight.shape, stride, dilation
+        )
+        input_int32 = F.pad(input_int32, (left, right, top, bottom))
+        padding = (0, 0)
     weight_int32 = weight.to(torch.int32)
 
     if bias is None:
@@ -1110,6 +1151,12 @@ def quantized_depthwise_conv2d_impl(
 
     # Convert to int32 for accumulation and apply offsets
     input_int32 = input.to(torch.int32) + int(input_offset)
+    if len(padding) == 4:
+        top, left, bottom, right = _conv2d_padding(
+            padding, input.shape, weight.shape, stride, dilation
+        )
+        input_int32 = F.pad(input_int32, (left, right, top, bottom))
+        padding = (0, 0)
     weight_int32 = weight.to(torch.int32)
 
     if bias is None:
