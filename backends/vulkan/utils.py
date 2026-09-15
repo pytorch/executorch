@@ -275,6 +275,25 @@ def is_tensor_arg_node(node: Any) -> bool:
     return False
 
 
+def tensor_nodes_in_arg(arg: Any) -> List[torch.fx.Node]:
+    """
+    The tensor nodes contained in an operator argument, skipping `None` entries
+    (e.g. the unspecified indices of `aten.index.Tensor`). A single node argument
+    yields a single-element list when it is a tensor node, and an empty list
+    otherwise. A list argument containing any non-`None` entry that is not a
+    tensor node is not a tensor argument and yields an empty list.
+    """
+    if isinstance(arg, torch.fx.Node):
+        return [arg] if is_tensor_node(arg) else []
+    if isinstance(arg, (list, tuple)):
+        # `None` entries do not reference a tensor; skip them. Any other
+        # non-tensor entry means this is not a tensor argument.
+        if not all(n is None or is_tensor_node(n) for n in arg):
+            return []
+        return [n for n in arg if n is not None]
+    return []
+
+
 def num_tensor_arg_nodes(node: torch.fx.Node) -> int:
     """
     For a given node, return the number of argument nodes that are associated with
@@ -1428,7 +1447,10 @@ class OpRepSets:
         self.primary_arg_idx: Optional[int] = None
         for i, arg_node in enumerate(self.op_node.args):
             arg_node_repset = inputs_repsets[i]
-            if not is_tensor_arg_node(arg_node):
+            # `None` entries (e.g. the unspecified indices of `aten.index.Tensor`)
+            # do not reference a tensor; a list argument that mixes `None` entries
+            # with tensor nodes is still a tensor argument.
+            if len(tensor_nodes_in_arg(arg_node)) == 0:
                 continue
             if arg_node_repset is None:
                 continue
@@ -1453,8 +1475,11 @@ class OpRepSets:
             arg_repset = inputs_repsets[i]
 
             # Use ANY_STORAGE_INCL_PACKED_INT8 for non-tensor nodes so they don't cause the op
-            # repsets to appear empty
-            if not is_tensor_arg_node(arg_node):
+            # repsets to appear empty. `None` entries (e.g. the unspecified indices of
+            # `aten.index.Tensor`) do not reference a tensor; a list argument that mixes
+            # `None` entries with tensor nodes uses the registered repset so that
+            # `filter_invalid_reprs_for_arg` is applied to it.
+            if len(tensor_nodes_in_arg(arg_node)) == 0:
                 args_repset_list.append(ANY_STORAGE_INCL_PACKED_INT8)
             # NO_STORAGE is used to denote that an input is either a non tensor arg or
             # a weight tensor that is not prepacked. Similar to the above, use
@@ -1552,10 +1577,14 @@ class OpRepSets:
                 arg_node.meta["val"], arg_repsets, texture_limits
             )
         elif isinstance(arg_node, list) and all(
-            is_single_tensor_node(n) for n in arg_node
+            n is None or is_single_tensor_node(n) for n in arg_node
         ):
+            # `None` entries (e.g. the unspecified indices of `aten.index.Tensor`)
+            # do not reference a tensor; skip them.
             return filter_invalid_reprs_for_node_list(
-                arg_repsets, arg_node, texture_limits
+                arg_repsets,
+                [n for n in arg_node if n is not None],
+                texture_limits,
             )
         # Special case for getitem; return the repset of the particular val in the
         # list of tensors that is being extracted.
