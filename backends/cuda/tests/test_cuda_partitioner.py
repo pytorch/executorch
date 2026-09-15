@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import hashlib
+import json
 import operator
 import os
 import tempfile
@@ -25,6 +26,10 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaAotiVariant,
     CudaWeightCollector,
     encode_cuda_aoti_metadata,
+)
+from executorch.backends.cuda.passes.lower_offgraph_kv import (
+    LowerOffGraphKVPass,
+    parse_offgraph_kv_manifest,
 )
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
@@ -104,6 +109,67 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertIn(b"second", metadata)
             for storage in artifact.storages.values():
                 storage.close()
+
+    def test_offgraph_kv_metadata_is_kept_without_storage(self) -> None:
+        cache = torch.zeros(16, dtype=torch.bfloat16)
+        cache_properties = TensorProperties(cache)
+        cache.untyped_storage().resize_(0)
+        weight = torch.arange(4, dtype=torch.float32)
+        weights = Weights(
+            {
+                "__et_offgraph_kv_layer_0_k": (
+                    cache,
+                    cache_properties,
+                ),
+                "weight": (weight, TensorProperties(weight)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._materialize(weights, directory)
+            self.assertEqual(2, len(artifact.entries))
+            self.assertNotIn(
+                artifact.entries[0].storage_key,
+                artifact.storages,
+            )
+            self.assertEqual(artifact.entries[0].storage_nbytes, 32)
+            self.assertIn(artifact.entries[1].storage_key, artifact.storages)
+            collector = CudaWeightCollector()
+            result = self._parent_result("so-key")
+            collector.add_preprocess_result(result, artifact, "cuda")
+            collector.finish()
+            self.assertIn(
+                artifact.entries[1].storage_key.encode(), result.processed_bytes
+            )
+            self.assertIn(artifact.entries[0].fqn.encode(), result.processed_bytes)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_offgraph_manifest_rejects_duplicate_layer_ids(self) -> None:
+        layer = {
+            "layer_id": 0,
+            "policy": "flat",
+            "num_kv_heads": 2,
+            "head_dim": 64,
+        }
+        manifest = {
+            "version": 1,
+            "dtype": "bfloat16",
+            "maximum_capacity": 32,
+            "initial_capacity": 4,
+            "layers": [layer, layer],
+        }
+
+        with self.assertRaisesRegex(ValueError, "unique"):
+            parse_offgraph_kv_manifest(json.dumps(manifest).encode())
+
+    def test_offgraph_compile_placeholder_has_no_physical_storage(self) -> None:
+        storage = LowerOffGraphKVPass._compile_storage(
+            1024, torch.bfloat16, torch.device("cpu")
+        )
+
+        self.assertEqual(storage.numel(), 1024)
+        self.assertEqual(storage.untyped_storage().nbytes(), 0)
 
     @patch(
         "executorch.backends.cuda.cuda_backend._is_cpu_clone_active",
