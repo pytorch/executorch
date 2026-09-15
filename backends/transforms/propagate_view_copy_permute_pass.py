@@ -36,6 +36,13 @@ class _ForkBranchSplit:
     arg_update: tuple[Any, Any] | None
 
 
+@dataclass(frozen=True)
+class _PointwiseRegionMove:
+    nodes_and_shapes: tuple[tuple[torch.fx.Node, tuple[_Dim, ...]], ...]
+    exit_producer: torch.fx.Node
+    exit_user: torch.fx.Node
+
+
 class PropagateViewCopyPermutePass(ExportPass, ABC):
     """Abstract implementation of a permute/view_copy propagation pass.
 
@@ -852,13 +859,242 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         next_nodes: Sequence[torch.fx.Node],
     ) -> bool:
         if frontier is not node and previous_frontier is None:
+            # We cannot safely detach a path if its previous operation is
+            # unknown.
             return False
+
+        # First try to handle branches that do not use each other's results.
         plan = self._plan_fork_split(node, frontier, next_nodes)
-        if plan is None:
+        if plan is not None:
+            producer, branch_splits = plan
+            self._apply_fork_split(node, frontier, producer, branch_splits)
+            return True
+
+        # If the branches use each other's results, try moving the dimension
+        # reorder past the connected group of operations as one change.
+        region_move = self._plan_pointwise_region_move(node)
+        if region_move is not None:
+            self._apply_pointwise_region_move(node, region_move)
+            return True
+
+        # Neither rewrite is safe, so leave the graph unchanged.
+        return False
+
+    def _plan_pointwise_region_move(
+        self, node: torch.fx.Node
+    ) -> _PointwiseRegionMove | None:
+        """Check whether a dimension reorder can move past related operations.
+
+        This handles cases such as ``sub(x, floor(x))``, where one operation
+        uses the result of another. Here ``P`` means permute:
+
+            Before:  P(x) --+-----------------> sub -> user
+                            |                    ^
+                            +-> floor -----------+
+
+            After:      x --+-----------------> sub -> P -> user
+                            |                    ^
+                            +-> floor -----------+
+
+        These operations process each value independently, so the dimension
+        reorder can happen before or after them without changing the result.
+
+        First find all connected operations that can make this move. Only
+        accept the change when the group has one outgoing connection and any
+        input from outside the group is unaffected by dimension order. No graph
+        connections are changed until every check succeeds.
+
+        """
+        normalized_dims = self._pointwise_region_permute_dims(node)
+        if normalized_dims is None:
+            # This is not a supported, valid dimension reorder.
+            return None
+        rank = len(normalized_dims)
+
+        discovered_region = self._discover_pointwise_region(node, normalized_dims)
+        if discovered_region is None:
+            # A backend rejected one of the paths into a shared operation.
+            return None
+        region, exit_edges = discovered_region
+        if not region:
+            # No following operation can safely run before the reorder.
+            return None
+        if any(parent is node for parent, _ in exit_edges):
+            # A direct user still needs the reordered value, so moving the only
+            # reorder would break that path.
+            return None
+
+        # A connection first recorded as leaving the group may turn out to stay
+        # inside it when the same operation is reached through another branch.
+        exit_edges = {
+            (parent, user)
+            for parent, user in exit_edges
+            if parent in region and user not in region
+        }
+        if len(exit_edges) != 1:
+            # Moving one reorder is only safe when the group has exactly one
+            # outgoing connection.
+            return None
+
+        if not self._pointwise_region_inputs_are_safe(region, node, rank):
+            # An outside input depends on dimension order and would no longer
+            # match the reordered input.
+            return None
+
+        # Keep the operations in their original execution order and record the
+        # shape each one will have after the dimension reorder is moved.
+        graph_order = {
+            graph_node: index for index, graph_node in enumerate(node.graph.nodes)
+        }
+        nodes_and_shapes = []
+        for region_node in sorted(region, key=graph_order.__getitem__):
+            region_val = cast(torch.Tensor, region_node.meta["val"])
+            source_shape = self._source_shape(region_val, normalized_dims)
+            nodes_and_shapes.append((region_node, source_shape))
+
+        exit_producer, exit_user = next(iter(exit_edges))
+        return _PointwiseRegionMove(tuple(nodes_and_shapes), exit_producer, exit_user)
+
+    def _pointwise_region_permute_dims(
+        self, node: torch.fx.Node
+    ) -> tuple[int, ...] | None:
+        if node.target not in self._permute_targets or len(node.all_input_nodes) != 1:
+            # This rewrite only handles a known permute with one tensor input.
+            return None
+        producer = node.all_input_nodes[0]
+        if not isinstance(producer.meta.get("val"), torch.Tensor):
+            # The input shape is required to update shapes after the move.
+            return None
+        permute_dims = self._dim_arg(node.args[1])
+        if not isinstance(permute_dims, Sequence):
+            # A permute must provide an ordered list of dimensions.
+            return None
+        rank = len(permute_dims)
+        normalized_dims = tuple(dim if dim >= 0 else dim + rank for dim in permute_dims)
+        if sorted(normalized_dims) != list(range(rank)):
+            # Every input dimension must appear exactly once.
+            return None
+        return normalized_dims
+
+    def _discover_pointwise_region(
+        self, node: torch.fx.Node, normalized_dims: Sequence[int]
+    ) -> tuple[set[torch.fx.Node], set[tuple[torch.fx.Node, torch.fx.Node]]] | None:
+        region: set[torch.fx.Node] = set()
+        pending = [(node, user) for user in node.users]
+        exit_edges: set[tuple[torch.fx.Node, torch.fx.Node]] = set()
+        while pending:
+            parent, candidate = pending.pop()
+            if candidate in region:
+                if self.blocks_moving(node, parent, (candidate,)):
+                    # This operation was safe through another path, but this
+                    # backend does not allow moving through the current path.
+                    return None
+                # Another branch already reached and checked this operation.
+                continue
+            if not self._can_include_in_pointwise_region(
+                node, parent, candidate, normalized_dims
+            ):
+                # Stop following this path and record where the checked group
+                # connects to the rest of the graph.
+                exit_edges.add((parent, candidate))
+                continue
+            region.add(candidate)
+            pending.extend((candidate, user) for user in candidate.users)
+        return region, exit_edges
+
+    def _can_include_in_pointwise_region(
+        self,
+        moving_node: torch.fx.Node,
+        parent: torch.fx.Node,
+        candidate: torch.fx.Node,
+        normalized_dims: Sequence[int],
+    ) -> bool:
+        candidate_val = candidate.meta.get("val")
+        if not self.is_elementwise(candidate):
+            # Other operations may produce different results when dimensions
+            # are reordered before them.
             return False
-        producer, branch_splits = plan
-        self._apply_fork_split(node, frontier, producer, branch_splits)
+        if not isinstance(candidate_val, torch.Tensor):
+            # The output shape is required to update the graph safely.
+            return False
+        if len(candidate_val.shape) != len(normalized_dims):
+            # The same reorder cannot be reused after the number of dimensions
+            # changes.
+            return False
+        if self.blocks_moving(moving_node, parent, (candidate,)):
+            # Give each backend a chance to reject a move it cannot support.
+            return False
+        source_shape = self._source_shape(candidate_val, normalized_dims)
+        if not self.tolerates_shape_after_move(candidate, source_shape):
+            # The operation cannot accept the shape it would see after moving
+            # the reorder.
+            return False
         return True
+
+    @staticmethod
+    def _source_shape(
+        value: torch.Tensor, normalized_dims: Sequence[int]
+    ) -> tuple[_Dim, ...]:
+        source_shape: list[_Dim] = [1] * len(normalized_dims)
+        for output_axis, source_axis in enumerate(normalized_dims):
+            source_shape[source_axis] = value.shape[output_axis]
+        return tuple(source_shape)
+
+    @staticmethod
+    def _pointwise_region_inputs_are_safe(
+        region: set[torch.fx.Node], moving_node: torch.fx.Node, rank: int
+    ) -> bool:
+        # Inputs created inside the group move together. Any input from outside
+        # must be unaffected by dimension order, or the operation could combine
+        # values from mismatched dimensions after the move.
+        return all(
+            input_node is moving_node
+            or input_node in region
+            or FuseIdenticalInputTransformsPass.is_layout_invariant(input_node, rank)
+            for region_node in region
+            for input_node in region_node.all_input_nodes
+        )
+
+    def _apply_pointwise_region_move(
+        self, node: torch.fx.Node, plan: _PointwiseRegionMove
+    ) -> None:
+        """Move the reorder to the group's only outgoing connection."""
+        # Save the input before the reorder and the information describing the
+        # group's original output.
+        producer = node.all_input_nodes[0]
+        old_exit_meta = copy.copy(plan.exit_producer.meta)
+
+        # Replace uses of the old reorder inside the group with its original
+        # input. Update every operation's recorded output shape to match.
+        for region_node, source_shape in plan.nodes_and_shapes:
+            region_node.replace_input_with(node, producer)
+            region_node.meta = copy.copy(region_node.meta)
+            region_val = cast(torch.Tensor, region_node.meta["val"])
+            region_node.meta["val"] = region_val.new_empty(source_shape)
+
+        # Recreate the reorder after the final operation in the group.
+        with plan.exit_producer.graph.inserting_after(plan.exit_producer):
+            moved_permute = plan.exit_producer.graph.call_function(
+                cast(Any, node.target),
+                args=(plan.exit_producer, *node.args[1:]),
+                kwargs=dict(node.kwargs),
+            )
+
+        # The new reorder produces the same value and retains the same backend
+        # assignment as the group's output did before the move.
+        moved_permute.meta = copy.copy(node.meta)
+        moved_permute.meta["val"] = old_exit_meta["val"]
+        if "delegation_tag" in old_exit_meta:
+            moved_permute.meta["delegation_tag"] = old_exit_meta["delegation_tag"]
+        else:
+            moved_permute.meta.pop("delegation_tag", None)
+
+        # Send the group's only outside user through the new reorder.
+        plan.exit_user.replace_input_with(plan.exit_producer, moved_permute)
+
+        # The reorder at its old location is now unused.
+        if not node.users:
+            node.graph.erase_node(node)
 
     def _plan_fork_split(
         self,
