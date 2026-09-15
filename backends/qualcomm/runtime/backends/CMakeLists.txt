@@ -15,6 +15,7 @@ target_sources(
 target_sources(
   qnn_function_interface
   INTERFACE ${CMAKE_CURRENT_LIST_DIR}/QnnFunctionInterface.h
+            ${CMAKE_CURRENT_LIST_DIR}/QnnSdkCompatibility.h
 )
 
 # qnn_sys_implementation
@@ -28,6 +29,7 @@ target_sources(
 target_sources(
   qnn_sys_function_interface
   INTERFACE ${CMAKE_CURRENT_LIST_DIR}/QnnSysFunctionInterface.h
+            ${CMAKE_CURRENT_LIST_DIR}/QnnSdkCompatibility.h
 )
 
 # qnn_logger

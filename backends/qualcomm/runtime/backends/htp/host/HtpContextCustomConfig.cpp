@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpContextCustomConfig.h>
 
@@ -24,6 +25,19 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
         QNN_HTP_CONTEXT_CONFIG_OPTION_WEIGHT_SHARING_ENABLED;
     p_custom_config->weightSharingEnabled = true;
     ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
+  }
+  if (fcb_options_ != nullptr && fcb_options_->fcb_reference_weight_sharing()) {
+#if QNN_EXECUTORCH_SUPPORTS_FCB
+    p_custom_config = AllocContextCustomConfig();
+    p_custom_config->option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_REFERENCE_WEIGHT_SHARING_ENABLED;
+    p_custom_config->referenceWeightSharingEnabled = true;
+    ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
+#else
+    QNN_EXECUTORCH_LOG_ERROR(
+        "FCB reference weight sharing is not supported by this QNN SDK; "
+        "Compilation with QAIRT SDK 2.48 or newer is required.");
+#endif
   }
 
   return ret;
