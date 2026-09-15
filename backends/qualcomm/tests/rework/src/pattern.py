@@ -33,6 +33,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
+    QCOM_REQUANTIZE,
 )
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -551,47 +552,86 @@ class ConvertLinearToConv2d:
         pass_pipeline: PassPipeline,
     ):
         target_pass = _passes.ConvertLinearToConv2d
-        conv = exir_ops.edge.aten.convolution.default
+        if quantizer is None:
+            conv = exir_ops.edge.aten.convolution.default
+            linear = exir_ops.edge.aten.linear.default
+            view = exir_ops.edge.aten.view_copy.default
+            permute = exir_ops.edge.aten.permute_copy.default
+
+            def lower(module, sample_input):
+                return pass_pipeline.lower_edge_ep(
+                    module=module,
+                    sample_input=sample_input,
+                    backend_type=backend_type,
+                    compile_spec=compile_spec,
+                    target_pass=target_pass,
+                    quantizer=quantizer,
+                    convert_linear_to_conv2d=True,
+                ).graph_module
+
+        else:
+            conv = torch.ops.aten.conv2d.default
+            linear = torch.ops.aten.linear.default
+            view = torch.ops.aten.reshape.default
+            permute = torch.ops.aten.permute.default
+
+            def lower(module, sample_input):
+                aten_gm = pass_pipeline.lower_annotation_gm(
+                    module=module,
+                    sample_input=sample_input,
+                    target_pass=target_pass,
+                    backend_type=backend_type,
+                    convert_linear_to_conv2d=True,
+                )
+
+                # This is an extra test to ensure nn_module_stack got propagated
+                # to edge graph.
+                prev_convert = quantizer._convert_linear_to_conv2d
+                quantizer.set_convert_linear_to_conv2d(True)
+                try:
+                    # The quantizer fixture is cached and shared across tests, so the
+                    # annotation-time flag is restored before returning.
+                    edge_gm = pass_pipeline.lower_edge_ep(
+                        module=module,
+                        sample_input=sample_input,
+                        backend_type=backend_type,
+                        compile_spec=compile_spec,
+                        target_pass=target_pass,
+                        quantizer=quantizer,
+                        convert_linear_to_conv2d=True,
+                    ).graph_module
+                finally:
+                    quantizer.set_convert_linear_to_conv2d(prev_convert)
+
+                edge_conv = exir_ops.edge.aten.convolution.default
+                assertions.assert_target_count_at_least(edge_gm, edge_conv, 1)
+                for node in edge_gm.graph.nodes:
+                    if node.target == edge_conv:
+                        stack = node.meta["nn_module_stack"]
+                        assert any(
+                            path.endswith(".conv") for path, _ in stack.values()
+                        ), f"{node} lost annotation-phase .conv module path: {stack}"
+
+                return aten_gm
 
         with subtests.test(msg="basic"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=ConvertLinearToConv2d._Basic(),
-                sample_input=(torch.randn(2, 8),),
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=target_pass,
-                quantizer=quantizer,
-                convert_linear_to_conv2d=True,
-            ).graph_module
-            assertions.assert_no_target(gm, exir_ops.edge.aten.linear.default)
+            gm = lower(ConvertLinearToConv2d._Basic(), (torch.randn(2, 8),))
+            assertions.assert_no_target(gm, linear)
             assertions.assert_target_count(gm, conv, 1)
             # rank-2 input: reshape×2 (input + output restore) + permute×2 (pre/post conv)
-            assertions.assert_target_count(gm, exir_ops.edge.aten.view_copy.default, 2)
-            assertions.assert_target_count(
-                gm, exir_ops.edge.aten.permute_copy.default, 2
-            )
+            assertions.assert_target_count(gm, view, 2)
+            assertions.assert_target_count(gm, permute, 2)
 
         with subtests.test(msg="shared_weight"):
-            gm = pass_pipeline.lower_edge_ep(
-                module=ConvertLinearToConv2d._SharedWeight(),
-                sample_input=(torch.randn(2, 8), torch.randn(2, 8)),
-                backend_type=backend_type,
-                compile_spec=compile_spec,
-                target_pass=target_pass,
-                quantizer=quantizer,
-                convert_linear_to_conv2d=True,
-            ).graph_module
-            assertions.assert_no_target(gm, exir_ops.edge.aten.linear.default)
+            gm = lower(
+                ConvertLinearToConv2d._SharedWeight(),
+                (torch.randn(2, 8), torch.randn(2, 8)),
+            )
+            assertions.assert_no_target(gm, linear)
             assertions.assert_target_count(gm, conv, 2)
-            conv_weight_sources = set()
-            for node in gm.graph.nodes:
-                if node.target is conv:
-                    weight_arg = node.args[1]
-                    conv_weight_sources.add(
-                        weight_arg.args[0]
-                        if weight_arg.target in dq_ops
-                        else weight_arg
-                    )
+            conv_weight_sources = {
+                node.args[1] for node in gm.graph.nodes if node.target is conv
+            }
             assert (
                 len(conv_weight_sources) == 1
             ), f"expected both convolution nodes to share one weight source, got {conv_weight_sources}"
@@ -3779,6 +3819,128 @@ class FuseConsecutiveCast:
         # Multiple casting nodes fused to a single cast node
         assertions.assert_no_consecutive(gm, FuseConsecutiveCast._CAST_OPS)
         assertions.assert_target_count_at_most(gm, FuseConsecutiveCast._CAST_OPS, 1)
+
+
+class FuseConsecutiveReshape:
+    class _ConsecutiveReshape(torch.nn.Module):
+        def forward(self, x):
+            a = torch.relu(x)
+            b = a.view(2, 3, 4)
+            c = b.view(6, 4)
+            d = c.view(24)
+            e = d.view(12, 2)
+            return torch.relu(e)
+
+    @staticmethod
+    def _annotate_16a8w(wide_node_names):
+        """This is to trigger requantize"""
+        from executorch.backends.qualcomm.quantizer.qconfig import (
+            get_16a8w_qnn_ptq_config,
+        )
+        from executorch.backends.qualcomm.quantizer.rules import Q_ANNOTATION_KEY
+        from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
+
+        def annotate(gm: torch.fx.GraphModule):
+            config = get_16a8w_qnn_ptq_config()
+            for node in gm.graph.nodes:
+                if node.name not in wide_node_names:
+                    continue
+                input_qspec_map = {
+                    arg: config.input_activation
+                    for arg in node.args
+                    if isinstance(arg, torch.fx.Node)
+                }
+                node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                    input_qspec_map=input_qspec_map,
+                    output_qspec=config.output_activation,
+                    _annotated=True,
+                )
+
+        return annotate
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+        subtests,
+    ):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+
+        module = FuseConsecutiveReshape._ConsecutiveReshape()
+        inputs = (torch.randn(4, 6),)
+        target_pass = _passes.FuseConsecutiveReshape
+        view = exir_ops.edge.aten.view_copy.default
+
+        def lower(active_quantizer):
+            return pass_pipeline.lower_edge_ep(
+                module=module,
+                sample_input=inputs,
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=target_pass,
+                quantizer=active_quantizer,
+            ).graph_module
+
+        def assert_requantize_intact(gm):
+            """Every QCOM_REQUANTIZE entry is keyed by consumer name, so each name
+            must still be a real user after the fuse rewires args."""
+            found = 0
+            for node in gm.graph.nodes:
+                requantize = node.meta.get(QCOM_REQUANTIZE)
+                if not requantize:
+                    continue
+                found += 1
+                users = {user.name for user in node.users}
+                missing = set(requantize) - users
+                assert not missing, (
+                    f"{node} has QCOM_REQUANTIZE naming non-users {missing}; "
+                    f"actual users {users}"
+                )
+                unnamed = users - set(requantize)
+                assert not unnamed, (
+                    f"{node} carries QCOM_REQUANTIZE but gained users {unnamed} "
+                    f"that would read the un-requantized value"
+                )
+            assert found > 0, "expected a QCOM_REQUANTIZE boundary to be annotated"
+
+        with subtests.test(msg="default"):
+            gm = lower(quantizer)
+            assertions.assert_no_consecutive(gm, view)
+            assertions.assert_target_count(gm, view, 1)
+
+        # Test requantize with FuseConsecutiveReshape
+        if quantizer is None:
+            return
+
+        requantize_cases = [
+            (
+                "requantize_after_first_view",
+                {"view_1", "view_2", "view_3", "relu_1"},
+                4,
+            ),
+            (
+                "requantize_at_first_relu",
+                {"view", "view_1", "view_2", "view_3", "relu_1"},
+                4,
+            ),
+            ("requantize_at_middle_view", {"view_2", "view_3", "relu_1"}, 3),
+            ("requantize_at_output", {"relu_1"}, 1),
+        ]
+        for name, wide_node_names, expected_views in requantize_cases:
+            with subtests.test(msg=name):
+                mixed_quantizer = make_quantizer(
+                    backend=backend_type,
+                    custom_annotations=(
+                        FuseConsecutiveReshape._annotate_16a8w(wide_node_names),
+                    ),
+                )
+                gm = lower(mixed_quantizer)
+                assertions.assert_target_count(gm, view, expected_views)
+                assert_requantize_intact(gm)
 
 
 class FuseConsecutiveTranspose:
