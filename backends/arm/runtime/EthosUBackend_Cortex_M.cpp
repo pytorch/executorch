@@ -53,10 +53,11 @@ namespace arm {
 
 struct PlatformState {};
 
-PlatformState* platform_init(
+executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
-    executorch::runtime::MemoryAllocator* /*allocator*/) {
-  return nullptr;
+    executorch::runtime::MemoryAllocator* /*allocator*/,
+    ExecutionHandle* /*handle*/) {
+  return executorch::runtime::Error::Ok;
 }
 
 void platform_destroy(PlatformState* /*state*/) {}

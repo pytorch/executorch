@@ -46,6 +46,9 @@ from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
     MLPerfTinyImageClassification,
 )
+from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_keyword_spotting import (
+    MLPerfTinyKeywordSpotting,
+)
 from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
 from executorch.exir import (
     EdgeCompileConfig,
@@ -65,6 +68,7 @@ MODELS = {
     "cifar10": CifarNet,
     "mobilenetv2": MobilenetV2,
     "mlperf_tiny_image_classification": MLPerfTinyImageClassification,
+    "mlperf_tiny_keyword_spotting": MLPerfTinyKeywordSpotting,
 }
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -100,7 +104,10 @@ def _print_ops_in_edge_program(edge_program):
 
 
 def _get_model_info_from_name(
-    model_name: str, dataset_path: str | None, use_random_dataset: bool
+    model_name: str,
+    dataset_path: str | None,
+    use_random_dataset: bool,
+    num_samples: int | None,
 ):
     """Given the name of an example pytorch model and args, return the model, its class instance (can be None), example inputs and calibration inputs (can be None).
 
@@ -119,9 +126,11 @@ def _get_model_info_from_name(
                 )
             model_cls_inst = model_cls()
 
-        elif model_cls is MLPerfTinyImageClassification:
+        elif model_cls in (MLPerfTinyImageClassification, MLPerfTinyKeywordSpotting):
             model_cls_inst = model_cls(
-                dataset_path=dataset_path, use_random_dataset=use_random_dataset
+                dataset_path=dataset_path,
+                use_random_dataset=use_random_dataset,
+                num_samples=num_samples,
             )
 
         else:
@@ -258,6 +267,13 @@ def _get_arg_parser():
         help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
     )
     parser.add_argument(
+        "--num_random_samples",
+        required=False,
+        default=None,
+        type=int,
+        help="Number of random samples to generate, required when `--use_random_dataset` flag is set.",
+    )
+    parser.add_argument(
         "-dst",
         "--dataset_path",
         required=False,
@@ -286,7 +302,10 @@ if __name__ == "__main__":  # noqa C901
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs, model_cls_inst = (
         _get_model_info_from_name(
-            args.model_name, args.dataset_path, args.use_random_dataset
+            args.model_name,
+            args.dataset_path,
+            args.use_random_dataset,
+            args.num_random_samples,
         )
     )
     model = model.eval()
@@ -317,7 +336,8 @@ if __name__ == "__main__":  # noqa C901
         quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
         if args.use_qat:
             if not isinstance(
-                model_cls_inst, (CifarNet, MLPerfTinyImageClassification)
+                model_cls_inst,
+                (CifarNet, MLPerfTinyImageClassification, MLPerfTinyKeywordSpotting),
             ):
                 raise ValueError(
                     f"QAT training is not supported for model '{args.model_name}'"

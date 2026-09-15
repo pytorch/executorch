@@ -276,6 +276,7 @@ enum QnnExecuTorchOpPackageTarget: int {
   UNKNOWN = 0,
   CPU,
   HTP,
+  LPAI,
 }
 
 /// The platform of the op package library.
@@ -283,6 +284,7 @@ enum QnnExecuTorchOpPackagePlatform: int {
   UNKNOWN = 0,
   X86_64,
   AARCH64_ANDROID,
+  HEXAGON,
 }
 
 table QnnExecuTorchOpPackageInfo {

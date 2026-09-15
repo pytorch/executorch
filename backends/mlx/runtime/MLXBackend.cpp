@@ -6,6 +6,7 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+#include "MLXBatchedSequenceCache.h"
 #include "MLXCache.h"
 #include "MLXCellCache.h"
 #include "MLXExecutor.h"
@@ -392,6 +393,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
               std::string("init: cache under key '") + cache_key +
               "' is not an MLX cache");
         }
+        handle->state.cache->bind_controller_stream(handle->stream);
       }
 
       // Run init chain if present.
@@ -606,9 +608,11 @@ static auto success_with_compiler = register_backend(backend);
 // Cache it installs under a cache_key. Adding a kind is a new builder here.
 const int cache_builders_registered = [] {
   const Error single = cache::CacheFactory::global().register_builder(
-      kMLXBackendId, cache::kind::kSingle, [](const cache::CacheConfig& cfg) {
+      kMLXBackendId,
+      cache::kind::kSingle,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXSequenceCache>(cfg));
+            std::make_shared<MLXSequenceCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       single == Error::Ok,
@@ -618,15 +622,40 @@ const int cache_builders_registered = [] {
   const Error batched_cell = cache::CacheFactory::global().register_builder(
       kMLXBackendId,
       cache::kind::kBatchedCell,
-      [](const cache::CacheConfig& cfg) {
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXCellCache>(cfg));
+            std::make_shared<MLXCellCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       batched_cell == Error::Ok,
       "Failed to register cache builder for %s:%s",
       kMLXBackendId,
       cache::kind::kBatchedCell);
+  const Error batched_seq = cache::CacheFactory::global().register_builder(
+      kMLXBackendId,
+      cache::kind::kBatchedSequence,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
+            std::make_shared<MLXBatchedSequenceCache>(geometry, cfg));
+      });
+  ET_CHECK_MSG(
+      batched_seq == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatchedSequence);
+  // The layout kBatched points at, also registered under its own name above.
+  const Error batched = cache::CacheFactory::global().register_builder(
+      kMLXBackendId,
+      cache::kind::kBatched,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::Cache>(
+            std::make_shared<MLXBatchedSequenceCache>(geometry, cfg));
+      });
+  ET_CHECK_MSG(
+      batched == Error::Ok,
+      "Failed to register cache builder for %s:%s",
+      kMLXBackendId,
+      cache::kind::kBatched);
   return 0;
 }();
 } // namespace

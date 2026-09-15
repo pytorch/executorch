@@ -143,7 +143,12 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       return read_status;
     }
 
-    handle->platform_state = platform_init(compile_specs, allocator);
+    const Error platform_status =
+        platform_init(compile_specs, allocator, handle);
+    if (platform_status != Error::Ok) {
+      delete handle;
+      return platform_status;
+    }
 
     // Return the same buffer we were passed - this data will be
     // executed directly
@@ -460,15 +465,6 @@ auto EthosUBackend_backend = EthosUBackend();
 Backend EthosUBackend_id{"EthosUBackend", &EthosUBackend_backend};
 static executorch::runtime::Error EthosUBackend_registered =
     register_backend(EthosUBackend_id);
-
-// DEPRECATED in Executorch 1.2
-// Remove it from your code and make sure to add this to your CMAKE rules
-// instead:
-//   executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
-extern "C" ET_DEPRECATED executorch::runtime::Error
-executorch_delegate_EthosUBackend_registered() {
-  return EthosUBackend_registered;
-}
 
 } // namespace
 

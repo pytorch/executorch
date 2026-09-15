@@ -34,8 +34,16 @@ from executorch.backends.native.passes.reinplace import (
     BACKEND_INPLACE_OPS,
     NativeReinplacePass,
 )
+from executorch.backends.native.passes.replace_copy_with_alias import (
+    ReplaceCopyWithAliasPass,
+)
 
 from executorch.backends.transforms.collapse_view_copy import CollapseViewCopyPass
+from executorch.backends.transforms.fuse_gqa_with_sdpa import FuseGQAWithSDPAPass
+from executorch.backends.transforms.fuse_rms_norm import FuseRMSNormPass
+from executorch.backends.transforms.normalize_sdpa_input_rank import (
+    NormalizeSDPAInputRankPass,
+)
 
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportPass
 from executorch.exir.passes.cse_pass import CSEPass
@@ -44,18 +52,26 @@ __all__ = [
     "backend_inplace_aten_variants",
     "BACKEND_INPLACE_OPS",
     "CollapseViewCopyPass",
+    "FuseGQAWithSDPAPass",
+    "FuseRMSNormPass",
     "get_default_passes",
     "NativeReinplacePass",
+    "NormalizeSDPAInputRankPass",
+    "ReplaceCopyWithAliasPass",
 ]
 
 
 def get_default_passes() -> List[Union[ExportPass, ExportedProgramPassBase]]:
     """Passes enabled by default for the native backend.
 
-    view_copy collapsing and CSE run first to settle the graph; reinplace runs
-    last, rewriting functional ops into their in-place edge forms.
+    GQA fusion runs before SDPA rank normalization, then view_copy collapsing
+    and CSE settle the graph. Reinplace runs last, rewriting functional ops into
+    their in-place edge forms.
     """
     return [
+        FuseGQAWithSDPAPass(),
+        NormalizeSDPAInputRankPass(),
+        FuseRMSNormPass(fold_dtype_casts=True, allow_lossy_weight_casts=True),
         CollapseViewCopyPass(),
         CSEPass(),
         NativeReinplacePass(),

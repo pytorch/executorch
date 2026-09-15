@@ -43,7 +43,9 @@ def test_constant_out_of_bounds_index_raises(dim: int, index: int):
     )
     edge_program = to_edge(exported_program)
     edge_exported_program = edge_program.exported_program()
-    decompose_pass = DecomposeIndexTensorToGatherPass(edge_exported_program)
+    decompose_pass = DecomposeIndexTensorToGatherPass(
+        edge_exported_program, decompose_constant_indices=True
+    )
 
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
         with pytest.raises(

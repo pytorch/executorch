@@ -566,7 +566,8 @@ def _get_dtype_count(model: torch.nn.Module):
     # Set nbr_conv to be the amount of groups set if necessary.
     nbr_convs: int = model.nbr_convs if model.groups is None else model.groups  # noqa
     return {
-        "CONST": {"INT4": nbr_convs * 2},  # One for the weight, one for the zp.
+        # Each convolution has a distinct weight and shares the symmetric zero point.
+        "CONST": {"INT4": nbr_convs + 1},
         "CONV2D": {"INT32": nbr_convs},
         "RESCALE": {"INT8": nbr_convs},
     }

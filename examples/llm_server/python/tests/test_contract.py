@@ -73,6 +73,35 @@ def test_chat_nonstreaming_shape(make_client):
     )
 
 
+def test_usage_reports_cached_tokens(make_client):
+    # Warm-resume accounting must be visible in-band (SGLang-compatible
+    # `prompt_tokens_details.cached_tokens`), not just in server logs, so
+    # benches can measure reuse without scraping.
+    client, _ = make_client(tokens=["Hello"], reuse=3)
+    body = client.post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
+    ).json()
+    assert body["usage"]["prompt_tokens_details"]["cached_tokens"] == 3
+
+
+def test_streaming_usage_reports_cached_tokens(make_client):
+    client, _ = make_client(tokens=["a"], reuse=2)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        },
+    )
+    chunks, _ = _sse_chunks(resp.text)
+    usage_chunks = [c for c in chunks if c.get("usage")]
+    assert usage_chunks, "expected a chunk carrying usage"
+    assert usage_chunks[-1]["usage"]["prompt_tokens_details"]["cached_tokens"] == 2
+
+
 def test_unknown_model_is_rejected(make_client):
     client, _ = make_client()
     resp = client.post(
