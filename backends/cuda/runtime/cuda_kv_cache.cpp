@@ -182,6 +182,11 @@ void release_allocation(Context& context, Allocation& allocation) {
 
 Error grow_flat(Context& context, int64_t new_capacity, cudaStream_t stream) {
   const int64_t old_capacity = context.metrics.flat_capacity;
+  for (const auto& item : context.descriptors) {
+    if (item.first->cuda_graph_state.phase != CudaGraphPhase::Disabled) {
+      item.first->cuda_graph_state.reset_for_recapture();
+    }
+  }
   for (const auto& layer : context.config.layers) {
     if (layer.policy != OffGraphKVPolicy::Flat) {
       continue;
@@ -544,10 +549,6 @@ Error offgraph_kv_rebind_for_execute(CudaDelegateHandle* handle) {
   if (context.error != Error::Ok) {
     return context.error;
   }
-  ET_CHECK_OR_RETURN_ERROR(
-      handle->cuda_graph_state.phase == CudaGraphPhase::Disabled,
-      NotSupported,
-      "offgraph_kv: CUDA graph is not supported");
   ET_CHECK_OR_RETURN_ERROR(
       !context.allocations.empty(),
       InvalidState,
