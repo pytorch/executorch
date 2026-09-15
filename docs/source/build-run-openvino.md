@@ -1,4 +1,4 @@
-# Building and Running ExecuTorch with OpenVINO Backend
+# OpenVINO Backend
 
 In this tutorial we will walk you through the process of setting up the prerequisites, building OpenVINO backend library, exporting `.pte` models with OpenVINO optimizations, and executing the exported models on Intel hardware.
 
