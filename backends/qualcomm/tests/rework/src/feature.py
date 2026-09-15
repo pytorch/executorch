@@ -71,6 +71,75 @@ def get_quantizer(qnn_config: QnnConfig):
     )
 
 
+class GraphSplit:
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def example_inputs(self):
+            return (torch.randn(1, 2, 3, 4),)
+
+        def forward(self, x):
+            return torch.nn.ReLU()(x)
+
+    @staticmethod
+    def _test(qnn_config, compile_specs, expected):
+        def callback(adb: SimpleADB, pattern):
+            def verify(log):
+                msg = log.stdout
+                assert pattern in msg, f"{pattern} in log"
+
+            # QnnExecuTorchLogLevel.kLogLevelVerbose
+            adb.extra_cmds += " --log_level 4"
+            adb.execute(output_callback=verify)
+
+        with expected:
+            # model declaration
+            model = __class__.Model()
+            inputs = model.example_inputs()
+            # perform ptq
+            with calibrate(
+                model, [inputs], make_quantizer(soc_model=qnn_config.soc_model)
+            ) as model:
+                executorch_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                    module=model,
+                    inputs=inputs,
+                    compiler_specs=compile_specs,
+                ).to_executorch()
+                # file for subgraph 0
+                assert os.path.isfile("forward_schematic.bin_sg_0.py")
+                os.remove("forward_schematic.bin_sg_0.py")
+                # remote testing
+                invoke_remote(
+                    qnn_config=qnn_config,
+                    executorch_prog=executorch_prog_mgr,
+                    callback=partial(callback, pattern="Found blob with gpe enabled"),
+                )
+
+    @staticmethod
+    @unpack_fixtures
+    def test_graph_splitting(qnn_config, compile_specs, expected):
+        # extend this for other backends
+        backend_compile_specs = {
+            QnnExecuTorchBackendType.kHtpBackend: compile_specs(
+                tuple(
+                    {
+                        "soc_model": getattr(QcomChipset, qnn_config.soc_model),
+                        "use_graph_splitting": True,
+                        "use_fp16": False,
+                        "profile_level": 3,
+                    }.items()
+                )
+            ),
+        }
+
+        __class__._test(
+            qnn_config=qnn_config,
+            compile_specs=backend_compile_specs[qnn_config.backend],
+            expected=expected,
+        )
+
+
 class Logging:
     class Model(torch.nn.Module):
         def __init__(self):
