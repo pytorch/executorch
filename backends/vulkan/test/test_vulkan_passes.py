@@ -834,3 +834,28 @@ class TestVulkanPasses(unittest.TestCase):
             vk_utils.has_node_repr(idx_node),
             "tensor node in a mixed None/tensor list arg was not tagged",
         )
+
+        # The idx node must be tagged with a representation from the op's
+        # registered repset (`pick_io_storage_fn` constrains `index.Tensor`
+        # with a rank>1 `self` to CONTIGUOUS_BUFFER), not the over-wide
+        # non-tensor fallback (all buffer + all texture layouts).
+        from executorch.backends.vulkan.op_registry import get_op_features
+
+        features = get_op_features(index_node.target)
+        assert features.pick_io_storage_fn is not None
+        registered_inputs_storage, _ = features.pick_io_storage_fn(index_node)
+        registered_arg_repset = vk_utils.TensorRepSetList(registered_inputs_storage)[1]
+        idx_repr = vk_utils.get_node_repr(idx_node)
+        valid_repr_pairs = {
+            (vk_utils.VkStorageType.BUFFER, layout)
+            for layout in registered_arg_repset.valid_buffer_layouts
+        } | {
+            (vk_utils.VkStorageType.TEXTURE_3D, layout)
+            for layout in registered_arg_repset.valid_texture_layouts
+        }
+        self.assertIn(
+            (idx_repr.storage_type, idx_repr.memory_layout),
+            valid_repr_pairs,
+            f"tensor node in a mixed None/tensor list arg got {idx_repr}, "
+            f"which is outside the registered repset {registered_arg_repset}",
+        )
