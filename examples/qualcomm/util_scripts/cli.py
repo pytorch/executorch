@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
@@ -26,10 +27,12 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     get_backend_type,
     make_quantizer,
     QnnConfig,
-    SimpleADB,
+    SUPPORTED_TARGETS,
+    WINDOWS_TARGET,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -357,23 +360,28 @@ def execute(args):
         backend_options=backend_options,
     )
     io_info = get_io_info(args.artifact, compiler_specs)
-    logger.info("preparing ADB connection")
+    logger.info("preparing device connection")
 
     qnn_config = QnnConfig.load_config(args)
-    # leverage SimpleADB for e2e inference
-    adb = SimpleADB(
+    # leverage Device for e2e inference
+    workspace = (
+        os.path.join(tempfile.gettempdir(), "executorch", pte_name)
+        if args.target in WINDOWS_TARGET
+        else f"/data/local/tmp/executorch/{pte_name}"
+    )
+    device = Device(
         qnn_config=qnn_config,
         pte_path=args.artifact,
-        workspace=f"/data/local/tmp/executorch/{pte_name}",
+        workspace=workspace,
     )
 
     logger.info("pushing QNN libraries & other artifacts")
 
-    adb.push(inputs=user_inputs, backends=[backend_type])
+    device.push(inputs=user_inputs, backends=[backend_type])
 
     logger.info("starting inference")
     iteration = 100 if args.profile else 1
-    adb.execute(iteration=iteration)
+    device.execute(iteration=iteration)
 
     tmp_dir = f"{args.output_folder}/tmp_outputs"
     os.makedirs(tmp_dir, exist_ok=True)
@@ -432,9 +440,9 @@ def execute(args):
 
     logger.info("collecting output data")
     if args.profile:
-        adb.pull_etdump(args.output_folder, callback=post_process_etdump)
+        device.pull_etdump(args.output_folder, callback=post_process_etdump)
     else:
-        adb.pull(host_output_path=tmp_dir, callback=post_process)
+        device.pull(host_output_path=tmp_dir, callback=post_process)
     shutil.rmtree(tmp_dir)
     logger.info(f"execution finished, please check {args.output_folder} for results")
 
@@ -622,8 +630,8 @@ def main():
         "-s",
         "--device",
         type=str,
-        required=True,
-        help="Serial no of device which could be obtained by 'adb devices'.",
+        default=None,
+        help="Serial no of device which could be obtained by 'adb devices'. Not needed for Windows targets (aarch64-windows-msvc/x86_64-windows-msvc).",
     )
     sub_execute.add_argument(
         "-o",
@@ -655,11 +663,7 @@ def main():
         "-t",
         "--target",
         help="Target platform for deployment",
-        choices=[
-            "aarch64-android",
-            "aarch64-oe-linux-gcc9.3",
-            "aarch64-oe-linux-gcc11.2",
-        ],
+        choices=SUPPORTED_TARGETS,
         default="aarch64-android",
         type=str,
     )

@@ -47,13 +47,13 @@ build_executorch_binary(
 ### 2. Generate optrace and QHAS
 Generate optrace and QHAS files using QNN tools under $QNN_SDK_ROOT. After finishing, you will get a `binaries_trace` dictionary.
 ``` python
-adb = SimpleADB(
+device = Device(
     qnn_config=qnn_config,
     pte_path=f"{args.artifact}/{pte_filename}.pte",
     workspace=f"/data/local/tmp/executorch/{pte_filename}",
 )
 binaries_trace = generate_optrace(
-    args, adb, f"{args.artifact}/{pte_filename}.pte", example_input
+    args, device, f"{args.artifact}/{pte_filename}.pte", example_input
 )
 ```
 - **`binaries_trace`**: A dictionary where keys are the dumped file paths and values are tuples containing the paths to the generated optrace and QHAS JSON files.
@@ -159,15 +159,15 @@ Ensure `dump_intermediate_outputs` is enabled in your `QnnConfig` (or pass `--du
 **Note:** Intermediate tensor dumping is not currently supported in direct mode on HTP/LPAI backends.
 
 ```python
-from executorch.examples.qualcomm.utils import SimpleADB
+from executorch.backends.qualcomm.export_utils import Device
 
-adb = SimpleADB(
+device = Device(
     qnn_config=qnn_config,
     pte_path=f"{args.artifact}/{pte_filename}.pte",
     workspace=f"/data/local/tmp/executorch/{pte_filename}",
 )
-adb.push(inputs=inputs)
-adb.execute()
+device.push(inputs=inputs)
+device.execute()
 ```
 
 ### 3. Pull results and compare
@@ -207,7 +207,7 @@ def validate_intermediate_tensor():
         comparator=cos_comparator,
     )
 
-adb.pull_debug_output(
+device.pull_debug_output(
     args.artifact, args.artifact, callback=validate_intermediate_tensor
 )
 ```

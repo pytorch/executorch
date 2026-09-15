@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import types
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields
 from typing import Callable, List, Optional, Set, Tuple, Union
 
@@ -68,6 +69,13 @@ from torchao.quantization.pt2e.quantize_pt2e import (
     prepare_qat_pt2e,
 )
 
+WINDOWS_TARGET = ("aarch64-windows-msvc", "x86_64-windows-msvc")
+SUPPORTED_TARGETS = (
+    "aarch64-android",
+    "aarch64-oe-linux-gcc9.3",
+    "aarch64-oe-linux-gcc11.2",
+) + WINDOWS_TARGET
+
 
 @dataclass
 class QnnConfig:
@@ -89,7 +97,7 @@ class QnnConfig:
         profile_level (int): Level of profiling in runtime.
         enable_x86_64: Enable x86_64 simulator execution.
         host (str): Hostname where android device is connected.
-        device (str): Serial number for android device communicated via ADB.
+        device (str): Serial number for an Android/OE-Linux target communicated via ADB. Not required for Windows targets (see WINDOWS_TARGET), compile_only, or enable_x86_64.
         port (int): IPC port for delivering execution result
         ip (str): IPC address for delivering execution result.
         skip_delegate_node_ids (str): If specified, skip delegation for the specified node based on node ids. Node ids should be separated by comma. e.g., aten_relu_default_10,aten_relu_default_2
@@ -141,7 +149,12 @@ class QnnConfig:
         # which would turn this into a confusing failure much later.
         if not os.environ.get("QNN_SDK_ROOT"):
             raise EnvironmentError("Environment variable QNN_SDK_ROOT must be set.")
-        if (not self.compile_only and not self.enable_x86_64) and self.device is None:
+        if (
+            not self.compile_only
+            and not self.enable_x86_64
+            and self.target not in WINDOWS_TARGET
+            and self.device is None
+        ):
             raise RuntimeError(
                 "device serial is required if not compile only or run on x86 emulator. Please specify a device serial."
             )
@@ -243,14 +256,163 @@ def get_lpai_device_lib_dir(qnn_sdk: str, lpai_hw_ver) -> str:
     return signed_dir
 
 
-class SimpleADB:
+class DeviceBridge(ABC):
     """
-    A wrapper class for communicating with Android device
+    Shared contract for moving files to/from and running commands on a device.
+    Implemented by ADB (remote Android/OE-Linux device over adb) and
+    LocalBridge (Windows-on-device, where the CLI already runs locally on the
+    target machine, so there is no remote hop).
+    """
+
+    def __init__(self, error_only=False):
+        self.error_only = error_only
+
+    @abstractmethod
+    def mkdir(self, path): ...
+
+    @abstractmethod
+    def rmdir(self, path): ...
+
+    @abstractmethod
+    def push_file(self, src, dst_dir): ...
+
+    @abstractmethod
+    def pull_file(self, src, dst, recursive=False): ...
+
+    @abstractmethod
+    def run(self, cmd_str, output_callback: Optional[Callable[[str], None]] = None): ...
+
+    @abstractmethod
+    def run_executor(
+        self,
+        workspace,
+        runner_path,
+        args_str,
+        output_callback: Optional[Callable[[str], None]] = None,
+    ): ...
+
+
+def _run_subprocess(
+    cmds, error_only, output_callback: Optional[Callable[[str], None]] = None
+):
+    if output_callback:
+        result = subprocess.run(
+            cmds, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        output_callback(result)
+    else:
+        result = subprocess.run(
+            cmds, stdout=subprocess.DEVNULL if error_only else sys.__stdout__
+        )
+    if result.returncode != 0:
+        raise RuntimeError(f"device command failed: {cmds}")
+
+
+class ADB(DeviceBridge):
+    """Talk to a remote Android/OE-Linux device over adb."""
+
+    def __init__(self, device_id, host_id=None, error_only=False):
+        super().__init__(error_only)
+        self.device_id = device_id
+        self.host_id = host_id
+
+    def _exec(self, cmd, output_callback=None):
+        if not self.host_id:
+            cmds = ["adb", "-s", self.device_id]
+        else:
+            cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
+        cmds.extend(cmd)
+        _run_subprocess(cmds, self.error_only, output_callback)
+
+    def mkdir(self, path):
+        self._exec(["shell", f"mkdir -p {path}"])
+
+    def rmdir(self, path):
+        self._exec(["shell", f"rm -rf {path}"])
+
+    def push_file(self, src, dst_dir):
+        self._exec(["push", src, dst_dir])
+
+    def pull_file(self, src, dst, recursive=False):
+        args = ["pull"]
+        if recursive:
+            args.append("-a")
+        args.extend([src, dst])
+        self._exec(args)
+
+    def run(self, cmd_str, output_callback=None):
+        self._exec(["shell", cmd_str], output_callback=output_callback)
+
+    def run_executor(self, workspace, runner_path, args_str, output_callback=None):
+        runner_basename = os.path.basename(runner_path)
+        cmd = " ".join(
+            [
+                f"cd {workspace} &&",
+                f"chmod +x {runner_basename} &&",
+                f"export LD_LIBRARY_PATH=. && export ADSP_LIBRARY_PATH=. && echo 0x0C > {runner_basename}.farf && ./{runner_basename} {args_str}",
+            ]
+        )
+        self.run(cmd, output_callback=output_callback)
+
+
+class LocalBridge(DeviceBridge):
+    """
+    CLI already runs on-device (e.g. Windows on Snapdragon): no remote hop, artifacts
+    are staged with local file copies and the runner is invoked directly via
+    PowerShell.
+    """
+
+    def _exec(self, cmd, output_callback=None):
+        cmds = ["powershell", "-Command"]
+        cmds.extend(cmd)
+        _run_subprocess(cmds, self.error_only, output_callback)
+
+    def mkdir(self, path):
+        self._exec([f'New-Item -ItemType Directory -Force -Path "{path}" | Out-Null'])
+
+    def rmdir(self, path):
+        self._exec(
+            [
+                f'if (Test-Path "{path}") {{ Remove-Item "{path}" -Recurse -Force -ErrorAction SilentlyContinue }}'
+            ]
+        )
+
+    def push_file(self, src, dst_dir):
+        self._exec([f'Copy-Item -Path "{src}" -Destination "{dst_dir}" -Force'])
+
+    def pull_file(self, src, dst, recursive=False):
+        cmd = f'Copy-Item -Path "{src}" -Destination "{dst}"'
+        if recursive:
+            cmd += " -Recurse"
+        cmd += " -Force"
+        self._exec([cmd])
+
+    def run(self, cmd_str, output_callback=None):
+        self._exec([cmd_str], output_callback=output_callback)
+
+    def run_executor(self, workspace, runner_path, args_str, output_callback=None):
+        runner_basename = os.path.basename(runner_path)
+        cmd = "; ".join(
+            [
+                f'Set-Location "{workspace}"',
+                '$env:PATH = ".;" + $env:PATH',
+                '$env:ADSP_LIBRARY_PATH="."',
+                f"./{runner_basename} {args_str}",
+            ]
+        )
+        self.run(cmd, output_callback=output_callback)
+
+
+class Device:
+    """
+    A wrapper class for communicating with a device: either a remote Android/OE-Linux
+    device over adb, or a Windows-on-Snapdragon device on which the CLI already runs
+    locally (see DeviceBridge for the two backing implementations).
 
     Attributes:
         qnn_config: (QnnConfig): A config class that saves qnn lowering and execution configuration.
         pte_path (Union[str, list]): Path where executorch binary was stored. If there are multiple pte files, provide a list of pte paths.
-        workspace (str): Folder for storing artifacts on android device
+        workspace (str): Folder for storing artifacts on the target device
         error_only (bool): Redirect stdio and leave error messages only
         runner (str): Runtime executor binary
         expected_input_shape (Tuple[torch.Size]): Input shape of dynamic graph
@@ -267,12 +429,17 @@ class SimpleADB:
         expected_input_shape=None,
         expected_output_shape=None,
     ):
+        self.target = qnn_config.target
+        self.is_windows_target = self.target in WINDOWS_TARGET
         if runner is None:
-            runner = (
-                "examples/qualcomm/executor_runner/qnn_executor_runner"
-                if qnn_config.direct_build_folder is None
-                else "examples/qualcomm/direct_executor_runner/qnn_executor_direct_runner"
-            )
+            if qnn_config.direct_build_folder is not None:
+                runner = "examples/qualcomm/direct_executor_runner/qnn_executor_direct_runner"
+            elif self.is_windows_target:
+                runner = (
+                    "examples/qualcomm/executor_runner/Release/qnn_executor_runner.exe"
+                )
+            else:
+                runner = "examples/qualcomm/executor_runner/qnn_executor_runner"
         self.runner = runner
         if qnn_config.direct_build_folder:
             required_env = [HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT]
@@ -303,15 +470,15 @@ class SimpleADB:
         self.device_id = qnn_config.device
         self.host_id = qnn_config.host
         self.input_list_filename = "input_list.txt"
-        self.etdump_path = f"{self.workspace}/etdump.etdp"
+        path_separator = "\\" if self.is_windows_target else "/"
+        self.etdump_path = f"{self.workspace}{path_separator}etdump.etdp"
         self.dump_intermediate_outputs = qnn_config.dump_intermediate_outputs
-        self.debug_output_path = f"{self.workspace}/debug_output.bin"
-        self.output_folder = f"{self.workspace}/outputs"
+        self.debug_output_path = f"{self.workspace}{path_separator}debug_output.bin"
+        self.output_folder = f"{self.workspace}{path_separator}outputs"
         self.htp_arch = get_soc_to_htp_arch_map()[qnn_config.soc_model]
         self.lpai_hw_ver = get_soc_to_lpai_hw_ver_map().get(qnn_config.soc_model, None)
         self.error_only = error_only
         self.shared_buffer = qnn_config.shared_buffer
-        self.target = qnn_config.target
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
@@ -333,6 +500,11 @@ class SimpleADB:
             ]
             if self.direct_build_folder
             else ["libQnnLpaiSkel.so"]
+        )
+        self.bridge = (
+            LocalBridge(error_only=error_only)
+            if self.is_windows_target
+            else ADB(self.device_id, self.host_id, error_only=error_only)
         )
 
         if self.direct_build_folder and self.dump_intermediate_outputs:
@@ -360,6 +532,42 @@ class SimpleADB:
             )
             for _, library_paths in self.backend_library_paths.items():
                 library_paths.extend(direct_general_artifacts)
+        elif self.is_windows_target:
+            windows_general_artifacts = [
+                f"{self.qnn_sdk}/lib/{self.target}/QnnSystem.dll",
+                f"{self.build_path}/backends/qualcomm/Release/qnn_executorch_backend.dll",
+            ]
+            self.backend_library_paths.update(
+                {
+                    QnnExecuTorchBackendType.kHtpBackend: [
+                        f"{self.qnn_sdk}/lib/{self.target}/QnnHtp.dll",
+                        (
+                            f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                            f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                        ),
+                        (
+                            f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                            f"unsigned/libqnnhtpv{self.htp_arch}.cat"
+                        ),
+                        f"{self.qnn_sdk}/lib/{self.target}/QnnHtpV{self.htp_arch}Stub.dll",
+                        f"{self.qnn_sdk}/lib/{self.target}/QnnHtpPrepare.dll",
+                    ],
+                    QnnExecuTorchBackendType.kGpuBackend: [
+                        f"{self.qnn_sdk}/lib/{self.target}/QnnGpu.dll",
+                    ],
+                    # please note that users need to sign LPAI related libs manually
+                    QnnExecuTorchBackendType.kLpaiBackend: [
+                        f"{self.qnn_sdk}/lib/{self.target}/QnnLpai.dll",
+                        (
+                            f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/"
+                            f"signed/libQnnLpaiSkel.so"
+                        ),
+                        f"{self.qnn_sdk}/lib/{self.target}/QnnLpaiStub.dll",
+                    ],
+                }
+            )
+            for _, library_paths in self.backend_library_paths.items():
+                library_paths.extend(windows_general_artifacts)
         else:
             traditional_general_artifacts = [
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
@@ -448,8 +656,8 @@ class SimpleADB:
 
         artifacts = [*self.pte_path, f"{self.build_path}/{self.runner}"]
         if init_env:
-            self._adb(["shell", f"rm -rf {self.workspace}"])
-            self._adb(["shell", f"mkdir -p {self.workspace}"])
+            self.bridge.rmdir(self.workspace)
+            self.bridge.mkdir(self.workspace)
 
             if backends is None:
                 backends = {self.qnn_config.backend}
@@ -473,11 +681,11 @@ class SimpleADB:
                 artifacts.append(input_list_file)
 
             for artifact in artifacts:
-                self._adb(["push", artifact, self.workspace])
+                self.bridge.push_file(artifact, self.workspace)
 
             # input data
             for file_name in input_files:
-                self._adb(["push", file_name, self.workspace])
+                self.bridge.push_file(file_name, self.workspace)
 
             # dynamic shape related
             if self.expected_input_shape and self.expected_output_shape:
@@ -489,13 +697,13 @@ class SimpleADB:
                     with open(f"{tmp_dir}/{name}.txt", "w") as f:
                         for s in shapes:
                             f.write(str(tuple(s)).strip("()") + "\n")
-                    self._adb(["push", f"{tmp_dir}/{name}.txt", self.workspace])
+                    self.bridge.push_file(f"{tmp_dir}/{name}.txt", self.workspace)
                     self.extra_cmds += f" --{name}_path {name}.txt"
 
         # custom files
         if files is not None:
             for file_name in files:
-                self._adb(["push", file_name, self.workspace])
+                self.bridge.push_file(file_name, self.workspace)
 
     def execute(
         self,
@@ -504,7 +712,7 @@ class SimpleADB:
         output_callback: Optional[Callable[[str], None]] = None,
         iteration=1,
     ):
-        self._adb(["shell", f"mkdir -p {self.output_folder}"])
+        self.bridge.mkdir(self.output_folder)
         # run the delegation
         if custom_runner_cmd is None:
             qnn_executor_runner_args = (
@@ -533,40 +741,35 @@ class SimpleADB:
                         f"--domain_id {get_dsp_id(self.qnn_config.backend)}",
                     ]
                 )
-            qnn_executor_runner_cmds = " ".join(
-                [
-                    f"cd {self.workspace} &&",
-                    f"chmod +x {os.path.basename(self.runner)} &&",
-                    f"export LD_LIBRARY_PATH=. && export ADSP_LIBRARY_PATH=. && echo 0x0C > {os.path.basename(self.runner)}.farf && ./{os.path.basename(self.runner)} {qnn_executor_runner_args}",
-                ]
+            self.bridge.run_executor(
+                self.workspace,
+                self.runner,
+                qnn_executor_runner_args,
+                output_callback=output_callback,
             )
         else:
-            qnn_executor_runner_cmds = custom_runner_cmd
-
-        self._adb(
-            ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
-        )
+            self.bridge.run(custom_runner_cmd, output_callback=output_callback)
 
     def pull(self, host_output_path, device_output_path=None, callback=None):
         if device_output_path is None:
             device_output_path = self.output_folder
-        self._adb(["pull", "-a", device_output_path, host_output_path])
+        self.bridge.pull_file(device_output_path, host_output_path, recursive=True)
         if callback:
             callback()
 
     def pull_etdump(self, output_path, callback=None):
-        self._adb(["pull", self.etdump_path, output_path])
+        self.bridge.pull_file(self.etdump_path, output_path)
         if callback:
             callback()
 
     def pull_debug_output(self, etdump_path, debug_buffer_path, callback=None):
-        self._adb(["pull", self.etdump_path, etdump_path])
-        self._adb(["pull", self.debug_output_path, debug_buffer_path])
+        self.bridge.pull_file(self.etdump_path, etdump_path)
+        self.bridge.pull_file(self.debug_output_path, debug_buffer_path)
         if callback:
             callback()
 
     def pull_heap_output(self, src_file_path, dst_folder, callback=None):
-        self._adb(["pull", src_file_path, dst_folder])
+        self.bridge.pull_file(src_file_path, dst_folder)
         if callback:
             callback()
 
@@ -930,11 +1133,7 @@ def setup_common_args_and_variables(parser=None):
     parser.add_argument(
         "--target",
         help="Target platform for deployment",
-        choices=[
-            "aarch64-android",
-            "aarch64-oe-linux-gcc9.3",
-            "aarch64-oe-linux-gcc11.2",
-        ],
+        choices=SUPPORTED_TARGETS,
         default="aarch64-android",
         type=str,
     )

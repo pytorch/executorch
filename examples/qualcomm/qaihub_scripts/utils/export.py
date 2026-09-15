@@ -15,7 +15,7 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAd
 import numpy as np
 
 import torch
-from executorch.backends.qualcomm.export_utils import QnnConfig, SimpleADB
+from executorch.backends.qualcomm.export_utils import Device, QnnConfig
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     draw_graph,
@@ -166,7 +166,7 @@ def to_context_binary(
         device is not None
     ), "Please assign device serial for model library conversion."
     logger.info(f"Generating context binary for {model_lib}")
-    # leverage SimpleADB for model library conversion
+    # leverage Device for model library conversion
     lib_name = Path(model_lib).stem
     qnn_config = QnnConfig(
         soc_model=soc_model,
@@ -178,14 +178,14 @@ def to_context_binary(
     # Read after the config is built, because building it is what sets up the SDK and so may be
     # what puts this variable in the environment.
     sdk_root = os.getenv("QNN_SDK_ROOT")
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=model_lib,
         workspace=f"/data/local/tmp/executorch/{lib_name}",
     )
 
     logger.info("pushing QNN libraries & tool")
-    arch = adb.arch_table[soc_model]
+    arch = device.arch_table[soc_model]
     files = [
         f"{sdk_root}/bin/aarch64-android/qnn-context-binary-generator",
         f"{sdk_root}/lib/aarch64-android/libQnnHtp.so",
@@ -193,12 +193,12 @@ def to_context_binary(
         f"{sdk_root}/lib/aarch64-android/libQnnHtpPrepare.so",
         f"{sdk_root}/lib/hexagon-v{arch}/unsigned/libQnnHtpV{arch}Skel.so",
     ]
-    adb.push(files=files)
+    device.push(files=files)
 
     logger.info("starting conversion")
     commands = " ".join(
         [
-            f"cd {adb.workspace} &&",
+            f"cd {device.workspace} &&",
             "export LD_LIBRARY_PATH=. &&",
             "./qnn-context-binary-generator",
             f"--model {Path(model_lib).name}",
@@ -206,10 +206,10 @@ def to_context_binary(
             f"--binary_file {lib_name}",
         ]
     )
-    adb.execute(custom_runner_cmd=commands)
+    device.execute(custom_runner_cmd=commands)
 
     logger.info(f"collecting converted context binary - {lib_name}.bin")
-    adb._adb(["pull", f"{adb.workspace}/output/{lib_name}.bin", output_folder])
+    device.pull_heap_output(f"{device.workspace}/output/{lib_name}.bin", output_folder)
 
     bin_path = f"{output_folder}/{lib_name}.bin"
     assert os.path.exists(bin_path), (
@@ -314,18 +314,18 @@ def execute(args):
 
     logger.info("preparing ADB connection")
     qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
-    # leverage SimpleADB for e2e inference
-    adb = SimpleADB(
+    # leverage Device for e2e inference
+    device = Device(
         qnn_config=qnn_config,
         pte_path=f"{args.pte_directory}/{pte_name}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_name}",
     )
 
     logger.info("pushing QNN libraries & other artifacts")
-    adb.push(inputs=inputs)
+    device.push(inputs=inputs)
 
     logger.info("starting inference")
-    adb.execute()
+    device.execute()
 
     logger.info("collecting output data")
 
@@ -347,7 +347,7 @@ def execute(args):
             torch.save(output, f"{args.output_data_folder}/{output_info[i]['name']}.pt")
 
     make_output_dir(args.output_data_folder)
-    adb.pull(args.output_data_folder, post_process)
+    device.pull(args.output_data_folder, post_process)
     logger.info(
         f"execution finished, please check {args.output_data_folder} for results"
     )
@@ -402,7 +402,7 @@ def main():
         "-s",
         "--device",
         type=str,
-        help="Serial no of device which could be obtained by 'adb devices'.",
+        help="Serial no of device which could be obtained by 'adb devices'. Not needed for Windows targets (aarch64-windows-msvc/x86_64-windows-msvc).",
     )
     sub_compile.add_argument(
         "-o",
@@ -468,7 +468,7 @@ def main():
         "--device",
         type=str,
         required=True,
-        help="Serial no of device which could be obtained by 'adb devices'.",
+        help="Serial no of device which could be obtained by 'adb devices'. Not needed for Windows targets (aarch64-windows-msvc/x86_64-windows-msvc).",
     )
     sub_execute.add_argument(
         "-o",
