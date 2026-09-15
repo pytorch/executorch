@@ -154,7 +154,7 @@ if(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS)
     "cpu_portable_ops_lib"
     OPS_SCHEMA_YAML
     ""
-    ROOT_OPS
+    SELECT_OPS_LIST
     "${EXECUTORCH_SELECT_OPS_LIST}"
     INCLUDE_ALL_OPS
     ""

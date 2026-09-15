@@ -217,14 +217,14 @@ def gen_oplist(
     output_path: Path,
     model_file_path: Optional[str] = None,
     ops_schema_yaml_path: Optional[str] = None,
-    root_ops: Optional[str] = None,
+    select_ops_list: Optional[str] = None,
     ops_dict: Optional[str] = None,
     include_all_operators: bool = False,
 ):
     if not (
         model_file_path
         or ops_schema_yaml_path
-        or root_ops
+        or select_ops_list
         or ops_dict
         or include_all_operators
     ):
@@ -236,12 +236,17 @@ def gen_oplist(
     op_set = set()
     source_name = None
     et_kernel_metadata = {}  # type: ignore[var-annotated]
-    if root_ops:
+    if select_ops_list:
         # decide delimiter
-        delimiter = "," if "," in root_ops else " "
-        print(root_ops)
+        delimiter = "," if "," in select_ops_list else " "
+        print(select_ops_list)
         op_set.update(
-            set(filter(lambda x: len(x) > 0, map(str.strip, root_ops.split(delimiter))))
+            set(
+                filter(
+                    lambda x: len(x) > 0,
+                    map(str.strip, select_ops_list.split(delimiter)),
+                )
+            )
         )
         et_kernel_metadata = merge_et_kernel_metadata(
             et_kernel_metadata, {op: ["default"] for op in op_set}
@@ -310,8 +315,8 @@ def main(args: List[Any]) -> None:
         required=False,
     )
     parser.add_argument(
-        "--root_ops",
-        help=("A comma separated list of root operators used by the model"),
+        "--select_ops_list",
+        help=("A comma separated list of operators to select for selective build"),
         required=False,
     )
     parser.add_argument(
@@ -342,7 +347,7 @@ def main(args: List[Any]) -> None:
             output_path=output_path,
             model_file_path=options.model_file_path,
             ops_schema_yaml_path=options.ops_schema_yaml_path,
-            root_ops=options.root_ops,
+            select_ops_list=options.select_ops_list,
             ops_dict=options.ops_dict,
             include_all_operators=options.include_all_operators,
         )
@@ -352,8 +357,8 @@ def main(args: List[Any]) -> None:
             command.append(f"--model_file_path {options.model_file_path}")
         if options.ops_schema_yaml_path:
             command.append(f"--ops_schema_yaml_path {options.ops_schema_yaml_path}")
-        if options.root_ops:
-            command.append(f"--root_ops {options.root_ops}")
+        if options.select_ops_list:
+            command.append(f"--select_ops_list {options.select_ops_list}")
         if options.ops_dict:
             command.append(f"--ops_dict {options.ops_dict}")
         if options.include_all_operators:
