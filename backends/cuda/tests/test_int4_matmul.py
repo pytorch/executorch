@@ -17,9 +17,12 @@ Usage:
 """
 
 import unittest
+from unittest.mock import patch
 
 import torch
 from executorch.backends.cuda.triton.kernels.int4_matmul import (
+    _INT4_MATMUL_CONFIGS,
+    _int4_matmul_prune,
     dequant_w4_to_bf16,
     int4_matmul,
     int4_matvec,
@@ -92,6 +95,35 @@ def _quantize_simple(w_bf16, group_size):
 def _eager_int4_matmul(x, w_ref):
     """Reference matmul: x @ w_ref.T in float32, cast to bf16."""
     return (x.float() @ w_ref.float().T).to(torch.bfloat16)
+
+
+class TestInt4MatmulConfig(unittest.TestCase):
+    def test_small_rocm_queries_include_narrow_tile(self):
+        with patch.object(torch.version, "hip", "7.2"):
+            for m in (1, 2, 3, 4):
+                with self.subTest(m=m):
+                    configs = _int4_matmul_prune(_INT4_MATMUL_CONFIGS, {"M": m})
+                    self.assertEqual(configs, _INT4_MATMUL_CONFIGS)
+                    self.assertIn(
+                        {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128},
+                        [config.kwargs for config in configs],
+                    )
+
+    def test_other_queries_keep_existing_configs(self):
+        expected = [c for c in _INT4_MATMUL_CONFIGS if c.kwargs["BLOCK_SIZE_N"] != 16]
+        for hip, m in (
+            (None, 1),
+            (None, 4),
+            (None, 16),
+            ("7.2", 0),
+            ("7.2", 5),
+            ("7.2", 16),
+            ("7.2", None),
+        ):
+            with self.subTest(hip=hip, m=m), patch.object(torch.version, "hip", hip):
+                self.assertEqual(
+                    _int4_matmul_prune(_INT4_MATMUL_CONFIGS, {}, M=m), expected
+                )
 
 
 class TestDequantW4ToBf16(unittest.TestCase):
@@ -203,6 +235,26 @@ class TestInt4Matmul(unittest.TestCase):
 
     def test_small(self):
         self._run_matmul(1, 16, 64, 32)
+
+    def test_streaming_encoder_shapes(self):
+        for m, n, k in [
+            (4, 1280, 5120),
+            (4, 2048, 1280),
+            (4, 5120, 1280),
+            (1, 3072, 5120),
+        ]:
+            with self.subTest(m=m, n=n, k=k):
+                self._run_matmul(m, n, k, 32)
+
+    def test_small_query_tail_and_strides(self):
+        m, n, k, group_size = 3, 37, 96, 32
+        w = torch.randn(n, k, dtype=torch.bfloat16, device=DEVICE)
+        packed, scale, w_ref = _quantize_simple(w, group_size)
+        x = torch.randn(k * 2, m * 2, dtype=torch.bfloat16, device=DEVICE)[::2, ::2].T
+        packed = packed.T.contiguous().T
+        scale = scale.T.contiguous().T
+        actual = int4_matmul(x, packed, scale, group_size)
+        _assert_snr(self, actual, _eager_int4_matmul(x, w_ref), "strided small query")
 
 
 class TestInt4Matvec(unittest.TestCase):
