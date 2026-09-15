@@ -11,10 +11,12 @@ import torch.nn.functional as F
 from executorch.backends.arm.quantizer import is_annotated
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
+    TOSAQuantizer,
     VgfQuantizer,
 )
-from executorch.backends.arm.quantizer.quantization_annotator import annotate_graph
+from executorch.backends.arm.quantizer.quantization_config import TOSAQuantizationConfig
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineINT
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.vgf import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
 
@@ -175,9 +177,12 @@ class GridSampleModule(torch.nn.Module):
         )
 
 
-class GridFloatQuantizationConfig:
+class GridFloatQuantizationConfig(TOSAQuantizationConfig):
     def __init__(self) -> None:
-        self.base = get_symmetric_quantization_config()
+        base = get_symmetric_quantization_config()
+        super().__init__(
+            base.input_activation, base.output_activation, base.weight, base.bias
+        )
 
     def get_input_act_qspec(self, node=None, input_node=None):
         if (
@@ -187,16 +192,7 @@ class GridFloatQuantizationConfig:
             and input_node == node.args[1]
         ):
             return None
-        return self.base.get_input_act_qspec(node, input_node)
-
-    def get_output_act_qspec(self, node=None):
-        return self.base.get_output_act_qspec(node)
-
-    def get_weight_qspec(self, node=None):
-        return self.base.get_weight_qspec(node)
-
-    def get_bias_qspec(self, node=None):
-        return self.base.get_bias_qspec(node)
+        return super().get_input_act_qspec(node, input_node)
 
 
 def test_grid_sampler_annotation_keeps_float_grid_when_grid_qspec_is_none():
@@ -204,7 +200,9 @@ def test_grid_sampler_annotation_keeps_float_grid_when_grid_qspec_is_none():
     example_inputs = (torch.randn(1, 4, 8, 8), torch.randn(1, 4, 4, 2))
     gm = export(module, example_inputs).graph_module
 
-    annotate_graph(gm, GridFloatQuantizationConfig())
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    quantizer.set_global(GridFloatQuantizationConfig())
+    quantizer.annotate(gm)
 
     grid_sampler_node = next(
         node
@@ -217,8 +215,8 @@ def test_grid_sampler_annotation_keeps_float_grid_when_grid_qspec_is_none():
     annotation = grid_sampler_node.meta[Q_ANNOTATION_KEY]
 
     assert is_annotated(grid_sampler_node)
-    assert image_node in annotation.input_qspec_map
-    assert grid_node not in annotation.input_qspec_map
+    assert annotation.input_qspec_map[image_node] is not None
+    assert annotation.input_qspec_map[grid_node] is None
     assert annotation.output_qspec is not None
 
 
@@ -227,7 +225,9 @@ def test_grid_sampler_annotation_keeps_default_tosa_grid_float():
     example_inputs = (torch.randn(1, 4, 8, 8), torch.randn(1, 4, 4, 2))
     gm = export(module, example_inputs).graph_module
 
-    annotate_graph(gm, get_symmetric_quantization_config())
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    quantizer.set_global(get_symmetric_quantization_config())
+    quantizer.annotate(gm)
 
     grid_sampler_node = next(
         node
@@ -238,7 +238,7 @@ def test_grid_sampler_annotation_keeps_default_tosa_grid_float():
     grid_node = grid_sampler_node.args[1]
     annotation = grid_sampler_node.meta[Q_ANNOTATION_KEY]
 
-    assert grid_node not in annotation.input_qspec_map
+    assert annotation.input_qspec_map[grid_node] is None
 
 
 def test_vgf_quantizer_quantizes_grid_sampler_grid_coords():

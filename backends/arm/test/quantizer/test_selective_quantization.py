@@ -24,11 +24,9 @@ from torchvision import models, transforms  # type: ignore[import-untyped]
 from torchvision.ops.misc import Conv2dNormActivation  # type: ignore[import-untyped]
 
 
-def get_quantizer(use_composable_quantizer: bool = False):
+def get_quantizer():
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
-    quantizer = TOSAQuantizer(
-        tosa_spec, use_composable_quantizer=use_composable_quantizer
-    )
+    quantizer = TOSAQuantizer(tosa_spec)
     quantizer.set_global(get_symmetric_quantization_config())
     return quantizer
 
@@ -160,7 +158,7 @@ def test_selective_quant_cat_node_target_none_tosa_INT():
     model = Cat()
     inputs = (torch.randn(1, 2, 4), torch.randn(1, 3, 4))
 
-    quantizer = get_quantizer(use_composable_quantizer=True)
+    quantizer = get_quantizer()
     quantizer.set_node_target(torch.ops.aten.cat.default, None)
 
     pipeline = QuantizationPipeline[tuple[torch.Tensor, torch.Tensor]](
@@ -181,7 +179,7 @@ def test_composable_io_none_skips_global_tosa_INT():
     model = Add()
     inputs = (torch.randn(1, 10), torch.randn(1, 10))
 
-    quantizer = get_quantizer(use_composable_quantizer=True)
+    quantizer = get_quantizer()
     quantizer.set_io(None)
 
     pipeline = QuantizationPipeline[tuple[torch.Tensor, torch.Tensor]](
@@ -199,7 +197,7 @@ def test_composable_global_none_linear_graph_tail_tosa_INT():
     model = LinearGraphTail()
     inputs = (torch.randn(1, 10),)
 
-    quantizer = get_quantizer(use_composable_quantizer=True)
+    quantizer = get_quantizer()
     quantizer.set_global(None)
 
     pipeline = QuantizationPipeline[tuple[torch.Tensor]](
