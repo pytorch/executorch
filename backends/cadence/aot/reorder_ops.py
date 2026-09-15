@@ -141,8 +141,8 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
             get_overload_packet(x.target) in slice_or_select_overloadpkt
             for x in trivial_quantized_ops
         ):
-            # Profitability metric: the sum of all the output slices must be at
-            # least half the input node slice.
+            # Profitability metric: the sum of all the output slices must be
+            # more than half the input node size.
             slice_sizes = [
                 prod(list(y))
                 for x in trivial_quantized_ops
@@ -150,7 +150,7 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
             ]
             node_shape = get_shape(self.graph_module, node)
             node_size = prod(list(node_shape)) if node_shape is not None else 0
-            if node_size > 2 * sum(slice_sizes):
+            if node_size >= 2 * sum(slice_sizes):
                 descendent_quant_ops.clear()
 
         return descendent_quant_ops
