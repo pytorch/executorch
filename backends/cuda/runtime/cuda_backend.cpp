@@ -194,6 +194,12 @@ class ET_EXPERIMENTAL CudaBackend final
         res.ok() ? reinterpret_cast<name##Func>(res.get()) : nullptr; \
   } while (0)
 
+    auto run_single_threaded = get_function(
+        so_handle, "AOTInductorModelContainerRunSingleThreaded");
+    handle->run_single_threaded = run_single_threaded.ok()
+        ? reinterpret_cast<AOTInductorModelContainerRunFunc>(
+              run_single_threaded.get())
+        : nullptr;
     LOAD_OPTIONAL_SYMBOL(
         get_num_constants, AOTInductorModelContainerGetNumConstants);
     LOAD_OPTIONAL_SYMBOL(
@@ -476,8 +482,11 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Initialize CUDA graph state if enabled for this method.
     if (should_use_cuda_graph_for_method(method_name)) {
-      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
-      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
+      ET_CHECK_OR_RETURN_ERROR(
+          handle->run_single_threaded != nullptr,
+          NotSupported,
+          "CUDA graph requires AOTInductorModelContainerRunSingleThreaded");
+      handle->cuda_graph_state.enable(kCudaGraphWarmupSteps);
       ET_LOG(
           Info,
           "CUDA graph enabled for method '%s' (warmup=%d)",
@@ -850,7 +859,10 @@ class ET_EXPERIMENTAL CudaBackend final
       end_capture_guard.arm(cuda_stream);
     }
 
-    AOTIRuntimeError error = handle->run(
+    auto run = handle->cuda_graph_state.phase == CudaGraphPhase::Disabled
+        ? handle->run
+        : handle->run_single_threaded;
+    AOTIRuntimeError error = run(
         handle->container_handle,
         reinterpret_cast<Tensor**>(slim_inputs.data()),
         n_inputs,

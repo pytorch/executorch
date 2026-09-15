@@ -169,9 +169,12 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
   EXPECT_EQ(reset.flat_capacity, 8);
   EXPECT_EQ(reset.growth_count, 1);
 
-  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
-  EXPECT_EQ(
-      cu::offgraph_kv_rebind_for_execute(&handle), Error::NotSupported);
+  handle.cuda_graph_state.enable(3);
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  ASSERT_EQ(context.prepare(8), Error::Ok);
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
+  EXPECT_EQ(handle.cuda_graph_state.warmup_remaining, 3);
+  EXPECT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
   cu::offgraph_kv_forget_handle(&handle);
 }
 
