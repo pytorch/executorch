@@ -83,11 +83,11 @@ class TestMutableBufferMetadataTest(unittest.TestCase):
     def test_offgraph_manifest_replaces_every_kv_cache(self):
         model = build_random_tiny_model()
 
-        manifest = json.loads(enable_offgraph_kv_cache(model, 8))
+        manifest = json.loads(enable_offgraph_kv_cache(model))
 
         self.assertEqual(1, manifest["version"])
         self.assertEqual(TINY_CONFIG.max_seq_len, manifest["maximum_capacity"])
-        self.assertEqual(8, manifest["initial_capacity"])
+        self.assertNotIn("initial_capacity", manifest)
         self.assertEqual(TINY_CONFIG.n_layers, len(manifest["layers"]))
         self.assertFalse(
             any(hasattr(layer.self_attn, "kv_cache") for layer in model.layers)

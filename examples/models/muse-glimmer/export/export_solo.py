@@ -79,7 +79,6 @@ def export_and_lower(
     sample: bool = True,
     use_turboquant: bool = False,
     use_offgraph_kv_cache: bool = False,
-    offgraph_initial_capacity: int = 512,
     activation_dtype: torch.dtype = torch.bfloat16,
     max_prefill_chunk: int = 512,
     vision_model: nn.Module | None = None,
@@ -95,7 +94,6 @@ def export_and_lower(
             sample=sample,
             use_turboquant=use_turboquant,
             use_offgraph_kv_cache=use_offgraph_kv_cache,
-            offgraph_initial_capacity=offgraph_initial_capacity,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
@@ -160,7 +158,6 @@ def _export_cuda(
     sample: bool = True,
     use_turboquant: bool = False,
     use_offgraph_kv_cache: bool = False,
-    offgraph_initial_capacity: int = 512,
     vision_model: nn.Module | None = None,
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
@@ -209,9 +206,7 @@ def _export_cuda(
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
     offgraph_manifest = None
     if use_offgraph_kv_cache:
-        offgraph_manifest = enable_offgraph_kv_cache(
-            model, offgraph_initial_capacity
-        )
+        offgraph_manifest = enable_offgraph_kv_cache(model)
     else:
         cuda_source_transformations(model, use_turboquant=use_turboquant)
 
@@ -604,12 +599,6 @@ def main() -> None:
         help="Allocate CUDA KV cache at runtime instead of storing it in the PTE/PTD.",
     )
     parser.add_argument(
-        "--offgraph-initial-capacity",
-        type=int,
-        default=512,
-        help="Initial token capacity for growable flat off-graph KV caches.",
-    )
-    parser.add_argument(
         "--activation-dtype",
         default=None,
         choices=list(common.ACTIVATION_DTYPES),
@@ -666,10 +655,6 @@ def main() -> None:
         parser.error("--use-offgraph-kv-cache requires --backend cuda.")
     if args.use_offgraph_kv_cache and args.turboquant:
         parser.error("--use-offgraph-kv-cache cannot be combined with --turboquant.")
-    if not 0 < args.offgraph_initial_capacity <= args.max_seq_len:
-        parser.error(
-            "--offgraph-initial-capacity must be in the range [1, --max-seq-len]."
-        )
     if args.gguf:
         from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
             load_gguf_model,
@@ -727,7 +712,6 @@ def main() -> None:
         sample=not args.logits,
         use_turboquant=args.turboquant,
         use_offgraph_kv_cache=args.use_offgraph_kv_cache,
-        offgraph_initial_capacity=args.offgraph_initial_capacity,
         activation_dtype=activation_dtype,
         max_prefill_chunk=args.max_prefill_chunk,
         vision_model=vision_model,
