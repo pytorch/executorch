@@ -77,13 +77,16 @@ fbcode_target(
     srcs = [
         "passes/__init__.py",
         "passes/move_cond_predicate_to_cpu.py",
+        "passes/lower_offgraph_kv.py",
         "passes/replace_int64_floordiv.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
     ],
     deps = [
+        ":triton_kernels",
         "//caffe2:torch",
+        "//executorch/backends/transforms:utils",
         "//executorch/exir/dialects:lib",
     ],
 )
@@ -145,6 +148,7 @@ fbcode_target(
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/int4_matmul.py",
+        "triton/kernels/offgraph_kv.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
