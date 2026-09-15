@@ -29,6 +29,7 @@
 #include <pytorch/tokenizers/tokenizer.h>
 
 #ifdef EXECUTORCH_BUILD_CUDA
+#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #elif defined(EXECUTORCH_BUILD_MLX)
 #include <executorch/backends/mlx/runtime/backend_options.h>
@@ -62,9 +63,12 @@ enum class MuseGlimmerArtifactMode {
 #if defined(EXECUTORCH_BUILD_CUDA)
 using MuseGlimmerMutableStateContextOwner =
     ::executorch::backends::cuda::MutableStateContextOwner;
+using MuseGlimmerOffGraphKVCacheContextOwner =
+    ::executorch::backends::cuda::OffGraphKVCacheContextOwner;
 constexpr int kMuseGlimmerNoMutableSession =
     ::executorch::backends::cuda::kNoMutableSession;
 #elif defined(EXECUTORCH_BUILD_MLX)
+class MuseGlimmerOffGraphKVCacheContextOwner {};
 using MuseGlimmerMutableStateContextOwner =
     ::executorch::backends::mlx::MutableStateContextOwner;
 constexpr int kMuseGlimmerNoMutableSession =
@@ -80,6 +84,7 @@ struct MuseGlimmerConfig {
   int32_t max_sessions = 1;
   int64_t eos_id = 200001;
   bool enable_cuda_graph = false;
+  int64_t offgraph_initial_capacity = 512;
   MuseGlimmerArtifactMode artifact_mode = MuseGlimmerArtifactMode::Auto;
   int32_t dflash_block_length = 0;
   int32_t dflash_n_draft = 0;
@@ -142,6 +147,16 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
     return artifact_mode_;
   }
 
+#ifdef EXECUTORCH_BUILD_CUDA
+  std::optional<::executorch::backends::cuda::OffGraphKVMetrics>
+  offgraph_kv_metrics() const {
+    if (offgraph_kv_ == nullptr) {
+      return std::nullopt;
+    }
+    return offgraph_kv_->metrics();
+  }
+#endif
+
   MuseGlimmerEngine(const MuseGlimmerEngine&) = delete;
   MuseGlimmerEngine& operator=(const MuseGlimmerEngine&) = delete;
 
@@ -165,7 +180,8 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
       ::executorch::extension::TensorPtr decode_pos_table_dev,
       std::unique_ptr<MuseGlimmerVisionRuntime> vision_runtime,
       bool rebind_available,
-      std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state)
+      std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state,
+      std::unique_ptr<MuseGlimmerOffGraphKVCacheContextOwner> offgraph_kv)
       : config_(std::move(config)),
         tokenizer_(std::move(tokenizer)),
         metadata_(std::move(metadata)),
@@ -184,7 +200,8 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
         decode_pos_table_dev_(std::move(decode_pos_table_dev)),
         vision_runtime_(std::move(vision_runtime)),
         rebind_available_(rebind_available),
-        mutable_state_(std::move(mutable_state)) {}
+        mutable_state_(std::move(mutable_state)),
+        offgraph_kv_(std::move(offgraph_kv)) {}
 
   MuseGlimmerConfig config_;
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
@@ -207,6 +224,7 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
   std::unique_ptr<MuseGlimmerVisionRuntime> vision_runtime_;
   bool rebind_available_ = false;
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state_;
+  std::unique_ptr<MuseGlimmerOffGraphKVCacheContextOwner> offgraph_kv_;
   std::atomic<int> live_sessions_{0};
 };
 

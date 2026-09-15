@@ -611,11 +611,8 @@ def _offgraph_attention_forward(
     return self.o_proj(y.reshape(B, T, -1))
 
 
-def enable_offgraph_kv_cache(model: nn.Module, initial_capacity: int) -> str:
+def enable_offgraph_kv_cache(model: nn.Module) -> str:
     """Replace graph-owned caches and return the CUDA runtime manifest."""
-    if initial_capacity <= 0 or initial_capacity > model.config.max_seq_len:
-        raise ValueError("off-graph initial capacity must be in max_seq_len")
-
     layers = []
     for layer in model.layers:
         attn = layer.self_attn
@@ -636,7 +633,6 @@ def enable_offgraph_kv_cache(model: nn.Module, initial_capacity: int) -> str:
             "version": 1,
             "dtype": "bfloat16",
             "maximum_capacity": model.config.max_seq_len,
-            "initial_capacity": initial_capacity,
             "layers": layers,
         },
         sort_keys=True,
