@@ -26,8 +26,8 @@ precedence over this summary.
 * - C++
   - {doc}`extension-module` for the high-level `Module` API, or
     {doc}`executorch-runtime-api-reference` for `Program` and `Method`
-  - {doc}`llm/run-with-c-plus-plus` for `TextLLMRunner` and
-    `MultimodalRunner`
+  - {doc}`TextLLMRunner <llm/run-with-c-plus-plus>` and
+    [MultimodalRunner](https://github.com/pytorch/executorch/blob/main/extension/llm/runner/README.md#multimodalrunner)
   - Core: **stable**; LLM: **experimental**
 * - Python
   - {doc}`runtime-python-api-reference` for host-side loading, execution, and
@@ -44,7 +44,7 @@ precedence over this summary.
 * - Apple: Swift / Objective-C
   - {doc}`using-executorch-ios` for `Module`, `Tensor`, and `Value`
   - {doc}`llm/run-on-ios` for `TextRunner` and `MultimodalRunner`
-  - Core: **experimental**; LLM: **experimental**
+  - Core: follows {doc}`api-life-cycle`; LLM: **experimental**
 * - Browser: JavaScript / WebAssembly
   - [WebAssembly `Module` and `Tensor`](https://github.com/pytorch/executorch/blob/main/extension/wasm/README.md),
     currently built from source

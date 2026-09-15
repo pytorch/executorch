@@ -38,7 +38,7 @@ and Messenger**, serving billions of people. It also runs AI features on
 | **Local LLM and agent building blocks** | Quantized text models, long context, tool calling, speculative decoding, multi-session execution, and an experimental OpenAI-compatible local server | [Muse Glimmer](examples/models/muse-glimmer/README.md) · [LLM guide](https://docs.pytorch.org/executorch/main/llm/working-with-llms.html) · [LLM server](examples/llm_server/README.md) |
 | **Voice** | Streaming and offline speech recognition, speech synthesis, voice activity detection, and speaker diarization | [Voxtral Realtime](examples/models/voxtral_realtime/README.md) · [Parakeet](examples/models/parakeet/README.md) · [Sortformer diarization](examples/models/sortformer/README.md) · [Voxtral TTS](examples/models/voxtral_tts/README.md) |
 | **Multimodal** | Text, image, and audio runners; mobile vision-language models | [Gemma 4](examples/models/gemma4/README.md) · [Multimodal runner](extension/llm/runner/README.md) |
-| **Computer vision** | Image classification, object detection, semantic segmentation, and promptable segmentation | [MobileNet V2](docs/source/getting-started.md#preparing-the-model) · [YOLO26](examples/models/yolo26/README.md) · [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo) · [EfficientSAM](examples/models/efficient_sam/README.md) |
+| **Computer vision** | Image classification, object detection, semantic segmentation, and promptable segmentation | [MobileNet V2](https://docs.pytorch.org/executorch/main/getting-started.html#preparing-the-model) · [YOLO26](examples/models/yolo26/README.md) · [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo) · [EfficientSAM](examples/models/efficient_sam/README.md) |
 | **Embedded AI** | Cortex-M CPU kernels, Ethos-U and NXP NPUs, Cadence DSPs, Zephyr, Arduino, and Raspberry Pi Pico workflows | [Embedded guide](https://docs.pytorch.org/executorch/main/embedded-section.html) · [Cortex-M](https://docs.pytorch.org/executorch/main/backends/arm-cortex-m/arm-cortex-m-overview.html) · [Arduino](examples/arduino/README.md) |
 
 These are starting points, not a compatibility list. A model does not need to
@@ -73,7 +73,7 @@ new language-model architecture, see the
   guaranteed to load and execute for at least one following non-patch runtime
   release; see the
   [runtime compatibility](runtime/COMPATIBILITY.md) and
-  [API lifecycle](docs/source/api-life-cycle.md) policies.
+  [API lifecycle](https://docs.pytorch.org/executorch/main/api-life-cycle.html) policies.
 
 ## Install
 
@@ -90,11 +90,12 @@ pip install --upgrade --pre executorch torch --extra-index-url https://download.
 ```
 
 `torch` is explicit because nightly ExecuTorch wheels do not declare it as a
-dependency. This command installs a CPU-only PyTorch nightly. For an NVIDIA GPU,
-select the nightly command matching your CUDA version in the
+dependency. This command installs a CPU-only PyTorch nightly. On Linux with an
+NVIDIA GPU, select the nightly command matching your CUDA version in the
 [PyTorch installation selector](https://pytorch.org/get-started/locally/) and
 use its `nightly/cu*` index instead; otherwise, pip can replace a CUDA-enabled
-PyTorch installation with the CPU build.
+PyTorch installation with the CPU build. ExecuTorch CUDA wheels are published
+for Linux only.
 
 Backend export tools can require optional dependencies. For example, use
 `pip install 'executorch[ethos_u]'` for Ethos-U AOT export. Embedded
@@ -125,7 +126,6 @@ from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.runtime import Runtime
 
-# Define a simple model
 class Add(torch.nn.Module):
     def forward(self, x, y):
         return x + y
@@ -179,16 +179,12 @@ delegate is not a universal model file.
 
 ## Runtime and LLM APIs
 
-All language APIs load target-specific `.pte` programs. See the
-[API lifecycle policy](docs/source/api-life-cycle.md) for stability guarantees.
+Use C++, Python, Java/Kotlin, Swift/Objective-C, or JavaScript/WebAssembly for
+general `.pte` execution. Higher-level text and multimodal runners are available
+for C++, Python, Android, and Apple platforms.
 
-| Language / platform | General `.pte` execution | Text and multimodal generation |
-|---|---|---|
-| C++ | [`Module`](docs/source/extension-module.md) and lower-level [`Program` / `Method`](docs/source/running-a-model-cpp-tutorial.md) | [`TextLLMRunner`](docs/source/llm/run-with-c-plus-plus.md) and [`MultimodalRunner`](extension/llm/runner/README.md#multimodalrunner) |
-| Python | [`Runtime` / `Program` / `Method`](docs/source/runtime-python-api-reference.rst) for desktop and host validation | [Runner bindings](extension/llm/runner/README.md#python-api), depending on the installed package or source build |
-| Android, Java / Kotlin | [`Module`, `Tensor`, and `EValue`](docs/source/using-executorch-android.md) | [`LlmModule`](docs/source/llm/run-on-android.md) |
-| Apple, Swift / Objective-C | [`Module`, `Tensor`, and `Value`](docs/source/using-executorch-ios.md) | [`TextRunner` and `MultimodalRunner`](docs/source/llm/run-on-ios.md) |
-| JavaScript / WebAssembly | [`Module` and `Tensor`](extension/wasm/README.md), built from source | No high-level LLM API |
+[Compare the runtime and LLM APIs](https://docs.pytorch.org/executorch/main/api-section.html)
+for language-specific entry points and API maturity.
 
 ## Platforms and hardware backends
 
@@ -196,17 +192,17 @@ Choose a backend based on target hardware, operator coverage, and deployment
 constraints. The linked guides document setup, supported hardware, and known
 limitations. These are representative paths; the
 [backend documentation](https://docs.pytorch.org/executorch/main/backends-overview.html)
-is authoritative.
+is authoritative. See also the [Desktop guide](desktop/README.md).
 
 | Target | Backends and integrations |
 |---|---|
-| Android | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md) CPU; [Vulkan](docs/source/backends/vulkan/vulkan-overview.md) GPU; [Qualcomm](docs/source/backends-qualcomm.md), [MediaTek](docs/source/backends-mediatek.md), [Arm VGF](docs/source/backends/arm-vgf/arm-vgf-overview.md), and [Samsung Exynos](docs/source/backends/samsung/samsung-overview.md) accelerators |
-| iOS / iPadOS | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md) CPU; [Core ML](docs/source/backends/coreml/coreml-overview.md); [MLX](docs/source/backends/mlx/mlx-overview.md) on physical devices *(experimental)* |
-| macOS | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md); [Core ML](docs/source/backends/coreml/coreml-overview.md); experimental [MLX](docs/source/backends/mlx/mlx-overview.md), [Metal/AOTInductor](backends/apple/metal/README.md), and [WebGPU](docs/source/backends/webgpu/webgpu-overview.md) paths |
-| Linux | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md); [OpenVINO](docs/source/build-run-openvino.md); experimental [CUDA/AOTInductor](docs/source/backends/cuda/cuda-overview.md), [Vulkan](docs/source/backends/vulkan/vulkan-overview.md), and [WebGPU](docs/source/backends/webgpu/webgpu-overview.md) desktop paths |
-| Windows | [XNNPACK](docs/source/backends/xnnpack/xnnpack-overview.md); experimental [CUDA/AOTInductor](docs/source/backends/cuda/cuda-overview.md) and [Vulkan](docs/source/backends/vulkan/vulkan-overview.md) desktop paths |
-| Browser / WebAssembly | [Portable WebAssembly runtime](extension/wasm/README.md) and [WebGPU](docs/source/backends/webgpu/webgpu-overview.md) *(both experimental)* |
-| Embedded / MCU | [Arm Cortex-M with CMSIS-NN](docs/source/backends/arm-cortex-m/arm-cortex-m-overview.md) *(beta)*; [Arm Ethos-U](docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md); [NXP eIQ Neutron](docs/source/backends/nxp/nxp-overview.md); [Cadence DSP](docs/source/backends-cadence.md); [Zephyr](zephyr/README.md) and [Arduino](examples/arduino/README.md) integrations |
+| Android | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html) CPU; [Vulkan](https://docs.pytorch.org/executorch/main/backends/vulkan/vulkan-overview.html) GPU; [Qualcomm](https://docs.pytorch.org/executorch/main/backends-qualcomm.html), [MediaTek](https://docs.pytorch.org/executorch/main/backends-mediatek.html), [Arm VGF](https://docs.pytorch.org/executorch/main/backends/arm-vgf/arm-vgf-overview.html), and [Samsung Exynos](https://docs.pytorch.org/executorch/main/backends/samsung/samsung-overview.html) accelerators |
+| iOS / iPadOS | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html) CPU; [Core ML](https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html); [MLX](https://docs.pytorch.org/executorch/main/backends/mlx/mlx-overview.html) on physical devices *(experimental)* |
+| macOS | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html); [Core ML](https://docs.pytorch.org/executorch/main/backends/coreml/coreml-overview.html); experimental [MLX](https://docs.pytorch.org/executorch/main/backends/mlx/mlx-overview.html), [Metal/AOTInductor](backends/apple/metal/README.md), and [WebGPU](https://docs.pytorch.org/executorch/main/backends/webgpu/webgpu-overview.html) paths |
+| Linux | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html); [OpenVINO](https://docs.pytorch.org/executorch/main/build-run-openvino.html); experimental [CUDA/AOTInductor](https://docs.pytorch.org/executorch/main/backends/cuda/cuda-overview.html), [Vulkan](https://docs.pytorch.org/executorch/main/backends/vulkan/vulkan-overview.html), and [WebGPU](https://docs.pytorch.org/executorch/main/backends/webgpu/webgpu-overview.html) desktop paths |
+| Windows | [XNNPACK](https://docs.pytorch.org/executorch/main/backends/xnnpack/xnnpack-overview.html); experimental [CUDA/AOTInductor](https://docs.pytorch.org/executorch/main/backends/cuda/cuda-overview.html) and [Vulkan](https://docs.pytorch.org/executorch/main/backends/vulkan/vulkan-overview.html) desktop paths |
+| Browser / WebAssembly | [Portable WebAssembly runtime](extension/wasm/README.md) and [WebGPU](https://docs.pytorch.org/executorch/main/backends/webgpu/webgpu-overview.html) *(both experimental)* |
+| Embedded / MCU | [Arm Cortex-M with CMSIS-NN](https://docs.pytorch.org/executorch/main/backends/arm-cortex-m/arm-cortex-m-overview.html) *(beta)*; [Arm Ethos-U](https://docs.pytorch.org/executorch/main/backends/arm-ethos-u/arm-ethos-u-overview.html); [NXP eIQ Neutron](https://docs.pytorch.org/executorch/main/backends/nxp/nxp-overview.html); [Cadence DSP](https://docs.pytorch.org/executorch/main/backends-cadence.html); [Zephyr](zephyr/README.md) and [Arduino](examples/arduino/README.md) integrations |
 
 ## Documentation
 
