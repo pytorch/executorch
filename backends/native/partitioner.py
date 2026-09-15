@@ -38,6 +38,7 @@ _SUPPORTED_NON_CORE_OPS = [
     torch.ops.aten.linear.default,
     torch.ops.aten.addmm.default,
     torch.ops.aten.scaled_dot_product_attention.default,
+    torch.ops.aten.rms_norm.default,
 ]
 
 # Maps a control-flow higher-order op to the arg indices of its branch submodule
