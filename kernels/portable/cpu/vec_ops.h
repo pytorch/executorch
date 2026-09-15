@@ -46,7 +46,9 @@ vec_minmaxf_impl(const float* x, size_t size, float* min_out, float* max_out) {
     for (i = 0; i < vector_end; i += 4) {
       // Keep the independent lanes together even under size optimization.
 #if defined(__clang__) && (defined(__ARM_NEON) || defined(__SSE2__))
+#if !defined(__SANITIZE_ADDRESS__) && !__has_feature(address_sanitizer)
 #pragma clang loop vectorize_width(4) interleave_count(1) unroll(disable)
+#endif
 #endif
       for (size_t j = 0; j < 4; ++j) {
         if constexpr (ComputeMin) {
