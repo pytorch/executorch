@@ -61,7 +61,8 @@ backends/arm/
 │
 ├── quantizer/                     # Quantization-related logic
 │   ├── arm_quantizer.py           # EthosUQuantizer and VGFQuantizer definitions
-│   └── quantization_annotator.py  # Shared operator groups and quantization helpers
+│   ├── quantization_config.py     # Quantization specifications and helpers
+│   └── quantizer_support.py       # Supported operator patterns
 │
 ├── runtime/                       # Backends for running inference on target devices
 │   ├── EthosUBackend.cpp
