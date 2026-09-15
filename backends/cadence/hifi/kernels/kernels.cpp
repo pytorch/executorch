@@ -8,7 +8,12 @@
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <xa_nnlib_common.h>
+
+#if CORE_HIFI5
+#include <xa_nnlib_common_macros_hifi5.h>
+#else
 #include <xa_nnlib_common_macros.h>
+#endif
 
 namespace impl {
 namespace HiFi {
