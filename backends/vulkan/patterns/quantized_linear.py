@@ -236,6 +236,27 @@ class QuantizedLinearMatch(PatternMatch):
         # scales should have same size as weight's output channels dim
         return scales_shape[0] == weight_shape[-2]
 
+    def get_fp_input_node(self) -> Optional[torch.fx.Node]:
+        """
+        Returns the floating point tensor that the pattern's input quantization
+        consumes, or None if it is not available in the graph.
+
+        Some custom ops (i.e. et_vk.linear_q8ta_q8csw) quantize the activation
+        tensor themselves, so they need the floating point input rather than the
+        quantized one. For dynamically quantized inputs pattern_input_node is
+        already the floating point tensor; for statically quantized inputs it is
+        the quantized output of a quantize node, so step back past it.
+        """
+        if self.dequantize_input_node is None or self.quantize_input_node is not None:
+            return self.pattern_input_node
+
+        if utils.is_quant_node(self.pattern_input_node):
+            return self.pattern_input_node.args[0]  # pyre-ignore[7]
+
+        # The quantized tensor is produced outside of the graph, so there is no
+        # floating point tensor to use.
+        return None
+
     def is_input_static_per_tensor_quantized(self) -> bool:
         if self.dequantize_input_node is None:
             return False
@@ -503,12 +524,34 @@ def make_linear_q8ta_q8csw_custom_op(
             data=sum_per_output_channel,
         )
 
+    # This op quantizes the activation tensor itself, so it takes the floating
+    # point input rather than the quantized one.
+    fp_input_node = match.get_fp_input_node()
+    if fp_input_node is None:
+        # The input is only available as a quantized tensor, i.e. it is produced
+        # by a preceding quantized op. Dequantize it so that the op has the
+        # floating point tensor it expects.
+        with graph_module.graph.inserting_before(match.output_node):
+            fp_input_node = graph_module.graph.create_node(
+                "call_function",
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+                args=(
+                    match.pattern_input_node,
+                    match.input_scales_node,
+                    match.input_zeros_node,
+                    -128,
+                    127,
+                    torch.int8,
+                ),
+            )
+            fp_input_node.meta["val"] = match.dequantize_input_node.meta["val"]
+
     with graph_module.graph.inserting_before(match.output_node):
         qlinear_node = graph_module.graph.create_node(
             "call_function",
             exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
             args=(
-                match.pattern_input_node,
+                fp_input_node,
                 match.input_scales_node,
                 match.input_zeros_node,
                 match.weight_node,
