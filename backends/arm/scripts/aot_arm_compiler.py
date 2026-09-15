@@ -703,11 +703,6 @@ def _get_args():
         help="Disable strict checking while exporting models.",
     )
     parser.add_argument(
-        "--enable_qdq_fusion_pass",
-        action="store_true",
-        help="[DEPRECATED] This flag is no longer used and will be removed in a future release.",
-    )
-    parser.add_argument(
         "--enable_debug_mode",
         required=False,
         choices=["json", "tosa"],
@@ -1042,13 +1037,6 @@ def main() -> None:  # noqa: C901
     )
 
     model = exported_program.module()
-
-    if args.enable_qdq_fusion_pass:
-        logging.warning(
-            "--enable_qdq_fusion_pass is deprecated and has no effect. "
-            "Quantized node replacement is now handled within the "
-            "respective compilation paths."
-        )
 
     model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:

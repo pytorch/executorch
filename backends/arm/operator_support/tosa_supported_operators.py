@@ -513,7 +513,10 @@ def tosa_support_factory(
     if additional_positive_checks:
         positive_checks.extend(additional_positive_checks)
     negative_checks = _negative_checks(
-        tosa_spec, exported_program, reporter, additional_checks
+        tosa_spec,
+        exported_program,
+        reporter,
+        additional_checks,
     )
 
     # An op must be accepted by at least one postitive check, and not rejected by any
@@ -530,8 +533,44 @@ def tosa_support_factory(
     return any_chain(*additional_positive_overrides or (), default_checks)
 
 
+def _has_symbolic_shape(node: fx.Node) -> bool:
+    val = node.meta.get("val")
+    vals = val if isinstance(val, (list, tuple)) else (val,)
+    for node_val in vals:
+        if isinstance(node_val, torch.SymInt):
+            return True
+
+        shape = getattr(node_val, "shape", None)
+        if shape is not None and any(isinstance(dim, torch.SymInt) for dim in shape):
+            return True
+
+    return False
+
+
 class SymbolicShapeSupportCheck(OperatorSupportBase):
-    """Reject symbolic tensor shapes for specs without the shape extension."""
+    """Reject symbolic shape constructs that require the TOSA shape
+    extension.
+    """
+
+    _SYMBOLIC_SPATIAL_DIM_TARGETS = (
+        exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.avg_pool2d.default,
+        exir_ops.edge.aten.max_pool2d.default,
+        exir_ops.edge.aten.max_pool2d_with_indices.default,
+        exir_ops.edge.aten._adaptive_avg_pool2d.default,
+        torch.ops.aten.conv_transpose2d.input,
+    )
+    _SYMBOLIC_MEAN_TARGETS = (
+        exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.mean.default,
+    )
+    _SYMBOLIC_VIEW_SHAPE_TARGETS = (
+        exir_ops.edge.aten.squeeze_copy.dim,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+    )
+    _SYMBOLIC_PAD_TARGETS = (exir_ops.edge.aten.constant_pad_nd.default,)
+    _SYMBOLIC_SLICE_TARGETS = (exir_ops.edge.aten.slice_copy.Tensor,)
 
     def __init__(self, reporter: WhyNoPartitionReporter):
         """Initialize the check with a reporter.
@@ -543,63 +582,89 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
         self.reporter = reporter
 
     @staticmethod
-    def _has_symbolic_shape(node: fx.Node) -> bool:
-        val = node.meta.get("val")
-        vals = val if isinstance(val, (list, tuple)) else (val,)
-        for node_val in vals:
-            if isinstance(node_val, torch.SymInt):
-                return True
+    def _has_symbolic_shape_argument(arg: object) -> bool:
+        if isinstance(arg, torch.SymInt):
+            return True
 
-            shape = getattr(node_val, "shape", None)
-            if shape is not None and any(
-                isinstance(dim, torch.SymInt) for dim in shape
-            ):
-                return True
+        if isinstance(arg, fx.Node):
+            return SymbolicShapeSupportCheck._has_symbolic_shape_argument(
+                arg.meta.get("val")
+            )
+
+        if isinstance(arg, (list, tuple)):
+            return any(
+                SymbolicShapeSupportCheck._has_symbolic_shape_argument(item)
+                for item in arg
+            )
 
         return False
 
-    def _partition_dynamic_upmsample_nearest2d(self, node: fx.Node) -> bool:
-        """Check if the node is an upsample_nearest2d with symbolic shapes.
+    @staticmethod
+    def _get_mean_reduction_dims(node: fx.Node, input_rank: int) -> tuple[int, ...]:
+        if node.target == exir_ops.edge.aten.mean.default:
+            return tuple(range(input_rank))
 
-        Args:
-            node (fx.Node): FX node to check.
+        dims = node.kwargs.get("dim", node.args[1] if len(node.args) > 1 else None)
+        if dims is None:
+            return tuple(range(input_rank))
+        if isinstance(dims, int):
+            return (dims % input_rank,)
+        return tuple(dim % input_rank for dim in typing.cast(Sequence[int], dims))
 
-        Returns:
-            bool: True if the node is an upsample_nearest2d with symbolic
-                shapes; otherwise, False.
-
-        """
-        if node.target != exir_ops.edge.aten.upsample_nearest2d.vec:
+    def _has_unsupported_symbolic_tensor_shape(self, node: fx.Node) -> bool:
+        if node.target not in (
+            *self._SYMBOLIC_SPATIAL_DIM_TARGETS,
+            *self._SYMBOLIC_MEAN_TARGETS,
+            *self._SYMBOLIC_VIEW_SHAPE_TARGETS,
+            *self._SYMBOLIC_PAD_TARGETS,
+            *self._SYMBOLIC_SLICE_TARGETS,
+        ):
+            return False
+        if not node.all_input_nodes:
             return False
 
-        try:
-            input_tensor = get_first_fake_tensor(node.all_input_nodes[0])
-            output_tensor = get_first_fake_tensor(node)
-        except Exception as exc:
-            self.reporter.report_reject(
-                node,
-                f"upsample_nearest2d symbolic shapes need tensor metadata: {exc}",
-            )
+        input_node = node.all_input_nodes[0]
+        input_fake_tensor = get_first_fake_tensor(input_node)
+        if not any(isinstance(s, torch.SymInt) for s in input_fake_tensor.shape):
             return False
 
-        input_size_xy = input_tensor.shape[2:4]
-        output_size_xy = output_tensor.shape[2:4]
-        if len(input_size_xy) != 2 or len(output_size_xy) != 2:
-            self.reporter.report_reject(
-                node, "upsample_nearest2d expects 2D spatial input/output."
-            )
-            return False
+        if node.target in self._SYMBOLIC_SPATIAL_DIM_TARGETS:
+            if any(isinstance(s, torch.SymInt) for s in input_fake_tensor.shape[2:]):
+                self.reporter.report_reject(node, "Symbolic spatial dims unsupported")
+                return True
 
-        return True
+        if node.target in self._SYMBOLIC_MEAN_TARGETS:
+            if any(
+                isinstance(input_fake_tensor.shape[dim], torch.SymInt)
+                for dim in self._get_mean_reduction_dims(
+                    node, len(input_fake_tensor.shape)
+                )
+            ):
+                self.reporter.report_reject(node, "Symbolic mean dims unsupported")
+                return True
+
+        if node.target in self._SYMBOLIC_VIEW_SHAPE_TARGETS:
+            self.reporter.report_reject(node, "Symbolic view dims unsupported")
+            return True
+
+        if node.target in self._SYMBOLIC_PAD_TARGETS:
+            self.reporter.report_reject(node, "Symbolic pad dims unsupported")
+            return True
+
+        if node.target in self._SYMBOLIC_SLICE_TARGETS:
+            self.reporter.report_reject(node, "Symbolic slices unsupported")
+            return True
+
+        return False
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        """Return False for nodes with symbolic tensor input or output shapes.
+        """Return False for symbolic shape uses needing shape extension.
 
-        Dynamic shapes require the TOSA shape extension. Reject nodes with
-        symbolic tensor dimensions before partitioning when the active spec
-        does not enable that extension.
+        Without TOSA shape extension, symbolic input/output tensor dimensions
+        are generally allowed because they are tensor metadata. Symbolic shape
+        arguments and known shape-materialization edge cases are rejected.
 
         Args:
             submodules (typing.Mapping[str, torch.nn.Module]): Exported modules.
@@ -609,22 +674,55 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
             bool: False if rejected by constraints; otherwise, True.
 
         """
+        del submodules
         if node.op in ("placeholder", "output"):
             return True
         if node.op == "call_function" and node.target in (*Q_OPS, *DQ_OPS):
             return True
 
-        if self._has_symbolic_shape(node) or any(
-            self._has_symbolic_shape(input_node) for input_node in node.all_input_nodes
+        if self._has_symbolic_shape_argument(node.args):
+            self.reporter.report_reject(
+                node,
+                "Node has symbolic shape arguments, has the TOSA spec shape extension support?",
+            )
+            return False
+
+        if self._has_unsupported_symbolic_tensor_shape(node):
+            return False
+
+        return True
+
+
+class CheckResolvedTensorShapes(OperatorSupportBase):
+    """Reject nodes with unresolved tensor input or output shapes."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        """Initialize the check with a reporter.
+
+        Args:
+            reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+
+        """
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Return False when the node depends on unresolved tensor shapes."""
+        del submodules
+        if node.op in ("placeholder", "output"):
+            return True
+        if node.op == "call_function" and node.target in (*Q_OPS, *DQ_OPS):
+            return True
+
+        if _has_symbolic_shape(node) or any(
+            _has_symbolic_shape(input_node) for input_node in node.all_input_nodes
         ):
-            if node.target == exir_ops.edge.aten.upsample_nearest2d.vec:
-                return self._partition_dynamic_upmsample_nearest2d(node)
-            else:
-                self.reporter.report_reject(
-                    node,
-                    "Node has symbolic shape, has the TOSA spec shape extension support?",
-                )
-                return False
+            self.reporter.report_reject(
+                node,
+                "Node has unresolved tensor shapes, which are not supported by this target.",
+            )
+            return False
 
         return True
 
