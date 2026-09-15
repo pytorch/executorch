@@ -193,9 +193,14 @@ pip install -e . --no-build-isolation
 
 The key CMake flag is `EXECUTORCH_BUILD_PYBIND=ON`, which builds the `_llm_runner` extension module providing `TextLLMRunner`, `MultimodalRunner`, `GenerationConfig`, and related classes.
 
-Verify the installation:
+Verify the installation and register the operators used by your exported model.
+The `custom_ops` import loads LLM kernels such as KV-cache updates and SDPA;
+`quantized` loads quantized kernels. Run the corresponding imports once per
+Python process before loading a model that needs them:
 
 ```python
+from executorch.extension.llm.custom_ops import custom_ops
+from executorch.kernels import quantized
 from executorch.extension.llm.runner import TextLLMRunner, GenerationConfig
 ```
 
@@ -204,6 +209,8 @@ from executorch.extension.llm.runner import TextLLMRunner, GenerationConfig
 #### Basic Multimodal Generation
 
 ```python
+from executorch.extension.llm.custom_ops import custom_ops
+from executorch.kernels import quantized
 from executorch.extension.llm.runner import (
     GenerationConfig, MultimodalRunner, 
     make_text_input, make_image_input, make_audio_input
@@ -248,6 +255,8 @@ runner.generate(inputs, config, token_callback, stats_callback)
 #### Working with Different Input Types
 
 ```python
+from executorch.extension.llm.custom_ops import custom_ops
+from executorch.kernels import quantized
 from executorch.extension.llm.runner import (
     MultimodalRunner, GenerationConfig,
     make_text_input, make_token_input, make_image_input, 
@@ -291,6 +300,8 @@ print(f"Response: {response}")
 #### Hugging Face Integration
 
 ```python
+from executorch.extension.llm.custom_ops import custom_ops
+from executorch.kernels import quantized
 from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig
 from transformers import AutoProcessor
 from PIL import Image
@@ -328,7 +339,10 @@ runner.generate_hf(
 #### Chat Session with State Management
 
 ```python
-from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig, make_text_input
+import torch
+from executorch.extension.llm.custom_ops import custom_ops
+from executorch.kernels import quantized
+from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig, make_text_input, make_image_input
 
 class ChatSession:
     def __init__(self, model_path: str, tokenizer_path: str):
@@ -369,8 +383,9 @@ chat.reset_conversation()
 
 #### GenerationConfig
 
-The Python binding currently exposes the fields shown below. The C++-only
-constrained-decoding fields are documented in the later C++ API section.
+The Python binding currently exposes the fields shown below. The reserved
+C++-only constrained-decoding fields are documented under
+[Generation Parameters](#generation-parameters).
 
 ```python
 from executorch.extension.llm.runner import GenerationConfig
@@ -471,7 +486,9 @@ runner.generate(inputs, config, token_callback, detailed_stats_callback)
 ### Error Handling
 
 ```python
-from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig
+from executorch.extension.llm.custom_ops import custom_ops
+from executorch.kernels import quantized
+from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig, make_image_input
 import torch
 
 try:
@@ -764,8 +781,8 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `echo` | `bool` | `true` | Whether to echo the input prompt |
-| `grammar` | `std::string` | empty | Grammar for constrained decoding |
-| `grammar_type` | `std::string` | empty | Grammar format: `json_schema`, `regex`, `lark`, or `gbnf` |
+| `grammar` | `std::string` | empty | Reserved for constrained decoding; currently ignored |
+| `grammar_type` | `std::string` | empty | Reserved for the grammar format; currently ignored |
 | `ignore_eos` | `bool` | `false` | Continue generation after an EOS token |
 | `max_new_tokens` | `int32_t` | `-1` | Maximum new tokens to generate (-1 = use available context) |
 | `warming` | `bool` | `false` | Whether this is a warmup run |
@@ -774,7 +791,8 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
 | `num_bos` | `int32_t` | `0` | Number of beginning-of-sequence tokens |
 | `num_eos` | `int32_t` | `0` | Number of end-of-sequence tokens |
 
-Support for constrained decoding is runner-dependent.
+No in-tree runner currently implements `grammar` or `grammar_type`. Setting
+either field does not constrain generated output.
 
 ### Performance Tuning
 

@@ -291,6 +291,15 @@ decode tokens/s for a 4-bit Llama 3.2 1B artifact at 128-token context.
 
 ::::
 
+More reference workflows:
+
+- [LoRA weight sharing in C++](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation/cpp/lora_example):
+  share a foundation-weight file across model programs and reuse those weights
+  through XNNPACK's weight cache.
+- [Stable Audio Open Small on Arm CPUs](https://github.com/Arm-Examples/ML-examples/tree/main/kleidiai-examples/audiogen-et):
+  generate audio from text prompts with ExecuTorch, XNNPACK, and Arm KleidiAI.
+  [Arm and Meta video session →](https://www.youtube.com/watch?v=q2P0ESVxhAY)
+
 ---
 
 ## Community Showcase

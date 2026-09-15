@@ -25,21 +25,21 @@ Before you begin, make sure you have:
 The metadata includes several important configuration parameters to be included during export step, which will be used by the runner library:
 
 1. **`enable_dynamic_shape`**: Whether the model supports dynamic input shapes
-2. **`max_seq_len`**: Maximum sequence length the model can handle
-3. **`max_context_len`**: Maximum context length for KV cache
+2. **`get_max_seq_len`**: Maximum sequence length the model can handle
+3. **`get_max_context_len`**: Maximum context length for KV cache
 4. **`use_kv_cache`**: Whether the model uses KV cache for efficient generation
 5. **`get_bos_id`**: Beginning-of-sequence token ID
 6. **`get_eos_ids`**: End-of-sequence token IDs
 
 ### Adding Metadata During Export
 
-To ensure your model has the necessary metadata, you can specify it during export using the `metadata` parameter in the export configuration:
+To ensure your model has the necessary metadata, you can specify it during export using the `metadata` parameter in the export configuration. The `++` override below adds or replaces that field; the nested quotes preserve the JSON as a string for Hydra:
 
-```python
+```bash
 # export_llm
-python -m extension.llm.export.export_llm \
+python -m executorch.extension.llm.export.export_llm \
   --config path/to/config.yaml \
-  +base.metadata='{"get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_max_context_len":4096}'
+  '++base.metadata="{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001], \"get_max_context_len\":4096}"'
 ```
 
 ## Building the Runner Library
@@ -211,10 +211,10 @@ struct GenerationConfig {
 };
 ```
 
-`grammar` and `grammar_type` carry an optional constrained-decoding
-specification in `json_schema`, `regex`, `lark`, or `gbnf` format; support is
-runner-dependent. Setting `ignore_eos` continues generation past EOS until
-another limit is reached.
+`grammar` and `grammar_type` are reserved for constrained decoding. No in-tree
+runner currently implements them: setting either field is ignored and does not
+constrain generated output. Setting `ignore_eos` continues generation past EOS
+until another limit is reached.
 
 The `resolve_max_new_tokens` method handles the logic of determining how many tokens can be generated based on:
 - The model's maximum context length

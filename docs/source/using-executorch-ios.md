@@ -196,7 +196,8 @@ You can assign such a config file to your target in Xcode:
 
 ExecuTorch provides native Objective-C APIs, automatically bridged to Swift, for interacting with the runtime. These APIs act as wrappers around the core C++ components found in [extension/tensor](extension-tensor.md) and [extension/module](extension-module.md), offering a more idiomatic experience for Apple platform developers.
 
-**Note:** These Objective-C/Swift APIs are currently experimental and subject to change.
+These core APIs follow the [API lifecycle policy](api-life-cycle.md). The
+separate [LLM runner APIs](llm/run-on-ios.md) are marked experimental.
 
 ### Importing
 

@@ -79,9 +79,7 @@ with open("mv2_mlx.pte", "wb") as file:
 ```
 
 `get_default_passes()` includes RMSNorm fusion, consecutive view/permute/dtype-cast collapsing, no-op removal, and common subexpression elimination. These are recommended for all models and required for optimal LLM performance.
-The accompanying `EdgeCompileConfig` disables generic edge IR validation and
-dimension-order conversion because the MLX reinplace pass introduces
-backend-specific in-place operators after export.
+The accompanying `EdgeCompileConfig` uses the settings in the MLX export examples.
 The `_check_ir_validity` and `_skip_dim_order` fields are internal and may change
 between ExecuTorch versions.
 

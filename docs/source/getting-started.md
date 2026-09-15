@@ -129,10 +129,9 @@ supplies more of that task-level integration for its tested model paths.
 <hr/>
 
 ## Running on Device
-ExecuTorch provides a stable C++ runtime API and experimental managed-language
-`Module` APIs for Java/Kotlin on Android and Objective-C/Swift on Apple
-platforms. The experimental APIs may change without notice; see the
-[API lifecycle policy](api-life-cycle.md).
+ExecuTorch provides C++ runtime APIs and `Module` bindings for Java/Kotlin on
+Android and Objective-C/Swift on Apple platforms. Stability follows the
+[API lifecycle policy](api-life-cycle.md) and the annotations on each API.
 
 Quick Links:
 - [Android](#android)
@@ -182,7 +181,7 @@ For a full example of running a model on Android, see the [DeepLabV3AndroidDemo]
 ### iOS
 
 #### Installation
-ExecuTorch supports iOS and macOS through C++ and through experimental
+ExecuTorch supports iOS and macOS through C++ and through
 Objective-C APIs that bridge to Swift. Core ML and XNNPACK provide accelerated
 execution paths on Apple platforms. The runtime libraries are distributed as
 `.xcframework` targets through a Swift Package Manager package.
@@ -195,10 +194,10 @@ can also be added to `Package.swift`; see
 [Using ExecuTorch on iOS](using-executorch-ios.md) for details.
 
 #### Runtime APIs
-Models can be loaded and run through the experimental Objective-C/Swift
-`Module`, `Tensor`, and `Value` APIs, or through the stable C++ runtime from
-Objective-C++. The managed APIs wrap the C++ `Module` and tensor extensions and
-are subject to change.
+Models can be loaded and run through the Objective-C/Swift `Module`, `Tensor`,
+and `Value` APIs, or through the C++ runtime from Objective-C++. The managed
+APIs wrap the C++ `Module` and tensor extensions. See the
+[API lifecycle policy](api-life-cycle.md) for stability guarantees.
 
 For more information on iOS integration, including an API reference, logging setup, and building from source, see [Using ExecuTorch on iOS](using-executorch-ios.md).
 

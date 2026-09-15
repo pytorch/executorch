@@ -84,7 +84,6 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPar
 from executorch.exir import to_edge_transform_and_lower
 from executorch.runtime import Runtime
 
-# Define a simple model
 class Add(torch.nn.Module):
     def forward(self, x, y):
         return x + y
@@ -165,7 +164,7 @@ Qualcomm backend selection for Android.
 :link: ios-section
 :link-type: doc
 
-Swift Package Manager setup, experimental Swift/Objective-C `Module` APIs, C++,
+Swift Package Manager setup, Swift/Objective-C `Module` APIs, C++,
 and Core ML / XNNPACK backend selection for iOS.
 :::
 
@@ -262,7 +261,7 @@ Choosing the right backend has the largest impact on performance. Use this table
 * - `.pte` file runs but produces wrong output
   - Use {doc}`devtools-tutorial` to compare intermediate activations
 * - Android Gradle sync fails
-  - Check `executorch_version` in `build.gradle.kts` matches your installed version
+  - Check `executorchVersion` in `build.gradle.kts` matches the release you intend to use
 * - iOS build fails with missing xcframework
   - Verify the Swift PM branch name matches your ExecuTorch version (format: `swiftpm-X.Y.Z`)
 ```

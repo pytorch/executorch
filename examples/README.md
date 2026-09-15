@@ -58,8 +58,10 @@ and the local [demo apps](demo-apps/).
 - Start with `pip install executorch` for supported host platforms. Use the
   [build-from-source guide](../docs/source/using-executorch-building-from-source.md)
   when an example requires a custom backend or build option.
-- Treat downloaded model weights and generated `.pte`/`.ptd` files as trusted
-  inputs. Third-party model licenses and terms still apply.
+- Treat model weights and `.pte`/`.ptd` files from third parties as untrusted.
+  Load only artifacts you generated or obtained from a source you trust;
+  runtime validation is not a security sandbox.
+- Third-party model licenses and terms still apply.
 
 ## Disclaimer
 

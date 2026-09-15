@@ -4,10 +4,14 @@ Instead of needing to manually write code to call torch.export(), use ExecuTorch
 
 ## Prerequisites
 
-The LLM export functionality requires the `pytorch_tokenizers` package. If you encounter a `ModuleNotFoundError: No module named 'pytorch_tokenizers'` error, install it from the ExecuTorch source code:
+Install ExecuTorch and a compatible PyTorch version as described in
+[Getting Started](../getting-started.md). The commands below use the installed
+`executorch` package and can run outside a source checkout. If you encounter a
+`ModuleNotFoundError: No module named 'pytorch_tokenizers'` error, install the
+tokenizer package in the same environment:
 
 ```bash
-pip install -e ./extension/llm/tokenizers/
+pip install pytorch-tokenizers
 ```
 
 ## Supported Models
@@ -29,7 +33,7 @@ that need model-specific changes can start with [Exporting custom LLMs](export-c
 ## The export_llm API
 `export_llm` is ExecuTorch's high-level export API for LLMs. In this tutorial, we will focus on exporting Llama 3.2 1B using this API. `export_llm`'s arguments are specified either through CLI args or through a yaml configuration whose fields are defined in [`LlmConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py). To call `export_llm`:
 
-```
+```bash
 python -m executorch.extension.llm.export.export_llm \
   --config <path-to-config-yaml> \
   +base.<additional-CLI-overrides>
@@ -41,16 +45,21 @@ To perform a basic export of Llama3.2, we will first need to download the checkp
 
 Then, we specify the `model_class`, `checkpoint` (path to checkpoint file), and `params` (path to params file) as arguments. Additionally, later when we run the exported .pte with our runner APIs, the runner will need to know about the bos and eos ids for this model to know when to terminate. These are exposed through bos and eos getter methods in the .pte, which we can add by specifying bos and eos ids in a `metadata` argument. The values for these tokens can usually be found in the model's `tokenizer_config.json` on Hugging Face.
 
-```
+Save the following YAML as `path/to/config.yaml`, replacing the placeholder file
+paths. Paths inside the configuration are relative to your current working
+directory unless you use absolute paths. Run the shell command separately.
+
+```yaml
 # path/to/config.yaml
 base:
   model_class: llama3_2
   checkpoint: path/to/consolidated.00.pth
   params: path/to/params.json
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+```
 
-# export_llm
-python -m extension.llm.export.export_llm \
+```bash
+python -m executorch.extension.llm.export.export_llm \
   --config path/to/config.yaml
 ```
 
@@ -64,7 +73,7 @@ For the other supported LLMs, the checkpoint will be downloaded from Hugging Fac
 ## Adding optimizations
 `export_llm` performs a variety of optimizations to the model before export, during export, and during lowering. Quantization and delegation to accelerator backends are the main ones and will be covered in the next two sections. All other optimizations can be found under [`ModelConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L120). We will go ahead and add a few optimizations.
 
-```
+```yaml
 # path/to/config.yaml
 base:
   model_class: llama3_2
@@ -74,9 +83,10 @@ base:
 model:
   use_kv_cache: True
   use_sdpa_with_kv_cache: True
+```
 
-# export_llm
-python -m extension.llm.export.export_llm \
+```bash
+python -m executorch.extension.llm.export.export_llm \
   --config path/to/config.yaml
 ```
 
@@ -109,7 +119,7 @@ For Arm CPUs, there are also [low-bit kernels](https://pytorch.org/blog/hi-po-lo
 
 To quantize embeddings, specify either `embedding_quantize: <bitwidth>,<groupsize>` (`bitwidth` here must be 2, 4, or 8), or for low-bit kernels use `embedding_quantize: torchao:<bitwidth>,<groupsize>` (`bitwidth` can be from 1-8).
 
-```
+```yaml
 # path/to/config.yaml
 base:
   model_class: llama3_2
@@ -122,9 +132,10 @@ model:
 quantization:
   embedding_quantize: 4,32
   qmode: 8da4w
+```
 
-# export_llm
-python -m extension.llm.export.export_llm \
+```bash
+python -m executorch.extension.llm.export.export_llm \
   --config path/to/config.yaml
 ```
 
@@ -139,7 +150,7 @@ Read more about pt2e [here](https://docs.pytorch.org/ao/main/pt2e_quantization/p
 ## Backend support
 Backend options are defined by [`BackendConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L434). Each backend has their own backend configuration options. Here is an example of lowering the LLM to XNNPACK for CPU acceleration:
 
-```
+```yaml
 # path/to/config.yaml
 base:
   model_class: llama3_2
@@ -156,25 +167,25 @@ backend:
   xnnpack:
     enabled: True
     extended_ops: True  # Expand the selection of ops delegated to XNNPACK.
+```
 
-# export_llm
-python -m extension.llm.export.export_llm \
+```bash
+python -m executorch.extension.llm.export.export_llm \
   --config path/to/config.yaml
 ```
 
 
 ## Profiling and Debugging
-To see which ops got delegated to the backend and which didn't, specify `verbose: True`:
+To see which ops got delegated to the backend and which didn't, add the following
+to your existing configuration:
 
-```
-# path/to/config.yaml
-...
+```yaml
 debug:
   verbose: True
-...
+```
 
-# export_llm
-python -m extension.llm.export.export_llm \
+```bash
+python -m executorch.extension.llm.export.export_llm \
   --config path/to/config.yaml
 ```
 
@@ -211,17 +222,15 @@ Number of non-delegated nodes: 2513 <br/>
 </details>
 <br/>
 
-For further performance analysis, use [ExecuTorch's Developer Tools](../devtools-overview.md) to trace individual operator performance back to source code, inspect memory planning, and debug intermediate activations. To generate an ETRecord that links the `.pte` program back to source code, use:
+For further performance analysis, use [ExecuTorch's Developer Tools](../devtools-overview.md) to trace individual operator performance back to source code, inspect memory planning, and debug intermediate activations. To generate an ETRecord that links the `.pte` program back to source code, add `generate_etrecord` to the `debug` section of your configuration:
 
-```
-# path/to/config.yaml
-...
+```yaml
 debug:
   generate_etrecord: True
-...
+```
 
-# export_llm
-python -m extension.llm.export.export_llm \
+```bash
+python -m executorch.extension.llm.export.export_llm \
   --config path/to/config.yaml
 ```
 
