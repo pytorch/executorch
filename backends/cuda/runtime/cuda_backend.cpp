@@ -45,6 +45,7 @@
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
@@ -441,6 +442,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->container_handle = container_handle;
 
+    // Runtime-owned off-graph buffers must capture their AOTI names before
+    // the serialized constants update installs the ordinary weight set.
+    offgraph_kv_note_handle(handle);
+
     // Versioned artifacts load each (device, FQN) through the same process-wide
     // cross-method cache model used by the legacy path. The payload only adds
     // the tensor metadata needed to reconstruct independently named PTD blobs.
@@ -589,6 +594,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_rebind_for_execute(handle));
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
 
     // ---------------------------------------------------------------
@@ -988,6 +994,7 @@ class ET_EXPERIMENTAL CudaBackend final
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
     mutable_state_forget_handle(handle);
+    offgraph_kv_forget_handle(handle);
 
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
