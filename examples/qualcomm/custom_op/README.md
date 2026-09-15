@@ -10,13 +10,13 @@ This folder contains examples demonstrating the end-to-end flow for adding a cus
 
 - Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/stable/getting-started-setup).
 
-- Please finish [setup QNN backend](../../../docs/source/backends-qualcomm.md). This example is verified with QNN SDK 2.37.0.
+- Please finish [setup QNN backend](../../../docs/source/backends-qualcomm.md). This example is verified with QNN SDK 2.50.0.
 
 - Please follow [the instructions to install proper version of Hexagon SDK and Hexagon Tools.](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-10/linux_setup.html#htp-and-dsp)
 
   The required Hexagon SDK and tools versions depend on your QNN SDK version. Check the `Makefile` in the op package directory for the exact combination — `HEXAGON_SDK_ROOT_V<arch>` and `HEXAGON_TOOLS_VERSION_V<arch>` specify the SDK and tools version per target.
 
-  For the examples in this folder (verified with QNN SDK 2.37.0, for SM8650):
+  For the examples in this folder (verified with QNN SDK 2.50.0, for SM8650):
 
   | Target | Hexagon SDK | Tools version |
   |--------|-------------|---------------|
