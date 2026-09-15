@@ -10,6 +10,12 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult, ProxyValue
 
 
+_SDPA_OPS = (
+    torch.ops.aten.scaled_dot_product_attention.default,
+    exir_ops.edge.aten.scaled_dot_product_attention.default,
+)
+
+
 class NormalizeSDPAInputRankPass(ExportPass):
     """Pad rank-2/3 SDPA inputs to rank 4 and restore the original output rank.
 
@@ -19,11 +25,19 @@ class NormalizeSDPAInputRankPass(ExportPass):
     the inserted output axes are squeezed.
     """
 
+    @staticmethod
+    def _needs_normalization(inputs, output):
+        return (
+            isinstance(output, torch.Tensor)
+            and output.dim() in (2, 3)
+            and all(
+                isinstance(value, torch.Tensor) and value.dim() == output.dim()
+                for value in inputs
+            )
+        )
+
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            torch.ops.aten.scaled_dot_product_attention.default,
-            exir_ops.edge.aten.scaled_dot_product_attention.default,
-        ):
+        if op not in _SDPA_OPS:
             return super().call_operator(op, args, kwargs, meta)
 
         inputs = [
@@ -32,15 +46,11 @@ class NormalizeSDPAInputRankPass(ExportPass):
         ]
         if not all(isinstance(x, ProxyValue) and x.is_tensor() for x in inputs):
             return super().call_operator(op, args, kwargs, meta)
-        rank = inputs[0].to_tensor().dim()
-        output = meta.data.get("val")
-        if (
-            rank not in (2, 3)
-            or any(x.to_tensor().dim() != rank for x in inputs)
-            or not isinstance(output, torch.Tensor)
-            or output.dim() != rank
+        if not self._needs_normalization(
+            [x.to_tensor() for x in inputs], meta.data.get("val")
         ):
             return super().call_operator(op, args, kwargs, meta)
+        rank = inputs[0].to_tensor().dim()
 
         aten = (
             torch.ops.aten
@@ -69,5 +79,22 @@ class NormalizeSDPAInputRankPass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         self._modified = False
-        result = super().call(graph_module)
-        return PassResult(result.graph_module, self._modified)
+        # Even a no-op retrace can create unbacked symbols in the shared ShapeEnv.
+        for module in graph_module.modules():
+            if not isinstance(module, torch.fx.GraphModule):
+                continue
+            for node in module.graph.nodes:
+                if node.op != "call_function" or node.target not in _SDPA_OPS:
+                    continue
+                inputs = [
+                    node.args[i] if i < len(node.args) else node.kwargs.get(name)
+                    for i, name in enumerate(("query", "key", "value"))
+                ]
+                values = [
+                    arg.meta.get("val") if isinstance(arg, torch.fx.Node) else arg
+                    for arg in inputs
+                ]
+                if self._needs_normalization(values, node.meta.get("val")):
+                    result = super().call(graph_module)
+                    return PassResult(result.graph_module, self._modified)
+        return PassResult(graph_module, False)
