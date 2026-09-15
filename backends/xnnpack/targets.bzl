@@ -41,6 +41,11 @@ def define_common_targets():
             headers = native.glob([
                 "runtime/*.h",
                 "runtime/profiling/*.h",
+                "runtime/core/*.h",
+                "runtime/graph/*.h",
+                "runtime/operators/*.h",
+                "runtime/executor/*.h",
+                "runtime/plan/*.h",
             ]),
             visibility = ["PUBLIC"],
             preprocessor_flags = [
