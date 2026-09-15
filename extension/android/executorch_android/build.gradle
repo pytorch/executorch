@@ -53,6 +53,17 @@ android {
         jvmTarget = "11"
         freeCompilerArgs += ["-Xjvm-default=all"]
     }
+
+    // libexecutorch.so links the NDK C++ runtime dynamically, so the AAR ships
+    // libc++_shared.so alongside it. fbjni's AAR carries its own copy, and AGP
+    // fails on duplicate .so paths rather than collapsing them, so any APK that
+    // packages both -- starting with this module's own androidTest APK -- needs
+    // one of them picked.
+    packaging {
+        jniLibs {
+            pickFirsts += ['lib/**/libc++_shared.so']
+        }
+    }
 }
 
 task copyTestRes(type: Exec) {
