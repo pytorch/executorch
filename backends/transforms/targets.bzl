@@ -68,6 +68,36 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "fuse_rms_norm",
+        srcs = ["fuse_rms_norm.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:_program_utils",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/passes:constant_prop_pass",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_fuse_rms_norm",
+        srcs = ["test/test_fuse_rms_norm.py"],
+        deps = [
+            ":fuse_rms_norm",
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:pass_manager",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/passes:remove_graph_asserts_pass",
+        ],
+    )
+
+    runtime.python_library(
         name = "normalize_sdpa_input_rank",
         srcs = ["normalize_sdpa_input_rank.py"],
         visibility = ["//executorch/backends/..."],

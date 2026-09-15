@@ -40,6 +40,7 @@ from executorch.backends.native.passes.replace_copy_with_alias import (
 
 from executorch.backends.transforms.collapse_view_copy import CollapseViewCopyPass
 from executorch.backends.transforms.fuse_gqa_with_sdpa import FuseGQAWithSDPAPass
+from executorch.backends.transforms.fuse_rms_norm import FuseRMSNormPass
 from executorch.backends.transforms.normalize_sdpa_input_rank import (
     NormalizeSDPAInputRankPass,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "BACKEND_INPLACE_OPS",
     "CollapseViewCopyPass",
     "FuseGQAWithSDPAPass",
+    "FuseRMSNormPass",
     "get_default_passes",
     "NativeReinplacePass",
     "NormalizeSDPAInputRankPass",
@@ -69,6 +71,7 @@ def get_default_passes() -> List[Union[ExportPass, ExportedProgramPassBase]]:
     return [
         FuseGQAWithSDPAPass(),
         NormalizeSDPAInputRankPass(),
+        FuseRMSNormPass(fold_dtype_casts=True, allow_lossy_weight_casts=True),
         CollapseViewCopyPass(),
         CSEPass(),
         NativeReinplacePass(),
