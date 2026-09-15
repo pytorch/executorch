@@ -147,7 +147,14 @@ class FuseGQAWithSDPAPassTest(unittest.TestCase):
         torch.testing.assert_close(fused.module()(*inputs), model(*inputs))
 
     @staticmethod
-    def _graph(rank=3, clone=True, repeat_dim=None, kv_heads=(2, 2), kwargs=False):
+    def _graph(
+        rank=3,
+        clone=True,
+        repeat_dim=None,
+        kv_heads=(2, 2),
+        kwargs=False,
+        repeat_interleave=False,
+    ):
         graph = torch.fx.Graph()
         prefix = [1] * (rank - 3)
         inputs = []
@@ -167,6 +174,11 @@ class FuseGQAWithSDPAPassTest(unittest.TestCase):
         def repeat(node):
             shape = list(node.meta["val"].shape)
             reps = 4 // shape[-3]
+            if repeat_interleave:
+                dim = rank - 3 if repeat_dim is None else repeat_dim
+                return call(
+                    torch.ops.aten.repeat_interleave.self_int, (node, reps, dim)
+                )
             dim = rank - 2 if repeat_dim is None else repeat_dim
             inner = call(torch.ops.aten.unsqueeze_copy.default, (node, dim))
             expanded = list(inner.meta["val"].shape)
@@ -203,6 +215,101 @@ class FuseGQAWithSDPAPassTest(unittest.TestCase):
                     self.assertIs(sdpa.kwargs["value"], inputs[2])
                     torch.testing.assert_close(gm(*values), expected)
                     self.assertFalse(FuseGQAWithSDPAPass().call(gm).modified)
+
+    def test_repeat_interleave_fusion(self):
+        for rank, normalize in ((3, False), (3, True), (4, False)):
+            for edge in (False, True):
+                for kwargs in (False, True):
+                    with self.subTest(
+                        rank=rank, normalize=normalize, edge=edge, kwargs=kwargs
+                    ):
+                        gm, inputs, sdpa = self._graph(
+                            rank=rank,
+                            repeat_dim=-3 if kwargs else None,
+                            repeat_interleave=True,
+                        )
+                        for node in gm.graph.nodes:
+                            if node.target is torch.ops.aten.repeat_interleave.self_int:
+                                if edge:
+                                    node.target = (
+                                        exir_ops.edge.aten.repeat_interleave.self_int
+                                    )
+                                if kwargs:
+                                    repeat_kwargs = dict(
+                                        zip(("self", "repeats", "dim"), node.args)
+                                    )
+                                    node.args = (
+                                        (repeat_kwargs.pop("self"),) if edge else ()
+                                    )
+                                    node.kwargs = repeat_kwargs
+                        if edge:
+                            sdpa.target = (
+                                exir_ops.edge.aten.scaled_dot_product_attention.default
+                            )
+                        gm.recompile()
+                        values = tuple(n.meta["val"] for n in inputs)
+                        expected = gm(*values)
+                        if normalize:
+                            gm = NormalizeSDPAInputRankPass()(gm).graph_module
+                            inputs = [
+                                n for n in gm.graph.nodes if n.op == "placeholder"
+                            ]
+                        self.assertTrue(FuseGQAWithSDPAPass().call(gm).modified)
+                        sdpa = next(
+                            n for n in gm.graph.nodes if n.kwargs.get("enable_gqa")
+                        )
+                        for actual, base in zip(sdpa.args[1:3], inputs[1:]):
+                            if normalize:
+                                self.assertEqual(actual.args[1], 0)
+                                self.assertEqual(
+                                    actual.meta["val"].shape,
+                                    (1, *base.meta["val"].shape),
+                                )
+                                actual = actual.args[0]
+                            self.assertIs(actual, base)
+                        self.assertFalse(
+                            any(
+                                n.target
+                                in (
+                                    torch.ops.aten.repeat_interleave.self_int,
+                                    exir_ops.edge.aten.repeat_interleave.self_int,
+                                )
+                                for n in gm.graph.nodes
+                            )
+                        )
+                        torch.testing.assert_close(gm(*values), expected)
+                        self.assertFalse(FuseGQAWithSDPAPass().call(gm).modified)
+
+    def test_repeat_interleave_not_fused(self):
+        for case in (
+            "sequence",
+            "mismatched_heads",
+            "multiuser",
+            "repeat_count",
+            "output_shape",
+            "base_rank",
+            "indivisible_heads",
+        ):
+            with self.subTest(case=case):
+                gm, inputs, sdpa = self._graph(
+                    repeat_interleave=True,
+                    repeat_dim=-2 if case == "sequence" else None,
+                    kv_heads=(1, 2) if case == "mismatched_heads" else (2, 2),
+                )
+                repeated = sdpa.args[1]
+                if case == "multiuser":
+                    output = next(n for n in gm.graph.nodes if n.op == "output")
+                    output.args = ((sdpa, repeated),)
+                elif case == "repeat_count":
+                    repeated.args = (inputs[1], 3, 0)
+                elif case == "output_shape":
+                    repeated.meta["val"] = torch.empty(4, 8, 3)
+                elif case == "base_rank":
+                    inputs[1].meta["val"] = torch.empty(1, 2, 3, 8)
+                elif case == "indivisible_heads":
+                    inputs[1].meta["val"] = torch.empty(3, 3, 8)
+                self.assertFalse(FuseGQAWithSDPAPass().call(gm).modified)
+                self.assertFalse(sdpa.kwargs.get("enable_gqa", False))
 
     def test_keyword_repeat_inputs(self):
         repeat_ops = (
