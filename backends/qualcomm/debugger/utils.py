@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
-from typing import List, Literal, Optional, Sequence, Tuple
+from typing import Iterator, List, Literal, Optional, Sequence, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import pandas as pd
@@ -242,8 +242,8 @@ class QnnHtpProfileArtifacts:
 
 #   Hextimate (compile-time perf estimation) requires SDK >= 2.41. Below that,
 #   qnn-context-binary-generator silently drops the hextimate parameters
-_MIN_SDK_FOR_HEXTIMATE = "2.41"
-_HEXTIMATE_SUPPORTED_SOCS = (
+MIN_QNN_SDK_FOR_HEXTIMATE = "2.41"
+HEXTIMATE_SUPPORTED_SOCS = (
     QcomChipset.SA8540,
     QcomChipset.SA8255,
     QcomChipset.QCS9100,
@@ -253,7 +253,27 @@ _HEXTIMATE_SUPPORTED_SOCS = (
 
 #   - QNN: libQnnHtpNetRunExtensions.so
 #   - QAIRT: libQairtHtpBackendExtensions.so (QAIRT 2.49+ sdk)
-_BACKEND_EXTENSIONS_LIB = "libQnnHtpNetRunExtensions.so"
+_BACKEND_EXTENSIONS_LIB_NAMES = (
+    "libQnnHtpNetRunExtensions.so",
+    "libQairtHtpBackendExtensions.so",
+)
+
+
+def _backend_extensions_lib(qnn_sdk: str, target: str) -> str:
+    """Path to the HTP backend-extensions library for one SDK target.
+
+    Resolved by looking on disk rather than hardcoded: naming a library the SDK does not
+    ship makes qnn-net-run and qnn-context-binary-generator skip the backend-extensions
+    config silently, which is the same trap the hextimate version gate guards against.
+    """
+    lib_dir = os.path.join(qnn_sdk, "lib", target)
+    for name in _BACKEND_EXTENSIONS_LIB_NAMES:
+        path = os.path.join(lib_dir, name)
+        if os.path.isfile(path):
+            return path
+    raise FileNotFoundError(
+        f"none of {_BACKEND_EXTENSIONS_LIB_NAMES} were found under {lib_dir}"
+    )
 
 
 class QnnTool:
@@ -271,7 +291,6 @@ class QnnTool:
         soc_id,
         adb,
         sample_input=None,
-        build_folder=None,
         workspace="/data/local/tmp/qnn_executorch_test",
     ):
         # Makes the SDK usable first, because this tool runs a binary from inside it. Setup used to
@@ -279,12 +298,12 @@ class QnnTool:
         setup_qnn_sdk()
 
         self.qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
-        self.ndk = os.environ.get("ANDROID_NDK_ROOT", None)
-        # Raised rather than asserted, because an assert is stripped under `python -O` and both
-        # values are used to build real paths a few lines below.
+        # Raised rather than asserted, because an assert is stripped under `python -O` and the
+        # value is used to build real paths a few lines below.
         if not self.qnn_sdk:
             raise EnvironmentError("QNN_SDK_ROOT was not found in environment variable")
-        if not self.ndk:
+        # Only the on-device route reaches the NDK; hextimate never leaves the host.
+        if adb is not None and not os.environ.get("ANDROID_NDK_ROOT"):
             raise EnvironmentError(
                 "ANDROID_NDK_ROOT was not found in environment variable"
             )
@@ -293,8 +312,8 @@ class QnnTool:
         self.workspace = workspace
         self.adb = adb
         self.sample_input = sample_input
-        self.build_folder = build_folder
         self.soc_id = soc_id
+        self.profiling_log = os.path.join(artifact_dir, "qnn-profiling-data_0.log")
 
     def _get_base_config(self):
         # Generate base device profile — every subprocess call clones from this.
@@ -353,8 +372,8 @@ class QnnTool:
         target = "x86_64-linux-clang"
         backend_ext = self._get_base_config()["backend_extensions"]
         if enable_hextimate:
-            backend_ext["shared_library_path"] = (
-                f"{self.qnn_sdk}/lib/{target}/{_BACKEND_EXTENSIONS_LIB}"
+            backend_ext["shared_library_path"] = _backend_extensions_lib(
+                self.qnn_sdk, target
             )
         backend_ext_path, _ = self._write_config_files(backend_ext)
 
@@ -384,16 +403,17 @@ class QnnTool:
         ), f"qnn-context-binary-generator ran but did not produce {expected}"
 
     def _qnn_net_run(self, graph_name: str) -> None:
+        target = "aarch64-android"
+        backend_ext_lib = _backend_extensions_lib(self.qnn_sdk, target)
         # backend-extensions library path is device-relative when running via adb
         backend_ext = {
-            "shared_library_path": f"./{_BACKEND_EXTENSIONS_LIB}",
+            "shared_library_path": f"./{os.path.basename(backend_ext_lib)}",
             "config_file_path": "config.json",
         }
         backend_ext_path, config_path = self._write_config_files(backend_ext)
 
-        target = "aarch64-android"
         files = [
-            f"{self.qnn_sdk}/lib/{target}/{_BACKEND_EXTENSIONS_LIB}",
+            backend_ext_lib,
             backend_ext_path,
             config_path,
             os.path.join(self.artifact_dir, f"{graph_name}.bin"),
@@ -428,10 +448,10 @@ class QnnTool:
         )
 
         assert os.path.isfile(
-            f"{self.artifact_dir}/qnn-profiling-data_0.log"
+            self.profiling_log
         ), f"Error: qnn-profiling-data_0.log not found in {self.artifact_dir}"
 
-    def _qnn_profile_viewer(self, schematic_stem: str, graph_idx: int) -> None:
+    def _qnn_profile_viewer(self, schematic_stem: str, output_stem: str) -> None:
         # profile-viewer takes its own config schema (`features`), not the
         # device profile schema. Written to the SAME file name because that's
         # the flag qnn-profile-viewer expects — a per-step fresh config avoids
@@ -443,14 +463,23 @@ class QnnTool:
             json.dump({"features": {"qhas_json": True}}, f, indent=4)
 
         target = "x86_64-linux-clang"
-        # TODO: remove assumption that AOT dumpped schematic file exists in same cwd
-        # we need to make .pte self-contained.
-        schematic = os.path.join(os.getcwd(), f"{schematic_stem}.bin")
-        assert os.path.isfile(schematic), (
-            f"qnn-profile-viewer expected schematic at {schematic}; "
-            "in case of online_prepare, the context-binary-generator step should have produced it in artifact_dir. "
-            "in case of offline_prepare, the schematic should be dumpped from pte, make sure profiling_level=3 when generating pte. "
-        )
+        # qnn-context-binary-generator writes the schematic next to the context binary it
+        # produces, so online_prepare lands it in artifact_dir. Offline_prepare relies on the
+        # AoT export having dropped one in the process cwd.
+        # TODO: remove the cwd fallback once the schematic is carried inside the .pte.
+        candidates = [
+            os.path.join(self.artifact_dir, f"{schematic_stem}.bin"),
+            os.path.join(os.getcwd(), f"{schematic_stem}.bin"),
+        ]
+        schematic = next((p for p in candidates if os.path.isfile(p)), None)
+        # Raised rather than asserted: under `python -O` a stripped assert would leave None
+        # in the argv below and surface as a TypeError from subprocess.
+        if schematic is None:
+            raise FileNotFoundError(
+                f"qnn-profile-viewer expected a schematic at one of {candidates}; "
+                "in case of online_prepare, the context-binary-generator step should have produced it in artifact_dir. "
+                "in case of offline_prepare, the schematic should be dumped from pte, make sure profiling_level=3 when generating pte. "
+            )
 
         cmd = [
             f"{self.qnn_sdk}/bin/{target}/qnn-profile-viewer",
@@ -461,11 +490,17 @@ class QnnTool:
             "--reader",
             f"{self.qnn_sdk}/lib/{target}/libQnnHtpOptraceProfilingReader.so",
             "--input_log",
-            os.path.join(self.artifact_dir, "qnn-profiling-data_0.log"),
+            self.profiling_log,
             "--output",
-            os.path.join(self.artifact_dir, f"optrace_{graph_idx}.json"),
+            os.path.join(self.artifact_dir, f"{output_stem}.json"),
         ]
         self._run(cmd, "qnn-profile-viewer")
+
+        # The AoT export drops the offline-prepare schematic in the process cwd, where a
+        # later run of a different model would otherwise pick up a stale one and attribute
+        # its own profiling data to the wrong graph.
+        if schematic == candidates[-1]:
+            os.remove(schematic)
 
     def _validated_qhas_json(self, qhas_path: str) -> Optional[str]:
         """Return path if the QHAS JSON parses; None if truncated (hextimate SDK bug).
@@ -482,7 +517,8 @@ class QnnTool:
             with open(qhas_path, "r") as f:
                 json.load(f)
             return qhas_path
-        except json.JSONDecodeError:
+        except ValueError:
+            # JSONDecodeError, or UnicodeDecodeError when the cut lands mid-codepoint.
             return None
 
     def run(
@@ -510,15 +546,7 @@ class QnnTool:
                 f"hextimate requires .dlc (online prepare); got {ext!r}. "
                 "For offline-prepare context binaries, use mode='optrace' instead."
             )
-            if is_qnn_sdk_version_less_than(_MIN_SDK_FOR_HEXTIMATE):
-                # SDK < 2.41 silently drops hextimate config and produces a
-                # standard context binary — fail loudly before that trap.
-                raise AssertionError(
-                    f"hextimate requires QNN SDK >= {_MIN_SDK_FOR_HEXTIMATE}; "
-                    f"the current SDK at $QNN_SDK_ROOT={self.qnn_sdk} is older. "
-                    "Older SDKs silently ignore hextimate parameters and emit "
-                    "an ordinary profiling log with no hextimate events."
-                )
+            _validate_hextimate_sdk_version()
 
         prepare_mode: Literal["online", "offline"] = (
             "online" if ext == ".dlc" else "offline"
@@ -532,6 +560,12 @@ class QnnTool:
         else:
             graph_base_name = graph_name
             graph_idx = 0
+
+        # A log left behind by an earlier run in the same artifact_dir would otherwise be
+        # read as this run's data. Hextimate writes its log host-side during step 1, so
+        # there is no device pull to overwrite a stale one.
+        if os.path.isfile(self.profiling_log):
+            os.remove(self.profiling_log)
 
         # Step 1: for online-prepare (.dlc), materialize the context binary +
         # schematic on the host. Offline-prepare (.bin) already has both.
@@ -547,15 +581,21 @@ class QnnTool:
         if mode == "optrace":
             self._qnn_net_run(graph_name=graph_name)
 
-        # Step 3: post-process into optrace.json + QHAS side-artifacts.
+        # Step 3: post-process into the chrometrace + QHAS side-artifacts.
+        assert os.path.isfile(self.profiling_log), (
+            f"{self.profiling_log} was not produced by the {mode} run; "
+            "qnn-profile-viewer has no profiling data to read."
+        )
+        # Keyed by mode, so profiling one .pte both ways keeps both sets of reports.
+        output_stem = f"{mode}_{graph_idx}"
         self._qnn_profile_viewer(
             schematic_stem=f"{graph_base_name}_schematic",
-            graph_idx=graph_idx,
+            output_stem=output_stem,
         )
 
         # Collect the six output files. qnn-profile-viewer names them by
         # stripping `.json` off --output and appending suffixes.
-        base = os.path.join(self.artifact_dir, f"optrace_{graph_idx}")
+        base = os.path.join(self.artifact_dir, output_stem)
         chrometrace_json = f"{base}.json"
         qhas_json_candidate = f"{base}_qnn_htp_analysis_summary.json"
         qhas_html = f"{base}_qnn_htp_analysis_summary.html"
@@ -580,35 +620,76 @@ class QnnTool:
         )
 
 
-def _validate_pte_profile_level(pte_path: str) -> None:
-    """Assert that any offline-prepare .pte was built with profile_level=3."""
+def _iter_qnn_compile_options(pte_path: str) -> Iterator:
+    """Yield the compile options of every QnnBackend delegate in a .pte.
+
+    generate_qnn_executorch_compiler_spec() writes exactly one compile spec per
+    delegate, so index 0 is the whole story.
+    """
     from executorch.exir._serialize._program import deserialize_pte_binary
 
     with open(pte_path, "rb") as f:
         program = deserialize_pte_binary(f.read()).program
 
+    found = False
     for execution_plan in program.execution_plan:
         for delegate in execution_plan.delegates:
-            if delegate.id != "QnnBackend":
-                continue
-            spec = delegate.compile_specs[0]
-            options = flatbuffer_to_option(bytes(spec.value))
-            if options.online_prepare:
-                continue  # online-prepare: profile_level is set on-host later
-            assert options.profile_level == QnnExecuTorchProfileLevel.kProfileOptrace, (
-                f"{pte_path} was compiled with online_prepare=False and "
-                f"profile_level={options.profile_level.name}."
-                "HTP Profling (Optrace) feature requires profile_level=3 (kProfileOptrace) "
-                "at build_executorch_binary() time — \n"
-                "Please re-export with qnn_config.profile_level=3, or use online_prepare=True"
-            )
+            if delegate.id == "QnnBackend":
+                found = True
+                yield flatbuffer_to_option(bytes(delegate.compile_specs[0].value))
+
+    # Without this the validators below pass vacuously and both public entry points
+    # return an empty artifact list, which reads as a successful run that emitted nothing.
+    if not found:
+        raise AssertionError(
+            f"{pte_path} contains no QnnBackend delegate; nothing to profile."
+        )
+
+
+def _validate_pte_profile_level(pte_path: str) -> None:
+    """Assert that any offline-prepare .pte was built with profile_level=3."""
+    for options in _iter_qnn_compile_options(pte_path):
+        if options.online_prepare:
+            continue  # online-prepare: profile_level is set on-host later
+        assert options.profile_level == QnnExecuTorchProfileLevel.kProfileOptrace, (
+            f"{pte_path} was compiled with online_prepare=False and "
+            f"profile_level={options.profile_level.name}."
+            "HTP Profiling (Optrace) feature requires profile_level=3 (kProfileOptrace) "
+            "at build_executorch_binary() time — \n"
+            "Please re-export with qnn_config.profile_level=3, or use online_prepare=True"
+        )
+
+
+def _validate_pte_online_prepare(pte_path: str) -> None:
+    """Assert that every QnnBackend delegate in the .pte was built online-prepare."""
+    for options in _iter_qnn_compile_options(pte_path):
+        assert options.online_prepare, (
+            "hextimate reads a .dlc, which only online_prepare produces; "
+            f"{pte_path} was compiled with online_prepare=False. \n"
+            "Please re-export with qnn_config.online_prepare=True, or use "
+            "generate_htp_profile_result() for on-device optrace instead."
+        )
 
 
 def _validate_hextimate_soc(soc_id: QcomChipset) -> None:
-    if soc_id not in _HEXTIMATE_SUPPORTED_SOCS:
-        supported = ", ".join(soc.name for soc in _HEXTIMATE_SUPPORTED_SOCS)
+    if soc_id not in HEXTIMATE_SUPPORTED_SOCS:
+        supported = ", ".join(soc.name for soc in HEXTIMATE_SUPPORTED_SOCS)
         raise AssertionError(
-            f"hextimate currently supports only {supported}; got {soc_id.name}."
+            f"hextimate currently supports only {supported}; "
+            f"got {getattr(soc_id, 'name', soc_id)}."
+        )
+
+
+def _validate_hextimate_sdk_version() -> None:
+    # SDK < 2.41 silently drops the hextimate config and produces a standard
+    # context binary — fail loudly before that trap.
+    setup_qnn_sdk()
+    if is_qnn_sdk_version_less_than(MIN_QNN_SDK_FOR_HEXTIMATE):
+        raise AssertionError(
+            f"hextimate requires QNN SDK >= {MIN_QNN_SDK_FOR_HEXTIMATE}; "
+            f"the current SDK at $QNN_SDK_ROOT={os.environ.get('QNN_SDK_ROOT')} is older. "
+            "Older SDKs silently ignore hextimate parameters and emit "
+            "an ordinary profiling log with no hextimate events."
         )
 
 
@@ -623,7 +704,9 @@ def _generate_htp_analysis_result(
     assert mode in ("optrace", "hextimate"), f"unknown mode {mode!r}"
     if mode == "optrace":
         assert adb is not None, "optrace requires adb for on-device execution"
-    _validate_pte_profile_level(pte_path)
+        _validate_pte_profile_level(pte_path)
+    else:
+        _validate_pte_online_prepare(pte_path)
 
     dumpfiles = dump_context_from_pte(pte_path, output_dir=artifact_dir)
 
@@ -632,14 +715,15 @@ def _generate_htp_analysis_result(
         sample_input=inputs,
         soc_id=soc_id,
         adb=adb,
-        build_folder=(adb.build_path if adb is not None else None),
         workspace=(adb.workspace if adb is not None else None),
     )
 
     return [qnn_tool.run(mode=mode, binary_file=os.path.basename(f)) for f in dumpfiles]
 
 
-# backward compatibility shim
+# Deprecated: kept so the pre-rename call sites keep resolving. The argument order is the
+# old one, but the return value is the new List[QnnHtpProfileArtifacts], not the old
+# {binary_path: (optrace_json, qhas_json)} dict — callers have to be updated either way.
 def generate_optrace(
     artifact: str,
     soc_id: QcomChipset,
@@ -647,7 +731,7 @@ def generate_optrace(
     pte_path: str,
     inputs: Sequence[Tuple[torch.Tensor]],
 ) -> List[QnnHtpProfileArtifacts]:
-    """Legacy positional wrapper for generate_htp_profile_result()."""
+    """Deprecated positional alias for generate_htp_profile_result()."""
     return generate_htp_profile_result(artifact, soc_id, pte_path, inputs, adb)
 
 
@@ -701,8 +785,12 @@ def estimate_htp_profile_result(
       SA8540, SA8255, QCS9100, and SA8797.
     - pte_path: `.pte` produced by build_executorch_binary(),  requiring
     `QnnConfig.online_prepare=True` for `.pte` generation and QNN SDK >= 2.41.
+
+    The SoC and SDK requirements are checked before the `.pte` is read, so an
+    unsupported target fails immediately rather than after the QNN tools run.
     """
     _validate_hextimate_soc(soc_id)
+    _validate_hextimate_sdk_version()
     return _generate_htp_analysis_result(
         artifact_dir=artifact_dir,
         soc_id=soc_id,

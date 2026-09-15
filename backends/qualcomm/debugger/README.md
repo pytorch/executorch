@@ -41,13 +41,14 @@ We introduce how to trigger each preparation mode in section 1.1 and 1.2:
     - 1.1 `online_prepare`: controlled by `QnnConfig.online_prepare=True`.
     - 1.2 `offline_prepare`: controlled by `QnnConfig.online_prepare=False`.
 
-3. **Public Functions for Generating Profiling Results**
+2. **Public Functions for Generating Profiling Results**
     + 2.1 `generate_htp_profile_result()`: generates device-based profiling results (Optrace in QNN SDK).
     + 2.2 `estimate_htp_profile_result()`: estimates host-based profiling results (Hextimate in QNN SDK).
 
-4. **HTP Profile Output Format:**  `QnnHtpProfileArtifacts` contains genrated HTML, JSON and chrometrace files.
+3. **HTP Profile Output Format:**  `QnnHtpProfileArtifacts` contains generated HTML, JSON and chrometrace files.
 
-5. **Qairt-Visualizer:** QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
+4. **Qairt-Visualizer:** QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
+
 ## 1. Select AOT Prepare modes for `.pte` Generation
 Users choose one prepare mode before exporting the `.pte`:
 
@@ -131,8 +132,12 @@ Use `estimate_htp_profile_result()` when you want host-only compile-time perform
 **Demo script**:
 ```bash
 python -m examples.qualcomm.util_scripts.htp_profiling_on_host_hextimate \
-    --soc_model QCS9100 -a ${path_to_output_folder} --online_prepare
+    --soc_model QCS9100 --build_folder build-x86 --enable_x86_64 \
+    -a ${path_to_output_folder} --online_prepare
 ```
+
+`--enable_x86_64` is what tells the example it may run without a device serial; Hextimate itself
+never touches one.
 
 ```python
 from executorch.backends.qualcomm.debugger.utils import estimate_htp_profile_result

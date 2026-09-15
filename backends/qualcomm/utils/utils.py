@@ -221,7 +221,9 @@ def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
 
     program = deserialize_pte_binary(program_data).program
 
-    ctx_path = output_dir or os.path.dirname(pte_path)
+    # "." keeps a bare "model.pte" working: dirname() is "" there, which makedirs rejects
+    # and which would put the dumped binaries at the filesystem root.
+    ctx_path = output_dir or os.path.dirname(pte_path) or "."
     os.makedirs(ctx_path, exist_ok=True)
     dumpfiles = []
     for execution_plan in program.execution_plan:
@@ -1351,6 +1353,7 @@ def get_soc_to_htp_arch_map():
         "SW6100": HtpArch.V81,
         "QCM6490": HtpArch.V68,
         "SM8845": HtpArch.V81,
+        "SA8540": HtpArch.V68,
     }
 
 

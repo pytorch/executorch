@@ -25,6 +25,8 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 from executorch.backends.qualcomm.debugger.utils import (
     estimate_htp_profile_result,
     generate_htp_profile_result,
+    HEXTIMATE_SUPPORTED_SOCS,
+    MIN_QNN_SDK_FOR_HEXTIMATE,
 )
 
 from executorch.backends.qualcomm.export_utils import (
@@ -8849,6 +8851,14 @@ class TestQNNQuantizedUtils(TestQNN):
             )
         if get_backend_type(self.backend) == QnnExecuTorchBackendType.kLpaiBackend:
             self.skipTest("LPAI does not support hextimate generation.")
+        if self.chipset_table[TestQNN.soc_model] not in HEXTIMATE_SUPPORTED_SOCS:
+            supported = ", ".join(soc.name for soc in HEXTIMATE_SUPPORTED_SOCS)
+            self.skipTest(
+                f"Hextimate does not support {TestQNN.soc_model}; "
+                f"re-run with one of {supported}."
+            )
+        if is_qnn_sdk_version_less_than(MIN_QNN_SDK_FOR_HEXTIMATE):
+            self.skipTest(f"Hextimate requires QNN SDK >= {MIN_QNN_SDK_FOR_HEXTIMATE}.")
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
@@ -8891,6 +8901,27 @@ class TestQNNQuantizedUtils(TestQNN):
                     "qhas_json=None.",
                 )
                 self.assertTrue(os.path.isfile(a.qhas_html))
+
+            # An offline-prepare .pte carries a .bin, which hextimate cannot
+            # read; reject it while decoding the compile spec rather than
+            # letting qnn-context-binary-generator fail on the dumped binary.
+            offline_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module,
+                sample_input,
+                generate_qnn_executorch_compiler_spec(
+                    soc_model=self.chipset_table[TestQNN.soc_model],
+                    backend_options=backend_options,
+                ),
+            ).to_executorch()
+            offline_pte_path = f"{tmp_dir}/offline_model.pte"
+            with open(offline_pte_path, "wb") as f:
+                offline_prog_mgr.write_to_file(f)
+            with self.assertRaisesRegex(AssertionError, "online_prepare"):
+                estimate_htp_profile_result(
+                    artifact_dir=tmp_dir,
+                    soc_id=self.chipset_table[self.soc_model],
+                    pte_path=offline_pte_path,
+                )
 
     def test_qnn_backend_seq_mse(self):
         from executorch.backends.qualcomm._passes.seq_mse import SeqMSE
@@ -11795,8 +11826,8 @@ class TestUtilsScript(TestQNN):
 
     def test_debugger_generate_optrace(self):
         # This test drives the offline-prepare demo (profile_level=3, no
-        # --online_prepare). See qairt_visualizer_demo_online.py for the
-        # online path.
+        # --online_prepare). See htp_profiling_on_device_op_trace_online.py
+        # for the online path.
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_offline.py",
