@@ -160,21 +160,32 @@ Error AdamW::step(const std::map<std::string_view, executorch::aten::Tensor>&
       if (param_state_it == state_.end()) {
         void* m_buf_ptr = malloc(g.nbytes());
         void* v_buf_ptr = malloc(g.nbytes());
+        if (m_buf_ptr == nullptr || v_buf_ptr == nullptr) {
+          free(m_buf_ptr);
+          free(v_buf_ptr);
+          return Error::MemoryAllocationFailed;
+        }
         std::memset(m_buf_ptr, 0, g.nbytes());
         std::memset(v_buf_ptr, 0, g.nbytes());
 
         std::vector<executorch::aten::SizesType> sizes(
             g.sizes().begin(), g.sizes().end());
+        // The buffers come from malloc, so they live on the CPU regardless of
+        // where the gradient does.
+        const auto cpu =
+            executorch::aten::Device(executorch::aten::DeviceType::CPU);
         auto m_ptr = make_tensor_ptr(
             sizes,
             m_buf_ptr,
             g.scalar_type(),
+            cpu,
             executorch::aten::TensorShapeDynamism::STATIC,
             [](void* p) { free(p); });
         auto v_ptr = make_tensor_ptr(
             sizes,
             v_buf_ptr,
             g.scalar_type(),
+            cpu,
             executorch::aten::TensorShapeDynamism::STATIC,
             [](void* p) { free(p); });
 
