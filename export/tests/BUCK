@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//tools/build_defs:testpilot_defs.bzl", "tpx_labels")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
@@ -48,7 +49,7 @@ fbcode_target(
         "HTTP_PROXY": "http://fwdproxy:8080",
         "HTTPS_PROXY": "http://fwdproxy:8080",
     },
-    labels = ["long_running"],
+    labels = [tpx_labels.long_running],
     deps = [
         "//executorch/export:lib",
         "//executorch/export:target_recipes",
