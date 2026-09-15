@@ -145,16 +145,11 @@ Error AdamW::step(const std::map<std::string_view, executorch::aten::Tensor>&
       auto g = named_gradient->second;
       auto p = param_iter->second;
 
-      // Decoupled weight decay: p <- p - lr * weight_decay * p. Applied to
-      // the parameter directly, BEFORE the moment-based update, and NOT
-      // folded into the gradient. This is the defining property of AdamW
-      // (Loshchilov & Hutter, 2019).
-      if (weight_decay != 0.0) {
-        add_out_hack(p, p, -lr * weight_decay, p);
-      }
-
       // Look up or lazily allocate the per-parameter state (two moment
       // buffers sized and shaped like the gradient, plus a step counter).
+      // Done before p is touched: the allocation below can fail, and a
+      // half-applied step that decayed p without advancing its moments would
+      // decay p twice if the caller retried.
       auto param_state_it = state_.find(p.unsafeGetTensorImpl());
       AdamWParamState* state_ptr = nullptr;
       if (param_state_it == state_.end()) {
@@ -195,6 +190,14 @@ Error AdamW::step(const std::map<std::string_view, executorch::aten::Tensor>&
         state_[p.unsafeGetTensorImpl()] = std::move(state);
       } else {
         state_ptr = param_state_it->second.get();
+      }
+
+      // Decoupled weight decay: p <- p - lr * weight_decay * p. Applied to
+      // the parameter directly, BEFORE the moment-based update, and NOT
+      // folded into the gradient. This is the defining property of AdamW
+      // (Loshchilov & Hutter, 2019).
+      if (weight_decay != 0.0) {
+        add_out_hack(p, p, -lr * weight_decay, p);
       }
 
       state_ptr->increment_step_count();
