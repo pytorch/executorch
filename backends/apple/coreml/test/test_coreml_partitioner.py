@@ -510,6 +510,27 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         self.assertLess(sizes[True], sizes[False])
 
+    def test_quantize_embedding_tables_keeps_pass_names_positional(self):
+        """
+        quantize_embedding_tables is the last parameter, so a caller that already passed
+        pass_names positionally still binds it to pass_names rather than to the new flag.
+        """
+        specs = CoreMLBackend.generate_compile_specs(
+            ct.ComputeUnit.ALL,
+            ct.target.iOS18,
+            ct.precision(ct.precision.FLOAT16.value),
+            CoreMLBackend.MODEL_TYPE.MODEL,
+            None,
+            ["remove_redundant_ops"],
+        )
+        pipeline = [
+            spec.value.decode("utf-8") for spec in specs if spec.key == "pass_pipeline"
+        ]
+        self.assertEqual(pipeline, ['["remove_redundant_ops"]'])
+        self.assertFalse(
+            CoreMLBackend.quantize_embedding_tables_from_compile_specs(specs)
+        )
+
     def test_quantize_embedding_tables_defaults_to_off(self):
         """
         Absent the spec, the table stays exempt. Covers models lowered by callers that
