@@ -17,6 +17,7 @@ from typing import Any, Dict, final, List, Optional, Tuple, Union
 
 import coremltools as ct
 import coremltools.optimize as cto
+import numpy as np
 from executorch.backends.apple.coreml import executorchcoreml
 from executorch.backends.apple.coreml.compiler.enumerated_shape_utils import (
     _get_ct_inputs,
@@ -65,6 +66,37 @@ def _gathers_sharing_a_weight(mlmodel: ct.models.MLModel) -> List[str]:
         if gathers and len(gathers) < len(ops):
             shared += [op.name for op in gathers]
     return shared
+
+
+def _gathers_with_a_float_table(mlmodel: ct.models.MLModel) -> List[str]:
+    """
+    Names of gather ops whose table is a floating point constant.
+
+    Core ML lowers embedding lookups to `gather`, but so does `index_select`, and an
+    integer table (a uint8 codebook, say) is not something the linear quantizer can
+    compress: handed one, it aborts the conversion. Naming only the float tables keeps
+    the opt-in from turning a working lowering into a failing one. Returns nothing for
+    a model whose program is not available, which leaves the behaviour as it was.
+    """
+    program = getattr(mlmodel, "_mil_program", None)
+    if program is None:
+        return []
+
+    names: List[str] = []
+    for function in program.functions.values():
+        for op in function.operations:
+            if op.op_type != "gather":
+                continue
+            table = op.inputs.get("x")
+            source = getattr(table, "op", None)
+            if source is None or source.op_type != "const":
+                continue
+            value = getattr(table, "val", None)
+            if value is None:
+                continue
+            if np.issubdtype(np.asarray(value).dtype, np.floating):
+                names.append(op.name)
+    return names
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -423,11 +455,14 @@ class CoreMLBackend(BackendDetails):
         compute_precision: ct.precision = ct.precision.FLOAT16,
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
-        quantize_embedding_tables: bool = False,
         pass_names: Optional[List[str]] = None,
+        quantize_embedding_tables: bool = False,
     ) -> List[CompileSpec]:
         """
         Returns the list of compile specs that's used by CoreMLBackend to lower the module.
+
+        quantize_embedding_tables goes last so that callers already passing pass_names
+        positionally keep binding it to pass_names.
         """
         compile_specs: List[CompileSpec] = []
         compile_specs.append(
@@ -448,15 +483,15 @@ class CoreMLBackend(BackendDetails):
                     op_linear_quantizer_config
                 )
             )
+        if pass_names is not None:
+            compile_specs.append(
+                CoreMLBackend.generate_pass_pipeline_compile_spec(pass_names)
+            )
         if quantize_embedding_tables:
             compile_specs.append(
                 CoreMLBackend.generate_quantize_embedding_tables_compile_spec(
                     quantize_embedding_tables
                 )
-            )
-        if pass_names is not None:
-            compile_specs.append(
-                CoreMLBackend.generate_pass_pipeline_compile_spec(pass_names)
             )
 
         return compile_specs
@@ -650,24 +685,25 @@ class CoreMLBackend(BackendDetails):
             # refuses to compress a constant its consumers disagree about, so opting the
             # gather out there does not skip the table, it fails the whole lowering.
             #
-            # quantize_embedding_tables drops the opt-out entirely, for models whose table
-            # is most of their weight and which have measured that compressing it is worth
-            # it. It stays off by default: the table is the one weight an embedding model's
-            # output quality rests on most directly, so opting in belongs with the caller
-            # who can measure the result.
+            # quantize_embedding_tables opts the float tables back in, for models whose
+            # table is most of their weight and which have measured that compressing it is
+            # worth it. It stays off by default: the table is the one weight an embedding
+            # model's output quality rests on most directly, so opting in belongs with the
+            # caller who can measure the result. It applies to every gather with a float
+            # table, not only to embeddings, because Core ML lowers index_select to gather
+            # too and the two are indistinguishable here.
+            configured = set(_gathers_sharing_a_weight(mlmodel))
             if CoreMLBackend.quantize_embedding_tables_from_compile_specs(
                 compile_specs
             ):
-                config = cto.coreml.OptimizationConfig(
-                    global_config=op_linear_quantizer_config,
-                )
-            else:
-                tied = _gathers_sharing_a_weight(mlmodel)
-                config = cto.coreml.OptimizationConfig(
-                    global_config=op_linear_quantizer_config,
-                    op_type_configs={"gather": None},
-                    op_name_configs={name: op_linear_quantizer_config for name in tied},
-                )
+                configured |= set(_gathers_with_a_float_table(mlmodel))
+            config = cto.coreml.OptimizationConfig(
+                global_config=op_linear_quantizer_config,
+                op_type_configs={"gather": None},
+                op_name_configs={
+                    name: op_linear_quantizer_config for name in sorted(configured)
+                },
+            )
             mlmodel = cto.coreml.linear_quantize_weights(mlmodel, config=config)
 
         return mlmodel
