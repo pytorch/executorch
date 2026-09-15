@@ -11,7 +11,6 @@ from typing import cast, Optional
 
 import executorch.backends.cortex_m.ops.operators  # noqa
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
-import executorch.exir as exir
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
@@ -24,9 +23,6 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     quantize_val,
     SHIFT_INT8,
     to_physical_order,
-)
-from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
-    required_cmsis_nn_buffer_sizes,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
@@ -80,32 +76,8 @@ class AtenToCortexMPass(AtenToDialectPass):
                 raise RuntimeError(
                     f"Cortex-M lowering left {node.target} in the graph."
                 )
-            self._initialize_alloc_node_size(node)
 
         return PassResult(result.graph_module, result.modified or max_pool_modified)
-
-    def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
-        """Initialize trailing scratch alloc nodes for CMSIS-NN kernels."""
-        scratch_buffer_sizes = required_cmsis_nn_buffer_sizes(
-            node, self.target_config.backend
-        )
-        if scratch_buffer_sizes is None:
-            return
-
-        for i, scratch_buffer_size in enumerate(reversed(scratch_buffer_sizes)):
-            scratch_arg = node.args[-(i + 1)]
-            if (
-                not isinstance(scratch_arg, torch.fx.Node)
-                or scratch_arg.target != exir.memory.alloc
-            ):
-                raise RuntimeError(
-                    f"Expected scratch alloc node as final argument(s) for {node.target}, got {scratch_arg}."
-                )
-
-            scratch_arg.args = (((scratch_buffer_size,), torch.uint8),)
-            scratch_arg.meta["val"] = torch.empty(
-                (scratch_buffer_size,), dtype=torch.uint8, device="meta"
-            )
 
 
 def _create_uninitialized_alloc_node(
