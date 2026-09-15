@@ -173,11 +173,8 @@ Tensor& max_pool2d_with_indices_backward_out(
 
   static constexpr auto name = "max_pool2d_with_indices_backward.grad_input";
 
-  // max_pool_backward_impl scatter-adds into grad_input (`grad_input_ptr[maxindex] += ...`), writing
-  // only the argmax positions. resize_tensor does not clear the buffer and the memory planner recycles
-  // arena allocations across ops and iterations, so every other element would accumulate onto stale
-  // data. ATen zeroes gradInput before dispatching the identical loop
-  // (aten/src/ATen/native/DilatedMaxPool2d.cpp).
+  // max_pool_backward_impl only writes the argmax positions, and resize_tensor
+  // does not clear recycled memory, so zero grad_input first (as ATen does).
   memset(grad_input.mutable_data_ptr(), 0, grad_input.nbytes());
 
   ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
