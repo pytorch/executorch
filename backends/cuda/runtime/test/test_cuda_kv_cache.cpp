@@ -115,10 +115,16 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
   auto handle = make_handle(container);
   context.with_load_scope([&] { cu::offgraph_kv_note_handle(&handle); });
   ASSERT_EQ(context.validate(), Error::Ok);
+  auto session = context.create_session();
+  ASSERT_TRUE(session.ok());
+  const int token = session.get();
   EXPECT_EQ(context.metrics().allocated_bytes, 0);
 
-  ASSERT_EQ(context.prepare(3), Error::Ok);
-  ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(context.prepare(token, 3), Error::Ok);
+  ASSERT_EQ(
+      context.with_active_session(
+          token, [&] { return cu::offgraph_kv_rebind_for_execute(&handle); }),
+      Error::Ok);
   const auto initial = context.metrics();
   EXPECT_EQ(initial.flat_capacity, 4);
   EXPECT_EQ(initial.growth_count, 0);
@@ -137,10 +143,13 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
           cudaMemcpyHostToDevice),
       cudaSuccess);
   void* old_k = container.pointers["flat_k"];
-  ASSERT_EQ(context.commit(3), Error::Ok);
+  ASSERT_EQ(context.commit(token, 3), Error::Ok);
 
-  ASSERT_EQ(context.prepare(2), Error::Ok);
-  ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(context.prepare(token, 2), Error::Ok);
+  ASSERT_EQ(
+      context.with_active_session(
+          token, [&] { return cu::offgraph_kv_rebind_for_execute(&handle); }),
+      Error::Ok);
   EXPECT_NE(container.pointers["flat_k"], old_k);
   const auto grown = context.metrics();
   EXPECT_EQ(grown.flat_capacity, 8);
@@ -157,13 +166,13 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
       cudaSuccess);
   EXPECT_EQ(copied, values);
 
-  ASSERT_EQ(context.commit(2), Error::Ok);
-  ASSERT_EQ(context.prepare(1), Error::Ok);
+  ASSERT_EQ(context.commit(token, 2), Error::Ok);
+  ASSERT_EQ(context.prepare(token, 1), Error::Ok);
   EXPECT_EQ(context.metrics().flat_capacity, 8);
   EXPECT_EQ(context.metrics().growth_count, 1);
-  EXPECT_EQ(context.prepare(28), Error::InvalidArgument);
+  EXPECT_EQ(context.prepare(token, 28), Error::InvalidArgument);
   EXPECT_EQ(context.metrics().logical_length, 5);
-  ASSERT_EQ(context.reset(), Error::Ok);
+  ASSERT_EQ(context.reset(token), Error::Ok);
   const auto reset = context.metrics();
   EXPECT_EQ(reset.logical_length, 0);
   EXPECT_EQ(reset.flat_capacity, 8);
@@ -171,10 +180,14 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
 
   handle.cuda_graph_state.enable(3);
   handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
-  ASSERT_EQ(context.prepare(8), Error::Ok);
+  ASSERT_EQ(context.prepare(token, 9), Error::Ok);
   EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
   EXPECT_EQ(handle.cuda_graph_state.warmup_remaining, 3);
-  EXPECT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+  EXPECT_EQ(
+      context.with_active_session(
+          token, [&] { return cu::offgraph_kv_rebind_for_execute(&handle); }),
+      Error::Ok);
+  context.destroy_session(token);
   cu::offgraph_kv_forget_handle(&handle);
 }
 
@@ -211,9 +224,15 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
     auto handle = make_handle(container);
     context.with_load_scope([&] { cu::offgraph_kv_note_handle(&handle); });
     ASSERT_EQ(context.validate(), Error::Ok);
+    auto session = context.create_session();
+    ASSERT_TRUE(session.ok());
+    const int token = session.get();
 
-    ASSERT_EQ(context.prepare(4), Error::Ok);
-    ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+    ASSERT_EQ(context.prepare(token, 4), Error::Ok);
+    ASSERT_EQ(
+        context.with_active_session(
+            token, [&] { return cu::offgraph_kv_rebind_for_execute(&handle); }),
+        Error::Ok);
     EXPECT_EQ(container.dtypes["flat_k"], dtype);
     EXPECT_EQ(container.dtypes["flat_v"], dtype);
     EXPECT_EQ(container.dtypes["flat_capacity"], slimc10::ScalarType::Long);
@@ -236,10 +255,13 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
             values.size(),
             cudaMemcpyHostToDevice),
         cudaSuccess);
-    ASSERT_EQ(context.commit(4), Error::Ok);
+    ASSERT_EQ(context.commit(token, 4), Error::Ok);
 
-    ASSERT_EQ(context.prepare(1), Error::Ok);
-    ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+    ASSERT_EQ(context.prepare(token, 1), Error::Ok);
+    ASSERT_EQ(
+        context.with_active_session(
+            token, [&] { return cu::offgraph_kv_rebind_for_execute(&handle); }),
+        Error::Ok);
     std::vector<uint8_t> copied(2 * new_head_bytes);
     ASSERT_EQ(
         cudaMemcpy(
@@ -257,6 +279,89 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
               values.begin() + head * old_head_bytes,
               values.begin() + (head + 1) * old_head_bytes));
     }
+    context.destroy_session(token);
     cu::offgraph_kv_forget_handle(&handle);
   }
+}
+
+TEST(CudaKVCacheTest, SessionsOwnIndependentAllocationsAndGrowth) {
+  if (!has_cuda_device()) {
+    GTEST_SKIP() << "CUDA device required";
+  }
+
+  cu::OffGraphKVConfig config;
+  config.maximum_capacity = 16;
+  config.initial_capacity = 4;
+  config.layers = {{0, cu::OffGraphKVPolicy::Flat, 0, 1, 8}};
+  cu::OffGraphKVCacheContextOwner context(std::move(config));
+  FakeContainer container{
+      {"flat_k", "flat_v", "flat_capacity"},
+      {"__et_offgraph_kv_layer_0_k",
+       "__et_offgraph_kv_layer_0_v",
+       "__et_offgraph_kv_layer_0_capacity"},
+      {},
+      {}};
+  auto handle = make_handle(container);
+  context.with_load_scope([&] { cu::offgraph_kv_note_handle(&handle); });
+  ASSERT_EQ(context.validate(), Error::Ok);
+  auto first = context.create_session();
+  auto second = context.create_session();
+  ASSERT_TRUE(first.ok());
+  ASSERT_TRUE(second.ok());
+
+  ASSERT_EQ(context.prepare(first.get(), 4), Error::Ok);
+  ASSERT_EQ(
+      context.with_active_session(first.get(), [&] {
+        return cu::offgraph_kv_rebind_for_execute(&handle);
+      }),
+      Error::Ok);
+  void* first_k = container.pointers["flat_k"];
+  const std::vector<uint16_t> first_values(32, 17);
+  ASSERT_EQ(
+      cudaMemcpy(
+          first_k,
+          first_values.data(),
+          first_values.size() * sizeof(uint16_t),
+          cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_EQ(context.commit(first.get(), 4), Error::Ok);
+
+  ASSERT_EQ(context.prepare(second.get(), 2), Error::Ok);
+  ASSERT_EQ(
+      context.with_active_session(second.get(), [&] {
+        return cu::offgraph_kv_rebind_for_execute(&handle);
+      }),
+      Error::Ok);
+  void* second_k = container.pointers["flat_k"];
+  EXPECT_NE(first_k, second_k);
+
+  ASSERT_EQ(context.prepare(first.get(), 1), Error::Ok);
+  ASSERT_EQ(
+      context.with_active_session(first.get(), [&] {
+        return cu::offgraph_kv_rebind_for_execute(&handle);
+      }),
+      Error::Ok);
+  EXPECT_NE(first_k, container.pointers["flat_k"]);
+  std::vector<uint16_t> copied(64);
+  ASSERT_EQ(
+      cudaMemcpy(
+          copied.data(),
+          container.pointers["flat_k"],
+          copied.size() * sizeof(uint16_t),
+          cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  EXPECT_EQ(
+      std::vector<uint16_t>(copied.begin(), copied.begin() + first_values.size()),
+      first_values);
+
+  ASSERT_EQ(
+      context.with_active_session(second.get(), [&] {
+        return cu::offgraph_kv_rebind_for_execute(&handle);
+      }),
+      Error::Ok);
+  EXPECT_EQ(container.pointers["flat_k"], second_k);
+
+  context.destroy_session(first.get());
+  context.destroy_session(second.get());
+  cu::offgraph_kv_forget_handle(&handle);
 }

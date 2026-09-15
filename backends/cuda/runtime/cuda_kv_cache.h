@@ -17,6 +17,7 @@
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 
 namespace executorch::backends::cuda {
 
@@ -51,6 +52,7 @@ struct OffGraphKVMetrics {
 
 using OffGraphKVContext = uint64_t;
 constexpr OffGraphKVContext kInvalidOffGraphKVContext = 0;
+constexpr int kNoOffGraphKVSession = -1;
 
 namespace detail {
 
@@ -59,14 +61,20 @@ void offgraph_kv_destroy_context(OffGraphKVContext context);
 void offgraph_kv_begin_load(OffGraphKVContext context);
 void offgraph_kv_end_load();
 runtime::Error offgraph_kv_validate(OffGraphKVContext context);
+runtime::Result<int> offgraph_kv_create_session(OffGraphKVContext context);
+void offgraph_kv_destroy_session(OffGraphKVContext context, int token);
+void offgraph_kv_set_active(OffGraphKVContext context, int token);
 runtime::Error offgraph_kv_prepare(
     OffGraphKVContext context,
+    int token,
     int64_t write_length);
 runtime::Error offgraph_kv_commit(
     OffGraphKVContext context,
+    int token,
     int64_t write_length);
-runtime::Error offgraph_kv_reset(OffGraphKVContext context);
+runtime::Error offgraph_kv_reset(OffGraphKVContext context, int token);
 OffGraphKVMetrics offgraph_kv_metrics(OffGraphKVContext context);
+int64_t offgraph_kv_initial_bytes_per_session(OffGraphKVContext context);
 
 } // namespace detail
 
@@ -84,6 +92,21 @@ class OffGraphKVCacheContextOwner final {
     LoadScope& operator=(const LoadScope&) = delete;
     LoadScope(LoadScope&&) = delete;
     LoadScope& operator=(LoadScope&&) = delete;
+  };
+
+  class ActiveSessionScope final {
+   public:
+    ActiveSessionScope(OffGraphKVContext context, int token) {
+      detail::offgraph_kv_set_active(context, token);
+    }
+    ~ActiveSessionScope() {
+      detail::offgraph_kv_set_active(
+          kInvalidOffGraphKVContext, kNoOffGraphKVSession);
+    }
+    ActiveSessionScope(const ActiveSessionScope&) = delete;
+    ActiveSessionScope& operator=(const ActiveSessionScope&) = delete;
+    ActiveSessionScope(ActiveSessionScope&&) = delete;
+    ActiveSessionScope& operator=(ActiveSessionScope&&) = delete;
   };
 
   explicit OffGraphKVCacheContextOwner(OffGraphKVConfig config)
@@ -107,17 +130,31 @@ class OffGraphKVCacheContextOwner final {
   runtime::Error validate() const {
     return detail::offgraph_kv_validate(context_);
   }
-  runtime::Error prepare(int64_t write_length) const {
-    return detail::offgraph_kv_prepare(context_, write_length);
+  runtime::Result<int> create_session() const {
+    return detail::offgraph_kv_create_session(context_);
   }
-  runtime::Error commit(int64_t write_length) const {
-    return detail::offgraph_kv_commit(context_, write_length);
+  void destroy_session(int token) const {
+    detail::offgraph_kv_destroy_session(context_, token);
   }
-  runtime::Error reset() const {
-    return detail::offgraph_kv_reset(context_);
+  template <typename F>
+  decltype(auto) with_active_session(int token, F&& fn) const {
+    ActiveSessionScope scope(context_, token);
+    return std::forward<F>(fn)();
+  }
+  runtime::Error prepare(int token, int64_t write_length) const {
+    return detail::offgraph_kv_prepare(context_, token, write_length);
+  }
+  runtime::Error commit(int token, int64_t write_length) const {
+    return detail::offgraph_kv_commit(context_, token, write_length);
+  }
+  runtime::Error reset(int token) const {
+    return detail::offgraph_kv_reset(context_, token);
   }
   OffGraphKVMetrics metrics() const {
     return detail::offgraph_kv_metrics(context_);
+  }
+  int64_t initial_bytes_per_session() const {
+    return detail::offgraph_kv_initial_bytes_per_session(context_);
   }
 
  private:
