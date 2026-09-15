@@ -45,6 +45,7 @@
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
@@ -193,6 +194,12 @@ class ET_EXPERIMENTAL CudaBackend final
         res.ok() ? reinterpret_cast<name##Func>(res.get()) : nullptr; \
   } while (0)
 
+    auto run_single_threaded = get_function(
+        so_handle, "AOTInductorModelContainerRunSingleThreaded");
+    handle->run_single_threaded = run_single_threaded.ok()
+        ? reinterpret_cast<AOTInductorModelContainerRunFunc>(
+              run_single_threaded.get())
+        : nullptr;
     LOAD_OPTIONAL_SYMBOL(
         get_num_constants, AOTInductorModelContainerGetNumConstants);
     LOAD_OPTIONAL_SYMBOL(
@@ -441,6 +448,10 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->container_handle = container_handle;
 
+    // Runtime-owned off-graph buffers must capture their AOTI names before
+    // the serialized constants update installs the ordinary weight set.
+    offgraph_kv_note_handle(handle);
+
     // Versioned artifacts load each (device, FQN) through the same process-wide
     // cross-method cache model used by the legacy path. The payload only adds
     // the tensor metadata needed to reconstruct independently named PTD blobs.
@@ -471,8 +482,11 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Initialize CUDA graph state if enabled for this method.
     if (should_use_cuda_graph_for_method(method_name)) {
-      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
-      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
+      ET_CHECK_OR_RETURN_ERROR(
+          handle->run_single_threaded != nullptr,
+          NotSupported,
+          "CUDA graph requires AOTInductorModelContainerRunSingleThreaded");
+      handle->cuda_graph_state.enable(kCudaGraphWarmupSteps);
       ET_LOG(
           Info,
           "CUDA graph enabled for method '%s' (warmup=%d)",
@@ -589,6 +603,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_rebind_for_execute(handle));
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
 
     // ---------------------------------------------------------------
@@ -844,7 +859,10 @@ class ET_EXPERIMENTAL CudaBackend final
       end_capture_guard.arm(cuda_stream);
     }
 
-    AOTIRuntimeError error = handle->run(
+    auto run = handle->cuda_graph_state.phase == CudaGraphPhase::Disabled
+        ? handle->run
+        : handle->run_single_threaded;
+    AOTIRuntimeError error = run(
         handle->container_handle,
         reinterpret_cast<Tensor**>(slim_inputs.data()),
         n_inputs,
@@ -988,6 +1006,7 @@ class ET_EXPERIMENTAL CudaBackend final
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
     mutable_state_forget_handle(handle);
+    offgraph_kv_forget_handle(handle);
 
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
