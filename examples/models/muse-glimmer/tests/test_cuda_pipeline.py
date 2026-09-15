@@ -42,6 +42,7 @@ from executorch.examples.models.muse_glimmer.source_transformations.cuda import 
     add_dflash_hidden_tapping,
     add_on_device_sampler,
     cuda_source_transformations,
+    enable_offgraph_kv_cache,
 )
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
     build_random_tiny_model,
@@ -77,6 +78,22 @@ class TestMutableBufferMetadataTest(unittest.TestCase):
                 "draft.kv_cache.v_cache",
             ],
             metadata["mutable_buffers"],
+        )
+
+    def test_offgraph_manifest_replaces_every_kv_cache(self):
+        model = build_random_tiny_model()
+
+        manifest = json.loads(enable_offgraph_kv_cache(model, 8))
+
+        self.assertEqual(1, manifest["version"])
+        self.assertEqual(TINY_CONFIG.max_seq_len, manifest["maximum_capacity"])
+        self.assertEqual(8, manifest["initial_capacity"])
+        self.assertEqual(TINY_CONFIG.n_layers, len(manifest["layers"]))
+        self.assertFalse(
+            any(hasattr(layer.self_attn, "kv_cache") for layer in model.layers)
+        )
+        self.assertEqual(
+            {"flat", "ring"}, {layer["policy"] for layer in manifest["layers"]}
         )
 
 

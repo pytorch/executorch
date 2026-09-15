@@ -12,6 +12,7 @@ TurboQuant KV cache. Sliding-window RoPE layers retain their ring buffers.
 
 from __future__ import annotations
 
+import json
 import types
 
 # Register the length-aware global-attention operator.
@@ -19,6 +20,7 @@ import executorch.backends.cuda.triton.kernels.sdpa  # noqa: F401
 
 # Register the TurboQuant attention operator.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
+import executorch.extension.llm.cache.update_and_attend  # noqa: F401
 
 import torch
 import torch.nn as nn
@@ -30,11 +32,14 @@ from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
     rotate_half,
 )
-from executorch.examples.models.muse_glimmer.model.model import FlatKVCache, RingKVCache
+from executorch.examples.models.muse_glimmer.model.model import (
+    apply_rotary_emb,
+    FlatKVCache,
+    RingKVCache,
+)
 from executorch.examples.models.muse_glimmer.source_transformations.sampler import (
     sample,
 )
-from executorch.extension.llm.modules.turboquant import TurboQuantKVCache
 from torch.library import triton_op, wrap_triton
 
 
@@ -564,6 +569,81 @@ def _lenaware_attention_forward(
     return self.o_proj(y)
 
 
+def _offgraph_attention_forward(
+    self,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    attn_mask: torch.Tensor,
+) -> torch.Tensor:
+    B, T, _ = x.shape
+    h = self.qkv_proj_norm(x)
+    xq, xk, xv, og = _project_qkvo(self, h)
+    xq = xq.view(B, T, self.n_heads, self.head_dim)
+    xk = xk.view(B, T, self.n_kv_heads, self.head_dim)
+    xv = xv.view(B, T, self.n_kv_heads, self.head_dim)
+
+    if self.q_norm is not None:
+        xq = self.q_norm(xq)
+        xk = self.k_norm(xk)
+
+    xq = xq.transpose(1, 2)
+    xk = xk.transpose(1, 2)
+    xv = xv.transpose(1, 2)
+    if self.use_rope:
+        freqs = torch.outer(input_pos.float(), self.inv_freq)
+        cos = torch.cos(freqs).unsqueeze(0).unsqueeze(0)
+        sin = torch.sin(freqs).unsqueeze(0).unsqueeze(0)
+        xq, xk = apply_rotary_emb(xq, xk, cos, sin)
+
+    y = torch.ops.kvcache.update_and_attend(
+        xq,
+        xk,
+        xv,
+        input_pos,
+        self.layer_idx,
+        self.attn_scale,
+        torch.bfloat16,
+    )
+    y = y.transpose(1, 2).contiguous()
+    if self.use_o_gate and og is not None:
+        og = og.view(B, T, self.n_heads, self.head_dim)
+        y = torch.sigmoid(og) * y
+    return self.o_proj(y.reshape(B, T, -1))
+
+
+def enable_offgraph_kv_cache(model: nn.Module, initial_capacity: int) -> str:
+    """Replace graph-owned caches and return the CUDA runtime manifest."""
+    if initial_capacity <= 0 or initial_capacity > model.config.max_seq_len:
+        raise ValueError("off-graph initial capacity must be in max_seq_len")
+
+    layers = []
+    for layer in model.layers:
+        attn = layer.self_attn
+        layers.append(
+            {
+                "layer_id": attn.layer_idx,
+                "policy": "ring" if attn.is_sliding else "flat",
+                "window": attn.window_size if attn.is_sliding else 0,
+                "num_kv_heads": attn.n_kv_heads,
+                "head_dim": attn.head_dim,
+            }
+        )
+        del attn.kv_cache
+        attn.forward = types.MethodType(_offgraph_attention_forward, attn)
+
+    return json.dumps(
+        {
+            "version": 1,
+            "dtype": "bfloat16",
+            "maximum_capacity": model.config.max_seq_len,
+            "initial_capacity": initial_capacity,
+            "layers": layers,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
 def cuda_source_transformations(
     model: nn.Module,
     *,
@@ -605,6 +685,8 @@ def cuda_source_transformations(
         return
 
     config = model.config
+    from executorch.extension.llm.modules.turboquant import TurboQuantKVCache
+
     n_swapped = 0
     for layer in model.layers:
         attn = layer.self_attn
