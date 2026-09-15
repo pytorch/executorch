@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import io
 import logging
 import unittest
@@ -19,6 +20,9 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.external_constants_pass import (
+    delegate_external_constants_pass_unlifted,
+)
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
@@ -540,6 +544,126 @@ class TestXnnpackPartitioner(unittest.TestCase):
             plan.name for plan in edge.to_executorch().executorch_program.execution_plan
         ]
         self.assertIn("__et_training_parameters_index_forward", methods)
+
+    def test_pre_decomposition_folding_handles_view_of_parameter(self):
+        """
+        Before decomposition aten.t returns a view of the parameter, which
+        keeps requires_grad. The fold registers a detached leaf; otherwise
+        the retrace in to_edge clones it into a non-leaf that the delegate
+        cannot deep-copy.
+        """
+
+        class MatmulT(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(3, 4))
+
+            def forward(self, x):
+                return x @ self.w.t()
+
+        model = MatmulT().eval()
+        example_inputs = (torch.randn(2, 4),)
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        self.assertEqual(
+            [n.op for n in edge.exported_program().graph.nodes].count("get_attr"), 1
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                model(*example_inputs),
+                rtol=1e-5,
+                atol=1e-5,
+            )
+        )
+
+    def test_pre_decomposition_folding_keeps_external_weight_tags(self):
+        """
+        A weight tagged for an external file keeps its tag through the fold.
+        The folded value is a parameter named after the weight, so the tag
+        function sees the name and run_decompositions carries the custom
+        meta to the delegate.
+        """
+
+        class TaggedWeights(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(3, 4))
+                self.lora_weight = torch.nn.Parameter(torch.randn(3, 4))
+
+            def forward(self, x):
+                return x @ self.weight.t() + x @ self.lora_weight.t()
+
+        def gen_tag_fn(node):
+            return "lora.ptd" if "lora" in node.name else "foundation.ptd"
+
+        def sha256(tensor):
+            return hashlib.sha256(
+                tensor.detach().t().contiguous().numpy().tobytes()
+            ).hexdigest()
+
+        model = TaggedWeights().eval()
+        example_inputs = (torch.randn(2, 4),)
+        module = export(model, example_inputs).module()
+        delegate_external_constants_pass_unlifted(module, gen_tag_fn)
+        edge = to_edge_transform_and_lower(
+            export(module, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        executorch = edge.to_executorch(
+            ExecutorchBackendConfig(external_constants=gen_tag_fn)
+        )
+        self.assertEqual(
+            {
+                file: set(entries)
+                for file, entries in executorch._named_data.external_data.items()
+            },
+            {
+                "foundation.ptd": {sha256(model.weight)},
+                "lora.ptd": {sha256(model.lora_weight)},
+            },
+        )
+        self.assertEqual(len(executorch._named_data.pte_data), 0)
+
+    def test_pre_decomposition_folding_names_folds_after_their_source(self):
+        """
+        Two methods whose first fold comes from different parameters write
+        different names into the external constant map, so a program data
+        file shared by the methods holds both.
+        """
+
+        class MethodA(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.wa = torch.nn.Parameter(torch.ones(3, 4))
+
+            def forward(self, x):
+                return x @ self.wa.t()
+
+        class MethodB(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.wb = torch.nn.Parameter(torch.full((3, 4), 2.0))
+
+            def forward(self, x):
+                return x @ self.wb.t()
+
+        example_inputs = (torch.randn(2, 4),)
+        partitioner = XnnpackPartitioner()
+        programs = {
+            name: partitioner.transform_for_pre_decomposition(
+                export(model, example_inputs)
+            )
+            for name, model in (("a", MethodA()), ("b", MethodB()))
+        }
+        executorch = to_edge(programs).to_executorch(
+            ExecutorchBackendConfig(external_constants=lambda node: "weights.ptd")
+        )
+        external_map = executorch._emitter_output.external_constant_map
+        self.assertEqual(set(external_map["weights.ptd"]), {"wa_prop", "wb_prop"})
+        self.assertEqual(len(executorch._emitter_output.external_constant_buffer), 2)
 
     def test_pre_decomposition_folding_keeps_scalar_item(self):
         """
