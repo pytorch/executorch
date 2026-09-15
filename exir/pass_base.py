@@ -918,7 +918,7 @@ class ExportPass(_ExportPassBase):
             # TODO according to zhengxu ExportPassBase should not be aware of
             # memory.alloc. Check this comment:
             # https://www.internalfb.com/diff/D42758019?dst_version_fbid=5906016402813292&transaction_fbid=1104713900200176
-            elif target == memory.alloc:
+            elif target in (memory.alloc, memory.slice):
                 return self.callback._fx(
                     "call_function",
                     target,
