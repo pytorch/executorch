@@ -5,9 +5,11 @@
 
 from typing import Sequence, Set, Type
 
+import torch
 from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, ProxyValue
 
 
 class RewriteHighRankSingletonPermutePass(ArmOpTargetedPass):
@@ -93,7 +95,19 @@ class RewriteHighRankSingletonPermutePass(ArmOpTargetedPass):
         reduced_input_shape = [input_shape[axis] for axis in non_singleton_axes]
         reduced_input = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
-            (args[0], reduced_input_shape),
+            (
+                args[0],
+                [
+                    (
+                        ProxyValue(dim.meta["val"], self.tracer.proxy(dim))
+                        if isinstance(dim, torch.fx.Node)
+                        else dim
+                    )
+                    for dim in materialize_symints(
+                        self.tracer.graph, reduced_input_shape
+                    )
+                ],
+            ),
             {},
             meta,
         )
@@ -108,7 +122,17 @@ class RewriteHighRankSingletonPermutePass(ArmOpTargetedPass):
             )
         return super().call_operator(
             exir_ops.edge.aten.view_copy.default,
-            (reduced_output, output_shape),
+            (
+                reduced_output,
+                [
+                    (
+                        ProxyValue(dim.meta["val"], self.tracer.proxy(dim))
+                        if isinstance(dim, torch.fx.Node)
+                        else dim
+                    )
+                    for dim in materialize_symints(self.tracer.graph, output_shape)
+                ],
+            ),
             {},
             meta,
         )

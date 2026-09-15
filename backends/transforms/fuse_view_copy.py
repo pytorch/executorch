@@ -7,12 +7,13 @@
 
 # pyre-strict
 
-from typing import Set, Type
+from typing import Any, Set, Type
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch.fx.node import map_arg
 
 
 class FuseViewCopyTransform(ExportPass):
@@ -68,12 +69,8 @@ class FuseViewCopyTransform(ExportPass):
 
     def _find_view_copy_chain(
         self, start_node: torch.fx.Node, ops: list[EdgeOpOverload]
-    ) -> tuple[torch.fx.Node, list[torch.fx.Node], list[torch.fx.Node]]:
-        """Collect a fusible chain starting at ``start_node``.
-
-        Returns:
-            list[torch.fx.Node]: View nodes following ``node`` that can be removed.
-        """
+    ) -> list[torch.fx.Node]:
+        """Collect removable view nodes in a fusible chain."""
 
         end_node = start_node
         view_nodes: list[torch.fx.Node] = []
@@ -90,7 +87,32 @@ class FuseViewCopyTransform(ExportPass):
 
         return view_nodes
 
-    def _merge_view_copy_chains(
+    def _shape_nodes(self, shape: Any) -> set[torch.fx.Node]:
+        nodes: set[torch.fx.Node] = set()
+
+        def collect_node(node: torch.fx.Node) -> torch.fx.Node:
+            nodes.add(node)
+            return node
+
+        map_arg(shape, collect_node)
+        return nodes
+
+    def _topologically_valid_shape(
+        self, graph: torch.fx.Graph, view_node: torch.fx.Node, shape: Any
+    ) -> bool:
+        shape_nodes = self._shape_nodes(shape)
+        if len(shape_nodes) == 0:
+            return True
+
+        seen_nodes: set[torch.fx.Node] = set()
+        for node in graph.nodes:
+            if node is view_node:
+                return shape_nodes.issubset(seen_nodes)
+            seen_nodes.add(node)
+
+        return False
+
+    def merge_view_copy_chains(
         self, graph: torch.fx.Graph
     ) -> tuple[torch.fx.Graph, bool]:
         """Merge redundant view nodes in linear chains.
@@ -113,17 +135,21 @@ class FuseViewCopyTransform(ExportPass):
         for node in graph.find_nodes(op="call_function", target=self.VIEW_OP):
             view_nodes_to_remove = self._find_view_copy_chain(node, ops)
 
-            if len(view_nodes_to_remove) > 0:
-                modified = True
+            if len(view_nodes_to_remove) == 0:
+                continue
 
-                # Set the first view node in the chain to have the final shape
-                final_shape = view_nodes_to_remove[-1].args[1]
-                new_args = (node.args[0], final_shape)
-                node.args = new_args
+            final_shape = view_nodes_to_remove[-1].args[1]
+            if not self._topologically_valid_shape(graph, node, final_shape):
+                continue
 
-                # Redirect output edges from removed view nodes to bypass them
-                for view_node in view_nodes_to_remove:
-                    view_node.replace_all_uses_with(view_node.args[0])
+            modified = True
+
+            # Set the first view node in the chain to have the final shape.
+            node.args = (node.args[0], final_shape)
+
+            # Redirect output edges from removed view nodes to bypass them.
+            for view_node in view_nodes_to_remove:
+                view_node.replace_all_uses_with(view_node.args[0])
 
         if modified:
             graph.eliminate_dead_code()
@@ -131,7 +157,7 @@ class FuseViewCopyTransform(ExportPass):
         return graph, modified
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        graph_module.graph, modified = self._merge_view_copy_chains(graph_module.graph)
+        graph_module.graph, modified = self.merge_view_copy_chains(graph_module.graph)
         if modified:
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
