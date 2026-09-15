@@ -1122,7 +1122,47 @@ def _apply_pre_decomposition_transforms(
     return program
 
 
-def _gen_edge_manager_for_partitioners(
+def _has_decomposable_ops(
+    program: "ExportedProgram",
+    decomp_table: dict,
+) -> bool:
+    """Check if any ops in the program match the decomposition table.
+
+    Nested GraphModules include control-flow and invoke_subgraph bodies that
+    run_decompositions also retraces. Returns True for empty tables because
+    that is the functionalization-only path.
+    """
+    if not decomp_table:
+        return True
+
+    for graph_module in program.graph_module.modules():
+        if not isinstance(graph_module, torch.fx.GraphModule):
+            continue
+        nested_config = graph_module.meta.get("nested_region_config")
+        if (
+            nested_config is not None
+            and getattr(nested_config, "decompositions", None) is not None
+        ):
+            return True
+        if contains_any_call_fn_target_op(graph_module, decomp_table):
+            return True
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
+            packet = (
+                node.target
+                if isinstance(node.target, torch._ops.OpOverloadPacket)
+                else getattr(node.target, "_op", None)
+            )
+            if isinstance(packet, torch._ops.OpOverloadPacket) and any(
+                getattr(packet, overload) in decomp_table
+                for overload in packet.overloads()
+            ):
+                return True
+    return False
+
+
+def _gen_edge_manager_for_partitioners(  # noqa: C901
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
     config: EdgeCompileConfig,
@@ -1159,7 +1199,8 @@ def _gen_edge_manager_for_partitioners(
                 table = _default_decomposition_table()
                 for op in config.preserve_ops:
                     table.pop(op, None)
-                program = program.run_decompositions(table)
+                if _has_decomposable_ops(program, table):
+                    program = program.run_decompositions(table)
 
             # Process each partitioner individually using their specific requirements
             for curr_partitioner in partitioners_for_program:
@@ -1183,7 +1224,7 @@ def _gen_edge_manager_for_partitioners(
                     # functionalized the graph. This second call only applies
                     # operator decompositions from the remaining table, so it is
                     # safe to skip when none of those targets occur in the graph.
-                    if contains_any_call_fn_target_op(program.graph_module, table):
+                    if _has_decomposable_ops(program, table):
                         program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
@@ -1198,7 +1239,8 @@ def _gen_edge_manager_for_partitioners(
                         table.pop(op, None)
 
                     # First pass of decompositions with this partitioner's preserved ops
-                    program = program.run_decompositions(table)
+                    if _has_decomposable_ops(program, table):
+                        program = program.run_decompositions(table)
 
                     # Filter ops using EDGE_DO_NOT_DECOMP
                     temp_partitioner_dict = {name: [curr_partitioner]}
@@ -1211,7 +1253,9 @@ def _gen_edge_manager_for_partitioners(
                     final_ops_to_preserve.update(preserved_ops)
 
                     # Second pass of decompositions with this partitioner's preserved ops after filtering
-                    program = program.run_decompositions(_default_decomposition_table())
+                    full_table = _default_decomposition_table()
+                    if _has_decomposable_ops(program, full_table):
+                        program = program.run_decompositions(full_table)
 
                     # Restore ops from edge_no_decomp_namespace to aten ops
                     _restore_transformed_ops_to_aten_ops(program)

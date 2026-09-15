@@ -22,6 +22,7 @@ from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
+    _has_decomposable_ops,
     _transform,
     EdgeProgramManager,
     ExecutorchProgramManager,
@@ -950,3 +951,183 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertTrue(issubclass(transformed.verifiers[0], MyVerifier))
         self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
+
+
+def _placeholder_decomp(*args: Any, **kwargs: Any) -> None:
+    # _has_decomposable_ops only checks table membership, never calls the value.
+    return None
+
+
+def _call_function_targets(gm: torch.fx.GraphModule) -> list[Any]:
+    return [n.target for n in gm.graph.nodes if n.op == "call_function"]
+
+
+def _all_call_function_targets(gm: torch.fx.GraphModule) -> list[Any]:
+    return [
+        node.target
+        for module in gm.modules()
+        if isinstance(module, torch.fx.GraphModule)
+        for node in module.graph.nodes
+        if node.op == "call_function"
+    ]
+
+
+def _all_graph_module_code(gm: torch.fx.GraphModule) -> dict[str, str]:
+    return {
+        name: module.code
+        for name, module in gm.named_modules()
+        if isinstance(module, torch.fx.GraphModule)
+    }
+
+
+class HasDecomposableOpsTest(unittest.TestCase):
+    class AddMul(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x * 2 + 3
+
+    class Cond(torch.nn.Module):
+        def forward(self, pred: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+            def true_fn(x: torch.Tensor) -> torch.Tensor:
+                return x.sin()
+
+            def false_fn(x: torch.Tensor) -> torch.Tensor:
+                return x.cos()
+
+            return torch.cond(pred, true_fn, false_fn, [x])
+
+    class WhileLinear(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = torch.nn.Linear(2, 2)
+
+        def forward(
+            self, iterations: torch.Tensor, x: torch.Tensor
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            def cond_fn(it: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+                return it > 0
+
+            def body_fn(
+                it: torch.Tensor, value: torch.Tensor
+            ) -> tuple[torch.Tensor, torch.Tensor]:
+                return it - 1, self.linear(value)
+
+            return torch._higher_order_ops.while_loop(cond_fn, body_fn, (iterations, x))
+
+    def _assert_false_guard_matches_noop(
+        self,
+        module: torch.nn.Module,
+        inputs: tuple[Any, ...],
+    ) -> None:
+        program = _export(module, inputs, pre_dispatch=True).run_decompositions({})
+        table = _default_decomposition_table()
+        for target in _call_function_targets(program.graph_module):
+            if target in table:
+                table.pop(target)
+
+        self.assertFalse(_has_decomposable_ops(program, table))
+
+        decomposed = copy.deepcopy(program).run_decompositions(table)
+        self.assertEqual(
+            _all_graph_module_code(program.graph_module),
+            _all_graph_module_code(decomposed.graph_module),
+        )
+        self.assertEqual(program.graph_signature, decomposed.graph_signature)
+        torch.testing.assert_close(
+            program.module()(*inputs),
+            decomposed.module()(*inputs),
+        )
+
+    def test_empty_table_returns_true(self) -> None:
+        # Empty table is the functionalize-only path, which the guard never skips.
+        ep = export(self.AddMul(), (torch.randn(4),), strict=True)
+        self.assertTrue(_has_decomposable_ops(ep, {}))
+
+    def test_returns_true_when_graph_has_matching_op(self) -> None:
+        ep = export(self.AddMul(), (torch.randn(4),), strict=True)
+        a_target = _call_function_targets(ep.graph_module)[0]
+        self.assertTrue(_has_decomposable_ops(ep, {a_target: _placeholder_decomp}))
+
+    def test_packet_target_matches_overload_decomposition(self) -> None:
+        ep = export(self.AddMul(), (torch.randn(4),), strict=True)
+        add_node = next(
+            node
+            for node in ep.graph_module.graph.nodes
+            if node.target == torch.ops.aten.add.Tensor
+        )
+        add_node.target = torch.ops.aten.add
+        self.assertIs(add_node.target, torch.ops.aten.add)
+
+        self.assertTrue(
+            _has_decomposable_ops(
+                ep,
+                {torch.ops.aten.add.Tensor: _placeholder_decomp},
+            )
+        )
+
+    def test_nested_region_local_decompositions_force_run(self) -> None:
+        class NestedConfig:
+            decompositions: dict[Any, Any] = {}
+
+        ep = export(self.AddMul(), (torch.randn(4),), strict=True)
+        ep.graph_module.meta["nested_region_config"] = NestedConfig()
+
+        self.assertTrue(
+            _has_decomposable_ops(
+                ep,
+                {torch.ops.aten.sin.default: _placeholder_decomp},
+            )
+        )
+
+    def test_returns_false_when_no_matching_op(self) -> None:
+        ep = export(self.AddMul(), (torch.randn(4),), strict=True)
+        # Start from the real table and drop every op the graph actually uses,
+        # so no remaining key can match.
+        table = _default_decomposition_table()
+        for target in _call_function_targets(ep.graph_module):
+            table.pop(target, None)
+        self.assertFalse(_has_decomposable_ops(ep, table))
+
+    def test_detects_op_in_control_flow_submodule(self) -> None:
+        # The matching op (sin) lives only inside the cond branches, not the
+        # top-level graph -- this exercises the get_control_flow_submodules
+        # recursion that a top-level-only scan would miss.
+        ep = export(self.Cond(), (torch.tensor(True), torch.randn(3)), strict=True)
+        self.assertNotIn(
+            torch.ops.aten.sin.default, _call_function_targets(ep.graph_module)
+        )
+        table = {torch.ops.aten.sin.default: _placeholder_decomp}
+        self.assertTrue(_has_decomposable_ops(ep, table))
+
+    def test_detects_op_in_while_loop_submodule(self) -> None:
+        linear = torch.ops.aten.linear.default
+        program = export(
+            self.WhileLinear(),
+            (torch.tensor(3), torch.randn(2, 2)),
+            strict=True,
+        ).run_decompositions({})
+        table = _default_decomposition_table()
+        linear_table = {linear: table[linear]}
+
+        self.assertNotIn(linear, _call_function_targets(program.graph_module))
+        self.assertIn(linear, _all_call_function_targets(program.graph_module))
+        self.assertTrue(_has_decomposable_ops(program, linear_table))
+
+        decomposed = copy.deepcopy(program).run_decompositions(linear_table)
+        self.assertNotIn(
+            linear,
+            _all_call_function_targets(decomposed.graph_module),
+        )
+
+    def test_false_implies_run_decompositions_is_noop(self) -> None:
+        self._assert_false_guard_matches_noop(
+            self.AddMul(),
+            (torch.randn(4),),
+        )
+
+    def test_false_guard_matches_noop_for_complex_models(self) -> None:
+        for model in (TestLSTM(), TestLinearSDPACombined()):
+            with self.subTest(model=type(model).__name__):
+                self._assert_false_guard_matches_noop(
+                    model,
+                    model._get_random_inputs(),
+                )
