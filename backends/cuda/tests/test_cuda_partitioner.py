@@ -31,6 +31,9 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     LowerOffGraphKVPass,
     parse_offgraph_kv_manifest,
 )
+from executorch.backends.cuda.triton.kernels.offgraph_kv import (
+    ring_physical_capacity,
+)
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
@@ -156,12 +159,59 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             "version": 1,
             "dtype": "bfloat16",
             "maximum_capacity": 32,
-            "initial_capacity": 4,
+            "max_write": 8,
             "layers": [layer, layer],
         }
 
         with self.assertRaisesRegex(ValueError, "unique"):
             parse_offgraph_kv_manifest(json.dumps(manifest).encode())
+
+    def test_offgraph_manifest_requires_max_write(self) -> None:
+        manifest = {
+            "version": 1,
+            "dtype": "bfloat16",
+            "maximum_capacity": 32,
+            "layers": [
+                {
+                    "layer_id": 0,
+                    "policy": "flat",
+                    "num_kv_heads": 2,
+                    "head_dim": 64,
+                }
+            ],
+        }
+
+        with self.assertRaisesRegex(ValueError, "max_write"):
+            parse_offgraph_kv_manifest(json.dumps(manifest).encode())
+
+    def test_offgraph_ring_storage_fits_a_max_write_step(self) -> None:
+        # The ring must hold the union of one step's per-query windows,
+        # window + max_write - 1, not just the window itself.
+        window, max_write = 16, 32
+        manifest = parse_offgraph_kv_manifest(
+            json.dumps(
+                {
+                    "version": 1,
+                    "dtype": "bfloat16",
+                    "maximum_capacity": 256,
+                    "max_write": max_write,
+                    "layers": [
+                        {
+                            "layer_id": 0,
+                            "policy": "ring",
+                            "window": window,
+                            "num_kv_heads": 2,
+                            "head_dim": 64,
+                        }
+                    ],
+                }
+            ).encode()
+        )
+
+        self.assertEqual(
+            window + max_write - 1,
+            ring_physical_capacity(window, manifest["max_write"]),
+        )
 
     def test_offgraph_compile_placeholder_has_no_physical_storage(self) -> None:
         storage = LowerOffGraphKVPass._compile_storage(

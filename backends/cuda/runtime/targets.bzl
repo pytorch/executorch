@@ -144,6 +144,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/aoti:delegate_handle",
             "//executorch/backends/aoti/slim/core:slimtensor",
             "//executorch/extension/cuda:runtime_api",
+            "//executorch/extension/llm/cache:kv_cache",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
         ],

@@ -28,6 +28,8 @@
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#include <executorch/extension/llm/runner/constants.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <nlohmann/json.hpp>
 #else
 #include <executorch/extension/llm/sampler/util.h>
@@ -117,9 +119,6 @@ constexpr const char* kDFlashMinDraftPrefillChunk =
     "get_min_draft_prefill_chunk";
 constexpr const char* kDFlashMaxDraftPrefillChunk =
     "get_max_draft_prefill_chunk";
-constexpr const char* kActivationDtype = "get_activation_dtype";
-constexpr const char* kOffGraphKVCacheMetadata =
-    "get_offgraph_kv_cache_metadata";
 constexpr const char* kVisionHiddenSize = "get_vision_hidden_size";
 constexpr const char* kMaxVisionPatches = "get_max_vision_patches";
 constexpr int64_t kVisionDownsampleArea = 4;
@@ -452,76 +451,42 @@ Error register_mutable_fqns(
   return Error::Ok;
 }
 
-Result<::executorch::backends::cuda::OffGraphKVConfig>
-read_offgraph_kv_config(Module* module, int64_t initial_capacity) {
-  auto result = module->execute(kOffGraphKVCacheMetadata);
-  ET_CHECK_OK_OR_RETURN_ERROR(result.error());
-  const auto& outputs = result.get();
-  ET_CHECK_OR_RETURN_ERROR(
-      !outputs.empty() && outputs[0].isString(),
-      InvalidProgram,
-      "%s must return a string",
-      kOffGraphKVCacheMetadata);
-  auto json = nlohmann::json::parse(
-      std::string(outputs[0].toString()), nullptr, /*allow_exceptions=*/false);
-  ET_CHECK_OR_RETURN_ERROR(
-      json.is_object() && json.contains("version") &&
-          json["version"].is_number_integer() &&
-          json["version"].get<int64_t>() == 1 &&
-          json.contains("dtype") && json["dtype"].is_string() &&
-          json["dtype"].get<std::string>() == "bfloat16" &&
-          json.contains("maximum_capacity") &&
-          json["maximum_capacity"].is_number_integer() &&
-          json.contains("layers") && json["layers"].is_array() &&
-          !json["layers"].empty(),
-      InvalidProgram,
-      "invalid off-graph KV cache metadata");
+Result<::executorch::backends::cuda::OffGraphKVSettings> read_offgraph_kv_settings(
+    Module& module,
+    const std::unordered_map<std::string, int64_t>& metadata,
+    int64_t initial_capacity) {
+  // Geometry comes from the neutral constant methods the MLX off-graph path
+  // also reads. The two sizes are already in the engine's metadata:
+  // kMaxContextLen is the cache ceiling (get_llm_metadata derives it from
+  // get_max_seq_len when the model does not publish it), and
+  // kMaxPrefillChunk is the largest single step, which is what a ring layer
+  // sizes its slots from.
+  ET_ASSIGN_OR_RETURN(
+      geometry, ::executorch::extension::llm::read_cache_geometry(module));
 
-  ::executorch::backends::cuda::OffGraphKVConfig config;
-  config.maximum_capacity = json["maximum_capacity"].get<int64_t>();
-  config.initial_capacity = initial_capacity;
+  const auto capacity_it = metadata.find(kMaxContextLen);
+  const auto chunk_it = metadata.find(kMaxPrefillChunk);
   ET_CHECK_OR_RETURN_ERROR(
-      config.maximum_capacity > 0 && config.initial_capacity > 0 &&
-          config.initial_capacity <= config.maximum_capacity,
+      capacity_it != metadata.end() && chunk_it != metadata.end(),
       InvalidProgram,
-      "invalid off-graph KV cache capacities");
+      "off-graph KV cache needs %s and %s metadata",
+      kMaxContextLen,
+      kMaxPrefillChunk);
 
-  std::unordered_set<int64_t> layer_ids;
-  for (const auto& item : json["layers"]) {
-    ET_CHECK_OR_RETURN_ERROR(
-        item.is_object() && item.contains("layer_id") &&
-            item["layer_id"].is_number_integer() && item.contains("policy") &&
-            item["policy"].is_string() && item.contains("num_kv_heads") &&
-            item["num_kv_heads"].is_number_integer() &&
-            item.contains("head_dim") && item["head_dim"].is_number_integer() &&
-            (!item.contains("window") || item["window"].is_number_integer()),
-        InvalidProgram,
-        "invalid off-graph KV layer metadata");
-    ::executorch::backends::cuda::OffGraphKVLayerConfig layer;
-    layer.layer_id = item["layer_id"].get<int64_t>();
-    layer.num_kv_heads = item["num_kv_heads"].get<int64_t>();
-    layer.head_dim = item["head_dim"].get<int64_t>();
-    layer.window = item.value("window", 0);
-    const std::string policy = item["policy"].get<std::string>();
-    if (policy == "flat") {
-      layer.policy = ::executorch::backends::cuda::OffGraphKVPolicy::Flat;
-    } else if (policy == "ring") {
-      layer.policy = ::executorch::backends::cuda::OffGraphKVPolicy::Ring;
-    } else {
-      ET_LOG(Error, "invalid off-graph KV policy '%s'", policy.c_str());
-      return Error::InvalidProgram;
-    }
-    ET_CHECK_OR_RETURN_ERROR(
-        layer.layer_id >= 0 && layer.num_kv_heads > 0 && layer.head_dim > 0 &&
-            (layer.policy ==
-                     ::executorch::backends::cuda::OffGraphKVPolicy::Flat ||
-             layer.window > 0) &&
-            layer_ids.insert(layer.layer_id).second,
-        InvalidProgram,
-        "invalid or duplicate off-graph KV layer");
-    config.layers.push_back(layer);
-  }
-  return config;
+  ::executorch::backends::cuda::OffGraphKVSettings settings;
+  settings.geometry = std::move(geometry);
+  settings.config.capacity = static_cast<int>(capacity_it->second);
+  settings.config.kv_dtype =
+      static_cast<int>(executorch::aten::ScalarType::BFloat16);
+  settings.config.initial_capacity = static_cast<int>(initial_capacity);
+  settings.config.max_write = static_cast<int>(chunk_it->second);
+  ET_CHECK_OR_RETURN_ERROR(
+      cache::valid(settings.geometry, settings.config) &&
+          settings.config.initial_capacity > 0 &&
+          settings.config.initial_capacity <= settings.config.capacity,
+      InvalidProgram,
+      "invalid off-graph KV cache configuration");
+  return settings;
 }
 
 TensorPtr build_decode_pos_table(
@@ -1487,7 +1452,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
   std::unique_ptr<MuseGlimmerOffGraphKVCacheContextOwner> offgraph_kv;
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state;
 #ifdef EXECUTORCH_BUILD_CUDA
-  if (method_names.count(kOffGraphKVCacheMetadata) != 0) {
+  if (method_names.count(kNumCaches) != 0) {
     ET_CHECK_OR_RETURN_ERROR(
         !config.enable_cuda_graph,
         NotSupported,
@@ -1500,11 +1465,11 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
         config.max_sessions == 1,
         NotSupported,
         "off-graph KV cache currently supports one session");
-    auto offgraph_config = read_offgraph_kv_config(
-        meta_module.get(), config.offgraph_initial_capacity);
-    ET_CHECK_OK_OR_RETURN_ERROR(offgraph_config.error());
+    auto offgraph_settings = read_offgraph_kv_settings(
+        *meta_module, metadata, config.offgraph_initial_capacity);
+    ET_CHECK_OK_OR_RETURN_ERROR(offgraph_settings.error());
     offgraph_kv = std::make_unique<MuseGlimmerOffGraphKVCacheContextOwner>(
-        std::move(offgraph_config.get()));
+        std::move(offgraph_settings.get()));
     ET_LOG(Info, "MuseGlimmerEngine: dynamic off-graph KV cache enabled");
   } else if (config.enable_cuda_graph) {
     ET_LOG(
