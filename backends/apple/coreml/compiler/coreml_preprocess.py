@@ -72,11 +72,14 @@ def _gathers_with_a_float_table(mlmodel: ct.models.MLModel) -> List[str]:
     """
     Names of gather ops whose table is a floating point constant.
 
-    Core ML lowers embedding lookups to `gather`, but so does `index_select`, and an
-    integer table (a uint8 codebook, say) is not something the linear quantizer can
-    compress: handed one, it aborts the conversion. Naming only the float tables keeps
-    the opt-in from turning a working lowering into a failing one. Returns nothing for
-    a model whose program is not available, which leaves the behaviour as it was.
+    This is every constant-table index read, not only embedding layers. Core ML lowers
+    `index_select` and plain indexing to `gather` as well, so a float buffer such as a
+    rotary position cache is named here too and gets compressed by the opt-in.
+
+    Integer tables are skipped: a uint8 codebook is not something the linear quantizer
+    can compress, and handed one it aborts the conversion. Naming only the float tables
+    keeps the opt-in from turning a working lowering into a failing one. Returns nothing
+    for a model whose program is not available, which leaves the behaviour as it was.
     """
     program = getattr(mlmodel, "_mil_program", None)
     if program is None:
@@ -105,7 +108,7 @@ class COMPILE_SPEC_KEYS(Enum):
     MIN_DEPLOYMENT_TARGET = "min_deployment_target"
     MODEL_COMPUTE_PRECISION = "model_compute_precision"
     OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
-    QUANTIZE_EMBEDDING_TABLES = "quantize_embedding_tables"
+    QUANTIZE_GATHER_TABLES = "quantize_gather_tables"
     ENUMERATED_SHAPES = "enumerated_shapes"
     PASS_PIPELINE = "pass_pipeline"
     MULTIMETHOD_WEIGHT_SHARING_STRATEGY = "multimethod_weight_sharing_strategy"
@@ -311,28 +314,36 @@ class CoreMLBackend(BackendDetails):
         return None
 
     @staticmethod
-    def generate_quantize_embedding_tables_compile_spec(
-        quantize_embedding_tables: bool,
+    def generate_quantize_gather_tables_compile_spec(
+        quantize_gather_tables: bool,
     ) -> CompileSpec:
         """
         Returns the compile spec saying whether op_linear_quantizer_config should also
-        compress embedding tables.
+        compress gather tables.
+
+        This covers every gather whose table is a float constant, not only embedding
+        layers. Core ML lowers any constant-table index read to gather, so buffers such
+        as a rotary position cache are compressed too.
         """
         return CompileSpec(
-            COMPILE_SPEC_KEYS.QUANTIZE_EMBEDDING_TABLES.value,
-            str(quantize_embedding_tables).encode("utf-8"),
+            COMPILE_SPEC_KEYS.QUANTIZE_GATHER_TABLES.value,
+            str(quantize_gather_tables).encode("utf-8"),
         )
 
     @staticmethod
-    def quantize_embedding_tables_from_compile_specs(
+    def quantize_gather_tables_from_compile_specs(
         compile_specs: List[CompileSpec],
     ) -> bool:
         """
-        Returns whether embedding tables opt in to op_linear_quantizer_config. Defaults
-        to False, which is the behaviour of every model lowered before this spec existed.
+        Returns whether float gather tables opt in to op_linear_quantizer_config.
+        Defaults to False, which is the behaviour of every model lowered before this
+        spec existed.
+
+        Opting in covers every gather reading a float constant, not only embedding
+        layers. See generate_quantize_gather_tables_compile_spec.
         """
         for compile_spec in compile_specs:
-            if compile_spec.key == COMPILE_SPEC_KEYS.QUANTIZE_EMBEDDING_TABLES.value:
+            if compile_spec.key == COMPILE_SPEC_KEYS.QUANTIZE_GATHER_TABLES.value:
                 return compile_spec.value.decode("utf-8") == "True"
         return False
 
@@ -456,12 +467,12 @@ class CoreMLBackend(BackendDetails):
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
         pass_names: Optional[List[str]] = None,
-        quantize_embedding_tables: bool = False,
+        quantize_gather_tables: bool = False,
     ) -> List[CompileSpec]:
         """
         Returns the list of compile specs that's used by CoreMLBackend to lower the module.
 
-        quantize_embedding_tables goes last so that callers already passing pass_names
+        quantize_gather_tables goes last so that callers already passing pass_names
         positionally keep binding it to pass_names.
         """
         compile_specs: List[CompileSpec] = []
@@ -487,10 +498,10 @@ class CoreMLBackend(BackendDetails):
             compile_specs.append(
                 CoreMLBackend.generate_pass_pipeline_compile_spec(pass_names)
             )
-        if quantize_embedding_tables:
+        if quantize_gather_tables:
             compile_specs.append(
-                CoreMLBackend.generate_quantize_embedding_tables_compile_spec(
-                    quantize_embedding_tables
+                CoreMLBackend.generate_quantize_gather_tables_compile_spec(
+                    quantize_gather_tables
                 )
             )
 
@@ -685,7 +696,7 @@ class CoreMLBackend(BackendDetails):
             # refuses to compress a constant its consumers disagree about, so opting the
             # gather out there does not skip the table, it fails the whole lowering.
             #
-            # quantize_embedding_tables opts the float tables back in, for models whose
+            # quantize_gather_tables opts the float tables back in, for models whose
             # table is most of their weight and which have measured that compressing it is
             # worth it. It stays off by default: the table is the one weight an embedding
             # model's output quality rests on most directly, so opting in belongs with the
@@ -693,9 +704,7 @@ class CoreMLBackend(BackendDetails):
             # table, not only to embeddings, because Core ML lowers index_select to gather
             # too and the two are indistinguishable here.
             configured = set(_gathers_sharing_a_weight(mlmodel))
-            if CoreMLBackend.quantize_embedding_tables_from_compile_specs(
-                compile_specs
-            ):
+            if CoreMLBackend.quantize_gather_tables_from_compile_specs(compile_specs):
                 configured |= set(_gathers_with_a_float_table(mlmodel))
             config = cto.coreml.OptimizationConfig(
                 global_config=op_linear_quantizer_config,
