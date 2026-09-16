@@ -15,7 +15,9 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.partitioner import MLXPartitioner
+from executorch.backends.mlx.passes import get_default_passes
 from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.runtime import Runtime
@@ -45,9 +47,10 @@ class TestMLXPartitionerRejectsToEdge(unittest.TestCase):
         self.assertIn("to_edge_transform_and_lower", str(ctx.exception))
 
 
-def _lower(model, inputs):
+def _lower(model, inputs, transform_passes=None):
     return to_edge_transform_and_lower(
         export(model, inputs, strict=False),
+        transform_passes=transform_passes,
         partitioner=[MLXPartitioner()],
     ).to_executorch()
 
@@ -60,7 +63,7 @@ def _delegate_count(program) -> int:
     )
 
 
-def _run(model, inputs):
+def _run(model, inputs, transform_passes=None):
     """Lower, execute, and return the node counts, the delegate count and the error.
 
     The delegate count is returned so a test can tell "decomposed onto this backend"
@@ -68,7 +71,7 @@ def _run(model, inputs):
     """
     with torch.no_grad():
         ref = model(*inputs)
-    program = _lower(model, inputs)
+    program = _lower(model, inputs, transform_passes)
     delegates = _delegate_count(program)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "model.pte"
@@ -108,6 +111,85 @@ class GroupedSdpa(nn.Module):
 
 class TestMLXPartitionerSdpaShapes(unittest.TestCase):
     """The fused kernel takes rank 4, so other ranks are adapted or left alone."""
+
+    def test_normalization_runs_before_preservation_check(self):
+        observed_ranks = []
+
+        class RankCheckingPartitioner(MLXPartitioner):
+            def ops_to_not_decompose(self, ep):
+                for node in ep.graph.nodes:
+                    if (
+                        node.op == "call_function"
+                        and node.target
+                        == torch.ops.aten.scaled_dot_product_attention.default
+                    ):
+                        observed_ranks.append(
+                            tuple(arg.meta["val"].dim() for arg in node.args[:3])
+                        )
+                return super().ops_to_not_decompose(ep)
+
+        for shape in ((16, 64), (2, 16, 64), (1, 2, 16, 64)):
+            with self.subTest(rank=len(shape)):
+                observed_ranks.clear()
+                inputs = tuple(torch.randn(shape) for _ in range(3))
+                program = to_edge_transform_and_lower(
+                    export(Sdpa(), inputs, strict=False),
+                    partitioner=[RankCheckingPartitioner()],
+                )
+                self.assertTrue(observed_ranks)
+                self.assertTrue(all(ranks == (4, 4, 4) for ranks in observed_ranks))
+                self.assertEqual(_delegate_count(program), 1)
+
+    def test_handler_requires_normalized_rank4_inputs(self):
+        for shape in ((16, 64), (2, 16, 64), (1, 2, 16, 64)):
+            with self.subTest(rank=len(shape)):
+                ep = export(Sdpa(), tuple(torch.randn(shape) for _ in range(3)))
+                sdpa = next(
+                    node
+                    for node in ep.graph.nodes
+                    if node.target
+                    == torch.ops.aten.scaled_dot_product_attention.default
+                )
+                builder = MLXProgramBuilder(ep)
+                builder.check_support_only()
+                info = builder.node_info[sdpa]
+                self.assertEqual(info.supported, len(shape) == 4)
+                if len(shape) < 4:
+                    self.assertIn("rank-4", info.unsupported_reason)
+
+    def test_handler_keyword_options(self):
+        inputs = tuple(torch.randn(1, 2, 3, 8) for _ in range(3))
+        for scale in (None, 0.0, 0.25):
+            with self.subTest(scale=scale):
+                ep = export(Sdpa(), inputs)
+                sdpa = next(
+                    node
+                    for node in ep.graph.nodes
+                    if node.target
+                    == torch.ops.aten.scaled_dot_product_attention.default
+                )
+                sdpa.kwargs = {
+                    "query": sdpa.args[0],
+                    "key": sdpa.args[1],
+                    "value": sdpa.args[2],
+                    "dropout_p": 0.0,
+                    "is_causal": False,
+                    "scale": scale,
+                    "enable_gqa": False,
+                }
+                sdpa.args = ()
+                ep.graph_module.recompile()
+                built = MLXProgramBuilder(ep).build()
+                instructions = [
+                    instr.op
+                    for chain in built.instruction_chains
+                    for instr in chain.instructions
+                    if type(instr.op).__name__ == "SdpaNode"
+                ]
+                self.assertEqual(len(instructions), 1)
+                self.assertEqual(
+                    instructions[0].scale, 8**-0.5 if scale is None else scale
+                )
 
     def test_rank4_is_unchanged(self):
         counts, _, err = _run(
@@ -174,20 +256,27 @@ class TestMLXPartitionerSdpaShapes(unittest.TestCase):
 
 
 class TestMLXPartitionerGroupedKeys(unittest.TestCase):
-    """The grouped key/value unwrap reads dim 1 as the head, which holds at rank 4."""
+    """Repeated KV heads are fused only when the caller enables the shared passes."""
 
-    def test_rank4_head_repeat_is_absorbed(self):
-        counts, _, err = _run(
-            GroupedSdpa(dim=1),
-            (
-                torch.randn(2, 4, 16, 64),
-                torch.randn(2, 2, 16, 64),
-                torch.randn(2, 2, 16, 64),
-            ),
-        )
-        self.assertEqual(counts.get("SdpaNode", 0), 1)
-        self.assertEqual(counts.get("RepeatNode", 0), 0)
-        self.assertLess(err, 1e-4)
+    def test_rank4_head_repeat_fusion_is_opt_in(self):
+        for use_default_passes in (False, True):
+            with self.subTest(use_default_passes=use_default_passes):
+                counts, _, err = _run(
+                    GroupedSdpa(dim=1),
+                    (
+                        torch.randn(2, 4, 16, 64),
+                        torch.randn(2, 2, 16, 64),
+                        torch.randn(2, 2, 16, 64),
+                    ),
+                    transform_passes=(
+                        get_default_passes() if use_default_passes else None
+                    ),
+                )
+                self.assertEqual(counts.get("SdpaNode", 0), 1)
+                self.assertEqual(
+                    counts.get("RepeatNode", 0), 0 if use_default_passes else 2
+                )
+                self.assertLess(err, 1e-4)
 
     def test_rank3_sequence_repeat_is_kept(self):
         # At rank 3 dim 1 is the key sequence, so absorbing the repeat would drop
@@ -196,6 +285,7 @@ class TestMLXPartitionerGroupedKeys(unittest.TestCase):
         counts, _, err = _run(
             GroupedSdpa(dim=1, is_causal=True),
             (torch.randn(2, 16, 64), torch.randn(2, 8, 64), torch.randn(2, 8, 64)),
+            transform_passes=get_default_passes(),
         )
         self.assertEqual(counts.get("RepeatNode", 0), 2)
         self.assertLess(err, 1e-4)
@@ -219,23 +309,23 @@ class TestMLXPartitionerSdpaCausal(unittest.TestCase):
         self.assertEqual(counts.get("ExpandDimsNode", 0), 3)
         self.assertLess(err, 1e-4)
 
-    def test_rank3_unequal_lengths_are_not_lifted(self):
-        # The two conventions disagree here and the disagreement is silent, so a
-        # shape this backend could not previously reach is not opened up.
+    def test_rank3_unequal_lengths_use_causal_correction(self):
         counts, delegates, err = _run(
             Sdpa(is_causal=True),
             (torch.randn(2, 6, 64), torch.randn(2, 16, 64), torch.randn(2, 16, 64)),
         )
-        self.assertEqual(counts.get("SdpaNode", 0), 0)
+        self.assertEqual(counts.get("SdpaNode", 0), 1)
+        self.assertEqual(counts.get("SliceNode", 0), 2)
         self.assertGreater(delegates, 0)
         self.assertLess(err, 1e-4)
 
-    def test_rank2_unequal_lengths_are_not_lifted(self):
+    def test_rank2_unequal_lengths_use_causal_correction(self):
         counts, _, err = _run(
             Sdpa(is_causal=True),
             (torch.randn(6, 64), torch.randn(16, 64), torch.randn(16, 64)),
         )
-        self.assertEqual(counts.get("SdpaNode", 0), 0)
+        self.assertEqual(counts.get("SdpaNode", 0), 1)
+        self.assertEqual(counts.get("SliceNode", 0), 2)
         self.assertLess(err, 1e-4)
 
 

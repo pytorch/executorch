@@ -218,3 +218,27 @@ jobs:
 
           .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.0'
         }"
+
+  delete-model-cuda-windows-artifacts:
+    name: delete-model-cuda-windows-artifacts
+    # The exports exist only to hand the models to the Windows job above, about
+    # 18 GB per run, and GitHub bills artifact storage by the hour, so delete
+    # them as soon as the tests have consumed them instead of keeping them for
+    # the repository retention window. They are kept when a test fails so that
+    # "Re-run failed jobs" and debugging still have them; those expire with the
+    # retention window.
+    needs: [export-model-cuda-windows-artifact, test-model-cuda-windows-e2e]
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: write
+    steps:
+      - name: Delete the exported models
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name | test("-cuda-windows-")) | "\(.id) \(.name)"' |
+          while read -r id name; do
+            echo "Deleting ${name} (${id})"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${id}"
+          done

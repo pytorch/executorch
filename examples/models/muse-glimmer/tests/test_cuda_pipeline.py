@@ -43,6 +43,7 @@ from executorch.examples.models.muse_glimmer.source_transformations.cuda import 
     add_on_device_sampler,
     cuda_source_transformations,
     enable_offgraph_kv_cache,
+    offgraph_kv_cache_geometry,
 )
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
     build_random_tiny_model,
@@ -87,13 +88,28 @@ class TestMutableBufferMetadataTest(unittest.TestCase):
 
         self.assertEqual(1, manifest["version"])
         self.assertEqual(TINY_CONFIG.max_seq_len, manifest["maximum_capacity"])
-        self.assertEqual(8, manifest["initial_capacity"])
+        self.assertEqual(8, manifest["max_write"])
         self.assertEqual(TINY_CONFIG.n_layers, len(manifest["layers"]))
         self.assertFalse(
             any(hasattr(layer.self_attn, "kv_cache") for layer in model.layers)
         )
         self.assertEqual(
             {"flat", "ring"}, {layer["policy"] for layer in manifest["layers"]}
+        )
+
+    def test_offgraph_geometry_matches_the_model_layers(self):
+        model = build_random_tiny_model()
+        enable_offgraph_kv_cache(model, 8)
+
+        geometry = offgraph_kv_cache_geometry(model)
+
+        self.assertEqual(TINY_CONFIG.n_layers, geometry["get_n_caches"])
+        for name in ("get_kv_heads", "get_head_dims", "get_windows"):
+            self.assertEqual(TINY_CONFIG.n_layers, geometry[name].numel())
+        # A sliding layer publishes its window; a global layer publishes 0.
+        self.assertEqual(
+            [layer.self_attn.is_sliding for layer in model.layers],
+            [window > 0 for window in geometry["get_windows"].tolist()],
         )
 
 

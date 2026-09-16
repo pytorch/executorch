@@ -570,11 +570,10 @@ void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
 
 void* XNNWeightsCache::reserve_space_heap(size_t n) {
   try {
-    std::string data_container;
     size_t raw_allocation_size = n + kPackedAllocationAlignment - 1;
-    data_container.resize(raw_allocation_size);
+    std::unique_ptr<char[]> data_container(new char[raw_allocation_size]);
 
-    void* maybe_aligned_space = data_container.data();
+    void* maybe_aligned_space = data_container.get();
     void* aligned_space = std::align(
         kPackedAllocationAlignment,
         n,

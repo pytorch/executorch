@@ -14,6 +14,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    supported_data_layout_dtypes,
     validate_num_inputs,
     validate_same_dtype,
     validate_valid_dtype,
@@ -25,9 +26,6 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 class ViewVisitor(NodeVisitor):
     target = "tosa.RESHAPE.default"
 
-    def __init__(self, *args):
-        super().__init__(*args)
-
     def define_node(
         self,
         node: torch.fx.Node,
@@ -35,26 +33,16 @@ class ViewVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        supported_dtypes = {ts.DType.BOOL}
-        if self.tosa_spec.support_integer():
-            supported_dtypes.update([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
-        if self.tosa_spec.support_float():
-            supported_dtypes.update([ts.DType.FP16, ts.DType.FP32])
-        if self.tosa_spec.support_extension("bf16"):
-            supported_dtypes.add(ts.DType.BF16)
-        if self.tosa_spec.support_extension("fp8e4m3"):
-            supported_dtypes.add(ts.DType.FP8E4M3)
-        if self.tosa_spec.support_extension("fp8e5m2"):
-            supported_dtypes.add(ts.DType.FP8E5M2)
-        if self.tosa_spec.support_extension("mxfp"):
-            supported_dtypes.update([ts.DType.FP8E4M3, ts.DType.FP8E5M2])
+        supported_dtypes = supported_data_layout_dtypes(
+            self.tosa_spec, include_mxfp=True
+        )
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            list(supported_dtypes),
+            supported_dtypes,
             self.tosa_spec,
         )
 
