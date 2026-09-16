@@ -103,6 +103,11 @@ class ReturnSymSizeArithmetic(torch.nn.Module):
         return x, self.operation(x.shape[0], 2)
 
 
+class Index(torch.nn.Module):
+    def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+        return x[indices]
+
+
 def _exported_program(
     module: torch.nn.Module,
     inputs: tuple[torch.Tensor, ...],
@@ -349,6 +354,35 @@ def test_without_shape_extension_rejects_symbolic_shape_argument():
 
     assert support.is_node_supported(exported_program.graph_module, view_node) is False
     assert "Node has symbolic shape arguments" in reporter.get_table_report()
+
+
+@pytest.mark.parametrize(
+    "tosa_spec",
+    ["TOSA-1.1+FP+INT+shape", "TOSA-1.1+FP+INT"],
+)
+@pytest.mark.parametrize(
+    "dynamic_values, dynamic_index",
+    [(False, False), (True, False), (False, True)],
+)
+def test_index_tensor_shape_support(tosa_spec, dynamic_values, dynamic_index):
+    exported_program = _exported_program(
+        Index(),
+        (torch.randn(8, 4), torch.tensor([0, 2, 3], dtype=torch.int32)),
+        dynamic_shapes=(
+            {0: Dim("rows", min=4, max=16)} if dynamic_values else {},
+            {0: Dim("selected", min=2, max=6)} if dynamic_index else {},
+        ),
+    )
+    support, reporter = _support(tosa_spec, exported_program)
+    index_node = _find_node(exported_program, exir_ops.edge.aten.index.Tensor)
+
+    expected_support = not (dynamic_values or dynamic_index)
+    assert (
+        support.is_node_supported(exported_program.graph_module, index_node)
+        is expected_support
+    )
+    if not expected_support:
+        assert "Symbolic value or index shapes" in reporter.get_table_report()
 
 
 def test_without_shape_extension_rejects_sym_size_int():
