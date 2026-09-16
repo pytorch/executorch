@@ -35,6 +35,7 @@ DOCGEN_OUTPUTS=(
 OP_SUPPORT_SCRIPT="backends/arm/scripts/docgen/generate_op_support.py"
 VGF_OP_SUPPORT_OUTPUT="docs/source/backends/arm-vgf/VGF_op_support.md"
 U55_OP_SUPPORT_OUTPUT="docs/source/backends/arm-ethos-u/U55_op_support.md"
+U85_OP_SUPPORT_OUTPUT="docs/source/backends/arm-ethos-u/U85_op_support.md"
 
 RUN_DOCGEN=0
 
@@ -355,6 +356,7 @@ fi
 
 run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT"
 run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT"
+run_op_support_checks "u85" "Ethos-U85" "$U85_OP_SUPPORT_OUTPUT"
 run_public_api_validator
 
 if [[ $FAILED ]]; then
