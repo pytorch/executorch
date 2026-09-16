@@ -9,6 +9,7 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm._passes.decompose_avg_pool2d_pass import (
     DecomposeAvgPool2dPass,
 )
@@ -314,10 +315,7 @@ class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
                 True,
             )
 
-        metadata_dict = dict(meta.data)
-        metadata_dict["input_qparams"] = {}
-        metadata_dict["output_qparams"] = {}
-        meta_with_no_qparams = NodeMetadata(metadata_dict)
+        meta_with_no_qparams = meta_without_qparams(meta)
 
         res = []
         for out_i in range(output_size_h):
@@ -384,10 +382,7 @@ class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
     def _decompose_dynamic_static_output(
         self, x, cat_op, output_size_h: int, output_size_w: int, kwargs, meta
     ):
-        metadata_dict = dict(meta.data)
-        metadata_dict["input_qparams"] = {}
-        metadata_dict["output_qparams"] = {}
-        meta_with_no_qparams = NodeMetadata(metadata_dict)
+        meta_with_no_qparams = meta_without_qparams(meta)
 
         input_h_shape = self._get_dim_shape(x, 2, meta_with_no_qparams)
         input_w_shape = self._get_dim_shape(x, 3, meta_with_no_qparams)

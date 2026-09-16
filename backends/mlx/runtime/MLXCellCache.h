@@ -34,16 +34,15 @@ namespace cache = ::executorch::extension::llm::cache;
 // prefill does, and neither is what MLX's fused "causal" describes.
 class MLXCellCache : public cache::CellCache, public MLXCache {
  public:
-  explicit MLXCellCache(const cache::CacheConfig& cfg)
-      : cache::CellCache(checked(cfg)) {
+  MLXCellCache(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg)
+      : cache::CellCache(checked(geometry, cfg), cfg) {
     const ::mlx::core::Dtype dt =
         resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
-    kpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    vpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    for (int l = 0; l < cfg.n_layers; ++l) {
-      // layers size 1 = one config broadcast to every layer, else per-layer.
-      const cache::LayerConfig& lc =
-          cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+    kpool_.reserve(geometry.layers.size());
+    vpool_.reserve(geometry.layers.size());
+    for (const cache::LayerGeometry& lc : geometry.layers) {
       // A window bounds what a query attends, not where its token lives, so
       // every layer spans the whole cell table whatever its policy.
       kpool_.emplace_back(
@@ -116,12 +115,14 @@ class MLXCellCache : public cache::CellCache, public MLXCache {
 
   // Enforce the neutral contract as an exception, the failure mode this layer
   // already uses. Runs as the base initializer's argument because CellCache's
-  // own ctor indexes `layers` before this class's body does.
-  static const cache::CacheConfig& checked(const cache::CacheConfig& cfg) {
-    if (!cache::valid(cfg)) {
-      throw std::runtime_error("MLXCellCache: invalid CacheConfig");
+  // own constructor reads the geometry before this body runs.
+  static const cache::CacheGeometry& checked(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg) {
+    if (!cache::valid(geometry, cfg)) {
+      throw std::runtime_error("MLXCellCache: invalid geometry or config");
     }
-    return cfg;
+    return geometry;
   }
 
   std::vector<Pool> kpool_;

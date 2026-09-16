@@ -40,14 +40,6 @@ set(ETHOS_SDK_PATH
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
-# Set default value of FETCH_ETHOS_U_CONTENT depending on whether ethos sdk is
-# available in $ETHOS_SDK_PATH.
-arm_ethos_u_default_fetch("${ETHOS_SDK_PATH}" _fetch_ethos_u_default)
-option(FETCH_ETHOS_U_CONTENT
-       "Fetch ethos_u dependencies instead of relying on pre-downloads"
-       ${_fetch_ethos_u_default}
-)
-
 if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   message(
     FATAL_ERROR
@@ -78,17 +70,19 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u
       PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
     )
-    arm_ensure_ethos_u_content(
-      "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
-    )
     set(DRIVER_ETHOSU_INCLUDE_DIR
         "${ETHOS_SDK_PATH}/core_software/core_driver/include"
     )
+    # Leave the fetch default to the runner when the backend's driver is
+    # present.
     if(NOT EXISTS "${DRIVER_ETHOSU_INCLUDE_DIR}/ethosu_driver.h")
-      message(
-        FATAL_ERROR
-          "Ethos-U core driver headers were not found in ${DRIVER_ETHOSU_INCLUDE_DIR}."
-          " Run examples/arm/setup.sh or enable FETCH_ETHOS_U_CONTENT."
+      option(FETCH_ETHOS_U_CONTENT
+             "Fetch ethos_u dependencies instead of relying on pre-downloads"
+             ON
+      )
+      arm_ensure_ethos_u_content(
+        "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+        DRIVER_ONLY
       )
     endif()
     target_include_directories(
