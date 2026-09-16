@@ -161,7 +161,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
             ] if runtime.is_oss else []) + ([
-                "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
+                "//executorch/backends/arm/scripts/docgen:generate_op_support",
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",

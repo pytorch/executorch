@@ -46,7 +46,15 @@ vec_minmaxf_impl(const float* x, size_t size, float* min_out, float* max_out) {
     for (i = 0; i < vector_end; i += 4) {
       // Keep the independent lanes together even under size optimization.
 #if defined(__clang__) && (defined(__ARM_NEON) || defined(__SSE2__))
+#if !defined(__SANITIZE_ADDRESS__) && !__has_feature(address_sanitizer) && \
+    !defined(__SANITIZE_HWADDRESS__) && !__has_feature(hwaddress_sanitizer)
+// Catalyst release builds make a failed vectorization hint fatal under -Werror.
+#if !__has_builtin(__is_target_environment)
 #pragma clang loop vectorize_width(4) interleave_count(1) unroll(disable)
+#elif !__is_target_environment(macabi)
+#pragma clang loop vectorize_width(4) interleave_count(1) unroll(disable)
+#endif
+#endif
 #endif
       for (size_t j = 0; j < 4; ++j) {
         if constexpr (ComputeMin) {
