@@ -2699,9 +2699,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unfold(self):
-        sample_input = (torch.randn(2, 128, 32, 32),)
-        module = Unfold()  # noqa: F405
-        self.lower_module_and_test_output(module, sample_input)
+        sample_input = (torch.randn(2, 128, 64, 64),)
+        modules = [
+            Unfold(kernel_size=(2, 2), stride=(2, 2)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(1, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 1), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 2), padding=(1, 1)),  # noqa: F405
+        ]
+        for index, module in enumerate(modules):
+            with self.subTest(i=index):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unsqueeze(self):
         module = Unsqueeze()  # noqa: F405
@@ -6330,10 +6338,18 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unfold(self):
-        sample_input = (torch.randn(2, 128, 32, 32),)
-        module = Unfold()  # noqa: F405
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        sample_input = (torch.randn(2, 128, 64, 64),)
+        modules = [
+            Unfold(kernel_size=(2, 2), stride=(2, 2)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(1, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 1), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 2), padding=(1, 1)),  # noqa: F405
+        ]
+        for index, module in enumerate(modules):
+            with self.subTest(i=index):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_unsqueeze(self):
         module = Unsqueeze()  # noqa: F405

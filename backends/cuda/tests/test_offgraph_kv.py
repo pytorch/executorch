@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.triton.kernels.offgraph_kv import (
     cuda_offgraph_update_and_attend,
+    ring_physical_capacity,
 )
 
 
@@ -175,6 +176,43 @@ class OffGraphKVTest(unittest.TestCase):
             history_k.append(k)
             history_v.append(v)
             position = torch.arange(start, start + length, device="cuda")
+            expected = _reference(
+                q,
+                torch.cat(history_k, dim=2),
+                torch.cat(history_v, dim=2),
+                position,
+                window,
+            )
+            self.assertLess((out.float() - expected).abs().max().item(), 1e-2)
+
+    def test_ring_serves_a_max_write_step_mid_sequence(self) -> None:
+        # A step of max_write tokens starting past the window is the chunked
+        # prefill case: its earliest query reads back window-1 positions before
+        # the step, so those must survive the step's own writes. A ring sized to
+        # 2*window instead of ring_physical_capacity() overwrites them.
+        torch.manual_seed(2)
+        window = 16
+        max_write = 2 * window
+        physical_capacity = ring_physical_capacity(window, max_write)
+        storage = (
+            torch.zeros(
+                1, 2, physical_capacity, 64, device="cuda", dtype=torch.bfloat16
+            ),
+            torch.zeros(
+                1, 2, physical_capacity, 64, device="cuda", dtype=torch.bfloat16
+            ),
+        )
+        capacity = torch.tensor([physical_capacity], device="cuda")
+        history_k = []
+        history_v = []
+
+        for start in (0, max_write, 2 * max_write):
+            out, q, k, v = self._step(
+                storage, capacity, start, max_write, policy=1, window=window
+            )
+            history_k.append(k)
+            history_v.append(v)
+            position = torch.arange(start, start + max_write, device="cuda")
             expected = _reference(
                 q,
                 torch.cat(history_k, dim=2),

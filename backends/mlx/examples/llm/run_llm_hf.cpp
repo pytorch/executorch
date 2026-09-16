@@ -112,6 +112,7 @@ using ::executorch::extension::Module;
 using ::executorch::extension::llm::check_vocab_size;
 using ::executorch::extension::llm::LogitsToKeepMode;
 using ::executorch::extension::llm::read_activation_dtype;
+using ::executorch::extension::llm::read_cache_geometry;
 using ::executorch::extension::llm::read_logits_to_keep_mode;
 using ::executorch::extension::llm::read_max_seq_len;
 using ::executorch::extension::llm::read_vocab_size;
@@ -152,17 +153,6 @@ bool parse_int_list(
     }
   }
   return true;
-}
-
-// Constant methods the export publishes (get_n_caches and friends). They carry
-// no delegate, so reading them only needs the program loaded -- which is what
-// lets the cache be built before forward's backend init consumes its key.
-std::optional<int64_t> const_int(Module& module, const char* name) {
-  const auto r = module.execute(name);
-  if (!r.ok() || r->empty() || !r->at(0).isInt()) {
-    return std::nullopt;
-  }
-  return r->at(0).toInt();
 }
 
 // The sampler (sample_from_logits) fatally aborts on any other dtype, so an
@@ -212,54 +202,6 @@ bool validate_forward_abi(
   return true;
 }
 
-std::optional<std::vector<int>> const_ints(Module& module, const char* name) {
-  const auto r = module.execute(name);
-  if (!r.ok() || r->empty() || !r->at(0).isTensor()) {
-    return std::nullopt;
-  }
-  const auto t = r->at(0).toTensor();
-  if (t.scalar_type() != ::executorch::aten::ScalarType::Int) {
-    return std::nullopt;
-  }
-  const int32_t* p = t.const_data_ptr<int32_t>();
-  return std::vector<int>(p, p + t.numel());
-}
-
-// Fill in the cache geometry the export published: get_n_caches, then one
-// entry per cache in get_kv_heads / get_head_dims / get_windows (0 = flat).
-// Capacity and dtype stay with the flags. False means this is not an off-graph
-// model.
-bool read_kv_layout(
-    Module& module,
-    int prefill_chunk,
-    cache::CacheConfig& cfg) {
-  const auto n_caches = const_int(module, "get_n_caches");
-  const auto kv_heads = const_ints(module, "get_kv_heads");
-  const auto head_dims = const_ints(module, "get_head_dims");
-  const auto windows = const_ints(module, "get_windows");
-  if (!n_caches || !kv_heads || !head_dims || !windows) {
-    return false;
-  }
-  cfg.max_write = prefill_chunk;
-  const size_t n = static_cast<size_t>(*n_caches);
-  if (kv_heads->size() != n || head_dims->size() != n || windows->size() != n) {
-    return false;
-  }
-  cfg.n_layers = static_cast<int>(n);
-  cfg.layers.clear();
-  cfg.layers.reserve(n);
-  for (size_t l = 0; l < n; ++l) {
-    cache::LayerConfig lc{};
-    lc.n_kv_heads = (*kv_heads)[l];
-    lc.head_dim = (*head_dims)[l];
-    lc.policy = (*windows)[l] > 0
-        ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, (*windows)[l]}
-        : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
-    cfg.layers.push_back(lc);
-  }
-  return true;
-}
-
 // Replace the model's own attention pattern with `spec`, a comma-separated list
 // of windows repeating over the caches (0 = flat). One entry makes every layer
 // sliding. Only the policy changes; each cache keeps the geometry the .pte
@@ -268,14 +210,17 @@ bool read_kv_layout(
 // The export sizes the chunk to the model's own window; narrowing the window
 // here would leave the ring (window + max_write - 1) sized by the chunk
 // instead, so the chunk follows the window down.
-bool apply_window_override(const std::string& spec, cache::CacheConfig& cfg) {
+bool apply_window_override(
+    const std::string& spec,
+    cache::CacheGeometry& geometry,
+    cache::CacheConfig& cfg) {
   std::vector<int> pattern;
   if (!parse_int_list(spec, ',', pattern) || pattern.empty()) {
     return false;
   }
-  for (size_t l = 0; l < cfg.layers.size(); ++l) {
+  for (size_t l = 0; l < geometry.layers.size(); ++l) {
     const int w = pattern[l % pattern.size()];
-    cfg.layers[l].policy = w > 0
+    geometry.layers[l].policy = w > 0
         ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, w}
         : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
   }
@@ -288,7 +233,7 @@ bool apply_window_override(const std::string& spec, cache::CacheConfig& cfg) {
   if (cfg.max_write && narrowest > 0 && narrowest < *cfg.max_write) {
     cfg.max_write = narrowest;
   }
-  return cache::valid(cfg);
+  return cache::valid(geometry, cfg);
 }
 
 // Human-readable name for a kv_dtype (an ET ScalarType int). Only the
@@ -310,14 +255,14 @@ std::string dtype_name(int st) {
 // Announce the cache shape: the same .pte runs under whatever config this
 // invocation asks for -- capacity, storage dtype, flat/ring layers -- with no
 // re-export. The footprint lines printed later then show it growing at runtime.
-void print_cache_summary(const cache::CacheConfig& cfg) {
+void print_cache_summary(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg) {
   // Ring layers grouped by window: --kv-windows can give each layer its own,
   // and the pools are sized per layer, so a single number would misreport them.
   std::map<int, int> ring;
   int flat = 0;
-  for (int l = 0; l < cfg.n_layers; ++l) {
-    const cache::LayerConfig& lc =
-        cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+  for (const cache::LayerGeometry& lc : geometry.layers) {
     if (lc.policy.kind == cache::LayerPolicy::Kind::Ring) {
       ++ring[lc.policy.window];
     } else {
@@ -330,7 +275,8 @@ void print_cache_summary(const cache::CacheConfig& cfg) {
   if (cfg.max_write) {
     std::cout << " max_write=" << *cfg.max_write;
   }
-  std::cout << "\n        " << cfg.n_layers << " layers: " << flat << " flat";
+  std::cout << "\n        " << geometry.layers.size() << " layers: " << flat
+            << " flat";
   for (const auto& [window, n] : ring) {
     std::cout << " + " << n << " ring(window " << window << ")";
   }
@@ -743,16 +689,19 @@ int main(int argc, char** argv) {
                 << " (bf16|fp16|fp32)" << std::endl;
       return 1;
     }
-    if (!read_kv_layout(module, prefill_chunk, cfg)) {
-      std::cerr << "No KV cache layout in " << pte
+    auto geometry = read_cache_geometry(module);
+    if (!geometry.ok()) {
+      std::cerr << "No valid KV cache geometry in " << pte
                 << "; re-export with --use-offgraph-cache" << std::endl;
       return 1;
     }
-    if (!kv_windows.empty() && !apply_window_override(kv_windows, cfg)) {
+    cfg.max_write = prefill_chunk;
+    if (!kv_windows.empty() &&
+        !apply_window_override(kv_windows, *geometry, cfg)) {
       std::cerr << "Invalid --kv-windows: " << kv_windows << std::endl;
       return 1;
     }
-    if (!cache::valid(cfg)) {
+    if (!cache::valid(*geometry, cfg)) {
       std::cerr << "Invalid cache config" << std::endl;
       return 1;
     }
@@ -762,7 +711,7 @@ int main(int argc, char** argv) {
 
     const char* const cache_kind = cache::kind::kSingle;
     auto built = cache::CacheFactory::global().build(
-        ::executorch::backends::mlx::kMLXBackendId, cache_kind, cfg);
+        ::executorch::backends::mlx::kMLXBackendId, cache_kind, *geometry, cfg);
     if (!built.ok()) {
       std::cerr << "Failed to build cache: " << static_cast<int>(built.error())
                 << std::endl;
@@ -775,7 +724,7 @@ int main(int argc, char** argv) {
     // load_method() inside it.
     const cache::InstallGuard guard{kv};
 
-    print_cache_summary(cfg);
+    print_cache_summary(*geometry, cfg);
     if (guard.set_option(mlx_opts) != Error::Ok ||
         options_map.set_options(
             ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=

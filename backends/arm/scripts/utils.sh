@@ -127,7 +127,14 @@ function patch_repo() {
 
     echo -e "[${FUNCNAME[0]}] Patching ${name}. repo_dir:${repo_dir}\t base_rev:${base_rev}\t patch_dir:${patch_dir}"
     pushd "${repo_dir}" > /dev/null || return 1
-    git fetch --quiet || rc=$?
+    if [[ ! "${base_rev}" =~ ^[0-9a-f]{40}$ ]] || \
+       ! git rev-parse --verify --quiet "${base_rev}^{commit}" > /dev/null; then
+        if git fetch --quiet origin "${base_rev}"; then
+            base_rev=FETCH_HEAD
+        else
+            rc=$?
+        fi
+    fi
     if [[ ${rc} -eq 0 ]]; then
         git reset --hard "${base_rev}" --quiet || rc=$?
     fi
