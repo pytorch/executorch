@@ -199,6 +199,7 @@ from executorch.exir.pass_base import (
     ExportPass,
 )
 from executorch.exir.pass_manager import ExportedProgramPassManager
+
 from torch._export.utils import _get_shape_env_from_gm
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
@@ -470,6 +471,10 @@ class ArmPassManager(ExportedProgramPassManager):
 
         if config.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.AUTO:
             passes.append(DecomposeSDPAWithRegularSoftmaxPass())
+
+        convert_pass = ConvertInt64OutputOpsToInt32Pass(convert_cast_ops=False)
+        if convert_pass.should_run(exported_program.graph_module):
+            passes.append(convert_pass)
 
         if passes:
             self.add_passes(passes)
