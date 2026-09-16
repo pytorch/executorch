@@ -16,6 +16,7 @@
 #include <vector>
 
 namespace cu = ::executorch::backends::cuda;
+namespace cache = ::executorch::extension::llm::cache;
 namespace aoti = ::executorch::backends::aoti;
 namespace slim = ::executorch::backends::aoti::slim;
 namespace slimc10 = ::executorch::backends::aoti::slim::c10;
@@ -94,14 +95,17 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
     GTEST_SKIP() << "CUDA device required";
   }
 
-  cu::OffGraphKVConfig config;
-  config.maximum_capacity = 32;
-  config.initial_capacity = 4;
-  config.layers = {
-      {0, cu::OffGraphKVPolicy::Flat, 0, 2, 8},
-      {1, cu::OffGraphKVPolicy::Ring, 4, 2, 8},
+  cu::OffGraphKVSettings settings;
+  settings.config.capacity = 32;
+  settings.config.initial_capacity = 4;
+  // The widest step below is 9 tokens, and a ring layer may not be handed
+  // more than max_write at once.
+  settings.config.max_write = 9;
+  settings.geometry.layers = {
+      {{cache::LayerPolicy::Kind::Flat, 0}, 2, 8},
+      {{cache::LayerPolicy::Kind::Ring, 4}, 2, 8},
   };
-  cu::OffGraphKVCacheContextOwner context(std::move(config));
+  cu::OffGraphKVCacheContextOwner context(std::move(settings));
   FakeContainer container{
       {"flat_k", "flat_v", "flat_capacity", "ring_k", "ring_v", "ring_capacity"},
       {"__et_offgraph_kv_layer_0_k",
@@ -192,12 +196,12 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
            slimc10::ScalarType::BFloat16,
        }) {
     SCOPED_TRACE(slimc10::toString(dtype));
-    cu::OffGraphKVConfig config;
-    config.maximum_capacity = 8;
-    config.initial_capacity = 4;
-    config.storage_dtype = dtype;
-    config.layers = {{0, cu::OffGraphKVPolicy::Flat, 0, 2, 8}};
-    cu::OffGraphKVCacheContextOwner context(std::move(config));
+    cu::OffGraphKVSettings settings;
+    settings.config.capacity = 8;
+    settings.config.initial_capacity = 4;
+    settings.storage_dtype = dtype;
+    settings.geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 2, 8}};
+    cu::OffGraphKVCacheContextOwner context(std::move(settings));
     FakeContainer container{
         {"flat_k", "flat_v", "flat_capacity"},
         {"__et_offgraph_kv_layer_0_k",
