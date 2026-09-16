@@ -134,6 +134,13 @@ def get_u55_compile_spec(
         extra_flags_list = extra_flags.split(" ")
     else:
         extra_flags_list = []
+    max_scratch_size = None
+    if (
+        system_config in (None, "Ethos_U55_High_End_Embedded")
+        and memory_mode in (None, "Shared_Sram")
+        and config in (None, "Arm/vela.ini")
+    ):
+        max_scratch_size = 2 * 1024 * 1024
     compile_spec = (
         EthosUCompileSpec(
             f"ethos-u55-{macs}",
@@ -141,6 +148,7 @@ def get_u55_compile_spec(
             memory_mode=memory_mode,
             extra_flags=extra_flags_list,
             config_ini=config,
+            max_scratch_size=max_scratch_size,
         )
         .dump_intermediate_artifacts_to(custom_path)
         .dump_debug_info(tosa_debug_mode)

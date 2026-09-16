@@ -15,6 +15,8 @@ ExecuTorch forbids a partitioner from mutating the graph module.
 
 from typing import Callable, final, List, Mapping, Optional, Tuple
 
+# Registers torch.ops.torchao.dequantize_gguf, referenced in _SUPPORTED_NON_CORE_OPS.
+import executorch.extension.llm.export.gguf  # noqa: F401
 import torch
 from executorch.backends.native.passes import backend_inplace_aten_variants
 
@@ -38,6 +40,10 @@ _SUPPORTED_NON_CORE_OPS = [
     torch.ops.aten.linear.default,
     torch.ops.aten.addmm.default,
     torch.ops.aten.scaled_dot_product_attention.default,
+    # GGUF weight dequantize stays in the delegate; the serializer folds it into a
+    # PackedQuant weight on the consuming op.
+    torch.ops.torchao.dequantize_gguf.default,
+    torch.ops.aten.rms_norm.default,
 ]
 
 # Maps a control-flow higher-order op to the arg indices of its branch submodule

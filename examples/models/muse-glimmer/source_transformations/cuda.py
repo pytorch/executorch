@@ -28,6 +28,8 @@ import torch.nn.functional as F
 import triton
 import triton.language as tl
 
+from executorch.extension.llm.export.model_metadata import write_cache_geometry
+
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
     rotate_half,
@@ -611,11 +613,12 @@ def _offgraph_attention_forward(
     return self.o_proj(y.reshape(B, T, -1))
 
 
-def enable_offgraph_kv_cache(model: nn.Module, initial_capacity: int) -> str:
-    """Replace graph-owned caches and return the CUDA runtime manifest."""
-    if initial_capacity <= 0 or initial_capacity > model.config.max_seq_len:
-        raise ValueError("off-graph initial capacity must be in max_seq_len")
+def enable_offgraph_kv_cache(model: nn.Module, max_write: int) -> str:
+    """Replace graph-owned caches and return the CUDA lowering manifest.
 
+    ``max_write`` is the largest number of tokens one forward writes, which is
+    what a ring layer sizes its slots from.
+    """
     layers = []
     for layer in model.layers:
         attn = layer.self_attn
@@ -636,12 +639,29 @@ def enable_offgraph_kv_cache(model: nn.Module, initial_capacity: int) -> str:
             "version": 1,
             "dtype": "bfloat16",
             "maximum_capacity": model.config.max_seq_len,
-            "initial_capacity": initial_capacity,
+            "max_write": max_write,
             "layers": layers,
         },
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def offgraph_kv_cache_geometry(model: nn.Module) -> dict[str, object]:
+    """Neutral cache-geometry constant methods for the off-graph runtime.
+
+    The runtime reads these through read_cache_geometry() rather than parsing
+    the lowering manifest, so CUDA and MLX describe a cache the same way.
+    """
+    kv_heads = []
+    head_dims = []
+    windows = []
+    for layer in model.layers:
+        attn = layer.self_attn
+        kv_heads.append(attn.n_kv_heads)
+        head_dims.append(attn.head_dim)
+        windows.append(attn.window_size if attn.is_sliding else 0)
+    return write_cache_geometry(kv_heads, head_dims, windows)
 
 
 def cuda_source_transformations(

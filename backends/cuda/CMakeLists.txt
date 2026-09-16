@@ -391,7 +391,7 @@ endif()
 target_link_libraries(
   aoti_cuda_backend
   PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
-         extension_cuda ${CMAKE_DL_LIBS}
+         extension_cuda extension_llm_cache ${CMAKE_DL_LIBS}
 )
 
 if(_cuda_is_msvc_toolchain)
