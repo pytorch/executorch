@@ -20,7 +20,7 @@ namespace llm {
 
 struct ET_EXPERIMENTAL Stats {
   // Scaling factor for timestamps - in this case, we use ms.
-  const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
+  static constexpr long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
   // Time stamps for the different stages of the execution
   // model_load_start_ms: Start of model loading.
   long model_load_start_ms = 0;
