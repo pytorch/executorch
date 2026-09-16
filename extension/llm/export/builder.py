@@ -555,7 +555,9 @@ class LLMEdgeManager:
         # TODO: ConvertToLinearPass is not a sound pass and must be called before
         # const propagation.  It requires fixing:
         # https://github.com/pytorch/executorch/issues/10499
-        self.edge_manager.transform([ConvertToLinearPass()])
+        self.edge_manager.transform(
+            [ConvertToLinearPass(self.edge_manager.exported_program())]
+        )
 
         self.export_program = self.edge_manager.to_executorch(
             ExecutorchBackendConfig(
