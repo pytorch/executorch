@@ -2010,6 +2010,18 @@ class TestPasses(unittest.TestCase):
             if user is not copy and user.op != "output":
                 self.assertLess(node_order[user], node_order[copy])
 
+    def test_mutable_buffers_write_back_no_inputs(self) -> None:
+        class NoInputModule(torch.nn.Module):
+            def forward(self):
+                return torch.ones(3) * 2
+
+        model = to_edge(export(NoInputModule(), (), strict=True))
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        # A graph with no placeholders has nothing to write back; the pass
+        # must complete cleanly rather than assume an input exists.
+        self.assertEqual(sum(node.op == "placeholder" for node in gm.graph.nodes), 0)
+
     def test_remove_quantized_op_noop_pass(self) -> None:
         class TestAddSliceNoop(torch.nn.Module):
             def __init__(self):
