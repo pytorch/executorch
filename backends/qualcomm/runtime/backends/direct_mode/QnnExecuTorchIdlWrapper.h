@@ -60,6 +60,9 @@ class QnnExecuTorchIdlWrapper {
   std::vector<executorch::runtime::Span<uint8_t>> planned_spans_;
   std::vector<std::vector<uint8_t>> input_tensors_;
   std::vector<std::vector<uint8_t>> output_tensors_;
+  // Tracks the outputs whose data pointer could not be overridden because they
+  // are memory planned or constant. Those are read back from the method itself.
+  std::vector<bool> output_is_preallocated_;
   std::vector<executorch::aten::TensorImpl> input_tensor_impls_;
 };
 

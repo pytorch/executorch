@@ -213,7 +213,10 @@ static Tensor& quantized_transpose_conv2d_out_impl(
 #ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
   const int32_t buffer_bytes = arm_transpose_conv_s8_get_buffer_size(
       &transpose_conv_params, &input_dims, &filter_dims, &output_dims);
-  if (scratch.nbytes() != static_cast<size_t>(buffer_bytes)) {
+  // AOT reserves max(API size, corrected kernel size), so it may be larger.
+  // TODO: Restore equality once our CMSIS-NN pin includes
+  // https://github.com/ARM-software/CMSIS-NN/pull/243.
+  if (scratch.nbytes() < static_cast<size_t>(buffer_bytes)) {
     ET_LOG(
         Error,
         "quantized_transpose_conv2d_out: scratch buffer size incorrect - actual: (%d) needed: (%d)",

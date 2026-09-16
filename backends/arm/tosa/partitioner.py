@@ -38,6 +38,7 @@ from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
     is_quantized,
     tosa_support_factory,
 )
@@ -56,7 +57,7 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
-from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
+from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,24 @@ def _is_custom_partition_op(
         except Exception:
             return False
     return False
+
+
+class CustomOpSupported(OperatorSupportBase):
+    """Accept custom operators registered with the TOSA partitioner."""
+
+    def __init__(self, custom_ops: set[torch._ops.OpOverload]) -> None:
+        self.custom_ops = set(custom_ops)
+
+    def is_node_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
+    ) -> bool:
+        """Return supported for registered custom ops and otherwise defer."""
+        del submodules
+        if node.op == "call_function" and _is_custom_partition_op(
+            self.custom_ops, node.target
+        ):
+            return True
+        return False
 
 
 def _is_noop_clone(node: torch.fx.node.Node) -> bool:
@@ -435,6 +454,7 @@ class TOSAPartitioner(Partitioner):
         self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._requires_resolved_tensor_shapes = False
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
@@ -614,16 +634,6 @@ class TOSAPartitioner(Partitioner):
                 )
             tags = tags | submodule_tags
         operator_support = self._create_operator_support(containing_program, reporter)
-        if self._custom_partition_ops:
-            custom_ops = set(self._custom_partition_ops)
-
-            class CustomOpSupported(OperatorSupportBase):
-                def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-                    return node.op == "call_function" and _is_custom_partition_op(
-                        custom_ops, node.target
-                    )
-
-            operator_support = any_chain(operator_support, CustomOpSupported())
         capability_partitioner = CapabilityBasedPartitioner(
             module,
             operator_support,
@@ -732,16 +742,27 @@ class TOSAPartitioner(Partitioner):
         containing_program: ExportedProgram,
         reporter: WhyNoPartitionReporter,
     ) -> OperatorSupportBase:
+        # Override default checks for custom ops
+        positive_overrides = (
+            [CustomOpSupported(self._custom_partition_ops)]
+            if self._custom_partition_ops
+            else None
+        )
+        additional_checks = list(self.additional_checks or ())
+        if self._requires_resolved_tensor_shapes:
+            additional_checks.append(CheckResolvedTensorShapes(reporter))
+
         return tosa_support_factory(
             self.tosa_spec,
             containing_program,
             reporter,
-            self.additional_checks,
+            additional_checks=additional_checks,
             additional_positive_checks=[
                 self._decomposable_resize_support,
                 DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
                 DecomposableRollSupported(self.tosa_spec),
             ],
+            additional_positive_overrides=positive_overrides,
         )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:

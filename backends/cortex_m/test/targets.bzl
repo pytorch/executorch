@@ -72,6 +72,8 @@ def define_common_targets(is_fbcode = False):
             srcs = ["test_explicit_layout_pipeline.py"],
             compile = "with-source",
             typing = False,
+            # Implementation tests require the Cortex-M FVP runner, which Buck does not provide.
+            env = {"PYTEST_ADDOPTS": "-k 'not test_implementation'"},
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m:target_config",

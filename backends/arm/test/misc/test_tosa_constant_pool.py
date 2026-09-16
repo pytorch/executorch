@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 import tosa_serializer as ts
 from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
 
 
 def _serializer(path_prefix=""):
@@ -20,6 +21,14 @@ def _serializer(path_prefix=""):
         targetPatch=0,
         targetDraft=False,
     )
+
+
+def _serialized_operator_count(serializer):
+    graph = TosaGraph.GetRootAs(serializer.serialize(), 0)
+    assert graph.RegionsLength() == 1
+    region = graph.Regions(0)
+    assert region.BlocksLength() == 1
+    return region.Blocks(0).OperatorsLength()
 
 
 @pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])
@@ -33,7 +42,7 @@ def test_identical_constants_are_reused(dtype):
     assert second is first
     assert first.name == "first"
     block = serializer.currRegion.currBasicBlock
-    assert len(block.operators) == 1
+    assert _serialized_operator_count(serializer) == 1
     constants = block.shapes if dtype == ts.DType.SHAPE else block.tensors
     assert list(constants.keys()) == ["first"]
 
@@ -59,7 +68,7 @@ def test_unpooled_constants_are_not_reused():
     second = serializer.addUnpooledConst([1], ts.DType.INT8, [0], name="second")
 
     assert second is not first
-    assert len(serializer.currRegion.currBasicBlock.operators) == 2
+    assert _serialized_operator_count(serializer) == 2
     assert list(serializer.currRegion.currBasicBlock.tensors.keys()) == [
         "first",
         "second",
@@ -89,7 +98,7 @@ def test_constants_with_different_keys_remain_separate(first, second):
     second_const = serializer.addConst(*second, name="second")
 
     assert second_const is not first_const
-    assert len(serializer.currRegion.currBasicBlock.operators) == 2
+    assert _serialized_operator_count(serializer) == 2
 
 
 def test_float_constants_use_exact_serialized_values():
@@ -110,7 +119,7 @@ def test_float_constants_use_exact_serialized_values():
 
     assert negative_zero is not positive_zero
     assert repeated_negative_zero is negative_zero
-    assert len(serializer.currRegion.currBasicBlock.operators) == 2
+    assert _serialized_operator_count(serializer) == 2
 
 
 def test_constants_are_scoped_to_basic_blocks():
