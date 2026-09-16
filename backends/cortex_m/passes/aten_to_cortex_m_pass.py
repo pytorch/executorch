@@ -526,6 +526,17 @@ def _get_convolution_replacement(
     in_channels = param_weight_tensor.shape[1] * groups
     out_channels = param_weight_tensor.shape[0]
     is_depthwise = (in_channels == groups) and (out_channels % in_channels == 0)
+    # CMSIS-NN MVE already repacks these weights and runs regular convolution on
+    # every inference. Emit that layout at export to avoid repeated repacking
+    # and its scratch storage. The >8 limit covers both compiler thresholds.
+    assert isinstance(dialect_pass, AtenToCortexMPass)
+    if (
+        is_depthwise
+        and dialect_pass.target_config.backend == cmsis_nn.Backend.MVE
+        and in_channels == 1
+        and out_channels > 8
+    ):
+        is_depthwise = False
 
     # Only use DW path if batch_size==1, as CMSIS-NN DW falls back to
     # unoptimized implementation otherwise.
@@ -880,7 +891,7 @@ def _get_avg_pool2d_replacement(
     output_mult, output_shift = quantize_multiplier_aot(input_scale)
 
     avg_padding = padding
-    if count_include_pad:
+    if count_include_pad and any(padding):
         pad_h, pad_w = padding
         if explicit_nhwc:
             pre_pad = post_pad = [0, pad_h, pad_w, 0]
