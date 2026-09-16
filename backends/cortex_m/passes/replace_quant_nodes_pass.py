@@ -11,10 +11,12 @@ import executorch.backends.cortex_m.ops.operators  # noqa
 import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+from executorch.exir.pass_base import NodeMetadata, ProxyValue
+
+from .cortex_m_quantized_pass import CortexMQuantizedPass
 
 
-class ReplaceQuantNodesPass(ExportPass):
+class ReplaceQuantNodesPass(CortexMQuantizedPass):
     """
     Replace quantize and dequantize nodes with the corresponding
     cortex_m.quantize_per_tensor and cortex_m.dequantize_per_tensor nodes.
