@@ -271,7 +271,6 @@ class QnnTool:
         soc_id,
         adb,
         sample_input=None,
-        build_folder=None,
         workspace="/data/local/tmp/qnn_executorch_test",
     ):
         # Makes the SDK usable first, because this tool runs a binary from inside it. Setup used to
@@ -293,7 +292,6 @@ class QnnTool:
         self.workspace = workspace
         self.adb = adb
         self.sample_input = sample_input
-        self.build_folder = build_folder
         self.soc_id = soc_id
 
     def _get_base_config(self):
@@ -632,7 +630,6 @@ def _generate_htp_analysis_result(
         sample_input=inputs,
         soc_id=soc_id,
         adb=adb,
-        build_folder=(adb.build_path if adb is not None else None),
         workspace=(adb.workspace if adb is not None else None),
     )
 
