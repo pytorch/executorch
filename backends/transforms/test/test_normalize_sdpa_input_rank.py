@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -13,6 +14,8 @@ from executorch.backends.transforms.normalize_sdpa_input_rank import (
 )
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_manager import ExportedProgramPassManager
 
 
 class Attention(torch.nn.Module):
@@ -207,21 +210,40 @@ class NormalizeSDPAInputRankPassTest(unittest.TestCase):
             )
             self.assertEqual(gm(*inputs)[0].shape, (2, query_length, 6))
 
-    def test_rank_four_is_unchanged(self):
-        inputs = (
-            torch.randn(1, 2, 3, 4),
-            torch.randn(1, 2, 5, 4),
-            torch.randn(1, 2, 5, 6),
+    def test_noop_attention_does_not_retrace(self):
+        shapes = (
+            ((1, 2, 3, 4), (1, 2, 5, 4), (1, 2, 5, 6)),
+            ((1, 1, 2, 3, 4), (1, 1, 2, 5, 4), (1, 1, 2, 5, 6)),
+            ((3, 4), (2, 5, 4), (2, 5, 6)),
         )
-        model = Attention()
-        gm = self._export(model, inputs)
-        result = NormalizeSDPAInputRankPass()(gm)
+        for edge in (False, True):
+            for qkv_shapes in shapes:
+                with self.subTest(edge=edge, shapes=qkv_shapes):
+                    inputs = tuple(torch.randn(shape) for shape in qkv_shapes)
+                    model = Attention()
+                    gm = self._export(model, inputs, edge=edge)
+                    with patch.object(ExportPass, "call") as retrace:
+                        result = NormalizeSDPAInputRankPass()(gm)
+                    retrace.assert_not_called()
+                    self.assertFalse(result.modified)
+                    self.assertIs(result.graph_module, gm)
+                    torch.testing.assert_close(gm(*inputs)[0], model(*inputs))
+
+    def test_no_sdpa_preserves_unbacked_shape_environment(self):
+        class DynamicSize(torch.nn.Module):
+            def forward(self, size):
+                n = size.item()
+                torch._check(n >= 0)
+                return torch.ones(n)
+
+        inputs = (torch.tensor(3),)
+        ep = torch.export.export(DynamicSize(), inputs)
+        result = ExportedProgramPassManager([NormalizeSDPAInputRankPass()])(ep)
         self.assertFalse(result.modified)
-        self.assertEqual(
-            [(n.op, n.target) for n in result.graph_module.graph.nodes],
-            [(n.op, n.target) for n in gm.graph.nodes],
-        )
-        torch.testing.assert_close(result.graph_module(*inputs)[0], model(*inputs))
+        self.assertIs(result.exported_program.graph_module, ep.graph_module)
+        # A no-op pass must not leave fresh symbols that poison functionalization.
+        functional = result.exported_program.run_decompositions({})
+        torch.testing.assert_close(functional.module()(*inputs), torch.ones(3))
 
     def test_shared_qkv_and_another_consumer(self):
         class Shared(torch.nn.Module):

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Fold a HuggingFace repeat_kv expansion into scaled_dot_product_attention."""
+"""Fold KV head repetition into scaled_dot_product_attention."""
 
 import torch
 
@@ -57,11 +57,38 @@ def _unwrap_rank_normalization(node: object) -> Node | None:
     return None
 
 
+def _unwrap_repeat_interleave(node: Node, rank: int, n_heads: int) -> Node | None:
+    base = node.args[0] if node.args else node.kwargs.get("self")
+    value = base.meta.get("val") if isinstance(base, Node) else None
+    if rank not in (3, 4) or not isinstance(value, torch.Tensor) or value.dim() != rank:
+        return None
+    dim = node.args[2] if len(node.args) > 2 else node.kwargs.get("dim")
+    repeats = node.args[1] if len(node.args) > 1 else node.kwargs.get("repeats")
+    head_axis = rank - 3
+    n_kv = value.shape[head_axis]
+    if (
+        dim not in (head_axis, -3)
+        or not isinstance(n_kv, int)
+        or n_kv <= 0
+        or n_heads <= n_kv
+        or n_heads % n_kv
+        or not isinstance(repeats, int)
+        or repeats != n_heads // n_kv
+    ):
+        return None
+    folded = list(value.shape)
+    folded[head_axis] = n_heads
+    return base if _matches_shape(node, folded) else None
+
+
 def _unwrap_repeat_kv(node: object, rank: int, n_heads: int) -> Node | None:
     """Match head repetition for [H, S, D] or [B, H, S, D] KV tensors."""
-    if _resolve_aten(
-        getattr(node, "target", None)
-    ) is not torch.ops.aten.view_copy.default or not _single_user(node):
+    if not _single_user(node):
+        return None
+    target = _resolve_aten(node.target)
+    if target is torch.ops.aten.repeat_interleave.self_int:
+        return _unwrap_repeat_interleave(node, rank, n_heads)
+    if target is not torch.ops.aten.view_copy.default:
         return None
     inner = node.args[0] if node.args else node.kwargs.get("self")
     clone = None
@@ -111,12 +138,12 @@ def _unwrap_repeat_kv(node: object, rank: int, n_heads: int) -> Node | None:
 
 
 class FuseGQAWithSDPAPass(ExportPass):
-    """Fold a HuggingFace repeat_kv expansion into scaled_dot_product_attention.
+    """Fold KV head repetition into scaled_dot_product_attention.
 
     Grouped-query attention repeats each KV head n_rep = n_heads // n_kv times so
     K/V match the query head count before SDPA. aten SDPA can do that broadcast
     itself via ``enable_gqa=True``, so when both K and V feed SDPA through a
-    repeat_kv chain we drop the expansion and pass the un-repeated
+    repeat_kv chain or repeat_interleave we drop the expansion and pass the un-repeated
     rank-3 ``[n_kv, T, D]`` or rank-4 ``[B, n_kv, T, D]`` tensors directly,
     setting ``enable_gqa=True``. This removes
     the materialized KV copies (expand + clone) from the graph. ``enable_gqa``
