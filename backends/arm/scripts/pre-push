@@ -78,6 +78,7 @@ run_op_support_checks() {
     local backend="$1"
     local backend_name="$2"
     local output="$3"
+    local coverage_output
 
     echo -e "${INFO} Generating ${backend_name} operator support documentation"
 
@@ -95,7 +96,8 @@ run_op_support_checks() {
 
     echo -e "${INFO} Checking ${backend_name} operator support coverage"
 
-    if ! python "$OP_SUPPORT_SCRIPT" --backend "$backend" --check; then
+    if ! coverage_output=$(python "$OP_SUPPORT_SCRIPT" --backend "$backend" --check 2>&1); then
+        echo "$coverage_output" >&2
         echo -e "${ERROR} ${backend_name} operator support coverage check failed" >&2
         FAILED=1
     else
