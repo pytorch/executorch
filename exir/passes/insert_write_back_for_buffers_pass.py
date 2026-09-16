@@ -28,6 +28,9 @@ def _may_alias_input(node: torch.fx.Node) -> bool:
     we cannot tell (no schema, getitem, submodule calls, etc.) we
     conservatively answer True.
     """
+    if node.op == "output":
+        # The output node produces no value of its own, so it cannot alias.
+        return False
     if node.op != "call_function":
         return True
     if node.target is operator.getitem:
@@ -36,6 +39,18 @@ def _may_alias_input(node: torch.fx.Node) -> bool:
     if schema is None:
         return True
     return any(ret.alias_info is not None for ret in schema.returns)
+
+
+def _contains_node(value: object, input_node: torch.fx.Node) -> bool:
+    """
+    Whether input_node appears in value, looking through lists and tuples so
+    that container arguments (e.g. foreach-style ops) are handled.
+    """
+    if value is input_node:
+        return True
+    if isinstance(value, (list, tuple)):
+        return any(_contains_node(v, input_node) for v in value)
+    return False
 
 
 def _mutates_input(node: torch.fx.Node, input_node: torch.fx.Node) -> bool:
@@ -51,13 +66,13 @@ def _mutates_input(node: torch.fx.Node, input_node: torch.fx.Node) -> bool:
     if schema is None:
         return True
     for i, arg in enumerate(node.args):
-        if arg is input_node and i < len(schema.arguments):
+        if _contains_node(arg, input_node) and i < len(schema.arguments):
             alias_info = schema.arguments[i].alias_info
             if alias_info is not None and alias_info.is_write:
                 return True
     schema_kwargs = {a.name: a for a in schema.arguments}
     for name, arg in node.kwargs.items():
-        if arg is input_node and name in schema_kwargs:
+        if _contains_node(arg, input_node) and name in schema_kwargs:
             alias_info = schema_kwargs[name].alias_info
             if alias_info is not None and alias_info.is_write:
                 return True
@@ -86,7 +101,7 @@ def _insertion_point(
     mutated_node: torch.fx.Node,
     return_node: torch.fx.Node,
     node_order: Dict[torch.fx.Node, int],
-    last_placeholder: torch.fx.Node,
+    last_placeholder: Optional[torch.fx.Node],
 ) -> torch.fx.Node:
     """
     The earliest node after which it is safe to insert
@@ -100,9 +115,12 @@ def _insertion_point(
        may mutate the buffer);
      * all placeholders.
     """
-    latest = last_placeholder
-    if node_order[return_node] > node_order[latest]:
-        latest = return_node
+    latest = return_node
+    if (
+        last_placeholder is not None
+        and node_order[last_placeholder] > node_order[latest]
+    ):
+        latest = last_placeholder
 
     for alias in _collect_aliases(mutated_node, node_order):
         for user in alias.users:
@@ -148,7 +166,8 @@ def _insert_copy(
     node_order: Dict[torch.fx.Node, int] = {
         node: i for i, node in enumerate(gm.graph.nodes)
     }
-    last_placeholder = [node for node in gm.graph.nodes if node.op == "placeholder"][-1]
+    placeholders = [node for node in gm.graph.nodes if node.op == "placeholder"]
+    last_placeholder = placeholders[-1] if placeholders else None
 
     # Pair up the returns with the nodes they mutate.
     copies: List[Tuple[torch.fx.Node, torch.fx.Node]] = []
