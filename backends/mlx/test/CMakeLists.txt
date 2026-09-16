@@ -143,6 +143,7 @@ et_cxx_test(
   mlx_batched_sequence_cache_test
   SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/mlx_batched_sequence_cache_test.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_clone_test.cpp
   EXTRA_LIBS
   mlxdelegate
   mlx_schema

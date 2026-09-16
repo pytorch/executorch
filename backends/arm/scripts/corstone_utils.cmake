@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/ArmEthosUSDK.cmake)
+
 function(patch_ethos_u_repo REPO_PATH BASE_REV PATCH_DIR ET_DIR_PATH)
   execute_process(
     COMMAND
@@ -25,13 +27,14 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  set(ethos_u_base_tag "26.05.1")
+  # Ethos-U 26.05.1.
+  set(ethos_u_base_rev "878cc6ddfc57bf0b1ea30ee02e8b3e5d5bedd867")
   set(ethos_u_manifest_version "26.05")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY
       https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
-    GIT_TAG ${ethos_u_base_tag}
+    GIT_TAG ${ethos_u_base_rev}
     SOURCE_DIR ${ETHOS_SDK_PATH} BINARY_DIR ${ETHOS_SDK_PATH}
     # Keep the generator-specific population project local to this build.
     SOURCE_SUBDIR none
@@ -39,23 +42,35 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   FetchContent_MakeAvailable(ethos_u)
   # Patch manifest to remove unused projects.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
-  set(ethos_u_base_rev "26.05.1")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}" "${ethos_u_base_rev}" "${patch_dir}" "${ET_DIR_PATH}"
   )
 
-  # Get ethos_u externals only if core driver headers do not already exist.
-  if(NOT EXISTS
-     "${ETHOS_SDK_PATH}/core_software/core_driver/include/ethosu_driver.h"
-  )
+  # Retry incomplete downloads even when the core driver is already present.
+  arm_ethos_u_content_ready("${ETHOS_SDK_PATH}" _arm_ethos_ready)
+  if(NOT _arm_ethos_ready)
     execute_process(
       COMMAND ${Python3_EXECUTABLE} fetch_externals.py -c
               ${ethos_u_manifest_version}.json fetch
       WORKING_DIRECTORY ${ETHOS_SDK_PATH}
+      RESULT_VARIABLE fetch_result
     )
+    if(NOT "${fetch_result}" STREQUAL "0")
+      message(
+        FATAL_ERROR
+          "Failed to fetch Ethos-U externals into ${ETHOS_SDK_PATH} (${fetch_result}). Inspect the logs above and retry with FETCH_ETHOS_U_CONTENT=ON."
+      )
+    endif()
+    arm_ethos_u_content_ready("${ETHOS_SDK_PATH}" _arm_ethos_ready)
+    if(NOT _arm_ethos_ready)
+      message(
+        FATAL_ERROR
+          "Ethos-U externals are incomplete in ${ETHOS_SDK_PATH} after fetching. Inspect the logs above."
+      )
+    endif()
   endif()
-  # Patch core_software to remove unused projects.
-  set(core_software_base_rev "26.05")
+  # Patch core_software to remove unused projects. Core software 26.05.
+  set(core_software_base_rev "e8411ce990d6b17efbb216a2cfddc15ab588e501")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_software" "${core_software_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
@@ -66,8 +81,8 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # HardFault handler so the Corstone-300 target source compiles for older
   # Cortex-M cores. Once the equivalent guards land upstream in
   # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
-  # commits, delete the 0002 and 0003 patches.
-  set(core_platform_base_rev "26.05")
+  # commits, delete the 0002 and 0003 patches. Core platform 26.05.
+  set(core_platform_base_rev "02d02901842fb26c077adc1061c2650d89f9f0e5")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_platform" "${core_platform_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
