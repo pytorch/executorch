@@ -15,6 +15,7 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir.pass_base import ExportPass
 from torch.fx import Graph, GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
+from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 
 TARGET_OP = torch.ops.aten.add.Tensor
@@ -56,9 +57,11 @@ class DummyTargetedPass(ArmOpTargetedPass):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.call_operator_count = 0
+        self.called_ops = []
 
     def call_operator(self, op, args, kwargs, meta):
         self.call_operator_count += 1
+        self.called_ops.append(op)
         return super().call_operator(op, args, kwargs, meta)
 
 
@@ -80,6 +83,28 @@ class InsertTargetPass(ExportPass):
         return PassResult(graph_module, True)
 
 
+class NestedCondModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        def outer_true(arg: torch.Tensor) -> torch.Tensor:
+            def inner_true(inner_arg: torch.Tensor) -> torch.Tensor:
+                return inner_arg + inner_arg
+
+            def inner_false(inner_arg: torch.Tensor) -> torch.Tensor:
+                return inner_arg * inner_arg
+
+            return torch.cond(
+                arg.sum() > 1,
+                inner_true,
+                inner_false,
+                [arg],
+            )
+
+        def outer_false(arg: torch.Tensor) -> torch.Tensor:
+            return arg * arg
+
+        return torch.cond(x.sum() > 0, outer_true, outer_false, [x])
+
+
 class CondModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         def true_branch(arg: torch.Tensor) -> torch.Tensor:
@@ -89,6 +114,43 @@ class CondModule(torch.nn.Module):
             return arg - 1
 
         return torch.cond(x.sum() > 0, true_branch, false_branch, [x])
+
+
+def test_replays_targeted_op_and_fast_copies_cold_op() -> None:
+    graph = Graph()
+    lhs = graph.placeholder("lhs")
+    rhs = graph.placeholder("rhs")
+    lhs.meta["val"] = torch.randn(2, 3)
+    rhs.meta["val"] = torch.randn(2, 3)
+    cold = graph.call_function(torch.ops.aten.mul.Tensor, (lhs, rhs))
+    cold.meta["val"] = lhs.meta["val"] * rhs.meta["val"]
+    cold.meta["tensor_meta"] = _extract_tensor_metadata(cold.meta["val"])
+    targeted = graph.call_function(TARGET_OP, (cold, rhs))
+    targeted.meta["val"] = cold.meta["val"] + rhs.meta["val"]
+    targeted.meta["tensor_meta"] = _extract_tensor_metadata(targeted.meta["val"])
+    graph.output(targeted)
+    graph_module = GraphModule(torch.nn.Module(), graph)
+    targeted_pass = DummyTargetedPass()
+
+    result = run_single_pass(graph_module, targeted_pass)
+
+    assert result.modified
+    assert targeted_pass.call_operator_count == 1
+
+
+def test_empty_target_ops_disables_fast_copy_and_skips_pass() -> None:
+    class EmptyTargetedPass(DummyTargetedPass):
+        target_ops = ()
+
+    graph_module = create_graph_module(TARGET_OP)
+    targeted_pass = EmptyTargetedPass()
+
+    result = run_single_pass(graph_module, targeted_pass)
+
+    assert targeted_pass.get_fast_copy_target_ops() is None
+    assert result.graph_module is graph_module
+    assert not result.modified
+    assert targeted_pass.call_operator_count == 0
 
 
 def test_skips_when_target_is_absent() -> None:
@@ -138,6 +200,18 @@ def test_runs_when_previous_pass_creates_target() -> None:
     assert targeted_pass.call_operator_count == 1
 
 
+def test_runs_when_target_is_present_in_deeply_nested_submodule() -> None:
+    exported_program = torch.export.export(NestedCondModule(), (torch.randn(2, 3),))
+    graph_module = exported_program.graph_module
+    targeted_pass = DummyTargetedPass()
+
+    result = run_single_pass(graph_module, targeted_pass)
+
+    assert result is not None
+    assert result.modified
+    assert TARGET_OP in targeted_pass.called_ops
+
+
 def test_runs_when_target_is_present_in_nested_submodule() -> None:
     exported_program = torch.export.export(CondModule(), (torch.randn(2, 3),))
     graph_module = exported_program.graph_module
@@ -147,4 +221,4 @@ def test_runs_when_target_is_present_in_nested_submodule() -> None:
 
     assert result is not None
     assert result.modified
-    assert targeted_pass.call_operator_count > 0
+    assert TARGET_OP in targeted_pass.called_ops

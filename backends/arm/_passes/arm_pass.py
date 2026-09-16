@@ -24,12 +24,19 @@ from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
 
 
+_OPS_WITHOUT_QUANTIZED_FAKE_KERNEL = (
+    exir_ops.edge.aten.bmm.default,
+    exir_ops.edge.aten.leaky_relu.default,
+)
+
+
 class ArmPass(ExportPass):
     """Base class for Arm passes."""
 
     def __init__(self, tfa_pass: bool = False, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.submodule_depth = 0
+        self._top_level_call_operator = self.call_operator
         self.is_tfa_pass = tfa_pass
 
     def allowed_to_transform(self, meta: NodeMetadata | dict[str, Any]) -> bool:
@@ -56,6 +63,11 @@ class ArmPass(ExportPass):
         input_qparams = meta_dict.get("input_qparams", {})
         output_qparams = meta_dict.get("output_qparams", {})
         return bool(input_qparams) and bool(output_qparams)
+
+    def should_fast_copy_node(self, target: torch.fx.node.Target) -> bool:
+        if any(target is op for op in _OPS_WITHOUT_QUANTIZED_FAKE_KERNEL):
+            return False
+        return super().should_fast_copy_node(target)
 
     @property
     @abstractmethod
@@ -86,12 +98,8 @@ class ArmPass(ExportPass):
             )
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
-        ops_without_quantized_fake_kernel = {
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.leaky_relu.default,
-        }
         if (
-            op in ops_without_quantized_fake_kernel
+            op in _OPS_WITHOUT_QUANTIZED_FAKE_KERNEL
             and isinstance(meta, NodeMetadata)
             and len(meta.data.get("input_qparams", {})) > 0
         ):
@@ -138,21 +146,32 @@ class ArmPass(ExportPass):
         self.tracer.set_metadata(res_proxy.node, res_data)
         return ProxyValue(res_data, res_proxy)
 
+    def should_run_on_nested_submodule(self, graph_module: GraphModule) -> bool:
+        """Return whether subclass rewrites should run in this nested submodule."""
+        has_custom_precheck = type(self).should_run_pass is not ArmPass.should_run_pass
+        return has_custom_precheck and self.should_run_pass(graph_module)
+
     def call_submodule(
         self, graph_module: GraphModule, inputs: tuple[Any, ...]
     ) -> PassResult:
         self.submodule_depth += 1
-        if self.submodule_depth == 1:
-            result = super().call_submodule(graph_module, inputs)
-        else:
-            # When we trace a submodule, we don't want to apply the calling pass.
-            # Temporarily replace call_operator to avoid this.
-            _call_operator_fn = self.call_operator
-            self.call_operator = super().call_operator  # type: ignore
-            result = super().call_submodule(graph_module, inputs)
-            self.call_operator = _call_operator_fn  # type: ignore
-        self.submodule_depth -= 1
-        return result
+        try:
+            if self.submodule_depth == 1:
+                self._top_level_call_operator = self.call_operator
+                return super().call_submodule(graph_module, inputs)
+
+            call_operator = self.call_operator
+            try:
+                if self.should_run_on_nested_submodule(graph_module):
+                    self.call_operator = self._top_level_call_operator  # type: ignore
+                else:
+                    # Nested submodules still need replay without subclass rewrites.
+                    self.call_operator = super().call_operator  # type: ignore
+                return super().call_submodule(graph_module, inputs)
+            finally:
+                self.call_operator = call_operator  # type: ignore
+        finally:
+            self.submodule_depth -= 1
 
     def call_shape_operator(
         self, op, args: tuple, kwargs: dict, meta: NodeMetadata, updated: bool = True
@@ -235,10 +254,15 @@ class ArmPass(ExportPass):
 class ArmOpTargetedPass(ArmPass):
     """Base class for passes that only transform selected operators.
 
-    Subclasses set ``target_ops`` to the call_function targets they can
-    transform. If the current graph and nested control-flow subgraphs do not
-    contain any target, the pass returns immediately without paying the default
-    ExportPass retracing cost.
+    Subclasses must set ``target_ops`` to the exhaustive set of call_function
+    targets their ``call_operator()`` can transform. This ARM-specific contract
+    drives both the target pre-scan and fast-copy eligibility; an empty
+    ``target_ops`` disables fast copy and skips the pass. Generic ``ExportPass``
+    subclasses instead use ``targeted_ops`` for explicit fast-copy opt-in.
+
+    If the current graph and nested control-flow subgraphs do not contain any
+    target, the pass returns immediately without paying the default ExportPass
+    retracing cost.
 
     Set ``check_allowed_to_transform`` to ``True`` when the target pre-scan
     should also apply ``allowed_to_transform()`` to matching target nodes. This
@@ -248,14 +272,28 @@ class ArmOpTargetedPass(ArmPass):
 
     """
 
+    enable_fast_copy = True
     target_ops: Collection[Any] = ()
     check_allowed_to_transform = False
 
-    def has_target_node(self, graph_module: GraphModule) -> bool:
+    def get_fast_copy_target_ops(self) -> Optional[tuple[Any, ...]]:
+        if not self.enable_fast_copy:
+            return None
+        targets = tuple(self.target_ops)
+        return targets if targets else None
+
+    def should_run_on_nested_submodule(self, graph_module: GraphModule) -> bool:
+        return self.has_target_node(graph_module, recursive=False)
+
+    def has_target_node(
+        self, graph_module: GraphModule, recursive: bool = True
+    ) -> bool:
         """Return whether the graph module tree contains a target node.
 
         Args:
             graph_module (GraphModule): The graph module tree to inspect.
+            recursive (bool): Whether to inspect nested child GraphModules.
+                When false, inspect only ``graph_module`` itself.
 
         Returns:
             bool: True if a matching call_function node is present.
@@ -284,7 +322,7 @@ class ArmOpTargetedPass(ArmPass):
                     if target_node_can_trigger_pass(node):
                         return True
 
-            return any(
+            return recursive and any(
                 isinstance(child, GraphModule) and graph_has_target(child)
                 for child in module.children()
             )
