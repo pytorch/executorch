@@ -2045,7 +2045,6 @@ class TestQNNFloatingPointOperator(TestQNN):
                     test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
                 )
 
-    @unittest.skip("failed to lower in QNN 2.26")
     def test_qnn_backend_mha(self):
         module = MultiheadAttention()  # noqa: F405
         sample_input = (torch.randn(1, 197, 96),)
