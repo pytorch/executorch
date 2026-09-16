@@ -6200,7 +6200,7 @@ class SDPATest(OpTestCase):
     name = "sdpa"
     rtol = 1e-3
     atol = 1e-3
-    expected_node_counts = {"SdpaNode": 1, "ExpandDimsNode": 0}
+    expected_node_counts = {"SdpaNode": 1, "ExpandDimsNode": 0, "RepeatNode": 0}
 
     def __init__(
         self,
@@ -6251,6 +6251,11 @@ class SDPATest(OpTestCase):
             cls(is_causal=True, seq_len=1, kv_seq_len=32),
             cls(is_causal=True, seq_len=6, kv_seq_len=32),
         ]
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
     def create_model(self) -> nn.Module:
         if self.use_mask:
