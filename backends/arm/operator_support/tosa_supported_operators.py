@@ -9,6 +9,7 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 
 """
 
+import math
 import operator
 import typing
 from typing import final, Optional, Sequence, Type
@@ -158,6 +159,10 @@ def _is_integer_dtype(dtype: torch.dtype) -> bool:
 class ProductSupported(SupportedTOSAOperatorCheck):
     """Provide TOSA support check for product reductions."""
 
+    # TOSA REDUCE_PRODUCT is only available to the floating-point path used by
+    # this checker. Do not register prod.dim_int as positive support for an
+    # INT-only specification such as Ethos-U55.
+    tosa_specs = TosaSpecification.all_versions_for_profile("FP")
     targets = [exir_ops.edge.aten.prod.dim_int]
 
     @staticmethod
@@ -309,6 +314,244 @@ class MXOpsSupportList(OperatorSupportBase):
         return node.op == "call_function" and node.target in self.targets
 
 
+class DynamicW8A8QParamsSupport(OperatorSupportBase):
+    """Admit the canonical dynamic INT8 activation helper chain.
+
+    Partition-time support is intentionally limited to the helper chain itself:
+
+        choose_qparams_symmetric.tensor
+          -> getitem(0/1)
+          -> quantize_per_tensor.tensor
+          -> dequantize_per_tensor.tensor
+
+    The backend detector remains responsible for validating the destination
+    Linear, static weight representation, shapes, scales, zero points, and
+    dtypes before replacing the Linear with INT8 MATMUL.
+
+    """
+
+    def __init__(self, tosa_spec: TosaSpecification):
+        self.tosa_spec = tosa_spec
+
+    @staticmethod
+    def _choose_target():
+        return exir_ops.edge.quantized_decomposed.choose_qparams_symmetric.tensor
+
+    @staticmethod
+    def _q_target():
+        return exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor
+
+    @staticmethod
+    def _dq_target():
+        return exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor
+
+    @staticmethod
+    def _is_int_literal(value: object, expected: int) -> bool:
+        return (
+            isinstance(value, int) and not isinstance(value, bool) and value == expected
+        )
+
+    @staticmethod
+    def _node_dtype(node: object) -> torch.dtype | None:
+        if not isinstance(node, fx.Node):
+            return None
+        return getattr(node.meta.get("val"), "dtype", None)
+
+    @staticmethod
+    def _same_arg(lhs: object, rhs: object) -> bool:
+        if isinstance(lhs, fx.Node) or isinstance(rhs, fx.Node):
+            return lhs is rhs
+        if isinstance(lhs, torch.dtype) or isinstance(rhs, torch.dtype):
+            return lhs is rhs
+        return lhs == rhs
+
+    @classmethod
+    def _same_args(cls, lhs: tuple[object, ...], rhs: tuple[object, ...]) -> bool:
+        return len(lhs) == len(rhs) and all(
+            cls._same_arg(a, b) for a, b in zip(lhs, rhs)
+        )
+
+    @staticmethod
+    def _node_rank(node: object) -> int | None:
+        if not isinstance(node, fx.Node):
+            return None
+        shape = getattr(node.meta.get("val"), "shape", None)
+        return None if shape is None else len(shape)
+
+    @staticmethod
+    def _epsilon_is_valid(value: object) -> bool:
+        # Keep partition-time support deliberately conservative. The choose
+        # decomposition can resolve a few additional static forms, but the
+        # partitioner must not bypass normal support checks unless it can
+        # guarantee that the node will be decomposed later.
+        return (
+            isinstance(value, (float, int))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) > 0.0
+        )
+
+    @classmethod
+    def _choose_signature_is_valid(cls, node: fx.Node) -> bool:
+        if (
+            node.op != "call_function"
+            or node.target != cls._choose_target()
+            or len(node.args) < 5
+        ):
+            return False
+
+        x, qmin, qmax, eps, dtype = node.args[:5]
+        rank = cls._node_rank(x)
+        return (
+            cls._is_int_literal(qmin, -127)
+            and cls._is_int_literal(qmax, 127)
+            and dtype is torch.int8
+            and cls._node_dtype(x) is torch.float32
+            and rank is not None
+            and rank > 0
+            and cls._epsilon_is_valid(eps)
+        )
+
+    @classmethod
+    def _getitem_info(cls, node: fx.Node) -> tuple[fx.Node, int] | None:
+        if (
+            node.op != "call_function"
+            or node.target is not operator.getitem
+            or len(node.args) < 2
+            or not isinstance(node.args[0], fx.Node)
+            or not cls._choose_signature_is_valid(node.args[0])
+        ):
+            return None
+        if cls._is_int_literal(node.args[1], 0):
+            return node.args[0], 0
+        if cls._is_int_literal(node.args[1], 1):
+            return node.args[0], 1
+        return None
+
+    @classmethod
+    def _q_signature_is_valid(cls, node: fx.Node) -> bool:
+        if (
+            node.op != "call_function"
+            or node.target != cls._q_target()
+            or len(node.args) < 6
+        ):
+            return False
+
+        scale = node.args[1]
+        zero_point = node.args[2]
+        if not isinstance(scale, fx.Node) or not isinstance(zero_point, fx.Node):
+            return False
+
+        scale_info = cls._getitem_info(scale)
+        zero_point_info = cls._getitem_info(zero_point)
+        return (
+            scale_info is not None
+            and zero_point_info is not None
+            and scale_info[0] is zero_point_info[0]
+            and scale_info[1] == 0
+            and zero_point_info[1] == 1
+            and cls._is_int_literal(node.args[3], -127)
+            and cls._is_int_literal(node.args[4], 127)
+            and node.args[5] is torch.int8
+            and cls._node_dtype(node.args[0]) is torch.float32
+            and cls._node_dtype(node) is torch.int8
+        )
+
+    @classmethod
+    def _dq_matches_q(cls, dq: fx.Node, q: fx.Node) -> bool:
+        if (
+            dq.op != "call_function"
+            or dq.target != cls._dq_target()
+            or len(dq.args) < 6
+            or dq.args[0] is not q
+        ):
+            return False
+        return (
+            cls._same_args(tuple(dq.args[1:6]), tuple(q.args[1:6]))
+            and dq.kwargs.get("out_dtype") in (None, torch.float32)
+            and cls._node_dtype(dq) is torch.float32
+        )
+
+    @classmethod
+    def _is_dynamic_q(cls, node: fx.Node) -> bool:
+        if not cls._q_signature_is_valid(node):
+            return False
+        return any(
+            isinstance(user, fx.Node) and cls._dq_matches_q(user, node)
+            for user in node.users
+        )
+
+    @classmethod
+    def _is_dynamic_dq(cls, node: fx.Node) -> bool:
+        if not node.args or not isinstance(node.args[0], fx.Node):
+            return False
+        q = node.args[0]
+        return cls._q_signature_is_valid(q) and cls._dq_matches_q(node, q)
+
+    @classmethod
+    def _getitem_participates(cls, node: fx.Node) -> bool:
+        if cls._getitem_info(node) is None:
+            return False
+        return any(
+            (user.target == cls._q_target() and cls._is_dynamic_q(user))
+            or (user.target == cls._dq_target() and cls._is_dynamic_dq(user))
+            for user in node.users
+            if user.op == "call_function"
+        )
+
+    @classmethod
+    def _choose_participates(cls, node: fx.Node) -> bool:
+        if not cls._choose_signature_is_valid(node) or not node.users:
+            return False
+
+        indices: set[int] = set()
+        for user in node.users:
+            info = cls._getitem_info(user)
+            if info is None or not cls._getitem_participates(user):
+                return False
+            indices.add(info[1])
+        return indices == {0, 1}
+
+    @classmethod
+    def matches(cls, node: fx.Node) -> bool:
+        if node.target == cls._choose_target():
+            return cls._choose_participates(node)
+        if node.target is operator.getitem:
+            return cls._getitem_participates(node)
+        if node.target == cls._q_target():
+            return cls._is_dynamic_q(node)
+        if node.target == cls._dq_target():
+            return cls._is_dynamic_dq(node)
+        return False
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        return (
+            self.tosa_spec.support_integer()
+            and self.tosa_spec.support_float()
+            and self.matches(node)
+        )
+
+
+class _AllowDynamicW8A8QParamsOr(OperatorSupportBase):
+    """Bypass dtype/profile checks only for the validated qparam helper
+    nodes.
+    """
+
+    def __init__(self, wrapped: OperatorSupportBase, tosa_spec: TosaSpecification):
+        self.wrapped = wrapped
+        self.dynamic = DynamicW8A8QParamsSupport(tosa_spec)
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        return self.dynamic.is_node_supported(
+            submodules, node
+        ) or self.wrapped.is_node_supported(submodules, node)
+
+
 def _profile_support_check(
     tosa_spec: TosaSpecification,
 ) -> Optional[OperatorSupportBase]:
@@ -342,7 +585,9 @@ def _positive_checks(
     ]
 
     if profile_check := _profile_support_check(tosa_spec):
-        checks.append(profile_check)
+        # Dynamic W8A8 qparam helper nodes are a narrow exemption from
+        # the normal profile support list, not an additional global gate.
+        checks.append(_AllowDynamicW8A8QParamsOr(profile_check, tosa_spec))
 
     if tosa_spec.support_extension("mxfp"):
         checks.append(MXOpsSupportList())
@@ -392,21 +637,32 @@ def _negative_checks(
     checks.append(CheckKnownUnsupportedTOSASemantics(reporter))
 
     if not tosa_spec.support_extension("int64"):
-        checks.append(CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec))
+        checks.append(
+            _AllowDynamicW8A8QParamsOr(
+                CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec),
+                tosa_spec,
+            )
+        )
 
     checks.append(CheckScalarReductionInputs(reporter))
 
     checks.extend(_wrapped_additional_checks(additional_checks, reporter))
 
     if tosa_spec.support_float():
-        checks.extend(_floating_profile_negative_checks(tosa_spec, reporter))
+        checks.extend(
+            _AllowDynamicW8A8QParamsOr(check, tosa_spec)
+            for check in _floating_profile_negative_checks(tosa_spec, reporter)
+        )
     else:
         checks.append(CheckArmQuantized(reporter))
         checks.append(CheckProperQuantization(reporter))
 
     checks.append(
-        CheckDtypeInputsAndOutputs(
-            exported_program, reporter, _disallowed_dtypes(tosa_spec), tosa_spec
+        _AllowDynamicW8A8QParamsOr(
+            CheckDtypeInputsAndOutputs(
+                exported_program, reporter, _disallowed_dtypes(tosa_spec), tosa_spec
+            ),
+            tosa_spec,
         )
     )
 

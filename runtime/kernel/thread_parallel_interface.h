@@ -31,6 +31,13 @@ inline bool parallel_for_no_threadpool(
       begin,
       end);
   ET_CHECK_OR_RETURN_FALSE(grain_size > 0, "grain_size = %" PRId64, grain_size);
+  // An empty range runs no work items, so the callback is not invoked. Checked
+  // here rather than only in the release branch below: the debug branch skips
+  // it as a side effect of iterating an empty range, and relying on that made
+  // the two branches disagree.
+  if (begin == end) {
+    return true;
+  }
 #ifndef NDEBUG
   // Go backwards through the range elementwise to catch code that
   // assumes parallel_for is in order like a regular for loop.

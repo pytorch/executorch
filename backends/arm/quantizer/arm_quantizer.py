@@ -195,8 +195,9 @@ def get_symmetric_quantization_config(
 ) -> QuantizationConfig:
     """Create symmetric quantization config for activations and weights.
 
-    Activations use an affine qscheme; "symmetric" refers to the weight
-    quantization qscheme.
+    Activations normally use an affine qscheme. Dynamic INT8 activations
+    using the symmetric [-127, 127] range use per-tensor symmetric
+    qparams so TorchAO emits choose_qparams_symmetric.tensor.
 
     Args:
         is_per_channel (bool): Whether to use per-channel quantization for
@@ -235,7 +236,11 @@ def get_symmetric_quantization_config(
         dtype=torch.int8,
         quant_min=act_qmin,
         quant_max=act_qmax,
-        qscheme=torch.per_tensor_affine,
+        qscheme=(
+            torch.per_tensor_symmetric
+            if is_dynamic and act_qmin == -127 and act_qmax == 127
+            else torch.per_tensor_affine
+        ),
         is_dynamic=is_dynamic,
         observer_or_fake_quant_ctr=act_observer_or_fake_quant_ctr.with_args(
             **extra_args,
