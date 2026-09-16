@@ -760,6 +760,10 @@ jobs:
           - variant: kquant-17gb
             mode: solo-text
           - variant: kquant-17gb
+            mode: solo-text-offgraph
+          - variant: kquant-17gb
+            mode: solo-text-offgraph-cuda-graph
+          - variant: kquant-17gb
             mode: dflash-image
           - variant: kquant-dynamic
             mode: solo-text

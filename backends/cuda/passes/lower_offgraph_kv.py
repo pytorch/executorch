@@ -17,6 +17,7 @@ from torch.export.graph_signature import InputKind
 
 from executorch.backends.cuda.triton.kernels.offgraph_kv import (
     FLAT_CACHE,
+    ring_physical_capacity,
     RING_CACHE,
 )
 
@@ -32,15 +33,11 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:
     if manifest.get("dtype") != "bfloat16":
         raise ValueError("off-graph KV cache currently requires bfloat16")
     maximum_capacity = manifest.get("maximum_capacity")
-    initial_capacity = manifest.get("initial_capacity")
     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
         raise ValueError("off-graph maximum_capacity must be positive")
-    if (
-        not isinstance(initial_capacity, int)
-        or initial_capacity <= 0
-        or initial_capacity > maximum_capacity
-    ):
-        raise ValueError("off-graph initial_capacity is invalid")
+    max_write = manifest.get("max_write")
+    if not isinstance(max_write, int) or not 0 < max_write <= maximum_capacity:
+        raise ValueError("off-graph max_write must be in [1, maximum_capacity]")
     layers = manifest.get("layers")
     if not isinstance(layers, list) or not layers:
         raise ValueError("off-graph manifest must contain layers")
@@ -87,7 +84,9 @@ class LowerOffGraphKVPass:
         heads = layer["num_kv_heads"]
         head_dim = layer["head_dim"]
         if layer["policy"] == "ring":
-            capacity = layer["window"] * 2
+            capacity = ring_physical_capacity(
+                layer["window"], self._manifest["max_write"]
+            )
         else:
             capacity = self._manifest["maximum_capacity"]
         device = node.args[0].meta["val"].device

@@ -41,6 +41,7 @@ from .explicit_layout_pass import (
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
+from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
@@ -59,6 +60,7 @@ class CortexMPassManager(PassManager):
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
         AtenToCortexMPass,
+        InitializeScratchBuffersPass,
     ]
 
     explicit_layout_pass_list: list[PassClass] = [
@@ -77,6 +79,7 @@ class CortexMPassManager(PassManager):
         ValidateCortexMExplicitLayoutPass,
         ReplaceQuantNodesPass,
         AtenToCortexMPass,
+        InitializeScratchBuffersPass,
     ]
 
     pass_list = legacy_pass_list

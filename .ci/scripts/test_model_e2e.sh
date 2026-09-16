@@ -46,6 +46,8 @@ Arguments:
                 - vr-streaming: Voxtral Realtime streaming mode
                 - vr-offline: Voxtral Realtime offline mode
                 - solo-text: Muse Glimmer solo text mode
+                - solo-text-offgraph: Muse Glimmer solo text, runtime-owned KV cache
+                - solo-text-offgraph-cuda-graph: the same, with CUDA graph capture
                 - dflash-image: Muse Glimmer DFlash vision mode
 
 Environment:
@@ -111,7 +113,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|dflash-image)
+    solo-text|solo-text-offgraph|solo-text-offgraph-cuda-graph|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -120,7 +122,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, dflash-image"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-offgraph, solo-text-offgraph-cuda-graph, dflash-image"
       exit 1
       ;;
   esac
@@ -285,7 +287,7 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     case "$MODE" in
-      solo-text)
+      solo-text|solo-text-offgraph|solo-text-offgraph-cuda-graph)
         RUNNER_TARGET="solo_runner"
         EXPECTED_OUTPUT="Paris"
         IMAGE_URL=""
@@ -296,7 +298,7 @@ case "$HF_MODEL" in
         IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         ;;
       *)
-        echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph', 'solo-text-offgraph-cuda-graph' or 'dflash-image'"
         exit 1
         ;;
     esac
@@ -446,12 +448,19 @@ EOF
     ;;
   muse_glimmer)
     PROMPT_FILE="${MODEL_DIR}/muse_glimmer_prompt.txt"
-    if [ "$MODE" = "solo-text" ]; then
+    if [ "$MODE" = "solo-text" ] || [ "$MODE" = "solo-text-offgraph" ] ||
+       [ "$MODE" = "solo-text-offgraph-cuda-graph" ]; then
       printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
     else
       printf '%s' '<|start|>user<|message|>What animal is in this image? <img><|eot|><|start|>assistant' > "$PROMPT_FILE"
     fi
-    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512 --cuda_graph"
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512"
+    if [ "$MODE" = "solo-text-offgraph" ]; then
+      # Control: off-graph KV on the eager decode path.
+      RUNNER_ARGS="$RUNNER_ARGS --cuda_graph=false"
+    else
+      RUNNER_ARGS="$RUNNER_ARGS --cuda_graph"
+    fi
     if [ "$MODE" = "dflash-image" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --image_path ${MODEL_DIR}/test_image.jpg"
     fi

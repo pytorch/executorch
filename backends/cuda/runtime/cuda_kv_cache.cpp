@@ -12,6 +12,7 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -57,7 +58,13 @@ struct Bound {
 };
 
 struct Context {
-  OffGraphKVConfig config;
+  OffGraphKVSettings settings;
+  // Owns the logical length, admission, and rewind for every layer. The
+  // physical slot math stays in the Triton kernels: it has to run on device so
+  // a captured CUDA graph replays against the current positions rather than
+  // the ones that were live at capture. Unset when the geometry is invalid;
+  // SequenceCache asserts on that, so validate() must be able to report it.
+  std::optional<cache::SequenceCache> sequence;
   int device{0};
   bool device_known{false};
   bool handles_associated{false};
@@ -68,6 +75,15 @@ struct Context {
       descriptors;
   std::unordered_map<CudaDelegateHandle*, Bound> bound;
   std::unordered_set<std::string> discovered_fqns;
+
+  explicit Context(OffGraphKVSettings s) : settings(std::move(s)) {
+    if (cache::valid(settings.geometry, settings.config) &&
+        settings.config.initial_capacity > 0) {
+      sequence.emplace(settings.geometry, settings.config);
+    } else {
+      error = Error::InvalidArgument;
+    }
+  }
 };
 
 struct Manager {
@@ -89,21 +105,26 @@ std::string fqn(int64_t layer_id, const char* suffix) {
 }
 
 size_t storage_bytes(
-    const OffGraphKVConfig& config,
-    const OffGraphKVLayerConfig& layer,
+    const OffGraphKVSettings& settings,
+    const cache::LayerGeometry& layer,
     int64_t capacity) {
-  return static_cast<size_t>(layer.num_kv_heads) *
+  return static_cast<size_t>(layer.n_kv_heads) *
       static_cast<size_t>(capacity) * static_cast<size_t>(layer.head_dim) *
-      config.element_size();
+      settings.element_size();
+}
+
+bool is_ring(const cache::LayerGeometry& layer) {
+  return layer.policy.kind == cache::LayerPolicy::Kind::Ring;
 }
 
 Error allocate_layer(
     Context& context,
-    const OffGraphKVLayerConfig& layer,
+    int64_t layer_id,
+    const cache::LayerGeometry& layer,
     int64_t capacity,
     cudaStream_t stream) {
   Allocation allocation;
-  const size_t bytes = storage_bytes(context.config, layer, capacity);
+  const size_t bytes = storage_bytes(context.settings, layer, capacity);
   auto k = CudaAllocator::allocate_async(bytes, context.device, stream);
   ET_CHECK_OK_OR_RETURN_ERROR(k.error());
   allocation.k = k.get();
@@ -140,25 +161,28 @@ Error allocate_layer(
     return Error::Internal;
   }
   context.metrics.allocated_bytes += static_cast<int64_t>(2 * bytes + sizeof(int64_t));
-  context.allocations.emplace(layer.layer_id, allocation);
+  context.allocations.emplace(layer_id, allocation);
   return Error::Ok;
 }
 
 Error ensure_initial_allocations(Context& context, cudaStream_t stream) {
   bool allocated = false;
-  for (const auto& layer : context.config.layers) {
-    if (context.allocations.find(layer.layer_id) != context.allocations.end()) {
+  const auto& layers = context.settings.geometry.layers;
+  for (size_t index = 0; index < layers.size(); ++index) {
+    const int64_t layer_id = static_cast<int64_t>(index);
+    if (context.allocations.find(layer_id) != context.allocations.end()) {
       continue;
     }
-    const int64_t capacity = layer.policy == OffGraphKVPolicy::Ring
-        ? layer.window * 2
-        : context.config.initial_capacity;
+    const cache::LayerGeometry& layer = layers[index];
+    const int64_t capacity = is_ring(layer)
+        ? context.settings.ring_capacity(layer)
+        : context.settings.config.initial_capacity;
     ET_CHECK_OK_OR_RETURN_ERROR(
-        allocate_layer(context, layer, capacity, stream));
+        allocate_layer(context, layer_id, layer, capacity, stream));
     allocated = true;
   }
   if (allocated) {
-    context.metrics.flat_capacity = context.config.initial_capacity;
+    context.metrics.flat_capacity = context.settings.config.initial_capacity;
     ET_LOG(
         Info,
         "offgraph_kv: initialized flat_capacity=%lld allocated_bytes=%lld",
@@ -187,11 +211,14 @@ Error grow_flat(Context& context, int64_t new_capacity, cudaStream_t stream) {
       item.first->cuda_graph_state.reset_for_recapture();
     }
   }
-  for (const auto& layer : context.config.layers) {
-    if (layer.policy != OffGraphKVPolicy::Flat) {
+  const auto& layers = context.settings.geometry.layers;
+  for (size_t index = 0; index < layers.size(); ++index) {
+    const cache::LayerGeometry& layer = layers[index];
+    if (is_ring(layer)) {
       continue;
     }
-    auto old_it = context.allocations.find(layer.layer_id);
+    const int64_t layer_id = static_cast<int64_t>(index);
+    auto old_it = context.allocations.find(layer_id);
     ET_CHECK_OR_RETURN_ERROR(
         old_it != context.allocations.end(),
         InvalidState,
@@ -199,16 +226,16 @@ Error grow_flat(Context& context, int64_t new_capacity, cudaStream_t stream) {
     Allocation old = old_it->second;
     context.allocations.erase(old_it);
     const Error allocation_error =
-        allocate_layer(context, layer, new_capacity, stream);
+        allocate_layer(context, layer_id, layer, new_capacity, stream);
     if (allocation_error != Error::Ok) {
-      context.allocations.emplace(layer.layer_id, old);
+      context.allocations.emplace(layer_id, old);
       return allocation_error;
     }
-    Allocation& replacement = context.allocations.at(layer.layer_id);
+    Allocation& replacement = context.allocations.at(layer_id);
     const size_t row_bytes = static_cast<size_t>(old.capacity) *
-        static_cast<size_t>(layer.head_dim) * context.config.element_size();
+        static_cast<size_t>(layer.head_dim) * context.settings.element_size();
     const size_t new_pitch = static_cast<size_t>(new_capacity) *
-        static_cast<size_t>(layer.head_dim) * context.config.element_size();
+        static_cast<size_t>(layer.head_dim) * context.settings.element_size();
     for (const auto pair : {std::pair{replacement.k, old.k},
                             std::pair{replacement.v, old.v}}) {
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy2DAsync(
@@ -217,12 +244,12 @@ Error grow_flat(Context& context, int64_t new_capacity, cudaStream_t stream) {
           pair.second,
           row_bytes,
           row_bytes,
-          static_cast<size_t>(layer.num_kv_heads),
+          static_cast<size_t>(layer.n_kv_heads),
           cudaMemcpyDeviceToDevice,
           stream));
     }
     context.metrics.allocated_bytes -= static_cast<int64_t>(
-        2 * storage_bytes(context.config, layer, old.capacity) +
+        2 * storage_bytes(context.settings, layer, old.capacity) +
         sizeof(int64_t));
     CudaAllocator::deallocate_async(old.k, context.device, stream);
     CudaAllocator::deallocate_async(old.v, context.device, stream);
@@ -267,14 +294,17 @@ Error build_descriptors(Context& context, CudaDelegateHandle* handle) {
   }
 
   auto& descriptors = context.descriptors[handle];
-  for (const auto& layer : context.config.layers) {
-    const int64_t max_capacity = layer.policy == OffGraphKVPolicy::Ring
-        ? layer.window * 2
-        : context.config.maximum_capacity;
+  const auto& layers = context.settings.geometry.layers;
+  for (size_t index = 0; index < layers.size(); ++index) {
+    const cache::LayerGeometry& layer = layers[index];
+    const int64_t layer_id = static_cast<int64_t>(index);
+    const int64_t max_capacity = is_ring(layer)
+        ? context.settings.ring_capacity(layer)
+        : context.settings.config.capacity;
     for (const auto& [suffix, kind] : {
              std::pair{"k", Descriptor::Kind::Key},
              std::pair{"v", Descriptor::Kind::Value}}) {
-      const std::string name = fqn(layer.layer_id, suffix);
+      const std::string name = fqn(layer_id, suffix);
       const auto found = internal_names.find(name);
       if (found == internal_names.end()) {
         continue;
@@ -283,22 +313,22 @@ Error build_descriptors(Context& context, CudaDelegateHandle* handle) {
           name,
           Descriptor{
               found->second,
-              layer.layer_id,
+              layer_id,
               kind,
-              {layer.num_kv_heads * max_capacity * layer.head_dim},
+              {layer.n_kv_heads * max_capacity * layer.head_dim},
               {1},
-              context.config.storage_dtype,
+              context.settings.storage_dtype,
               slimc10::Device(slimc10::DeviceType::CUDA, context.device)});
       context.discovered_fqns.insert(name);
     }
-    const std::string capacity_name = fqn(layer.layer_id, "capacity");
+    const std::string capacity_name = fqn(layer_id, "capacity");
     const auto found = internal_names.find(capacity_name);
     if (found != internal_names.end()) {
       descriptors.emplace(
           capacity_name,
           Descriptor{
               found->second,
-              layer.layer_id,
+              layer_id,
               Descriptor::Kind::Capacity,
               {1},
               {1},
@@ -358,13 +388,11 @@ Error bind(Context& context, CudaDelegateHandle* handle) {
 
 namespace detail {
 
-OffGraphKVContext offgraph_kv_create_context(OffGraphKVConfig config) {
+OffGraphKVContext offgraph_kv_create_context(OffGraphKVSettings settings) {
   auto& state = manager();
   std::lock_guard<std::mutex> guard(state.mutex);
   const OffGraphKVContext id = state.next_context++;
-  Context context;
-  context.config = std::move(config);
-  state.contexts.emplace(id, std::move(context));
+  state.contexts.try_emplace(id, std::move(settings));
   return id;
 }
 
@@ -406,27 +434,21 @@ Error offgraph_kv_validate(OffGraphKVContext id) {
     return context.error;
   }
   ET_CHECK_OR_RETURN_ERROR(
-      context.config.maximum_capacity > 0 &&
-          context.config.initial_capacity > 0 &&
-          context.config.initial_capacity <= context.config.maximum_capacity &&
-          !context.config.layers.empty(),
+      cache::valid(context.settings.geometry, context.settings.config) &&
+          context.settings.config.initial_capacity > 0 &&
+          context.sequence.has_value(),
       InvalidArgument,
       "offgraph_kv: invalid cache configuration");
-  std::unordered_set<int64_t> layer_ids;
-  for (const auto& layer : context.config.layers) {
-    ET_CHECK_OR_RETURN_ERROR(
-        layer.layer_id >= 0 && layer.num_kv_heads > 0 && layer.head_dim > 0 &&
-            (layer.policy == OffGraphKVPolicy::Flat || layer.window > 0) &&
-            layer_ids.insert(layer.layer_id).second,
-        InvalidArgument,
-        "offgraph_kv: invalid or duplicate layer configuration");
+  const auto& layers = context.settings.geometry.layers;
+  for (size_t index = 0; index < layers.size(); ++index) {
     for (const char* suffix : {"k", "v", "capacity"}) {
-      if (context.discovered_fqns.find(fqn(layer.layer_id, suffix)) ==
+      if (context.discovered_fqns.find(
+              fqn(static_cast<int64_t>(index), suffix)) ==
           context.discovered_fqns.end()) {
         ET_LOG(
             Error,
-            "offgraph_kv: missing AOTI storage for layer %lld (%s)",
-            static_cast<long long>(layer.layer_id),
+            "offgraph_kv: missing AOTI storage for layer %zu (%s)",
+            index,
             suffix);
         return Error::InvalidProgram;
       }
@@ -443,19 +465,36 @@ Error offgraph_kv_prepare(OffGraphKVContext id, int64_t write_length) {
       found != state.contexts.end(), InvalidArgument, "invalid offgraph KV context");
   Context& context = found->second;
   ET_CHECK_OR_RETURN_ERROR(write_length > 0, InvalidArgument, "write length must be positive");
-  const int64_t required = context.metrics.logical_length + write_length;
-  ET_CHECK_OR_RETURN_ERROR(
-      required <= context.config.maximum_capacity,
-      InvalidArgument,
-      "offgraph_kv: required capacity %lld exceeds maximum %lld",
-      static_cast<long long>(required),
-      static_cast<long long>(context.config.maximum_capacity));
+  ET_CHECK_OK_OR_RETURN_ERROR(context.error);
+  // plan() is the neutral admission check: it rejects a step that runs past
+  // capacity, and one wider than a ring layer can serve. It runs on the host
+  // between executes, so it never lands inside a CUDA graph capture.
+  const int position = context.sequence->length();
+  for (size_t index = 0; index < context.settings.geometry.layers.size();
+       ++index) {
+    ET_CHECK_OR_RETURN_ERROR(
+        context.sequence
+            ->plan(
+                static_cast<int>(index),
+                position,
+                static_cast<int>(write_length))
+            .has_value(),
+        InvalidArgument,
+        "offgraph_kv: a %lld-token step at position %d does not fit layer %zu",
+        static_cast<long long>(write_length),
+        position,
+        index);
+  }
+  const int64_t required = position + write_length;
   ET_CHECK_OK_OR_RETURN_ERROR(ensure_initial_allocations(context, cudaStreamPerThread));
   if (required > context.metrics.flat_capacity) {
     const int64_t doubled = context.metrics.flat_capacity * 2;
-    const int64_t next = std::min(
-        context.config.maximum_capacity,
-        std::max(required, std::max(context.config.initial_capacity, doubled)));
+    const int64_t next = std::min<int64_t>(
+        context.settings.config.capacity,
+        std::max(
+            required,
+            std::max<int64_t>(
+                context.settings.config.initial_capacity, doubled)));
     ET_CHECK_OK_OR_RETURN_ERROR(grow_flat(context, next, cudaStreamPerThread));
   }
   return Error::Ok;
@@ -469,7 +508,14 @@ Error offgraph_kv_commit(OffGraphKVContext id, int64_t write_length) {
       found != state.contexts.end(), InvalidArgument, "invalid offgraph KV context");
   ET_CHECK_OR_RETURN_ERROR(
       write_length > 0, InvalidArgument, "write length must be positive");
-  found->second.metrics.logical_length += write_length;
+  Context& context = found->second;
+  ET_CHECK_OK_OR_RETURN_ERROR(context.error);
+  const auto plan = context.sequence->plan(
+      0, context.sequence->length(), static_cast<int>(write_length));
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.has_value(), InvalidArgument, "offgraph_kv: uncommittable step");
+  context.sequence->commit(*plan);
+  context.metrics.logical_length = context.sequence->length();
   return Error::Ok;
 }
 
@@ -479,6 +525,9 @@ Error offgraph_kv_reset(OffGraphKVContext id) {
   auto found = state.contexts.find(id);
   ET_CHECK_OR_RETURN_ERROR(
       found != state.contexts.end(), InvalidArgument, "invalid offgraph KV context");
+  if (found->second.sequence.has_value()) {
+    found->second.sequence->clear();
+  }
   found->second.metrics.logical_length = 0;
   ET_LOG(
       Info,

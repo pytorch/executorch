@@ -495,12 +495,22 @@ def _get_compile_spec(args) -> ArmCompileSpec:
         if args.direct_drive:
             extra_flags.append("--separate-io-regions")
             extra_flags.append("--cop-format=COP2")
+        max_scratch_size = args.max_scratch_size
+        if (
+            max_scratch_size is None
+            and args.target.startswith("ethos-u55")
+            and args.system_config in (None, "Ethos_U55_High_End_Embedded")
+            and args.memory_mode in (None, "Shared_Sram")
+            and args.config in (None, "Arm/vela.ini")
+        ):
+            max_scratch_size = 2 * 1024 * 1024
         compile_spec = EthosUCompileSpec(
             args.target,
             system_config=args.system_config,
             memory_mode=args.memory_mode,
             extra_flags=extra_flags,
             config_ini=args.config,
+            max_scratch_size=max_scratch_size,
         )
     elif "vgf" in args.target:
         if args.quantize:
@@ -690,6 +700,15 @@ def _get_args():
         help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U65 and Ethos-U85 targets",
     )
     parser.add_argument(
+        "--max_scratch_size",
+        type=int,
+        default=None,
+        help="Maximum Ethos-U delegate scratch size in bytes. Defaults to 2097152 "
+        "for U55 Shared_Sram with Ethos_U55_High_End_Embedded and Arm/vela.ini "
+        "(the Corstone-300 test configuration); unset for other configurations. "
+        "Override only to match the deployment platform's scratch capacity.",
+    )
+    parser.add_argument(
         "--config",
         required=False,
         default="Arm/vela.ini",
@@ -701,11 +720,6 @@ def _get_args():
         required=False,
         action="store_false",
         help="Disable strict checking while exporting models.",
-    )
-    parser.add_argument(
-        "--enable_qdq_fusion_pass",
-        action="store_true",
-        help="[DEPRECATED] This flag is no longer used and will be removed in a future release.",
     )
     parser.add_argument(
         "--enable_debug_mode",
@@ -1042,13 +1056,6 @@ def main() -> None:  # noqa: C901
     )
 
     model = exported_program.module()
-
-    if args.enable_qdq_fusion_pass:
-        logging.warning(
-            "--enable_qdq_fusion_pass is deprecated and has no effect. "
-            "Quantized node replacement is now handled within the "
-            "respective compilation paths."
-        )
 
     model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:

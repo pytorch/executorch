@@ -98,6 +98,7 @@ def vela_compile(
     verbose: bool = False,
     intermediate_path: str | None = None,
     block_placements: Mapping[str, str] | None = None,
+    max_scratch_size: int | None = None,
 ) -> VelaCompileResult:
     """Compile a TOSA graph to a binary stream for ArmBackendEthosU using
     Vela.
@@ -141,6 +142,17 @@ def vela_compile(
             if not isinstance(data["scratch_shape"][0], np.int64):
                 raise RuntimeError("Expected scratch to be int64")
             block_length = int(data["scratch_shape"][0])
+            if max_scratch_size is not None and block_length > max_scratch_size:
+                raise RuntimeError(
+                    f"Ethos-U delegate scratch arena requires {block_length} bytes, "
+                    f"exceeding the configured capacity of {max_scratch_size} bytes "
+                    f"by {block_length - max_scratch_size} bytes. "
+                    "Reduce the model's memory requirements or target a platform "
+                    "with sufficient scratch memory. See Vela's documentation "
+                    "for memory-mode and arena-cache-size options: "
+                    "https://gitlab.arm.com/artificial-intelligence/ethos-u/"
+                    "ethos-u-vela/-/blob/main/OPTIONS.md"
+                )
             bin_blocks["scratch_size"] = struct.pack("<I", block_length)
 
             # Capture inputs and outputs
