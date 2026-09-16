@@ -19,7 +19,10 @@ from .qnn_constants import OpSpaceToDepth, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class SpaceToDepthVisitor(NodeVisitor):
-    target = ["aten.pixel_unshuffle.default"]
+    # aten.pixel_unshuffle.default only supports a single (square) block size;
+    # qnn_custom.space_to_depth.default generalizes it to independent
+    # block_h/block_w, e.g. for im2col decomposition with a non-square kernel.
+    target = ["aten.pixel_unshuffle.default", "qnn_custom.space_to_depth.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -50,7 +53,9 @@ class SpaceToDepthVisitor(NodeVisitor):
 
         block_size = []
         for index in range(1, 3):
-            block_size.append(input_tensor.shape[index] / output_tensor.shape[index])
+            size = input_tensor.shape[index] / output_tensor.shape[index]
+            assert size.is_integer(), "block size is not integer"
+            block_size.append(size)
         block_size = np.array(block_size, dtype=np.uint32)
         block_size_shape = [2]
 

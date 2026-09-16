@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <new>
 #include <random>
 #include <utility>
 
@@ -31,6 +32,18 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 namespace {
+
+struct SequenceGuard {
+  cache::BatchControl& control;
+  std::int32_t seq_id;
+  bool owned = true;
+
+  ~SequenceGuard() {
+    if (owned) {
+      control.seq_rm(seq_id);
+    }
+  }
+};
 
 bool is_supported_logits_type(::executorch::aten::ScalarType type) {
   using ScalarType = ::executorch::aten::ScalarType;
@@ -190,7 +203,7 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return Error::InvalidArgument;
   }
   if (max_sessions <= 0 || max_session_tokens <= 0) {
-    ET_LOG(Error, "ModuleExecutor: session limits must be positive");
+    ET_LOG(Error, "ModuleExecutor: invalid session limits");
     return Error::InvalidArgument;
   }
   const Error load_error =
@@ -355,7 +368,7 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
   if (!built.ok()) {
     ET_LOG(
         Error,
-        "ModuleExecutor: backend %s registers no %s cache",
+        "ModuleExecutor: failed to build backend %s cache %s",
         backend_id.c_str(),
         cache_kind.c_str());
     return built.error();
@@ -372,7 +385,7 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
   if (seq_limit && max_sessions > *seq_limit) {
     ET_LOG(
         Error,
-        "ModuleExecutor: %d sessions asked of a cache holding %d",
+        "ModuleExecutor: %d resident sessions requested, but the layout holds %d",
         max_sessions,
         *seq_limit);
     return Error::InvalidArgument;
@@ -412,15 +425,36 @@ bool ModuleExecutor::initialize() {
 }
 
 std::optional<SessionId> ModuleExecutor::open_session() {
-  if (static_cast<int>(sessions_.size()) >= max_sessions_) {
+  if (sessions_.size() >= static_cast<std::size_t>(max_sessions_) ||
+      next_session_ == 0) {
     return std::nullopt;
   }
-  const std::optional<std::int32_t> seq_id = ctl_->seq_new();
-  if (!seq_id) {
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    const std::optional<std::int32_t> seq_id = ctl_->seq_new();
+    return seq_id ? publish_session(*seq_id, 0) : std::nullopt;
+#if ET_HAS_EXCEPTIONS
+  } catch (const std::bad_alloc&) {
     return std::nullopt;
   }
-  const SessionId session = next_session_++;
-  sessions_.emplace(session, SessionState{*seq_id, nullptr});
+#endif
+}
+
+std::optional<SessionId> ModuleExecutor::publish_session(
+    std::int32_t seq_id,
+    Position position) {
+  SequenceGuard guard{*ctl_, seq_id};
+  if (ctl_->pos(seq_id) != position) {
+    return std::nullopt;
+  }
+  const SessionId session = next_session_;
+  if (!sessions_.emplace(session, SessionState{seq_id, nullptr}).second) {
+    return std::nullopt;
+  }
+  guard.owned = false;
+  next_session_ =
+      session == std::numeric_limits<SessionId>::max() ? 0 : session + 1;
   return session;
 }
 
@@ -432,6 +466,30 @@ void ModuleExecutor::close_session(SessionId session) {
   // Frees the cells and hands the sequence id back. The session id is not.
   ctl_->seq_rm(it->second.seq_id);
   sessions_.erase(it);
+}
+
+std::optional<SessionId> ModuleExecutor::clone(
+    SessionId source,
+    Position upto) {
+  const auto it = sessions_.find(source);
+  if (it == sessions_.end() || upto < 0 || upto > max_session_tokens_ ||
+      sessions_.size() >= static_cast<std::size_t>(max_sessions_) ||
+      next_session_ == 0) {
+    return std::nullopt;
+  }
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    if (upto > ctl_->pos(it->second.seq_id)) {
+      return std::nullopt;
+    }
+    const auto seq_id = ctl_->seq_clone(it->second.seq_id, upto);
+    return seq_id ? publish_session(*seq_id, upto) : std::nullopt;
+#if ET_HAS_EXCEPTIONS
+  } catch (const std::bad_alloc&) {
+    return std::nullopt;
+  }
+#endif
 }
 
 void ModuleExecutor::set_sampling(
