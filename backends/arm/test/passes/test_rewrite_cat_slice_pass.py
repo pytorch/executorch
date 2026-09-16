@@ -79,18 +79,23 @@ def test_rewrite_cat_slice_inserts_on_boundary() -> None:
     )
 
     assert _run(graph_module)
-    assert [node.target for node in _call_nodes(graph_module)] == [_CAT]
-    assert list(cast(list[Node], output.args[0])) == [
+    call_nodes = _call_nodes(graph_module)
+    assert [node.target for node in call_nodes] == [_CAT, _CAT]
+    output_inputs = cast(list[Node], output.args[0])
+    nested_concat = output_inputs[0]
+    assert list(cast(list[Node], nested_concat.args[0])) == [
         inputs[0],
         inputs[1],
+    ]
+    assert output_inputs == [
+        nested_concat,
         next(node for node in graph_module.graph.nodes if node.name == "inserted"),
         inputs[2],
     ]
     assert output.meta["input_qparams"] == {
         0: "left",
-        1: "left",
-        2: "inserted",
-        3: "right",
+        1: "inserted",
+        2: "right",
     }
 
 
