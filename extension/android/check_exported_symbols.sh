@@ -24,6 +24,14 @@ SO_PATH="${1:?usage: check_exported_symbols.sh <libexecutorch.so> [llvm-nm]}"
 NM="${2:-llvm-nm}"
 
 # Demangled symbol fragments that must be exported by the core .so.
+#
+# NOTE: this list is portable-mode specific. In portable (non-ATen) builds
+# ET_RUNTIME_NAMESPACE is executorch::runtime; in ATen builds it is
+# executorch::runtime::aten (exec_aten.h), so register_backend et al. would
+# carry that namespace instead. The Android AAR build is portable, so the
+# substrings below are correct here. The globs in
+# extension/android/jni/version_script.txt span both namespaces and are
+# unaffected. Keep REQUIRED_SYMBOLS in sync with that file.
 REQUIRED_SYMBOLS=(
   # Backend registration (runtime/backend/interface.h)
   "executorch::runtime::register_backend"
