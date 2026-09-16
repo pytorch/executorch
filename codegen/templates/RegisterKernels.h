@@ -7,7 +7,7 @@
  */
 
 // ${generated_comment}
-// Exposing an API for registering all kernels at once.
+// Exposing an API for registering generated kernels at once.
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/operator_registry.h>
@@ -16,7 +16,7 @@
 namespace torch {
 namespace executor {
 
-Error register_all_kernels();
+Error ${manual_registration_function_name}();
 
 } // namespace executor
 } // namespace torch
