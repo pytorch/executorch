@@ -611,6 +611,27 @@ def test_index_tensor_tosa_FP(test_data: input_params):
         )
 
 
+def test_index_tensor_tosa_FP_symbolic_shapes_not_delegated():
+    tester = ArmTester(
+        IndexTensor(),
+        (
+            torch.randn(8, 4),
+            (
+                torch.tensor([0, 2, 3], dtype=torch.int32),
+                torch.tensor([0, 1, 2], dtype=torch.int32),
+            ),
+        ),
+        common.get_tosa_compile_spec("TOSA-1.1+FP+INT+shape"),
+        dynamic_shapes=({1: torch.export.Dim("columns", min=3, max=8)}, ({}, {})),
+    )
+    tester.export().to_edge_transform_and_lower().check_count(
+        {
+            "torch.ops.higher_order.executorch_call_delegate": 0,
+            IndexTensorTestCommon.exir_op: 1,
+        }
+    ).to_executorch()
+
+
 @common.parametrize("test_data", IndexTensor.test_data_fp8)
 def test_index_tensor_tosa_FP_fp8(test_data):
     input_, indices, tosa_extension = test_data

@@ -196,6 +196,7 @@ def _export_cuda(
         add_on_device_sampler,
         cuda_source_transformations,
         enable_offgraph_kv_cache,
+        offgraph_kv_cache_geometry,
         vision_cuda_source_transformations,
     )
 
@@ -204,14 +205,20 @@ def _export_cuda(
     # the global KV caches for TurboQuant TQ4.
     if use_offgraph_kv_cache and use_turboquant:
         raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
+
+    # A prefill chunk is one write step, so the ring must hold the union of the
+    # step's per-query windows. enable_offgraph_kv_cache sizes it from this.
+    max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
+
     offgraph_manifest = None
+    offgraph_geometry = {}
     if use_offgraph_kv_cache:
-        offgraph_manifest = enable_offgraph_kv_cache(model)
+        offgraph_manifest = enable_offgraph_kv_cache(model, max_prefill)
+        # Read the geometry while the model is alive; it is freed before the
+        # constant methods are assembled.
+        offgraph_geometry = offgraph_kv_cache_geometry(model)
     else:
         cuda_source_transformations(model, use_turboquant=use_turboquant)
-
-    # Max prefill chunk must fit in the ring buffer (2 * sliding_window)
-    max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
 
     has_vision = vision_model is not None
     programs: dict[str, "torch.export.ExportedProgram"] = {}
@@ -314,7 +321,12 @@ def _export_cuda(
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = sample
     if offgraph_manifest is not None:
-        constant_methods["get_offgraph_kv_cache_metadata"] = offgraph_manifest
+        # The manifest is a compile spec (the lowering pass needs geometry at
+        # partition time). The runtime instead reads the neutral cache-geometry
+        # constant methods, the same ones the MLX off-graph path publishes.
+        # Sizing already travels as get_max_seq_len (context) and
+        # get_max_prefill_chunk (largest step); only the geometry is new.
+        constant_methods.update(offgraph_geometry)
 
     print(
         f"Lowering {len(programs)} methods to ExecuTorch (CUDA): "

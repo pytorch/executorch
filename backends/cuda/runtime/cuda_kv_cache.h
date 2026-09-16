@@ -16,29 +16,34 @@
 
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/extension/llm/cache/cache.h>
+#include <executorch/extension/llm/cache/sequence_cache.h>
 #include <executorch/runtime/core/error.h>
 
 namespace executorch::backends::cuda {
 
-enum class OffGraphKVPolicy { Flat, Ring };
+namespace cache = ::executorch::extension::llm::cache;
 
-struct OffGraphKVLayerConfig {
-  int64_t layer_id{0};
-  OffGraphKVPolicy policy{OffGraphKVPolicy::Flat};
-  int64_t window{0};
-  int64_t num_kv_heads{0};
-  int64_t head_dim{0};
-};
-
-struct OffGraphKVConfig {
-  int64_t maximum_capacity{0};
-  int64_t initial_capacity{0};
+// Geometry and sizing for one off-graph cache, in the neutral vocabulary.
+// cache::CacheGeometry is positional: layer id is the index into `layers`.
+struct OffGraphKVSettings {
+  cache::CacheGeometry geometry;
+  cache::CacheConfig config;
   aoti::slim::c10::ScalarType storage_dtype{
       aoti::slim::c10::ScalarType::BFloat16};
-  std::vector<OffGraphKVLayerConfig> layers;
 
   size_t element_size() const {
     return aoti::slim::c10::elementSize(storage_dtype);
+  }
+
+  // Slots a ring layer needs to serve one step of up to max_write tokens: the
+  // step writes all of them before attending, and its earliest query still
+  // reads back window - 1 positions. Same formula as cache::RingPolicy and as
+  // ring_physical_capacity() in triton/kernels/offgraph_kv.py.
+  int64_t ring_capacity(const cache::LayerGeometry& layer) const {
+    const int max_write =
+        config.max_write ? *config.max_write : layer.policy.window;
+    return static_cast<int64_t>(layer.policy.window) + max_write - 1;
   }
 };
 
@@ -54,7 +59,7 @@ constexpr OffGraphKVContext kInvalidOffGraphKVContext = 0;
 
 namespace detail {
 
-OffGraphKVContext offgraph_kv_create_context(OffGraphKVConfig config);
+OffGraphKVContext offgraph_kv_create_context(OffGraphKVSettings settings);
 void offgraph_kv_destroy_context(OffGraphKVContext context);
 void offgraph_kv_begin_load(OffGraphKVContext context);
 void offgraph_kv_end_load();
@@ -86,8 +91,8 @@ class OffGraphKVCacheContextOwner final {
     LoadScope& operator=(LoadScope&&) = delete;
   };
 
-  explicit OffGraphKVCacheContextOwner(OffGraphKVConfig config)
-      : context_(detail::offgraph_kv_create_context(std::move(config))) {}
+  explicit OffGraphKVCacheContextOwner(OffGraphKVSettings settings)
+      : context_(detail::offgraph_kv_create_context(std::move(settings))) {}
   ~OffGraphKVCacheContextOwner() {
     detail::offgraph_kv_destroy_context(context_);
   }
