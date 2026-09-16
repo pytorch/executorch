@@ -183,7 +183,7 @@ class TestMultimodalInput(unittest.TestCase):
         # Wrong dimensions (expects 3D or 4D tensor)
         with self.assertRaises(RuntimeError) as cm:
             make_image_input(torch.ones((100,), dtype=torch.uint8))
-        self.assertIn("3-dimensional", str(cm.exception))
+        self.assertIn("must have shape", str(cm.exception))
 
         # Wrong number of channels
         with self.assertRaises(RuntimeError) as cm:
@@ -252,15 +252,56 @@ class TestHelperFunctions(unittest.TestCase):
         self.assertEqual(text_input.get_text(), "Hello")
 
     def test_make_image_input(self):
-        """Test make_image_input helper."""
-        # Create a test image tensor (RGB, CHW)
-        img_tensor = torch.zeros((3, 100, 150), dtype=torch.uint8)
-        img_tensor[0, :, :] = 255  # Red channel
+        """Test supported image layouts and dtypes."""
+        height, width = 5, 7
+        for channels in (3, 4):
+            for dtype in (torch.uint8, torch.float32):
+                chw = torch.arange(channels * height * width, dtype=dtype).reshape(
+                    channels, height, width
+                )
+                hwc = chw.permute(1, 2, 0).contiguous()
+                layouts = {
+                    "chw": chw,
+                    "1xchw": chw.unsqueeze(0),
+                    "hwc": hwc,
+                    "1xhwc": hwc.unsqueeze(0),
+                }
 
-        image_input = make_image_input(img_tensor)
-        self.assertTrue(image_input.is_image())
+                for layout, tensor in layouts.items():
+                    with self.subTest(channels=channels, dtype=dtype, layout=layout):
+                        image_input = make_image_input(tensor)
+                        self.assertTrue(image_input.is_image())
+                        image = image_input.get_image()
+                        self.assertEqual(image.channels, channels)
+                        self.assertEqual(image.height, height)
+                        self.assertEqual(image.width, width)
+                        expected_data = chw.flatten().tolist()
+                        actual_data = (
+                            image.uint8_data
+                            if dtype == torch.uint8
+                            else image.float_data
+                        )
+                        self.assertEqual(actual_data, expected_data)
 
-        # Test with RGBA (CHW)
-        img_tensor_rgba = torch.ones((4, 50, 50), dtype=torch.uint8) * 128
-        image_input_rgba = make_image_input(img_tensor_rgba)
-        self.assertTrue(image_input_rgba.is_image())
+    def test_make_image_input_rejects_invalid_inputs(self):
+        """Test invalid image dimensions, layouts, and dtypes."""
+        with self.assertRaisesRegex(RuntimeError, "must have shape"):
+            make_image_input(torch.ones((100,), dtype=torch.uint8))
+
+        with self.assertRaisesRegex(RuntimeError, "Batch size"):
+            make_image_input(torch.ones((2, 3, 5, 7), dtype=torch.uint8))
+
+        with self.assertRaisesRegex(RuntimeError, r"3 \(RGB\) or 4 \(RGBA\)"):
+            make_image_input(torch.ones((2, 5, 7), dtype=torch.uint8))
+
+        with self.assertRaisesRegex(RuntimeError, "Only uint8 and float32"):
+            make_image_input(torch.ones((3, 5, 7), dtype=torch.int32))
+
+        noncontiguous_tensors = (
+            torch.ones((3, 5, 7), dtype=torch.uint8).transpose(1, 2),
+            torch.ones((5, 7, 3), dtype=torch.uint8).transpose(0, 1),
+        )
+        for tensor in noncontiguous_tensors:
+            with self.subTest(shape=tuple(tensor.shape)):
+                with self.assertRaisesRegex(RuntimeError, "must be contiguous"):
+                    make_image_input(tensor)
