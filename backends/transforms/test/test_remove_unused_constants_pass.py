@@ -10,6 +10,7 @@ import torch
 from executorch.backends.transforms.remove_unused_constants_pass import (
     RemoveUnusedConstantsPass,
 )
+from executorch.exir import to_edge
 from torch.export.experimental import _export_forward_backward
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 
@@ -73,6 +74,45 @@ def test_removes_unused_state_and_preserves_mutation():
         torch.testing.assert_close(actual(*inputs), reference(*inputs))
         torch.testing.assert_close(actual.updated, inputs[0])
     assert not RemoveUnusedConstantsPass()(ep).modified
+
+
+def test_edge_transform_preserves_original_program():
+    inputs = (torch.randn(4, 4), torch.randn(1))
+    edge = to_edge(torch.export.export(TensorStateModel(), inputs))
+    original = edge.exported_program()
+    weight = next(node for node in original.graph.nodes if node.name == "p_weight")
+    x = next(node for node in original.graph.nodes if node.name == "x")
+    weight.replace_all_uses_with(x)
+    original.graph_module.recompile()
+    original.validate()
+    expected = original.module()(*inputs)
+    original_graph = original.graph
+    original_signature = original.graph_signature
+    original_state = original.state_dict
+    original_constants = original.constants
+    original.graph_module.meta["constant_pruning_test"] = "preserved"
+
+    transformed = edge.transform([RemoveUnusedConstantsPass()]).exported_program()
+
+    original.validate()
+    transformed.validate()
+    assert original.graph is original_graph
+    assert original.graph.owning_module is original.graph_module
+    assert original.graph_signature is original_signature
+    assert original.state_dict is original_state
+    assert original.constants is original_constants
+    assert original.graph_signature.parameters == ("weight",)
+    assert "weight" in original.state_dict
+    assert transformed.graph is not original.graph
+    assert transformed.graph_signature.parameters == ()
+    assert "weight" not in transformed.state_dict
+    assert transformed.graph_module.meta["constant_pruning_test"] == "preserved"
+    for name, tensor in transformed.state_dict.items():
+        assert tensor is original.state_dict[name]
+    for name, tensor in transformed.constants.items():
+        assert tensor is original.constants[name]
+    torch.testing.assert_close(original.module()(*inputs), expected)
+    torch.testing.assert_close(transformed.module()(*inputs), expected)
 
 
 def test_preserves_parameter_with_gradient_output():

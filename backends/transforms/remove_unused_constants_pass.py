@@ -4,9 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+
 from executorch.exir.pass_base import ExportedProgramPassBase, ExportedProgramPassResult
 from torch.export import ExportedProgram
 from torch.export.graph_signature import ExportGraphSignature, InputKind, TensorArgument
+from torch.fx import GraphModule
 
 
 class RemoveUnusedConstantsPass(ExportedProgramPassBase):
@@ -50,8 +53,15 @@ class RemoveUnusedConstantsPass(ExportedProgramPassBase):
             ],
             output_specs=list(signature.output_specs),
         )
-        for spec in unused:
-            exported_program.graph.erase_node(placeholders[spec.arg.name])
+        # The pass manager shallow-copies programs, so their graph is still shared.
+        graph = copy.deepcopy(exported_program.graph)
+        for original_node, node in zip(exported_program.graph.nodes, list(graph.nodes)):
+            # FX copying can rename built-ins such as "input", used by the signature.
+            node.name = original_node.name
+            if node.op == "placeholder" and node.name in unused_names:
+                graph.erase_node(node)
+        graph_module = GraphModule(exported_program.graph_module, graph)
+        graph_module.meta = exported_program.graph_module.meta.copy()
 
         remaining_targets = {spec.target for spec in signature.input_specs}
         # Entry points can share state dictionaries; retain their tensor identities.
@@ -65,5 +75,5 @@ class RemoveUnusedConstantsPass(ExportedProgramPassBase):
         exported_program._state_dict = state_dict
         exported_program._constants = constants
         exported_program._graph_signature = signature
-        exported_program.graph_module.recompile()
+        exported_program._graph_module = graph_module
         return ExportedProgramPassResult(exported_program, True)
