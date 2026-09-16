@@ -130,7 +130,7 @@ class QnnLLMEdgeManager:
         self.edge_prog_mgr = None
         self.logits_quant_attrs = None
         recipe_cls = HUGGING_FACE_QUANT_RECIPES.get(model_name, DefaultQuantRecipe)
-        if recipe_cls == DefaultQuantRecipe:
+        if recipe_cls is DefaultQuantRecipe:
             logging.warning(
                 f"{model_name} does not have customized quant recipe using default quant recipe."
             )
@@ -222,7 +222,11 @@ class QnnLLMEdgeManager:
         calibration_data,
         tokenizer_path,
     ):
-        assert calibration_tasks is None, "Task calibration is temporary unsupported."
+        if calibration_tasks is not None:
+            raise ValueError(
+                "Task calibration is not supported yet. "
+                "Pass calibration_tasks=None and calibrate with calibration_data instead."
+            )
         tokenizer = get_tokenizer(tokenizer_path)
         logging.info(
             f"Calibrating with tasks: {calibration_tasks}, limit: {calibration_limit}, calibration_data: {calibration_data}, tokenizer_path: {tokenizer_path}, seq_length: {self.config.max_seq_len}"

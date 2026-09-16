@@ -12,6 +12,8 @@ import os
 import subprocess
 from multiprocessing.connection import Client
 
+import numpy as np
+
 import torch
 from executorch.backends.qualcomm.export_utils import (
     QnnConfig,
@@ -130,8 +132,6 @@ def inference(args: argparse, qnn_config: QnnConfig):
     # template. Tokenize the raw prompt here (matching the Python calibration
     # path) and feed it via --tokenized_prompt so the runner skips
     # get_formatted_prompt. File format: raw little-endian uint64 tokens.
-    import numpy as np
-
     prompt_token_ids = tokenizer(args.prompt)["input_ids"]
     tokenized_prompt_path = f"{args.artifact}/tokenized_prompt.raw"
     np.asarray(prompt_token_ids, dtype=np.uint64).tofile(tokenized_prompt_path)
@@ -259,17 +259,23 @@ if __name__ == "__main__":
         nargs="+",
         type=str,
         default=None,
-        help="Tasks for GPTQ calibration from lm_eval",
+        help="Tasks for GPTQ calibration from lm_eval. Currently unsupported.",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
         default=None,
-        help="number of samples used for calibration from lm_eval",
+        help="number of samples used for calibration from lm_eval. Currently unsupported.",
     )
 
     try:
         args = parser.parse_args()
+
+        if args.calibration_tasks is not None or args.calibration_limit is not None:
+            parser.error(
+                "--calibration_tasks/--calibration_limit are not supported yet. "
+                "Calibration uses --prompt instead."
+            )
 
         if args.artifact is None:
             args.artifact = args.decoder_model
