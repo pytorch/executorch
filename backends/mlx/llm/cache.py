@@ -53,10 +53,23 @@ def resolve_hf_cache_layout(config):
     else:
         layer_types = list(layer_types)
 
-    if hasattr(text_config, "num_kv_shared_layers"):
-        layer_types = layer_types[: -text_config.num_kv_shared_layers]
+    shared = getattr(text_config, "num_kv_shared_layers", 0)
+    if shared:
+        layer_types = layer_types[:-shared]
 
-    if hasattr(text_config, "global_head_dim"):
+    per_layer = getattr(text_config, "per_layer_config", None)
+    if per_layer is not None:
+        # Entries index from 0, as layer_types does after the truncation.
+        head_dims = [per_layer[i].head_dim for i in range(len(layer_types))]
+        num_heads = [
+            getattr(
+                per_layer[i],
+                "num_key_value_heads",
+                per_layer[i].num_attention_heads,
+            )
+            for i in range(len(layer_types))
+        ]
+    elif hasattr(text_config, "global_head_dim"):
         head_dims = [
             (
                 text_config.global_head_dim
