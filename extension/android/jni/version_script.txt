@@ -13,9 +13,11 @@
 #     get_backend_class, register_kernels), BackendInterface, EValue,
 #     MemoryManager / MemoryAllocator, FreeableBuffer, logging, and the rest of
 #     the public runtime API declared under runtime/.
-#   - executorch::aten::*     the exec_aten data model (Tensor, EValue,
-#     Scalar, ...) that backend implementations are written against in
-#     portable (non-ATen) builds.
+#     executorch::runtime::* also covers the exec_aten data model backend
+#     implementations are written against: the portable Tensor is
+#     executorch::runtime::etensor::Tensor and executorch::aten::Tensor is
+#     only a using-alias (exec_aten.h), so no symbols ever bind under
+#     executorch::aten and it is intentionally not listed below.
 #   - et_pal_*                the platform abstraction layer C API, so backend
 #     .so files share the process-wide logging / allocation / time hooks.
 #
@@ -37,14 +39,11 @@ EXECUTORCH_1_0 {
 
     extern "C++" {
       "executorch::runtime::*";
-      "executorch::aten::*";
       # RTTI and vtables for polymorphic public types (e.g. BackendInterface)
       # whose key functions are emitted in this library; external .so files
       # subclass these and need the symbols at link/load time.
       "typeinfo for executorch::runtime::*";
-      "typeinfo for executorch::aten::*";
       "vtable for executorch::runtime::*";
-      "vtable for executorch::aten::*";
     };
   local:
     *;
