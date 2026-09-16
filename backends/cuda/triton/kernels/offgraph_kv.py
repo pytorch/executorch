@@ -28,6 +28,24 @@ FLAT_CACHE = 0
 RING_CACHE = 1
 
 
+def ring_physical_capacity(window: int, max_write: int) -> int:
+    """Slots a ring layer needs to serve one step of up to ``max_write`` tokens.
+
+    A step writes all its tokens before attending, and its earliest query still
+    reads back to ``position - window + 1``, so ``window + max_write - 1``
+    positions must be live at once. Sizing the ring to the window alone lets a
+    step overwrite cells its own earlier queries still attend to.
+
+    Matches ``RingPolicy`` in executorch/extension/llm/cache/sequence_cache.h;
+    the CUDA runtime applies the same formula when it allocates.
+    """
+    if window <= 0:
+        raise ValueError("ring cache requires a positive window")
+    if max_write <= 0:
+        raise ValueError("ring cache requires a positive max_write")
+    return window + max_write - 1
+
+
 @triton.jit
 def _update_cache_kernel(
     K,
@@ -302,7 +320,9 @@ def _launch_offgraph_decode_splitk(
 ) -> None:
     B, h_q, _, head_dim = q.shape
     sweep_length = window_size if window_size else max_capacity
-    num_splits, chunk_size = _decode_splitk_config(sweep_length)
+    num_splits, chunk_size = _decode_splitk_config(
+        sweep_length, B * h_kv, q.device
+    )
     o_partial = torch.empty(
         (num_splits, B, h_q, head_dim), device=q.device, dtype=torch.float32
     )

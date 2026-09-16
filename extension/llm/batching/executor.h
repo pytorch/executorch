@@ -93,6 +93,20 @@ class ET_EXPERIMENTAL Executor {
   // double close is not an error, though Runner closes each owned id once.
   virtual void close_session(SessionId session) = 0;
 
+  // Independently writable state for source's committed [0, upto) prefix,
+  // with a lifetime-unique id and no sampling policy. Called between forwards;
+  // source may have an active generation or hold speculative state past upto.
+  // The caller owns the returned session until close_session().
+  //
+  // nullopt = unsupported, unavailable retained history, or insufficient
+  // capacity. An empty prefix may also be refused. Failure, including an
+  // exception, must leave source unchanged and retain no new session.
+  virtual std::optional<SessionId> clone(
+      SessionId /*source*/,
+      Position /*upto*/) {
+    return std::nullopt;
+  }
+
   // Installs the session's sampling policy, immediately before the generation's
   // tasks are submitted, and holds until the next generation replaces it, so it
   // does not ride on each input.
