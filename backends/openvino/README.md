@@ -368,7 +368,7 @@ Run all commands from the ExecuTorch repository root.
 ```powershell
 .\install_executorch.bat --clean
 
-$env:CMAKE_ARGS = "-DEXECUTORCH_BUILD_OPENVINO=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON"
+$env:CMAKE_ARGS = "-DEXECUTORCH_BUILD_OPENVINO=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON -DEXECUTORCH_BUILD_XNNPACK=OFF -DEXECUTORCH_BUILD_VULKAN=OFF"
 $env:CMAKE_BUILD_ARGS = "--target openvino_backend"
 .\install_executorch.bat --use-pt-pinned-commit
 
@@ -438,8 +438,8 @@ cmake --build cmake-out --target install --config Release -j $env:NUMBER_OF_PROC
 
 ```powershell
 python -m pip install -r backends/openvino/requirements.txt
-
-$env:CMAKE_ARGS = "-DEXECUTORCH_BUILD_OPENVINO=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON"
+.\install_executorch.bat --clean
+$env:CMAKE_ARGS = "-DEXECUTORCH_BUILD_OPENVINO=ON -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON -DEXECUTORCH_BUILD_XNNPACK=OFF -DEXECUTORCH_BUILD_VULKAN=OFF"
 $env:CMAKE_BUILD_ARGS = "--target openvino_backend"
 .\install_executorch.bat --use-pt-pinned-commit
 ```

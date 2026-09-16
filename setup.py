@@ -68,6 +68,12 @@ from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path, PurePosixPath
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
+
+def _remove_readonly(func, path, _exc_info):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 # Clean dynamic import using importlib
 _install_utils_path = Path(__file__).parent / "install_utils.py"
 _spec = importlib.util.spec_from_file_location("install_utils", _install_utils_path)
@@ -2853,7 +2859,7 @@ class CustomBuild(build):
             # is predictable.
             if os.path.exists(cmake_cache_dir):
                 log.info(f"clearing {cmake_cache_dir}")
-                shutil.rmtree(cmake_cache_dir)
+                shutil.rmtree(cmake_cache_dir, onerror=_remove_readonly)
 
             subprocess.run(
                 [
