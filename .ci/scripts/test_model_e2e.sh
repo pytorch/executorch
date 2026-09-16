@@ -47,7 +47,6 @@ Arguments:
                 - vr-offline: Voxtral Realtime offline mode
                 - solo-text: Muse Glimmer solo text mode
                 - solo-text-offgraph: Muse Glimmer solo text, runtime-owned KV cache
-                - solo-text-offgraph-cuda-graph: the same, with CUDA graph capture
                 - dflash-image: Muse Glimmer DFlash vision mode
 
 Environment:
@@ -113,7 +112,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|solo-text-offgraph|solo-text-offgraph-cuda-graph|dflash-image)
+    solo-text|solo-text-offgraph|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -122,7 +121,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-offgraph, solo-text-offgraph-cuda-graph, dflash-image"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-offgraph, dflash-image"
       exit 1
       ;;
   esac
@@ -287,7 +286,7 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     case "$MODE" in
-      solo-text|solo-text-offgraph|solo-text-offgraph-cuda-graph)
+      solo-text|solo-text-offgraph)
         RUNNER_TARGET="solo_runner"
         EXPECTED_OUTPUT="Paris"
         IMAGE_URL=""
@@ -298,7 +297,7 @@ case "$HF_MODEL" in
         IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         ;;
       *)
-        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph', 'solo-text-offgraph-cuda-graph' or 'dflash-image'"
+        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph' or 'dflash-image'"
         exit 1
         ;;
     esac
@@ -448,16 +447,16 @@ EOF
     ;;
   muse_glimmer)
     PROMPT_FILE="${MODEL_DIR}/muse_glimmer_prompt.txt"
-    if [ "$MODE" = "solo-text" ] || [ "$MODE" = "solo-text-offgraph" ] ||
-       [ "$MODE" = "solo-text-offgraph-cuda-graph" ]; then
+    if [ "$MODE" = "solo-text" ] || [ "$MODE" = "solo-text-offgraph" ]; then
       printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
     else
       printf '%s' '<|start|>user<|message|>What animal is in this image? <img><|eot|><|start|>assistant' > "$PROMPT_FILE"
     fi
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512"
     if [ "$MODE" = "solo-text-offgraph" ]; then
-      # Control: off-graph KV on the eager decode path.
-      RUNNER_ARGS="$RUNNER_ARGS --cuda_graph=false"
+      # Exercise the same artifact on both decode paths: eager, then the
+      # captured CUDA graph, which is recaptured whenever the cache grows.
+      RUNNER_VARIANTS="--cuda_graph=false --cuda_graph"
     else
       RUNNER_ARGS="$RUNNER_ARGS --cuda_graph"
     fi
@@ -483,50 +482,69 @@ EOF
     ;;
 esac
 
-OUTPUT=$(eval $RUNNER_BIN $RUNNER_ARGS 2>&1)
-EXIT_CODE=$?
-set -e
-
-echo "Runner output:"
-echo "$OUTPUT"
-
-if [ $EXIT_CODE -ne 0 ]; then
-  echo "Unexpected exit code: $EXIT_CODE"
-  exit $EXIT_CODE
-fi
-
-# Validate output for models that have expected output
-if [ -n "$EXPECTED_OUTPUT" ]; then
-  if ! echo "$OUTPUT" | grep -iq "$EXPECTED_OUTPUT"; then
-    echo "Expected output '$EXPECTED_OUTPUT' not found in output"
-    exit 1
-  else
-    echo "Success: '$EXPECTED_OUTPUT' found in output"
+# A mode that needs more than one runtime configuration sets RUNNER_VARIANTS to
+# a space-separated list of extra args; each is run and validated on its own.
+# Everything else runs once with no extra args.
+run_and_validate() {
+  VARIANT_ARGS="$1"
+  if [ -n "$VARIANT_ARGS" ]; then
+    echo "--- Runner pass: $VARIANT_ARGS ---"
   fi
-else
-  echo "SUCCESS: Runner completed successfully"
-fi
 
-# Validate GPU peak memory usage for models with known memory budgets.
-# The runner prints "GPU peak memory usage: XXXX.X MiB" at the end.
-case "$MODEL_NAME" in
-  qwen3_5_moe)
-    MAX_MEMORY_MIB=20480  # 20 GB — must fit on a single GPU (e.g. 4090)
-    PEAK_MEM=$(echo "$OUTPUT" | grep -oP 'GPU peak memory usage: \K[0-9.]+' || true)
-    if [ -n "$PEAK_MEM" ]; then
-      # Compare as integers (truncate decimals)
-      PEAK_MEM_INT=${PEAK_MEM%%.*}
-      if [ "$PEAK_MEM_INT" -gt "$MAX_MEMORY_MIB" ]; then
-        echo "FAIL: GPU peak memory ${PEAK_MEM} MiB exceeds budget ${MAX_MEMORY_MIB} MiB"
-        exit 1
-      else
-        echo "Success: GPU peak memory ${PEAK_MEM} MiB within budget (max ${MAX_MEMORY_MIB} MiB)"
-      fi
+  set +e
+  OUTPUT=$(eval $RUNNER_BIN $RUNNER_ARGS $VARIANT_ARGS 2>&1)
+  EXIT_CODE=$?
+  set -e
+
+  echo "Runner output:"
+  echo "$OUTPUT"
+
+  if [ $EXIT_CODE -ne 0 ]; then
+    echo "Unexpected exit code: $EXIT_CODE"
+    exit $EXIT_CODE
+  fi
+
+  # Validate output for models that have expected output
+  if [ -n "$EXPECTED_OUTPUT" ]; then
+    if ! echo "$OUTPUT" | grep -iq "$EXPECTED_OUTPUT"; then
+      echo "Expected output '$EXPECTED_OUTPUT' not found in output"
+      exit 1
     else
-      echo "WARNING: GPU peak memory usage not found in output"
+      echo "Success: '$EXPECTED_OUTPUT' found in output"
     fi
-    ;;
-esac
+  else
+    echo "SUCCESS: Runner completed successfully"
+  fi
+
+  # Validate GPU peak memory usage for models with known memory budgets.
+  # The runner prints "GPU peak memory usage: XXXX.X MiB" at the end.
+  case "$MODEL_NAME" in
+    qwen3_5_moe)
+      MAX_MEMORY_MIB=20480  # 20 GB — must fit on a single GPU (e.g. 4090)
+      PEAK_MEM=$(echo "$OUTPUT" | grep -oP 'GPU peak memory usage: \K[0-9.]+' || true)
+      if [ -n "$PEAK_MEM" ]; then
+        # Compare as integers (truncate decimals)
+        PEAK_MEM_INT=${PEAK_MEM%%.*}
+        if [ "$PEAK_MEM_INT" -gt "$MAX_MEMORY_MIB" ]; then
+          echo "FAIL: GPU peak memory ${PEAK_MEM} MiB exceeds budget ${MAX_MEMORY_MIB} MiB"
+          exit 1
+        else
+          echo "Success: GPU peak memory ${PEAK_MEM} MiB within budget (max ${MAX_MEMORY_MIB} MiB)"
+        fi
+      else
+        echo "WARNING: GPU peak memory usage not found in output"
+      fi
+      ;;
+  esac
+}
+
+if [ -z "${RUNNER_VARIANTS:-}" ]; then
+  run_and_validate ""
+else
+  for VARIANT in $RUNNER_VARIANTS; do
+    run_and_validate "$VARIANT"
+  done
+fi
 echo "::endgroup::"
 
 if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
