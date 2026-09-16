@@ -2010,6 +2010,41 @@ class TestPasses(unittest.TestCase):
             if user is not copy and user.op != "output":
                 self.assertLess(node_order[user], node_order[copy])
 
+    def test_mutable_buffers_write_back_after_view_reads(self) -> None:
+        class ViewReadModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x):
+                # The buffer's old value is read through a view. view_copy is
+                # a copy here, but ReplaceViewCopyWithViewPass later turns it
+                # into a true alias, so the write-back must still come after
+                # the read.
+                new_state = x * 2
+                old_through_view = self.state.view(2, 2).sum()
+                self.state.copy_(new_state)
+                return old_through_view
+
+        model = to_edge(export(ViewReadModule(), (torch.zeros(4),), strict=True))
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        views = [node for node in gm.graph.nodes if "view_copy" in str(node.target)]
+        self.assertTrue(len(views) >= 1)
+        # Every reader through the view stays before the write-back.
+        for view in views:
+            for user in view.users:
+                if user is not copy and user.op != "output":
+                    self.assertLess(node_order[user], node_order[copy])
+
     def test_mutable_buffers_write_back_no_inputs(self) -> None:
         class NoInputModule(torch.nn.Module):
             def forward(self):

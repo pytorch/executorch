@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import torch
 from executorch.exir.operator.convert import is_inplace_variant
+from executorch.exir.passes.replace_view_copy_with_view_pass import _is_view_copy
 
 from torch.export.exported_program import (
     ExportedProgram,
@@ -34,6 +35,11 @@ def _may_alias_input(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return True
     if node.target is operator.getitem:
+        return True
+    if _is_view_copy(node):
+        # view_copy produces a fresh tensor here, but ReplaceViewCopyWithViewPass
+        # later rewrites non-output view_copy nodes into true aliases, so readers
+        # through a view must stay ordered before any write-back into its base.
         return True
     schema = getattr(node.target, "_schema", None)
     if schema is None:
