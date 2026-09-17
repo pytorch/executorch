@@ -663,6 +663,15 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
 endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
+if(WIN32)
+  # This target carries the vendored c10 headers, and safe_numerics.h reaches
+  # std::countl_zero on the branch MSVC takes. Stating it as a compile feature
+  # rather than relying on CMAKE_CXX_STANDARD is what makes it reach every
+  # consumer: features raise a target's standard even where CMAKE_CXX_STANDARD
+  # says 17, and install(EXPORT) carries them into ExecuTorchTargets.cmake, so
+  # projects configured separately from this one pick it up too.
+  target_compile_features(executorch_core PUBLIC cxx_std_20)
+endif()
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
     executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
