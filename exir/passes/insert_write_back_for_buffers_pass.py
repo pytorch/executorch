@@ -89,17 +89,31 @@ def _collect_aliases(
     seed: torch.fx.Node, node_order: Dict[torch.fx.Node, int]
 ) -> Set[torch.fx.Node]:
     """
-    The set of nodes whose values may alias the value of seed, found by
-    walking forward through the graph.
+    The set of nodes whose values may alias the value of seed. The closure is
+    taken in both directions: a node that may alias its inputs pulls its
+    result into the set of its inputs (forward), and pulls its inputs into
+    the set of its result (backward). The backward direction matters for
+    views: the base of a view must count as an alias of the view's value,
+    since a mutation of the base is a mutation of the view once
+    ReplaceViewCopyWithViewPass has run.
     """
     aliases = {seed}
-    for node in node_order:
-        if node in aliases:
-            continue
-        if any(arg in aliases for arg in node.all_input_nodes) and _may_alias_input(
-            node
-        ):
-            aliases.add(node)
+    changed = True
+    while changed:
+        changed = False
+        for node in node_order:
+            if node in aliases:
+                if _may_alias_input(node):
+                    for arg in node.all_input_nodes:
+                        if arg not in aliases:
+                            aliases.add(arg)
+                            changed = True
+                continue
+            if any(arg in aliases for arg in node.all_input_nodes) and _may_alias_input(
+                node
+            ):
+                aliases.add(node)
+                changed = True
     return aliases
 
 

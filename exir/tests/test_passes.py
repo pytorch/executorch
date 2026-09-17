@@ -2123,6 +2123,48 @@ class TestPasses(unittest.TestCase):
                 if user is not copy and user.op != "output":
                     self.assertLess(node_order[user], node_order[copy])
 
+    def test_mutable_buffers_write_back_aliased_fallback(self) -> None:
+        class AliasedWriteBacksModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("a", torch.zeros(4))
+                self.register_buffer("b", torch.zeros(2, 2))
+
+            def forward(self, x):
+                # b's new value is a view of a, and a is mutated as well, so
+                # the two write-backs are not independent: after the view
+                # rewrite the value written into b aliases the buffer the
+                # other copy_ mutates. The pass must fall back to inserting
+                # both copies at the end of the graph in their original
+                # order.
+                self.b.copy_(self.a.view(2, 2))
+                self.a.add_(x)
+                return x + 1
+
+        model = to_edge(
+            export(AliasedWriteBacksModule(), (torch.zeros(4),), strict=True)
+        )
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 2)
+        # Both copies sit at the end of the graph, after all other compute.
+        last_compute = max(
+            node_order[node]
+            for node in gm.graph.nodes
+            if node.op == "call_function" and node not in copies
+        )
+        for copy in copies:
+            self.assertGreater(node_order[copy], last_compute)
+        # The copies keep their original (output-spec) order.
+        output_args = gm.graph.output_node().args[0]
+        self.assertEqual([output_args[0], output_args[1]], copies)
+
     def test_mutable_buffers_write_back_no_inputs(self) -> None:
         class NoInputModule(torch.nn.Module):
             def forward(self):
