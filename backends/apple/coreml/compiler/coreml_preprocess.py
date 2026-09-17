@@ -72,14 +72,24 @@ def _gathers_with_a_float_table(mlmodel: ct.models.MLModel) -> List[str]:
     """
     Names of gather ops whose table is a floating point constant.
 
-    This is every constant-table index read, not only embedding layers. Core ML lowers
-    `index_select` and plain indexing to `gather` as well, so a float buffer such as a
-    rotary position cache is named here too and gets compressed by the opt-in.
+    This is every constant-table index read lowered to `gather`, not only embedding
+    layers. Core ML lowers `index_select` and plain indexing to `gather` as well, so a
+    float buffer such as a rotary position cache is named here too and gets compressed
+    by the opt-in.
 
-    Integer tables are skipped: a uint8 codebook is not something the linear quantizer
-    can compress, and handed one it aborts the conversion. Naming only the float tables
-    keeps the opt-in from turning a working lowering into a failing one. Returns nothing
-    for a model whose program is not available, which leaves the behaviour as it was.
+    Only `gather` is covered. Core ML has two more gather-shaped ops, `gather_along_axis`
+    (from `torch.gather`) and `gather_nd` (from indexing with two index tensors), and
+    their tables are compressed by `op_linear_quantizer_config` whether or not this
+    opt-in is set, because the default exemption below names `gather` alone. Widening
+    that exemption would shrink what existing models compress, so it is left to its own
+    change rather than folded in here.
+
+    Integer tables are skipped. Running the quantizer on one directly: a two dimensional
+    integer table raises and takes the conversion down with it, a one dimensional one is
+    skipped on its own. So the filter matters for the two dimensional case, and a test
+    that pins it needs a table of that shape; a 1-D table passes with or without this
+    check. Returns nothing for a model whose program is not available, which leaves the
+    behaviour as it was.
     """
     program = getattr(mlmodel, "_mil_program", None)
     if program is None:
@@ -325,9 +335,12 @@ class CoreMLBackend(BackendDetails):
         layers. Core ML lowers any constant-table index read to gather, so buffers such
         as a rotary position cache are compressed too.
         """
+        # bool() first: the spec is read back by comparing against "True", so a truthy
+        # value that is not exactly True (1, or "true" from a config file) would spell
+        # something else and read back as False, leaving the flag silently ineffective.
         return CompileSpec(
             COMPILE_SPEC_KEYS.QUANTIZE_GATHER_TABLES.value,
-            str(quantize_gather_tables).encode("utf-8"),
+            str(bool(quantize_gather_tables)).encode("utf-8"),
         )
 
     @staticmethod
@@ -467,13 +480,15 @@ class CoreMLBackend(BackendDetails):
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
         pass_names: Optional[List[str]] = None,
+        *,
         quantize_gather_tables: bool = False,
     ) -> List[CompileSpec]:
         """
         Returns the list of compile specs that's used by CoreMLBackend to lower the module.
 
-        quantize_gather_tables goes last so that callers already passing pass_names
-        positionally keep binding it to pass_names.
+        quantize_gather_tables is keyword-only. It went in after pass_names and briefly
+        took its positional slot, which silently bound a caller's pass list to this flag;
+        the marker keeps the next option added here from repeating that.
         """
         compile_specs: List[CompileSpec] = []
         compile_specs.append(
@@ -499,6 +514,11 @@ class CoreMLBackend(BackendDetails):
                 CoreMLBackend.generate_pass_pipeline_compile_spec(pass_names)
             )
         if quantize_gather_tables:
+            if op_linear_quantizer_config is None:
+                logger.warning(
+                    "quantize_gather_tables is set but op_linear_quantizer_config is "
+                    "not; the flag only widens that config and does nothing on its own."
+                )
             compile_specs.append(
                 CoreMLBackend.generate_quantize_gather_tables_compile_spec(
                     quantize_gather_tables
@@ -690,8 +710,10 @@ class CoreMLBackend(BackendDetails):
             logger.warning(
                 "Core ML Backend op_linear_quantizer_config API is experimental"
             )
-            # Gathers are left alone so that embedding tables are not quantized by this
-            # config, except where the table is also some other op's weight. A tied
+            # Single-axis `gather` is left alone so that embedding tables are not
+            # quantized by this config, except where the table is also some other op's
+            # weight. `gather_along_axis` and `gather_nd` are not exempt and are
+            # compressed as usual; see _gathers_with_a_float_table. A tied
             # embedding is one constant feeding both a gather and a linear, and coremltools
             # refuses to compress a constant its consumers disagree about, so opting the
             # gather out there does not skip the table, it fails the whole lowering.

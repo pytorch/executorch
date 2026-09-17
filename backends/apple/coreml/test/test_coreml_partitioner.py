@@ -560,19 +560,26 @@ class TestCoreMLPartitioner(unittest.TestCase):
         The opt-in names only float gather tables. A model that also indexes an integer
         buffer still lowers, and still gets smaller, which is what pins the dtype filter:
         naming the integer table would abort the conversion instead.
+
+        The integer table is two dimensional on purpose. Run against the quantizer
+        directly, a 2-D integer table raises and takes the conversion down, while a 1-D
+        one is skipped by the quantizer itself, so a 1-D table here would pass with the
+        dtype filter deleted and pin nothing.
         """
 
         class MixedTables(torch.nn.Module):
-            def __init__(self, vocab=4096, dim=128):
+            def __init__(self, vocab=4096, dim=128, codes=8):
                 super().__init__()
                 self.embedding = torch.nn.Embedding(vocab, dim)
                 self.register_buffer(
-                    "codebook", torch.randint(0, 255, (vocab,), dtype=torch.uint8)
+                    "codebook", torch.randint(0, 255, (vocab, codes), dtype=torch.uint8)
                 )
 
             def forward(self, ids):
                 floats = self.embedding(ids).sum(dim=1)
-                ints = self.codebook[ids].to(torch.float32).sum(dim=1, keepdim=True)
+                ints = (
+                    self.codebook[ids].to(torch.float32).sum(dim=(1, 2)).unsqueeze(-1)
+                )
                 return floats + ints
 
         ids = torch.zeros(1, 4, dtype=torch.long)
