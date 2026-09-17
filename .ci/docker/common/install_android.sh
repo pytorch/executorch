@@ -83,8 +83,7 @@ install_sdk() {
   # was already unavailable on aarch64, and Google has since withdrawn it for
   # every host, so sdkmanager answers "Failed to find package 'tools'" and the
   # build dies under set -e. Its replacements, cmdline-tools and platform-tools,
-  # are installed above. The emulator itself is a separate package and nothing
-  # in CI installs or runs one today.
+  # This Docker image neither installs nor runs an emulator today.
 }
 
 install_prerequiresites
