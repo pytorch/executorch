@@ -32,14 +32,16 @@ def _fx_nodes_in(value: object) -> List[torch.fx.Node]:
     return []
 
 
-def _alias_sets(alias_info: object) -> Set[str]:
+def _alias_sets(alias_info: Optional[torch._C._AliasInfo]) -> Set[str]:
     """The alias-set annotations of a schema argument or return."""
     if alias_info is None:
         return set()
-    return set(alias_info.before_set) | set(alias_info.after_set)  # pyre-ignore[16]
+    return set(alias_info.before_set) | set(alias_info.after_set)
 
 
-def _schema_paired_args(node: torch.fx.Node, schema) -> List[Tuple[object, object]]:
+def _schema_paired_args(
+    node: torch.fx.Node, schema: torch.FunctionSchema
+) -> List[Tuple[object, torch.Argument]]:
     """Each FX arg/kwarg of node paired with its schema argument."""
     schema_kwargs = {a.name: a for a in schema.arguments}
     return [
@@ -245,13 +247,6 @@ def _insert_copy(
     outputs = pytree.tree_flatten(output_node.args)[0]
     assert len(outputs) == len(mutated_outputs)
 
-    node_order: Dict[torch.fx.Node, int] = {
-        node: i for i, node in enumerate(gm.graph.nodes)
-    }
-    placeholders = [node for node in gm.graph.nodes if node.op == "placeholder"]
-    last_placeholder = placeholders[-1] if placeholders else None
-    alias_index = _AliasIndex(list(gm.graph.nodes))
-
     # Pair up the returns with the nodes they mutate.
     copies: List[Tuple[torch.fx.Node, torch.fx.Node]] = []
     user_output_nodes = []
@@ -270,40 +265,52 @@ def _insert_copy(
             )
         copies.append((mutated_node, return_node))
 
-    # The copies themselves mutate the buffers. If the value written back by
-    # one copy may alias the buffer mutated by another, then the order of the
-    # copies (and their position relative to everything else) matters in ways
-    # the insertion points below do not track, so fall back to inserting all
-    # of them at the end of the graph, in their original order, as before.
-    independent = True
-    if len(copies) > 1:
-        mutated_aliases: Set[torch.fx.Node] = set()
-        return_aliases: Set[torch.fx.Node] = set()
-        for mutated_node, return_node in copies:
-            mutated_alias = alias_index.aliases(mutated_node)
-            return_alias = alias_index.aliases(return_node)
-            if mutated_alias & return_aliases or return_alias & mutated_aliases:
-                independent = False
-                break
-            mutated_aliases |= mutated_alias
-            return_aliases |= return_alias
-
     # insert the copies
-    buffer_output_nodes = []
-    for mutated_node, return_node in copies:
-        if independent:
-            insert_after = _insertion_point(
-                mutated_node, return_node, node_order, last_placeholder, alias_index
-            )
-            insertion = gm.graph.inserting_after(insert_after)
-        else:
-            insertion = gm.graph.inserting_before(output_node)
-        with insertion:
-            buffer_output = gm.graph.call_function(
-                torch.ops.aten.copy_.default, (mutated_node, return_node)
-            )
-            # add output of copy to graph outputs
-            buffer_output_nodes.append(buffer_output)
+    buffer_output_nodes: List[torch.fx.Node] = []
+    # The alias analysis is only needed to place copies, so graphs with no
+    # write-backs (the common case for models without mutable state) skip its
+    # cost entirely.
+    if copies:
+        node_order: Dict[torch.fx.Node, int] = {
+            node: i for i, node in enumerate(gm.graph.nodes)
+        }
+        placeholders = [node for node in gm.graph.nodes if node.op == "placeholder"]
+        last_placeholder = placeholders[-1] if placeholders else None
+        alias_index = _AliasIndex(list(gm.graph.nodes))
+
+        # The copies themselves mutate the buffers. If the value written back
+        # by one copy may alias the buffer mutated by another, then the order
+        # of the copies (and their position relative to everything else)
+        # matters in ways the insertion points below do not track, so fall
+        # back to inserting all of them at the end of the graph, in their
+        # original order, as before.
+        independent = True
+        if len(copies) > 1:
+            mutated_aliases: Set[torch.fx.Node] = set()
+            return_aliases: Set[torch.fx.Node] = set()
+            for mutated_node, return_node in copies:
+                mutated_alias = alias_index.aliases(mutated_node)
+                return_alias = alias_index.aliases(return_node)
+                if mutated_alias & return_aliases or return_alias & mutated_aliases:
+                    independent = False
+                    break
+                mutated_aliases |= mutated_alias
+                return_aliases |= return_alias
+
+        for mutated_node, return_node in copies:
+            if independent:
+                insert_after = _insertion_point(
+                    mutated_node, return_node, node_order, last_placeholder, alias_index
+                )
+                insertion = gm.graph.inserting_after(insert_after)
+            else:
+                insertion = gm.graph.inserting_before(output_node)
+            with insertion:
+                buffer_output = gm.graph.call_function(
+                    torch.ops.aten.copy_.default, (mutated_node, return_node)
+                )
+                # add output of copy to graph outputs
+                buffer_output_nodes.append(buffer_output)
 
     with gm.graph.inserting_before(output_node):
         buffer_output_nodes.extend(user_output_nodes)
