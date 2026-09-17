@@ -26,7 +26,9 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
     ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
   }
 
-#if (QNN_HTP_API_VERSION_MAJOR > 5 || (QNN_HTP_API_VERSION_MAJOR == 5 && QNN_HTP_API_VERSION_MINOR >= 49))
+#if (                                \
+    QNN_HTP_API_VERSION_MAJOR > 5 || \
+    (QNN_HTP_API_VERSION_MAJOR == 5 && QNN_HTP_API_VERSION_MINOR >= 49))
   if (htp_options_->use_graph_splitting()) {
     p_custom_config = AllocContextCustomConfig();
     p_custom_config->option =
