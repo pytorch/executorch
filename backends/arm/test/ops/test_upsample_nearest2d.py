@@ -17,6 +17,7 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -90,6 +91,11 @@ test_data_u55 = {
     ),
     "rand_quadruple_size": lambda: (torch.rand(1, 4, 8, 3), (32, 12), None, True),
     "rand_octuple_size": lambda: (torch.rand(1, 4, 8, 3), (64, 24), None, True),
+}
+
+test_data_suite_u85_same_size = {
+    "rand_same_size": lambda: (torch.rand(2, 3, 5, 5), (5, 5), None, False),
+    "rand_same_scale": lambda: (torch.rand(2, 3, 5, 5), None, 1.0, False),
 }
 
 test_data_suite_dynamic = {
@@ -510,6 +516,23 @@ def test_upsample_nearest2d_vec_u55_INT_UpsamplingNearest2d(
         aten_op,
         exir_op,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_u85_same_size)
+def test_upsample_nearest2d_vec_u85_INT_same_size(
+    test_data: torch.Tensor,
+):
+    test_data, size, scale_factor, compare_outputs = test_data()
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Interpolate(size, scale_factor),
+        (test_data,),
+        aten_op,
+        exir_op,
+    )
+    if not compare_outputs:
+        pipeline.pop_stage(-1)
     pipeline.run()
 
 

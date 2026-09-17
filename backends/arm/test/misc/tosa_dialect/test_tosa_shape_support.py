@@ -3,12 +3,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 import executorch.backends.arm.operator_support.convolution_support  # noqa: F401
 import executorch.backends.arm.operator_support.pool_2d_support  # noqa: F401
 import executorch.backends.arm.operator_support.reduce_sum_support  # noqa: F401
+
 import executorch.backends.arm.operator_support.sym_size_int_support  # noqa: F401
 import pytest
 import torch
+from executorch.backends.arm.operator_support.symint_arithmetic_support import (
+    SymIntArithmeticSupport,
+)
 
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
@@ -86,6 +92,20 @@ class ReturnSymSize(torch.nn.Module):
 class ReshapeWithSymSize(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.reshape(x.shape[0], 6)
+
+
+class ReturnSymSizeArithmetic(torch.nn.Module):
+    def __init__(self, operation) -> None:
+        super().__init__()
+        self.operation = operation
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, int]:
+        return x, self.operation(x.shape[0], 2)
+
+
+class Index(torch.nn.Module):
+    def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+        return x[indices]
 
 
 def _exported_program(
@@ -336,6 +356,35 @@ def test_without_shape_extension_rejects_symbolic_shape_argument():
     assert "Node has symbolic shape arguments" in reporter.get_table_report()
 
 
+@pytest.mark.parametrize(
+    "tosa_spec",
+    ["TOSA-1.1+FP+INT+shape", "TOSA-1.1+FP+INT"],
+)
+@pytest.mark.parametrize(
+    "dynamic_values, dynamic_index",
+    [(False, False), (True, False), (False, True)],
+)
+def test_index_tensor_shape_support(tosa_spec, dynamic_values, dynamic_index):
+    exported_program = _exported_program(
+        Index(),
+        (torch.randn(8, 4), torch.tensor([0, 2, 3], dtype=torch.int32)),
+        dynamic_shapes=(
+            {0: Dim("rows", min=4, max=16)} if dynamic_values else {},
+            {0: Dim("selected", min=2, max=6)} if dynamic_index else {},
+        ),
+    )
+    support, reporter = _support(tosa_spec, exported_program)
+    index_node = _find_node(exported_program, exir_ops.edge.aten.index.Tensor)
+
+    expected_support = not (dynamic_values or dynamic_index)
+    assert (
+        support.is_node_supported(exported_program.graph_module, index_node)
+        is expected_support
+    )
+    if not expected_support:
+        assert "Symbolic value or index shapes" in reporter.get_table_report()
+
+
 def test_without_shape_extension_rejects_sym_size_int():
     inputs = (torch.randn(2, 3),)
     batch = Dim("batch", min=1, max=4)
@@ -403,3 +452,41 @@ def test_shape_extension_partitions_sym_size_int():
     )
 
     assert sym_size_node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [operator.add, operator.sub, operator.mul, operator.mod, operator.floordiv],
+)
+def test_shape_extension_partitions_symint_arithmetic(operation):
+    inputs = (torch.randn(2, 3),)
+    batch = Dim("batch", min=1, max=4)
+    exported_program = _exported_program(
+        ReturnSymSizeArithmetic(operation),
+        inputs,
+        dynamic_shapes=({0: batch},),
+    )
+
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.1+FP+shape")).partition(
+        exported_program
+    )
+    tagged_program = partition_result.tagged_exported_program
+    sym_size_node = _find_node(tagged_program, torch.ops.aten.sym_size.int)
+    arithmetic_node = _find_node(tagged_program, operation)
+
+    assert sym_size_node.meta.get("delegation_tag") in partition_result.partition_tags
+    assert arithmetic_node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+def test_shape_extension_rejects_non_symint_arithmetic():
+    graph = torch.fx.Graph()
+    arithmetic_node = graph.call_function(operator.add, (1.0, 2.0))
+    arithmetic_node.meta["val"] = 3.0
+    graph.output(arithmetic_node)
+
+    support = SymIntArithmeticSupport(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"),
+        WhyNoPartitionReporter(),
+    )
+
+    assert support.is_node_supported({}, arithmetic_node) is False

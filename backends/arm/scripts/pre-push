@@ -35,6 +35,7 @@ DOCGEN_OUTPUTS=(
 OP_SUPPORT_SCRIPT="backends/arm/scripts/docgen/generate_op_support.py"
 VGF_OP_SUPPORT_OUTPUT="docs/source/backends/arm-vgf/VGF_op_support.md"
 U55_OP_SUPPORT_OUTPUT="docs/source/backends/arm-ethos-u/U55_op_support.md"
+U85_OP_SUPPORT_OUTPUT="docs/source/backends/arm-ethos-u/U85_op_support.md"
 
 RUN_DOCGEN=0
 
@@ -78,6 +79,7 @@ run_op_support_checks() {
     local backend="$1"
     local backend_name="$2"
     local output="$3"
+    local coverage_output
 
     echo -e "${INFO} Generating ${backend_name} operator support documentation"
 
@@ -95,7 +97,8 @@ run_op_support_checks() {
 
     echo -e "${INFO} Checking ${backend_name} operator support coverage"
 
-    if ! python "$OP_SUPPORT_SCRIPT" --backend "$backend" --check; then
+    if ! coverage_output=$(python "$OP_SUPPORT_SCRIPT" --backend "$backend" --check 2>&1); then
+        echo "$coverage_output" >&2
         echo -e "${ERROR} ${backend_name} operator support coverage check failed" >&2
         FAILED=1
     else
@@ -353,6 +356,7 @@ fi
 
 run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT"
 run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT"
+run_op_support_checks "u85" "Ethos-U85" "$U85_OP_SUPPORT_OUTPUT"
 run_public_api_validator
 
 if [[ $FAILED ]]; then

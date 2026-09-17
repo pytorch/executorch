@@ -151,6 +151,79 @@ def test_u55_infrastructure_xfail_is_not_treated_as_unsupported() -> None:
         docgen._activate_backend(original)
 
 
+def test_u85_backend_configuration_and_profile() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        config = docgen._activate_backend("u85")
+        assert config.pipeline_class_names == frozenset({"EthosU85PipelineINT"})
+        assert docgen.BACKEND_NAME == "Ethos-U85"
+        assert docgen.BACKEND_TOSA_SPEC == "TOSA-1.0+INT+int16+int4+cf"
+        assert docgen.DEFAULT_OUTPUT == Path(
+            "docs/source/backends/arm-ethos-u/U85_op_support.md"
+        )
+        assert docgen.SUPPORT_PROFILE_ORDER == ["INT"]
+
+        stmt = ast.parse("EthosU85PipelineINT(quantize=False)").body[0]
+        assert isinstance(stmt, ast.Expr)
+        call = stmt.value
+        assert isinstance(call, ast.Call)
+        # U85 is integer-only; an irrelevant quantize kwarg cannot turn it FP.
+        assert docgen._pipeline_profile(call) == "INT"
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_u85_infrastructure_xfail_is_not_treated_as_unsupported() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("u85")
+        tree = ast.parse(
+            "@common.XfailIfNoCorstone320\n" "def test_u85():\n" "    pass\n"
+        )
+        function = tree.body[0]
+        assert isinstance(function, ast.FunctionDef)
+        assert not docgen._function_is_skipped_or_xfailed(function)
+
+        semantic_tree = ast.parse(
+            "@pytest.mark.xfail(reason='unsupported')\n"
+            "def test_u85():\n"
+            "    pass\n"
+        )
+        semantic_function = semantic_tree.body[0]
+        assert isinstance(semantic_function, ast.FunctionDef)
+        assert docgen._function_is_skipped_or_xfailed(semantic_function)
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_u85_explicit_coverage_attribution() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("u85")
+        coverage = docgen._active_explicit_backend_coverage()
+
+        assert coverage[
+            (
+                "backends/arm/test/ops/test_div_tensor_mode.py",
+                "test_div_tensor_mode_u85_INT",
+            )
+        ]["INT"] == {"torch.ops.aten.div.Tensor_mode"}
+        assert coverage[("backends/arm/test/ops/test_silu.py", "test_silu_u85_INT")][
+            "INT"
+        ] == {"torch.ops.aten.silu.default"}
+    finally:
+        docgen._activate_backend(original)
+
+
+def test_non_vgf_backend_does_not_collect_vgf_custom_partition_ops() -> None:
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend("u85")
+        assert docgen._collect_backend_custom_partition_ops(object()) == {}  # type: ignore[arg-type]
+    finally:
+        docgen._activate_backend(original)
+
+
 def test_backend_registry_filter_removes_unconditional_rejections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
