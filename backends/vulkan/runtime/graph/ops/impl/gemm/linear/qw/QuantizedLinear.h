@@ -17,10 +17,8 @@ namespace vkcompute {
 
 // Per-shader coopmat tile geometry (must match each shader's yaml).
 // Workgroup size (wg_size) = SG_GRID_X * SG_GRID_Y * SUBGROUP_SIZE.
-//   linear_q4gsw_coopmat       128x64x16, 2x2 subgroups x 32 (forced) -> 128
-//   linear_dq8ca_q4gsw_coopmat 128x64x32, 2x2 subgroups x 64          -> 256
-// (The int8-MMA shaders stay on wave64: int8 WMMA at forced subgroup 32
-// crashes the Xclipse PAL compiler.)
+//   linear_q4gsw_coopmat       128x64x32, 2x2 x 32 -> 128
+//   linear_dq8ca_q4gsw_coopmat 128x64x32, 2x2 x 64 or 4x2 x 32 -> 256
 struct CoopmatTileDims {
   uint32_t m;
   uint32_t n;
@@ -31,8 +29,8 @@ struct CoopmatTileDims {
   uint32_t wg_size;
 };
 // linear_qw_coopmat.yaml: 128x64, 2x2 subgroup grid, sg32 -> WG_SIZE 128.
-constexpr CoopmatTileDims kQ4gswCoopmatDims = {128, 64, 16, 128};
-// linear_dq8ca_qw_coopmat.yaml: 128x64, 2x2 grid, sg64 -> WG_SIZE 256.
+constexpr CoopmatTileDims kQ4gswCoopmatDims = {128, 64, 32, 128};
+// linear_dq8ca_qw_coopmat.yaml: 128x64, sg64 or sg32 -> WG_SIZE 256.
 constexpr CoopmatTileDims kDq8caQ4gswCoopmatDims = {128, 64, 32, 256};
 
 void resize_linear_qw_node(
@@ -54,14 +52,27 @@ LocalWorkGroup quantized_linear_lwg(
     const std::vector<ValueRef>& resize_args);
 
 bool can_use_q4gsw_coopmat(
+    ComputeGraph& graph,
+    const ValueRef output,
+    const ValueRef fp_input,
+    int64_t group_size,
+    const ValueRef bias);
+
+const char* pick_dq8ca_q4gsw_coopmat_variant(
     ComputeGraph* graph,
     const ValueRef output,
     const ValueRef fp_input,
     int64_t group_size,
-    const ValueRef bias,
-    int64_t tile_m = kCoopmatTileM,
-    int64_t tile_n = kCoopmatTileN,
-    int64_t tile_k = kCoopmatTileK);
+    const ValueRef bias);
+
+void add_q4gsw_coopmat_linear_node(
+    ComputeGraph& graph,
+    const ValueRef fp_input,
+    const ValueRef weight_data,
+    const ValueRef weight_scales_data,
+    const ValueRef group_size,
+    const ValueRef bias_data,
+    const ValueRef output);
 
 ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,

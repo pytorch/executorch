@@ -27,6 +27,7 @@ struct LinearConfig {
   bool has_bias = false;
   std::string test_case_name = "placeholder";
   std::string op_name = "linear_dq8ca_q4gsw";
+  bool singleton_batch = false;
 };
 
 TestCase create_test_case_from_config(

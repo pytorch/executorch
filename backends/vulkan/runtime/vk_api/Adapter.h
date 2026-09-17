@@ -238,6 +238,17 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
+  inline bool supports_vulkan_memory_model() const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_vulkan_memory_model)
+    return physical_device_.vulkan_memory_model_features.vulkanMemoryModel ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_vulkan_memory_model */
+  }
+
   inline bool supports_int8_dot_product() const {
     if (capability_overrides_.int8_dot_product.has_value()) {
       return *capability_overrides_.int8_dot_product;
@@ -308,20 +319,106 @@ class Adapter final {
     return false;
 #elif defined(VK_KHR_cooperative_matrix)
     return physical_device_.cooperative_matrix_features.cooperativeMatrix ==
-        VK_TRUE;
+        VK_TRUE &&
+        (physical_device_.cooperative_matrix_device_properties
+             .cooperativeMatrixSupportedStages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
 #else
     return false;
 #endif /* VK_KHR_cooperative_matrix */
   }
 
-  // True when VK_COMPONENT_TYPE_SINT8_KHR is enumerated in the device's
-  // cooperative matrix property list — required for coopmat<int8> shaders.
-  inline bool supports_int8_cooperative_matrix() const {
+  // The feature bit alone does not guarantee the shader's exact MulAdd tuple.
+  inline bool
+  supports_fp16_cooperative_matrix(uint32_t m, uint32_t n, uint32_t k) const {
 #if defined(ETVK_FORCE_NO_EXTENSIONS)
     return false;
 #elif defined(VK_KHR_cooperative_matrix)
-    return physical_device_.supports_int8_coopmat;
+    for (const auto& p : physical_device_.cooperative_matrix_properties) {
+      if (p.AType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
+          p.BType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
+          p.CType == VK_COMPONENT_TYPE_FLOAT32_KHR &&
+          p.ResultType == VK_COMPONENT_TYPE_FLOAT32_KHR &&
+          p.saturatingAccumulation == VK_FALSE &&
+          p.scope == VK_SCOPE_SUBGROUP_KHR && p.MSize == m && p.NSize == n &&
+          p.KSize == k) {
+        return true;
+      }
+    }
+    return false;
 #else
+    (void)m;
+    (void)n;
+    (void)k;
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
+  inline bool
+  supports_int8_cooperative_matrix(uint32_t m, uint32_t n, uint32_t k) const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    for (const auto& p : physical_device_.cooperative_matrix_properties) {
+      if (p.AType == VK_COMPONENT_TYPE_SINT8_KHR &&
+          p.BType == VK_COMPONENT_TYPE_SINT8_KHR &&
+          p.CType == VK_COMPONENT_TYPE_SINT32_KHR &&
+          p.ResultType == VK_COMPONENT_TYPE_SINT32_KHR &&
+          p.saturatingAccumulation == VK_FALSE &&
+          p.scope == VK_SCOPE_SUBGROUP_KHR && p.MSize == m && p.NSize == n &&
+          p.KSize == k) {
+        return true;
+      }
+    }
+    return false;
+#else
+    (void)m;
+    (void)n;
+    (void)k;
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
+  // Accumulator-only matrices used for conversions and component-wise math
+  // must independently match an advertised C or result type.
+  inline bool supports_fp16_cooperative_matrix_accumulator(
+      uint32_t m,
+      uint32_t n) const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    for (const auto& p : physical_device_.cooperative_matrix_properties) {
+      if (p.scope == VK_SCOPE_SUBGROUP_KHR && p.MSize == m && p.NSize == n &&
+          (p.CType == VK_COMPONENT_TYPE_FLOAT16_KHR ||
+           p.ResultType == VK_COMPONENT_TYPE_FLOAT16_KHR)) {
+        return true;
+      }
+    }
+    return false;
+#else
+    (void)m;
+    (void)n;
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
+  inline bool supports_fp32_cooperative_matrix_accumulator(
+      uint32_t m,
+      uint32_t n) const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    for (const auto& p : physical_device_.cooperative_matrix_properties) {
+      if (p.scope == VK_SCOPE_SUBGROUP_KHR && p.MSize == m && p.NSize == n &&
+          (p.CType == VK_COMPONENT_TYPE_FLOAT32_KHR ||
+           p.ResultType == VK_COMPONENT_TYPE_FLOAT32_KHR)) {
+        return true;
+      }
+    }
+    return false;
+#else
+    (void)m;
+    (void)n;
     return false;
 #endif /* VK_KHR_cooperative_matrix */
   }
@@ -431,6 +528,15 @@ class Adapter final {
     return physical_device_.max_subgroup_size;
   }
 
+  inline uint32_t max_compute_workgroup_subgroups() const {
+#ifdef VK_EXT_subgroup_size_control
+    return physical_device_.subgroup_size_control_properties
+        .maxComputeWorkgroupSubgroups;
+#else
+    return 0u;
+#endif /* VK_EXT_subgroup_size_control */
+  }
+
   inline bool supports_subgroup_size_control() const {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
@@ -489,6 +595,10 @@ class Adapter final {
 
   inline uint32_t max_compute_workgroup_invocations() const {
     return physical_device_.properties.limits.maxComputeWorkGroupInvocations;
+  }
+
+  inline uint32_t max_compute_shared_memory_size() const {
+    return physical_device_.properties.limits.maxComputeSharedMemorySize;
   }
 
   inline uint32_t recommended_lwg_nthreads() const {
