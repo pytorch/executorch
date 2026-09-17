@@ -43,6 +43,7 @@ from .explicit_layout_pass import (
 )
 from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
+from .move_sdpa_scale_after_bmm_pass import MoveSDPAScaleAfterBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
 
@@ -85,6 +86,7 @@ class CortexMPassManager(PassManager):
     pass_list = legacy_pass_list
 
     pass_list_transform_for_annotation: list[PassClass] = [
+        MoveSDPAScaleAfterBmmPass,
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
