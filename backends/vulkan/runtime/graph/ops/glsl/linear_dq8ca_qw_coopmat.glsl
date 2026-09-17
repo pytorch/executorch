@@ -28,11 +28,11 @@
  * Loop structure follows the NVIDIA double-buffered GEMM reference
  * (shmem_double_buf4.comp "store-first" variant; see coopmat_mm_ref.glsl in
  * test/custom_ops): prologue register prefetch, then per chunk
- * barrier -> prefetch next chunk -> int8 MMA on the current LDS slice ->
- * store temp into the other slice. One barrier per chunk; the prefetch is
- * pure loads, in flight during the math; quant unpack happens at the store
- * stage. The loop stays NESTED (groups x chunks, group epilog unconditional
- * at the group tail) — flattening it with a conditional coopmat epilog
+ * barrier -> prefetch/unpack next chunk -> int8 MMA on the current LDS slice
+ * -> store temp into the other slice. One barrier per chunk; the packed
+ * prefetch values stay live during the math. The loop stays NESTED (groups x
+ * chunks, group epilog unconditional at the group tail) — flattening it with
+ * a conditional coopmat epilog
  * crashes the Xclipse PAL compiler at large spec-resolved trip counts.
  *
  * Per-(group, N) weight sums/scales live in a SECOND ping-pong pair indexed
@@ -49,16 +49,16 @@
  * per lane with a bank-conflict-free col stride. Each uint holds 4 packed
  * int8.
  *
- * Tile hierarchy (yaml): MMA 16x16x16 int8, WG_TILE 128x64, WG_TILE_K = 32,
- * 4 subgroups x 64 threads. The double-buffered reference's subgroup-32
- * layout is NOT used: the Xclipse PAL compiler crashes in
- * vkCreateComputePipelines when int8 WMMA is compiled at forced subgroup
- * size 32 (fp16 WMMA at 32 is fine; see linear_qw_coopmat).
+ * Tile hierarchy (yaml): WG_TILE 128x64, WG_TILE_K = 32, and 256 threads.
+ * Devices with a native subgroup size of 64 use four subgroup-64 16x16x16
+ * MMAs. Devices with a native subgroup size of 32 use eight subgroup-32
+ * 16x16x32 MMAs.
  *
  * Hard preconditions:
  *   M % WG_TILE_M == 0, N % WG_TILE_N == 0, K % WG_TILE_K == 0,
  *   INT4: group_size % WG_TILE_K == 0,
- *   device exposes coopmat<int8>x<int8>-><int32> at 16x16x16.
+ *   device exposes the coopmat<int8>x<int8>-><int32> tuple selected by the
+ *   shader variant.
  */
 
 #version 450 core
@@ -179,6 +179,30 @@ coopmat<float, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>
 coopmat<int32_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>
     accum_int32[MMAS_PER_SG_M][MMAS_PER_SG_N];
 
+#ifdef WEIGHT_INT4
+// Avoid dynamic vector indexing, which some drivers lower to a local array.
+uint select_ivec4_component_bits(const ivec4 v, const uint index) {
+  const uint select_yw = 0u - (index & 1u);
+  const uint select_zw = 0u - ((index >> 1u) & 1u);
+  const uint xy = (uint(v.x) & ~select_yw) | (uint(v.y) & select_yw);
+  const uint zw = (uint(v.z) & ~select_yw) | (uint(v.w) & select_yw);
+  return (xy & ~select_zw) | (zw & select_zw);
+}
+
+// Unpack the one N column owned by this thread before the MMA starts.
+uint unpack_q4_column(const ivec4 block, const uint col_in_block) {
+  const uint component = col_in_block & 3u;
+  const uint parity = col_in_block >> 2u;
+  const uint w = select_ivec4_component_bits(block, component);
+  const uint base = 4u * parity;
+  const uint v0 = (((w >> (base + 0u)) & 0xFu) - 8u) & 0xFFu;
+  const uint v1 = (((w >> (base + 8u)) & 0xFu) - 8u) & 0xFFu;
+  const uint v2 = (((w >> (base + 16u)) & 0xFu) - 8u) & 0xFFu;
+  const uint v3 = (((w >> (base + 24u)) & 0xFu) - 8u) & 0xFFu;
+  return v0 | (v1 << 8u) | (v2 << 16u) | (v3 << 24u);
+}
+#endif
+
 void main() {
   const uvec2 tileID = uvec2(gl_WorkGroupID.xy);
   const uvec2 warpInTile = uvec2(
@@ -231,6 +255,7 @@ void main() {
   const uint B_TOTAL_SLOTS = K_BLOCKS_PER_CHUNK * WG_TILE_N;
   const uint B_SLOTS_PER_THREAD = B_TOTAL_SLOTS / WG_SIZE;
   const uint N8_PER_TILE = WG_TILE_N >> 3u;
+  const uint b_col_in_block = gl_LocalInvocationID.x & 7u;
 #else
   // --- B staging thread map: one (k4, n4) ivec4 block per active thread ---
   // INT8 weight block layout: wblk[n_in_blk] packs 4 K-contiguous bytes for
@@ -246,7 +271,7 @@ void main() {
   // Prefetch temp registers.
   ivec4 temp_A;
 #ifdef WEIGHT_INT4
-  ivec4 temp_B[B_SLOTS_PER_THREAD];
+  uint temp_B[B_SLOTS_PER_THREAD];
   int   temp_wsum;
   float temp_wsc;
 #else
@@ -310,10 +335,13 @@ void main() {
     const uint k4_blk = block_in_chunk / N8_PER_TILE;
     const uint n8_blk = (tile_n_start >> 3u) + (block_in_chunk % N8_PER_TILE);
 #ifdef WEIGHT_BUFFER
-    temp_B[si] = t_packed_weight[(n8_blk * nblocks_x_A) + k4_blk];
+    const ivec4 raw_weight =
+        t_packed_weight[(n8_blk * nblocks_x_A) + k4_blk];
 #else
-    temp_B[si] = texelFetch(t_packed_weight, ivec2(k4_blk, n8_blk), 0);
+    const ivec4 raw_weight =
+        texelFetch(t_packed_weight, ivec2(k4_blk, n8_blk), 0);
 #endif
+    temp_B[si] = unpack_q4_column(raw_weight, b_col_in_block);
   }
 #else
   if (b_active) {
@@ -332,7 +360,8 @@ void main() {
       const uint k_uint_in_slab = a_k_block % (MMA_K >> 2u);
       const uint base_row = a_m_block * 4u;
       [[unroll]] for (uint m4i = 0; m4i < 4u; ++m4i) {
-        Ash_int8[slab_idx * A_SLAB_U32 + (base_row + m4i) * A_STRIDE_U32 + k_uint_in_slab] =
+        Ash_int8[slab_idx * A_SLAB_U32 +
+                 (base_row + m4i) * A_STRIDE_U32 + k_uint_in_slab] =
             uint(temp_A[m4i]);
       }
     }
@@ -340,22 +369,13 @@ void main() {
     [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
       const uint slot = gl_LocalInvocationID.x + si * WG_SIZE;
       const uint block_in_chunk = slot >> 3u;
-      const uint col_in_block   = slot & 7u;
       const uint k4_in_chunk    = block_in_chunk / N8_PER_TILE;
       const uint n8_in_tile     = block_in_chunk % N8_PER_TILE;
-      const uint r      = col_in_block & 3u;
-      const uint parity = col_in_block >> 2u;
-      const int  w      = temp_B[si][r];
-      const int  base   = int(4u * parity);
-      const int v0 = (((w >> (base + 0))  & 0xF) - 8) & 0xFF;
-      const int v1 = (((w >> (base + 8))  & 0xF) - 8) & 0xFF;
-      const int v2 = (((w >> (base + 16)) & 0xF) - 8) & 0xFF;
-      const int v3 = (((w >> (base + 24)) & 0xF) - 8) & 0xFF;
-      const uint n_col      = n8_in_tile * 8u + r + parity * 4u;
+      const uint n_col      = n8_in_tile * 8u + b_col_in_block;
       const uint slab_idx   = k4_in_chunk / (MMA_K >> 2u);
       const uint k4_in_slab = k4_in_chunk % (MMA_K >> 2u);
       Bsh_int8[slab_idx * B_SLAB_U32 + n_col * B_STRIDE_U32 + k4_in_slab] =
-          uint(v0 | (v1 << 8) | (v2 << 16) | (v3 << 24));
+          temp_B[si];
     }
 #else
     if (b_active) {
@@ -363,7 +383,8 @@ void main() {
       const uint k4_in_slab = b_k4_in_chunk % (MMA_K >> 2u);
       const uint n_col_base = b_n_uint_col * 4u;
       [[unroll]] for (uint n_in_blk = 0u; n_in_blk < 4u; ++n_in_blk) {
-        Bsh_int8[slab_idx * B_SLAB_U32 + (n_col_base + n_in_blk) * B_STRIDE_U32 + k4_in_slab] =
+        Bsh_int8[slab_idx * B_SLAB_U32 +
+                 (n_col_base + n_in_blk) * B_STRIDE_U32 + k4_in_slab] =
             uint(temp_B[n_in_blk]);
       }
     }
@@ -381,7 +402,8 @@ void main() {
   //                  starts a new group, also its wsum/wsc element. Skipped
   //                  entirely on the final chunk.
   //   3. int8 MMA  — on slice (chunk%2) into accum_int32.
-  //   4. store     — temp -> A/B slice ((chunk+1)%2), unpacking the weight;
+  //   4. store     — temp -> A/B slice ((chunk+1)%2); INT4 weights are
+  //                  already unpacked in the prefetch stage;
   //                  on a group boundary, wsum/wsc -> slice ((g+1)%2).
   // The group epilog runs unconditionally at the tail of each group.
   // =========================================================
@@ -412,10 +434,13 @@ void main() {
           const uint k4_blk = (chunkK_nxt >> 2u) + block_in_chunk / N8_PER_TILE;
           const uint n8_blk = (tile_n_start >> 3u) + (block_in_chunk % N8_PER_TILE);
 #ifdef WEIGHT_BUFFER
-          temp_B[si] = t_packed_weight[(n8_blk * nblocks_x_A) + k4_blk];
+          const ivec4 raw_weight =
+              t_packed_weight[(n8_blk * nblocks_x_A) + k4_blk];
 #else
-          temp_B[si] = texelFetch(t_packed_weight, ivec2(k4_blk, n8_blk), 0);
+          const ivec4 raw_weight =
+              texelFetch(t_packed_weight, ivec2(k4_blk, n8_blk), 0);
 #endif
+          temp_B[si] = unpack_q4_column(raw_weight, b_col_in_block);
         }
         if (group_crossing && gl_LocalInvocationID.x < WG_TILE_N) {
           const uint n_idx = tile_n_start + gl_LocalInvocationID.x;
@@ -472,7 +497,8 @@ void main() {
           const uint k_uint_in_slab = a_k_block % (MMA_K >> 2u);
           const uint base_row = a_m_block * 4u;
           [[unroll]] for (uint m4i = 0; m4i < 4u; ++m4i) {
-            Ash_int8[nxt_a + slab_idx * A_SLAB_U32 + (base_row + m4i) * A_STRIDE_U32 + k_uint_in_slab] =
+            Ash_int8[nxt_a + slab_idx * A_SLAB_U32 +
+                     (base_row + m4i) * A_STRIDE_U32 + k_uint_in_slab] =
                 uint(temp_A[m4i]);
           }
         }
@@ -480,22 +506,13 @@ void main() {
         [[unroll]] for (uint si = 0; si < B_SLOTS_PER_THREAD; ++si) {
           const uint slot = gl_LocalInvocationID.x + si * WG_SIZE;
           const uint block_in_chunk = slot >> 3u;
-          const uint col_in_block   = slot & 7u;
           const uint k4_in_chunk    = block_in_chunk / N8_PER_TILE;
           const uint n8_in_tile     = block_in_chunk % N8_PER_TILE;
-          const uint r      = col_in_block & 3u;
-          const uint parity = col_in_block >> 2u;
-          const int  w      = temp_B[si][r];
-          const int  base   = int(4u * parity);
-          const int v0 = (((w >> (base + 0))  & 0xF) - 8) & 0xFF;
-          const int v1 = (((w >> (base + 8))  & 0xF) - 8) & 0xFF;
-          const int v2 = (((w >> (base + 16)) & 0xF) - 8) & 0xFF;
-          const int v3 = (((w >> (base + 24)) & 0xF) - 8) & 0xFF;
-          const uint n_col      = n8_in_tile * 8u + r + parity * 4u;
+          const uint n_col      = n8_in_tile * 8u + b_col_in_block;
           const uint slab_idx   = k4_in_chunk / (MMA_K >> 2u);
           const uint k4_in_slab = k4_in_chunk % (MMA_K >> 2u);
-          Bsh_int8[nxt_b + slab_idx * B_SLAB_U32 + n_col * B_STRIDE_U32 + k4_in_slab] =
-              uint(v0 | (v1 << 8) | (v2 << 16) | (v3 << 24));
+          Bsh_int8[nxt_b + slab_idx * B_SLAB_U32 +
+                   n_col * B_STRIDE_U32 + k4_in_slab] = temp_B[si];
         }
         if (group_crossing && gl_LocalInvocationID.x < WG_TILE_N) {
           const uint wbase_nxt = ((group_i + 1u) % 2u) * WG_TILE_N;
@@ -508,7 +525,8 @@ void main() {
           const uint k4_in_slab = b_k4_in_chunk % (MMA_K >> 2u);
           const uint n_col_base = b_n_uint_col * 4u;
           [[unroll]] for (uint n_in_blk = 0u; n_in_blk < 4u; ++n_in_blk) {
-            Bsh_int8[nxt_b + slab_idx * B_SLAB_U32 + (n_col_base + n_in_blk) * B_STRIDE_U32 + k4_in_slab] =
+            Bsh_int8[nxt_b + slab_idx * B_SLAB_U32 +
+                     (n_col_base + n_in_blk) * B_STRIDE_U32 + k4_in_slab] =
                 uint(temp_B[n_in_blk]);
           }
         }
