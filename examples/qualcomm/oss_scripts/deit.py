@@ -15,9 +15,9 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -86,19 +86,19 @@ def main(args):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
     pte_path = f"{args.artifact}/{pte_filename}.pte"
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
     )
-    adb.push(inputs=inputs)
-    adb.execute()
+    device.push(inputs=inputs)
+    device.execute()
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
     make_output_dir(output_data_folder)
 
-    adb.pull(host_output_path=args.artifact)
+    device.pull(host_output_path=args.artifact)
 
     # top-k analysis
     predictions = []

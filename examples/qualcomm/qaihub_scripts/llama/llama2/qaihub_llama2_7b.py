@@ -11,9 +11,9 @@ from multiprocessing.connection import Client
 import torch
 
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
@@ -97,7 +97,7 @@ def main(args):
     if args.compile_only:
         return
 
-    adb = SimpleADB(
+    device = Device(
         qnn_config=qnn_config,
         pte_path=pte_files,
         workspace=f"/data/local/tmp/executorch/{pte_name}",
@@ -122,7 +122,7 @@ def main(args):
             for i, pte_file in enumerate(pte_files)
         ],
         *[f"--{fname}_path {fname}.raw" for fname in pos_embs_file],
-        f"--output_path {adb.output_folder}/{output_file}",
+        f"--output_path {device.output_folder}/{output_file}",
         f"--tokenizer_path {os.path.basename(args.tokenizer_bin)}",
         f"--prompt '{args.prompt}'",
         f"--temperature {args.temperature}",
@@ -133,7 +133,7 @@ def main(args):
     ]
     runner_cmds = " ".join(
         [
-            f"cd {adb.workspace} &&",
+            f"cd {device.workspace} &&",
             f"./qaihub_llama2_7b_runner {' '.join(runner_args)}",
         ]
     )
@@ -155,15 +155,15 @@ def main(args):
 
     custom_files = [args.tokenizer_bin]
     for var_name, freq in zip(pos_embs_file, compute_pos_embedding()):
-        custom_files.append(f"{adb.working_dir}/{var_name}.raw")
+        custom_files.append(f"{device.working_dir}/{var_name}.raw")
         scale, offset = (freq.max() - freq.min()) / 65535, 32768
         freq = (freq / scale + offset).clip(min=0, max=65535).detach()
         freq.to(dtype=torch.uint16).numpy().tofile(custom_files[-1])
 
     if not args.skip_push:
-        adb.push(files=custom_files)
-    adb.execute(custom_runner_cmd=runner_cmds)
-    adb.pull(args.artifact, callback=post_process)
+        device.push(files=custom_files)
+    device.execute(custom_runner_cmd=runner_cmds)
+    device.pull(args.artifact, callback=post_process)
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
             conn.send(
