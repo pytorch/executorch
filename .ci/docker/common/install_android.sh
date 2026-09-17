@@ -79,11 +79,9 @@ install_sdk() {
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "build-tools;35.0.0"
   # And some more tools for future emulator tests
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
-  # The obsolete 'tools' package used to be installed here for the emulator. It
-  # was already unavailable on aarch64, and Google has since withdrawn it for
-  # every host, so sdkmanager answers "Failed to find package 'tools'" and the
-  # build dies under set -e. Its replacements, cmdline-tools and platform-tools,
-  # This Docker image neither installs nor runs an emulator today.
+  # Google withdrew the 'tools' package, so installing it fails under set -e.
+  # cmdline-tools and platform-tools above replace it, and this image neither
+  # installs nor runs an emulator.
 }
 
 install_prerequiresites
