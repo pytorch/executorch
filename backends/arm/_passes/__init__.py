@@ -198,6 +198,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .remove_permutes_around_elementwise_tosa_ops import (  # noqa
     RemovePermutesAroundElementwiseTosaOps,
 )
+from .remove_redundant_type_as_pass import RemoveRedundantTypeAsPass  # noqa
 from .remove_safe_softmax_guard_pass import RemoveSafeSoftmaxGuardPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,

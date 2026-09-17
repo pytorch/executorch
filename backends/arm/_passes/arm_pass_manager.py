@@ -157,6 +157,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
+    RemoveRedundantTypeAsPass,
     RemoveSafeSoftmaxGuardPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
@@ -783,6 +784,7 @@ class ArmPassManager(ExportedProgramPassManager):
         with self._tosa_context(graph_module):
             # Preprocessing passes
             self.add_pass(RemoveGraphAssertsPass(tfa_pass=True))
+            self.add_pass(RemoveRedundantTypeAsPass())
             self.add_pass(ConstantFoldingPass())
 
             # Transformation passes (pre scalar -> tensor)
