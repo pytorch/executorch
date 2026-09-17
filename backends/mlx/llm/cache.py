@@ -533,7 +533,13 @@ class HFStaticCache(StaticCache):
             layer.head_dim = config["head_dim"]
             layer.k_head_dim = config["head_dim"]
             layer.v_head_dim = config["head_dim"]
-            layer.cumulative_length = torch.zeros((), dtype=torch.long)
+            # HF versions use either scalar or length-one counters; preserve
+            # the native shape for the export wrapper's in-place position copy.
+            layer.cumulative_length = torch.as_tensor(
+                getattr(layer, "cumulative_length", 0),
+                dtype=torch.long,
+                device=layer.device,
+            )
             layer.is_initialized = True
         return cache
 
@@ -671,8 +677,8 @@ class HFStaticCache(StaticCache):
             # Current HF ExecuTorch wrappers copy the requested cache position
             # into each StaticCache layer's cumulative_length before forward().
             if hasattr(self.layers[layer_idx], "cumulative_length"):
-                # cumulative_length is a scalar; KVCache.update indexes [0], so
-                # give it the 1-D shape a cache_kwargs caller would have passed.
+                # Normalize scalar and length-one counters to the 1-D shape
+                # expected by KVCache.update, which indexes [0].
                 cache_position = self.layers[layer_idx].cumulative_length.reshape(1)
             else:
                 raise RuntimeError(
@@ -694,6 +700,17 @@ class HFStaticCache(StaticCache):
         k_cache = self.kv_cache[layer_idx].k_cache
         # Check if any value in the head_dim is non-zero for each position
         return (k_cache[0, 0, :, 0] != 0).sum().item()
+
+    def get_mask_sizes(
+        self, query_length=None, layer_idx: int = 0, *, cache_position=None
+    ) -> Tuple[int, int]:
+        """Return physical buffer geometry without native sliding-cache branches.
+
+        HF passes either a query length or (in older versions) cache positions.
+        Neither affects the full buffers returned by MLX updates. Ring slots are
+        not a contiguous token range; MLX attention builds their mask separately.
+        """
+        return self.get_max_cache_shape(layer_idx), 0
 
     def get_max_cache_shape(self, layer_idx: int = 0) -> int:
         return self.kv_cache[layer_idx].k_cache.shape[2]
