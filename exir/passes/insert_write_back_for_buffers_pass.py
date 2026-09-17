@@ -32,13 +32,33 @@ def _fx_nodes_in(value: object) -> List[torch.fx.Node]:
     return []
 
 
-def _aliasing_inputs(node: torch.fx.Node) -> List[torch.fx.Node]:
+def _alias_sets(alias_info: object) -> Set[str]:
+    """The alias-set annotations of a schema argument or return."""
+    if alias_info is None:
+        return set()
+    return set(alias_info.before_set) | set(alias_info.after_set)  # pyre-ignore[16]
+
+
+def _schema_paired_args(node: torch.fx.Node, schema) -> List[Tuple[object, object]]:
+    """Each FX arg/kwarg of node paired with its schema argument."""
+    schema_kwargs = {a.name: a for a in schema.arguments}
+    return [
+        (arg, schema.arguments[i])
+        for i, arg in enumerate(node.args)
+        if i < len(schema.arguments)
+    ] + [
+        (arg, schema_kwargs[name])
+        for name, arg in node.kwargs.items()
+        if name in schema_kwargs
+    ]
+
+
+def _schemaless_aliasing_inputs(
+    node: torch.fx.Node,
+) -> Optional[List[torch.fx.Node]]:
     """
-    The subset of node's FX inputs that the value produced by node may alias.
-    When we cannot tell (no schema, getitem, submodule calls, etc.) we
-    conservatively answer all inputs; for schema-annotated ops we answer only
-    the inputs whose alias set is shared with a return, so that e.g. the
-    shape-supplying argument of expand_as does not count as an alias.
+    Aliasing inputs for the nodes that cannot be answered from a schema, or
+    None when the node has a schema to consult.
     """
     if node.op == "output":
         # The output node produces no value of its own, so it cannot alias.
@@ -52,41 +72,36 @@ def _aliasing_inputs(node: torch.fx.Node) -> List[torch.fx.Node]:
         # later rewrites non-output view_copy nodes into true aliases of their
         # base, the first argument.
         return _fx_nodes_in(node.args[0] if node.args else None)
-    schema = getattr(node.target, "_schema", None)
-    if schema is None:
+    if getattr(node.target, "_schema", None) is None:
         return list(node.all_input_nodes)
+    return None
+
+
+def _aliasing_inputs(node: torch.fx.Node) -> List[torch.fx.Node]:
+    """
+    The subset of node's FX inputs that the value produced by node may alias.
+    When we cannot tell (no schema, getitem, submodule calls, etc.) we
+    conservatively answer all inputs; for schema-annotated ops we answer only
+    the inputs whose alias set is shared with a return, so that e.g. the
+    shape-supplying argument of expand_as does not count as an alias.
+    """
+    special = _schemaless_aliasing_inputs(node)
+    if special is not None:
+        return special
+    schema = node.target._schema  # pyre-ignore[16]
     ret_sets: Set[str] = set()
     for ret in schema.returns:
-        if ret.alias_info is not None:
-            ret_sets |= set(ret.alias_info.before_set)
-            ret_sets |= set(ret.alias_info.after_set)
+        ret_sets |= _alias_sets(ret.alias_info)
     if not ret_sets:
         return []
     if "*" in ret_sets:
         # A wildcard return may alias any input.
         return list(node.all_input_nodes)
     aliasing: List[torch.fx.Node] = []
-    for i, arg in enumerate(node.args):
-        if i < len(schema.arguments):
-            alias_info = schema.arguments[i].alias_info
-            arg_sets = (
-                set(alias_info.before_set) | set(alias_info.after_set)
-                if alias_info is not None
-                else set()
-            )
-            if arg_sets & ret_sets or "*" in arg_sets:
-                aliasing.extend(_fx_nodes_in(arg))
-    schema_kwargs = {a.name: a for a in schema.arguments}
-    for name, arg in node.kwargs.items():
-        if name in schema_kwargs:
-            alias_info = schema_kwargs[name].alias_info
-            arg_sets = (
-                set(alias_info.before_set) | set(alias_info.after_set)
-                if alias_info is not None
-                else set()
-            )
-            if arg_sets & ret_sets or "*" in arg_sets:
-                aliasing.extend(_fx_nodes_in(arg))
+    for arg, schema_arg in _schema_paired_args(node, schema):
+        arg_sets = _alias_sets(schema_arg.alias_info)
+        if arg_sets & ret_sets or "*" in arg_sets:
+            aliasing.extend(_fx_nodes_in(arg))
     return aliasing
 
 

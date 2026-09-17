@@ -2159,8 +2159,8 @@ class TestPasses(unittest.TestCase):
             for node in gm.graph.nodes
             if node.op == "call_function" and node not in copies
         )
-        for copy in copies:
-            self.assertGreater(node_order[copy], last_compute)
+        for copy_node in copies:
+            self.assertGreater(node_order[copy_node], last_compute)
         # The copies keep their original (output-spec) order.
         output_args = gm.graph.output_node().args[0]
         self.assertEqual([output_args[0], output_args[1]], copies)
