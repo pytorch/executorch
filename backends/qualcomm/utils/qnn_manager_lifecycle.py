@@ -49,9 +49,7 @@ class QnnManagerRegistry:
             self._registry[key] = qnn_manager
         return self._registry[key]
 
-    def destroy_qnn_manager(
-        self, backend_type: QnnExecuTorchBackendType, soc_model
-    ):
+    def destroy_qnn_manager(self, backend_type: QnnExecuTorchBackendType, soc_model):
         key = (backend_type, soc_model)
         if key in self._registry:
             self._registry[key].Destroy()
