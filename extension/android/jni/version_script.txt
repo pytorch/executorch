@@ -37,14 +37,19 @@ EXECUTORCH_1_0 {
     # Platform abstraction layer (extern "C" API).
     et_pal_*;
 
-    extern "C++" {
-      "executorch::runtime::*";
-      # RTTI and vtables for polymorphic public types (e.g. BackendInterface)
-      # whose key functions are emitted in this library; external .so files
-      # subclass these and need the symbols at link/load time.
-      "typeinfo for executorch::runtime::*";
-      "vtable for executorch::runtime::*";
-    };
+    # executorch::runtime::* surface, expressed as Itanium-mangled wildcards.
+    # Quoted demangled patterns are matched literally by lld (wildcards only
+    # apply unquoted, and the demangled forms contain spaces), so the mangled
+    # forms are used instead:
+    #   _ZN10executorch7runtimeE*   executorch::runtime::* (all symbols)
+    #   _ZTIN10executorch7runtimeE* typeinfo for executorch::runtime::*
+    #   _ZTVN10executorch7runtimeE* vtable for executorch::runtime::*
+    # RTTI and vtables are needed for polymorphic public types (e.g.
+    # BackendInterface) whose key functions are emitted in this library;
+    # external .so files subclass these and need the symbols at link/load time.
+    _ZN10executorch7runtimeE*;
+    _ZTIN10executorch7runtimeE*;
+    _ZTVN10executorch7runtimeE*;
   local:
     *;
 };
