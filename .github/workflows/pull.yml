@@ -854,6 +854,46 @@ jobs:
         # Test test_arm_backend.sh with test
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
+  test-arm-backend-vkml:
+    name: test-arm-backend-vkml
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_backend: test_pytest_ops_vkml
+          - test_arm_backend: test_ootb_tests_vgf
+      fail-fast: false
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh \
+          --disable-ethos-u-deps \
+          --enable-mlsdk-deps \
+          --install-mlsdk-deps-with-pip
+
+        sudo sysctl fs.inotify.max_user_watches=1048576
+
+        ARM_TEST=${{ matrix.test_arm_backend }}
+
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+          export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
+
   test-arm-backend-public-api-backward-compatibility:
     needs: docker-image
     name: test-arm-backend-public-api-backward-compatibility
