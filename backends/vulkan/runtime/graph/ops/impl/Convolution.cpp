@@ -317,8 +317,8 @@ Conv2dMethod get_conv2d_method(
 constexpr int64_t kIm2colMinCOut = 128;
 
 // A cheap gather is a second, independent reason to take im2col. The gather
-// materializes an N x K_total matrix before the GEMM runs, and a large gather is
-// fine when c_out is large because the GEMM reads it back c_out times. When
+// materializes an N x K_total matrix before the GEMM runs, and a large gather
+// is fine when c_out is large because the GEMM reads it back c_out times. When
 // c_out is small it is only worth paying if the matrix is small outright, which
 // is where the direct shader on Mali loses badly: an 80x80 3x3 conv wants ~4M
 // elements, a 640x640 9x9 conv wants ~100M.
@@ -345,8 +345,7 @@ bool should_use_conv2d_im2col(
   const size_t ndim = out_sizes.size();
   const int64_t n = out_sizes.at(ndim - 1) * out_sizes.at(ndim - 2);
   return c_out >= kIm2colMinCOut ||
-      (graph.device_is_mali() &&
-       n * k_total <= kIm2colMaxCheapGatherElements);
+      (graph.device_is_mali() && n * k_total <= kIm2colMaxCheapGatherElements);
 }
 
 GlobalWorkGrid create_conv2d_gwg(
