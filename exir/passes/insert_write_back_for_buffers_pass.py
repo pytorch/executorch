@@ -302,7 +302,13 @@ def _insert_copy(
             for mutated_node, return_node in copies:
                 mutated_alias = alias_index.aliases(mutated_node)
                 return_alias = alias_index.aliases(return_node)
-                if mutated_alias & return_aliases or return_alias & mutated_aliases:
+                if (
+                    mutated_alias & return_aliases
+                    or return_alias & mutated_aliases
+                    # Two destinations that may share storage must also keep
+                    # their original write order.
+                    or mutated_alias & mutated_aliases
+                ):
                     independent = False
                     break
                 mutated_aliases |= mutated_alias
