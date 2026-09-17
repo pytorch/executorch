@@ -741,9 +741,7 @@ class TestVulkanBackend(unittest.TestCase):
                 # any() yields a boolean tensor, which cannot go through
                 # torch.allclose, so select through it instead.
                 m = (x > 0).any(dim=-1, keepdim=True)
-                return torch.where(
-                    m, torch.full_like(x, 7.0), torch.full_like(x, -3.0)
-                )
+                return torch.where(m, torch.full_like(x, 7.0), torch.full_like(x, -3.0))
 
         # Rows are mostly negative with a positive planted in every third one,
         # so both branches are exercised. Uniformly random data would put a
