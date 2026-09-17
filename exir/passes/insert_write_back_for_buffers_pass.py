@@ -32,6 +32,16 @@ def _fx_nodes_in(value: object) -> List[torch.fx.Node]:
     return []
 
 
+def _schema_is_trusted(schema: torch.FunctionSchema) -> bool:
+    """
+    Only aten:: schemas are trusted for alias/mutation introspection. Custom
+    op schemas (mlx::, torchao::, etc.) may not accurately annotate mutation
+    or aliasing (the same policy cse_pass.py applies), so they are treated as
+    unknown.
+    """
+    return schema.name.startswith("aten::")
+
+
 def _alias_sets(alias_info: Optional[torch._C._AliasInfo]) -> Set[str]:
     """The alias-set annotations of a schema argument or return."""
     if alias_info is None:
@@ -74,7 +84,8 @@ def _schemaless_aliasing_inputs(
         # later rewrites non-output view_copy nodes into true aliases of their
         # base, the first argument.
         return _fx_nodes_in(node.args[0] if node.args else None)
-    if getattr(node.target, "_schema", None) is None:
+    schema = getattr(node.target, "_schema", None)
+    if schema is None or not _schema_is_trusted(schema):
         return list(node.all_input_nodes)
     return None
 
@@ -129,7 +140,7 @@ def _mutates_input(node: torch.fx.Node, input_node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return True
     schema = getattr(node.target, "_schema", None)
-    if schema is None:
+    if schema is None or not _schema_is_trusted(schema):
         return True
     for i, arg in enumerate(node.args):
         if _contains_node(arg, input_node) and i < len(schema.arguments):
