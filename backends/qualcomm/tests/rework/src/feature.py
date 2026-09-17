@@ -107,8 +107,12 @@ class GraphSplit:
                     compiler_specs=compile_specs,
                 ).to_executorch()
                 # file for subgraph 0
-                assert os.path.isfile("forward_schematic.bin_sg_0.py")
-                os.remove("forward_schematic.bin_sg_0.py")
+                # delete artifact before assertion to avoid leak
+                file_name = "forward_schematic.bin_sg_0.py"
+                file_exist = os.path.isfile(file_name)
+                if file_exist:
+                    os.remove(file_name)
+                assert os.path.isfile(file_exist)
                 # remote testing
                 invoke_remote(
                     qnn_config=qnn_config,
