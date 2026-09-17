@@ -343,7 +343,9 @@ TEST_F(ProgramTest, EmptyConstantSegmentIsStillASegment) {
   // empty segments") and what makes the segment indistinguishable from an
   // absent one. BufferDataLoader hands back a pointer into its own buffer and
   // would hide this.
-  std::string path = std::filesystem::temp_directory_path() /
+  // std::filesystem::path, not std::string: path::value_type is wchar_t on
+  // Windows, so there is no implicit conversion to std::string there.
+  const std::filesystem::path path = std::filesystem::temp_directory_path() /
       "et_empty_constant_segment_test.pte";
   {
     std::ofstream out(path, std::ios::binary);
@@ -351,7 +353,7 @@ TEST_F(ProgramTest, EmptyConstantSegmentIsStillASegment) {
     out.write(reinterpret_cast<const char*>(data.data()), data.size());
   }
 
-  Result<FileDataLoader> loader = FileDataLoader::from(path.c_str());
+  Result<FileDataLoader> loader = FileDataLoader::from(path.string().c_str());
   ASSERT_EQ(loader.error(), Error::Ok);
   Result<Program> program = Program::load(&loader.get(), kDefaultVerification);
   std::filesystem::remove(path);
