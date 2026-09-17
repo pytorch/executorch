@@ -216,10 +216,11 @@ Error XNNWeightsCache::initialize_for_runtime(
   is_finalized_ = false;
 
   // An earlier compile can bail out between its first load_unpacked_data and
-  // its finalize_for_runtime, leaving its constants here. This instance is
-  // shared by every model in the process, so without this the next model to
-  // compile successfully would adopt those buffers and hold them until it is
-  // unloaded. The model that loaded them is gone, so free them.
+  // its finalize_for_runtime, leaving its constants here. A successful compile
+  // frees whatever is left in finalize_for_runtime, but a failed one never
+  // reaches it, so back to back failures would pile up on an instance that
+  // lives as long as the process. The model that loaded them is gone, so free
+  // them here.
   for (FreeableBuffer& buffer : unpacked_data_) {
     buffer.Free();
   }
@@ -310,9 +311,11 @@ Error XNNWeightsCache::initialize_for_runtime(
 void XNNWeightsCache::take_unpacked_data_from(
     size_t first_index,
     std::vector<FreeableBuffer>& out) {
-  if (first_index >= unpacked_data_.size()) {
-    return;
-  }
+  // No bounds check: the loop below is empty when first_index is at or past
+  // the end, and the list only grows during a compile so that cannot happen
+  // anyway. An index that is too small cannot be detected here, and would hand
+  // the executor buffers of values XNNPACK did pack; callers must pass the
+  // get_num_unpacked_data() taken immediately before the value was defined.
   for (size_t i = first_index; i < unpacked_data_.size(); i++) {
     // The name map is keyed on the data pointer, which a move preserves, so
     // look_up_or_insert keeps naming packed entries correctly after this.
