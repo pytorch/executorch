@@ -187,6 +187,10 @@ class ModelArgs:
     use_attn_o_norm: bool = False
     use_residual_gate: bool = False
     use_ffn_learnable_scales: bool = False
+    # Zero-centered gamma: the checkpoint stores gamma offset by -1, so the
+    # effective scale is ``weight + 1``. rlformers applies this in
+    # RMSNormWithInputScale; ignoring it silently rescales every post-FFN norm.
+    norm_zero_centered_gamma: bool = False
     output_soft_cap_temp: Optional[float] = None
     output_linear_intermediate_dim: int = 0
 
