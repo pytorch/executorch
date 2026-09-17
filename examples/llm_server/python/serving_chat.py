@@ -139,9 +139,7 @@ class ServingChat:
 
     @staticmethod
     def _return_reasoning(req: ChatCompletionRequest) -> bool:
-        # Default ON: thinking models bill reasoning tokens either way;
-        # return them unless the client explicitly opts out, matching
-        # SGLang/llama.cpp. Explicit {"return_reasoning": False} opts out.
+        # Response visibility only; the model still computes reasoning on opt-out.
         kwargs = req.chat_template_kwargs or {}
         return kwargs.get("return_reasoning", True)
 

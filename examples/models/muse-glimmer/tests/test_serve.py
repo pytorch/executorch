@@ -705,7 +705,9 @@ async def _create_message(serving, request):
 
 
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.parametrize("echo_mode", ["edited", "unchanged", "omitted", "opt-out"])
+@pytest.mark.parametrize(
+    "echo_mode", ["edited", "unchanged", "omitted", "null", "opt-out", "opt-out-null"]
+)
 def test_thinking_turn_replays_ids_only_for_unchanged_history(stream, echo_mode):
     # The worker reports non-terminal ids; the next rendered turn supplies EOS.
     # Two raw thinking blocks become one client-visible reasoning string.
@@ -732,13 +734,15 @@ def test_thinking_turn_replays_ids_only_for_unchanged_history(stream, echo_mode)
                 session_id="s",
                 stream=stream,
                 chat_template_kwargs=(
-                    {"return_reasoning": False} if echo_mode == "opt-out" else None
+                    {"return_reasoning": False}
+                    if echo_mode.startswith("opt-out")
+                    else None
                 ),
             ),
         )
     )
     assert first["content"] == "156"
-    if echo_mode == "opt-out":
+    if echo_mode.startswith("opt-out"):
         assert "reasoning_content" not in first
     else:
         assert first["reasoning_content"] == "\nFirst step.\n\nSecond step."
@@ -746,6 +750,8 @@ def test_thinking_turn_replays_ids_only_for_unchanged_history(stream, echo_mode)
         first["reasoning_content"] = "Use this corrected reasoning instead."
     elif echo_mode == "omitted":
         first.pop("reasoning_content")
+    elif echo_mode in ("null", "opt-out-null"):
+        first["reasoning_content"] = None
     request2 = ChatCompletionRequest(
         messages=[u1, ChatMessage(**first), ChatMessage(role="user", content="And?")],
         session_id="s",
@@ -760,6 +766,54 @@ def test_thinking_turn_replays_ids_only_for_unchanged_history(stream, echo_mode)
         assert _assemble(prompt2) != resident + _benc(trailing)
     else:
         assert _assemble(prompt2) == resident + _benc(trailing)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("edited_field", ["content", "reasoning_content"])
+@pytest.mark.parametrize("restore_history", [False, True])
+def test_replay_recovers_after_edit_without_restoring_stale_turns(
+    stream, edited_field, restore_history
+):
+    raw = [
+        f" to=self<|message|>reasoning {i}<|eom|>"
+        f"<|start|>assistant to=user<|message|>a{i}"
+        for i in range(1, 6)
+    ]
+    generated = [_benc(text) for text in raw]
+    template = _HarmonyTemplate()
+    serving, runtime = _glimmer_serving(
+        [{"text": text, "gen_ids": ids} for text, ids in zip(raw, generated)],
+        template=template,
+    )
+
+    async def conversation():
+        messages = []
+        for i in range(5):
+            if i == 3:
+                original = messages[3]
+                messages[3] = original.model_copy(update={edited_field: "EDITED"})
+            elif i == 4 and restore_history:
+                messages[3] = original
+            messages.append(ChatMessage(role="user", content=f"u{i + 1}"))
+            response = await _create_message(
+                serving,
+                ChatCompletionRequest(
+                    messages=list(messages), session_id="s", stream=stream
+                ),
+            )
+            assert response["content"] == f"a{i + 1}"
+            prompt = runtime.prompts[-1]
+            assert _assemble(prompt) == _benc(template.render(messages))
+            expected = generated[:i] if i < 3 else [generated[0]]
+            if i == 4:
+                expected.append(generated[3])
+                if not restore_history:
+                    resident = _assemble(runtime.prompts[3]) + generated[3]
+                    assert _assemble(prompt)[: len(resident)] == resident
+            assert [s["ids"] for s in prompt.segments or [] if "ids" in s] == expected
+            messages.append(ChatMessage(**response))
+
+    asyncio.run(conversation())
 
 
 def test_extract_muse_glimmer_reasoning_plain_text_fallback():

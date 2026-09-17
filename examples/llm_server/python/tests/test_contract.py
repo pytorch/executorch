@@ -185,11 +185,15 @@ def test_reasoning_response_contract(make_client, stream, options, returns_reaso
 
 
 @pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("has_extractor", [False, True])
 @pytest.mark.parametrize("value", ["true", "false", 0, 1, 1.0, None, [], {}])
 def test_return_reasoning_rejects_non_boolean_before_generation(
-    make_client, stream, value
+    make_client, stream, has_extractor, value
 ):
-    client, fake = make_client(max_named_sessions=1)
+    client, fake = make_client(
+        max_named_sessions=1,
+        reasoning_extractor=(lambda text: (None, text)) if has_extractor else None,
+    )
     response = client.post(
         "/v1/chat/completions",
         json={

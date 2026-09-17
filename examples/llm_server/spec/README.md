@@ -26,10 +26,16 @@ uses the worker's unset/random value.
 `model` must match the id returned by `/v1/models`; unknown ids return
 `404 model_not_found`.
 
-For models with a reasoning extractor, `chat_template_kwargs.return_reasoning`
-defaults to `true`. Set it to the boolean `false` to omit reasoning from the
-response; this does not disable the model's reasoning computation. Non-boolean
-values return `400 invalid_request_error` (`code: "invalid_value"`).
+`chat_template_kwargs.return_reasoning` is an ExecuTorch response-visibility
+control and defaults to `true`. For models with a reasoning extractor, set it
+to `false` to omit reasoning from the response; the model still computes reasoning.
+Unlike disabling reasoning separation in SGLang or llama.cpp, this suppresses
+extracted reasoning instead of leaving it in `content`.
+
+The flag must be a JSON boolean for every model, including models without a
+reasoning extractor. Non-boolean values return `400 invalid_request_error`
+(`code: "invalid_value"`) before session admission or generation. This tightens
+earlier behavior, which accepted non-boolean values as an opt-out.
 
 **Rejected** with `400 invalid_request_error` (`code: "unsupported_parameter"`)
 rather than silently ignored — a client relying on them would otherwise get
@@ -95,9 +101,16 @@ suffix. All KV/resident state lives inside the worker/session, never the control
 plane.
 
 For named sessions, an unchanged assistant reply can reuse its original generated
-token IDs. Clients may omit `reasoning_content` when echoing a reply. If the field
-is supplied, it must match the value returned to that client; a changed value
-(including explicit `null` or `""`) invalidates that turn's stored IDs and later
-records. The updated history is then rendered normally. If an assistant boundary
-cannot be verified, the server also uses the rendered text. The worker checks
-the resulting token sequence before reusing KV state in either case.
+token IDs. Clients may omit `reasoning_content` or send `null` when echoing a reply;
+both allow replay of the original tokens, including reasoning. A supplied string
+must exactly match the value returned to that client. String edits, including
+whitespace or line-ending changes and `""`, invalidate that turn's stored IDs and
+later records. Invalidated turns render normally and do not regain their old IDs
+if the client restores the old history. Newly generated turns can be replayed at
+their original assistant-turn indices.
+
+If an assistant boundary cannot be verified, the server uses the rendered text.
+The generic launcher accepts `--assistant-header` and warns at startup if it is
+absent from the template's generation prompt. The worker checks the resulting
+token sequence before reusing KV state in either case; text fallback may still
+reuse KV when the tokens match.

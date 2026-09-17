@@ -876,7 +876,13 @@ def test_plain_turn_splice_reproduces_resident_prefix():
             "ORIGINAL", {"reasoning_content": "ORIGINAL "}, False, id="whitespace"
         ),
         pytest.param("ORIGINAL", {"reasoning_content": ""}, False, id="empty"),
-        pytest.param("ORIGINAL", {"reasoning_content": None}, False, id="null"),
+        pytest.param("ORIGINAL", {"reasoning_content": None}, True, id="null"),
+        pytest.param(
+            "line 1\nline 2",
+            {"reasoning_content": "line 1\r\nline 2"},
+            False,
+            id="line-endings",
+        ),
         pytest.param(None, {"reasoning_content": None}, True, id="unchanged-null"),
         pytest.param(None, {"reasoning_content": ""}, False, id="null-to-empty"),
     ],
@@ -1205,6 +1211,69 @@ def test_mistral_bracket_terminator_tail_falls_back(u1):
     )
     assert pi.segments is None and pi.text == rendered
     assert enc(pi.text) == resident + enc("</s>[INST]u2[/INST]")
+
+
+@pytest.mark.parametrize(
+    "template_cls, header",
+    [(_FakeOtherHeader, _FakeOtherHeader.OHDR), (_FakeMistralNemo, "[/INST]")],
+    ids=["llama", "mistral"],
+)
+@pytest.mark.parametrize("configured", [False, True])
+def test_non_chatml_header_configuration_preserves_generated_bpe_tokens(
+    template_cls, header, configured
+):
+    vocab = {chr(i): i for i in range(128)}
+    vocab["ab"] = len(vocab)
+    tokenizer = Tokenizer(models.BPE(vocab, merges=[("a", "b")]))
+    tokenizer.decoder = decoders.Fuse()
+    fake = template_cls()
+
+    class TemplateTokenizer:
+        def apply_chat_template(self, messages, tools, **kwargs):
+            return fake.render([ChatMessage(**m) for m in messages], tools=tools)
+
+    def enc(text):
+        return tokenizer.encode(text, add_special_tokens=False).ids
+
+    template = ChatTemplate(
+        allow_fallback=True, assistant_header=header if configured else HDR
+    )
+    template._hf = TemplateTokenizer()
+    state = OpenAITranscriptState(template)
+    first_prompt = template.render(_msgs(("user", "u1")))
+    # Decoding preserves the answer, but re-encoding merges these two tokens.
+    generated = [vocab["a"], vocab["b"]]
+    assert tokenizer.decode(generated) == "ab"
+    assert generated != enc("ab")
+    resident = enc(first_prompt) + generated
+    state.record_assistant_turn(
+        session_id="s",
+        content="ab",
+        tool_calls=None,
+        generated_token_ids=generated,
+        prior_turns=0,
+        preamble=template.generation_preamble(),
+    )
+    messages = _msgs(("user", "u1"), ("assistant", "ab"), ("user", "u2"))
+    rendered = template.render(messages)
+    prompt = state.build_prompt_input(
+        session_id="s",
+        messages=messages,
+        rendered_prompt=rendered,
+        tools=None,
+        template_kwargs=None,
+    )
+    assembled = (
+        enc(prompt.text) if prompt.text is not None else _assemble(prompt.segments, enc)
+    )
+    assert tokenizer.decode(assembled) == rendered
+    if configured:
+        assert prompt.segments is not None
+        suffix = rendered[len(first_prompt + "ab") :]
+        assert assembled == resident + enc(suffix)
+    else:
+        assert prompt.text == rendered
+        assert assembled[: len(resident)] != resident
 
 
 # --- generation_preamble threads tools ------------------------------------

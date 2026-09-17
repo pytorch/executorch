@@ -42,7 +42,7 @@ class ChatMessage(BaseModel):
     # ResponseMessage.reasoning_content so a multi-turn client can echo an assistant
     # turn's reasoning back into the request; a chat template that renders prior
     # reasoning needs it here, and without the field it is dropped at parse.
-    # Omission allows stored-token replay; an explicit edit invalidates that turn.
+    # Omission/null allows stored-token replay; a string edit invalidates that turn.
     reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
     tool_call_id: Optional[str] = None

@@ -84,9 +84,9 @@ def _extract_muse_glimmer_reasoning(text: str) -> tuple[str | None, str]:
 
     Nonempty thinking bodies retain their whitespace and are joined with a
     newline without adding channel framing. Interior text is not otherwise
-    sanitized. Warm resume compares any supplied reasoning against the returned
+    sanitized. Warm resume compares any supplied reasoning string against the returned
     text before splicing stored generated token ids, preserving the original
-    channel framing for unchanged echoes or omitted reasoning.
+    channel framing for unchanged echoes or omitted/null reasoning.
     """
     matches = list(_MUSE_GLIMMER_ADDRESSED_HEADER_RE.finditer(text))
     if not matches:

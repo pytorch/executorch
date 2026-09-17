@@ -60,11 +60,19 @@ Key flags:
 | Flag | Effect |
 |------|--------|
 | `--hf-tokenizer` | model's HF chat template (required unless fallback) |
+| `--assistant-header` | exact assistant generation header, including trailing whitespace (default: ChatML) |
 | `--allow-chatml-fallback` | opt into approximate ChatML when no HF tokenizer |
 | `--no-think` | default `enable_thinking=False` (e.g. Qwen3) |
 | `--max-context N` | reject over-long prompts with 400 instead of failing mid-gen |
 | `--num-runners N` | Worker processes — **1 only** (one worker hosts many isolated sessions on one weight load; more would duplicate weights) |
 | `--worker-bin PATH` | path to a model worker binary that speaks the llm_server JSONL protocol |
+
+Set `--assistant-header` to the model template's exact generation boundary when
+it differs from ChatML. For Llama 3 templates, add
+`--assistant-header $'<|start_header_id|>assistant<|end_header_id|>\n\n'` in Bash;
+the `$'...'` quoting supplies literal newlines. The launcher warns once at startup
+if the configured header is absent from a rendered probe. Unverified boundaries
+use the rendered text, which can reduce KV reuse.
 
 ## Smoke test
 
