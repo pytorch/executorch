@@ -7228,8 +7228,12 @@ class TestQNNFloatingPointUtils(TestQNN):
             module, sample_input, compiler_spec
         ).to_executorch()
         # file for subgraph 0
-        self.assertTrue(os.path.isfile("forward_schematic.bin_sg_0.py"))
-        os.remove("forward_schematic.bin_sg_0.py")
+        # delete artifact before assertion to avoid leak
+        file_name = "forward_schematic.bin_sg_0.py"
+        file_exist = os.path.isfile(file_name)
+        if file_exist:
+            os.remove(file_name)
+        self.assertTrue(file_exist)
         self.verify_output(
             module=module, sample_inputs=sample_input, executorch_prog=edge_prog_mgr
         )

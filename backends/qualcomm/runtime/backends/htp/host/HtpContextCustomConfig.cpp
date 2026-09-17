@@ -26,12 +26,12 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
     ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
   }
 
-#if (QNN_HTP_API_VERSION_MAJOR >= 5 && QNN_HTP_API_VERSION_MINOR >= 49)
+#if (QNN_HTP_API_VERSION_MAJOR > 5 || (QNN_HTP_API_VERSION_MAJOR == 5 && QNN_HTP_API_VERSION_MINOR >= 49))
   if (htp_options_->use_graph_splitting()) {
     p_custom_config = AllocContextCustomConfig();
     p_custom_config->option =
         QNN_HTP_CONTEXT_CONFIG_OPTION_GRAPH_SPLITTING_CONFIGS;
-    QnnHtpContext_GraphSplit_t graph_split_info;
+    QnnHtpContext_GraphSplit_t graph_split_info{};
     graph_split_info.graphSplittingEnabled = true;
     p_custom_config->graphSplittingConfigs = graph_split_info;
     ret.push_back(static_cast<QnnContext_CustomConfig_t>(p_custom_config));
@@ -42,8 +42,8 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
         "use_graph_splitting is enabled but the QNN SDK used for this build "
         "(API %d.%d) does not support graph splitting, which requires HTP API "
         "5.49 or newer. The option will be ignored.",
-        QNN_API_VERSION_MAJOR,
-        QNN_API_VERSION_MINOR);
+        QNN_HTP_API_VERSION_MAJOR,
+        QNN_HTP_API_VERSION_MINOR);
   }
 #endif
 
