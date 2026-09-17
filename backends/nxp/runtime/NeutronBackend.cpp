@@ -290,6 +290,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
     auto* cfg = allocator->allocateInstance<NeutronExecutorchConfig>();
 
+    // allocateInstance returns raw, uninitialized memory (no constructor runs),
+    // so set the driver-config timeout explicitly.
+    cfg->mcfg.timeoutSeconds = 60;
+
     // The following data is read from the "processed" data blob.
     //    cfg->numInputs
     //    cfg->numoutputs
@@ -438,8 +442,20 @@ class NeutronBackend final : public PyTorchBackendInterface {
       auto arg = args[cfg->inputMap[i]]->toTensor();
       auto dim_order = arg.dim_order().data();
 
-      if (cfg->inputTranspositionFlags[i] &&
-          multipleChannelsPresent(arg.sizes())) {
+      if (cfg->inputTranspositionFlags[i]) {
+        if (!multipleChannelsPresent(arg.sizes())) {
+          // The input has only 1 channel, so NCHW and NHWC data is equivalent
+          // and no transposition is needed.
+          if (!is_channels_last_dim_order(dim_order, arg.dim()) &&
+              !is_contiguous_dim_order(dim_order, arg.dim())) {
+            ET_LOG(Error, "Input %d uses unsupported dim-order.", i);
+            print_dim_order(dim_order, arg.dim());
+            return Error::InvalidProgram;
+          }
+
+          cfg->dcfg.inputs[i] = arg.const_data_ptr();
+          continue;
+        }
         // The input must be transposed.
         if (arg.sizes().size() < 3) {
           ET_LOG(Error, "Unable to transpose 1D and 2D input to channel last");
@@ -492,10 +508,21 @@ class NeutronBackend final : public PyTorchBackendInterface {
       auto arg = args[cfg->numInputArgs + cfg->outputMap[i]]->toTensor();
       auto dim_order = arg.dim_order().data();
 
-      if (cfg->outputTranspositionFlags[i] &&
-          multipleChannelsPresent(arg.sizes())) {
-        // The output will have to be transposed.
+      if (cfg->outputTranspositionFlags[i]) {
+        if (!multipleChannelsPresent(arg.sizes())) {
+          // The output has only 1 channel, so NCHW and NHWC data is equivalent
+          // and no transposition is needed.
+          if (!is_channels_last_dim_order(dim_order, arg.dim()) &&
+              !is_contiguous_dim_order(dim_order, arg.dim())) {
+            ET_LOG(Error, "Output %d uses unsupported dim-order.", i);
+            print_dim_order(dim_order, arg.dim());
+            return Error::InvalidProgram;
+          }
 
+          cfg->dcfg.outputs[i] = arg.mutable_data_ptr();
+          continue;
+        }
+        // The output will have to be transposed.
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The tensor will already be correctly permuted. No transposition
           //  needed.
@@ -523,6 +550,16 @@ class NeutronBackend final : public PyTorchBackendInterface {
       }
     }
 
+    // Resume (clock-ungate) the NPU immediately before inference and suspend it
+    // again immediately after, so its clock only runs during compute
+#ifdef NEUTRON_NPU_POWER_GATING
+    NeutronError resumeRC = neutronResume();
+    if (resumeRC != ENONE) {
+      ET_LOG(Error, "neutronResume failed with error code %ld", resumeRC);
+      return Error::InvalidProgram;
+    }
+#endif
+
 #ifdef ET_EVENT_TRACER_ENABLED
     // Save ticks before neutron compute to measure how much time profiling dump
     // takes
@@ -530,6 +567,21 @@ class NeutronBackend final : public PyTorchBackendInterface {
 #endif
     // Run neutron compute.
     NeutronError neutronRC = neutronRunBlocking(cfg->nmh, &cfg->dcfg);
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Save ticks after neutron compute to measure how much time profiling dump
+    // takes
+    et_timestamp_t stop_ticks = ::executorch::runtime::pal_current_ticks();
+#endif
+
+#ifdef NEUTRON_NPU_POWER_GATING
+    // Suspend (clock-gate) the NPU again regardless of the run result; a failed
+    // suspend only wastes power, so it must not fail the inference.
+    NeutronError suspendRC = neutronSuspend();
+    if (suspendRC != ENONE) {
+      ET_LOG(Error, "neutronSuspend failed with error code %ld", suspendRC);
+    }
+#endif
+
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
@@ -537,11 +589,6 @@ class NeutronBackend final : public PyTorchBackendInterface {
           neutronRC);
       return Error::InvalidProgram;
     }
-#ifdef ET_EVENT_TRACER_ENABLED
-    // Save ticks after neutron compute to measure how much time profiling dump
-    // takes
-    et_timestamp_t stop_ticks = ::executorch::runtime::pal_current_ticks();
-#endif
 
     // Transpose outputs.
     for (int i = 0; i < cfg->numOutputs; i++) {
@@ -586,7 +633,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
       char* profile_info =
           static_cast<char*>(cfg->dcfg.outputs[profiling_index]);
       NeutronFullProfilingEvent* neutron_events =
-          reinterpreter_cast<NeutronFullProfilingEvent*>(profile_info);
+          reinterpret_cast<NeutronFullProfilingEvent*>(profile_info);
       executorch::runtime::EventTracer* tracer = context.event_tracer();
       uint32_t start_time = 0;
       int index = 0;
@@ -612,6 +659,14 @@ class NeutronBackend final : public PyTorchBackendInterface {
           index++;
         }
       }
+      // The neutronGetSdkVersion() function is available starting with Neutron
+      // Software 3.2.1. The code below is not backward compatible with earlier
+      // Neutron Software versions.
+      NeutronSdkVersion neutron_sdk_version = neutronGetSdkVersion();
+      uint16_t neutron_sdk_version_uint16 =
+          static_cast<const uint16_t>(neutron_sdk_version.major << 8) |
+          static_cast<const uint16_t>(neutron_sdk_version.minor << 4) |
+          static_cast<const uint16_t>(neutron_sdk_version.patch);
       event_tracer_log_profiling_delegate(
           tracer,
           nullptr,
@@ -619,9 +674,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
           neutron_events[events_num - 1].startEvent.time,
           neutron_events[events_num - 1].stopEvent.time + stop_ticks -
               start_ticks,
-          static_cast<const void*>(
-              &neutron_events[events_num - 1].startEvent.functionCode),
-          sizeof(uint8_t));
+          static_cast<const void*>(&neutron_sdk_version_uint16),
+          sizeof(uint16_t));
     }
 #endif
 

@@ -38,6 +38,18 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "turboquant",
+    srcs = [
+        "turboquant/__init__.py",
+        "turboquant/codebook.py",
+        "turboquant/kv_cache.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "module_lib",
     srcs = [
         "__init__.py",

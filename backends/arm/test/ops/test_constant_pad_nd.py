@@ -18,6 +18,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -344,7 +345,20 @@ def test_constant_pad_nd_tosa_INT_a16w8(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.XfailIfNoCorstone300
+def test_constant_pad_nd_u55_INT():
+    inp, padding, value, mode = test_data_suite["4dim_last2dim"]()
+    pipeline = EthosU55PipelineINT[input_t1](
+        ConstantPadND(padding, value, mode),
+        (inp,),
+        aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_constant_pad_nd_vgf_no_quant(test_data: Tuple):
     inp, padding, value, mode = test_data()

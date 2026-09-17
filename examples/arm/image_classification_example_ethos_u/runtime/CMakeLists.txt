@@ -71,28 +71,38 @@ endif()
 find_package(
   executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
 )
+include(${ET_DIR_PATH}/backends/arm/cmake/ArmRunnerUtils.cmake)
 
 # The core_platform project defines the corstone-320 target and contains the
 # start-up code for the Cortex-M
 add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
 
 add_executable(img_class_example main.cpp)
+arm_runner_link_minimal_specs(img_class_example)
 
 target_sources(
   img_class_example
-  PRIVATE main.cpp
-          ${CMAKE_SOURCE_DIR}/../../executor_runner/arm_memory_allocator.cpp
+  PRIVATE main.cpp ${ET_DIR_PATH}/examples/arm/common/arm_memory_allocator.cpp
+)
+
+arm_runner_create_selected_ops_lib(
+  LIB_NAME
+  "image_classification_cortex_m_ops_lib"
+  CUSTOM_OPS_YAML
+  "${ET_DIR_PATH}/backends/cortex_m/ops/operators.yaml"
+  OPS_FROM_MODEL
+  "${ET_PTE_FILE_PATH}"
+  KERNEL_LIBS
+  cortex_m_kernels
+  DEPS
+  executorch
 )
 
 target_link_libraries(
   img_class_example
-  PUBLIC executorch
-         ethosu_target_init
-         extension_runner_util
-         quantized_ops_lib
+  PUBLIC executorch ethosu_target_init extension_runner_util
+         image_classification_cortex_m_ops_lib cortex_m_kernels
          portable_kernels
-         cortex_m_kernels
-         cortex_m_ops_lib
 )
 
 # Apply whole-archive helper where available to keep static initializers.
@@ -108,7 +118,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 set(LINK_FILE_OUT_BASE "platform_linker_script")
-set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/../../executor_runner/Corstone-320.ld")
+set(LINK_FILE_IN
+    "${ET_DIR_PATH}/backends/arm/cmake/linker_scripts/Corstone-320.ld"
+)
 set(LINK_FILE_OUT
     ${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}
 )
@@ -136,9 +148,8 @@ target_link_options(img_class_example PRIVATE "-T" "${LINK_FILE_OUT}")
 # file
 execute_process(
   COMMAND
-    ${PYTHON_EXECUTABLE}
-    ${CMAKE_SOURCE_DIR}/../../executor_runner/pte_to_header.py --pte
-    ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    ${PYTHON_EXECUTABLE} ${ET_DIR_PATH}/examples/arm/common/pte_to_header.py
+    --pte ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # Convert an RGB image to an array in a .h file
@@ -150,5 +161,5 @@ execute_process(
 target_include_directories(
   img_class_example
   PRIVATE ${ET_INCLUDE_PATH} ${ET_DIR_PATH}/runtime/core/portable_type/c10
-          ${CMAKE_SOURCE_DIR}/../../executor_runner ${CMAKE_CURRENT_BINARY_DIR}
+          ${ET_DIR_PATH}/examples/arm/common ${CMAKE_CURRENT_BINARY_DIR}
 )

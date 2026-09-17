@@ -22,7 +22,7 @@
 
 namespace vkcompute {
 
-utils::uvec3 pick_embedding_q4gsw_global_wg_size(
+GlobalWorkGrid pick_embedding_q4gsw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -38,7 +38,7 @@ utils::uvec3 pick_embedding_q4gsw_global_wg_size(
     depth *= static_cast<uint32_t>(sizes[i]);
   }
 
-  return {blocks_per_row, height, depth};
+  return GlobalWorkGrid({blocks_per_row, height, depth}, kTiledWorkGrid);
 }
 
 void resize_embedding_q4gsw_node(
@@ -99,8 +99,8 @@ void add_embedding_q4gsw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_embedding_q4gsw_global_wg_size,
-      default_pick_local_wg_size,
+      pick_embedding_q4gsw_gwg,
+      default_pick_lwg,
       {{out, vkapi::kWrite}, {{indices, weight, weight_scales}, vkapi::kRead}},
       param_ubos,
       push_constants,

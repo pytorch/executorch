@@ -133,6 +133,10 @@ def _lenaware_attention_forward(
     O(context) instead of O(max_seq_len) — and routes L_q==1 decode through the
     length-aware split-K flash-decoding kernel. Sliding-window layers are not
     patched (they already use a bounded ring buffer).
+
+    NOTE: ``attn_mask`` is unused — the full-attention mask is standard causal,
+    so it is reconstructed in the kernel (``is_causal=True`` with ``kv_len``) to
+    save data transfer, exactly as on the TurboQuant path.
     """
     B, T, _ = x.shape
 
@@ -172,14 +176,18 @@ def _lenaware_attention_forward(
 
     # ``scale=self.scaling`` (= 1.0 for Gemma 4) — Gemma's QK-norm has absorbed
     # the 1/sqrt(d) factor into trained weights. ``enable_gqa=True`` lets the
-    # kernel handle the head ratio without materializing expanded K/V.
+    # kernel handle the head ratio without materializing expanded K/V. In-kernel
+    # causal: pass no dense mask; the kernel reconstructs the standard causal
+    # mask analytically (bottom-right aligned via kv_len), so the dense
+    # [1, 1, T, max_seq_len] bool mask is dead code and dropped by DCE -- exactly
+    # as on the TurboQuant path.
     y = torch.ops.triton.sdpa(
         q,
         k,
         v,
-        attn_mask,
+        None,  # attn_mask: reconstruct the causal mask in-kernel
         0.0,  # dropout_p
-        False,  # is_causal: attn_mask already encodes causal masking
+        True,  # is_causal: with kv_len, uses bottom-right aligned causal
         self.scaling,
         True,  # enable_gqa
         kv_len,
@@ -206,17 +214,21 @@ def _fused_mlp_forward(self, x: torch.Tensor) -> torch.Tensor:
 def _concat_coalesced_int4_along_n(a, b):
     """Concatenate two ``CudaCoalescedInt4Tensor`` along the output (N) dim.
 
-    qdata is ``[N, K/2]`` and scale/zero_point are ``[N, n_groups]`` in the
-    coalesced layout, so a per-output-row concat on dim 0 is exact: the W4A8
-    dp4a matvec reads each output row's qdata/scale/zero independently, so
-    out[:N_a] reproduces ``a`` and out[N_a:] reproduces ``b`` bit-for-bit.
+    All stored fields are in the coalesced layout with N as dim 0 — qdata
+    ``[N, K/2]``, ``scale`` ``[N, n_groups]`` uint8, ``scale_step`` ``[N, K/256]``
+    fp16, ``zero_point`` ``[N, n_groups]`` uint8, ``zero_point_step`` ``[N, 1]`` bf16 —
+    so a per-output-row concat on dim 0 is exact: the W4A8 dp4a matvec reads each
+    output row's metadata independently, so out[:N_a] reproduces ``a`` and
+    out[N_a:] reproduces ``b`` bit-for-bit (each row keeps its own steps).
     """
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
 
     return CudaCoalescedInt4Tensor(
         torch.cat([a.qdata, b.qdata], dim=0),
         torch.cat([a.scale, b.scale], dim=0),
+        torch.cat([a.scale_step, b.scale_step], dim=0),
         torch.cat([a.zero_point, b.zero_point], dim=0),
+        torch.cat([a.zero_point_step, b.zero_point_step], dim=0),
         a.block_size,
         torch.Size([a.shape[0] + b.shape[0], a.shape[1]]),
         None,

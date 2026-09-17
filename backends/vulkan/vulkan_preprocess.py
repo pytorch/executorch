@@ -17,6 +17,7 @@ from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    Conv1dAsConv2dPass,
     FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
@@ -90,6 +91,17 @@ def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     return program
 
 
+def _parse_external_constants_max_data_bytes(value_bytes: bytes) -> int:
+    # CompileSpec values can bypass parse_compile_options, so validate this
+    # serialized boundary independently.
+    if len(value_bytes) != 8:
+        raise ValueError("external_constants_max_data_bytes must be encoded as uint64")
+    value = int.from_bytes(value_bytes, byteorder="little")
+    if value <= 0:
+        raise ValueError("external_constants_max_data_bytes must be a positive uint64")
+    return value
+
+
 def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
     options = {}
     for spec in compile_specs:
@@ -118,6 +130,12 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
 
         if spec.key == "skip_memory_planning":
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "alias_buffer_mutations":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "external_constants_max_data_bytes":
+            options[spec.key] = _parse_external_constants_max_data_bytes(spec.value)
 
         # Unhandled options are ignored
 
@@ -158,6 +176,7 @@ class VulkanBackend(BackendDetails):
         )
         downcast_64_bit = compile_options.get("downcast_64_bit", True)
         force_fp16 = compile_options.get("force_fp16", False)
+        alias_buffer_mutations = compile_options.get("alias_buffer_mutations", False)
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
@@ -172,6 +191,7 @@ class VulkanBackend(BackendDetails):
                 AddmmToLinearTransform(),
                 InsertDtypePromotionPass(),
                 FusePatternsPass(),
+                Conv1dAsConv2dPass(),
                 FuseClampPass(),
                 RemoveRedundantOpsTransform(),
                 FuseQuantizedOpsTransform(),
@@ -201,7 +221,7 @@ class VulkanBackend(BackendDetails):
         # Optionally apply the memory metadata tagging pass, which will insert storage
         # type and memory layout transition nodes to ensure that all tensor arguments
         # to an operator is in a supported or optimal configuration. If this pass is not
-        # applied, there will be a risk that some operators recieve arguments with
+        # applied, there will be a risk that some operators receive arguments with
         # memory settings that are not supported by the implementation.
         if not compile_options.get("skip_tag_memory_metadata", False):
             program = apply_passes(
@@ -244,8 +264,19 @@ class VulkanBackend(BackendDetails):
             DelegateMappingBuilder(generated_identifiers=True),
             downcast_64_bit=downcast_64_bit,
             force_fp16=force_fp16,
+            alias_buffer_mutations=alias_buffer_mutations,
         )
         vk_graph = graph_builder.build_graph()
+        external_constants_max_data_bytes = compile_options.get(
+            "external_constants_max_data_bytes"
+        )
+        if external_constants_max_data_bytes is not None:
+            # VkGraphBuilder populates pte_data only from constant tensors;
+            # already-tagged named data remains in external_data.
+            graph_builder.named_data_store.externalize_pte_data(
+                external_constants_max_data_bytes,
+                "vulkan_constants",
+            )
 
         return PreprocessResult(
             processed_bytes=serialize_vulkan_graph(

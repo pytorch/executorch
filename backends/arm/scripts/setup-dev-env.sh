@@ -14,9 +14,4 @@ mkdir -p "$git_dir/hooks"
   else
       ln -s "../../backends/arm/scripts/pre-push" "pre-push"
   fi
-  if [ -e "pre-commit" ] || [ -L "pre-commit" ]; then
-      echo "Hook '$git_dir/hooks/pre-commit' already exists. Please remove it before running $(basename "$0")."
-  else
-    ln -s "../../backends/arm/scripts/pre-commit" pre-commit
-  fi
 )

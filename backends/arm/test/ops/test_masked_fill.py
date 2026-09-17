@@ -18,7 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 
-aten_op = "torch.aten.ops.masked_fill.Scalar"
+aten_op = "torch.ops.aten.masked_fill.Scalar"
 exir_op = "executorch_exir_dialects_edge__ops_aten_masked_fill_scalar"
 
 input_t = Tuple[torch.Tensor, torch.Tensor, float]

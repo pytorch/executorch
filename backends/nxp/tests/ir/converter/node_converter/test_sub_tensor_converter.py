@@ -8,6 +8,12 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.backend.ops_aliases import (
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    SubTensor,
+)
 
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import (
@@ -19,13 +25,10 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import MaxPoolSubTensorModule, SubTensorModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-    SubTensor,
+from executorch.backends.nxp.tests.simple_models import (
+    MaxPoolSubTensorModule,
+    SubTensorModule,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
@@ -34,6 +37,15 @@ from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 def reseed_model_per_test_run():
     torch.manual_seed(23)
     np.random.seed(23)
+
+
+class SubTensorAlphaModule(torch.nn.Module):
+    def __init__(self, alpha):
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, x, y):
+        return torch.sub(x, y, alpha=self.alpha)
 
 
 class TestSubTensor:
@@ -56,6 +68,9 @@ class TestSubTensor:
             mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -65,7 +80,7 @@ class TestSubTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     def test__basic_nsys_inference_qat(self, mocker, request):
@@ -75,6 +90,9 @@ class TestSubTensor:
             mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -85,7 +103,7 @@ class TestSubTensor:
             dataset_creator,
             comparator,
             use_qat=True,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     @pytest.mark.parametrize(
@@ -105,6 +123,10 @@ class TestSubTensor:
                 [ModelInputSpec((5, 3, 4)), ModelInputSpec((1, 3, 1))],
                 id="2 inputs 3D.",
             ),
+            pytest.param(
+                [ModelInputSpec((10,)), ModelInputSpec((1, 1))],
+                id="2 inputs 1D + 2D, num_elems of input == num_elems of output",
+            ),
         ],
     )
     def test__broadcast(self, mocker, request, input_spec):
@@ -113,6 +135,9 @@ class TestSubTensor:
             mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -122,7 +147,7 @@ class TestSubTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     @pytest.mark.parametrize(
@@ -225,6 +250,9 @@ class TestSubTensor:
             expected_non_delegated_ops={},
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -234,5 +262,19 @@ class TestSubTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
+
+    def test__alpha(self):
+        model = SubTensorAlphaModule(alpha=2)
+        shape = (42,)
+
+        delegated_ep = to_quantized_edge_program(
+            model, [ModelInputSpec(shape), ModelInputSpec(shape)]
+        ).exported_program()
+
+        # Make sure the `sub.Tensor` was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [SubTensor])

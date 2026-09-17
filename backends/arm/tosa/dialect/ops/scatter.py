@@ -5,12 +5,12 @@
 
 
 import torch
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "SCATTER(Tensor values_in, Tensor indices, Tensor input) -> Tensor",  # schema
     TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )

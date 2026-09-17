@@ -10,6 +10,7 @@
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
+#include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -486,7 +487,7 @@ class GraphBuilder {
 
 #ifdef ET_EVENT_TRACER_ENABLED
       std::string operator_json =
-          make_operator_json(compute_graph_, op_name, args);
+          make_operator_json(compute_graph_, op_name, args, op_call->node_id());
       set_and_get_current_operator_json(operator_json);
       get_current_operator_count(true);
 #endif // ET_EVENT_TRACER_ENABLED
@@ -614,8 +615,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   ~VulkanBackend() override = default;
 
   bool is_available() const override {
-    // TODO(ssjia): replace with an actual Vulkan runtime availability check
-    return true;
+    return vkapi::set_and_get_external_adapter() != nullptr || api::available();
   }
 
   ET_NODISCARD Error compileModel(
@@ -719,6 +719,22 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     const size_t num_inputs = compute_graph->inputs().size();
     const size_t num_outputs = compute_graph->outputs().size();
+    // `args` carries the delegate call's inputs followed by its outputs. If the
+    // serialized graph disagrees about either count, the `args.size() -
+    // num_outputs` computed below underflows and every output access reads
+    // through a wild pointer, so report the mismatch rather than segfault on
+    // it. A mutated buffer serialized as a graph output is one way to reach
+    // this: nothing passes such a buffer to the delegate call, so it has no
+    // argument slot.
+    VK_CHECK_COND(
+        args.size() == num_inputs + num_outputs,
+        "Vulkan graph declares ",
+        num_inputs,
+        " inputs and ",
+        num_outputs,
+        " outputs, but the delegate call supplied ",
+        args.size(),
+        " arguments");
     bool should_propagate_resize = false;
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
@@ -748,12 +764,26 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             args[i]->toTensor().numel(),
             equivalent_scalar_type(args[i]->toTensor().scalar_type()));
       } else if (compute_graph->val_is_symint(iref)) {
-        VK_CHECK_COND(
-            args[i]->isTensor(),
-            "Cannot handle symint arg to graph that is not derived from a "
-            "scalar tensor at the moment.");
-        bool was_updated = maybe_update_scalar_tensor(
-            compute_graph, iref, args[i]->toTensor());
+        // A SymInt input may arrive either as a scalar tensor (the convention
+        // when the value was lifted from one) or as a plain Int EValue, which
+        // is what the emitter produces when the Method's schema declares the
+        // argument as SymInt. Accept both.
+        bool was_updated = false;
+        if (args[i]->isTensor()) {
+          was_updated = maybe_update_scalar_tensor(
+              compute_graph, iref, args[i]->toTensor());
+        } else if (args[i]->isInt()) {
+          const int32_t cur_val = compute_graph->read_symint(iref);
+          const int32_t new_val = static_cast<int32_t>(args[i]->toInt());
+          if (new_val != cur_val) {
+            compute_graph->set_symint(iref, new_val);
+            was_updated = true;
+          }
+        } else {
+          VK_THROW(
+              "Could not handle symint arg: caller's EValue is neither "
+              "a scalar tensor nor an Int.");
+        }
         // Since symint inputs may impact tensor's sizes, trigger a resize if
         // any symbolic integer shapes are updated.
         should_propagate_resize = should_propagate_resize || was_updated;
@@ -830,6 +860,32 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             args[o]->toTensor().mutable_data_ptr(),
             args[o]->toTensor().numel(),
             equivalent_scalar_type(args[o]->toTensor().scalar_type()));
+      } else if (compute_graph->val_is_symint(oref)) {
+        // Mirror of the input path: write the graph's current SymInt value
+        // into the caller's slot, which may be either a scalar tensor or a
+        // plain Int EValue.
+        const int32_t out_val = compute_graph->read_symint(oref);
+        if (args[o]->isTensor()) {
+          executorch::aten::Tensor& dst = args[o]->toTensor();
+          const auto dtype = dst.scalar_type();
+          if (dtype == executorch::aten::ScalarType::Int) {
+            *dst.mutable_data_ptr<int32_t>() = out_val;
+          } else if (dtype == executorch::aten::ScalarType::Long) {
+            *dst.mutable_data_ptr<int64_t>() = static_cast<int64_t>(out_val);
+          } else {
+            VK_THROW(
+                "Could not handle symint output with destination tensor dtype ",
+                static_cast<int>(dtype));
+          }
+        } else if (args[o]->isInt()) {
+          // Overwrite the EValue's int payload in place. EValue stores its int
+          // as int64_t, so a SymInt fits without truncation.
+          *args[o] = EValue(static_cast<int64_t>(out_val));
+        } else {
+          VK_THROW(
+              "Could not handle symint output: caller's EValue is neither "
+              "a scalar tensor nor an Int.");
+        }
       }
       // TensorRef values represent constant tensors which will not have been
       // modified by the graph execution. Therefore, if a constant tensor is

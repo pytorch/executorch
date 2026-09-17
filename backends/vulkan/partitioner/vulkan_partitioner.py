@@ -287,6 +287,21 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     compile_specs = []
 
     for key, value in compile_options.items():
+        if key == "external_constants_max_data_bytes":
+            # Validate at the user-facing option boundary. Preprocess and the
+            # data store repeat validation because they can be called directly.
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value <= 0
+                or value >= 1 << 64
+            ):
+                raise ValueError(
+                    "external_constants_max_data_bytes must be a positive uint64"
+                )
+            compile_specs.append(CompileSpec(key, value.to_bytes(8, "little")))
+            continue
+
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))

@@ -4,24 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
-import os
-import platform
-import re
 import warnings
 from collections import defaultdict, OrderedDict
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
-
 import executorch.exir as exir
 import torch
-
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
-
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
     QNN_TENSOR_TYPE_MAP,
@@ -40,6 +34,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
     QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPerformanceMode,
     QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
@@ -57,13 +52,21 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
     option_to_flatbuffer,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    describe_sdk_build_id,
+    get_qnn_lib_name,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_QNN_COMPILE_SPEC,
     QCOM_QUANTIZED_IO,
 )
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
-
-from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import (
+    disable_mkldnn_on_amd,
+    setup_qnn_sdk,
+)
+from executorch.exir import ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import (
@@ -76,20 +79,6 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.library import Library
-
-
-def _get_qnn_lib_name(base: str) -> str:
-    """Returns the platform-specific shared library filename for a QNN library."""
-    if platform.system().lower() == "windows":
-        return f"{base}.dll"
-    return f"lib{base}.so"
-
-
-def _get_qnn_host_lib_dir_name() -> str:
-    """Returns the QNN SDK library subdirectory name for the current x86-64 host OS."""
-    if platform.system().lower() == "windows":
-        return "x86_64-windows-msvc"
-    return "x86_64-linux-clang"
 
 
 class _AnnotationSkipper(OperatorSupportBase):
@@ -180,11 +169,20 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
-            x = torch.transpose(x, 1, 2)
+            if rank == 3:
+                bsz, dim0, dim1 = x.size()
+                x = torch.reshape(x, (bsz, dim0, 1, dim1))
+            else:
+                dim0, dim1 = x.size()
+                x = torch.reshape(x, (1, dim0, 1, dim1))
+            x = torch.transpose(x, 1, 3)
             res = self.conv(x)
-            res = torch.transpose(res, 1, 2)
-            res = res.squeeze(-1) if rank == 3 else res.reshape(*res.shape[1:3])
+            res = res.permute(0, 3, 1, 2)
+            res = (
+                res.squeeze(-1)
+                if rank == 3
+                else res.reshape(dim0, self.conv.weight.shape[0])
+            )
             return res
 
     def replace_linear(module: torch.nn.Module):
@@ -246,6 +244,10 @@ def dump_context_from_pte(pte_path) -> List[str]:
 def update_spill_fill_size(
     exported_program: ExportedProgram | List[LoweredBackendModule],
 ):
+    # Reads a context binary through a QnnManager, so the SDK has to be usable first.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     # check if user specifies to use multi_contexts
     # this is a generic approach in case there exists multiple backends
     def get_program_info(program):
@@ -333,7 +335,7 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
             skip_decomp_op
             for skip_decomp_op in skip_decompositions
             if skip_decomp_op
-            not in AnnotateStack.decomp_ops + AnnotateUnbind.decomp_ops
+            not in AnnotateStack._SOURCE_OPS + AnnotateUnbind._SOURCE_OPS
         ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
@@ -391,6 +393,17 @@ def to_edge_transform_and_lower_to_qnn(
         EdgeProgramManager:
             The manager for the edge program after transformation and lowering.
     """
+    # Both applied at the entry point rather than deeper in the lowering.
+    #
+    # The SDK setup can download one, and on an old glibc the installer re-executes the
+    # interpreter to pick up a staged loader. Doing that partway through would throw away a model
+    # that has already been traced, so it happens before any of that work.
+    #
+    # The AMD guard needs to precede any eager run of the model. The crash it prevents needs a
+    # real convolution to execute, which a trace does not do (it works on fake tensors) but
+    # calibration and a plain forward pass do.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
 
     def ensure_graph_specific_dict(value, graph_names):
         """
@@ -476,10 +489,7 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(
-            ep,
-            convert_linear_to_conv2d=convert_linear_to_conv2d,
-        )
+        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(ep)
         transform_passes[graph_name] = pass_manager.get_to_edge_transform_passes(
             ep,
             passes_job=passes_job[graph_name],
@@ -487,6 +497,7 @@ def to_edge_transform_and_lower_to_qnn(
             compiler_specs=compiler_specs[graph_name],
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(
@@ -526,6 +537,10 @@ def capture_program(
         DeprecationWarning,
         stacklevel=1,
     )
+    # See to_edge_transform_and_lower_to_qnn for why both happen at the entry point.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
     pass_manager = get_qnn_pass_manager_cls(QnnExecuTorchBackendType.kHtpBackend)()
     ep = pass_manager.transform_for_export_pipeline(ep)
@@ -735,6 +750,12 @@ def skip_annotation(
     from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
     from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
+    # Both before the tracing and calibration below. Calibration runs the model eagerly, which is
+    # what the AMD guard is for, and the installer can re-execute the interpreter, which must not
+    # happen after a model has been traced.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     def prepare_subgm(subgm, subgm_name):
         # prepare current submodule for quantization annotation
         subgm_prepared = prepare_pt2e(subgm, quantizer)
@@ -819,6 +840,10 @@ def from_context_binary(  # noqa: C901
     soc_model: QcomChipset = QcomChipset.SM8650,
     custom_info: Dict = None,
 ):
+    # Reads a context binary through a QnnManager, so the SDK has to be usable first.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     from pathlib import Path
 
     def implement_op(custom_op, op_name, outputs):
@@ -959,8 +984,6 @@ def from_context_binary(  # noqa: C901
     # temporarily remove the first parameter name.
     edge_prog_mgr = to_edge(
         {graph_name: bundle_prog["exported_program"]},
-        # do not alter name for custom op
-        compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
 
     # update meta with context binary
@@ -996,6 +1019,7 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule, format=DrawForma
 
 
 def generate_gpu_compiler_spec(
+    performance_mode: QnnExecuTorchGpuPerformanceMode = QnnExecuTorchGpuPerformanceMode.kGpuPerfHintHigh,
     precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
     use_memory_optimizations: bool = True,
     use_node_optimizations: bool = True,
@@ -1006,6 +1030,8 @@ def generate_gpu_compiler_spec(
     Helper function generating backend options for QNN HTP
 
     Args:
+        performance_mode:
+            kGpuPerfHintHigh / kGpuPerfHintNormal / kGpuPerfHintLow
         precision:
             kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
             kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
@@ -1024,6 +1050,7 @@ def generate_gpu_compiler_spec(
     """
     # TODO: enable performance hint mechanism in runtime and make this as an option
     gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.performance_mode = performance_mode
     gpu_options.precision = precision
     gpu_options.use_memory_optimizations = use_memory_optimizations
     gpu_options.use_node_optimizations = use_node_optimizations
@@ -1172,9 +1199,11 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     Args:
         soc_model: The SoC you plan to run the compiled model. Please check
             QcomChipset for supported SoC.
+            SM7675(Snapdragon 7+ Gen 3)
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SM8635(Snapdragon 8s Gen 3)
             SM8650(Snapdragon 8 Gen 3)
             SM8750(Snapdragon 8 Elite)
             SM8850(Snapdragon 8 Elite Gen 5)
@@ -1226,7 +1255,7 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     qnn_executorch_options.dump_intermediate_outputs = dump_intermediate_outputs
 
     if saver:
-        qnn_executorch_options.library_path = _get_qnn_lib_name("QnnSaver")
+        qnn_executorch_options.library_path = get_qnn_lib_name("QnnSaver")
         qnn_executorch_options.saver = True
         qnn_executorch_options.saver_output_dir = "saver_output"
 
@@ -1268,12 +1297,17 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
                 "Please choose the following SOC: "
                 f"{list(get_soc_to_lpai_hw_ver_map().keys())}"
             )
-        elif get_soc_to_lpai_hw_ver_map()[
+        # Before the version check below, so a host with no SDK yet gets one installed and the
+        # check has something real to read. It cannot lift an older SDK past this gate: the
+        # installer fetches a fixed version, so a caller who needs a newer one has to supply it
+        # through QNN_SDK_ROOT.
+        setup_qnn_sdk()
+        if get_soc_to_lpai_hw_ver_map()[
             soc_model.name
         ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
             raise ValueError(
                 f"Target soc_model({soc_model.name}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
-                f"Current QNN SDK version: {get_sdk_build_id()}"
+                f"Current QNN SDK version: {describe_sdk_build_id()}"
             )
 
     qnn_executorch_options.shared_buffer = shared_buffer
@@ -1295,11 +1329,14 @@ def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
         "SA8797": HtpArch.V81,
+        "SC8380XP": HtpArch.V73,
         "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
+        "SM7675": HtpArch.V73,
         "SA8255": HtpArch.V73,
+        "SM8635": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
         "SM8850": HtpArch.V81,
@@ -1328,11 +1365,14 @@ def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
         "SA8797": QcomChipset.SA8797,
+        "SC8380XP": QcomChipset.SC8380XP,
+        "SM7675": QcomChipset.SM7675,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
         "SA8255": QcomChipset.SA8255,
+        "SM8635": QcomChipset.SM8635,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
         "SM8850": QcomChipset.SM8850,
@@ -1435,50 +1475,6 @@ def rewrite_prepared_observer(
             continue
         for target_name in module_name_list[old_module]:
             setattr(graph_module, target_name, new_observer)
-
-
-def get_sdk_build_id():
-    htp_library_path = os.path.join(
-        os.environ.get("QNN_SDK_ROOT", None),
-        "lib",
-        _get_qnn_host_lib_dir_name(),
-        _get_qnn_lib_name("QnnHtp"),
-    )
-    # The GetQnnSdkBuildId API can be used without needing to create a backend first, so it works regardless of which backend is used.
-    sdk_build_id = PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
-    return sdk_build_id
-
-
-def is_qnn_sdk_version_less_than(target_version):
-    current_version = get_sdk_build_id()
-
-    match = re.search(r"v(\d+)\.(\d+)", current_version)
-    if match:
-        current_major, current_minor = map(int, match.groups()[:2])
-    else:
-        raise ValueError(
-            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
-        )
-
-    target_major, target_minor = map(int, target_version.split(".")[:2])
-
-    return current_major == target_major and current_minor < target_minor
-
-
-def is_qnn_sdk_version_greater_than(target_version):
-    current_version = get_sdk_build_id()
-
-    match = re.search(r"v(\d+)\.(\d+)", current_version)
-    if match:
-        current_major, current_minor = map(int, match.groups()[:2])
-    else:
-        raise ValueError(
-            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
-        )
-
-    target_major, target_minor = map(int, target_version.split(".")[:2])
-
-    return current_major == target_major and current_minor > target_minor
 
 
 def get_qnn_context_binary_alignment() -> int:

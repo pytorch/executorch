@@ -8,17 +8,12 @@
 Graph transformation passes for the MLX backend.
 """
 
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 import torch
-from executorch.backends.mlx.pattern_utils import (
-    extract_lifted_tensor_constant,
-    match_target,
-    OpStep,
-    PatternMatch,
-    walk_back,
-)
+from executorch.backends.transforms.collapse_view_copy import CollapseViewCopyPass
+from executorch.backends.transforms.fuse_gqa_with_sdpa import FuseGQAWithSDPAPass
+from executorch.backends.transforms.fuse_rms_norm import FuseRMSNormPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
     ExportedProgramPassBase,
@@ -26,16 +21,18 @@ from executorch.exir.pass_base import (
     ExportPass,
     PassResult,
 )
+from executorch.exir.pass_manager import PassType
 from executorch.exir.passes.cse_pass import CSEPass
 from torch.fx import GraphModule, Node
 
 
-def get_default_passes() -> List[ExportPass]:
+def get_default_passes() -> List[PassType]:
     """
     Returns a list of passes that are enabled by default for the MLX backend.
     """
     return [
-        FuseRMSNormPass(),
+        FuseRMSNormPass(fold_dtype_casts=True, allow_lossy_weight_casts=True),
+        FuseGQAWithSDPAPass(),
         CanonicalizePermutePass(),
         CollapseViewCopyPass(),
         CollapsePermutePass(),
@@ -99,217 +96,7 @@ class MLXReinplacePass(ExportedProgramPassBase):
         }
         if ops_to_inplace:
             reinplace_pass(exported_program, ops_to_inplace=ops_to_inplace)
-            self._resync_output_specs(exported_program)
         return ExportedProgramPassResult(exported_program, True)
-
-    @staticmethod
-    def _resync_output_specs(exported_program) -> None:
-        """Re-sync graph-signature output names after reinplace.
-
-        ``reinplace_pass`` rewrites an output-producing node (e.g. the final
-        ``exp`` -> ``exp_``) via ``replace_all_uses_with`` + erase, but does not
-        update ``graph_signature.output_specs``. Output order is preserved, so we
-        positionally re-sync each spec's argument name to the current output node
-        arg; otherwise ``ExportedProgram.validate()`` (run by the pass manager)
-        raises a SpecViolationError.
-
-        This positional pairing is only valid because reinplace does a 1:1
-        ``replace_all_uses_with`` + erase and never drops, adds, or reorders
-        outputs. We assert ``len(output_specs) == len(out_args)`` so that a
-        future change violating that invariant fails loudly here instead of
-        silently mis-pairing names (``zip`` would otherwise truncate). Specs
-        whose ``arg`` is not a named tensor (e.g. ``ConstantArgument``) carry no
-        ``name`` and are skipped by the ``getattr`` guard below.
-        """
-        out_node = next(
-            n for n in reversed(exported_program.graph.nodes) if n.op == "output"
-        )
-        out_args = out_node.args[0]
-        if not isinstance(out_args, (tuple, list)):
-            out_args = (out_args,)
-        output_specs = exported_program.graph_signature.output_specs
-        assert len(output_specs) == len(out_args), (
-            "reinplace changed graph output count: "
-            f"{len(output_specs)} output_specs vs {len(out_args)} output args. "
-            "Positional output-spec re-sync assumes a 1:1, order-preserving "
-            "rewrite."
-        )
-        for spec, arg in zip(output_specs, out_args):
-            if (
-                isinstance(arg, torch.fx.Node)
-                and getattr(spec.arg, "name", None) is not None
-                and spec.arg.name != arg.name
-            ):
-                spec.arg.name = arg.name
-
-
-@dataclass
-class RMSNormMatch(PatternMatch):
-    """
-    Matched RMSNorm pattern.
-
-    HuggingFace Llama's RMSNorm decomposes into:
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + eps)
-        return weight * hidden_states.to(input_dtype)
-
-    Graph pattern:
-        _to_copy (to f32) [optional]
-        pow(x, 2)
-        mean_dim(pow_out, [-1], keepdim=True)
-        add(mean_out, eps_tensor)
-        rsqrt(add_out)
-        mul(to_copy_out, rsqrt_out)
-        _to_copy (back to original dtype) [optional]
-        mul(weight, to_copy_out)
-    """
-
-    input_node: Node = None  # type: ignore[assignment]
-    weight_node: Node = None  # type: ignore[assignment]
-    eps: float = 0.0
-
-    @classmethod
-    def maybe_create(cls, head: Node, **context) -> Optional["RMSNormMatch"]:
-        """Match RMSNorm pattern starting from final mul(weight, normalized)."""
-        # Head must be mul
-        if not match_target(head, torch.ops.aten.mul.Tensor):
-            return None
-
-        if len(head.args) < 2:
-            return None
-
-        # Try both orderings: mul(weight, normalized) or mul(normalized, weight)
-        for weight_idx, norm_idx in [(0, 1), (1, 0)]:
-            weight_node = head.args[weight_idx]
-            norm_node = head.args[norm_idx]
-
-            if not isinstance(norm_node, Node):
-                continue
-
-            # Match entire chain with single walk_back:
-            #   [_to_copy] -> mul(input, rsqrt) -> rsqrt -> add -> mean -> pow -> [_to_copy]
-            # The mul follows arg_index=1 to get rsqrt (not input)
-            result = walk_back(
-                norm_node,
-                [
-                    OpStep(
-                        op=torch.ops.aten._to_copy.default,
-                        optional=True,
-                        kwargs={
-                            "dtype",
-                            "layout",
-                            "device",
-                            "pin_memory",
-                            "non_blocking",
-                            "memory_format",
-                        },
-                    ),
-                    OpStep(op=torch.ops.aten.mul.Tensor, nargs=2, arg_index=1),
-                    OpStep(op=torch.ops.aten.rsqrt.default),
-                    OpStep(op=torch.ops.aten.add.Tensor, nargs=2),
-                    OpStep(op=torch.ops.aten.mean.dim, nargs=(2, 3), kwargs={"dtype"}),
-                    OpStep(op=torch.ops.aten.pow.Tensor_Scalar, nargs=2),
-                    OpStep(
-                        op=torch.ops.aten._to_copy.default,
-                        optional=True,
-                        require_single_user=False,  # _to_copy output used by both pow and mul
-                        kwargs={
-                            "dtype",
-                            "layout",
-                            "device",
-                            "pin_memory",
-                            "non_blocking",
-                            "memory_format",
-                        },
-                    ),
-                ],
-            )
-            if result is None:
-                continue
-
-            original_input, entries = result
-            to_copy_out, mul, rsqrt, add, mean, pow, to_copy_in = entries
-
-            # If input _to_copy matched, verify it has exactly 2 users: pow and mul
-            if to_copy_in is not None:
-                users = set(to_copy_in.users.keys())
-                expected_users = {pow, mul}
-                if users != expected_users:
-                    continue
-
-            # Validate pow exponent is 2
-            if pow.args[1] != 2:
-                continue
-
-            # Extract epsilon from add node (it's a lifted tensor constant)
-            eps_value = None
-            for arg in add.args:
-                eps_value = extract_lifted_tensor_constant(arg)
-                if eps_value is not None:
-                    break
-
-            if eps_value is None:
-                continue
-
-            # Build body from non-None entries
-            body = [n for n in entries if n is not None]
-
-            return cls(
-                head=head,
-                body=body,
-                input_node=original_input,
-                weight_node=weight_node,
-                eps=eps_value,
-            )
-
-        return None
-
-
-class FuseRMSNormPass(ExportPass):
-    """
-    Fuses decomposed RMSNorm operations into aten.rms_norm.
-
-    This reduces ~7 ops to 1 fused op per RMSNorm layer.
-    """
-
-    def call(self, graph_module: GraphModule) -> PassResult:
-        graph = graph_module.graph
-        modified = False
-
-        for node in list(graph.nodes):
-            match = RMSNormMatch.maybe_create(node)
-            if match is None:
-                continue
-
-            # Get input shape for normalized_shape
-            input_meta = match.input_node.meta.get("val")
-            if input_meta is None:
-                continue
-
-            # Create fused rms_norm node
-            with graph.inserting_before(node):
-                normalized_shape = [input_meta.shape[-1]]
-                rms_norm_node = graph.call_function(
-                    torch.ops.aten.rms_norm.default,
-                    args=(
-                        match.input_node,
-                        normalized_shape,
-                        match.weight_node,
-                        match.eps,
-                    ),
-                )
-                rms_norm_node.meta = node.meta.copy()
-
-            node.replace_all_uses_with(rms_norm_node)
-            match.remove_body_nodes(graph)
-            graph.erase_node(node)
-            modified = True
-
-        if modified:
-            graph.eliminate_dead_code()
-            graph.lint()
-
-        return PassResult(graph_module, modified)
 
 
 class CanonicalizePermutePass(ExportPass):
@@ -359,68 +146,6 @@ class CanonicalizePermutePass(ExportPass):
             modified = True
 
         if modified:
-            graph.lint()
-
-        return PassResult(graph_module, modified)
-
-
-class CollapseViewCopyPass(ExportPass):
-    """
-    Collapses consecutive view_copy nodes into a single view_copy.
-
-    view_copy(view_copy(x, shape1), shape2) → view_copy(x, shape2)
-
-    Only the final shape matters, so intermediate view_copys can be removed.
-    """
-
-    def call(self, graph_module: GraphModule) -> PassResult:
-        graph = graph_module.graph
-        modified = False
-        view_copy_target = exir_ops.edge.aten.view_copy.default
-
-        for node in list(graph.nodes):
-            if node.op != "call_function" or node.target != view_copy_target:
-                continue
-
-            parent = node.args[0]
-            if (
-                isinstance(parent, Node)
-                and parent.op == "call_function"
-                and parent.target == view_copy_target
-                and len(parent.users) == 1
-            ):
-                original_input = parent.args[0]
-                target_shape = node.args[1]
-
-                # Check if final shape matches original input shape (identity).
-                # Compare meta shapes (not args) so SymInt dims are handled.
-                # Use try/except because shapes may contain unbacked SymInts
-                # (e.g. from .item() calls) that can't be guarded on.
-                original_val = (
-                    original_input.meta.get("val")
-                    if isinstance(original_input, Node)
-                    else None
-                )
-                output_val = node.meta.get("val")
-                is_identity = False
-                if original_val is not None and output_val is not None:
-                    try:
-                        is_identity = original_val.shape == output_val.shape
-                    except Exception:
-                        is_identity = False
-                if is_identity:
-                    # Identity — remove both view_copys
-                    node.replace_all_uses_with(original_input)
-                    graph.erase_node(node)
-                    graph.erase_node(parent)
-                else:
-                    # Collapse: view_copy(view_copy(x, s1), s2) → view_copy(x, s2)
-                    node.args = (original_input, target_shape)
-                    graph.erase_node(parent)
-                modified = True
-
-        if modified:
-            graph.eliminate_dead_code()
             graph.lint()
 
         return PassResult(graph_module, modified)

@@ -641,6 +641,12 @@ def escape(line: str) -> str:
 def preprocess(
     input_text: str, variables: Dict[str, Any], input_path: str = "codegen"
 ) -> str:
+    # Normalize line endings first. Templates checked out with CRLF (common on
+    # Windows) otherwise break the trailing-backslash handling below: in
+    # re.MULTILINE, $ matches immediately before \n, so a CR would sit between a
+    # trailing \ and the line end and defeat the r"\\$" match, leaving a lone
+    # backslash that escape() turns into an unterminated Python string literal.
+    input_text = input_text.replace("\r\n", "\n").replace("\r", "\n")
     # Workaround to handle source files using \ to extend mecros to a new line
     input_text = re.sub(r"\\$", r"\\\\", input_text, flags=re.MULTILINE)
 

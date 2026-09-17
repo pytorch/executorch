@@ -6,7 +6,10 @@
 from typing import final, Optional, Sequence
 
 from executorch.backends.arm.ethosu import EthosUBackend, EthosUCompileSpec
-from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.partitioner import (
+    DecomposableResizeSupported,
+    TOSAPartitioner,
+)
 from executorch.exir.backend.partitioner import DelegationSpec
 from torch._ops import OpOverload
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -31,7 +34,10 @@ class EthosUPartitioner(TOSAPartitioner):
         self.delegation_spec = DelegationSpec(
             EthosUBackend.__name__, compile_spec._to_list()
         )
+        self.compile_spec = compile_spec
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
+        self._requires_resolved_tensor_shapes = True
+        self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()

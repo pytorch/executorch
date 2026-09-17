@@ -19,7 +19,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-
 input_t = Tuple[torch.Tensor]
 
 
@@ -298,7 +297,9 @@ def test_gt_scalar_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
+@common.parametrize(
+    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
+)
 @common.SkipIfNoModelConverter
 def test_gt_tensor_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
@@ -311,7 +312,9 @@ def test_gt_tensor_vgf_no_quant(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_data_scalar | test_data_scalar_fp16)
+@common.parametrize(
+    "test_module", test_data_scalar | test_data_scalar_bf16 | test_data_scalar_fp16
+)
 @common.SkipIfNoModelConverter
 def test_gt_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](

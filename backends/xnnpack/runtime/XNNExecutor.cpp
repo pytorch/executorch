@@ -19,7 +19,6 @@ using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
-using executorch::runtime::is_contiguous_dim_order;
 using executorch::runtime::kTensorDimensionLimit;
 using executorch::runtime::Span;
 

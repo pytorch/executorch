@@ -1,0 +1,13 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+extrema:
+  parameter_names_with_default_values:
+    REDUCE_FN: max
+  shader_variants:
+    - NAME: amax
+    - NAME: amin
+      REDUCE_FN: min

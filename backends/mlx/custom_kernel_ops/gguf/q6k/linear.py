@@ -426,7 +426,7 @@ def _emit_q6k_matmul(
     )
 
 
-def emit_linear(
+def _emit_linear_fused(
     P: MLXProgramBuilder,
     head: Node,
     x_node: Node,
@@ -482,3 +482,30 @@ def emit_linear(
         ),
     )
     return out
+
+
+def emit_linear(
+    P: MLXProgramBuilder,
+    head: Node,
+    x_node: Node,
+    weight_node: Node,
+    bias_node: Optional[Node],
+) -> Slot:
+    """Dispatch to the MLX-native repack path or the fused Metal kernels.
+
+    The repack path is only valid when the weight merges to an MLX-supported
+    group size (>= 32); otherwise (and when ``ET_MLX_EMIT_DIRECT_GGUF=1``) the
+    fused kernels are used.
+    """
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import emit_direct_gguf
+
+    if not emit_direct_gguf():
+        from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.linear_mlx_native import (
+            emit_linear as emit_linear_mlx_native,
+        )
+
+        out = emit_linear_mlx_native(P, head, x_node, weight_node, bias_node)
+        if out is not None:
+            return out
+
+    return _emit_linear_fused(P, head, x_node, weight_node, bias_node)

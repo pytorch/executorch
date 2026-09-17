@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -33,7 +33,10 @@ from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import (
+    contains_any_call_fn_target_op,
+    get_control_flow_submodules,
+)
 from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import PassBase
@@ -45,6 +48,7 @@ from executorch.exir.passes import (
     convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
+    LegalizePortableDimOrderPass,
     MemoryFormatOpsPass,
     OpReplacePass,
     remove_unused_parameters_pass,
@@ -405,12 +409,14 @@ class ExirExportedProgram:
         self,
         exported_program: ExportedProgram,
         after_to_edge_passes: bool,
+        compile_config: Optional[EdgeCompileConfig] = None,
     ):
         self.exported_program = exported_program
 
         # Add a flag to denote whehter to_edge is called on this program
         # to detect misusage of directly calling to_executorch without to_edge
         self.after_to_edge_passes = after_to_edge_passes
+        self.compile_config = compile_config or EdgeCompileConfig()
 
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
         self.exported_program = _transform(self.exported_program, *passes)
@@ -441,7 +447,9 @@ class ExirExportedProgram:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
         new_gm = self.exported_program.graph_module
-        for p in edge_to_executorch_passes(config):
+        for p in edge_to_executorch_passes(
+            config, edge_compile_config=self.compile_config
+        ):
             new_gm_res = p(new_gm)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
@@ -478,6 +486,7 @@ class ExirExportedProgram:
         new_eep = ExirExportedProgram(
             copy.deepcopy(self.exported_program, memo),
             self.after_to_edge_passes,
+            copy.deepcopy(self.compile_config, memo),
         )
         return new_eep
 
@@ -673,6 +682,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 ],
             ),
             False,
+            config,
         )
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
@@ -681,14 +691,13 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
     new_gm = new_ep.exported_program.graph_module
-    if config._use_edge_ops:
-        new_gm_res = OpReplacePass()(new_gm)
+    new_gm_res = OpReplacePass()(new_gm)
+    assert new_gm_res is not None
+    new_gm = new_gm_res.graph_module
+    if not config._skip_dim_order:
+        new_gm_res = MemoryFormatOpsPass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
-        if not config._skip_dim_order:
-            new_gm_res = MemoryFormatOpsPass()(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -753,7 +762,9 @@ def pre_memory_planning_passes(
 
 
 def edge_to_executorch_passes(
-    config: ExecutorchBackendConfig, name: Optional[str] = None
+    config: ExecutorchBackendConfig,
+    name: Optional[str] = None,
+    edge_compile_config: Optional[EdgeCompileConfig] = None,
 ) -> List[PassType]:
     """
     Returns a list of passes to lower from edge to executorch.
@@ -766,6 +777,7 @@ def edge_to_executorch_passes(
     else:
         device_cfg = propagate_device_config
 
+    edge_compile_config = edge_compile_config or EdgeCompileConfig()
     passes: List[PassType] = [
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
@@ -780,6 +792,9 @@ def edge_to_executorch_passes(
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
+
+    if not edge_compile_config._skip_dim_order:
+        passes.insert(len(config.passes), LegalizePortableDimOrderPass())
 
     return passes
 
@@ -811,10 +826,9 @@ def _generate_edge_program(
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
     passes.extend(pre_op_replace_passes)
-    if config._use_edge_ops:
-        passes.append(OpReplacePass())
-        if not config._skip_dim_order:
-            passes.append(MemoryFormatOpsPass())
+    passes.append(OpReplacePass())
+    if not config._skip_dim_order:
+        passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module
     for p in passes:
@@ -1100,6 +1114,14 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     return check_op_support is None
 
 
+def _apply_pre_decomposition_transforms(
+    program: ExportedProgram, partitioners: List[Partitioner]
+) -> ExportedProgram:
+    for partitioner in partitioners:
+        program = partitioner.transform_for_pre_decomposition(program)
+    return program
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1123,11 +1145,13 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = defaultdict(list)
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        partitioners_for_program = partitioner.get(name, [])
+        program = _apply_pre_decomposition_transforms(program, partitioners_for_program)
+
         # Functionalize program before asking partitioners to preserve ops
         program = program.run_decompositions({})
 
         if partitioner is not None:
-            partitioners_for_program = partitioner.get(name, [])
             final_ops_to_preserve = set()
 
             # Decompose by default if there are no partitioners for the method
@@ -1155,7 +1179,12 @@ def _gen_edge_manager_for_partitioners(
                         if table.pop(op, None) is not None:
                             ops_needing_preservation.append(op)
 
-                    program = program.run_decompositions(table)
+                    # The initial ``run_decompositions({})`` above has already
+                    # functionalized the graph. This second call only applies
+                    # operator decompositions from the remaining table, so it is
+                    # safe to skip when none of those targets occur in the graph.
+                    if contains_any_call_fn_target_op(program.graph_module, table):
+                        program = program.run_decompositions(table)
                     final_ops_to_preserve.update(ops_needing_preservation)
                 else:
                     # EDGE_DO_NOT_DECOMP path for the partitioner
@@ -1331,6 +1360,8 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
+        for method in edge_manager.methods:
+            lift_constant_tensor_pass(edge_manager.exported_program(method))
 
         if generate_etrecord:
             edge_manager._etrecord.add_extra_export_modules(
@@ -1702,7 +1733,9 @@ class EdgeProgramManager:
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
-            for p in edge_to_executorch_passes(config, name):
+            for p in edge_to_executorch_passes(
+                config, name, edge_compile_config=self.compile_config
+            ):
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module

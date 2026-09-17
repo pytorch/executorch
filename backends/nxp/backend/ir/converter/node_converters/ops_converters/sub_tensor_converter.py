@@ -19,14 +19,15 @@ from torch.nn import Parameter
 
 
 class SubTensorConverter(NodeConverter):
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if not NodeConverter.at_least_one_input_shape_matches_the_output_shape(node):
+        if not NodeConverter.inputs_satisfy_broadcast_condition(node):
             return False
 
         supported_types = [torch.int8, torch.uint8]
@@ -48,7 +49,7 @@ class SubTensorConverter(NodeConverter):
 
         # The `alpha` attribute can be represented by adding an extra `Mul` operator.
         #  However, this is not implemented as `alpha` is rarely used.
-        if hasattr(node.kwargs, "alpha"):
+        if node.kwargs.get("alpha", 1) != 1:
             return False
 
         return True

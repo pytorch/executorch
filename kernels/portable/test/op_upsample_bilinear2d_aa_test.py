@@ -161,10 +161,7 @@ class UpsampleBilinear2dAATest(unittest.TestCase):
             input_tensor,
             output_size=(2, 2),
             align_corners=False,
-            # Aggressive 4x downsampling magnifies the separable-vs-direct
-            # interpolation differences between ExecuTorch and ATen; observed
-            # max abs error reaches ~0.6 for typical N(0,1) inputs.
-            atol=1.0,
+            atol=1e-3,
         )
 
     def test_upsample_bilinear2d_aa_asymmetric_downsampling(self):
@@ -174,7 +171,7 @@ class UpsampleBilinear2dAATest(unittest.TestCase):
             input_tensor,
             output_size=(4, 4),  # 3x downsample in H, 2x in W
             align_corners=False,
-            atol=0.25,  # Relaxed tolerance due to implementation differences in separable vs direct interpolation
+            atol=1e-3,
         )
 
     def test_upsample_bilinear2d_aa_align_corners_upsampling(self):
@@ -194,7 +191,7 @@ class UpsampleBilinear2dAATest(unittest.TestCase):
             input_tensor,
             output_size=(4, 4),
             align_corners=True,
-            atol=0.25,  # Relaxed tolerance due to implementation differences in separable vs direct interpolation
+            atol=1e-3,
         )
 
     def test_upsample_bilinear2d_aa_batched(self):
@@ -245,19 +242,12 @@ class UpsampleBilinear2dAATest(unittest.TestCase):
         """Test against known correct output values to catch regressions."""
         # This test case is adapted from ATen's test suite
         input_tensor = torch.arange(3 * 8 * 8, dtype=torch.float).reshape(1, 3, 8, 8)
-
-        # Test with a known downsampling case
-        try:
-            self.run_upsample_aa_test(
-                input_tensor,
-                output_size=(2, 2),
-                align_corners=False,
-                atol=1e-2,  # Slightly relaxed for implementation differences
-            )
-            # The test should pass if our implementation is close to ATen
-        except AssertionError as e:
-            # Log the difference for debugging but don't fail the test during development
-            print(f"Known values test difference (expected during development): {e}")
+        self.run_upsample_aa_test(
+            input_tensor,
+            output_size=(2, 2),
+            align_corners=False,
+            atol=1e-3,
+        )
 
     def test_upsample_bilinear2d_aa_various_dtypes(self):
         """Test with various data types."""

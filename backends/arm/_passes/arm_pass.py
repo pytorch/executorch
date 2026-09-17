@@ -11,6 +11,10 @@ from collections.abc import Collection
 from typing import Any, List, Optional, Set, Type
 
 import torch
+from executorch.backends.arm._passes.mutable_buffer_utils import (
+    collect_mutable_buffer_infos,
+    restore_mutable_buffer_targets,
+)
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -82,12 +86,16 @@ class ArmPass(ExportPass):
             )
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
+        ops_without_quantized_fake_kernel = {
+            exir_ops.edge.aten.bmm.default,
+            exir_ops.edge.aten.leaky_relu.default,
+        }
         if (
-            op == exir_ops.edge.aten.bmm.default
+            op in ops_without_quantized_fake_kernel
             and isinstance(meta, NodeMetadata)
             and len(meta.data.get("input_qparams", {})) > 0
         ):
-            return self._call_quantized_bmm_without_fake_kernel(op, args, kwargs, meta)
+            return self._call_quantized_op_without_fake_kernel(op, args, kwargs, meta)
 
         if not updated:
             return super().call_operator(op, args, kwargs, meta)
@@ -101,7 +109,7 @@ class ArmPass(ExportPass):
         new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
         return super().call_operator(op, args, kwargs, NodeMetadata(new_meta))
 
-    def _call_quantized_bmm_without_fake_kernel(
+    def _call_quantized_op_without_fake_kernel(
         self,
         op,
         args: tuple[ProxyValue, ...],
@@ -213,8 +221,14 @@ class ArmPass(ExportPass):
         if not self.should_run_pass(graph_module):
             self.ensures(graph_module)
             return PassResult(graph_module, False)
+        mutable_buffers = collect_mutable_buffer_infos(graph_module)
         res = self.call(graph_module)
         self.ensures(graph_module)
+        if res is not None:
+            res = PassResult(
+                restore_mutable_buffer_targets(res.graph_module, mutable_buffers),
+                res.modified,
+            )
         return res
 
 

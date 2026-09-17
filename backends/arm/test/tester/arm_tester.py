@@ -11,6 +11,7 @@ import logging
 import platform
 
 from collections import Counter, defaultdict
+from pathlib import Path
 from pprint import pformat
 from typing import (
     Any,
@@ -41,6 +42,7 @@ from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer import get_symmetric_quantization_config
+from executorch.backends.arm.test.common import maybe_get_tosa_artifact_path
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     get_output_quantization_params,
@@ -192,7 +194,6 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
-        compile_spec: Optional[ArmCompileSpec] = None,
     ):
         super().__init__(
             default_partitioner_cls=None,
@@ -232,18 +233,13 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
 class ToExecutorch(BaseStages.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
-            # Check if the model has mutable buffers. These are not delegated to the backend
-            # and are handled by core ExecuTorch as I/O. In other words, the mutable buffer
-            # is outputted and re-inputted into the model. As we are calling the graph module
-            # directly, we need to ensure we handle these extra mutable inputs.
-            if (
-                len(self.artifact.exported_program().graph_signature.buffers_to_mutate)
-                > 0
-            ):
-                buffers = list(self.artifact.exported_program().buffers())
-                buffers.extend(inputs)
-
-                return self.artifact.exported_program().graph_module(*buffers)
+            program = self.artifact.exported_program()
+            # Mutable inputs and other parameters become inputs to the graph
+            # so we need to input these in the correct order.
+            # Also, execute the raw graph to preserve mutation outputs for comparison.
+            if program.graph_signature.buffers_to_mutate:
+                flat_inputs = program._graph_module_flat_inputs(inputs, {})
+                return program.graph_module(*flat_inputs)
             else:
                 return super().run_artifact(inputs)
 
@@ -376,6 +372,12 @@ class ArmTester(tester.Tester):
         self.transform_passes = transform_passes
         self.constant_methods = constant_methods
         self.compile_spec = compile_spec
+        if compile_spec._get_intermediate_path() is None:
+            artifact_path = maybe_get_tosa_artifact_path()
+            if artifact_path is not None:
+                Path(artifact_path).mkdir(parents=True, exist_ok=True)
+                self.compile_spec = copy.deepcopy(compile_spec)
+                self.compile_spec.dump_intermediate_artifacts_to(artifact_path)
         stage_classes = tester.Tester.default_stage_classes() | {
             StageType.PARTITION: Partition,
             StageType.TO_EDGE_TRANSFORM_AND_LOWER: ToEdgeTransformAndLower,
@@ -474,7 +476,6 @@ class ArmTester(tester.Tester):
                 edge_compile_config,
                 constant_methods=self.constant_methods,
                 transform_passes=self.transform_passes,
-                compile_spec=self.compile_spec,
             )
         else:
             if partitioners is not None:

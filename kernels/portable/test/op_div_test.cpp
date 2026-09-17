@@ -18,8 +18,6 @@
 using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
-using executorch::aten::SizesType;
-using executorch::aten::StridesType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
@@ -60,7 +58,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeTrunc) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      std::optional<std::string_view>("trunc"),
+      "trunc",
       out);
 
   // Check that it matches the expected output.
@@ -78,7 +76,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      std::optional<std::string_view>("floor"),
+      "floor",
       out);
 
   // Check that it matches the expected output.
@@ -92,11 +90,7 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
 
   Tensor out = tf.zeros(sizes);
 
-  op_div_scalar_mode_out(
-      tf.make(sizes, {1, 2, 4, -9}),
-      2,
-      std::optional<std::string_view>("trunc"),
-      out);
+  op_div_scalar_mode_out(tf.make(sizes, {1, 2, 4, -9}), 2, "trunc", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {0, 1, 2, -4}));
@@ -109,11 +103,7 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeFloor) {
 
   Tensor out = tf.zeros(sizes);
 
-  op_div_scalar_mode_out(
-      tf.make(sizes, {1, 2, 4, -9}),
-      2,
-      std::optional<std::string_view>("floor"),
-      out);
+  op_div_scalar_mode_out(tf.make(sizes, {1, 2, 4, -9}), 2, "floor", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {0, 1, 2, -5}));

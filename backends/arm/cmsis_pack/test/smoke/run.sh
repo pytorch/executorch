@@ -50,12 +50,14 @@ python3 "${TEST_DIR}/../validate_pack.py" "${PACK_FILE}"
 echo
 echo "=== Consumer build (${DOCKER_IMAGE}) ==="
 docker run --rm \
-    -v "${TEST_DIR}:/workspace" \
+    -v "${TEST_DIR}:/workspace-src:ro" \
     -v "${OUTPUT_DIR}:/pack-output:ro" \
     "${DOCKER_IMAGE}" \
     bash -lc '
 set -euo pipefail
-cd /workspace
+rm -rf /tmp/executorch-smoke
+cp -a /workspace-src /tmp/executorch-smoke
+cd /tmp/executorch-smoke
 
 # Acquire the toolchain set declared in vcpkg-configuration.json
 # (cmsis-toolbox + arm-none-eabi-gcc + cmake + ninja).

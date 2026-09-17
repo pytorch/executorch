@@ -71,13 +71,23 @@ def get_binary_elementwise_inputs():
     ]
     highdim_test_suite.test_name_suffix = "highdim"
 
+    large_buffer_test_suite = VkTestSuite(
+        [
+            ((5000000,), (5000000,)),
+        ]
+    )
+    large_buffer_test_suite.storage_types = ["utils::kBuffer"]
+    large_buffer_test_suite.layouts = ["utils::kWidthPacked"]
+    large_buffer_test_suite.data_range = (1, 2)
+    large_buffer_test_suite.test_name_suffix = "large_buffer"
+
     for suite in [test_suite, highdim_test_suite]:
         suite.layouts = [
             "utils::kWidthPacked",
             "utils::kChannelsPacked",
         ]
 
-    return [test_suite, highdim_test_suite]
+    return [test_suite, highdim_test_suite, large_buffer_test_suite]
 
 
 # Eq requires a different test generator so it was split from the other test case.
@@ -751,6 +761,13 @@ def get_native_layer_norm_inputs():
             ((S1, S2), [S2], (S2), (S2), 0.001),
             ((M, M1, M2), [M2], (M2), (M2), 0.001),
             ((S, XL, M1, M2), [M2], (M2), (M2), 0.001),
+            # Either affine parameter may be absent: nn.LayerNorm(bias=False)
+            # has no bias, and F.layer_norm called with neither (kokoro's
+            # AdaLayerNorm applies its own scale and shift afterwards) has
+            # neither.
+            ((M, M1, M2), [M2], (M2), None, 0.001),
+            ((M, M1, M2), [M2], None, (M2), 0.001),
+            ((M, M1, M2), [M2], None, None, 0.001),
         ]
     )
     test_suite.layouts = [
@@ -999,14 +1016,22 @@ def get_view_inputs():
     highdim_test_suite.test_name_suffix = "highdim"
     highdim_test_suite.data_gen = "make_seq_tensor"
 
-    for suite in [test_suite, highdim_test_suite]:
+    large_buffer_test_suite = VkTestSuite(
+        [
+            ((30, 3, 256, 256), (30, 3, 65536)),
+        ]
+    )
+    large_buffer_test_suite.storage_types = ["utils::kBuffer"]
+    large_buffer_test_suite.test_name_suffix = "large_buffer"
+
+    for suite in [test_suite, highdim_test_suite, large_buffer_test_suite]:
         suite.layouts = [
             # "utils::kWidthPacked",
             "utils::kHeightPacked",
             "utils::kChannelsPacked",
         ]
 
-    return [test_suite, highdim_test_suite]
+    return [test_suite, highdim_test_suite, large_buffer_test_suite]
 
 
 @register_test_suite("aten.slice_copy.Tensor")
@@ -1813,6 +1838,7 @@ def get_var_inputs():
         "aten.hardswish.default",
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
+        "aten.log10.default",
         "aten.round.default",
         "aten.tan.default",
         "aten.relu6.default",
@@ -1831,6 +1857,54 @@ def get_unary_ops_inputs():
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
     return test_suite
+
+
+@register_test_suite("aten.unfold_copy.default")
+def get_unfold_copy_inputs():
+    Test = namedtuple("UnfoldCopy", ["self", "dimension", "size", "step"])
+
+    test_suite = VkTestSuite(
+        [
+            Test(self=(11,), dimension=0, size=5, step=2),
+            Test(self=(3, 11), dimension=-1, size=5, step=2),
+            Test(self=(3, 7, 11), dimension=1, size=3, step=2),
+            Test(self=(5, 3, 7, 11), dimension=0, size=3, step=2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.test_name_suffix = "buffer"
+
+    highdim_test_suite = VkTestSuite(
+        [
+            Test(
+                self=(2, 2, 2, 3, 2, 2, 2),
+                dimension=-4,
+                size=2,
+                step=1,
+            ),
+        ]
+    )
+    highdim_test_suite.storage_types = ["utils::kBuffer"]
+    highdim_test_suite.layouts = ["utils::kChannelsPacked"]
+    highdim_test_suite.data_gen = "make_seq_tensor"
+    highdim_test_suite.test_name_suffix = "highdim_buffer"
+
+    scenex_test_suite = VkTestSuite(
+        [
+            Test(self=(30, 15760), dimension=-1, size=400, step=160),
+        ]
+    )
+    scenex_test_suite.storage_types = ["utils::kBuffer"]
+    scenex_test_suite.layouts = ["utils::kWidthPacked"]
+    scenex_test_suite.dtypes = ["at::kFloat"]
+    scenex_test_suite.test_name_suffix = "scenex_buffer"
+
+    return [test_suite, highdim_test_suite, scenex_test_suite]
 
 
 # separate test suite from unary_ops for learning purposes
@@ -2250,3 +2324,42 @@ def get_eq_scalar_inputs():
     test_suite.dtypes = ["at::kInt", "at::kFloat"]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
+
+
+def _get_compare_scalar_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M2, M1), 2.5),
+            ((S1, M1, M2), 1000),
+        ]
+    )
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+@register_test_suite("aten.ne.Scalar")
+def get_ne_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.lt.Scalar")
+def get_lt_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.le.Scalar")
+def get_le_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.gt.Scalar")
+def get_gt_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.ge.Scalar")
+def get_ge_scalar_inputs():
+    return _get_compare_scalar_inputs()

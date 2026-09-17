@@ -21,6 +21,8 @@ using executorch::runtime::CompileSpec;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+
 namespace executorch {
 namespace backends {
 namespace vgf {
@@ -67,6 +69,14 @@ typedef struct SegmentState {
   VkDataGraphPipelineSessionARM vk_session = VK_NULL_HANDLE;
   VkShaderModule vk_shader = VK_NULL_HANDLE;
   std::array<uint32_t, 3> dispatch_shape = {1, 1, 1};
+
+  // to work with data provide by arm neural statistics api
+  bool neural_statistics_bind_point_available = false;
+  VkDeviceMemory neural_statistics_memory = VK_NULL_HANDLE;
+  VkDeviceSize neural_statistics_memory_size = 0;
+  bool neural_statistics_memory_host_visible = false;
+  bool neural_statistics_memory_host_coherent = false;
+  std::string neural_statistics_status;
 } SegmentState;
 
 typedef struct ResourceAlloc {
@@ -95,13 +105,19 @@ class VgfRepr {
       VkDevice dev,
       VkQueue queue,
       VkCommandPool pool,
-      uint32_t queue_family_index = UINT32_MAX)
+      uint32_t queue_family_index = UINT32_MAX,
+      bool neural_statistics_requested = false,
+      bool neural_statistics_device_enabled = false,
+      int neural_statistics_mode_index = 1)
       : vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
         vk_queue(queue),
         vk_command_pool(pool),
-        vk_queue_family_index(queue_family_index) {}
+        vk_queue_family_index(queue_family_index),
+        neural_statistics_requested_(neural_statistics_requested),
+        neural_statistics_device_enabled_(neural_statistics_device_enabled),
+        neural_statistics_mode_index_(neural_statistics_mode_index) {}
 
   /*
    * Process a VGF ready for execution, allocate necessary Vulkan objects.
@@ -149,8 +165,24 @@ class VgfRepr {
     (void)io;
   }
 
+  // to work with arm neural statistics data
+  std::vector<VgfNeuralStatisticsSegmentContext>
+  get_neural_statistics_segment_contexts() const;
+
+  std::string collect_neural_statistics_metadata() const;
+
+  bool neural_statistics_requested() const {
+    return neural_statistics_requested_;
+  }
+
   ~VgfRepr() {
     free_vgf();
+    if (vk_pipeline_cache != VK_NULL_HANDLE) {
+      // The cache is private to this VgfRepr, so no other delegate instance can
+      // be accessing it while this object is being destroyed.
+      vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
+      vk_pipeline_cache = VK_NULL_HANDLE;
+    }
   }
 
  private:
@@ -161,6 +193,16 @@ class VgfRepr {
   VkQueue vk_queue;
   VkCommandPool vk_command_pool;
   uint32_t vk_queue_family_index = UINT32_MAX;
+
+  // Owned by this VgfRepr. One cache is reused across all graph and compute
+  // segments in this loaded VGF, but is not shared with independent VgfRepr
+  // instances. flags=0 uses Vulkan's default internally synchronized cache
+  // mode.
+  VkPipelineCache vk_pipeline_cache = VK_NULL_HANDLE;
+
+  bool neural_statistics_requested_ = false;
+  bool neural_statistics_device_enabled_ = false;
+  int neural_statistics_mode_index_ = 1;
 
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;

@@ -18,7 +18,6 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::SizesType;
-using executorch::aten::StridesType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 

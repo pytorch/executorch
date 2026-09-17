@@ -106,6 +106,90 @@ def _test_create_delete(kind: InputKind, persistent_buffer: bool = None):
     assert len(exported_program.constants) == 0
 
 
+def test_create_delete_sanitized_name():
+    """
+    torch.fx renames a placeholder whose requested name is not a valid
+    identifier, e.g. '0_weight_fused_bn' from a top-level nn.Sequential.
+    Target, graph signature and state_dict must follow the assigned name.
+    """
+    module = EmptyNetwork()
+    exported_program = export(module, args=module.test_data, strict=True)
+    exported_program = to_edge(exported_program).exported_program()
+    graph = exported_program.graph_module.graph
+
+    input_node = list(graph.nodes)[0]
+    with graph.inserting_before(input_node):
+        const_node = create_constant_placeholder(
+            exp_program=exported_program,
+            graph=graph,
+            kind=InputKind.PARAMETER,
+            name="0_test_node",
+            data=torch.ones(1),
+        )
+
+    assert const_node.name != "0_test_node"
+    assert const_node.name.isidentifier()
+    assert const_node.target == const_node.name
+    assert const_node.name in exported_program.graph_signature.inputs_to_parameters
+    target = exported_program.graph_signature.inputs_to_parameters[const_node.name]
+    assert target in exported_program.state_dict
+
+    with graph.inserting_after(input_node):
+        add_node = graph.create_node(
+            "call_function",
+            exir_ops.edge.aten.add.Tensor,
+            args=(input_node, const_node),
+            kwargs={},
+        )
+    output_node = graph.output_node()
+    output_node.replace_input_with(input_node, add_node)
+
+    # Recompiling emits the placeholder target as a function parameter name
+    assert exported_program.module()(torch.zeros(1)) == 1
+
+    output_node.replace_input_with(add_node, input_node)
+    graph.eliminate_dead_code()
+    delete_constant_placeholder(exported_program, const_node)
+    assert len(exported_program.state_dict) == 0
+    assert len(exported_program.graph_signature.input_specs) == 1
+
+
+def test_create_same_name_returns_existing_node():
+    """
+    Requesting the same name twice must return the existing node instead of
+    creating a duplicate, including when torch.fx renamed the placeholder.
+    """
+    # "block1-0_weight" mirrors torchvision regnet's hyphenated module names
+    for requested_name in ("test_node", "0_test_node", "block1-0_weight"):
+        module = EmptyNetwork()
+        exported_program = export(module, args=module.test_data, strict=True)
+        exported_program = to_edge(exported_program).exported_program()
+        graph = exported_program.graph_module.graph
+
+        input_node = list(graph.nodes)[0]
+        with graph.inserting_before(input_node):
+            first = create_constant_placeholder(
+                exp_program=exported_program,
+                graph=graph,
+                kind=InputKind.PARAMETER,
+                name=requested_name,
+                data=torch.ones(1),
+            )
+        with graph.inserting_before(input_node):
+            second = create_constant_placeholder(
+                exp_program=exported_program,
+                graph=graph,
+                kind=InputKind.PARAMETER,
+                name=requested_name,
+                data=torch.ones(1),
+            )
+
+        assert first is second
+        placeholders = [n for n in graph.nodes if n.op == "placeholder"]
+        assert len(placeholders) == 2  # the created node and the user input
+        assert len(exported_program.state_dict) == 1
+
+
 def test_create_delete_parameter():
     _test_create_delete(InputKind.PARAMETER)
 

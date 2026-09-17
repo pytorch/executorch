@@ -1,0 +1,40 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# coopmat<int8> x coopmat<int8> -> coopmat<int32> variant of the
+# dynamically-quantized-activation linear tiled shader (INT4 group-symmetric
+# weight).
+#   WEIGHT_NBITS=4 -> linear_dq8ca_q4gsw_coopmat (INT4 group-symmetric)
+# Requires the VK_COMPONENT_TYPE_SINT8_KHR cooperative matrix property to be
+# enumerated on the device.
+# Loop structure follows the double-buffered reference (coopmat_mm_ref) at
+# a 128x64 tile with K-step 32, 4 subgroups x 64 threads. The reference's
+# subgroup-32 layout is NOT used — the Xclipse PAL compiler crashes in
+# vkCreateComputePipelines when int8 WMMA is compiled at forced subgroup
+# size 32 (fp16 WMMA at 32 is fine; see linear_qw_coopmat).
+
+linear_dq8ca_qw_coopmat:
+  parameter_names_with_default_values:
+    PRECISION: highp
+    HAS_BIAS: false
+    WEIGHT_NBITS: 4
+    WEIGHT_STORAGE: texture2d
+    MMA_M: 16
+    MMA_N: 16
+    MMA_K: 16
+    WG_TILE_M: 128
+    WG_TILE_N: 64
+    WG_TILE_K: 32
+    SG_GRID_X: 2
+    SG_GRID_Y: 2
+    SUBGROUP_SIZE: 64
+  shader_variants:
+    - NAME: linear_dq8ca_q4gsw_coopmat_buffer_texture2d_half
+      WEIGHT_NBITS: 4
+      WEIGHT_STORAGE: texture2d
+    - NAME: linear_dq8ca_q4gsw_coopmat_buffer_buffer_half
+      WEIGHT_NBITS: 4
+      WEIGHT_STORAGE: buffer

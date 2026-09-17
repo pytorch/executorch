@@ -1,0 +1,133 @@
+# Copyright 2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Sequence
+
+import executorch.backends.transforms.channels_last_ops  # noqa: F401
+
+import torch
+
+from executorch.exir.dialects._ops import ops as exir_ops
+
+from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+from torch.fx.passes.infra.pass_base import PassResult
+
+_DIM_ORDER_CHANGING_OPS: frozenset = frozenset(
+    {
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+    }
+)
+
+# kwargs that carry no tensor semantics and require no value inspection.
+_PASS_THROUGH_KWARGS: frozenset = frozenset({"dim_order", "non_blocking"})
+
+# TensorOptions that the exporter may annotate explicitly on `_to_dim_order_copy` nodes even
+# when no actual change occurs. These are allowed only when their value is identical to the
+# source tensor's property (i.e. truly a no-op). Any value that would actually change the
+# tensor (e.g. a different dtype) blocks replacement. Any kwarg not in either set is unknown
+# and is also rejected.
+_TENSOR_OPTION_KWARGS: frozenset = frozenset(
+    {"dtype", "layout", "device", "pin_memory"}
+)
+
+_ALLOWED_KWARGS: frozenset = _PASS_THROUGH_KWARGS | _TENSOR_OPTION_KWARGS
+
+_TO_NHWC_PERMUTATION: list[int] = [0, 2, 3, 1]
+_TO_NCHW_PERMUTATION: list[int] = [0, 3, 1, 2]
+
+
+def _is_4d_contiguous(dim_order: Sequence[int]) -> bool:
+    return list(dim_order) == [0, 1, 2, 3]
+
+
+def _is_4d_channels_last(dim_order: Sequence[int]) -> bool:
+    return list(dim_order) == [0, 2, 3, 1]
+
+
+def _is_replaceable_input_boundary_clone(op, args, kwargs) -> bool:
+    """Return True if the op/args/kwargs describe a 4D channels-last-to-contiguous clone of a model input.
+
+    These are the input boundary clones inserted by `EnforceContiguousDimOrder`: they consume a
+    channels-last placeholder and produce a contiguous tensor. Replacing them with a permute pair
+    allows them to be optimized out by other passes, leaving only the no-op `aten.permute_copy`.
+    """
+    if op not in _DIM_ORDER_CHANGING_OPS:
+        return False
+    if not args or not hasattr(args[0], "node"):
+        return False
+    src = args[0].node
+    if not isinstance(src, torch.fx.Node) or src.op != "placeholder":
+        return False
+    val = src.meta.get("val")
+    if not isinstance(val, torch.Tensor):
+        return False
+    # Primary guard: reject any kwarg outside the known set. Unknown kwargs may carry
+    # semantics we cannot reason about, so we conservatively block replacement.
+    if not set(kwargs.keys()) <= _ALLOWED_KWARGS:
+        return False
+    # Secondary guard: each TensorOption that is present must be a no-op relative to the
+    # source tensor. The exporter annotates these even when no actual change occurs, but a
+    # differing value (e.g. a dtype cast) must not be silently dropped by the replacement.
+    if kwargs.get("dtype") not in (None, val.dtype):
+        return False
+    if kwargs.get("layout") not in (None, val.layout):
+        return False
+    if kwargs.get("device") not in (None, val.device):
+        return False
+    if kwargs.get("pin_memory") not in (None, False):
+        return False
+    return _is_4d_channels_last(val.dim_order()) and _is_4d_contiguous(
+        kwargs.get("dim_order", [])
+    )
+
+
+class ReplaceChannelsLastInputClones(ExportPass):
+    """Replace `_to_dim_order_copy` and `_clone_dim_order` with an equivalent sequence in the following pattern. This
+        approach allows the `channels_last.permute_copy` to be optimized out if there are subsequent channels last
+        operators in the model, leaving only the `aten.permute_copy`, which is effectively a no-op. As a result, the
+        input data doesn't have to be permuted in memory.
+                                                                              <model input>
+                                                                                    │ [N, C, H, W] shape, (0, 2, 3, 1) dim order
+          <model input>                                                             │ data is stored channels last
+                │ [N, C, H, W] shape, (0, 2, 3, 1) dim order              ┌─────────▼─────────┐
+                │ data is stored channels last                            │ aten.permute_copy ◄──── [0, 2, 3, 1] permutation
+    ┌───────────▼────────────┐                                            └─────────┬─────────┘
+    │ <dim order clone/copy> │                     ────────────────►                │ [N, H, W, C] shape, (0, 1, 2, 3) dim order
+    └───────────┬────────────┘                                                      │ data is stored channels last
+                │ [N, C, H, W] shape, (0, 1, 2, 3) dim order         ┌──────────────▼─────────────┐
+                ▼ data is stored channels first                      │ channels_last.permute_copy ◄──── [0, 3, 1, 2] permutation
+                                                                     └──────────────┬─────────────┘
+                                                                                    │ [N, C, H, W] shape, (0, 1, 2, 3) dim order
+                                                                                    ▼ data is stored channels first
+    """
+
+    _modified: bool
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self._modified = False
+        result = super().call(graph_module)
+        return PassResult(result.graph_module, self._modified)
+
+    def call_operator(self, op, args, kwargs, meta: NodeMetadata) -> ProxyValue:
+        if not _is_replaceable_input_boundary_clone(op, args, kwargs):
+            return super().call_operator(op, args, kwargs, meta)
+
+        x = super().call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            (args[0], _TO_NHWC_PERMUTATION),
+            {},
+            meta,
+        )
+        x = super().call_operator(
+            exir_ops.edge.channels_last.permute_copy.default,
+            (x, _TO_NCHW_PERMUTATION),
+            {},
+            meta,
+        )
+
+        self._modified = True
+
+        return x

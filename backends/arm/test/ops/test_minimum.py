@@ -100,7 +100,12 @@ def test_minimum_u85_INT(test_data: Tuple):
     ).run()
 
 
-@common.parametrize("test_data", Minimum.test_parameters | Minimum.test_parameters_fp16)
+@common.parametrize(
+    "test_data",
+    Minimum.test_parameters
+    | Minimum.test_parameters_bf16
+    | Minimum.test_parameters_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_minimum_vgf_no_quant(test_data: test_t):
     pipeline = VgfPipeline[test_t](

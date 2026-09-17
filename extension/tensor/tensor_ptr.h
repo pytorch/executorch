@@ -43,11 +43,11 @@ using TensorPtr = std::shared_ptr<executorch::aten::Tensor>;
  * @param dim_order A vector specifying the order of dimensions.
  * @param strides A vector specifying the strides of the tensor.
  * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides (default CPU).
  * @param dynamism Specifies the mutability of the tensor's shape.
  * @param deleter A custom deleter function for managing the lifetime of the
  * data buffer. If provided, this deleter will be called when the managed Tensor
  * object is destroyed.
- * @param device The device on which `data` resides (default CPU).
  * @return A TensorPtr that manages the newly created Tensor.
  */
 TensorPtr make_tensor_ptr(
@@ -57,11 +57,11 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::StridesType> strides,
     const executorch::aten::ScalarType type =
         executorch::aten::ScalarType::Float,
+    executorch::aten::Device device =
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
     const executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    std::function<void(void*)> deleter = nullptr,
-    executorch::aten::Device device =
-        executorch::aten::Device(executorch::aten::DeviceType::CPU));
+    std::function<void(void*)> deleter = nullptr);
 
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
@@ -70,12 +70,12 @@ TensorPtr make_tensor_ptr(
  * device semantics.
  *
  * @param sizes A vector specifying the size of each dimension.
- * @param data A pointer to the data buffer (CPU or device, see device_type).
+ * @param data A pointer to the data buffer (CPU or device, see device).
  * @param type The scalar type of the tensor elements.
+ * @param device The device on which `data` resides (default CPU).
  * @param dynamism Specifies the mutability of the tensor's shape.
  * @param deleter A custom deleter function for managing the lifetime of the
  * data buffer.
- * @param device The device on which `data` resides (default CPU).
  * @return A TensorPtr that manages the newly created Tensor.
  */
 inline TensorPtr make_tensor_ptr(
@@ -83,20 +83,20 @@ inline TensorPtr make_tensor_ptr(
     void* data,
     const executorch::aten::ScalarType type =
         executorch::aten::ScalarType::Float,
+    executorch::aten::Device device =
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
     const executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-    std::function<void(void*)> deleter = nullptr,
-    executorch::aten::Device device =
-        executorch::aten::Device(executorch::aten::DeviceType::CPU)) {
+    std::function<void(void*)> deleter = nullptr) {
   return make_tensor_ptr(
       std::move(sizes),
       data,
       {},
       {},
       type,
+      device,
       dynamism,
-      std::move(deleter),
-      device);
+      std::move(deleter));
 }
 
 /**
@@ -181,6 +181,7 @@ inline TensorPtr make_tensor_ptr(
         std::move(dim_order),
         std::move(strides),
         type,
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
         dynamism,
         [data_ptr = std::move(data_ptr)](void*) {});
   }
@@ -192,6 +193,7 @@ inline TensorPtr make_tensor_ptr(
       std::move(dim_order),
       std::move(strides),
       type,
+      executorch::aten::Device(executorch::aten::DeviceType::CPU),
       dynamism,
       [data_ptr = std::move(data_ptr)](void*) {});
 }
@@ -425,13 +427,13 @@ inline TensorPtr make_tensor_ptr(
       std::move(strides),
       tensor.scalar_type(),
 #ifndef USE_ATEN_LIB
+      executorch::aten::Device(tensor.device_type(), tensor.device_index()),
       tensor.shape_dynamism(),
-      std::move(deleter),
-      executorch::aten::Device(tensor.device_type(), tensor.device_index()));
+      std::move(deleter));
 #else // USE_ATEN_LIB
+      tensor.device(),
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
-      std::move(deleter),
-      tensor.device());
+      std::move(deleter));
 #endif // USE_ATEN_LIB
 }
 

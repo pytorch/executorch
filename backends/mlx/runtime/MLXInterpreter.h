@@ -8,7 +8,11 @@
 
 #pragma once
 
+#include "MLXCache.h"
 #include "MLXExecutor.h"
+
+#include <algorithm>
+#include <vector>
 
 #include <mlx/array.h>
 #include <mlx/fast.h>
@@ -289,7 +293,80 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 
   array out = fast::scaled_dot_product_attention(
-      Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+      Q,
+      K,
+      V,
+      static_cast<float>(n.scale),
+      mask_mode,
+      mask_arr,
+      sinks,
+      false,
+      s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_update_and_attend(
+    const UpdateAndAttendNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  if (!st.cache) {
+    throw std::runtime_error("update_and_attend: no cache installed");
+  }
+  if (!n.layer_id) {
+    throw std::runtime_error("update_and_attend: layer_id is not set");
+  }
+  if (!n.scale) {
+    throw std::runtime_error("update_and_attend: scale is not set");
+  }
+  // The cache places the step and attends over whatever storage its layout
+  // uses; the handler reads the query side off the graph.
+  const array& q = st.const_tensor_ref(n.q);
+  // One position per query token, read host-side so the cache stays pure graph
+  // + integer bookkeeping. Every layer of a step reads the same position
+  // tensor, so evaluating it in place costs one sync for the first layer and
+  // nothing for the rest.
+  auto pos = st.const_tensor_ref(n.position);
+  eval(pos);
+  // The entries are read in order off the buffer, which a strided view would
+  // walk with the wrong stride.
+  if (!pos.flags().row_contiguous) {
+    throw std::runtime_error("update_and_attend: position must be contiguous");
+  }
+  const int length = static_cast<int>(pos.size());
+  if (length != static_cast<int>(q.shape(2))) {
+    throw std::runtime_error(
+        "update_and_attend: position must hold one entry per query token");
+  }
+  std::vector<int32_t> positions(static_cast<size_t>(length));
+  switch (pos.dtype()) {
+    case ::mlx::core::int32:
+      std::copy(
+          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
+      break;
+    case ::mlx::core::int64:
+      std::transform(
+          pos.data<int64_t>(),
+          pos.data<int64_t>() + length,
+          positions.begin(),
+          [](int64_t p) { return static_cast<int32_t>(p); });
+      break;
+    default:
+      throw std::runtime_error(
+          std::string("update_and_attend: position must be int32 or int64, ") +
+          "got " + ExecutionState::dtype_str(pos.dtype()));
+  }
+  array out = st.cache->attend(
+      *n.layer_id,
+      positions,
+      q,
+      st.const_tensor_ref(n.k),
+      st.const_tensor_ref(n.v),
+      static_cast<float>(*n.scale),
+      s);
+  // Honor the op's output-dtype contract (unset -> SDPA's native output).
+  if (n.out_dtype) {
+    out = astype(out, resolve_dtype(*n.out_dtype), s);
+  }
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -740,6 +817,11 @@ exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
 }
 
+inline void exec_flip(const FlipNode& n, ExecutionState& st, StreamOrDevice s) {
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, flip(st.const_tensor_ref(n.x), axes, s));
+}
+
 inline void
 exec_as_strided(const AsStridedNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -872,7 +954,10 @@ exec_gather_mm(const GatherMmNode& n, ExecutionState& st, StreamOrDevice s) {
     rhs_idx = st.const_tensor_ref(*n.rhs_indices);
   }
 
-  array Y = gather_mm(A, B, lhs_idx, rhs_idx, n.sorted_indices, s);
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
+  array Y = gather_mm(A, B, lhs_idx, rhs_idx, sorted, s);
   st.set_tensor(n.out, std::move(Y));
 }
 
@@ -895,6 +980,9 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
     rhs_idx = st.const_tensor_ref(*n.rhs_indices);
   }
 
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
   array Y = gather_qmm(
       X,
       Wq,
@@ -906,7 +994,7 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
       n.group_size,
       n.bits,
       n.mode,
-      n.sorted_indices,
+      sorted,
       s);
   st.set_tensor(n.out, std::move(Y));
 }
@@ -1459,6 +1547,11 @@ inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_trunc(const TruncNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, trunc(st.const_tensor_ref(n.x), s));
+}
+
+inline void
 exec_square(const SquareNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, square(st.const_tensor_ref(n.x), s));
 }
@@ -1959,6 +2052,10 @@ class Interpreter {
       case OpCode::SDPA:
         ops::exec_sdpa(std::get<SdpaNode>(instr.node), st, s);
         break;
+      case OpCode::UPDATE_AND_ATTEND:
+        ops::exec_update_and_attend(
+            std::get<UpdateAndAttendNode>(instr.node), st, s);
+        break;
       case OpCode::ADD:
         ops::exec_add(std::get<AddNode>(instr.node), st, s);
         break;
@@ -2049,6 +2146,9 @@ class Interpreter {
         break;
       case OpCode::TRANSPOSE:
         ops::exec_transpose(std::get<TransposeNode>(instr.node), st, s);
+        break;
+      case OpCode::FLIP:
+        ops::exec_flip(std::get<FlipNode>(instr.node), st, s);
         break;
       case OpCode::AS_STRIDED:
         ops::exec_as_strided(std::get<AsStridedNode>(instr.node), st, s);
@@ -2144,6 +2244,9 @@ class Interpreter {
         break;
       case OpCode::CEIL:
         ops::exec_ceil(std::get<CeilNode>(instr.node), st, s);
+        break;
+      case OpCode::TRUNC:
+        ops::exec_trunc(std::get<TruncNode>(instr.node), st, s);
         break;
       case OpCode::SQUARE:
         ops::exec_square(std::get<SquareNode>(instr.node), st, s);

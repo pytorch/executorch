@@ -23,13 +23,21 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
 
 ${layout_declare_ubo(B, "TextureMetadata", "outp")}
-${layout_declare_ubo(B, "float", "start")}
-${layout_declare_ubo(B, "float", "step")}
+${layout_declare_ubo(B, "uint", "start")}
+${layout_declare_ubo(B, "uint", "step")}
+
+layout(push_constant) uniform restrict Block {
+  ivec2 params_are_int;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 const int packed_dim = get_packed_dim(out_layout);
+
+float decode_param(const uint value, const int is_int) {
+  return is_int != 0 ? float(int(value)) : uintBitsToFloat(value);
+}
 
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
@@ -44,11 +52,13 @@ void main() {
   // arange output is 1D, so the W dimension holds the element index.
   // Compute the value for each element in the texel along the packed dim.
   VEC4_T outtex = VEC4_T(0);
+  const float start_val = decode_param(start, params_are_int.x);
+  const float step_val = decode_param(step, params_are_int.y);
   int limit = min(
       4, safe_idx(outp.sizes, packed_dim) - out_tidx.data[packed_dim]);
   for (int comp = 0; comp < limit; comp++) {
     int elem_idx = out_tidx.data[0]; // W index is the linear element index
-    outtex[comp] = VEC4_T(start + elem_idx * step).x;
+    outtex[comp] = VEC4_T(start_val + elem_idx * step_val).x;
     out_tidx.data[packed_dim]++;
   }
 

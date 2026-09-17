@@ -436,6 +436,7 @@ Please help update following table if you are contributing new operators:
 | GetSparseValues | &cross; |
 | GridSample | &check; |
 | GroupNorm | &check; |
+| HadamardTransform | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
 | IsInf | &check; |
@@ -502,6 +503,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
+| `aten.as_strided` | `DecomposeAsStrided` |
 | `aten.asinh` | `DecomposeHyperbolicVariants` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
 | `aten.atanh` | `DecomposeHyperbolicVariants` |
@@ -521,9 +523,10 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.log10`, `aten.log2`, `aten.log1p` | `DecomposeLogVariants` |
 | `aten.max_pool3d` | `DecomposeMaxPool3d` |
 | `aten.min.dim`, `aten.max.dim` | `DecomposeMinMaxDim` |
+| `aten.pdist`, `aten._pdist_forward` | `DecomposePDist` |
 | `aten.reciprocal` | `DecomposeReciprocal` |
 | `aten.reflection_pad1d` | PyTorch built-in decomposition |
-| `aten.reflection_pad2d` | `DecomposePad` |
+| `aten.reflection_pad2d`, `aten.reflection_pad3d` | `DecomposePad` |
 | `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
 | `aten.roll` | `DecomposeRoll` |
 | `aten.select_scatter` | `DecomposeSelectScatter` |

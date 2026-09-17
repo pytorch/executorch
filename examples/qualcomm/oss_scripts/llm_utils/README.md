@@ -1,7 +1,7 @@
 ## Tutorial to run [eval_decoder_model_qnn.py](./eval_decoder_model_qnn.py)
 This script, [`eval_decoder_model_qnn.py`](./eval_decoder_model_qnn.py), is designed to evaluate large language models (LLMs) from transformers that have been compiled into ExecuTorch Portable Executable (PTE) format for execution on Qualcomm devices. It leverages the `lm-evaluation-harness` library to perform various NLP evaluation tasks.
 
-> ⚠️ **Important:** Note that this script runs PTE files generated specifically for Hugging Face Transformers, such as [qwen2_5.py](../qwen2_5/qwen2_5.py), rather than [the static LLaMA version](../llama/llama.py).
+> ⚠️ **Important:** Note that this script runs PTE files generated specifically for Hugging Face Transformers, such as [hf_causal_lm.py](../hf_causal_lm.py), rather than [the static LLaMA version](../llama/llama.py).
 
 ### Features:
 

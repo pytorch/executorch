@@ -8,6 +8,12 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.backend.ops_aliases import (
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    MulTensor,
+)
 
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import (
@@ -19,13 +25,10 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import MaxPoolMulTensorModule, MulTensorModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-    MulTensor,
+from executorch.backends.nxp.tests.simple_models import (
+    MaxPoolMulTensorModule,
+    MulTensorModule,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
@@ -95,6 +98,10 @@ class TestMulTensor:
             ),
             pytest.param(
                 [ModelInputSpec((4,)), ModelInputSpec((4, 4))], id="2 inputs 1D+2D."
+            ),
+            pytest.param(
+                [ModelInputSpec((10,)), ModelInputSpec((1, 1))],
+                id="2 inputs 1D + 2D, num_elems of input == num_elems of output",
             ),
         ],
     )
@@ -204,6 +211,9 @@ class TestMulTensor:
             expected_non_delegated_ops={},
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -213,5 +223,5 @@ class TestMulTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )

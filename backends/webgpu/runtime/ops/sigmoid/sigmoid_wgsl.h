@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sigmoid.wgsl - DO NOT EDIT.
-// wgsl-sha256: 70395dbb107b8b95ae13c0a6fb12a8415c561c645da0347294c92904314ae84c
+// wgsl-sha256: 79a1554e9d957e10c0f4379b5e0240191743952198e9ed9c0342402bacd356de
 inline constexpr const char* kSigmoidWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -23,11 +23,13 @@ struct Params {
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
-override wg_size: u32 = 64u;
+override wg_size: u32 = 256;
 
-@compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+@compute @workgroup_size(wg_size)
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (idx >= params.num_elements) {
         return;
     }
@@ -35,7 +37,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 )";
 
-inline constexpr uint32_t kSigmoidWorkgroupSizeX = 64;
+inline constexpr uint32_t kSigmoidWorkgroupSizeX = 256;
 inline constexpr uint32_t kSigmoidWorkgroupSizeY = 1;
 inline constexpr uint32_t kSigmoidWorkgroupSizeZ = 1;
 

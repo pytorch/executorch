@@ -98,6 +98,28 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
             output_dtype=dtype,
         )
 
+    def to(self, *args, **kwargs) -> "ExportableNVFP4Tensor":
+        """Move device and/or set the output dtype *without* dequantizing.
+
+        Mirrors ``ExportableInt4Tensor.to``: the packed ``qdata`` (uint32) and
+        ``scale`` (uint8 E4M3 block scales) only move across devices -- neither
+        is a floating scale, so casting to the activation dtype must not touch
+        their bit patterns. ``per_tensor_scale`` (a float32 scalar) follows the
+        device only, and ``orig_dtype`` (the dequantized output dtype) follows
+        ``dtype``. Use :meth:`dequantize` to materialize a dense tensor.
+        """
+        kwargs = self._get_to_kwargs(*args, **kwargs)
+        device = kwargs.pop("device")
+        dtype = kwargs.pop("dtype")
+        assert dtype.is_floating_point, f"expected a floating dtype; got {dtype}"
+        return ExportableNVFP4Tensor(
+            self.qdata.to(device),
+            self.scale.to(device),
+            self.per_tensor_scale.to(device),
+            self.block_size,
+            dtype,
+        )
+
     __torch_function__ = torch._C._disabled_torch_function_impl
 
 
@@ -161,7 +183,7 @@ def _exportable_nvfp4_transform(module: nn.Module, config: ExportableNVFP4Config
             f"NVFP4 requires weight dims divisible by 16, got {weight.shape}"
         )
 
-    per_tensor_scale = 1.0
+    per_tensor_scale = None
     if config.use_per_tensor_scale:
         tensor_amax = torch.max(torch.abs(weight))
         per_tensor_scale = per_tensor_amax_to_scale(tensor_amax)
@@ -173,7 +195,11 @@ def _exportable_nvfp4_transform(module: nn.Module, config: ExportableNVFP4Config
     qdata_u32 = qdata_packed.view(torch.uint32)
     scales_u8 = scales_fp8.view(torch.uint8)
 
-    pts = torch.tensor(per_tensor_scale, dtype=torch.float32)
+    pts = torch.as_tensor(
+        1.0 if per_tensor_scale is None else per_tensor_scale,
+        dtype=torch.float32,
+        device=weight.device,
+    )
     quantized_weight = ExportableNVFP4Tensor(
         qdata_u32,
         scales_u8,

@@ -65,7 +65,7 @@ private constructor(
     private var modulePath: String? = null
     private var tokenizerPath: String? = null
     private var temperature: Float = 0.8f
-    private var dataPath: String? = ""
+    private var dataPath: String? = null
     private var modelType: Int = MODEL_TYPE_TEXT
     private var numBos: Int = 0
     private var numEos: Int = 0

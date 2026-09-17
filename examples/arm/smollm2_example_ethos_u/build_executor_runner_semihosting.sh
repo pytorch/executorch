@@ -3,6 +3,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Example build helper. This command-line interface is not a public API and may
+# change without deprecation.
 
 set -euo pipefail
 
@@ -16,13 +19,14 @@ pte_file=""
 target="ethos-u85-256"
 system_config="Ethos_U85_SYS_DRAM_High"
 memory_mode="Dedicated_Sram_512KB"
-method_pool_size="0x00800000"
-scratch_pool_size="0x00400000"
+method_pool_size="0x01000000"
+scratch_pool_size="0x00800000"
 input_file_pool_size="0x00100000"
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [options]
+Note: this example build script is not a stable public API.
 
 Options:
   --pte=PATH             Embed this PTE in the semihosting runner ELF.

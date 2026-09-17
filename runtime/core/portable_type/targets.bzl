@@ -19,7 +19,6 @@ def define_common_targets():
             "tensor.h",
             "tensor_impl.h",
             "string_view.h",
-            "device.h",
         ],
         # Only should be depended on by kernel_types:kernel_types, but various suffixes like Android and Static
         # mean I cant just expose visibility to a single rule.
@@ -36,6 +35,7 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         exported_deps = [
+            ":device",
             ":scalar_type",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:tensor_shape_dynamism",
@@ -43,6 +43,20 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core:tag",
+        ],
+    )
+
+    # device.h is standalone and is the one portable type header that ATen mode
+    # code also needs, so it is split out like :scalar_type below rather than
+    # making a caller that wants only Device depend on every portable type.
+    runtime.cxx_library(
+        name = "device",
+        exported_headers = [
+            "device.h",
+        ],
+        visibility = [
+            "//executorch/extension/aten_util/...",
+            "//executorch/runtime/core/...",
         ],
     )
 

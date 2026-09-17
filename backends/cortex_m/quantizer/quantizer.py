@@ -12,9 +12,10 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     PatternQuantizer,
     SharedQspecQuantizer,
 )
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.node_finders import (
-    GlobalNodeFinder,
+    GlobalNoOutputNodeFinder,
     NodeTargetNodeFinder,
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
@@ -24,8 +25,10 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
 )
 from executorch.backends.cortex_m.quantizer.quantizer_support import (
     __name__ as cortex_m_quantizer_support_module,
+    CONV1D_OP_PATTERNS,
     CONV_OP_PATTERNS,
     CONV_TRANSPOSE_OP_PATTERNS,
+    CORTEX_M_EXPLICIT_LAYOUT_QUANTIZER_SUPPORT_DICT,
     CORTEX_M_QUANTIZER_SUPPORT_DICT,
 )
 from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
@@ -44,19 +47,48 @@ def mark_node_as_annotated(
 
 
 class CortexMQuantizer(ComposableQuantizer):
+    def __init__(
+        self,
+        per_tensor_config: Optional[QuantizationConfig] = None,
+        use_explicit_layout: bool = False,
+    ) -> None:
+        """Cortex-M PT2E quantizer.
 
-    def __init__(self) -> None:
-        conv_targets: set[OpOverload] = set()
-        for key in CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys():
-            conv_targets.update(key)
+        Args:
+            per_tensor_config: Per-tensor activation config applied to the
+                non-conv elementwise ops (div/mul/add/...) that
+                ``GlobalNodeFinder`` matches anywhere in the graph. Convolutions
+                are always quantized with the per-channel config. Defaults to
+                ``INT8_PER_TENSOR_CONFIG``; pass ``INT16_PER_TENSOR_CONFIG`` to
+                quantize the ops that support it (e.g. ``quantized_div``) with
+                int16 activations.
+            use_explicit_layout: Select the support checks for the experimental
+                explicit-layout pipeline. Legacy mode continues to require
+                channels-last convolution inputs.
+        """
+        per_tensor_config = per_tensor_config or INT8_PER_TENSOR_CONFIG
 
+        support_dict = CORTEX_M_QUANTIZER_SUPPORT_DICT
         support_dict_name = (
             cortex_m_quantizer_support_module + ".CORTEX_M_QUANTIZER_SUPPORT_DICT"
         )
+        conv_patterns = CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys()
+        if use_explicit_layout:
+            support_dict = CORTEX_M_EXPLICIT_LAYOUT_QUANTIZER_SUPPORT_DICT
+            support_dict_name = (
+                cortex_m_quantizer_support_module
+                + ".CORTEX_M_EXPLICIT_LAYOUT_QUANTIZER_SUPPORT_DICT"
+            )
+            conv_patterns |= CONV1D_OP_PATTERNS.keys()
+
+        conv_targets: set[OpOverload] = set()
+        for key in conv_patterns:
+            conv_targets.update(key)
+
         pattern_matcher = PatternMatcher(
             cast(
                 dict[tuple[OpOverload, ...], Optional[type[PatternCheck]]],
-                CORTEX_M_QUANTIZER_SUPPORT_DICT,
+                support_dict,
             ),
             support_dict_name=support_dict_name,
         )
@@ -67,8 +99,8 @@ class CortexMQuantizer(ComposableQuantizer):
                 pattern_matcher=pattern_matcher,
             ),
             PatternQuantizer(
-                INT8_PER_TENSOR_CONFIG,
-                node_finder=GlobalNodeFinder(),
+                per_tensor_config,
+                node_finder=GlobalNoOutputNodeFinder(),
                 pattern_matcher=pattern_matcher,
             ),
             SharedQspecQuantizer(),

@@ -127,7 +127,6 @@ using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
-using executorch::runtime::TensorInfo;
 using executorch::runtime::toString;
 
 #if defined(ET_BUNDLE_IO)
@@ -137,11 +136,9 @@ using executorch::bundled_program::verify_method_outputs;
 #endif
 
 #if defined(ET_EVENT_TRACER_ENABLED)
-using executorch::etdump::BufferDataSink;
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 using executorch::runtime::EventTracerDebugLogLevel;
-using torch::executor::etdump_result;
 #endif
 
 /**

@@ -7,10 +7,8 @@ from __future__ import annotations
 
 import argparse
 import logging
-
 import math
 import time
-
 from dataclasses import dataclass
 from enum import Enum
 from functools import wraps
@@ -19,10 +17,11 @@ from typing import Any, Dict, List, Optional
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
-from executorch.backends.qualcomm.utils.utils import (
-    get_sdk_build_id,
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    describe_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import setup_qnn_sdk
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
@@ -90,7 +89,6 @@ def process_model_args(
         config: LLMModelConfig object to be used.
         mode: Mode of operation (PREFILL, DECODE, or CALIBRATE).
     """
-    # TODO: support batch inputs if necessary
     if mode == Mode.DECODE:
         ar_len = (
             # To get better performance, we round up to the nearest power of 2.
@@ -107,8 +105,8 @@ def process_model_args(
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
-    # TODO: support multi_batch for CALIBRATION MODE
-    model_args.max_batch_size = 1
+    # TODO: support batch inputs for runtime mode if necessary
+    model_args.max_batch_size = control_args.batch_size if mode == Mode.CALIBRATE else 1
     model_args.max_seq_len = control_args.max_seq_len
     model_args.max_context_len = control_args.max_context_len
     model_args.use_kv_cache = (
@@ -119,10 +117,13 @@ def process_model_args(
     model_args.kv_io_bit_width = quant_recipe.get_kv_io_bit_width()
 
     if config.masked_softmax:
+        # Before the version check, because setup may install a newer SDK than this process can
+        # currently see, and asking first could disable the feature on an SDK that supports it.
+        setup_qnn_sdk()
         if is_qnn_sdk_version_less_than("2.35"):
             logging.warning(
-                f"Masked softmax is supported after QNN SDK 2.35. Given sdk version {get_sdk_build_id()}"
-                " is lower the target version. Disabling the feature."
+                f"Masked softmax is supported after QNN SDK 2.35. Given sdk version "
+                f"{describe_sdk_build_id()} is lower the target version. Disabling the feature."
             )
             model_args.enable_masked_softmax = False
         else:
@@ -166,17 +167,19 @@ class Processor:
 @dataclass
 class Request:
     @dataclass
-    class CalibrationData:
-        datasets: Optional[DataLoader] = None
+    class QuantizationData:
+        calib_loader: Optional[DataLoader] = None
         intermediate_outputs: Optional[DataLoader] = None
         qdq_intermediate_outputs: Optional[DataLoader] = None
+        train_loader: Optional[DataLoader] = None
+        val_loader: Optional[DataLoader] = None
 
     @dataclass
     class Data:
         compile_spec: List[CompileSpec] = None
         pte_filename: str = None
         custom_annotation: Any = ()
-        calibration_data: Request.CalibrationData = None
+        quantization_data: Request.QuantizationData = None
         tokenizer: callable = None
         skip_quantize: bool = False
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend

@@ -37,17 +37,37 @@ static_assert(
     sizeof(EmbeddingParams) == 32,
     "EmbeddingParams must be 32 bytes");
 
+struct EmbeddingLayout {
+  uint32_t embed_dim;
+  uint32_t blocks_per_row;
+  uint32_t group_size;
+  uint32_t groups_per_row;
+  uint32_t bytes_per_row;
+  bool is_linear_weight;
+};
+
+EmbeddingParams make_embedding_params(
+    const EmbeddingLayout& layout,
+    uint32_t num_indices,
+    uint32_t total_blocks) {
+  return {
+      layout.embed_dim,
+      layout.blocks_per_row,
+      num_indices,
+      layout.group_size,
+      layout.groups_per_row,
+      layout.bytes_per_row,
+      total_blocks,
+      layout.is_linear_weight ? 1u : 0u};
+}
+
 // Resize hook body: recompute counts/dispatch; out = indices dims +
 // [embed_dim].
 void resize_embedding_q4gsw(
     WebGPUGraph& g,
     int indices_id,
     int out_id,
-    uint32_t embed_dim,
-    uint32_t blocks_per_row,
-    uint32_t gs_u,
-    uint32_t groups_per_row,
-    uint32_t bytes_per_row,
+    const EmbeddingLayout& layout,
     uint32_t wg_size,
     size_t dispatch_idx,
     WGPUBuffer params_buf) {
@@ -56,22 +76,16 @@ void resize_embedding_q4gsw(
   if (ni == 0) {
     throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
   }
-  const uint64_t total_blocks = ni * blocks_per_row;
+  const uint64_t total_blocks = ni * layout.blocks_per_row;
   if (total_blocks > UINT32_MAX) {
     throw std::runtime_error(
         "WebGPU embedding_q4gsw: total_blocks exceeds uint32");
   }
   std::vector<int64_t> od = id;
-  od.push_back(static_cast<int64_t>(embed_dim));
+  od.push_back(static_cast<int64_t>(layout.embed_dim));
   g.set_cur_dims(out_id, od);
-  EmbeddingParams p = {};
-  p.embed_dim = embed_dim;
-  p.blocks_per_row = blocks_per_row;
-  p.num_indices = static_cast<uint32_t>(ni);
-  p.group_size = gs_u;
-  p.groups_per_row = groups_per_row;
-  p.bytes_per_row = bytes_per_row;
-  p.total_blocks = static_cast<uint32_t>(total_blocks);
+  EmbeddingParams p = make_embedding_params(
+      layout, static_cast<uint32_t>(ni), static_cast<uint32_t>(total_blocks));
   wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
   g.dispatch_at(dispatch_idx).workgroup_count_x =
       utils::compute_1d_workgroup_count(
@@ -176,15 +190,15 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const uint32_t workgroup_count = utils::compute_1d_workgroup_count(
       device, static_cast<uint32_t>(total_blocks), wg_size, "embedding_q4gsw");
 
-  EmbeddingParams params = {};
-  params.embed_dim = embed_dim;
-  params.blocks_per_row = blocks_per_row;
-  params.num_indices = num_indices; // std140 layout only; shader derives it
-  params.group_size = static_cast<uint32_t>(group_size);
-  params.groups_per_row = groups_per_row;
-  params.bytes_per_row = bytes_per_row;
-  params.total_blocks = static_cast<uint32_t>(total_blocks);
-  params.is_linear_weight = is_linear ? 1u : 0u;
+  const EmbeddingLayout layout = {
+      embed_dim,
+      blocks_per_row,
+      static_cast<uint32_t>(group_size),
+      groups_per_row,
+      bytes_per_row,
+      is_linear};
+  EmbeddingParams params = make_embedding_params(
+      layout, num_indices, static_cast<uint32_t>(total_blocks));
 
   WGPUBufferDescriptor uniform_desc = {};
   uniform_desc.size = sizeof(EmbeddingParams);
@@ -197,109 +211,48 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   wgpuBufferUnmap(uniform_buffer);
   graph.add_uniform_buffer_bytes(sizeof(EmbeddingParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kEmbeddingQ4gswWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Bind group layout: out (rw) + indices/weight/scales (ro storage) + uniform.
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 3; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out.buffer;
-  bg_entries[0].size = out.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = indices.buffer;
-  bg_entries[1].size = indices.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight.buffer;
-  bg_entries[2].size = weight.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = scales.buffer;
-  bg_entries[3].size = scales.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = uniform_buffer;
-  bg_entries[4].size = sizeof(EmbeddingParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kEmbeddingQ4gswWGSL,
+      {
+          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           indices.buffer,
+           indices.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight.buffer,
+           weight.nbytes},
+          {3,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           scales.buffer,
+           scales.nbytes},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(EmbeddingParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count, "embedding_q4gsw"});
+      {bundle.pipeline, bundle.bind_group, workgroup_count, "embedding_q4gsw"});
 
   // Dynamic shapes: recompute counts/dispatch; out = indices + [embed_dim].
-  const uint32_t gs_u = static_cast<uint32_t>(group_size);
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       indices_id,
-      [indices_id,
-       out_id,
-       embed_dim,
-       blocks_per_row,
-       gs_u,
-       groups_per_row,
-       bytes_per_row,
-       wg_size,
-       dispatch_idx,
-       params_buf](WebGPUGraph& g) {
+      [indices_id, out_id, layout, wg_size, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
         resize_embedding_q4gsw(
-            g,
-            indices_id,
-            out_id,
-            embed_dim,
-            blocks_per_row,
-            gs_u,
-            groups_per_row,
-            bytes_per_row,
-            wg_size,
-            dispatch_idx,
-            params_buf);
+            g, indices_id, out_id, layout, wg_size, dispatch_idx, params_buf);
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
 }

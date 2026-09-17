@@ -53,10 +53,23 @@ def resolve_hf_cache_layout(config):
     else:
         layer_types = list(layer_types)
 
-    if hasattr(text_config, "num_kv_shared_layers"):
-        layer_types = layer_types[: -text_config.num_kv_shared_layers]
+    shared = getattr(text_config, "num_kv_shared_layers", 0)
+    if shared:
+        layer_types = layer_types[:-shared]
 
-    if hasattr(text_config, "global_head_dim"):
+    per_layer = getattr(text_config, "per_layer_config", None)
+    if per_layer is not None:
+        # Entries index from 0, as layer_types does after the truncation.
+        head_dims = [per_layer[i].head_dim for i in range(len(layer_types))]
+        num_heads = [
+            getattr(
+                per_layer[i],
+                "num_key_value_heads",
+                per_layer[i].num_attention_heads,
+            )
+            for i in range(len(layer_types))
+        ]
+    elif hasattr(text_config, "global_head_dim"):
         head_dims = [
             (
                 text_config.global_head_dim
@@ -525,7 +538,9 @@ class HFStaticCache(StaticCache):
             # Current HF ExecuTorch wrappers copy the requested cache position
             # into each StaticCache layer's cumulative_length before forward().
             if hasattr(self.layers[layer_idx], "cumulative_length"):
-                cache_position = self.layers[layer_idx].cumulative_length
+                # cumulative_length is a scalar; KVCache.update indexes [0], so
+                # give it the 1-D shape a cache_kwargs caller would have passed.
+                cache_position = self.layers[layer_idx].cumulative_length.reshape(1)
             else:
                 raise RuntimeError(
                     "cache_position was not provided and the pinned "

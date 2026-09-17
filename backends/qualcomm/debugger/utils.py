@@ -4,15 +4,14 @@ import re
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from typing import Sequence, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import pandas as pd
 import torch
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import setup_qnn_sdk
 from executorch.backends.qualcomm.utils.utils import dump_context_from_pte
-
 from graphviz import Digraph
 
 
@@ -201,17 +200,27 @@ class QnnTool:
         build_folder,
         workspace="/data/local/tmp/qnn_executorch_test",
     ):
+        # Makes the SDK usable first, because this tool runs a binary from inside it. Setup used to
+        # happen while this module was imported, which set the variable read below as a side effect.
+        setup_qnn_sdk()
+
         self.qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
         self.ndk = os.environ.get("ANDROID_NDK_ROOT", None)
-        assert self.qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
-        assert self.ndk, "ANDROID_NDK_ROOT was not found in environment variable"
+        # Raised rather than asserted, because an assert is stripped under `python -O` and both
+        # values are used to build real paths a few lines below.
+        if not self.qnn_sdk:
+            raise EnvironmentError("QNN_SDK_ROOT was not found in environment variable")
+        if not self.ndk:
+            raise EnvironmentError(
+                "ANDROID_NDK_ROOT was not found in environment variable"
+            )
 
         self.tmp_dir = tmp_dir
         self.workspace = workspace
         self.adb = adb
         self.sample_input = sample_input
         self.build_folder = build_folder
-        self.root = str(Path(__file__).resolve().parents[3])
+        self.root = os.getcwd()
         self.config = {
             "backend_extension_config": {
                 "backend_extensions": {

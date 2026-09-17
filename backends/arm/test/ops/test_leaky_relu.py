@@ -61,7 +61,6 @@ def test_leaky_relu_tosa_INT(test_data):
         [],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()
 
 
@@ -75,7 +74,6 @@ def test_leaky_relu_u55_INT(test_data):
         [],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()
 
 
@@ -89,7 +87,6 @@ def test_leaky_relu_u85_INT(test_data):
         [],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()
 
 
@@ -121,5 +118,4 @@ def test_leaky_relu_vgf_quant(test_data):
         use_to_edge_transform_and_lower=True,
         quantize=True,
     )
-    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()

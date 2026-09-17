@@ -5,9 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 from .annotate_avg_pool1d import AnnotateAvgPool1D
+from .annotate_get_attr import AnnotateGetAttr
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
+from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
@@ -16,6 +18,7 @@ from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
 from .decompose_addmm import DecomposeAddmm
 from .decompose_any import DecomposeAny
+from .decompose_as_strided import DecomposeAsStrided
 from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -34,6 +37,7 @@ from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_pad import DecomposePad
+from .decompose_pdist import DecomposePDist
 from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
@@ -58,6 +62,7 @@ from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
 from .lpai_partition_fallback_support import LpaiPartitionFallbackSupport
+from .recompose_hadamard import RecomposeHadamard
 from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
@@ -70,9 +75,11 @@ from .tag_quant_io import TagQuantIO
 
 __all__ = [
     AnnotateAvgPool1D,
+    AnnotateGetAttr,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    BuildQuantIo,
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertLinearToConv2d,
@@ -81,6 +88,7 @@ __all__ = [
     DecomposeAcos,
     DecomposeAddmm,
     DecomposeAny,
+    DecomposeAsStrided,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
@@ -99,6 +107,7 @@ __all__ = [
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposePad,
+    DecomposePDist,
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
@@ -123,6 +132,7 @@ __all__ = [
     LayoutTransform,
     LiftConstantScalarOperands,
     LpaiPartitionFallbackSupport,
+    RecomposeHadamard,
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,

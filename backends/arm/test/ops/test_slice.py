@@ -5,10 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import os
+import sys
 from typing import Tuple
 
 import torch
-
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
 )
@@ -94,7 +95,7 @@ def test_slice_tensor_tosa_FP_fp8(test_data):
         exir_op,
         tosa_extensions=[tosa_extension],
     )
-    pipeline.count_tosa_ops({"SLICE": 3})
+    pipeline.count_tosa_ops({"SLICE": 1})
     pipeline.run()
 
 
@@ -144,7 +145,9 @@ def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](
@@ -382,7 +385,26 @@ def test_slice_tensor_u85_INT_step(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_step_int | test_data_step_fp)
+@common.parametrize(
+    "test_data",
+    test_data_step_int | test_data_step_fp,
+    xfails=(
+        {
+            "arange_fp32_2d_step4": common.xfail_if_dependency_version(
+                "ai-ml-emulation-layer-for-vulkan",
+                "==0.10.0",
+                reason=(
+                    "MLCE-1969: Emlayer 0.10.0 Interval memory planner corrupts "
+                    "multi-input CONCAT output"
+                ),
+                raises=AssertionError,
+            ),
+        }
+        if sys.platform == "linux"
+        and os.environ.get("VMEL_MEMORY_PLANNER") not in ("BestFit", "Linear")
+        else {}
+    ),
+)
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant_step(test_data: Tuple):
     pipeline = VgfPipeline[input_t_step](

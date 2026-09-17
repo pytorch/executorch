@@ -20,7 +20,6 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::quantize;
-using std::optional;
 
 /* This implements a generic 2d conv kernel that operates on raw pointers.
  * The quantized version handles quantized convolutions for 2D inputs.

@@ -324,7 +324,7 @@ def test_multiple_folded_get_attr():
     node targets are deleted as soon as there is one get_attr node w/o users
     using the target.
 
-    If there are multiple get_attr nodes refering the same target such as in
+    If there are multiple get_attr nodes referring the same target such as in
     this test, the function crashes if no workaround is present.
 
     """

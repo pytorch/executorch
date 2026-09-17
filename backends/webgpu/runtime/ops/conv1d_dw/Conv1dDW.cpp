@@ -1,0 +1,613 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_pw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_wgsl.h>
+
+#include <webgpu/webgpu.h>
+
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
+#include <vector>
+
+namespace executorch::backends::webgpu {
+
+namespace {
+
+struct Conv1dDwParams {
+  uint32_t kernel_size;
+  uint32_t stride;
+  uint32_t padding;
+  uint32_t dilation;
+  uint32_t channels;
+  uint32_t in_len;
+  uint32_t out_len;
+  uint32_t numel;
+  uint32_t has_bias;
+  uint32_t pad0;
+  float output_min;
+  float output_max;
+};
+static_assert(
+    sizeof(Conv1dDwParams) == 48,
+    "Conv1dDwParams must match the WGSL Params struct (48 bytes)");
+
+// Convolved output length: (L + 2p - dilation*(K-1) - 1) / stride + 1 (floor).
+uint32_t conv1d_out_len(
+    int64_t in_len,
+    int64_t k,
+    int64_t stride,
+    int64_t padding,
+    int64_t dilation) {
+  if (in_len <= 0 || k <= 0 || stride <= 0 || padding < 0 || dilation <= 0) {
+    throw std::runtime_error("conv1d: invalid geometry parameter");
+  }
+  constexpr int64_t kMaxShaderIndex = std::numeric_limits<int32_t>::max();
+  if (in_len > kMaxShaderIndex || k > kMaxShaderIndex ||
+      stride > kMaxShaderIndex || padding > kMaxShaderIndex ||
+      dilation > kMaxShaderIndex) {
+    throw std::runtime_error("conv1d: geometry parameter exceeds i32");
+  }
+  const int64_t numerator = in_len + 2 * padding - dilation * (k - 1) - 1;
+  if (numerator < 0) {
+    throw std::runtime_error("conv1d: kernel exceeds padded input");
+  }
+  const int64_t out_len = numerator / stride + 1;
+  if (static_cast<uint64_t>(out_len) > UINT32_MAX) {
+    throw std::runtime_error("conv1d: output length exceeds u32");
+  }
+  return static_cast<uint32_t>(out_len);
+}
+
+int64_t first_int(const std::vector<int64_t>& v) {
+  return v.empty() ? 0 : v[0];
+}
+
+struct Conv1dPwParams {
+  uint32_t in_channels;
+  uint32_t out_channels;
+  uint32_t length;
+  uint32_t numel;
+  uint32_t has_bias;
+  uint32_t pad0;
+  uint32_t pad1;
+  uint32_t pad2;
+};
+static_assert(
+    sizeof(Conv1dPwParams) == 32,
+    "Conv1dPwParams must match the WGSL Params struct (32 bytes)");
+
+struct Conv1dParams {
+  uint32_t in_channels;
+  uint32_t out_channels;
+  uint32_t in_len;
+  uint32_t out_len;
+  uint32_t kernel_size;
+  uint32_t stride;
+  uint32_t padding;
+  uint32_t dilation;
+  uint32_t numel;
+  uint32_t has_bias;
+};
+static_assert(
+    sizeof(Conv1dParams) == 40,
+    "Conv1dParams must match the WGSL Params struct (40 bytes)");
+constexpr uint64_t kMaxConv1dDispatchElements =
+    static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
+
+// Pointwise conv1d (K=1, groups=1): a per-position matmul over channels.
+void add_conv1d_pw_node(
+    WebGPUGraph& graph,
+    int in_id,
+    int weight_id,
+    int bias_id,
+    int out_id) {
+  WGPUDevice device = graph.device();
+  const auto& in_tensor = graph.get_tensor(in_id);
+  const auto& weight_tensor = graph.get_tensor(weight_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+
+  const bool has_bias =
+      graph.get_value_type(bias_id) == WebGPUGraph::ValueType::Tensor;
+  const uint32_t in_channels = static_cast<uint32_t>(in_tensor.dims.at(1));
+  const uint32_t out_channels = static_cast<uint32_t>(out_tensor.dims.at(1));
+  const uint32_t length = static_cast<uint32_t>(out_tensor.dims.at(2));
+  if (in_tensor.dims.at(2) != out_tensor.dims.at(2)) {
+    throw std::runtime_error("conv1d_pw: in/out length (dim 2) mismatch");
+  }
+
+  uint64_t out_numel = 1;
+  for (int64_t d : out_tensor.dims) {
+    out_numel *= static_cast<uint64_t>(d);
+  }
+  if (in_tensor.nbytes % sizeof(float) != 0 ||
+      out_tensor.nbytes != out_numel * sizeof(float) ||
+      weight_tensor.nbytes !=
+          static_cast<size_t>(out_channels) * in_channels * sizeof(float)) {
+    throw std::runtime_error("conv1d_pw: fp32-only (byte-size mismatch)");
+  }
+  if (out_numel > UINT32_MAX) {
+    throw std::runtime_error("conv1d_pw: output numel exceeds u32");
+  }
+
+  Conv1dPwParams params = {};
+  params.in_channels = in_channels;
+  params.out_channels = out_channels;
+  params.length = length;
+  params.numel = static_cast<uint32_t>(out_numel);
+  params.has_bias = has_bias ? 1u : 0u;
+
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kConv1dPwWorkgroupSizeX);
+  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
+      device, static_cast<uint32_t>(out_numel), wg_size, "conv1d_pw");
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
+
+  WGPUBuffer params_buf =
+      utils::make_uniform(device, &params, sizeof(Conv1dPwParams));
+  graph.add_uniform_buffer_bytes(sizeof(Conv1dPwParams));
+
+  WGPUBuffer bias_buf =
+      has_bias ? graph.get_tensor(bias_id).buffer : weight_tensor.buffer;
+  uint64_t bias_sz =
+      has_bias ? graph.get_tensor(bias_id).nbytes : weight_tensor.nbytes;
+
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kConv1dPwWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight_tensor.buffer,
+           weight_tensor.nbytes},
+          {3, WGPUBufferBindingType_ReadOnlyStorage, bias_buf, bias_sz},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           params_buf,
+           sizeof(Conv1dPwParams)},
+      },
+      &wg_size_constant,
+      1);
+
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "conv1d_pw",
+       workgroup_count.y});
+
+  // Dynamic shapes: only the length varies; recompute params + dispatch.
+  WGPUBuffer p_buf = params_buf;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id,
+       out_id,
+       in_channels,
+       out_channels,
+       has_bias,
+       wg_size,
+       dispatch_idx,
+       p_buf](WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        if (d.size() != 3) {
+          throw std::runtime_error("conv1d_pw(resize): input is not 3D");
+        }
+        if (d[1] != static_cast<int64_t>(in_channels)) {
+          throw std::runtime_error(
+              "conv1d_pw(resize): in channel count changed");
+        }
+        Conv1dPwParams p = {};
+        p.in_channels = static_cast<uint32_t>(d[1]);
+        p.out_channels = out_channels;
+        p.length = static_cast<uint32_t>(d[2]);
+        p.numel = static_cast<uint32_t>(
+            static_cast<uint64_t>(d[0]) * out_channels * d[2]);
+        p.has_bias = has_bias ? 1u : 0u;
+        wgpuQueueWriteBuffer(g.queue(), p_buf, 0, &p, sizeof(p));
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(), p.numel, wg_size, "conv1d_pw(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
+        const std::vector<int64_t> out_d = {d[0], out_channels, d[2]};
+        g.set_cur_dims(out_id, out_d);
+      });
+
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(params_buf);
+}
+
+// General groups=1 conv1d. Voxtral uses K=3 with stride 1 then 2.
+void add_conv1d_node(
+    WebGPUGraph& graph,
+    int in_id,
+    int weight_id,
+    int bias_id,
+    int out_id,
+    uint32_t stride,
+    uint32_t padding,
+    uint32_t dilation) {
+  WGPUDevice device = graph.device();
+  const auto& in = graph.get_tensor(in_id);
+  const auto& weight = graph.get_tensor(weight_id);
+  const auto& out = graph.get_tensor(out_id);
+  const bool has_bias =
+      graph.get_value_type(bias_id) == WebGPUGraph::ValueType::Tensor;
+  if (!utils::is_fp32_tensor(in) || !utils::is_fp32_tensor(weight) ||
+      !utils::is_fp32_tensor(out)) {
+    throw std::runtime_error("conv1d: input, weight, and output must be fp32");
+  }
+
+  const uint32_t expected_out_len = conv1d_out_len(
+      in.dims.at(2), weight.dims.at(2), stride, padding, dilation);
+  const uint32_t batch = static_cast<uint32_t>(in.dims.at(0));
+  const uint32_t in_channels = static_cast<uint32_t>(in.dims.at(1));
+  const uint32_t in_len = static_cast<uint32_t>(in.dims.at(2));
+  const uint32_t out_channels = static_cast<uint32_t>(out.dims.at(1));
+  const uint32_t out_len = static_cast<uint32_t>(out.dims.at(2));
+  const uint32_t kernel_size = static_cast<uint32_t>(weight.dims.at(2));
+  if (out.dims.at(0) != in.dims.at(0) || out_len != expected_out_len ||
+      weight.dims.at(0) != out.dims.at(1) ||
+      weight.dims.at(1) != in.dims.at(1)) {
+    throw std::runtime_error("conv1d: shape mismatch");
+  }
+
+  const uint64_t in_numel = utils::check_fp32(in, "conv1d", "input");
+  const uint64_t out_numel = utils::check_fp32(out, "conv1d", "output");
+  const uint64_t weight_numel = utils::check_fp32(weight, "conv1d", "weight");
+  if (in_numel != static_cast<uint64_t>(batch) * in_channels * in_len ||
+      out_numel != static_cast<uint64_t>(batch) * out_channels * out_len ||
+      weight_numel !=
+          static_cast<uint64_t>(out_channels) * in_channels * kernel_size ||
+      in_numel > UINT32_MAX || weight_numel > UINT32_MAX ||
+      out_numel > kMaxConv1dDispatchElements) {
+    throw std::runtime_error("conv1d: fp32 byte-size or u32 mismatch");
+  }
+  if (has_bias) {
+    const auto& bias = graph.get_tensor(bias_id);
+    if (!utils::is_fp32_tensor(bias) || bias.dims.size() != 1 ||
+        bias.dims.at(0) != out.dims.at(1) ||
+        utils::check_fp32(bias, "conv1d", "bias") != out_channels) {
+      throw std::runtime_error("conv1d: bias shape mismatch");
+    }
+  }
+
+  Conv1dParams params = {};
+  params.in_channels = in_channels;
+  params.out_channels = out_channels;
+  params.in_len = in_len;
+  params.out_len = out_len;
+  params.kernel_size = kernel_size;
+  params.stride = stride;
+  params.padding = padding;
+  params.dilation = dilation;
+  params.numel = static_cast<uint32_t>(out_numel);
+  params.has_bias = has_bias ? 1u : 0u;
+
+  const uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kConv1dWorkgroupSizeX);
+  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
+      device, params.numel, wg_size, "conv1d");
+  WGPUConstantEntry wg_size_constant = utils::make_wg_size_constant(wg_size);
+  WGPUBuffer params_buf = graph.create_params_buffer(params);
+  WGPUBuffer bias_buf =
+      has_bias ? graph.get_tensor(bias_id).buffer : weight.buffer;
+  const uint64_t bias_size =
+      has_bias ? graph.get_tensor(bias_id).nbytes : weight.nbytes;
+
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kConv1dWGSL,
+      {
+          {0, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {1, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight.buffer,
+           weight.nbytes},
+          {3, WGPUBufferBindingType_ReadOnlyStorage, bias_buf, bias_size},
+          {4, WGPUBufferBindingType_Uniform, params_buf, sizeof(Conv1dParams)},
+      },
+      &wg_size_constant,
+      1);
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "conv1d",
+       workgroup_count.y});
+
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id,
+       out_id,
+       in_channels,
+       out_channels,
+       kernel_size,
+       stride,
+       padding,
+       dilation,
+       has_bias,
+       wg_size,
+       dispatch_idx,
+       params_buf](WebGPUGraph& g) {
+        const auto& dims = g.cur_dims(in_id);
+        if (dims.size() != 3 || dims[0] <= 0 || dims[1] <= 0 || dims[2] <= 0 ||
+            dims[1] != static_cast<int64_t>(in_channels)) {
+          throw std::runtime_error("conv1d(resize): input shape changed");
+        }
+        Conv1dParams p = {};
+        p.in_channels = in_channels;
+        p.out_channels = out_channels;
+        p.in_len = static_cast<uint32_t>(dims[2]);
+        p.out_len =
+            conv1d_out_len(dims[2], kernel_size, stride, padding, dilation);
+        p.kernel_size = kernel_size;
+        p.stride = stride;
+        p.padding = padding;
+        p.dilation = dilation;
+        const uint64_t input_numel = utils::numel(dims);
+        const uint64_t numel = utils::numel(
+            {dims[0], out_channels, static_cast<int64_t>(p.out_len)});
+        if (input_numel > UINT32_MAX || numel > kMaxConv1dDispatchElements) {
+          throw std::runtime_error(
+              "conv1d(resize): tensor numel exceeds shader index range");
+        }
+        p.numel = static_cast<uint32_t>(numel);
+        p.has_bias = has_bias ? 1u : 0u;
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(), p.numel, wg_size, "conv1d(resize)");
+        g.set_cur_dims(
+            out_id, {dims[0], out_channels, static_cast<int64_t>(p.out_len)});
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
+      });
+}
+
+// depthwise-conv1d (groups==C); mirrors Vulkan conv1d_dw (Convolution.cpp:755).
+void convolution_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // args mirror Vulkan conv1d_dw; bias (arg 2) may be Null; out=args.back().
+  const int in_id = args.at(0);
+  const int weight_id = args.at(1);
+  const int bias_id = args.at(2);
+  const int stride_id = args.at(3);
+  const int padding_id = args.at(4);
+  const int dilation_id = args.at(5);
+  const int transposed_id = args.at(6);
+  const int groups_id = args.at(8);
+  const int out_id = args.at(args.size() - 1);
+
+  if (graph.get_value_type(in_id) != WebGPUGraph::ValueType::Tensor ||
+      graph.get_value_type(weight_id) != WebGPUGraph::ValueType::Tensor ||
+      graph.get_value_type(out_id) != WebGPUGraph::ValueType::Tensor) {
+    throw std::runtime_error("convolution: in/weight/out is not a tensor");
+  }
+
+  WGPUDevice device = graph.device();
+  const auto& in_tensor = graph.get_tensor(in_id);
+  const auto& weight_tensor = graph.get_tensor(weight_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+  if (in_tensor.dims.size() != 3 || out_tensor.dims.size() != 3 ||
+      weight_tensor.dims.size() != 3) {
+    throw std::runtime_error("convolution: only conv1d (3D) is supported");
+  }
+
+  const bool has_bias =
+      graph.get_value_type(bias_id) == WebGPUGraph::ValueType::Tensor;
+
+  const uint32_t channels = static_cast<uint32_t>(in_tensor.dims.at(1));
+  const uint32_t in_len = static_cast<uint32_t>(in_tensor.dims.at(2));
+  const uint32_t out_len = static_cast<uint32_t>(out_tensor.dims.at(2));
+  const uint32_t kernel_size = static_cast<uint32_t>(weight_tensor.dims.at(2));
+
+  const bool transposed = graph.get_bool(transposed_id);
+  const int64_t groups = graph.get_int(groups_id);
+
+  const int64_t stride_i = first_int(graph.get_int_list(stride_id));
+  const int64_t padding_i = first_int(graph.get_int_list(padding_id));
+  const int64_t dilation_i = first_int(graph.get_int_list(dilation_id));
+  if (stride_i < 1 || stride_i > std::numeric_limits<int32_t>::max()) {
+    throw std::runtime_error("convolution: stride must fit positive i32");
+  }
+  if (padding_i < 0 || padding_i > std::numeric_limits<int32_t>::max()) {
+    throw std::runtime_error("convolution: padding must fit nonnegative i32");
+  }
+  if (dilation_i < 1 || dilation_i > std::numeric_limits<int32_t>::max()) {
+    throw std::runtime_error("convolution: dilation must fit positive i32");
+  }
+  const uint32_t stride = static_cast<uint32_t>(stride_i);
+  const uint32_t padding = static_cast<uint32_t>(padding_i);
+  const uint32_t dilation = static_cast<uint32_t>(dilation_i);
+
+  // Pointwise (K=1, groups=1): a matmul over channels; stride-1 / no-pad only.
+  if (!transposed && groups == 1 && weight_tensor.dims.at(2) == 1 &&
+      stride_i == 1 && padding_i == 0) {
+    add_conv1d_pw_node(graph, in_id, weight_id, bias_id, out_id);
+    return;
+  }
+
+  const bool is_depthwise = !transposed &&
+      groups == static_cast<int64_t>(channels) &&
+      weight_tensor.dims.at(0) == static_cast<int64_t>(channels) &&
+      weight_tensor.dims.at(1) == 1;
+  if (!is_depthwise && !transposed && groups == 1) {
+    add_conv1d_node(
+        graph, in_id, weight_id, bias_id, out_id, stride, padding, dilation);
+    return;
+  }
+
+  if (!is_depthwise) {
+    throw std::runtime_error(
+        "convolution: only depthwise, pointwise, or groups=1 conv1d supported");
+  }
+
+  uint64_t out_numel = 1;
+  for (int64_t d : out_tensor.dims) {
+    out_numel *= static_cast<uint64_t>(d);
+  }
+  if (in_tensor.nbytes % sizeof(float) != 0 ||
+      out_tensor.nbytes != out_numel * sizeof(float) ||
+      weight_tensor.nbytes !=
+          static_cast<size_t>(channels) * kernel_size * sizeof(float)) {
+    throw std::runtime_error("convolution: fp32-only (byte-size mismatch)");
+  }
+  if (out_numel > UINT32_MAX) {
+    throw std::runtime_error("convolution: output numel exceeds u32");
+  }
+
+  // aten.convolution has no fused clamp (that is et_vk.conv_with_clamp).
+  const float output_min = std::numeric_limits<float>::lowest();
+  const float output_max = std::numeric_limits<float>::max();
+
+  Conv1dDwParams params = {};
+  params.kernel_size = kernel_size;
+  params.stride = stride;
+  params.padding = padding;
+  params.dilation = dilation;
+  params.channels = channels;
+  params.in_len = in_len;
+  params.out_len = out_len;
+  params.numel = static_cast<uint32_t>(out_numel);
+  params.has_bias = has_bias ? 1u : 0u;
+  params.output_min = output_min;
+  params.output_max = output_max;
+
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kConv1dDwWorkgroupSizeX);
+  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
+      device, static_cast<uint32_t>(out_numel), wg_size, "conv1d_dw");
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
+
+  WGPUBuffer params_buf =
+      utils::make_uniform(device, &params, sizeof(Conv1dDwParams));
+  graph.add_uniform_buffer_bytes(sizeof(Conv1dDwParams));
+
+  // No-bias binds the weight buffer as an unread placeholder (has_bias gates).
+  WGPUBuffer bias_buf =
+      has_bias ? graph.get_tensor(bias_id).buffer : weight_tensor.buffer;
+  uint64_t bias_sz =
+      has_bias ? graph.get_tensor(bias_id).nbytes : weight_tensor.nbytes;
+
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kConv1dDwWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight_tensor.buffer,
+           weight_tensor.nbytes},
+          {3, WGPUBufferBindingType_ReadOnlyStorage, bias_buf, bias_sz},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           params_buf,
+           sizeof(Conv1dDwParams)},
+      },
+      &wg_size_constant,
+      1);
+
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "conv1d_dw",
+       workgroup_count.y});
+
+  // Dynamic shapes: recompute out_len + params + dispatch.
+  WGPUBuffer p_buf = params_buf;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id,
+       out_id,
+       channels,
+       kernel_size,
+       stride,
+       padding,
+       dilation,
+       has_bias,
+       output_min,
+       output_max,
+       wg_size,
+       dispatch_idx,
+       p_buf](WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        if (d.size() != 3) {
+          throw std::runtime_error("conv1d_dw(resize): input is not 3D");
+        }
+        if (d[1] != static_cast<int64_t>(channels)) {
+          throw std::runtime_error("conv1d_dw(resize): channel count changed");
+        }
+        Conv1dDwParams p = {};
+        p.kernel_size = kernel_size;
+        p.stride = stride;
+        p.padding = padding;
+        p.dilation = dilation;
+        p.channels = static_cast<uint32_t>(d[1]);
+        p.in_len = static_cast<uint32_t>(d[2]);
+        p.out_len =
+            conv1d_out_len(d[2], kernel_size, stride, padding, dilation);
+        const uint64_t out_numel =
+            static_cast<uint64_t>(d[0]) * d[1] * p.out_len;
+        if (out_numel > UINT32_MAX) {
+          throw std::runtime_error(
+              "conv1d_dw(resize): output numel exceeds u32");
+        }
+        p.numel = static_cast<uint32_t>(out_numel);
+        p.has_bias = has_bias ? 1u : 0u;
+        p.output_min = output_min;
+        p.output_max = output_max;
+        wgpuQueueWriteBuffer(g.queue(), p_buf, 0, &p, sizeof(p));
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(), p.numel, wg_size, "conv1d_dw(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
+        const std::vector<int64_t> out_d = {
+            d[0], d[1], static_cast<int64_t>(p.out_len)};
+        g.set_cur_dims(out_id, out_d);
+      });
+
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(params_buf);
+}
+
+} // namespace
+
+// Single aten.convolution.default registration lives in Conv2d.cpp, which
+// dispatches on input rank; this is the 3D (conv1d) entry it calls.
+void conv1d_dispatch(WebGPUGraph& graph, const std::vector<int>& args) {
+  convolution_impl(graph, args);
+}
+
+} // namespace executorch::backends::webgpu

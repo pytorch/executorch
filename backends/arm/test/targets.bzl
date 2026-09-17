@@ -19,6 +19,8 @@ def define_arm_tests():
         "ops/test_avg_pool2d.py",
         "ops/test_cat.py",
         "ops/test_conv2d.py",
+        "ops/test_isinf.py",
+        "ops/test_isnan.py",
         "ops/test_linear.py",
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
@@ -48,22 +50,31 @@ def define_arm_tests():
         "ops/test_split.py",
     ]
 
+    # Export recipes
+    test_files += [
+        "recipes/test_arm_recipes.py",
+    ]
+
     # Quantization
     test_files += [
         "quantizer/test_generic_annotater.py",
         "quantizer/test_uint8_io_quantization.py",
+        "quantizer/test_vgf_snorm_quantization.py",
     ]
 
     # Misc tests
     test_files += [
+        "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
+        "misc/test_external_vela_blocks.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
+        "misc/test_tosa_constant_pool.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
         "misc/tosa_dialect/test_tosa_resize.py",
-        "misc/test_tosa_spec.py",
+        "misc/tosa_dialect/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
@@ -71,15 +82,12 @@ def define_arm_tests():
         "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
         "misc/test_vgf_check_env.py",
+        "misc/test_vulkan_validation_layer.py",
         "misc/test_vgf_backend.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
 
-    # Deprecation tests
-    test_files += [
-        "deprecation/test_arm_compile_spec_deprecation.py",
-    ]
 
     # These import the top-level executorch.backends.arm package, whose
     # __init__ eagerly imports torch. Pulling that into pytest collection fails
@@ -87,6 +95,7 @@ def define_arm_tests():
     # surface is covered by a dedicated backward-compatibility CI job.
     if runtime.is_oss:
         test_files += [
+            "misc/test_docgen_op_support.py",
             "misc/test_public_api_manifest.py",
             "misc/test_validate_public_api_manifest.py",
         ]
@@ -96,6 +105,19 @@ def define_arm_tests():
     for test_file in test_files:
         test_file_name = paths.basename(test_file)
         test_name = test_file_name.replace("test_", "").replace(".py", "")
+        test_env = {
+            "TEST_RUNTIME_IS_NOT_OSS": "1" if not runtime.is_oss else "0",
+        }
+        if not runtime.is_oss and _ENABLE_VGF:
+            test_env.update({
+                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
+                "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
+                "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
+                "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
+                "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
+                "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
+                "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+            })
 
         python_pytest(
             name = test_name,
@@ -105,15 +127,7 @@ def define_arm_tests():
             compile = "with-source",
             typing = False,
             skip_on_mode_mac = True,
-            env = {} if runtime.is_oss else ({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
-                "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
-                "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
-                "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
-                "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
-                "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
-                "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
-            } if _ENABLE_VGF else {}),
+            env = test_env,
             preload_deps = [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
             ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
@@ -127,6 +141,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
                 "//executorch/backends/arm:ao_ext",
                 "//executorch/backends/arm:ethosu",
+                "//executorch/backends/arm/recipes:recipes",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
                 "//executorch/backends/arm:vgf",
@@ -136,6 +151,8 @@ def define_arm_tests():
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:serializer",
+                "fbsource//third-party/tosa_tools:tosa",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
             ] + ([
                 # Needed only by the OSS-only public API manifest tests above.
@@ -143,5 +160,52 @@ def define_arm_tests():
                 # __init__ (and its torch import) into pytest collection.
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
-            ] if runtime.is_oss else []),
+            ] if runtime.is_oss else []) + ([
+                "//executorch/backends/arm/scripts/docgen:generate_op_support",
+            ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
+                "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
+                "fbsource//third-party/pypi/packaging:packaging",
+            ] if test_file == "misc/test_version_xfail.py" else []),
+        )
+
+    runtime.cxx_test(
+        name = "vela_external_blocks_test",
+        srcs = ["vela_external_blocks_test.cpp"],
+        deps = [
+            "//executorch/backends/arm/runtime:vela_bin_stream",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+        ],
+    )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_neural_statistics_test",
+            srcs = ["vgf_neural_statistics_test.cpp"],
+            compiler_flags = [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
+                "//executorch/runtime/core:core",
+                "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_vulkan_features_test",
+            srcs = ["vgf_vulkan_features_test.cpp"],
+            compiler_flags = [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
         )

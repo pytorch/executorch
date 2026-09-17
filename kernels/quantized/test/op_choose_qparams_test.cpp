@@ -19,8 +19,6 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::native::choose_qparams_per_token_asymmetric_out;
@@ -50,6 +48,10 @@ void test_dtype() {
 
   EXPECT_TENSOR_CLOSE(scale_out, expected_scale);
   EXPECT_TENSOR_EQ(zero_point_out, expected_zero_point);
+}
+
+TEST(OpChooseQparamsTensorOutTest, Byte) {
+  test_dtype<ScalarType::Byte>();
 }
 
 TEST(OpChooseQparamsPerTokenAsymmetricTensorOutTest, Float) {

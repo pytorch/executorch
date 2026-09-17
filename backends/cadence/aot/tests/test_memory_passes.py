@@ -27,11 +27,7 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
     MemoryPlanningAlgo,
     MemoryPlanningState,
 )
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    count_node,
-    register_cadence_pass,
-)
+from executorch.backends.cadence.aot.pass_utils import CompileMode, count_node
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
@@ -128,10 +124,12 @@ class TestMemPlanningPasses(unittest.TestCase):
         )  # Align data on a 16 byte boundary
         self.assertEqual(peak_usage, expected_peak_usage)
 
-    def test_zero_memory_pass(self) -> None:
+    def test_zero_memory_when_graph_io_is_not_allocated(self) -> None:
         class ZeroMem(torch.nn.Module):
             def forward(self, x):
-                return x[:, 2::3, ...]
+                # The only produced tensor is the graph output, so disabling graph
+                # input/output allocation should leave no planned memory.
+                return torch.relu(x)
 
         x = torch.randn(2, 7, 3, 2)
 
@@ -255,7 +253,7 @@ class TestMemTransform(unittest.TestCase):
     def run_memory_planning(
         self,
         original: GraphModule,
-        opt_level: int = 2,
+        mode: CompileMode = CompileMode.DEFAULT,
         mem_algo: int = 1,  # greedy_by_size_for_offset_calculation_with_hierarchy
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
@@ -267,7 +265,7 @@ class TestMemTransform(unittest.TestCase):
         graph_module = SpecPropPass().call(original).graph_module
         return CadenceMemoryPlanning(
             memory_config,
-            opt_level=opt_level,
+            mode=mode,
             mem_algo=mem_algo,
             alloc_graph_input=alloc_graph_input,
             alloc_graph_output=alloc_graph_output,
@@ -608,7 +606,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([cat])
         original = builder.get_graph_module()
         graph_module = self.run_memory_planning(
-            original, opt_level=3, alloc_graph_input=alloc_graph_input
+            original, mode=CompileMode.DEFAULT, alloc_graph_input=alloc_graph_input
         )
         graph_module.graph.eliminate_dead_code()
         if alloc_graph_input:
@@ -701,7 +699,7 @@ class TestMemTransform(unittest.TestCase):
         )
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_slice_depending_on_opt_level(self) -> None:
+    def test_optimize_slice_depending_on_mode(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.ones(2, 6, dtype=torch.float32))
         slice_out = builder.call_operator(
@@ -725,7 +723,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([slice_result])
         original = builder.get_graph_module()
         graph_module = self.run_memory_planning(
-            original, opt_level=2, alloc_graph_input=False
+            original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
@@ -734,9 +732,9 @@ class TestMemTransform(unittest.TestCase):
         self.verify_nop_memory_alloc(graph_module)
 
         # When we compile with alloc_graph_input=True, all the slice ops must
-        # be optimized, which is available only at opt_level 2+.
+        # be optimized, which is available only outside minimal mode.
         graph_module = self.run_memory_planning(
-            original, opt_level=3, alloc_graph_input=True
+            original, mode=CompileMode.DEFAULT, alloc_graph_input=True
         )
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
@@ -818,7 +816,7 @@ class TestMemTransform(unittest.TestCase):
         )
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_select_depending_on_opt_level(self) -> None:
+    def test_optimize_select_depending_on_mode(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.ones(2, 6, dtype=torch.float32))
         slice_out = builder.call_operator(
@@ -840,7 +838,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([slice_result])
         original = builder.get_graph_module()
         graph_module = self.run_memory_planning(
-            original, opt_level=2, alloc_graph_input=False
+            original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
@@ -849,9 +847,9 @@ class TestMemTransform(unittest.TestCase):
         self.verify_nop_memory_alloc(graph_module)
 
         # When we compile with alloc_graph_input=True, all the slice ops must
-        # be optimized, which is available only at opt_level 2+.
+        # be optimized, which is available only outside minimal mode.
         graph_module = self.run_memory_planning(
-            original, opt_level=3, alloc_graph_input=True
+            original, mode=CompileMode.DEFAULT, alloc_graph_input=True
         )
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(
@@ -891,7 +889,7 @@ class TestMemTransform(unittest.TestCase):
         )
         builder.output([slice_result])
         original = builder.get_graph_module()
-        graph_module = self.run_memory_planning(original, opt_level=3)
+        graph_module = self.run_memory_planning(original, mode=CompileMode.DEFAULT)
         graph_module.graph.eliminate_dead_code()
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 0)
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
@@ -940,7 +938,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([cat2])
         original = builder.get_graph_module()
         graph_module = self.run_memory_planning(
-            original, opt_level=3, alloc_graph_input=False
+            original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
 
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 2)
@@ -1041,7 +1039,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([graph_output])
         original = builder.get_graph_module()
         graph_module = self.run_memory_planning(
-            original, opt_level=3, alloc_graph_input=False
+            original, mode=CompileMode.DEFAULT, alloc_graph_input=False
         )
         graph_module.graph.eliminate_dead_code()
 
@@ -1075,7 +1073,7 @@ class TestMemTransform(unittest.TestCase):
         builder.output([add_x, add_x_y])
         original = builder.get_graph_module()
         graph_module = self.run_memory_planning(
-            original, opt_level=2, alloc_graph_output=False
+            original, mode=CompileMode.DEFAULT, alloc_graph_output=False
         )
         self.assertEqual(
             count_node(graph_module, exir_ops.edge.aten.view_copy.default), 1
@@ -1101,7 +1099,7 @@ class TestMemTransform(unittest.TestCase):
                 compiler.export_to_executorch_gen_etrecord(
                     model,
                     inputs,
-                    opt_level=1,
+                    mode=CompileMode.DEFAULT,
                     mem_algo=mem_algo,
                     alloc_graph_input=False,
                     alloc_graph_output=False,
@@ -1141,14 +1139,13 @@ class TestMemTransform(unittest.TestCase):
         add_scalar_block_mem_ids = [2, 3]
         mul_scalar_block_mem_ids = [1, 3]
 
-        @register_cadence_pass(CadencePassAttribute(opt_level=0))
         class DummyMemIdBlockConstraintGen(PassBase):
             """Blocks placement based on op type.
             add: blocks 2, 3
             mul: blocks 1, 3
             """
 
-            def __init__(self, memory_constraints: MemConstraints):
+            def __init__(self, memory_constraints: MemConstraints) -> None:
                 self.memory_constraints = memory_constraints
 
             def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -1166,6 +1163,7 @@ class TestMemTransform(unittest.TestCase):
                     logging.error(f"mul node: {node} {id(spec)=}")
                     for mem_id in mul_scalar_block_mem_ids:
                         self.memory_constraints.add_mem_id_to_blocklist(spec, mem_id)
+                return PassResult(graph_module, True)
 
         graph_module = self.run_memory_planning(
             original,

@@ -1,6 +1,8 @@
+$if DTYPE == "half":
+  enable f16;
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
 @group(0) @binding(1) var<storage, read> t_q: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read> t_k_cache: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> t_k_cache: array<${buffer_gvec_type(DTYPE, 4)}>;
 
 struct Params {
   S: u32,
@@ -36,7 +38,10 @@ fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = c * params.Hkv * params.D + kvh * params.D + d4;
-  return t_k_cache[base / 4u];
+  $if DTYPE == "half":
+    return vec4<f32>(t_k_cache[base / 4u]);
+  $else:
+    return t_k_cache[base / 4u];
 }
 
 fn store_qk(s: u32, c: u32, h: u32, raw: f32) {

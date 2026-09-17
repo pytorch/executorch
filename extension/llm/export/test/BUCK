@@ -17,3 +17,24 @@ fbcode_target(_kind = runtime.python_test,
         "//caffe2:torch",
     ],
 )
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_int4",
+    srcs = ["test_int4.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:int4",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_gguf",
+    srcs = ["test_gguf.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:gguf",
+        "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/numpy:numpy",
+    ],
+)

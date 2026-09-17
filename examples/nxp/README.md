@@ -3,15 +3,17 @@ This directory contains examples demonstrating the use of ExecuTorch AoT flow to
 format and delegate the model computation to eIQ Neutron NPU using the eIQ Neutron Backend.
 
 ## Layout
+* `executor_runner` - contains utility to run compiled ExecuTorch programs on Neutron Backend.
 * `experimental/` - contains CifarNet model example.
 * `models` - demo models instantiation used in examples.
 * `aot_neutron_compile.py` - script with end-to-end ExecuTorch AoT Neutron Backend workflow.
 * `README.md` - this file.
+* `run.sh` - utility script to build nxp_executor_runner, convert example model and run it on NSYS.
 * `run_aot_example.sh` - utility script to launch _aot_neutron_compile.py_. Primarily for CI purpose. 
 * `setup.sh` - setup script to install Neutron Backend dependencies.
 
 ## Setup
-Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup).
+Please finish tutorial [Getting Started with ExecuTorch](https://docs.pytorch.org/executorch/main/getting-started.html).
 
 Run the setup.sh script to install the neutron-converter:
 ```commandline
@@ -43,4 +45,4 @@ The steps are expected to be executed from the `executorch` root folder.
 project, presented [here](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/example_applications.html#how-to-build-and-run-executorch-cifarnet-example).
 This project will guide you through the process of deploying your PTE model to the device.
 To get the MCUXpresso SDK follow this [guide](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/getting_mcuxpresso.html),
-use the MCUXpresso SDK v25.12.00. 
+use the MCUXpresso SDK v26.06.00. 

@@ -27,7 +27,7 @@ Tensor& logical_or_out(
     const Tensor& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "logical_or.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "logical_or.out");
   return internal::logical_tensor_out<op_name>(logical_or, ctx, a, b, out);
 }
 

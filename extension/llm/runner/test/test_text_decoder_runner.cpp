@@ -18,12 +18,9 @@
 
 using namespace ::testing;
 using executorch::extension::Module;
-using executorch::extension::TensorPtr;
 using executorch::extension::llm::IOManager;
 using executorch::extension::llm::TextDecoderRunner;
 using executorch::runtime::Error;
-using executorch::runtime::EValue;
-using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
 
 namespace {
