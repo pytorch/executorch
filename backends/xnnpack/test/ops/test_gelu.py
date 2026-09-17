@@ -38,73 +38,69 @@ class TestGelu(unittest.TestCase):
         def forward(self, x):
             return self.gelu(x)
 
-    def run_gelu_test(self, inputs):
+    def run_gelu_test(
+        self, inputs, *, approximate="none", dynamic=False, atol=None, rtol=None
+    ):
         input_tensor = inputs[0]
+        is_fp16 = input_tensor.dtype == torch.float16
 
-        if input_tensor.dtype == torch.float16:
+        if is_fp16:
             with torch.no_grad():
                 ref_output = torch.nn.functional.gelu(
-                    input_tensor.to(torch.float32)
+                    input_tensor.to(torch.float32), approximate=approximate
                 ).to(torch.float16)
-            atol, rtol = calculate_fp16_gelu_tolerance(ref_output)
+            default_atol, default_rtol = calculate_fp16_gelu_tolerance(ref_output)
         else:
-            atol = 1e-03
-            rtol = 1e-03
+            default_atol, default_rtol = 1e-3, 1e-3
 
-        (
-            Tester(self.Gelu(), inputs)
+        if atol is None:
+            atol = default_atol
+        if rtol is None:
+            rtol = default_rtol
+
+        dynamic_shapes = (
+            ({0: torch.export.Dim("length", min=2, max=32)},) if dynamic else None
+        )
+        tester = (
+            Tester(
+                self.Gelu(approximate=approximate),
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+            )
             .export()
             .check_count({"torch.ops.aten.gelu.default": 1})
             .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(atol=atol, rtol=rtol)
         )
 
-    @parameterized.expand([("none",), ("tanh",)])
-    def test_fp16_gelu(self, approximate):
-        # Older versions of XNNPACK don't support fp16 GELU.
-        # TODO (gjcomer) Remove this when we update XNNPACK. (#16679)
-        inputs = (torch.randn(20).to(torch.float16),)
-
-        with torch.no_grad():
-            ref_output = torch.nn.functional.gelu(
-                inputs[0].to(torch.float32), approximate=approximate
-            ).to(torch.float16)
-        atol, rtol = calculate_fp16_gelu_tolerance(ref_output)
+        if is_fp16:
+            # Older versions of XNNPACK don't support fp16 GELU.
+            # TODO (gjcomer) Remove this when we update XNNPACK. (#16679)
+            tester.check(
+                ["executorch_exir_dialects_edge__ops_aten_gelu_default"]
+            ).check_not(["torch.ops.higher_order.executorch_call_delegate"])
+        else:
+            tester.check_count(
+                {"torch.ops.higher_order.executorch_call_delegate": 1}
+            ).check_not(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
 
         (
-            Tester(self.Gelu(approximate=approximate), inputs)
-            .export()
-            .check_count({"torch.ops.aten.gelu.default": 1})
-            .to_edge_transform_and_lower()
-            # Expect no delegation
-            .check(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-            .to_executorch()
+            tester.to_executorch()
             .serialize()
             .run_method_and_compare_outputs(inputs=inputs, atol=atol, rtol=rtol)
         )
+        if dynamic:
+            tester.run_method_and_compare_outputs(
+                inputs=(torch.linspace(-6, 6, 19),), atol=atol, rtol=rtol
+            )
+
+    @parameterized.expand([("none",), ("tanh",)])
+    def test_fp16_gelu(self, approximate):
+        inputs = (torch.randn(20).to(torch.float16),)
+        self.run_gelu_test(inputs, approximate=approximate)
 
     def test_fp32_gelu(self):
         inputs = (torch.randn(20),)
         self.run_gelu_test(inputs)
-
-    def test_fp32_gelu_tanh(self):
-        inputs = (torch.tensor([-2.7]),)
-        (
-            Tester(self.Gelu(approximate="tanh"), inputs)
-            .export()
-            .check_count({"torch.ops.aten.gelu.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(inputs=inputs, atol=1e-5, rtol=1e-5)
-        )
 
     @parameterized.expand(
         [
@@ -115,21 +111,10 @@ class TestGelu(unittest.TestCase):
     )
     def test_fp32_gelu_approximation(self, approximate, dynamic):
         inputs = (torch.tensor([-6.0, -2.7, -1.0, 0.0, 1.0, 2.7, 6.0]),)
-        dynamic_shapes = (
-            ({0: torch.export.Dim("length", min=2, max=32)},) if dynamic else None
+        self.run_gelu_test(
+            inputs,
+            approximate=approximate,
+            dynamic=dynamic,
+            atol=1e-5,
+            rtol=1e-5,
         )
-        tester = (
-            Tester(self.Gelu(approximate), inputs, dynamic_shapes=dynamic_shapes)
-            .export()
-            .check_count({"torch.ops.aten.gelu.default": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(inputs=inputs, atol=1e-5, rtol=1e-5)
-        )
-        if dynamic:
-            tester.run_method_and_compare_outputs(
-                inputs=(torch.linspace(-6, 6, 19),), atol=1e-5, rtol=1e-5
-            )
