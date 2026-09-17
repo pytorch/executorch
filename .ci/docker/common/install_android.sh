@@ -79,10 +79,12 @@ install_sdk() {
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "build-tools;35.0.0"
   # And some more tools for future emulator tests
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
-  # The 'tools' package (emulator) is not available on aarch64
-  if [ "$(uname -m)" != "aarch64" ]; then
-    yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
-  fi
+  # The obsolete 'tools' package used to be installed here for the emulator. It
+  # was already unavailable on aarch64, and Google has since withdrawn it for
+  # every host, so sdkmanager answers "Failed to find package 'tools'" and the
+  # build dies under set -e. Its replacements, cmdline-tools and platform-tools,
+  # are installed above. The emulator itself is a separate package and nothing
+  # in CI installs or runs one today.
 }
 
 install_prerequiresites
