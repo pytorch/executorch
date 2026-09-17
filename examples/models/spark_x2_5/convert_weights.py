@@ -89,9 +89,7 @@ def load_checkpoint(input_dir: str) -> Dict[str, torch.Tensor]:
         print("Loading checkpoint from safetensors directory")
         return load_file(model_path)
 
-    raise FileNotFoundError(
-        f"Could not find safetensors checkpoint in {input_dir}"
-    )
+    raise FileNotFoundError(f"Could not find safetensors checkpoint in {input_dir}")
 
 
 def convert_weights(input_dir: str, output_file: str) -> None:
