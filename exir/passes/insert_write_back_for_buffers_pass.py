@@ -23,28 +23,71 @@ from torch.utils import _pytree as pytree
 from torchgen.model import SchemaKind
 
 
-def _may_alias_input(node: torch.fx.Node) -> bool:
+def _fx_nodes_in(value: object) -> List[torch.fx.Node]:
+    """The FX nodes contained in value, looking through lists and tuples."""
+    if isinstance(value, torch.fx.Node):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [n for v in value for n in _fx_nodes_in(v)]
+    return []
+
+
+def _aliasing_inputs(node: torch.fx.Node) -> List[torch.fx.Node]:
     """
-    Whether the value produced by this node may alias one of its inputs. When
-    we cannot tell (no schema, getitem, submodule calls, etc.) we
-    conservatively answer True.
+    The subset of node's FX inputs that the value produced by node may alias.
+    When we cannot tell (no schema, getitem, submodule calls, etc.) we
+    conservatively answer all inputs; for schema-annotated ops we answer only
+    the inputs whose alias set is shared with a return, so that e.g. the
+    shape-supplying argument of expand_as does not count as an alias.
     """
     if node.op == "output":
         # The output node produces no value of its own, so it cannot alias.
-        return False
+        return []
     if node.op != "call_function":
-        return True
+        return list(node.all_input_nodes)
     if node.target is operator.getitem:
-        return True
+        return list(node.all_input_nodes)
     if _is_view_copy(node):
         # view_copy produces a fresh tensor here, but ReplaceViewCopyWithViewPass
-        # later rewrites non-output view_copy nodes into true aliases, so readers
-        # through a view must stay ordered before any write-back into its base.
-        return True
+        # later rewrites non-output view_copy nodes into true aliases of their
+        # base, the first argument.
+        return _fx_nodes_in(node.args[0] if node.args else None)
     schema = getattr(node.target, "_schema", None)
     if schema is None:
-        return True
-    return any(ret.alias_info is not None for ret in schema.returns)
+        return list(node.all_input_nodes)
+    ret_sets: Set[str] = set()
+    for ret in schema.returns:
+        if ret.alias_info is not None:
+            ret_sets |= set(ret.alias_info.before_set)
+            ret_sets |= set(ret.alias_info.after_set)
+    if not ret_sets:
+        return []
+    if "*" in ret_sets:
+        # A wildcard return may alias any input.
+        return list(node.all_input_nodes)
+    aliasing: List[torch.fx.Node] = []
+    for i, arg in enumerate(node.args):
+        if i < len(schema.arguments):
+            alias_info = schema.arguments[i].alias_info
+            arg_sets = (
+                set(alias_info.before_set) | set(alias_info.after_set)
+                if alias_info is not None
+                else set()
+            )
+            if arg_sets & ret_sets or "*" in arg_sets:
+                aliasing.extend(_fx_nodes_in(arg))
+    schema_kwargs = {a.name: a for a in schema.arguments}
+    for name, arg in node.kwargs.items():
+        if name in schema_kwargs:
+            alias_info = schema_kwargs[name].alias_info
+            arg_sets = (
+                set(alias_info.before_set) | set(alias_info.after_set)
+                if alias_info is not None
+                else set()
+            )
+            if arg_sets & ret_sets or "*" in arg_sets:
+                aliasing.extend(_fx_nodes_in(arg))
+    return aliasing
 
 
 def _contains_node(value: object, input_node: torch.fx.Node) -> bool:
@@ -85,36 +128,39 @@ def _mutates_input(node: torch.fx.Node, input_node: torch.fx.Node) -> bool:
     return False
 
 
-def _collect_aliases(
-    seed: torch.fx.Node, node_order: Dict[torch.fx.Node, int]
-) -> Set[torch.fx.Node]:
+class _AliasIndex:
     """
-    The set of nodes whose values may alias the value of seed. The closure is
-    taken in both directions: a node that may alias its inputs pulls its
-    result into the set of its inputs (forward), and pulls its inputs into
-    the set of its result (backward). The backward direction matters for
-    views: the base of a view must count as an alias of the view's value,
-    since a mutation of the base is a mutation of the view once
+    Alias closures over the graph. The undirected adjacency (each node joined
+    to the inputs its value may alias) is built once, and each closure is a
+    breadth-first walk cached per seed. The closure is symmetric on purpose:
+    the base of a view must count as an alias of the view's value, since a
+    mutation of the base is a mutation of the view once
     ReplaceViewCopyWithViewPass has run.
     """
-    aliases = {seed}
-    changed = True
-    while changed:
-        changed = False
-        for node in node_order:
-            if node in aliases:
-                if _may_alias_input(node):
-                    for arg in node.all_input_nodes:
-                        if arg not in aliases:
-                            aliases.add(arg)
-                            changed = True
-                continue
-            if any(arg in aliases for arg in node.all_input_nodes) and _may_alias_input(
-                node
-            ):
-                aliases.add(node)
-                changed = True
-    return aliases
+
+    def __init__(self, nodes: List[torch.fx.Node]) -> None:
+        self._adjacency: Dict[torch.fx.Node, List[torch.fx.Node]] = {}
+        for node in nodes:
+            for arg in _aliasing_inputs(node):
+                self._adjacency.setdefault(node, []).append(arg)
+                self._adjacency.setdefault(arg, []).append(node)
+        self._cache: Dict[torch.fx.Node, Set[torch.fx.Node]] = {}
+
+    def aliases(self, seed: torch.fx.Node) -> Set[torch.fx.Node]:
+        cached = self._cache.get(seed)
+        if cached is not None:
+            return cached
+        seen = {seed}
+        frontier = [seed]
+        while frontier:
+            node = frontier.pop()
+            for other in self._adjacency.get(node, ()):
+                if other not in seen:
+                    seen.add(other)
+                    frontier.append(other)
+        for node in seen:
+            self._cache[node] = seen
+        return seen
 
 
 def _insertion_point(
@@ -122,6 +168,7 @@ def _insertion_point(
     return_node: torch.fx.Node,
     node_order: Dict[torch.fx.Node, int],
     last_placeholder: Optional[torch.fx.Node],
+    alias_index: _AliasIndex,
 ) -> torch.fx.Node:
     """
     The earliest node after which it is safe to insert
@@ -142,7 +189,7 @@ def _insertion_point(
     ):
         latest = last_placeholder
 
-    for alias in _collect_aliases(mutated_node, node_order):
+    for alias in alias_index.aliases(mutated_node):
         for user in alias.users:
             # Users not in node_order are copy_ nodes inserted by us for other
             # buffers; ordering with respect to them is handled by the
@@ -154,7 +201,7 @@ def _insertion_point(
             ):
                 latest = user
 
-    for alias in _collect_aliases(return_node, node_order):
+    for alias in alias_index.aliases(return_node):
         for user in alias.users:
             if (
                 user in node_order
@@ -188,6 +235,7 @@ def _insert_copy(
     }
     placeholders = [node for node in gm.graph.nodes if node.op == "placeholder"]
     last_placeholder = placeholders[-1] if placeholders else None
+    alias_index = _AliasIndex(list(gm.graph.nodes))
 
     # Pair up the returns with the nodes they mutate.
     copies: List[Tuple[torch.fx.Node, torch.fx.Node]] = []
@@ -217,8 +265,8 @@ def _insert_copy(
         mutated_aliases: Set[torch.fx.Node] = set()
         return_aliases: Set[torch.fx.Node] = set()
         for mutated_node, return_node in copies:
-            mutated_alias = _collect_aliases(mutated_node, node_order)
-            return_alias = _collect_aliases(return_node, node_order)
+            mutated_alias = alias_index.aliases(mutated_node)
+            return_alias = alias_index.aliases(return_node)
             if mutated_alias & return_aliases or return_alias & mutated_aliases:
                 independent = False
                 break
@@ -230,7 +278,7 @@ def _insert_copy(
     for mutated_node, return_node in copies:
         if independent:
             insert_after = _insertion_point(
-                mutated_node, return_node, node_order, last_placeholder
+                mutated_node, return_node, node_order, last_placeholder, alias_index
             )
             insertion = gm.graph.inserting_after(insert_after)
         else:
