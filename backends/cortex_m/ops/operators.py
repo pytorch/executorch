@@ -11,17 +11,17 @@ from typing import Sequence
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
+)
+from executorch.backends.cortex_m.utils import (
     dequantize_per_tensor_cmsis,
     is_channel_broadcast,
     is_channels_last,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
-)
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    CMSIS_SOFTMAX_SCALE,
-    CMSIS_SOFTMAX_ZERO_POINT,
 )
 from executorch.exir._warnings import experimental
 from executorch.exir.dialects._ops import ops as exir_ops
