@@ -27,7 +27,7 @@ $if WEIGHT_STORAGE == "buffer":
 #define TILE_K4 ${TILE_K4}
 #define TILE_N4 ${TILE_N8 * 2}
 
-#define TILE_M ${TILE_M4 * 4}
+#define TILE_M ${TILE_M}
 #define TILE_K ${TILE_K4 * 4}
 #define TILE_N ${TILE_N8 * 8}
 

@@ -10,6 +10,7 @@ linear_q4gsw_tiled:
     IO_STORAGE: texture3d
     WEIGHT_STORAGE: texture2d
     TILE_M4: 1
+    TILE_M: 4
     TILE_K4: 1
     TILE_N8: 1
   generate_variant_forall:
@@ -24,5 +25,18 @@ linear_q4gsw_tiled:
       IO_STORAGE: buffer
       WEIGHT_STORAGE: texture2d
     - NAME: linear_q4gsw_tiled_buffer_buffer
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: buffer
+    - NAME: linear_q4gsw_tiledm2_texture3d_texture2d
+      TILE_M: 2
+    - NAME: linear_q4gsw_tiledm2_texture3d_buffer
+      TILE_M: 2
+      WEIGHT_STORAGE: buffer
+    - NAME: linear_q4gsw_tiledm2_buffer_texture2d
+      TILE_M: 2
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: texture2d
+    - NAME: linear_q4gsw_tiledm2_buffer_buffer
+      TILE_M: 2
       IO_STORAGE: buffer
       WEIGHT_STORAGE: buffer
