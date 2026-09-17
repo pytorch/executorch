@@ -37,6 +37,7 @@ from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
@@ -388,6 +389,7 @@ class TOSAPartitioner(Partitioner):
         self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._requires_resolved_tensor_shapes = False
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
@@ -685,11 +687,15 @@ class TOSAPartitioner(Partitioner):
         containing_program: ExportedProgram,
         reporter: WhyNoPartitionReporter,
     ) -> OperatorSupportBase:
+        additional_checks = list(self.additional_checks or ())
+        if self._requires_resolved_tensor_shapes:
+            additional_checks.append(CheckResolvedTensorShapes(reporter))
+
         return tosa_support_factory(
             self.tosa_spec,
             containing_program,
             reporter,
-            self.additional_checks,
+            additional_checks=additional_checks,
             additional_positive_checks=[
                 self._decomposable_resize_support,
                 DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
