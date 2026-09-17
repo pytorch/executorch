@@ -81,7 +81,9 @@ def test_spark_x2_5_architecture_configs_match_expected_shapes() -> None:
     for filename, expected_fields in expected.items():
         cfg = _load_json_config(filename)
         for key, value in expected_fields.items():
-            assert cfg[key] == value, f"{filename}: {key} expected {value}, got {cfg[key]}"
+            assert (
+                cfg[key] == value
+            ), f"{filename}: {key} expected {value}, got {cfg[key]}"
 
     # 1.7B: 28 layers = 7 groups of 4
     cfg_1_7b = _load_json_config("spark_x2_5_1_7b_config.json")
@@ -108,7 +110,9 @@ def test_spark_x2_5_architecture_configs_match_expected_shapes() -> None:
         assert cfg["rope_parameters"]["full_attention"]["rope_theta"] == 5000000
         assert cfg["rope_parameters"]["full_attention"]["partial_rotary_factor"] == 0.25
         assert cfg["rope_parameters"]["sliding_attention"]["rope_theta"] == 10000
-        assert cfg["rope_parameters"]["sliding_attention"]["partial_rotary_factor"] == 1.0
+        assert (
+            cfg["rope_parameters"]["sliding_attention"]["partial_rotary_factor"] == 1.0
+        )
 
 
 def test_spark_x2_5_mlx_config_enables_mlx_backend() -> None:

@@ -216,7 +216,9 @@ class TransformerBlock(nn.Module):
             self.feed_forward = LoRAFeedForward(args.dim, args.hidden_dim, args)
         else:
             self.feed_forward = FeedForward(
-                dim=args.dim, hidden_dim=args.hidden_dim, act_fn=args.act_fn.get_function()
+                dim=args.dim,
+                hidden_dim=args.hidden_dim,
+                act_fn=args.act_fn.get_function(),
             )
 
         if isinstance(self.attention, AttentionSkip):
@@ -443,7 +445,11 @@ class Transformer(nn.Module):
         attn_options_ = attn_options.copy() if attn_options is not None else {}
 
         h, attn_options_update = self._forward_layers(
-            h, freqs_cos, freqs_sin, attn_options_, seqlen,
+            h,
+            freqs_cos,
+            freqs_sin,
+            attn_options_,
+            seqlen,
             freqs_by_type=freqs_by_type,
         )
 
