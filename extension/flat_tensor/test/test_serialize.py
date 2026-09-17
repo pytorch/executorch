@@ -8,11 +8,15 @@
 
 import dataclasses
 import math
+import runpy
 import tempfile
 import unittest
 from pathlib import Path
 
 from typing import Dict, List, Optional
+from unittest import mock
+
+import executorch.extension.flat_tensor.serialize.serialize as serialize_module
 
 import torch
 
@@ -322,6 +326,29 @@ class TestSerialize(unittest.TestCase):
             save_ptd(path, {})
             self.assertEqual(load_ptd(path), {})
 
+    def test_save_ptd_aligns_segments(self) -> None:
+        tensor_map = {
+            "odd_sized": torch.ones(3, dtype=torch.int8),
+            "weight": torch.ones(5, dtype=torch.float32),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "aligned.ptd"
+            save_ptd(path, tensor_map)
+            serialized_data = path.read_bytes()
+
+        header = FlatTensorHeader.from_bytes(
+            serialized_data[8 : FlatTensorHeader.EXPECTED_LENGTH + 8]
+        )
+        flat_tensor = _deserialize_to_flat_tensor(
+            serialized_data[: header.flatbuffer_offset + header.flatbuffer_size]
+        )
+        self.assertEqual(len(flat_tensor.segments), len(tensor_map))
+        segment_alignment = FlatTensorConfig().segment_alignment
+        for segment in flat_tensor.segments:
+            self.assertEqual(
+                (header.segment_base_offset + segment.offset) % segment_alignment, 0
+            )
+
     def test_save_and_load_additional_ptd_dtypes(self) -> None:
         tensor_map = {
             "bits16": torch.tensor([1, 2], dtype=torch.uint16).view(torch.bits16),
@@ -342,6 +369,32 @@ class TestSerialize(unittest.TestCase):
                 self.assertTrue(
                     torch.equal(actual.view(torch.uint8), expected.view(torch.uint8))
                 )
+
+    def test_import_without_optional_dtypes(self) -> None:
+        missing_dtypes = {
+            ScalarType.UINT16: "uint16",
+            ScalarType.UINT32: "uint32",
+            ScalarType.UINT64: "uint64",
+            ScalarType.BITS16: "bits16",
+            ScalarType.FLOAT8E5M2: "float8_e5m2",
+            ScalarType.FLOAT8E4M3FN: "float8_e4m3fn",
+            ScalarType.FLOAT8E5M2FNUZ: "float8_e5m2fnuz",
+            ScalarType.FLOAT8E4M3FNUZ: "float8_e4m3fnuz",
+            ScalarType.QUINT4x2: "quint4x2",
+            ScalarType.QUINT2x4: "quint2x4",
+        }
+        with mock.patch.dict(torch.__dict__):
+            for name in missing_dtypes.values():
+                torch.__dict__.pop(name, None)
+            module = runpy.run_path(serialize_module.__file__)
+            for scalar_type in missing_dtypes:
+                self.assertNotIn(scalar_type, module["_PTD_TO_TORCH_DTYPE"])
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                path = Path(temp_dir) / "state.ptd"
+                expected = torch.tensor([1.0, -2.0])
+                module["save_ptd"](path, {"weight": expected})
+                torch.testing.assert_close(module["load_ptd"](path)["weight"], expected)
 
     def test_save_ptd_normalizes_unsupported_layouts(self) -> None:
         tensor_map = {

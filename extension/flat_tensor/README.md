@@ -32,8 +32,13 @@ tensors = load_ptd("state.ptd")
 ```
 
 The APIs support strided, non-quantized tensor dtypes represented by the PTD
-schema. Contiguous and channels-last strides are preserved; other strided
-layouts are saved in contiguous form.
+schema. Contiguous and `torch.channels_last` tensors keep their memory format.
+Other strided layouts, such as transposed or expanded tensors, are normalized
+rather than preserved: they load with the same shape and values but contiguous
+strides.
+
+`save_ptd` uses the default segment alignment from `FlatTensorConfig`, so its
+files can also be loaded by the C++ `FlatTensorDataMap` with `MmapDataLoader`.
 
 ### Alignment Considerations
 

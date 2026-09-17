@@ -50,41 +50,47 @@ _FLATBUFFER_ALIGNMENT: int = 16
 _FLAT_TENSOR_VERSION: int = 0
 
 # Keep in sync with scalar_type.fbs, which excludes complex types.
+_PTD_TO_TORCH_DTYPE_NAME: Dict[ScalarType, str] = {
+    ScalarType.BYTE: "uint8",
+    ScalarType.CHAR: "int8",
+    ScalarType.SHORT: "int16",
+    ScalarType.INT: "int32",
+    ScalarType.LONG: "int64",
+    ScalarType.HALF: "float16",
+    ScalarType.FLOAT: "float32",
+    ScalarType.DOUBLE: "float64",
+    ScalarType.BOOL: "bool",
+    ScalarType.QINT8: "qint8",
+    ScalarType.QUINT8: "quint8",
+    ScalarType.QINT32: "qint32",
+    ScalarType.BFLOAT16: "bfloat16",
+    ScalarType.QUINT4x2: "quint4x2",
+    ScalarType.QUINT2x4: "quint2x4",
+    ScalarType.BITS16: "bits16",
+    ScalarType.FLOAT8E5M2: "float8_e5m2",
+    ScalarType.FLOAT8E4M3FN: "float8_e4m3fn",
+    ScalarType.FLOAT8E5M2FNUZ: "float8_e5m2fnuz",
+    ScalarType.FLOAT8E4M3FNUZ: "float8_e4m3fnuz",
+    ScalarType.UINT16: "uint16",
+    ScalarType.UINT32: "uint32",
+    ScalarType.UINT64: "uint64",
+}
+# Resolved by name to skip dtypes that the installed torch build lacks.
 _PTD_TO_TORCH_DTYPE: Dict[ScalarType, torch.dtype] = {
-    ScalarType.BYTE: torch.uint8,
-    ScalarType.CHAR: torch.int8,
-    ScalarType.SHORT: torch.int16,
-    ScalarType.INT: torch.int32,
-    ScalarType.LONG: torch.int64,
-    ScalarType.HALF: torch.float16,
-    ScalarType.FLOAT: torch.float32,
-    ScalarType.DOUBLE: torch.float64,
-    ScalarType.BOOL: torch.bool,
-    ScalarType.QINT8: torch.qint8,
-    ScalarType.QUINT8: torch.quint8,
-    ScalarType.QINT32: torch.qint32,
-    ScalarType.BFLOAT16: torch.bfloat16,
-    ScalarType.QUINT4x2: torch.quint4x2,
-    ScalarType.QUINT2x4: torch.quint2x4,
-    ScalarType.BITS16: torch.bits16,
-    ScalarType.FLOAT8E5M2: torch.float8_e5m2,
-    ScalarType.FLOAT8E4M3FN: torch.float8_e4m3fn,
-    ScalarType.FLOAT8E5M2FNUZ: torch.float8_e5m2fnuz,
-    ScalarType.FLOAT8E4M3FNUZ: torch.float8_e4m3fnuz,
-    ScalarType.UINT16: torch.uint16,
-    ScalarType.UINT32: torch.uint32,
-    ScalarType.UINT64: torch.uint64,
+    scalar_type: getattr(torch, name)
+    for scalar_type, name in _PTD_TO_TORCH_DTYPE_NAME.items()
+    if hasattr(torch, name)
 }
 _TORCH_DTYPE_TO_PTD: Dict[torch.dtype, ScalarType] = {
     dtype: scalar_type for scalar_type, dtype in _PTD_TO_TORCH_DTYPE.items()
 }
 # PTD tensor layouts do not encode quantization parameters.
-_QUANTIZED_DTYPES: Set[torch.dtype] = {
-    torch.qint8,
-    torch.quint8,
-    torch.qint32,
-    torch.quint4x2,
-    torch.quint2x4,
+_QUANTIZED_SCALAR_TYPES: Set[ScalarType] = {
+    ScalarType.QINT8,
+    ScalarType.QUINT8,
+    ScalarType.QINT32,
+    ScalarType.QUINT4x2,
+    ScalarType.QUINT2x4,
 }
 
 
@@ -493,10 +499,15 @@ def save_ptd(
 ) -> None:
     """Saves a dictionary of tensors to a PTD file.
 
+    Tensors that are neither contiguous nor `torch.channels_last` are saved in
+    contiguous form, so they load with the same shape and values but contiguous
+    strides.
+
     Args:
         path: Path to the output PTD file.
         tensor_map: Mapping from tensor names to supported strided CPU tensors.
     """
+    config = FlatTensorConfig()
     buffers: List[bytes] = []
     named_data: Dict[str, DataEntry] = {}
     for name, tensor in tensor_map.items():
@@ -529,12 +540,12 @@ def save_ptd(
         buffers.append(bytes(tensor_to_save.untyped_storage()))
         named_data[name] = DataEntry(
             buffer_index=buffer_index,
-            alignment=1,
+            alignment=config.segment_alignment,
             tensor_layout=tensor_layout,
         )
 
     data_payload = DataPayload(buffers=buffers, named_data=named_data)
-    serialized_data = FlatTensorSerializer().serialize(data_payload)
+    serialized_data = FlatTensorSerializer(config).serialize(data_payload)
     with open(path, "wb") as file:
         file.write(bytes(serialized_data))
 
@@ -570,7 +581,7 @@ def load_ptd(path: Union[str, os.PathLike[str]]) -> Dict[str, torch.Tensor]:
                 f"Unsupported scalar type {tensor_layout.scalar_type} for tensor "
                 f"'{name}'."
             ) from error
-        if dtype in _QUANTIZED_DTYPES:
+        if tensor_layout.scalar_type in _QUANTIZED_SCALAR_TYPES:
             raise ValueError(f"Unsupported tensor dtype {dtype} for PTD files.")
 
         strides = stride_from_dim_order(tensor_layout.sizes, tensor_layout.dim_order)
