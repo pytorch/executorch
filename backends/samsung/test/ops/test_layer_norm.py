@@ -36,9 +36,7 @@ class TestLayerNorm(unittest.TestCase):
             tester.export()
             .check_count({"torch.ops.aten.layer_norm.default": 1})
             .to_edge_transform_and_lower()
-            .check_not(
-                ["executorch_exir_dialects_edge__ops_aten_native_layer_norm_default"]
-            )
+            .check_not(["executorch_exir_dialects_edge__ops_aten_layer_norm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=inputs)

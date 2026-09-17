@@ -11,6 +11,7 @@ from executorch.backends.samsung.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
+from executorch.backends.transforms import get_shape
 
 
 @register_node_visitor
@@ -26,6 +27,9 @@ class PixelUnshuffleVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> bool:
+        if len(get_shape(node.args[0])) != 4:
+            return False
+
         input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
 
         downscale_factor = cast(int, node.args[1])
