@@ -7457,10 +7457,15 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+
+        def output_callback(log_msg):
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
+            output_callback=output_callback,
         )
 
     def test_qnn_backend_online_prepare(self):
@@ -8549,10 +8554,15 @@ class TestQNNQuantizedUtils(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
+
+        def output_callback(log_msg):
+            self.assertIn("Shared buffer initialized via libcdsprpc", log_msg.stdout)
+
         self.lower_module_and_test_output(
             module,
             sample_input,
             expected_partitions=1,
+            output_callback=output_callback,
         )
 
     def test_qnn_backend_online_prepare(self):

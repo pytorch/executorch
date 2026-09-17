@@ -82,7 +82,9 @@ SharedBuffer& SharedBuffer::GetSharedBufferManager() {
   std::lock_guard<std::mutex> lk(init_mutex_);
   static SharedBuffer shared_buffer_manager;
   if (!shared_buffer_manager.GetInitialize()) {
-#if defined(__aarch64__) && !defined(_WIN32)
+    // libcdsprpc is only available on aarch64 targets: Linux/Android and
+    // Windows-on-ARM64. There is no equivalent on Windows-x86.
+#if defined(__aarch64__) || defined(_M_ARM64)
     Error status = shared_buffer_manager.Load();
 #else
     Error status = Error::NotSupported;
@@ -95,7 +97,7 @@ SharedBuffer& SharedBuffer::GetSharedBufferManager() {
 }
 
 SharedBuffer::~SharedBuffer() {
-#if defined(__aarch64__) && !defined(_WIN32)
+#if defined(__aarch64__) || defined(_M_ARM64)
   if (initialize_) {
     SharedBuffer::GetSharedBufferManager().UnLoad();
   }
@@ -163,9 +165,13 @@ bool SharedBuffer::IsAllocated(void* buf) {
 Error SharedBuffer::Load() {
   // On Android, 32-bit and 64-bit libcdsprpc.so can be found at /vendor/lib/
   // and /vendor/lib64/ respectively.
+#if defined(_WIN32)
+  const char* lib_name = "libcdsprpc.dll";
+#else
+  const char* lib_name = "libcdsprpc.so";
+#endif
   lib_cdsp_rpc_ = pal::dynamic_loading::DlOpen(
-      "libcdsprpc.so",
-      pal::dynamic_loading::DL_NOW | pal::dynamic_loading::DL_LOCAL);
+      lib_name, pal::dynamic_loading::DL_NOW | pal::dynamic_loading::DL_LOCAL);
   if (lib_cdsp_rpc_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unable to load shared buffer. dlerror(): %s",
@@ -186,6 +192,7 @@ Error SharedBuffer::Load() {
     pal::dynamic_loading::DlClose(lib_cdsp_rpc_);
     return Error::Internal;
   }
+  QNN_EXECUTORCH_LOG_INFO("Shared buffer initialized via %s", lib_name);
   return Error::Ok;
 }
 
