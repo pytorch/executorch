@@ -718,6 +718,10 @@ class SharedBuffer:
 
         module = __class__.Model()
         qnn_config.shared_buffer = True
+
+        def verify(log):
+            assert "Shared buffer initialized via libcdsprpc" in log.stdout
+
         export_and_verify(
             module=module,
             inputs=module.example_inputs(),
@@ -727,6 +731,7 @@ class SharedBuffer:
                 tuple(backend_compile_specs[qnn_config.backend].items())
             ),
             metrics=expected,
+            output_callback=verify,
         )
 
 
