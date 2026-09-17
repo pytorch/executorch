@@ -79,6 +79,9 @@ bool parallel_for(
     const int64_t grain_size,
     runtime::FunctionRef<void(int64_t, int64_t)> f);
 
+/** Returns the number of threads available to parallel_for. */
+int64_t get_thread_count();
+
 int64_t get_thread_num();
 
 void set_thread_num(int64_t thread_num);
@@ -94,6 +97,10 @@ bool parallel_for(
 
 inline int64_t get_thread_num() {
   return 0;
+}
+
+inline int64_t get_thread_count() {
+  return 1;
 }
 
 inline void set_thread_num(int64_t thread_num) {
