@@ -17,7 +17,7 @@ from executorch.backends.qualcomm.utils import qnn_manager_lifecycle as lifecycl
 class TestQnnManagerDeviceCache(unittest.TestCase):
     def test_registry_keys_managers_by_backend_and_soc(self):
         managers = [Mock(), Mock(), Mock()]
-        for i, manager in enumerate(managers):
+        for manager in managers:
             manager.InitBackend.return_value = Mock(value=0)
 
         with (
@@ -43,8 +43,6 @@ class TestQnnManagerDeviceCache(unittest.TestCase):
                 b"third",
                 QcomChipset.SM8650,
             )
-
-
 
         self.assertEqual(create.call_count, 2)
         self.assertIsNot(first, second)

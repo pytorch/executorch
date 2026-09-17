@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackendCustomConfig.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackendCustomConfig.h>
 #include <unordered_map>
 
 namespace executorch {
