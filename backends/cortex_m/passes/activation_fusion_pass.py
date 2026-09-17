@@ -8,7 +8,7 @@ import logging
 
 import executorch.backends.cortex_m.ops.operators  # noqa: F401
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.utils import (
     get_activation_bounds,
     quantize_val,
     skips_quantized_max_pool2d,
