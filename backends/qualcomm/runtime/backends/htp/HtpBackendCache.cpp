@@ -17,7 +17,7 @@ using executorch::runtime::Error;
 Error HtpBackendCache::RetrieveBackendBinaryInfo(
     const QnnSystemContext_BinaryInfo_t* binaryinfo) {
   QnnHtpSystemContext_HwBlobInfo_t* htp_hwblobinfo = nullptr;
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
   std::vector<QnnHtpSystemContext_GraphBlobInfo_t*> htp_graphblobinfos;
   std::uint32_t num_graphs;
 
@@ -29,7 +29,7 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
     htp_hwblobinfo = static_cast<QnnHtpSystemContext_HwBlobInfo_t*>(
         binaryinfo->contextBinaryInfoV2.hwInfoBlob);
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
     num_graphs = binaryinfo->contextBinaryInfoV3.numGraphs;
     for (size_t i = 0; i < num_graphs; ++i) {
@@ -57,7 +57,7 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
     }
   }
 
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
   if (htp_graphblobinfos.size() > 0) {
     // After version 2.21, we need to get spill fill buffer size from graph
     // blob info instead of hw blob info. If there are multiple graphs, we
