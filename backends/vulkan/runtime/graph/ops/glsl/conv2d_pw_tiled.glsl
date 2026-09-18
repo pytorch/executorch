@@ -51,35 +51,60 @@ ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 #include "linear_fp_packed_weight_tile_load.glslh"
 #include "linear_fp_output_tile_fp_compute.glslh"
 
-void load_input_tile_with_checks(
-    out FPInputTile tile,
-    const int k4_start,
+// Texel coordinates for the TILE_M spatial positions this invocation covers.
+//
+// Recovering (x, y) from the flattened spatial index costs a division and a
+// modulo by W_out, which is a runtime uniform, so the compiler cannot strength
+// reduce either into a shift. Those coordinates depend only on m, so computing
+// them once per invocation keeps the K loop free of integer division; done
+// per (m, k4) instead, a conv with K4 = 4 issues four times as many divides as
+// the arithmetic they feed.
+struct InCoords {
+  ivec2 pos[TILE_M];
+  ivec2 out_pos[TILE_M];
+  bool valid[TILE_M];
+};
+
+void compute_in_coords(
+    out InCoords coords,
     const int m_start,
-    const int K4,
     const int M,
     const int W_out,
     const int W_in,
     const int H_in) {
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    const int out_spatial = m_start + m;
+    if (out_spatial >= M) {
+      coords.pos[m] = ivec2(0);
+      coords.out_pos[m] = ivec2(0);
+      coords.valid[m] = false;
+      continue;
+    }
+    const int out_x = out_spatial % W_out;
+    const int out_y = out_spatial / W_out;
+    coords.out_pos[m] = ivec2(out_x, out_y);
+    if (stride_1_padding_0 != 0) {
+      coords.pos[m] = ivec2(out_x, out_y);
+      coords.valid[m] = true;
+    } else {
+      const int in_x = out_x * stride_w - padding_w;
+      const int in_y = out_y * stride_h - padding_h;
+      coords.pos[m] = ivec2(in_x, in_y);
+      coords.valid[m] = in_x >= 0 && in_x < W_in && in_y >= 0 && in_y < H_in;
+    }
+  }
+}
+
+void load_input_tile_with_checks(
+    out FPInputTile tile,
+    const InCoords coords,
+    const int k4_start,
+    const int K4) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
-      if (k4_start + k4 < K4 && m_start + m < M) {
-        if (stride_1_padding_0 != 0) {
-          const int spatial = m_start + m;
-          tile.data[m][k4] =
-              texelFetch(t_in, ivec3(spatial % W_out, spatial / W_out, k4_start + k4), 0);
-        } else {
-          const int out_spatial = m_start + m;
-          const int out_x = out_spatial % W_out;
-          const int out_y = out_spatial / W_out;
-          const int in_x = out_x * stride_w - padding_w;
-          const int in_y = out_y * stride_h - padding_h;
-          if (in_x >= 0 && in_x < W_in && in_y >= 0 && in_y < H_in) {
-            tile.data[m][k4] =
-                texelFetch(t_in, ivec3(in_x, in_y, k4_start + k4), 0);
-          } else {
-            tile.data[m][k4] = VEC4_T(0.0);
-          }
-        }
+      if (k4_start + k4 < K4 && coords.valid[m]) {
+        tile.data[m][k4] =
+            texelFetch(t_in, ivec3(coords.pos[m], k4_start + k4), 0);
       } else {
         tile.data[m][k4] = VEC4_T(0.0);
       }
@@ -89,22 +114,23 @@ void load_input_tile_with_checks(
 
 void store_output_tile_with_checks(
     const FPOutTile out_tile,
+    const InCoords coords,
     const int n4_start,
     const int m_start,
     const int N4,
-    const int M,
-    const int W_out) {
+    const int M) {
+  // Reuse the coordinates computed for this invocation rather than dividing by
+  // W_out again per output texel.
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       if (m_start + m < M && n4_start + n4 < N4) {
-        const int spatial = m_start + m;
         VEC4_T texel = out_tile.data[m][n4];
         if (activation_type == 1) {
           texel = max(texel, VEC4_T(0.0));
         } else if (activation_type == 2) {
           texel = clamp(texel, VEC4_T(out_min), VEC4_T(out_max));
         }
-        imageStore(t_out, ivec3(spatial % W_out, spatial / W_out, n4_start + n4), texel);
+        imageStore(t_out, ivec3(coords.out_pos[m], n4_start + n4), texel);
       }
     }
   }
@@ -138,8 +164,11 @@ void main() {
   FPInputTile in_tile;
   FPWeightTile w_tile;
 
+  InCoords in_coords;
+  compute_in_coords(in_coords, m_start, M, W_out, W_in, H_in);
+
   for (int k4 = 0; k4 < K4; k4++) {
-    load_input_tile_with_checks(in_tile, k4, m_start, K4, M, W_out, W_in, H_in);
+    load_input_tile_with_checks(in_tile, in_coords, k4, K4);
     load_packed_weight_tile_with_checks(w_tile, n4_start, k4, 0, N4, K4);
     fp_accumulate_with_fp_weight(out_tile, in_tile, w_tile);
   }
@@ -154,5 +183,5 @@ void main() {
     }
   }
 
-  store_output_tile_with_checks(out_tile, n4_start, m_start, N4, M, W_out);
+  store_output_tile_with_checks(out_tile, in_coords, n4_start, m_start, N4, M);
 }
