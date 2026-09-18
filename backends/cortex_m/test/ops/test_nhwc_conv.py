@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import pytest
 import torch
 
 from executorch.backends.cortex_m.test.ops.nhwc_test_utils import (
@@ -16,8 +17,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class Conv2dNhwc(torch.nn.Module):
-    def __init__(self, grouped=False):
+    def __init__(self, grouped=False, padding=(1, 0)):
         super().__init__()
+        self.padding = padding
         in_channels = 4 if grouped else 3
         self.register_buffer(
             "weight", int8_values((4, 2, 3, 2 if grouped else in_channels))
@@ -34,7 +36,7 @@ class Conv2dNhwc(torch.nn.Module):
             self.weight,
             self.bias,
             [2, 1],
-            [1, 0],
+            self.padding,
             [1, 1],
             0,
             0,
@@ -47,8 +49,9 @@ class Conv2dNhwc(torch.nn.Module):
 
 
 class DepthwiseConv2dNhwc(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, padding=(1, 0)):
         super().__init__()
+        self.padding = padding
         self.register_buffer("weight", int8_values((1, 3, 2, 4)))
         self.register_buffer("bias", torch.arange(4, dtype=torch.int32) - 2)
         self.register_buffer(
@@ -62,7 +65,7 @@ class DepthwiseConv2dNhwc(torch.nn.Module):
             self.weight,
             self.bias,
             [2, 1],
-            [1, 0],
+            self.padding,
             [1, 1],
             1,
             0,
@@ -105,9 +108,10 @@ class TransposeConv2dNhwc(torch.nn.Module):
         )
 
 
-def test_conv2d_nhwc_runs_on_fvp(cortex_m_target):
+@pytest.mark.parametrize("padding", [(1, 0), (0, 1, 1, 1)])
+def test_conv2d_nhwc_runs_on_fvp(cortex_m_target, padding):
     run_on_fvp(
-        Conv2dNhwc(),
+        Conv2dNhwc(padding=padding),
         int8_values((1, 7, 10, 3)),
         exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
         cortex_m_target,
@@ -115,9 +119,10 @@ def test_conv2d_nhwc_runs_on_fvp(cortex_m_target):
     )
 
 
-def test_grouped_conv2d_nhwc_runs_on_fvp(cortex_m_target):
+@pytest.mark.parametrize("padding", [(1, 0), (0, 1, 1, 1)])
+def test_grouped_conv2d_nhwc_runs_on_fvp(cortex_m_target, padding):
     run_on_fvp(
-        Conv2dNhwc(grouped=True),
+        Conv2dNhwc(grouped=True, padding=padding),
         int8_values((1, 7, 10, 4)),
         exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
         cortex_m_target,
@@ -125,9 +130,10 @@ def test_grouped_conv2d_nhwc_runs_on_fvp(cortex_m_target):
     )
 
 
-def test_depthwise_conv2d_nhwc_runs_on_fvp(cortex_m_target):
+@pytest.mark.parametrize("padding", [(1, 0), (1, 0, 1, 1)])
+def test_depthwise_conv2d_nhwc_runs_on_fvp(cortex_m_target, padding):
     run_on_fvp(
-        DepthwiseConv2dNhwc(),
+        DepthwiseConv2dNhwc(padding=padding),
         int8_values((1, 7, 10, 4)),
         exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default,
         cortex_m_target,
