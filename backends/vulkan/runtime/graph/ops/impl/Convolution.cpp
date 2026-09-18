@@ -312,15 +312,24 @@ Conv2dMethod get_conv2d_method(
 //   - groups == 1
 //   - dilation == 1 (all dims)
 //
-// Selection rule: use im2col on Mali universally, or once the output channel
-// count is large enough to amortize the fixed ~N*K_total im2col gather cost.
+// Selection rule: use im2col once the output channel count is large enough to
+// amortize the fixed ~N*K_total im2col gather cost.
 constexpr int64_t kIm2colMinCOut = 128;
+
+// A cheap gather is a second, independent reason to take im2col. The gather
+// materializes an N x K_total matrix before the GEMM runs, and a large gather
+// is fine when c_out is large because the GEMM reads it back c_out times. When
+// c_out is small it is only worth paying if the matrix is small outright, which
+// is where the direct shader on Mali loses badly: an 80x80 3x3 conv wants ~4M
+// elements, a 640x640 9x9 conv wants ~100M.
+constexpr int64_t kIm2colMaxCheapGatherElements = 32 * 1024 * 1024;
 
 bool should_use_conv2d_im2col(
     ComputeGraph& graph,
     const ValueRef weight_data,
     const int64_t groups_val,
-    const Kernel2dParams& kernel_params) {
+    const Kernel2dParams& kernel_params,
+    const ValueRef out) {
   if (groups_val != 1) {
     return false;
   }
@@ -329,7 +338,14 @@ bool should_use_conv2d_im2col(
   }
   const auto weight_sizes = graph.sizes_of(weight_data);
   const int64_t c_out = weight_sizes.at(0);
-  return graph.device_is_mali() || c_out >= kIm2colMinCOut;
+  const int64_t k_total =
+      weight_sizes.at(1) * weight_sizes.at(2) * weight_sizes.at(3);
+
+  const auto out_sizes = graph.sizes_of(out);
+  const size_t ndim = out_sizes.size();
+  const int64_t n = out_sizes.at(ndim - 1) * out_sizes.at(ndim - 2);
+  return c_out >= kIm2colMinCOut ||
+      (graph.device_is_mali() && n * k_total <= kIm2colMaxCheapGatherElements);
 }
 
 GlobalWorkGrid create_conv2d_gwg(
@@ -539,7 +555,8 @@ void add_conv2d_node(
   // device); the default (false) reproduces the production routing exactly.
   const bool use_im2col = !force_direct &&
       method == Conv2dMethod::SlidingWindow &&
-      should_use_conv2d_im2col(graph, weight_data, groups_val, kernel_params);
+      should_use_conv2d_im2col(
+          graph, weight_data, groups_val, kernel_params, out);
   if (use_im2col) {
     return conv2d_gemm_impl(
         graph,
