@@ -32,6 +32,7 @@ fbcode_target(_kind = runtime.python_library,
         ":transformer_modules",
         "//caffe2:torch",
         "//executorch/examples/models/lfm2:lfm2",
+        "//executorch/examples/models/spark_x2_5:spark_x2_5",
     ],
 )
 
