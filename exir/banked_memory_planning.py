@@ -168,6 +168,10 @@ class BankedGreedy:
         self.allow_overlapping_allocations = allow_overlapping_allocations
         # Named so MemoryPlanningAlgorithmSuite can report which algo it picked.
         self.__name__ = "banked_greedy"
+        # Read by MemoryPlanningPass: the bufsizes returned here are checked
+        # against the map's bank sizes, so a shared arena appended afterwards
+        # would be charged to no bank.
+        self.plans_against_a_memory_budget = True
 
     def __call__(
         self,
@@ -421,15 +425,16 @@ def banked_memory_planning_pass(
     those tags, or declare a bank 1 that can hold them.
     """
     if kwargs.get("share_mutable_buffers"):
-        # run_multimethod hardcodes shared state to arena 2 and
-        # _check_default_mem_ids requires every other buffer on arena 1, neither of
-        # which a multi-bank plan can satisfy. Supporting it means placing shared
-        # state one arena past the last planned one, which is a change to core
-        # memory planning and belongs in its own review.
+        # Closing the shared_buffer_fqns half means letting the shared arena be
+        # a declared bank.
         raise ValueError(
             "share_mutable_buffers is not yet supported with banked memory "
-            "planning: it reserves arena 2 for shared state and requires every "
-            "other buffer on arena 1."
+            "planning. Sharing every mutable buffer reserves arena 2 and "
+            "requires every other buffer on arena 1, which a multi-bank plan "
+            "cannot satisfy. Naming buffers with shared_buffer_fqns instead "
+            "gives them an arena appended after this planner returns, so it is "
+            "not one of the declared banks and no bank is charged for it; "
+            "MemoryPlanningPass refuses that pairing too."
         )
 
     planner = BankedGreedy(
