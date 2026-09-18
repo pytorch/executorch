@@ -8,7 +8,7 @@
 
 #include <executorch/examples/models/muse-glimmer/runtime/engine/dflash_session.h>
 
-#include <executorch/examples/models/muse-glimmer/runtime/engine/sampling.h>
+#include <executorch/examples/models/muse-glimmer/runtime/engine/dflash2_sampling.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -30,6 +30,7 @@
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#include <executorch/extension/cuda/caller_stream.h>
 #endif
 
 namespace executorch::extension::llm {
@@ -720,7 +721,23 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const bool draft_argmax = stochastic && config_.draft_argmax;
     const auto draft_sampling_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
-    if (draft_argmax) {
+    if (config_.selector_top_k > 0) {
+      ET_CHECK_OR_RETURN_ERROR(
+          muse_glimmer::sample_dflash2_path(
+              rng_,
+              draft_candidate_ids_.data(),
+              draft_logits_storage_.data(),
+              verify_len - 1,
+              config_.selector_top_k,
+              last_logits_tensor_->size(last_logits_tensor_->dim() - 1),
+              effective_temperature(),
+              !stochastic || draft_argmax,
+              candidates,
+              draft_probs_,
+              sampling_workspace_),
+          InvalidProgram,
+          "Invalid DFlash2 candidate lattice");
+    } else if (draft_argmax) {
       const auto& logits = *draft_logits.get();
       const int64_t vocab_size = logits.size(logits.dim() - 1);
       const float* logits_data =
@@ -970,16 +987,24 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       bool use_target_prefill = false,
       int64_t retain_from_row = 0) {
     std::vector<int64_t> token_data(tokens, tokens + count);
-    std::vector<int64_t> positions(count);
+#ifdef EXECUTORCH_BUILD_CUDA
+    // Keep verification arithmetic at four rows when fewer proposals
+    // are requested. Causal masking excludes the padded future positions.
+    if (!use_target_prefill && image == nullptr &&
+        count < kCudaDFlashHiddenRows &&
+        start_pos + kCudaDFlashHiddenRows <= max_context_len()) {
+      token_data.resize(kCudaDFlashHiddenRows, config_.mask_token_id);
+    }
+#endif
+    const auto input_count = static_cast<SizesType>(token_data.size());
+    std::vector<int64_t> positions(input_count);
     std::iota(positions.begin(), positions.end(), start_pos);
     auto token_tensor = from_blob(
         token_data.data(),
-        {1, static_cast<SizesType>(count)},
+        {1, input_count},
         executorch::aten::ScalarType::Long);
     auto position_tensor = from_blob(
-        positions.data(),
-        {static_cast<SizesType>(count)},
-        executorch::aten::ScalarType::Long);
+        positions.data(), {input_count}, executorch::aten::ScalarType::Long);
 
     const auto execute_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
@@ -993,7 +1018,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const auto& embed_tensor = (*embed_outputs)[0].toTensor();
     ET_CHECK_OR_RETURN_ERROR(
         embed_tensor.dim() == 3 && embed_tensor.size(0) == 1 &&
-            embed_tensor.size(1) == count &&
+            embed_tensor.size(1) == input_count &&
             embed_tensor.scalar_type() == hidden_dtype_,
         InvalidProgram,
         "embed_text must return [1, T, H] in the activation dtype");
@@ -1101,9 +1126,18 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
 
     const auto& hidden_tensor = outputs[1].toTensor();
+    int64_t max_output_rows = count;
+#ifdef EXECUTORCH_BUILD_CUDA
+    // Caller-allocated CUDA outputs can retain their four-row capacity when
+    // verification uses fewer rows. Only the first count rows are active.
+    if (!use_target_prefill && count < kCudaDFlashHiddenRows) {
+      max_output_rows = kCudaDFlashHiddenRows;
+    }
+#endif
     ET_CHECK_OR_RETURN_ERROR(
         hidden_tensor.dim() == 3 && hidden_tensor.size(0) == 1 &&
-            hidden_tensor.size(1) == count &&
+            hidden_tensor.size(1) >= count &&
+            hidden_tensor.size(1) <= max_output_rows &&
             hidden_tensor.scalar_type() == hidden_dtype_,
         InvalidProgram,
         "DFlash target hidden must be [1, T, H] in the activation dtype");
@@ -1162,10 +1196,16 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         cudaPointerGetAttributes(&attributes, source) == cudaSuccess &&
         attributes.type == cudaMemoryTypeDevice;
     if (on_device) {
-      return cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost) ==
-              cudaSuccess
-          ? Error::Ok
-          : Error::Internal;
+      const auto stream =
+          executorch::extension::cuda::getCallerStream().value_or(
+              cudaStreamPerThread);
+      if (cudaMemcpyAsync(
+              destination, source, bytes, cudaMemcpyDeviceToHost, stream) !=
+          cudaSuccess) {
+        return Error::Internal;
+      }
+      return cudaStreamSynchronize(stream) == cudaSuccess ? Error::Ok
+                                                          : Error::Internal;
     }
 #endif
     std::memcpy(destination, source, bytes);
@@ -1239,8 +1279,36 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
     const auto logits_copy_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
+    size_t score_output = 0;
+    if (config_.selector_top_k > 0) {
+      ET_CHECK_OR_RETURN_ERROR(
+          outputs->size() == 2 && (*outputs)[1].isTensor(),
+          InvalidProgram,
+          "DFlash2 draft_forward must return candidate IDs and pair scores");
+      const auto& ids = (*outputs)[0].toTensor();
+      const auto& scores = (*outputs)[1].toTensor();
+      const int64_t k = config_.selector_top_k;
+      int64_t proposals = draft_len - 1;
+#ifdef EXECUTORCH_BUILD_CUDA
+      proposals = std::min(proposals, kCudaDFlashHiddenRows - 1);
+#endif
+      ET_CHECK_OR_RETURN_ERROR(
+          ids.scalar_type() == executorch::aten::ScalarType::Long &&
+              ids.dim() == 3 && ids.size(0) == 1 && ids.size(1) == proposals &&
+              ids.size(2) == k && scores.dim() == 4 && scores.size(0) == 1 &&
+              scores.size(1) == proposals && scores.size(2) == k &&
+              scores.size(3) == k,
+          InvalidProgram,
+          "Invalid DFlash2 lattice shapes");
+      draft_candidate_ids_.resize(ids.numel());
+      ET_CHECK_OK_OR_RETURN_ERROR(copy_bytes_to_host(
+          draft_candidate_ids_.data(),
+          ids.const_data_ptr(),
+          draft_candidate_ids_.size() * sizeof(int64_t)));
+      score_output = 1;
+    }
     auto host_logits = copy_float_tensor_to_host(
-        (*outputs)[0].toTensor(), draft_logits_storage_);
+        (*outputs)[score_output].toTensor(), draft_logits_storage_);
     ET_CHECK_OK_OR_RETURN_ERROR(host_logits.error());
     draft_logits_tensor_ = std::move(host_logits.get());
     if (timing != nullptr) {
@@ -1283,6 +1351,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
 
   std::vector<float> last_logits_storage_;
   TensorPtr last_logits_tensor_;
+  std::vector<int64_t> draft_candidate_ids_;
   std::vector<float> draft_logits_storage_;
   TensorPtr draft_logits_tensor_;
   std::vector<std::vector<float>> draft_probs_;

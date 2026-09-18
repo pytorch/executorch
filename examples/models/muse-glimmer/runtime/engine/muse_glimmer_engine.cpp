@@ -105,6 +105,7 @@ constexpr const char* kEmbedTextMethod = "embed_text";
 constexpr const char* kMuseGlimmerVisionEncoderMethod = "vision_encoder";
 constexpr const char* kDraftForwardMethod = "draft_forward";
 constexpr const char* kDraftPrefillMethod = "draft_prefill";
+constexpr const char* kDFlashSelectorTopK = "get_dflash_selector_top_k";
 constexpr const char* kDFlashBlockSize = "get_block_size";
 constexpr const char* kDFlashMaskTokenId = "get_mask_token_id";
 constexpr const char* kDFlashTargetLayers = "get_n_target_layers";
@@ -301,8 +302,10 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       cuda_opts.set_option("weight_sharing_across_methods", true));
   if (config.enable_cuda_graph) {
     const char* graph_methods = artifact_mode == MuseGlimmerArtifactMode::DFlash
-        ? "target_forward_from_embeddings,draft_forward"
+        ? "draft_forward"
         : kDecodeFromEmbeddingMethod;
+    // Capture only the fixed-shape draft. Verification may shrink to
+    // one row at the context limit, which the existing graph replay cannot do.
     ET_CHECK_OK_OR_RETURN_ERROR(
         cuda_opts.set_option("enable_cuda_graph_for_method", graph_methods));
     ET_LOG(Info, "MuseGlimmerEngine: CUDA graph enabled for %s", graph_methods);
@@ -1285,6 +1288,18 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
     dflash_mask_token_id = mask_token.get();
     dflash_n_target_layers = target_layers.get();
     dflash_sliding_window = sliding_window.get();
+    int64_t selector_top_k = 0;
+    if (method_names.count(kDFlashSelectorTopK) != 0) {
+      auto top_k =
+          get_required_int_metadata(meta_module.get(), kDFlashSelectorTopK);
+      ET_CHECK_OK_OR_RETURN_ERROR(top_k.error());
+      selector_top_k = top_k.get();
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        selector_top_k >= 0 && selector_top_k <= metadata.at("get_vocab_size"),
+        InvalidProgram,
+        "Invalid DFlash selector size");
+    metadata[kDFlashSelectorTopK] = selector_top_k;
 #ifdef EXECUTORCH_BUILD_CUDA
     if (has_dflash_target_prefill) {
       auto min_target_prefill_chunk = get_required_int_metadata(
@@ -1341,6 +1356,10 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
         ? config.dflash_block_length
         : dflash_block_size;
     ET_CHECK_OR_RETURN_ERROR(
+        selector_top_k == 0 || block_length == dflash_block_size,
+        InvalidArgument,
+        "DFlash2 requires its exported block length; use n_draft to limit verification");
+    ET_CHECK_OR_RETURN_ERROR(
         config.dflash_n_draft == 0 ||
             (config.dflash_n_draft > 0 && config.dflash_n_draft < block_length),
         InvalidArgument,
@@ -1348,8 +1367,9 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
 #ifdef EXECUTORCH_BUILD_CUDA
     // A decode cycle retains up to n_draft + 1 hidden rows, which the next
     // draft call must feed into the fixed-size CUDA hidden input.
-    const int64_t n_draft =
-        config.dflash_n_draft > 0 ? config.dflash_n_draft : block_length - 1;
+    const int64_t n_draft = config.dflash_n_draft > 0
+        ? config.dflash_n_draft
+        : std::min(block_length - 1, kCudaDFlashHiddenRows - 1);
     ET_CHECK_OR_RETURN_ERROR(
         n_draft + 1 <= kCudaDFlashHiddenRows,
         InvalidArgument,
@@ -1398,7 +1418,9 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
         Info,
         "MuseGlimmerEngine: CUDA graph requested; per-session rebinding "
         "disabled and serving capacity clamped to 1 session.");
-  } else {
+  } else if (config.max_sessions > 1) {
+    // A single session uses the program's buffers directly. Capturing templates
+    // and allocating a second cache provides no isolation benefit in that case.
     auto candidate = std::make_unique<MuseGlimmerMutableStateContextOwner>();
     if (Error e = register_mutable_fqns(meta_module.get(), *candidate);
         e == Error::Ok) {
@@ -1560,8 +1582,12 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
     const int64_t block_length = config_.dflash_block_length > 0
         ? config_.dflash_block_length
         : dflash_block_size_;
+    int64_t default_n_draft = block_length - 1;
+#ifdef EXECUTORCH_BUILD_CUDA
+    default_n_draft = std::min(default_n_draft, kCudaDFlashHiddenRows - 1);
+#endif
     const int64_t n_draft =
-        config_.dflash_n_draft > 0 ? config_.dflash_n_draft : block_length - 1;
+        config_.dflash_n_draft > 0 ? config_.dflash_n_draft : default_n_draft;
     DFlashSessionConfig session_config;
     session_config.module = shared_module_.get();
     session_config.exec_mutex = &exec_mutex_;
@@ -1576,6 +1602,7 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
     session_config.block_size = dflash_block_size_;
     session_config.block_length = block_length;
     session_config.n_draft = n_draft;
+    session_config.selector_top_k = metadata_.at(kDFlashSelectorTopK);
     session_config.mask_token_id = dflash_mask_token_id_;
     session_config.n_target_layers = dflash_n_target_layers_;
     session_config.draft_sliding_window = dflash_sliding_window_;

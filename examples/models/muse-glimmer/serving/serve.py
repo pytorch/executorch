@@ -471,7 +471,7 @@ def main() -> None:
     p.add_argument(
         "--dflash-block-length",
         type=int,
-        default=4,
+        default=0,
         help="DFlash block length; zero uses the artifact's exported maximum.",
     )
     p.add_argument(

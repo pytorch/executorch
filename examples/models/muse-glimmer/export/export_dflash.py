@@ -122,6 +122,15 @@ def export_dflash(
             activation_dtype=activation_dtype,
         )
 
+    if (
+        draft_config.dim != target_config.dim
+        or draft_config.vocab_size != target_config.vocab_size
+        or max(draft_config.target_layers) >= target_config.n_layers
+    ):
+        raise ValueError(
+            "Draft dimensions, vocabulary, and hidden taps must match the target"
+        )
+
     vision_model = None
     pos_embed_table = None
     if mmproj is not None:
@@ -179,6 +188,7 @@ def _dflash_constant_methods(
         "get_block_size": exported_block_size,
         "get_mask_token_id": draft_config.mask_token_id,
         "get_n_target_layers": draft_config.n_target_layers,
+        "get_dflash_selector_top_k": draft_config.selector_top_k,
         "get_draft_sliding_window": (
             draft_config.sliding_window or 0
             if draft_config.sliding_window_pattern is not None
@@ -325,11 +335,12 @@ def _export_dflash_mlx(
     n_target = draft_config.n_target_layers
     dim = draft_config.dim
 
-    # Draft block length is dynamic: a single artifact can run any block length
-    # in [2, block_size] at runtime (min 2 avoids 0/1 specialization; max is the
-    # native trained block size). target_hidden keeps its dynamic new_ctx_len.
-    # Both dims feed the RoPE arange over (ctx_start + new_ctx_len + block_len).
-    block_dim = Dim("block_len", min=2, max=exported_block_size)
+    # DFlash2 keeps the trained block width; n_draft can limit verification.
+    block_dim = (
+        Dim.STATIC
+        if draft_config.selector_top_k
+        else Dim("block_len", min=2, max=exported_block_size)
+    )
     new_ctx_dim = Dim("new_ctx_len", min=1, max=max_prefill)
 
     # input_pos for draft: [ctx_start_pos] — cache write offset
@@ -470,7 +481,11 @@ def _export_dflash_cuda(
     materialize_dflash_runtime_buffers(draft_model, dtype=activation_dtype)
 
     combined = MuseGlimmerWithDFlash(
-        target_model, draft_model, target_config, draft_config
+        target_model,
+        draft_model,
+        target_config,
+        draft_config,
+        max_draft_tokens=min(3, draft_config.block_size - 1),
     )
     max_target_prefill = min(
         target_config.max_seq_len - 1, target_model._sliding_window * 2
@@ -556,12 +571,21 @@ def _export_dflash_cuda(
     print("=" * 60)
     print("Exporting draft_forward...")
     print("=" * 60)
-    exported_block_size = min(draft_config.block_size, 4)
+    exported_block_size = (
+        draft_config.block_size
+        if draft_config.selector_top_k
+        else min(draft_config.block_size, 4)
+    )
     n_target = draft_config.n_target_layers
     dim = draft_config.dim
     new_ctx_max = 4
 
-    block_dim = Dim("block_len", min=2, max=exported_block_size)
+    # Preserve the trained backbone block, projecting only three proposals.
+    block_dim = (
+        Dim.STATIC
+        if draft_config.selector_top_k
+        else Dim("block_len", min=2, max=exported_block_size)
+    )
     draft_input_pos = torch.tensor([0], dtype=torch.long)
 
     with common.BoundMethodForward(combined, combined.draft_forward), torch.no_grad():
