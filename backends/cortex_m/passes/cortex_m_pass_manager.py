@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import copy
 import inspect
 from typing import Any, Optional, Type
 
@@ -20,16 +21,24 @@ from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
     RemovePermutesAroundElementwiseOps,
 )
+from executorch.backends.transforms.remove_unused_constants_pass import (
+    RemoveUnusedConstantsPass,
+)
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
 from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
     ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import (
+    ExportedProgramPassBase,
+    ExportedProgramPassResult,
+    ExportPass,
+)
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
+from torch.fx import GraphModule
 
 from .activation_fusion_pass import ActivationFusionPass
 from .aten_to_cortex_m_pass import AtenToCortexMPass
@@ -47,7 +56,29 @@ from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
 
-PassClass = Type[ExportPass]
+PassClass = Type[ExportPass | ExportedProgramPassBase]
+
+
+class LiftConstantTensorsPass(ExportedProgramPassBase):
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        # The pass manager shallow-copies programs; lifting mutates shared structures.
+        graph = copy.deepcopy(exported_program.graph)
+        for original, cloned in zip(exported_program.graph.nodes, graph.nodes):
+            cloned.name = original.name
+        graph_module = GraphModule(exported_program.graph_module, graph)
+        graph_module.meta = exported_program.graph_module.meta.copy()
+        exported_program._graph_module = graph_module
+        exported_program._graph_signature = copy.deepcopy(
+            exported_program.graph_signature
+        )
+        exported_program._state_dict = exported_program.state_dict.copy()
+
+        buffer_count = len(exported_program.graph_signature.buffers)
+        exported_program = lift_constant_tensor_pass(exported_program)
+        return ExportedProgramPassResult(
+            exported_program,
+            len(exported_program.graph_signature.buffers) != buffer_count,
+        )
 
 
 class CortexMPassManager(PassManager):
@@ -63,6 +94,8 @@ class CortexMPassManager(PassManager):
         AtenToCortexMPass,
         FuseConvPaddingPass,
         InitializeScratchBuffersPass,
+        LiftConstantTensorsPass,
+        RemoveUnusedConstantsPass,
     ]
 
     explicit_layout_pass_list: list[PassClass] = [
@@ -83,11 +116,13 @@ class CortexMPassManager(PassManager):
         AtenToCortexMPass,
         FuseConvPaddingPass,
         InitializeScratchBuffersPass,
+        LiftConstantTensorsPass,
+        RemoveUnusedConstantsPass,
     ]
 
     pass_list = legacy_pass_list
 
-    pass_list_transform_for_annotation: list[PassClass] = [
+    pass_list_transform_for_annotation: list[Type[ExportPass]] = [
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
@@ -165,7 +200,4 @@ class CortexMPassManager(PassManager):
             transform_pass = pass_cls(**kwargs)
             exported_program = _transform(exported_program, transform_pass)
 
-        # All constant tensors should be lifted to buffers at this point, re-run
-        # lift_constant_tensor_pass in case new ones have been introduced.
-        exported_program = lift_constant_tensor_pass(exported_program)
         return exported_program
