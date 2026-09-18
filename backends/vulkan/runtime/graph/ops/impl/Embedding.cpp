@@ -112,7 +112,7 @@ void add_embedding_legacy_node(
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_embedding_node));
 }
 
 void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {

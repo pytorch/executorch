@@ -5,6 +5,8 @@
 
 import numpy as np
 import torch
+
+from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
     common,
@@ -36,6 +38,10 @@ class AvgPool2dConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        # The input must be 4D.
+        if input_rank(node, 0) != 4:
+            return False
+
         n_args = len(node.args)
 
         padding = node.args[3] if n_args >= 4 else [0, 0]

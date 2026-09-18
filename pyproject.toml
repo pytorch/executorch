@@ -100,9 +100,6 @@ Changelog = "https://github.com/pytorch/executorch/releases"
 [project.scripts]
 flatc = "executorch.data.bin:flatc"
 
-# TODO(dbort): Could use py_modules to restrict the set of modules we
-# package, and package_data to restrict the set up non-python files we
-# include. See also setuptools/discovery.py for custom finders.
 [tool.setuptools]
 license-files = ["LICENSE"]
 
@@ -118,10 +115,9 @@ license-files = ["LICENSE"]
 "executorch" = "src/executorch"
 
 [tool.setuptools.package-data]
-# TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we
-# don't need.
-# TODO(RobertKalmar): When test[s] dirs pruned the PROJECT_DIR resolution in backends.nxp.tests_models.config.py can
-#  avoid exporting and reading env variable.
+# TODO(RobertKalmar): the PROJECT_DIR env variable is still needed. Test directories still install,
+#  since the suites import shared helpers from them, and the artifacts that config.py resolves are
+#  not in the wheel, so a path derived from __file__ would point at files that are not there.
 "*" = [
   # Some backends like XNNPACK need their .fbs files.
   "*.fbs",

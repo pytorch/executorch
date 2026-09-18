@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' && github.run_id }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -42,6 +42,7 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: |
+            .github/workflows/lint.yml
             requirements-lintrunner.txt
             torch_pin.py
 
@@ -56,7 +57,8 @@ jobs:
           pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao
-          pip install pytest numpy parameterized huggingface_hub transformers timm expecttest types-requests
+          # Match requirements-examples.txt for the model APIs checked by mypy.
+          pip install pytest numpy parameterized huggingface_hub "transformers==5.0.0rc1" timm expecttest types-requests
 
       - name: Generate mypy stubs for C++ bindings
         run: |

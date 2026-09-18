@@ -15,7 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.node_finders import (
-    GlobalNodeFinder,
+    GlobalNoOutputNodeFinder,
     NodeTargetNodeFinder,
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
@@ -100,7 +100,7 @@ class CortexMQuantizer(ComposableQuantizer):
             ),
             PatternQuantizer(
                 per_tensor_config,
-                node_finder=GlobalNodeFinder(),
+                node_finder=GlobalNoOutputNodeFinder(),
                 pattern_matcher=pattern_matcher,
             ),
             SharedQspecQuantizer(),

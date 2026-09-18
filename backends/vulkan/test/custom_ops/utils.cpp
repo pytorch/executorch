@@ -31,6 +31,56 @@ constexpr float kMinProbeTimeUs = 1.0f;
 
 } // namespace
 
+// Benchmark graphs are immutable after input upload, so the operator nodes can
+// be recorded repeatedly. Staging uploads/downloads are encoded once:
+// repeating them would redo host-visible copies on every repetition and bias
+// per-invocation timings.
+RepeatedGraphExecutor::RepeatedGraphExecutor(
+    ComputeGraph& graph,
+    int repetitions,
+    OpNodeRange op_nodes)
+    : graph_(graph) {
+  VK_CHECK_COND(repetitions > 0);
+  VK_CHECK_COND(op_nodes.begin <= op_nodes.end);
+  VK_CHECK_COND(op_nodes.end <= graph_.execute_nodes().size());
+
+  api::Context* const context = graph_.context();
+  context->flush();
+  context->set_cmd(/*reusable=*/true);
+  context->cmd_reset_querypool();
+
+  for (size_t i = 0; i < op_nodes.begin; ++i) {
+    graph_.execute_nodes()[i]->encode(&graph_);
+  }
+  for (int i = 0; i < repetitions; ++i) {
+    for (size_t j = op_nodes.begin; j < op_nodes.end; ++j) {
+      graph_.execute_nodes()[j]->encode(&graph_);
+    }
+  }
+  for (size_t i = op_nodes.end; i < graph_.execute_nodes().size(); ++i) {
+    graph_.execute_nodes()[i]->encode(&graph_);
+  }
+
+  command_ =
+      std::make_unique<vkapi::CommandBuffer>(std::move(context->extract_cmd()));
+}
+
+void RepeatedGraphExecutor::execute() {
+  api::Context* const context = graph_.context();
+  command_->end();
+
+  // Intentionally bypasses Context::submit_cmd_to_gpu(): its submit-count
+  // bookkeeping and threshold-split path only serve submit_compute_job
+  // recording, which benchmarks don't use.
+  vkapi::VulkanFence fence = context->fences().get_fence();
+  context->adapter_ptr()->submit_cmd(
+      context->queue(),
+      command_->get_submit_handle(/*final_use=*/false),
+      fence.get_submit_handle());
+  fence.wait();
+  context->fences().return_fence(fence);
+}
+
 int get_seed() {
   static int seed = 42;
   return seed++;
@@ -172,10 +222,29 @@ void set_debugging(bool enable_debugging) {
 }
 
 // ValueSpec implementation
-void ValueSpec::generate_tensor_data(int seed) {
+void ValueSpec::ensure_unique_data() const {
+  if (data_.use_count() != 1) {
+    data_ = std::make_shared<TensorData>(*data_);
+  }
+}
+
+void ValueSpec::ensure_unique_reference_data() const {
+  if (reference_data_.use_count() != 1) {
+    reference_data_ = std::make_shared<TensorData>(*reference_data_);
+  }
+}
+
+void ValueSpec::generate_tensor_data(int seed) const {
   if (spec_type != SpecType::Tensor) {
     return;
   }
+
+  ensure_unique_data();
+  auto& float_data = data_->float_data;
+  auto& int32_data = data_->int32_data;
+  auto& half_data = data_->half_data;
+  auto& int8_data = data_->int8_data;
+  auto& uint8_data = data_->uint8_data;
 
   int64_t num_elements = numel();
 
@@ -498,81 +567,95 @@ std::string ValueSpec::to_string() const {
 
 // Additional ValueSpec methods
 void ValueSpec::resize_data(size_t new_size) {
+  // Generate first so a deferred tensor keeps its data-gen pattern (resized,
+  // not pinned to zeros by the data_generated_ flag set below).
+  ensure_data_generated();
+  ensure_unique_data();
   switch (dtype) {
     case vkapi::kFloat:
-      float_data.resize(new_size);
+      data_->float_data.resize(new_size);
       break;
     case vkapi::kHalf:
-      half_data.resize(new_size);
+      data_->half_data.resize(new_size);
       break;
     case vkapi::kInt:
-      int32_data.resize(new_size);
+      data_->int32_data.resize(new_size);
       break;
     case vkapi::kChar:
-      int8_data.resize(new_size);
+      data_->int8_data.resize(new_size);
       break;
     case vkapi::kByte:
-      uint8_data.resize(new_size);
+      data_->uint8_data.resize(new_size);
       break;
     default:
-      float_data.resize(new_size);
+      data_->float_data.resize(new_size);
       break;
   }
+  data_generated_ = true;
 }
 
 void* ValueSpec::get_mutable_data_ptr() {
+  ensure_data_generated();
+  ensure_unique_data();
   switch (dtype) {
     case vkapi::kFloat:
-      return float_data.data();
+      return data_->float_data.data();
     case vkapi::kHalf:
-      return half_data.data();
+      return data_->half_data.data();
     case vkapi::kInt:
-      return int32_data.data();
+      return data_->int32_data.data();
     case vkapi::kChar:
-      return int8_data.data();
+      return data_->int8_data.data();
     case vkapi::kByte:
-      return uint8_data.data();
+      return data_->uint8_data.data();
     default:
-      return float_data.data();
+      return data_->float_data.data();
   }
 }
 
 float ValueSpec::get_element(size_t index) const {
+  ensure_data_generated();
   if (index >= static_cast<size_t>(numel())) {
     return 0.0f;
   }
 
   switch (dtype) {
     case vkapi::kFloat:
-      return index < float_data.size() ? float_data[index] : 0.0f;
+      return index < data_->float_data.size() ? data_->float_data[index] : 0.0f;
     case vkapi::kHalf:
-      return index < half_data.size() ? half_to_float(half_data[index]) : 0.0f;
+      return index < data_->half_data.size()
+          ? half_to_float(data_->half_data[index])
+          : 0.0f;
     case vkapi::kInt:
-      return index < int32_data.size() ? static_cast<float>(int32_data[index])
-                                       : 0.0f;
+      return index < data_->int32_data.size()
+          ? static_cast<float>(data_->int32_data[index])
+          : 0.0f;
     case vkapi::kChar:
-      return index < int8_data.size() ? static_cast<float>(int8_data[index])
-                                      : 0.0f;
+      return index < data_->int8_data.size()
+          ? static_cast<float>(data_->int8_data[index])
+          : 0.0f;
     case vkapi::kByte:
-      return index < uint8_data.size() ? static_cast<float>(uint8_data[index])
-                                       : 0.0f;
+      return index < data_->uint8_data.size()
+          ? static_cast<float>(data_->uint8_data[index])
+          : 0.0f;
     default:
       return 0.0f;
   }
 }
 
 const void* ValueSpec::get_data_ptr() const {
+  ensure_data_generated();
   switch (dtype) {
     case vkapi::kFloat:
-      return float_data.data();
+      return data_->float_data.data();
     case vkapi::kHalf:
-      return half_data.data();
+      return data_->half_data.data();
     case vkapi::kInt:
-      return int32_data.data();
+      return data_->int32_data.data();
     case vkapi::kChar:
-      return int8_data.data();
+      return data_->int8_data.data();
     case vkapi::kByte:
-      return uint8_data.data();
+      return data_->uint8_data.data();
     default:
       throw std::runtime_error("Unsupported data type for get_data_ptr");
   }
@@ -801,7 +884,7 @@ bool ValueSpec::validate_against_reference(
 }
 
 // Ensure data is generated for this ValueSpec
-void ValueSpec::ensure_data_generated(int seed) {
+void ValueSpec::ensure_data_generated(int seed) const {
   if (data_generated_) {
     return;
   }
@@ -809,18 +892,22 @@ void ValueSpec::ensure_data_generated(int seed) {
   data_generated_ = true;
 }
 
-// Copy input data from another ValueSpec
-void ValueSpec::copy_data_from(const ValueSpec& other) {
+void ValueSpec::share_data_from(const ValueSpec& other) {
   if (!is_tensor() || !other.is_tensor()) {
     return;
   }
-  // Copy raw data based on dtype
-  float_data = other.float_data;
-  int32_data = other.int32_data;
-  half_data = other.half_data;
-  int8_data = other.int8_data;
-  uint8_data = other.uint8_data;
-  data_generated_ = other.data_generated_;
+  // Materialize the source first: sharing an ungenerated payload would let a
+  // later access materialize each spec independently under different seeds.
+  other.ensure_data_generated();
+  data_ = other.data_;
+  data_generated_ = true;
+}
+
+void ValueSpec::share_reference_from(const ValueSpec& other) {
+  if (!is_tensor() || !other.is_tensor()) {
+    return;
+  }
+  reference_data_ = other.reference_data_;
 }
 
 // ReferenceKey implementation
@@ -1396,17 +1483,23 @@ int64_t default_flop_calculator(const TestCase& test_case) {
   return total_elements;
 }
 
-ComputeGraph setup_compute_graph(
+BenchmarkGraph setup_compute_graph(
     TestCase& test_case,
     std::string op_name,
     int op_invocations_per_execute) {
   GraphConfig config;
   config.enable_querypool = true;
+  // Pool sizing takes max(execute, prepack) * factor, so scaling the factor
+  // also over-reserves the prepack side (encoded once). Accepted: precise
+  // execute-only sizing would need runtime changes.
+  config.descriptor_pool_safety_factor *=
+      std::max(1, op_invocations_per_execute);
   // Default-on (opt-out via TestCase::set_force_resize(false)): force every
-  // DynamicDispatchNode to run its resize function on each execute(),
-  // exercising the op's resize formula even when input shapes are unchanged.
+  // DynamicDispatchNode to run its resize function when execute_test_case
+  // runs propagate_resize() after prepack, exercising the op's resize formula
+  // even when input shapes are unchanged.
   config.force_resize = test_case.get_force_resize();
-  ComputeGraph graph(config);
+  auto graph = std::make_unique<ComputeGraph>(config);
 
   std::vector<ValueRef> input_values;
 
@@ -1415,17 +1508,17 @@ ComputeGraph setup_compute_graph(
     const ValueSpec& input_spec = test_case.inputs()[i];
 
     if (input_spec.is_none()) {
-      input_values.push_back(graph.add_none());
+      input_values.push_back(graph->add_none());
     } else if (input_spec.is_float()) {
       ValueRef input_value =
-          graph.add_scalar(static_cast<double>(input_spec.get_float_value()));
+          graph->add_scalar(static_cast<double>(input_spec.get_float_value()));
       input_values.push_back(input_value);
     } else if (input_spec.is_int()) {
       ValueRef input_value =
-          graph.add_scalar(static_cast<int64_t>(input_spec.get_int_value()));
+          graph->add_scalar(static_cast<int64_t>(input_spec.get_int_value()));
       input_values.push_back(input_value);
     } else if (input_spec.is_bool()) {
-      ValueRef input_value = graph.add_scalar(input_spec.get_bool_value());
+      ValueRef input_value = graph->add_scalar(input_spec.get_bool_value());
       input_values.push_back(input_value);
     } else if (input_spec.is_int_list()) {
       // Convert int32_t list to int64_t list for ComputeGraph
@@ -1435,20 +1528,20 @@ ComputeGraph setup_compute_graph(
       for (int32_t val : int32_list) {
         int64_list.push_back(static_cast<int64_t>(val));
       }
-      ValueRef input_value = graph.add_scalar_list(std::move(int64_list));
+      ValueRef input_value = graph->add_scalar_list(std::move(int64_list));
       input_values.push_back(input_value);
     } else if (input_spec.is_string()) {
       std::string str_copy = input_spec.get_string_value();
-      ValueRef input_value = graph.add_string(std::move(str_copy));
+      ValueRef input_value = graph->add_string(std::move(str_copy));
       input_values.push_back(input_value);
     } else if (input_spec.is_constant()) {
-      ValueRef input_value = graph.add_tensorref(
+      ValueRef input_value = graph->add_tensorref(
           input_spec.get_tensor_sizes(),
           input_spec.dtype,
           input_spec.get_data_ptr());
       input_values.push_back(input_value);
     } else {
-      IOValueRef input_io = graph.add_input_tensor(
+      IOValueRef input_io = graph->add_input_tensor(
           input_spec.get_tensor_sizes(),
           input_spec.dtype,
           input_spec.storage_type,
@@ -1468,7 +1561,7 @@ ComputeGraph setup_compute_graph(
     }
 
     // Create output tensor
-    ValueRef output_value = graph.add_tensor(
+    ValueRef output_value = graph->add_tensor(
         output_spec.get_tensor_sizes(),
         output_spec.dtype,
         output_spec.storage_type,
@@ -1484,17 +1577,16 @@ ComputeGraph setup_compute_graph(
   std::vector<ValueRef> op_args = input_values;
   op_args.insert(op_args.end(), output_values.begin(), output_values.end());
 
-  // Invoke the op op_invocations_per_execute times to stack dispatches per
-  // graph.execute(). The output set_output_value() calls below still happen
-  // exactly once.
-  for (int i = 0; i < op_invocations_per_execute; ++i) {
-    opFn(graph, op_args);
-  }
+  // Nodes added before the op are staging uploads; nodes added after are
+  // staging downloads. Only the op's own nodes are repeated by benchmarks.
+  const size_t op_begin = graph->execute_nodes().size();
+  opFn(*graph, op_args);
+  const size_t op_end = graph->execute_nodes().size();
 
   for (size_t i = 0; i < output_values.size(); ++i) {
-    graph.set_output_value(output_values[i]);
+    graph->set_output_value(output_values[i]);
   }
-  return graph;
+  return {std::move(graph), {op_begin, op_end}};
 }
 
 // Test execution utilities
@@ -1512,15 +1604,19 @@ BenchmarkResult execute_test_case(
     api::context()->initialize_querypool();
   }
 
-  // Build the measurement graph with the requested chained_dispatches factor.
-  // The caller (typically execute_test_cases) decides what it should be —
-  // this function is a pure "run at the given chained_dispatches" primitive.
-  ComputeGraph graph = setup_compute_graph(
+  // Build the operator once. Benchmark repetition is encoded separately so
+  // persistent graph allocations are not duplicated.
+  BenchmarkGraph benchmark = setup_compute_graph(
       test_case, test_case.operator_name(), chained_dispatches);
+  ComputeGraph& graph = *benchmark.graph;
 
   // Prepare the graph
   graph.prepare();
   graph.prepack();
+
+  // Run resize functions once so force_resize exercises resize formulas even
+  // though the record/replay path below never calls propagate_resize().
+  graph.propagate_resize();
 
   // Copy input data into the graph's staging buffers
   size_t graph_input_idx = 0;
@@ -1568,9 +1664,12 @@ BenchmarkResult execute_test_case(
     ++graph_input_idx;
   }
 
+  RepeatedGraphExecutor graph_executor(
+      graph, chained_dispatches, benchmark.op_nodes);
+
   // Warmup runs
   for (int run = 0; run < warmup_runs; ++run) {
-    graph.execute();
+    graph_executor.execute();
   }
 
   // Benchmark runs - collect individual iteration timings
@@ -1582,7 +1681,7 @@ BenchmarkResult execute_test_case(
   for (int run = 0; run < benchmark_runs; ++run) {
     // Measure CPU time for each execute() call
     auto cpu_start = std::chrono::high_resolution_clock::now();
-    graph.execute();
+    graph_executor.execute();
     auto cpu_end = std::chrono::high_resolution_clock::now();
 
     auto cpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1743,17 +1842,11 @@ TestResult execute_test_cases(
 
     // Compute reference once for prototype
     bool ref_computed = false;
-    std::vector<std::vector<float>> ref_data;
     if (reference_compute_func) {
       try {
         reference_compute_func(prototype);
         ref_computed = true;
-
-        // Cache the reference output for this group
-        for (const auto& output : prototype.outputs()) {
-          ref_data.push_back(output.get_ref_float_data());
-        }
-      } catch (const std::invalid_argument& _) {
+      } catch (const std::invalid_argument&) {
         // Reference computation skipped for this group
       }
     }
@@ -1771,15 +1864,21 @@ TestResult execute_test_cases(
         const auto& src = prototype.inputs()[j];
         if (dest.is_tensor() && src.is_tensor() && dest.sizes == src.sizes &&
             dest.dtype == src.dtype) {
-          dest.copy_data_from(src);
+          dest.share_data_from(src);
         }
       }
 
       // Copy reference output data if available
       if (ref_computed) {
-        for (size_t j = 0; j < tc.outputs().size() && j < ref_data.size();
+        for (size_t j = 0;
+             j < tc.outputs().size() && j < prototype.outputs().size();
              ++j) {
-          tc.outputs()[j].get_ref_float_data() = ref_data[j];
+          const auto& src = prototype.outputs()[j];
+          auto& dest = tc.outputs()[j];
+          if (dest.is_tensor() && src.is_tensor() && dest.sizes == src.sizes &&
+              dest.dtype == src.dtype) {
+            dest.share_reference_from(src);
+          }
         }
       }
     }
@@ -1924,6 +2023,8 @@ TestResult execute_test_cases(
 
       // Add result to collection
       results.add_result(std::move(result));
+
+      test_case.clear();
     }
   }
 

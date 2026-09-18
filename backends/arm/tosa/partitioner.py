@@ -29,19 +29,25 @@ from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
 from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
     can_decompose_large_stride_maxpool2d,
 )
+from executorch.backends.arm._passes.decompose_roll_pass import can_decompose_roll
 from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
     is_exact_tosa_boundary_bilinear_downscale,
 )
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
+    is_quantized,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -50,11 +56,12 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
+from torch._export.utils import _get_shape_env_from_gm
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
-from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
+from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +97,7 @@ class DecomposableLargeStrideMaxPool2dForU55Supported(OperatorSupportBase):
         input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
         return can_decompose_large_stride_maxpool2d(
             node.args[1],
-            node.args[2] if len(node.args) >= 3 else node.args[1],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
             node.args[3] if len(node.args) >= 4 else (0, 0),
             node.args[4] if len(node.args) >= 5 else (1, 1),
             node.args[5] if len(node.args) >= 6 else False,
@@ -123,6 +130,51 @@ class DecomposableResizeSupported(OperatorSupportBase):
         return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
 
 
+def _is_decomposable_roll_node(
+    node: torch.fx.Node, tosa_spec: TosaSpecification
+) -> bool:
+    """Return whether backend preprocessing can decompose a roll node."""
+    if node.target not in {
+        torch.ops.aten.roll.default,
+        exir_ops.edge.aten.roll.default,
+    }:
+        return False
+    if (
+        tosa_spec.support_integer()
+        and not tosa_spec.support_float()
+        and not is_quantized(node)
+    ):
+        return False
+    input_node = ensure_type(torch.fx.Node, node.args[0])
+    input_tensor = get_first_fake_tensor(input_node)
+    if not 0 < len(input_tensor.shape) <= MAX_RANK:
+        return False
+    if input_tensor.dtype not in {torch.float16, torch.float32} and not (
+        input_tensor.dtype == torch.bfloat16 and tosa_spec.support_extension("bf16")
+    ):
+        return False
+
+    dims = node.args[2] if len(node.args) > 2 else ()
+    return can_decompose_roll(input_tensor.shape, node.args[1], dims)
+
+
+class DecomposableRollSupported(OperatorSupportBase):
+    """Accept static rolls that backend preprocessing can decompose."""
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        """Initialize the check with the active TOSA specification."""
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when backend preprocessing can decompose the roll."""
+        del submodules
+        return _is_decomposable_roll_node(node, self.tosa_spec)
+
+
 def _is_custom_partition_op(
     custom_ops: set[torch._ops.OpOverload], target: object
 ) -> bool:
@@ -134,6 +186,24 @@ def _is_custom_partition_op(
         except Exception:
             return False
     return False
+
+
+class CustomOpSupported(OperatorSupportBase):
+    """Accept custom operators registered with the TOSA partitioner."""
+
+    def __init__(self, custom_ops: set[torch._ops.OpOverload]) -> None:
+        self.custom_ops = set(custom_ops)
+
+    def is_node_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
+    ) -> bool:
+        """Return supported for registered custom ops and otherwise defer."""
+        del submodules
+        if node.op == "call_function" and _is_custom_partition_op(
+            self.custom_ops, node.target
+        ):
+            return True
+        return False
 
 
 def _is_noop_clone(node: torch.fx.node.Node) -> bool:
@@ -388,6 +458,7 @@ class TOSAPartitioner(Partitioner):
         self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._requires_resolved_tensor_shapes = False
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
@@ -567,16 +638,6 @@ class TOSAPartitioner(Partitioner):
                 )
             tags = tags | submodule_tags
         operator_support = self._create_operator_support(containing_program, reporter)
-        if self._custom_partition_ops:
-            custom_ops = set(self._custom_partition_ops)
-
-            class CustomOpSupported(OperatorSupportBase):
-                def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-                    return node.op == "call_function" and _is_custom_partition_op(
-                        custom_ops, node.target
-                    )
-
-            operator_support = any_chain(operator_support, CustomOpSupported())
         capability_partitioner = CapabilityBasedPartitioner(
             module,
             operator_support,
@@ -685,15 +746,27 @@ class TOSAPartitioner(Partitioner):
         containing_program: ExportedProgram,
         reporter: WhyNoPartitionReporter,
     ) -> OperatorSupportBase:
+        # Override default checks for custom ops
+        positive_overrides = (
+            [CustomOpSupported(self._custom_partition_ops)]
+            if self._custom_partition_ops
+            else None
+        )
+        additional_checks = list(self.additional_checks or ())
+        if self._requires_resolved_tensor_shapes:
+            additional_checks.append(CheckResolvedTensorShapes(reporter))
+
         return tosa_support_factory(
             self.tosa_spec,
             containing_program,
             reporter,
-            self.additional_checks,
+            additional_checks=additional_checks,
             additional_positive_checks=[
                 self._decomposable_resize_support,
                 DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
+                DecomposableRollSupported(self.tosa_spec),
             ],
+            additional_positive_overrides=positive_overrides,
         )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
@@ -719,9 +792,12 @@ class TOSAPartitioner(Partitioner):
         )
 
         reporter = WhyNoPartitionReporter()
-        tags = self._tag_module(
-            exported_program.graph_module, exported_program, reporter
-        )
+        with TosaLoweringContext(
+            self.tosa_spec, _get_shape_env_from_gm(exported_program.graph_module)
+        ):
+            tags = self._tag_module(
+                exported_program.graph_module, exported_program, reporter
+            )
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
@@ -782,6 +858,9 @@ class TOSAPartitioner(Partitioner):
         ops_to_not_decompose_always = {
             torch.ops.aten.logit.default,
         }
+        ops_to_not_decompose_conditionally = {
+            torch.ops.aten.roll.default,
+        }
         ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
@@ -792,6 +871,7 @@ class TOSAPartitioner(Partitioner):
             | ops_to_not_decompose_if_quant_op
             | ops_to_not_decompose_if_fp
             | ops_to_not_decompose_if_integer
+            | ops_to_not_decompose_conditionally
         )
 
         if not self.tosa_spec.is_U55_subset:
@@ -824,6 +904,8 @@ class TOSAPartitioner(Partitioner):
                 and get_first_fake_tensor(node).dtype == torch.float64
             ):
                 return False
+            if node.target in ops_to_not_decompose_conditionally:
+                return _is_decomposable_roll_node(node, self.tosa_spec)
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp

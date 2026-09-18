@@ -4,9 +4,18 @@ standard on-device iOS and Android mobile deployments. One of the main goals for
 ExecuTorch is to enable wider customization and deployment capabilities of the
 PyTorch programs.
 
-The `executorch` pip package is in beta.
 * Supported python versions: 3.10, 3.11, 3.12, 3.13, 3.14
-* Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64
+* Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64, Windows x86_64
+
+Backend export tools can require optional Python dependencies. For example,
+install the dependencies needed for Ethos-U ahead-of-time (AOT) export with:
+
+```bash
+pip install 'executorch[ethos_u]'
+```
+
+The `ethos_u` extra does not install components needed to build or run a target
+runtime.
 
 To build a minimal wheel from source, set
 `EXECUTORCH_BUILD_MINIMAL=1` when running `pip wheel` or `pip install`.
@@ -14,7 +23,7 @@ That wheel contains the Python EXIR export path and `flatc` for `.pte`
 serialization, but omits runtime pybindings, kernels, backend packages, headers,
 examples, and devtools. It also declares only the Python dependencies the export
 path needs (no `coremltools`, `pandas`, `scikit-learn`, `hydra-core`, or
-`omegaconf`), so a normal install stays small. Like the full wheel it does not
+`omegaconf`), so a normal install stays small. Like the full wheel, it does not
 bundle PyTorch, so install a compatible `torch` separately. The wheel is still
 platform specific because it ships `flatc`.
 

@@ -18,6 +18,7 @@ view_convert_texture:
         - parameter_values: [uint8, float]
         - parameter_values: [uint8, half]
         - parameter_values: [uint8, int32]
+        - parameter_values: [int32, uint8]
         - parameter_values: [float, int32]
         - parameter_values: [float, half]
         - parameter_values: [half, float]

@@ -40,6 +40,14 @@ uint64_t ethosu_ArmBackendExecuteCycleCount = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCountStart = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCount = 0;
 uint64_t ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+struct IOCopyStats {
+  uint64_t calls = 0;
+  uint64_t bytes = 0;
+};
+IOCopyStats ethosu_inputCopyStats;
+IOCopyStats ethosu_outputCopyStats;
+#endif
 #if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
 struct DelegateStats {
   const void* handle = nullptr;
@@ -47,6 +55,10 @@ struct DelegateStats {
   uint64_t npu_invocations = 0;
   uint64_t pmu_cycles = 0;
   std::array<uint64_t, ethosu_pmuCountersUsed> pmu_events{};
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  IOCopyStats input_copies;
+  IOCopyStats output_copies;
+#endif
 };
 
 std::array<DelegateStats, ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES>
@@ -79,6 +91,30 @@ static_assert(ETHOSU_PMU_NCOUNTERS >= ethosu_pmuCountersUsed);
 } // namespace
 
 extern "C" {
+
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void EthosUBackend_input_memcpy(size_t size) {
+  ethosu_inputCopyStats.calls++;
+  ethosu_inputCopyStats.bytes += size;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  if (ethosu_activeDelegate != nullptr) {
+    ethosu_activeDelegate->input_copies.calls++;
+    ethosu_activeDelegate->input_copies.bytes += size;
+  }
+#endif
+}
+
+void EthosUBackend_output_memcpy(size_t size) {
+  ethosu_outputCopyStats.calls++;
+  ethosu_outputCopyStats.bytes += size;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  if (ethosu_activeDelegate != nullptr) {
+    ethosu_activeDelegate->output_copies.calls++;
+    ethosu_activeDelegate->output_copies.bytes += size;
+  }
+#endif
+}
+#endif
 
 #if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
 void EthosUBackend_delegate_begin(const void* handle) {
@@ -197,6 +233,10 @@ void StartMeasurements() {
   ethosu_ArmBackendExecuteCycleCount = 0;
   ethosu_ArmWhenNPURunCycleCount = 0;
   ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  ethosu_inputCopyStats = {};
+  ethosu_outputCopyStats = {};
+#endif
 #if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
   ethosu_delegateStats = {};
   ethosu_delegateCount = 0;
@@ -234,6 +274,32 @@ void StopMeasurements(int num_inferences) {
       "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
       ethosu_ArmBackendExecuteCycleCount,
       (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  const uint64_t io_copy_calls =
+      ethosu_inputCopyStats.calls + ethosu_outputCopyStats.calls;
+  const uint64_t io_copy_bytes =
+      ethosu_inputCopyStats.bytes + ethosu_outputCopyStats.bytes;
+  ET_LOG(
+      Info,
+      "Ethos-U IO copy calls: %" PRIu64 " (%.2f per inference)",
+      io_copy_calls,
+      (double)io_copy_calls / num_inferences);
+  ET_LOG(
+      Info,
+      "Ethos-U IO copy bytes: %" PRIu64 " bytes (%.2f per inference)",
+      io_copy_bytes,
+      (double)io_copy_bytes / num_inferences);
+  ET_LOG(
+      Info,
+      "Ethos-U input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+      ethosu_inputCopyStats.calls,
+      ethosu_inputCopyStats.bytes);
+  ET_LOG(
+      Info,
+      "Ethos-U output copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+      ethosu_outputCopyStats.calls,
+      ethosu_outputCopyStats.bytes);
+#endif
   // We could print a list of the cycles used by the other delegates here in the
   // future but now we only print ethos-u: this means that "Operator(s) total:
   // ..." will be the same number as ethos-u : cycle_cnt and not the sum of all
@@ -318,6 +384,21 @@ void StopMeasurements(int num_inferences) {
           event,
           stats.pmu_events[event]);
     }
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+    ET_LOG(
+        Info,
+        "Ethos-U delegate %zu input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+        delegate_id,
+        stats.input_copies.calls,
+        stats.input_copies.bytes);
+    ET_LOG(
+        Info,
+        "Ethos-U delegate %zu output copy: %" PRIu64 " calls, %" PRIu64
+        " bytes",
+        delegate_id,
+        stats.output_copies.calls,
+        stats.output_copies.bytes);
+#endif
   }
   if (ethosu_delegateCapacityExceeded) {
     ET_LOG(

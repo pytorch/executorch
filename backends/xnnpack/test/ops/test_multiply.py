@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,6 +30,10 @@ class TestMul(unittest.TestCase):
             z = torch.mul(x, y) * torch.functional.torch.mul(x, y)
             return z
 
+    class MulScalar(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.mul.Scalar(x, 0.5)
+
     class MulRelu(torch.nn.Module):
         def forward(self, x, y):
             z = x * y
@@ -57,6 +62,23 @@ class TestMul(unittest.TestCase):
     def test_fp32_mul(self):
         inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
         self._test_mul(inputs)
+
+    def test_fp32_mul_scalar(self):
+        (
+            Tester(self.MulScalar(), (torch.randn(2, 3),))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+                    "executorch_exir_dialects_edge__ops_aten_mul_Scalar",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
 
     def test_qs8_mul(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))

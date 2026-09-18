@@ -27,6 +27,7 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import (
     core_aten_ops_exception_list,
+    default_preserve_ops,
     generate_neutron_compile_spec,
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -42,8 +43,14 @@ from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
     train_cifarnet_model,
     verify_cifarnet_model,
 )
+from executorch.examples.nxp.models.mlperf_tiny.anomaly_detection.mlperf_tiny_anomaly_detection import (
+    MLPerfTinyAnomalyDetection,
+)
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
     MLPerfTinyImageClassification,
+)
+from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_keyword_spotting import (
+    MLPerfTinyKeywordSpotting,
 )
 from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
 from executorch.exir import (
@@ -63,7 +70,9 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt
 MODELS = {
     "cifar10": CifarNet,
     "mobilenetv2": MobilenetV2,
+    "mlperf_tiny_anomaly_detection": MLPerfTinyAnomalyDetection,
     "mlperf_tiny_image_classification": MLPerfTinyImageClassification,
+    "mlperf_tiny_keyword_spotting": MLPerfTinyKeywordSpotting,
 }
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -99,7 +108,10 @@ def _print_ops_in_edge_program(edge_program):
 
 
 def _get_model_info_from_name(
-    model_name: str, dataset_path: str | None, use_random_dataset: bool
+    model_name: str,
+    dataset_path: str | None,
+    use_random_dataset: bool,
+    num_samples: int | None,
 ):
     """Given the name of an example pytorch model and args, return the model, its class instance (can be None), example inputs and calibration inputs (can be None).
 
@@ -118,9 +130,15 @@ def _get_model_info_from_name(
                 )
             model_cls_inst = model_cls()
 
-        elif model_cls is MLPerfTinyImageClassification:
+        elif model_cls in (
+            MLPerfTinyImageClassification,
+            MLPerfTinyKeywordSpotting,
+            MLPerfTinyAnomalyDetection,
+        ):
             model_cls_inst = model_cls(
-                dataset_path=dataset_path, use_random_dataset=use_random_dataset
+                dataset_path=dataset_path,
+                use_random_dataset=use_random_dataset,
+                num_samples=num_samples,
             )
 
         else:
@@ -245,7 +263,7 @@ def _get_arg_parser():
         required=False,
         default=False,
         action="store_true",
-        help="During conversion to Neutron microcode by Neutron Converter, a kernel selection file will be dumped in "
+        help="During compilation to Neutron microcode by Neutron Compiler, a kernel selection file will be dumped in "
         "the working directory. This file can be used for reduction of Neutron Firmware size in the built app."
         "See `docs/source/backends/nxp/nxp-kernel-selection.md` for details.",
     )
@@ -255,6 +273,13 @@ def _get_arg_parser():
         default=False,
         action="store_true",
         help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
+    )
+    parser.add_argument(
+        "--num_random_samples",
+        required=False,
+        default=None,
+        type=int,
+        help="Number of random samples to generate, required when `--use_random_dataset` flag is set.",
     )
     parser.add_argument(
         "-dst",
@@ -285,7 +310,10 @@ if __name__ == "__main__":  # noqa C901
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs, model_cls_inst = (
         _get_model_info_from_name(
-            args.model_name, args.dataset_path, args.use_random_dataset
+            args.model_name,
+            args.dataset_path,
+            args.use_random_dataset,
+            args.num_random_samples,
         )
     )
     model = model.eval()
@@ -316,7 +344,13 @@ if __name__ == "__main__":  # noqa C901
         quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
         if args.use_qat:
             if not isinstance(
-                model_cls_inst, (CifarNet, MLPerfTinyImageClassification)
+                model_cls_inst,
+                (
+                    CifarNet,
+                    MLPerfTinyImageClassification,
+                    MLPerfTinyKeywordSpotting,
+                    MLPerfTinyAnomalyDetection,
+                ),
             ):
                 raise ValueError(
                     f"QAT training is not supported for model '{args.model_name}'"
@@ -384,6 +418,7 @@ if __name__ == "__main__":  # noqa C901
                 compile_spec,
                 neutron_target_spec,
                 post_quantization_state_dict=module.state_dict(),
+                preserve_ops=default_preserve_ops,
             )
         ]
         if args.delegate

@@ -31,7 +31,9 @@ class PlaceholderVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         if is_param_node(self.exported_program, node):
             return
         self.define_tensor(node, enn_graph, vals_to_ids)
+
+        return True

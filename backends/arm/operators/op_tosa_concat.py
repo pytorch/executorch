@@ -13,6 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    supported_data_layout_dtypes,
     validate_num_inputs,
     validate_same_dtype,
     validate_valid_dtype,
@@ -25,9 +26,6 @@ from torch.fx import Node
 class CatVisitor(NodeVisitor):
     target = "tosa.CONCAT.default"
 
-    def __init__(self, *args):
-        super().__init__(*args)
-
     def define_node(
         self,
         node: Node,
@@ -35,19 +33,9 @@ class CatVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        supported_dtypes = [ts.DType.BOOL]
-        if self.tosa_spec.support_integer():
-            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT32])
-            if self.tosa_spec.support_extension("int16"):
-                supported_dtypes.append(ts.DType.INT16)
-        if self.tosa_spec.support_float():
-            supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
-        if self.tosa_spec.support_extension("bf16"):
-            supported_dtypes.append(ts.DType.BF16)
-        if self.tosa_spec.support_extension("fp8e4m3"):
-            supported_dtypes.append(ts.DType.FP8E4M3)
-        if self.tosa_spec.support_extension("fp8e5m2"):
-            supported_dtypes.append(ts.DType.FP8E5M2)
+        supported_dtypes = supported_data_layout_dtypes(
+            self.tosa_spec, allow_int16_without_extension=False
+        )
         validate_num_inputs(self.target, inputs, [1, 2])
         input_tosa_args = [TosaArg(arg, self.tosa_spec) for arg in inputs[0].special]
         validate_same_dtype(self.target, [*input_tosa_args, output], ts)

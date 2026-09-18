@@ -20,6 +20,7 @@ from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_int_comparison_inputs_pass import CastIntComparisonInputsPass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
+from .convert_bool_sum_pass import ConvertBoolSumPass  # noqa
 from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
@@ -45,6 +46,9 @@ from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
 from .decompose_avg_pool2d_pass import DecomposeAvgPool2dPass  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
+from .decompose_choose_qparams_symmetric_pass import (  # noqa
+    DecomposeChooseQParamsSymmetricPass,
+)
 from .decompose_cosh_pass import DecomposeCoshPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
@@ -74,6 +78,7 @@ from .decompose_index_tensor_to_gather_pass import (  # noqa
     DecomposeIndexTensorToGatherPass,
 )
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
+from .decompose_isinf_isnan_pass import DecomposeIsInfAndIsNanPass  # noqa
 from .decompose_large_stride_maxpool2d_pass import (  # noqa
     DecomposeLargeStrideMaxPool2dForU55Pass,
 )
@@ -95,8 +100,12 @@ from .decompose_prod_pass import DecomposeProdPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
+from .decompose_roll_pass import DecomposeRollPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_sdpa_pass import DecomposeScaledDotProductAttentionPass  # noqa
+from .decompose_sdpa_with_regular_softmax_pass import (  # noqa
+    DecomposeSDPAWithRegularSoftmaxPass,
+)
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_select_scatter_pass import DecomposeSelectScatterPass  # noqa
 from .decompose_sign_pass import DecomposeSignPass  # noqa
@@ -118,7 +127,9 @@ from .decompose_unsupported_bilinear_resize_pass import (  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
+from .deduplicate_const_shapes_pass import DeduplicateConstShapesPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
+from .detect_dynamic_w8a8_linear_pass import DetectDynamicW8A8LinearPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
 from .exir_to_tosa_pass import ExirToTosaPass  # noqa
 from .fold_dyt_affine_into_conv_pass import FoldDyTAffineIntoConvPass  # noqa
@@ -131,6 +142,7 @@ from .fold_scalar_mul_into_conv_pass import FoldScalarMulIntoConvPass  # noqa
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
 from .fuse_consecutive_clamps_pass import FuseConsecutiveClampsPass  # noqa
 from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
+from .fuse_consecutive_concats_pass import FuseConsecutiveConcatsPass  # noqa
 from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
 from .fuse_consecutive_slices_pass import FuseConsecutiveSlicesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
@@ -156,6 +168,7 @@ from .insert_rescales_pass import (  # noqa
     InsertRescalePass,
 )
 from .insert_table_ops import InsertTableOpsPass  # noqa
+from .lower_dynamic_w8a8_linear_pass import LowerDynamicW8A8LinearPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
@@ -197,6 +210,7 @@ from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
 from .rewrite_bool_to_fp32_cast_via_int8_pass import (  # noqa
     RewriteBoolToFp32CastViaInt8Pass,
 )
+from .rewrite_cat_slice_pass import RewriteCatSlicePass  # noqa
 from .rewrite_conv_pass import RewriteConvPass  # noqa
 from .rewrite_high_rank_singleton_permute_pass import (  # noqa
     RewriteHighRankSingletonPermutePass,

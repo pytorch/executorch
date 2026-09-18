@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 MODES=()
-PRESETS=("ios" "ios-simulator" "macos")
+PRESETS=("apple-framework-ios" "apple-framework-ios-simulator" "apple-framework-macos")
 # To support backwards compatibility, we want to retain the same output directory.
 PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 

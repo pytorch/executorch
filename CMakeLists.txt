@@ -114,7 +114,18 @@ include(ExternalProject)
 include(GNUInstallDirs)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  # The vendored c10 is mirrored byte for byte from PyTorch, which builds at
+  # C++20, so it is free to use C++20 in headers we compile. safe_numerics.h
+  # reaches std::countl_zero and std::bit_width on the branch taken when
+  # __builtin_*_overflow is unavailable, which is MSVC only -- every other
+  # toolchain takes the builtin path and stays within C++17. Raising the
+  # standard on Windows alone keeps the embedded targets, where C++20 support is
+  # not a given, on C++17.
+  if(WIN32)
+    set(CMAKE_CXX_STANDARD 20)
+  else()
+    set(CMAKE_CXX_STANDARD 17)
+  endif()
 endif()
 announce_configured_options(CMAKE_CXX_STANDARD)
 
@@ -652,6 +663,15 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
 endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
+if(WIN32)
+  # This target carries the vendored c10 headers, and safe_numerics.h reaches
+  # std::countl_zero on the branch MSVC takes. Stating it as a compile feature
+  # rather than relying on CMAKE_CXX_STANDARD is what makes it reach every
+  # consumer: features raise a target's standard even where CMAKE_CXX_STANDARD
+  # says 17, and install(EXPORT) carries them into ExecuTorchTargets.cmake, so
+  # projects configured separately from this one pick it up too.
+  target_compile_features(executorch_core PUBLIC cxx_std_20)
+endif()
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
     executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
@@ -1000,7 +1020,9 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
   list(APPEND _executorch_extensions extension_llm_cache)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/batching)
-  list(APPEND _executorch_extensions extension_llm_batching)
+  list(APPEND _executorch_extensions extension_llm_batching
+       extension_llm_batching_module
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)

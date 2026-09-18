@@ -40,14 +40,6 @@ set(ETHOS_SDK_PATH
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
-# Set default value of FETCH_ETHOS_U_CONTENT depending on whether ethos sdk is
-# available in $ETHOS_SDK_PATH.
-arm_ethos_u_default_fetch("${ETHOS_SDK_PATH}" _fetch_ethos_u_default)
-option(FETCH_ETHOS_U_CONTENT
-       "Fetch ethos_u dependencies instead of relying on pre-downloads"
-       ${_fetch_ethos_u_default}
-)
-
 if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   message(
     FATAL_ERROR
@@ -78,17 +70,19 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u
       PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
     )
-    arm_ensure_ethos_u_content(
-      "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
-    )
     set(DRIVER_ETHOSU_INCLUDE_DIR
         "${ETHOS_SDK_PATH}/core_software/core_driver/include"
     )
+    # Leave the fetch default to the runner when the backend's driver is
+    # present.
     if(NOT EXISTS "${DRIVER_ETHOSU_INCLUDE_DIR}/ethosu_driver.h")
-      message(
-        FATAL_ERROR
-          "Ethos-U core driver headers were not found in ${DRIVER_ETHOSU_INCLUDE_DIR}."
-          " Run examples/arm/setup.sh or enable FETCH_ETHOS_U_CONTENT."
+      option(FETCH_ETHOS_U_CONTENT
+             "Fetch ethos_u dependencies instead of relying on pre-downloads"
+             ON
+      )
+      arm_ensure_ethos_u_content(
+        "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+        DRIVER_ONLY
       )
     endif()
     target_include_directories(
@@ -314,6 +308,27 @@ if(EXECUTORCH_BUILD_VGF)
   endif()
 
   executorch_target_link_options_shared_lib(vgf_backend)
+
+  if(EXECUTORCH_BUILD_TESTS)
+    add_executable(
+      vgf_vulkan_features_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_vulkan_features_test.cpp
+    )
+    target_include_directories(
+      vgf_vulkan_features_test
+      PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+              ${VOLK_HEADERS_PATH}
+    )
+    target_compile_options(
+      vgf_vulkan_features_test PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(vgf_vulkan_features_test PRIVATE GTest::gtest_main)
+    else()
+      target_link_libraries(vgf_vulkan_features_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_vulkan_features_test COMMAND vgf_vulkan_features_test)
+  endif()
 
   # end config for VGF builds
 endif()

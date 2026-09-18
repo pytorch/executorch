@@ -27,20 +27,33 @@ MACROS = (
     REPO_ROOT / "shim_et" / "xplat" / "executorch" / "build" / "runtime_wrapper.bzl"
 )
 
-# What the open source dependency map resolves these names to. Kept here rather than
-# imported so the test states the mapping it depends on.
+
+class _Select:
+    __slots__ = ("values",)
+
+    def __init__(self, values: dict[str, list[str]]) -> None:
+        self.values = values
+
+
+# Representative dependency-map results, including platform-specific values and
+# aliases shared by ATen and non-ATen dependency names.
 RESOLVED = {
-    "c10": ["//third-party:libtorch"],
+    "c10": _Select(
+        {
+            "ovr_config//os:android": ["fbsource//xplat/caffe2/c10:c10"],
+            "DEFAULT": ["fbsource//xplat/caffe2/c10:c10_ovrsource"],
+        }
+    ),
     "libtorch": ["//third-party:libtorch"],
     "libtorch_python": ["//third-party:libtorch_python"],
     "torch-core-cpp": ["//third-party:libtorch"],
-    "gtest_aten": ["//third-party:gtest_aten"],
-    "gmock_aten": ["//third-party:gmock_aten"],
+    "gtest_aten": ["fbsource//third-party/googletest:gtest"],
+    "gmock_aten": ["fbsource//third-party/googletest:gmock"],
 }
 FALLTHROUGH = "@fallthrough@"
 
 
-def _load_is_aten_target():
+def _load_macro_function(name: str):
     """Execute the real macro text, with the little of Starlark it uses shimmed."""
     text = MACROS.read_text()
     start = text.index("def _has_pytorch_dep")
@@ -53,6 +66,8 @@ def _load_is_aten_target():
 
     def _apply(obj, function):
         """Stand-in for selects.apply: run over each list the object holds."""
+        if isinstance(obj, _Select):
+            return _Select({key: function(value) for key, value in obj.values.items()})
         if isinstance(obj, dict):
             return {key: function(value) for key, value in obj.items()}
         return function(obj)
@@ -64,7 +79,11 @@ def _load_is_aten_target():
         "selects": types.SimpleNamespace(apply=_apply),
     }
     exec(compile(text[start:end], str(MACROS), "exec"), namespace)
-    return namespace["_is_aten_target"]
+    return namespace[name]
+
+
+def _load_is_aten_target():
+    return _load_macro_function("_is_aten_target")
 
 
 class TestIsAtenTarget(unittest.TestCase):
@@ -93,6 +112,16 @@ class TestIsAtenTarget(unittest.TestCase):
             )
         )
 
+    def test_resolved_label_returned_inside_a_select(self) -> None:
+        for dep in [
+            "fbsource//xplat/caffe2/c10:c10",
+            "fbsource//xplat/caffe2/c10:c10_ovrsource",
+        ]:
+            with self.subTest(dep=dep):
+                self.assertTrue(
+                    self.is_aten_target({"name": "some_lib", "deps": [dep]})
+                )
+
     def test_short_name_in_external_deps(self) -> None:
         for name in RESOLVED:
             with self.subTest(name=name):
@@ -101,7 +130,6 @@ class TestIsAtenTarget(unittest.TestCase):
                 )
 
     def test_plain_target_is_not_aten(self) -> None:
-        """The embedded builds rely on these staying at the older standard."""
         self.assertFalse(
             self.is_aten_target(
                 {
@@ -110,6 +138,16 @@ class TestIsAtenTarget(unittest.TestCase):
                         "//executorch/runtime/core:core",
                         "//third-party/googletest:gtest_main",
                     ],
+                }
+            )
+        )
+
+    def test_plain_gtest_target_is_not_aten(self) -> None:
+        self.assertFalse(
+            self.is_aten_target(
+                {
+                    "name": "some_test",
+                    "deps": ["fbsource//third-party/googletest:gtest"],
                 }
             )
         )
@@ -145,6 +183,26 @@ class TestIsAtenTarget(unittest.TestCase):
                 }
             )
         )
+
+
+class TestPatchTestCompilerFlags(unittest.TestCase):
+    def test_inherits_platform_standard(self) -> None:
+        patch_test_compiler_flags = _load_macro_function("_patch_test_compiler_flags")
+        for name in ["some_test", "some_aten_test"]:
+            with self.subTest(name=name):
+                kwargs = {
+                    "name": name,
+                    "compiler_flags": ["-DTEST"],
+                    "fbobjc_compiler_flags": ["-DAPPLE_TEST"],
+                }
+
+                result = patch_test_compiler_flags(kwargs)
+
+                self.assertFalse(
+                    any(flag.startswith("-std=") for flag in result["compiler_flags"])
+                )
+                self.assertEqual(["-DAPPLE_TEST"], result["fbobjc_compiler_flags"])
+                self.assertIn("-Wno-error", result["compiler_flags"])
 
 
 if __name__ == "__main__":
