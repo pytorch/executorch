@@ -6,6 +6,8 @@
 
 from typing import Optional
 
+import executorch.backends.vulkan.utils as utils
+
 import torch
 
 from executorch.backends.vulkan.patterns.pattern_registry import (
@@ -68,6 +70,19 @@ class RmsNormMatch(PatternMatch):
             final_mul_node
         )
         if norm_mul_node is None:
+            return
+
+        # et_vk.rms_norm prepacks its weight, so the multiplier has to be a
+        # constant that the prepacker can see. A multiplier that is computed in
+        # the graph - an adaptive norm whose scale comes from a conditioning
+        # signal, or Gemma's `1.0 + weight` - is not prepackable, and folding it
+        # in anyway makes the delegate abort at the first inference with
+        # "prepack_standard ... (graph.val_is_tref(tensor_data)) is false".
+        # Leaving the multiply unfused is correct and costs one dispatch.
+        if (
+            not isinstance(self.weight_node, torch.fx.Node)
+            or self.weight_node.op != "placeholder"
+        ):
             return
 
         self.all_nodes.append(norm_mul_node)
@@ -263,6 +278,13 @@ def replace_rms_norm_with_fused_op(
     graph_module: torch.fx.GraphModule,
     match: RmsNormMatch,
 ):
+    # The detector only sees the graph, which cannot distinguish a constant
+    # placeholder from a user input; both look the same there. Only a constant
+    # is actually prepackable, so make the final check here, where the exported
+    # program is available.
+    if not utils.is_param_node(ep, match.weight_node):
+        return
+
     eps_val = _extract_eps_value(match.eps_node)
 
     with graph_module.graph.inserting_before(match.anchor_node):
