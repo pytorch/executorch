@@ -47,6 +47,8 @@ class EXECUTORCH_GPU_SHARED_API SharedGpuContextRegistry final {
 
   runtime::Error unregister_context(const SharedGpuContextKey& key);
 
+  // Test-only. The caller must ensure that there are no concurrent
+  // registry operations or in-flight lookup_or_create() calls.
   void clear_for_testing();
 
  private:

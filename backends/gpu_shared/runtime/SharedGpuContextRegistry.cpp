@@ -70,6 +70,8 @@ runtime::Result<SharedGpuContextPtr> SharedGpuContextRegistry::lookup_or_create(
   }
 
   std::shared_ptr<Entry> entry;
+  SharedGpuContextPtr stale_context;
+
   {
     std::unique_lock<std::mutex> lock(mutex_);
     auto [it, inserted] = registry_.try_emplace(key, std::make_shared<Entry>());
@@ -84,9 +86,12 @@ runtime::Result<SharedGpuContextPtr> SharedGpuContextRegistry::lookup_or_create(
       return entry->context;
     }
 
-    entry->context.reset();
+    stale_context = std::move(entry->context);
     entry->creating = true;
   }
+
+  // lifetime_anchor destruction may re-enter the registry.
+  stale_context.reset();
 
   auto maybe_created = create_fn();
   runtime::Error create_error = runtime::Error::Ok;
