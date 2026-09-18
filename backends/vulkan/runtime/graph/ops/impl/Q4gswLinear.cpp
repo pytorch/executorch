@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Preprocess.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -641,6 +642,19 @@ void q4gsw_linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef group_size_ref = args.at(idx++);
   const ValueRef bias_data = args.at(idx++);
   const ValueRef output = args.at(idx);
+
+  const int64_t group_size = graph.extract_scalar<int64_t>(group_size_ref);
+  if (can_use_q4gsw_coopmat(graph, output, fp_input, group_size, bias_data)) {
+    add_q4gsw_coopmat_linear_node(
+        graph,
+        fp_input,
+        weight_data,
+        weight_scales_data,
+        group_size_ref,
+        bias_data,
+        output);
+    return;
+  }
 
   // Dtype-branched dispatch. Within each dtype, a single DynamicDispatchNode
   // switches between GEMM and GEMV via pick_shader_fn based on the current M.
