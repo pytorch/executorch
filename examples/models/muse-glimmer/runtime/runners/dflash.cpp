@@ -87,7 +87,7 @@ DEFINE_int32(
     "most 3.");
 DEFINE_int32(
     block_length,
-    4,
+    0,
     "Draft block length per call (0 = artifact maximum; otherwise must be in "
     "[2, block_size]).");
 #ifdef EXECUTORCH_BUILD_CUDA

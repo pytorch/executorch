@@ -189,6 +189,7 @@ class CUDADFlashAttention(nn.Module):
                 T,
                 self.kv_cache.buf_size,
                 self.window_size,
+                device=x.device,
             )
             k_ctx = k_cached
             v_ctx = v_cached
@@ -260,8 +261,9 @@ def _replace_dflash_cuda_layer_forward(layer: nn.Module) -> None:
         input_pos: torch.Tensor,
         valid_ctx_len: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.self_attn(
-            self.input_layernorm(x),
+        h, coefficients = self.prepare_attention(x)
+        h = self.self_attn(
+            h,
             target_hidden,
             ctx_cos,
             ctx_sin,
@@ -270,7 +272,8 @@ def _replace_dflash_cuda_layer_forward(layer: nn.Module) -> None:
             input_pos,
             valid_ctx_len,
         )
-        x = x + self.mlp(self.post_attention_layernorm(x))
+        x = x + self.finish_attention(h, coefficients)
+        x = x + self.feed_forward(x)
         return x
 
     layer.forward = types.MethodType(_cuda_dflash_layer_forward, layer)
