@@ -61,6 +61,8 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:triton_kernels",
+            # The oracle is the neutral op itself, not a reference rebuilt here.
+            "//executorch/extension/llm/cache:cache",
         ],
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(

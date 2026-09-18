@@ -119,7 +119,7 @@ BACKENDS: dict[str, BackendConfig] = {
         # A missing Corstone-320 FVP is infrastructure, not evidence that the
         # operator itself is unsupported.
         infrastructure_xfail_markers=frozenset({"XfailIfNoCorstone320"}),
-        max_missing_profile_cells=10,
+        max_missing_profile_cells=3,
     ),
 }
 

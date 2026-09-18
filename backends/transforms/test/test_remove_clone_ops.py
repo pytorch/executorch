@@ -37,7 +37,7 @@ class TestRemoveCloneOpsTransform(TestCase):
         Test RemoveCloneOpsTransform on a graph with d/q -> clone -> q -> linear pattern
 
         Before: Should contain all nodes
-        After: Should only have the linear operation
+        After: Should only have the final dequantize and linear operations
         """
 
         # Create a graph module directly with the pattern: quant -> clone -> dequant -> fp linear
@@ -60,19 +60,13 @@ class TestRemoveCloneOpsTransform(TestCase):
         input_node = graph.placeholder("x")
 
         # Create nodes for our pattern: quant -> clone -> dequant -> fp linear
-        # Constants for quantization parameters
-        scale = graph.create_node(
-            "call_function", torch.tensor, args=([0.1],), kwargs={}
-        )
-        zero_point = graph.create_node(
-            "call_function", torch.tensor, args=([0],), kwargs={}
-        )
+        qparams = (0.1, 0, -128, 127, torch.int8)
 
         # Dequantize node
         dequant_node = graph.create_node(
             "call_function",
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
-            args=(input_node, scale, zero_point, torch.int8),
+            args=(input_node, *qparams),
             kwargs={},
         )
 
@@ -89,19 +83,20 @@ class TestRemoveCloneOpsTransform(TestCase):
         quant_node = graph.create_node(
             "call_function",
             torch.ops.quantized_decomposed.quantize_per_tensor.default,
-            args=(clone_node, scale, zero_point, torch.int8),
+            args=(clone_node, *qparams),
             kwargs={},
         )
 
-        # Linear node (using the module's linear layer)
-        # Technically, should use quantized weight and bias
-        # but we are just inspecting graph patterns in this test
+        linear_input = graph.call_function(
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            args=(quant_node, *qparams),
+        )
         weight = graph.create_node("get_attr", "linear.weight")
         bias = graph.create_node("get_attr", "linear.bias")
         linear_node = graph.create_node(
             "call_function",
             torch.nn.functional.linear,
-            args=(quant_node, weight, bias),
+            args=(linear_input, weight, bias),
             kwargs={},
         )
 
@@ -125,12 +120,16 @@ class TestRemoveCloneOpsTransform(TestCase):
         )
 
         # Apply the transform
+        inputs = torch.randint(-128, 128, (2, 10), dtype=torch.int8)
+        expected = gm(inputs)
         transformed_gm = RemoveCloneOpsTransform()(gm).graph_module
 
         # Verify the dq -> clone -> q pattern is removed and linear op is still present using FileCheck
         FileCheck().check_not(
             "executorch_exir_dialects_edge__ops_aten_clone_default"
-        ).check_not("quantized_decomposed.dequantize_per_tensor.default").check_not(
+        ).check_count(
+            "quantized_decomposed.dequantize_per_tensor.default", 1, exactly=True
+        ).check_not(
             "quantized_decomposed.quantize_per_tensor.default"
         ).check_count(
             "torch._C._nn.linear",
@@ -139,6 +138,7 @@ class TestRemoveCloneOpsTransform(TestCase):
         ).run(
             transformed_gm.code
         )
+        torch.testing.assert_close(transformed_gm(inputs), expected, rtol=0, atol=0)
 
     def test_clone_non_identity_survives(self):
         """Verify clone ops that modify memory_format are preserved by RemoveCloneOpsTransform."""
