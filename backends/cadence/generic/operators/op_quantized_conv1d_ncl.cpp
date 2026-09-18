@@ -63,9 +63,13 @@ __attribute__((noinline)) void conv1d_ncl_core_generic(
     // Optional args that are only relevant for quantized convolution
     // input zero point
     IT in_zero_point = 0,
-    // weight zero point
-    int32_t weight_zero_point = 0,
-    float bias_scale = 1,
+    // weight zero point and bias scale. A stride of 0 keeps every output
+    // channel on the same qparam (per-tensor); a stride of 1 walks one entry
+    // per output channel (per-channel).
+    const int32_t* __restrict__ p_weight_zero_point = nullptr,
+    int32_t weight_zero_point_stride = 0,
+    const float* __restrict__ p_bias_scale = nullptr,
+    int32_t bias_scale_stride = 0,
     float out_scale = 1,
     OT out_zero_point = 0) {
   float inv_out_scale = 1. / out_scale;
@@ -87,6 +91,13 @@ __attribute__((noinline)) void conv1d_ncl_core_generic(
       int soc = _g * ocpg;
       // Populate all the output channels in the group
       for (int _oc = soc; _oc < soc + ocpg; ++_oc) {
+        int32_t weight_zero_point = 0;
+        float bias_scale = 1.f;
+        if (quantized) {
+          weight_zero_point =
+              p_weight_zero_point[_oc * weight_zero_point_stride];
+          bias_scale = p_bias_scale[_oc * bias_scale_stride];
+        }
         OT* out_plane = out_batch + _oc * ow;
         const WT* weight_batch = p_weight + _oc * wc * ww;
         // We compute one output channel at a time. The computation can be
@@ -152,8 +163,10 @@ void quantized_conv1d_ncl(
     IntArrayRef dilation,
     int16_t groups,
     int32_t in_zero_point,
-    int32_t weight_zero_point,
-    float bias_scale,
+    const int32_t* __restrict__ p_weight_zero_point,
+    int32_t weight_zero_point_stride,
+    const float* __restrict__ p_bias_scale,
+    int32_t bias_scale_stride,
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
@@ -187,8 +200,10 @@ void quantized_conv1d_ncl(
         dilation[dilation.size() - 1],                           \
         groups,                                                  \
         in_zero_point,                                           \
-        weight_zero_point,                                       \
-        bias_scale,                                              \
+        p_weight_zero_point, \
+        weight_zero_point_stride, \
+        p_bias_scale, \
+        bias_scale_stride, \
         output_scale,                                            \
         (ctype)output_zero_point);                               \
     break;                                                       \
@@ -204,30 +219,20 @@ void quantized_conv1d_ncl(
 #undef typed_quantized_conv1d_ncl
 }
 
-} // namespace
-
-// Public exported kernel functions
-
-::executorch::aten::Tensor& quantized_conv1d_ncl_out(
-    KernelRuntimeContext& ctx,
+void quantized_conv1d_ncl(
     const Tensor& input,
     const Tensor& weight,
     const Tensor& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
-    int64_t groups,
-    int64_t input_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    const Tensor& out_multiplier,
-    const Tensor& out_shift,
+    int16_t groups,
+    int32_t in_zero_point,
+    int32_t weight_zero_point,
+    float bias_scale,
+    float output_scale,
+    int32_t output_zero_point,
     Tensor& out) {
-  (void)ctx;
-  (void)out_multiplier;
-  (void)out_shift;
   quantized_conv1d_ncl(
       input,
       weight,
@@ -235,15 +240,21 @@ void quantized_conv1d_ncl(
       stride,
       padding,
       dilation,
-      static_cast<int16_t>(groups),
-      static_cast<int32_t>(input_zero_point),
-      weight_zero_point.const_data_ptr<int32_t>()[0],
-      bias_scale.const_data_ptr<float>()[0],
-      static_cast<float>(output_scale),
-      static_cast<int32_t>(output_zero_point),
+      groups,
+      in_zero_point,
+      &weight_zero_point,
+      0,
+      &bias_scale,
+      0,
+      output_scale,
+      output_zero_point,
       out);
-  return out;
 }
+
+} // namespace
+
+// Public exported kernel functions
+
 
 ::executorch::aten::Tensor& quantized_conv1d_ncl_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -274,6 +285,49 @@ void quantized_conv1d_ncl(
       static_cast<int32_t>(input_zero_point),
       static_cast<int32_t>(weight_zero_point),
       static_cast<float>(bias_scale),
+      static_cast<float>(output_scale),
+      static_cast<int32_t>(output_zero_point),
+      out);
+  return out;
+}
+
+
+// weight_zero_point and bias_scale carry one entry per output channel.
+// out_multiplier/out_shift stay unused, matching the reference
+// implementation, which folds the accumulator scale into bias_scale.
+::executorch::aten::Tensor& quantized_conv1d_ncl_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t input_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out) {
+  (void)ctx;
+  (void)out_multiplier;
+  (void)out_shift;
+  quantized_conv1d_ncl(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      static_cast<int16_t>(groups),
+      static_cast<int32_t>(input_zero_point),
+      weight_zero_point.const_data_ptr<int32_t>(),
+      weight_zero_point.numel() > 1 ? 1 : 0,
+      bias_scale.const_data_ptr<float>(),
+      bias_scale.numel() > 1 ? 1 : 0,
       static_cast<float>(output_scale),
       static_cast<int32_t>(output_zero_point),
       out);

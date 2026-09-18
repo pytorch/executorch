@@ -60,6 +60,44 @@ using ::executorch::runtime::KernelRuntimeContext;
       out);
 }
 
+// Per-channel (Tensor qparams) form. Delegates to the regular conv1d entry
+// point, which resolves weight_zero_point and bias_scale per output channel.
+::executorch::aten::Tensor& quantized_depthwise_conv1d_ncl_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t input_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out) {
+  return quantized_conv1d_ncl_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      input_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out_multiplier,
+      out_shift,
+      out);
+}
+
 } // namespace native
 } // namespace generic
 } // namespace impl

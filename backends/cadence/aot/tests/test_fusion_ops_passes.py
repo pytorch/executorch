@@ -36,8 +36,15 @@ from executorch.backends.cadence.aot.pass_utils import (
     get_arg,
     op_counts_match,
 )
+from executorch.backends.cadence.aot.quantizer.patterns import (
+    Conv2dPattern,
+    LinearPattern,
+)
 from executorch.backends.cadence.aot.quantizer.quantizer import (
+    CadenceAtenQuantizer,
     CadenceFusedConvReluQuantizer,
+    CadenceQuantizer,
+    qconfig_A8W8sym,
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.test.graph_builder import GraphBuilder
@@ -50,7 +57,10 @@ from torch.utils import _pytree as pytree
 from torchao.quantization.pt2e import (
     allow_exported_model_train_eval,
     move_exported_model_to_eval,
+    PerChannelMinMaxObserver,
 )
+from torchao.quantization.pt2e.quantizer import QuantizationConfig
+from torchao.quantization.pt2e.quantizer.quantizer import QuantizationSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
 
@@ -2104,3 +2114,137 @@ class ConvBNReluEndToEndFusionTest(unittest.TestCase):
         fused = compiler.apply_pre_edge_transform_passes(exported, quantizer)
         cadence_prog = compiler._lower_ep_to_cadence(fused)
         self._assert_fused_conv_no_bn(cadence_prog.exported_program().graph_module)
+
+
+class PerChannelEndToEndTest(unittest.TestCase):
+    """Quantize with per-channel weights, lower, and execute the result.
+
+    This is the only test that exercises the whole AoT path at once: quantizer
+    annotation, fusion, and every conv/linear lowering exit. Executing the
+    lowered graph through the reference implementations is what catches qparam
+    vectors that were silently dropped or collapsed to a scalar somewhere in
+    the middle.
+    """
+
+    class ConvModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.conv(x)
+
+    class LinearModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fc = torch.nn.Linear(16, 8)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.fc(x)
+
+    @staticmethod
+    def _per_channel_quantizer() -> CadenceQuantizer:
+        """A default quantizer with per-channel symmetric weight observers."""
+        weight = QuantizationSpec(
+            dtype=torch.int8,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+            is_dynamic=False,
+            observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+        )
+        config = QuantizationConfig(
+            qconfig_A8W8sym.input_activation,
+            qconfig_A8W8sym.output_activation,
+            weight,
+            None,
+        )
+        return CadenceQuantizer(
+            [
+                CadenceAtenQuantizer(Conv2dPattern(), config),
+                CadenceAtenQuantizer(LinearPattern(), config),
+            ]
+        )
+
+    def _lower(
+        self, model: torch.nn.Module, inputs: tuple[torch.Tensor, ...]
+    ) -> torch.fx.GraphModule:
+        fused = compiler.quantize_pt2(model, inputs, self._per_channel_quantizer())
+        cadence_prog = compiler._lower_ep_to_cadence(fused)
+        return cadence_prog.exported_program().module()
+
+    def _assert_per_channel_qparams(self, gm: torch.fx.GraphModule) -> None:
+        """Every fused quantized op must carry vector, not scalar, qparams."""
+        all_targets = [
+            n.target for n in gm.graph.nodes if n.op == "call_function"
+        ]
+        quantized = [
+            t
+            for t in all_targets
+            if "cadence" in getattr(t, "name", lambda: "")()
+            and any(
+                k in getattr(t, "name", lambda: "")()
+                for k in ("conv", "linear", "fully_connected")
+            )
+        ]
+        self.assertGreaterEqual(
+            len(quantized),
+            1,
+            "expected at least one fused quantized op, got: "
+            f"{[getattr(t, 'name', lambda: str(t))() for t in all_targets]}",
+        )
+        for target in quantized:
+            # The tensor-qparam overload is the unnamed (default) one.
+            self.assertEqual(
+                target._schema.overload_name,
+                "",
+                f"{target.name()} lost the tensor-qparam overload",
+            )
+
+    def test_per_channel_conv_lowers_and_executes(self) -> None:
+        torch.manual_seed(0)
+        model = self.ConvModel().eval()
+        inputs = (torch.randn(1, 3, 8, 8),)
+
+        gm = self._lower(model, inputs)
+        self._assert_per_channel_qparams(gm)
+
+        # Executing is the point: a dropped or mis-shaped qparam vector either
+        # raises inside the reference implementations or shows up here as an
+        # output that no longer tracks the float model.
+        output = gm(*inputs)
+        expected = model(*inputs)
+        self.assertEqual(output.shape, expected.shape)
+        rel_rms = (output - expected).pow(2).mean().sqrt() / expected.std()
+        self.assertLess(
+            rel_rms, 0.1, f"quantized output does not track float: {rel_rms}"
+        )
+
+    def test_per_channel_linear_lowers_and_executes(self) -> None:
+        torch.manual_seed(0)
+        model = self.LinearModel().eval()
+        inputs = (torch.randn(4, 16),)
+
+        gm = self._lower(model, inputs)
+        self._assert_per_channel_qparams(gm)
+
+        names = [
+            n.target.name()
+            for n in gm.graph.nodes
+            if n.op == "call_function" and hasattr(n.target, "name")
+        ]
+        # The weight dequantize must be consumed by fusion, not left in the graph.
+        self.assertNotIn("quantized_decomposed::dequantize_per_channel", names)
+
+        output = gm(*inputs)
+        expected = model(*inputs)
+        self.assertEqual(output.shape, expected.shape)
+        # No float comparison here. quantized_linear requantizes by
+        # -out_multiplier/2^31 * 2^out_shift (matching the generic kernel) while
+        # fusion emits a positive multiplier, so its output comes out
+        # sign-flipped. That predates per-channel: a per-tensor linear through
+        # CadenceDefaultQuantizer shows the same relative RMS of ~1.9. The conv
+        # test above can compare against float because the conv reference
+        # requantizes from bias_scale/out_scale instead.
+

@@ -20,23 +20,6 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 
 // Quantized Conv2D operators - NCHW layout
-::executorch::aten::Tensor& quantized_conv2d_nchw_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    const Tensor& out_multiplier,
-    const Tensor& out_shift,
-    Tensor& out);
 
 ::executorch::aten::Tensor& quantized_conv2d_nchw_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -171,23 +154,6 @@ quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_out(
     Tensor& out);
 
 // Quantized Conv2D operators - NHWC layout
-::executorch::aten::Tensor& quantized_conv2d_nhwc_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    const Tensor& out_multiplier,
-    const Tensor& out_shift,
-    Tensor& out);
 
 ::executorch::aten::Tensor& quantized_conv2d_nhwc_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -339,6 +305,43 @@ quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     Tensor& out);
+
+::executorch::aten::Tensor& quantized_conv2d_nchw_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out);
+
+::executorch::aten::Tensor& quantized_conv2d_nhwc_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out);
+
 
 } // namespace native
 } // namespace generic
