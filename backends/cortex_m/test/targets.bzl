@@ -61,7 +61,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m/passes:cortex_passes",
-                "//executorch/backends/cortex_m/passes:passes_utils",
+                "//executorch/backends/cortex_m:utils",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/exir/dialects:lib",
             ],
