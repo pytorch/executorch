@@ -2236,6 +2236,10 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   Error err = Error::Ok;
   for (auto value : *flatbuffer_graph->xvalues()) {
     size_t prev_buffers = unpacked_buffers.size();
+    // With the weights cache the buffers land in the cache rather than in
+    // unpacked_buffers, so track its list too.
+    size_t prev_cached_buffers =
+        use_weight_cache ? weights_cache->get_num_unpacked_data() : 0;
     err = defineTensor(
         subgraph.get(),
         remapped_ids,
@@ -2264,6 +2268,10 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         executor->unpacked_buffers_.push_back(std::move(unpacked_buffers[i]));
       }
       unpacked_buffers.resize(prev_buffers);
+      if (use_weight_cache) {
+        weights_cache->take_unpacked_data_from(
+            prev_cached_buffers, executor->unpacked_buffers_);
+      }
     }
   }
 
@@ -2312,6 +2320,8 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
   std::vector<std::string> packed_weights_names;
   if (use_weight_cache) {
+    // Constants XNNPACK does not pack were already moved to the executor in
+    // the value loop above, so everything left here is safe to free.
     auto packed_weights_names_result = weights_cache->finalize_for_runtime();
     ET_CHECK_OR_RETURN_ERROR(
         packed_weights_names_result.ok(),
