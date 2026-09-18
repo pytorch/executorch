@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import copy
 import inspect
 from typing import Any, Optional, Type
 
@@ -37,6 +38,7 @@ from executorch.exir.pass_base import (
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
+from torch.fx import GraphModule
 
 from .activation_fusion_pass import ActivationFusionPass
 from .aten_to_cortex_m_pass import AtenToCortexMPass
@@ -59,6 +61,18 @@ PassClass = Type[ExportPass | ExportedProgramPassBase]
 
 class LiftConstantTensorsPass(ExportedProgramPassBase):
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        # The pass manager shallow-copies programs; lifting mutates shared structures.
+        graph = copy.deepcopy(exported_program.graph)
+        for original, cloned in zip(exported_program.graph.nodes, graph.nodes):
+            cloned.name = original.name
+        graph_module = GraphModule(exported_program.graph_module, graph)
+        graph_module.meta = exported_program.graph_module.meta.copy()
+        exported_program._graph_module = graph_module
+        exported_program._graph_signature = copy.deepcopy(
+            exported_program.graph_signature
+        )
+        exported_program._state_dict = exported_program.state_dict.copy()
+
         buffer_count = len(exported_program.graph_signature.buffers)
         exported_program = lift_constant_tensor_pass(exported_program)
         return ExportedProgramPassResult(
