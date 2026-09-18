@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
+
 import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -306,18 +308,21 @@ class ExportSession:
             if stage_type == StageType.SOURCE_TRANSFORM:
                 stage = SourceTransformStage(
                     self._quant_recipe,
+                    source_transform_passes=list(
+                        self._export_recipe.source_transform_passes or ()
+                    ),
                     in_place=self._export_recipe.source_transform_in_place,
                 )
             elif stage_type == StageType.QUANTIZE:
-                stage = QuantizeStage(self._quant_recipe)
+                stage = QuantizeStage(
+                    self._quant_recipe,
+                    pre_trace_hooks=list(self._export_recipe.pre_trace_hooks or ()),
+                )
             elif stage_type == StageType.TORCH_EXPORT:
-                aten_transform_passes = None
-                if self._export_recipe.aten_transform_passes is not None:
-                    aten_transform_passes = list(
-                        self._export_recipe.aten_transform_passes
-                    )
                 stage = TorchExportStage(
-                    aten_transform_passes, strict=self._export_recipe.strict
+                    list(self._export_recipe.aten_transform_passes or ()),
+                    strict=self._export_recipe.strict,
+                    pre_trace_hooks=list(self._export_recipe.pre_trace_hooks or ()),
                 )
             elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
                 stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)

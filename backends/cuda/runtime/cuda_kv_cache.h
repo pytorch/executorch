@@ -8,44 +8,20 @@
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
-#include <string>
-#include <utility>
-#include <vector>
+#include <memory>
 
-#include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/extension/llm/cache/cache.h>
-#include <executorch/extension/llm/cache/sequence_cache.h>
 #include <executorch/runtime/core/error.h>
 
 namespace executorch::backends::cuda {
 
 namespace cache = ::executorch::extension::llm::cache;
 
-// Geometry and sizing for one off-graph cache, in the neutral vocabulary.
-// cache::CacheGeometry is positional: layer id is the index into `layers`.
-struct OffGraphKVSettings {
-  cache::CacheGeometry geometry;
-  cache::CacheConfig config;
-  aoti::slim::c10::ScalarType storage_dtype{
-      aoti::slim::c10::ScalarType::BFloat16};
-
-  size_t element_size() const {
-    return aoti::slim::c10::elementSize(storage_dtype);
-  }
-
-  // Slots a ring layer needs to serve one step of up to max_write tokens: the
-  // step writes all of them before attending, and its earliest query still
-  // reads back window - 1 positions. Same formula as cache::RingPolicy and as
-  // ring_physical_capacity() in triton/kernels/offgraph_kv.py.
-  int64_t ring_capacity(const cache::LayerGeometry& layer) const {
-    const int max_write =
-        config.max_write ? *config.max_write : layer.policy.window;
-    return static_cast<int64_t>(layer.policy.window) + max_write - 1;
-  }
-};
+// The name the runtime knows this delegate by, and the backend id its cache
+// builders are registered under.
+inline constexpr char kCudaBackendId[] = "CudaBackend";
 
 struct OffGraphKVMetrics {
   int64_t logical_length{0};
@@ -54,83 +30,60 @@ struct OffGraphKVMetrics {
   int64_t allocated_bytes{0};
 };
 
-using OffGraphKVContext = uint64_t;
-constexpr OffGraphKVContext kInvalidOffGraphKVContext = 0;
-
-namespace detail {
-
-OffGraphKVContext offgraph_kv_create_context(OffGraphKVSettings settings);
-void offgraph_kv_destroy_context(OffGraphKVContext context);
-void offgraph_kv_begin_load(OffGraphKVContext context);
-void offgraph_kv_end_load();
-runtime::Error offgraph_kv_validate(OffGraphKVContext context);
-runtime::Error offgraph_kv_prepare(
-    OffGraphKVContext context,
-    int64_t write_length);
-runtime::Error offgraph_kv_commit(
-    OffGraphKVContext context,
-    int64_t write_length);
-runtime::Error offgraph_kv_reset(OffGraphKVContext context);
-OffGraphKVMetrics offgraph_kv_metrics(OffGraphKVContext context);
-
-} // namespace detail
-
-class OffGraphKVCacheContextOwner final {
+// Backend face of the off-graph KV cache: what the CUDA delegate needs from
+// whatever cache the runner installed under its registry key.
+//
+// Named here rather than in cache.h for the same reason as MLXCache: a backend
+// face speaks the backend's own types (here, AOTI delegate handles) and the
+// neutral header cannot know about them.
+//
+// Deliberately NOT cache::SequencePlanner. That face hands the byte layer
+// host-computed physical runs, which suits MLX because its cache performs the
+// attention. Ours only owns the memory: the attention runs in a Triton kernel
+// inside the AOTI shared object, which derives physical slots on device from
+// the logical positions. Host-computed runs would also be baked in at CUDA
+// graph capture and replayed stale.
+class CudaKVCache {
  public:
-  class LoadScope final {
-   public:
-    explicit LoadScope(OffGraphKVContext context) {
-      detail::offgraph_kv_begin_load(context);
-    }
-    ~LoadScope() {
-      detail::offgraph_kv_end_load();
-    }
-    LoadScope(const LoadScope&) = delete;
-    LoadScope& operator=(const LoadScope&) = delete;
-    LoadScope(LoadScope&&) = delete;
-    LoadScope& operator=(LoadScope&&) = delete;
-  };
+  static constexpr const char* kFaceName = "cuda.CudaKVCache";
 
-  explicit OffGraphKVCacheContextOwner(OffGraphKVSettings settings)
-      : context_(detail::offgraph_kv_create_context(std::move(settings))) {}
-  ~OffGraphKVCacheContextOwner() {
-    detail::offgraph_kv_destroy_context(context_);
-  }
+  virtual ~CudaKVCache() = default;
 
-  OffGraphKVCacheContextOwner(const OffGraphKVCacheContextOwner&) = delete;
-  OffGraphKVCacheContextOwner& operator=(const OffGraphKVCacheContextOwner&) =
-      delete;
-  OffGraphKVCacheContextOwner(OffGraphKVCacheContextOwner&&) = delete;
-  OffGraphKVCacheContextOwner& operator=(OffGraphKVCacheContextOwner&&) = delete;
+  // Load time. Discovers this program's KV storage entries and records the
+  // metadata needed to bind them. One cache serves every method of a model, so
+  // this is called once per delegate handle.
+  virtual runtime::Error note_handle(CudaDelegateHandle* handle) = 0;
+  virtual void forget_handle(CudaDelegateHandle* handle) = 0;
 
-  template <typename F>
-  decltype(auto) with_load_scope(F&& fn) const {
-    LoadScope scope(context_);
-    return std::forward<F>(fn)();
-  }
+  // Execute time. Points the AOTI container at the current allocations, which
+  // move whenever the cache grows.
+  virtual runtime::Error rebind_for_execute(CudaDelegateHandle* handle) = 0;
 
-  runtime::Error validate() const {
-    return detail::offgraph_kv_validate(context_);
-  }
-  runtime::Error prepare(int64_t write_length) const {
-    return detail::offgraph_kv_prepare(context_, write_length);
-  }
-  runtime::Error commit(int64_t write_length) const {
-    return detail::offgraph_kv_commit(context_, write_length);
-  }
-  runtime::Error reset() const {
-    return detail::offgraph_kv_reset(context_);
-  }
-  OffGraphKVMetrics metrics() const {
-    return detail::offgraph_kv_metrics(context_);
-  }
+  // Every layer's storage was found in the loaded program, and at least one
+  // handle was associated.
+  virtual runtime::Error validate() const = 0;
 
- private:
-  OffGraphKVContext context_{kInvalidOffGraphKVContext};
+  // Between steps. prepare_step() admits a step of write_length tokens and
+  // grows the flat layers if needed; commit_step() advances the logical length
+  // past it.
+  //
+  // Named apart from the base's commit(SeqStepPlan), which applies one layer's
+  // already-computed plan: these take a token count and speak for the whole
+  // cache, so overloading the name would only blur two different verbs.
+  virtual runtime::Error prepare_step(int64_t write_length) = 0;
+  virtual runtime::Error commit_step(int64_t write_length) = 0;
+
+  virtual OffGraphKVMetrics metrics() const = 0;
 };
 
-void offgraph_kv_note_handle(CudaDelegateHandle* handle);
-void offgraph_kv_forget_handle(CudaDelegateHandle* handle);
-runtime::Error offgraph_kv_rebind_for_execute(CudaDelegateHandle* handle);
+// Builder for cache::kind::kSingle. Returns null when the geometry or config is
+// invalid, so CacheFactory reports the failure instead of the cache asserting
+// during construction.
+//
+// cfg.kv_dtype is an ExecuTorch ScalarType; the slim enum the storage uses
+// shares its numbering, and unsupported values are rejected here.
+std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg);
 
 } // namespace executorch::backends::cuda
