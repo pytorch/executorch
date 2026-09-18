@@ -167,6 +167,7 @@ behaviour with no accounting overhead of any kind.
 
 ```cpp
 #include <executorch/backends/mlx/runtime/backend_options.h>
+#include <executorch/runtime/backend/options.h>
 
 executorch::runtime::BackendOptions<1> opts;
 opts.set_option(executorch::backends::mlx::kEvalThresholdBytesKey,
