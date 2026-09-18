@@ -134,7 +134,7 @@ Error Runner::load() {
 
 int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
   static std::vector<float> logits_f(vocab_size_);
-  const uint16_t* logits = logits_tensor.data_ptr<uint16_t>();
+  const uint16_t* logits = logits_tensor.const_data_ptr<uint16_t>();
 
 #if defined(__aarch64__)
   static int32x4_t offset = vmovq_n_s32(logits_offset_);
