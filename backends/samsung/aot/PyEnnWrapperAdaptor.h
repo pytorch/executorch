@@ -30,10 +30,22 @@ class PyEnnWrapper {
  public:
   PyEnnWrapper() {}
 
-  void Init(const py::bytes& compile_opts) {
+  void Init() {
+    if (graphgen_instance_ != nullptr) {
+      graphgen_release(graphgen_instance_);
+    }
     graphgen_instance_ = graphgen_create();
+    context_initialized_ = false;
+  }
+
+  void SetOptions(const py::bytes& compile_opts) {
     option_buf_ = enn_option::GetEnnExecuTorchOptions(
         compile_opts.cast<std::string_view>().data());
+  }
+
+  void Init(const py::bytes& compile_opts) {
+    Init();
+    SetOptions(compile_opts);
   }
 
   bool IsNodeSupportedByBackend() {
@@ -45,17 +57,32 @@ class PyEnnWrapper {
       ENN_LOG_ERROR("Please call `Init()` first before compile.");
       return py::array_t<char>();
     }
-    auto soc_name = option_buf_->chipset();
-    if (graphgen_initialize_context(graphgen_instance_, soc_name) !=
-        GraphGenResult::SUCCESS) {
-      ENN_LOG_ERROR(
-          "Unsupported Soc (%d), please check your chipset version.", soc_name);
-      return py::array_t<char>();
+
+    // Initialize context only once
+    if (!context_initialized_) {
+      auto soc_name = option_buf_->chipset();
+      if (graphgen_initialize_context(graphgen_instance_, soc_name) !=
+          GraphGenResult::SUCCESS) {
+        ENN_LOG_ERROR(
+            "Unsupported Soc (%d), please check your chipset version.",
+            soc_name);
+        return py::array_t<char>();
+      }
+      context_initialized_ = true;
     }
 
     auto perf_mode = option_buf_->perf_mode();
     graphgen_set_perf_mode(
         graphgen_instance_, static_cast<PerformanceMode>(perf_mode));
+
+    auto weight_sharing_flag = option_buf_->weight_sharing_flag();
+    if (graphgen_set_weight_sharing_flag(
+            graphgen_instance_,
+            static_cast<WeightSharingFlag>(weight_sharing_flag)) !=
+        GraphGenResult::SUCCESS) {
+      ENN_LOG_ERROR("Set weight sharing flag failed.");
+      return py::array_t<char>();
+    }
 
     auto m_buf_info = model_buffer.request();
     auto* model_buf_ptr = reinterpret_cast<uint8_t*>(m_buf_info.ptr);
@@ -76,9 +103,39 @@ class PyEnnWrapper {
     return result;
   }
 
+  py::list GetWeights() {
+    if (graphgen_instance_ == nullptr) {
+      ENN_LOG_ERROR(
+          "Please call `Init()` and `Compile()` first before getting weights.");
+      return py::list();
+    }
+
+    WeightBuffer* weight_buffers = nullptr;
+    int weight_buffer_count = 0;
+    if (graphgen_get_all_separated_weights(
+            graphgen_instance_, &weight_buffers, &weight_buffer_count) !=
+        GraphGenResult::SUCCESS) {
+      ENN_LOG_ERROR("Get separated weights failed.");
+      return py::list();
+    }
+
+    py::list weight_list;
+    for (int i = 0; i < weight_buffer_count; ++i) {
+      auto weight_arr =
+          py::array_t<char>({weight_buffers[i].size}, {sizeof(char)});
+      auto weight_buf_info = weight_arr.request();
+      memcpy(
+          weight_buf_info.ptr, weight_buffers[i].addr, weight_buffers[i].size);
+      weight_list.append(weight_arr);
+    }
+
+    return weight_list;
+  }
+
   void Destroy() {
     graphgen_release(graphgen_instance_);
     graphgen_instance_ = nullptr;
+    context_initialized_ = false;
   }
 
   ~PyEnnWrapper() {
@@ -90,6 +147,8 @@ class PyEnnWrapper {
   void* graphgen_instance_ = nullptr;
   // enn compilation option buf
   const enn_option::EnnExecuTorchOptions* option_buf_ = nullptr;
+  // flag to track if context has been initialized
+  bool context_initialized_ = false;
 };
 } // namespace enn
 } // namespace executor
