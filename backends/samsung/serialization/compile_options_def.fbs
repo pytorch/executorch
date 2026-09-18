@@ -19,11 +19,19 @@ enum PerformanceMode : byte {
     HIGH_PERFORMANCE = 1,
 }
 
+enum WeightSharingFlag : byte {
+    WEIGHT_SHARING_NONE = 0,
+    WEIGHT_SHARING_GEN  = 1,
+    WEIGHT_SHARING_USE  = 2,
+}
+
 table EnnExecuTorchOptions {
   // The version of chipset. Specify the soc to compile and execute model.
   chipset: int;
 
   perf_mode: PerformanceMode = DEFAULT;
+
+  weight_sharing_flag: WeightSharingFlag = WEIGHT_SHARING_NONE;
 }
 
 root_type EnnExecuTorchOptions;
