@@ -11,6 +11,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <system_error>
 
 #include <cstring>
 #include <memory>
@@ -353,10 +354,20 @@ TEST_F(ProgramTest, EmptyConstantSegmentIsStillASegment) {
     out.write(reinterpret_cast<const char*>(data.data()), data.size());
   }
 
+  // Declared before the loader so that it runs after the loader has closed the
+  // file: Windows refuses to delete a file that still has an open handle. The
+  // non-throwing overload keeps a failed cleanup from failing the test.
+  struct RemoveOnExit {
+    const std::filesystem::path& path;
+    ~RemoveOnExit() {
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+    }
+  } remove_on_exit{path};
+
   Result<FileDataLoader> loader = FileDataLoader::from(path.string().c_str());
   ASSERT_EQ(loader.error(), Error::Ok);
   Result<Program> program = Program::load(&loader.get(), kDefaultVerification);
-  std::filesystem::remove(path);
   ASSERT_EQ(program.error(), Error::Ok);
 
   // The zero-length constant at index 1 resolves, rather than being rejected.
