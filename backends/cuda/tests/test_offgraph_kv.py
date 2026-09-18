@@ -7,11 +7,19 @@
 import unittest
 
 import torch
-import torch.nn.functional as F
 from executorch.backends.cuda.triton.kernels.offgraph_kv import (
     cuda_offgraph_update_and_attend,
     ring_physical_capacity,
 )
+from executorch.extension.llm.cache.reference_cache import (
+    CacheConfig,
+    LayerPolicy,
+    SequenceReferenceCache,
+)
+
+# Importing the op module registers kvcache::update_and_attend and exposes the
+# registry the eager implementation reads its cache from.
+from executorch.extension.llm.cache.update_and_attend import REGISTRY
 
 
 def _skip_if_no_cuda() -> None:
@@ -21,25 +29,60 @@ def _skip_if_no_cuda() -> None:
         raise unittest.SkipTest("BF16 not supported")
 
 
-def _reference(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    position: torch.Tensor,
-    window: int = 0,
-) -> torch.Tensor:
-    groups = q.shape[1] // k.shape[1]
-    keys = torch.arange(k.shape[2], device=q.device)
-    mask = keys.unsqueeze(0) <= position.unsqueeze(1)
-    if window:
-        mask &= position.unsqueeze(1) - keys.unsqueeze(0) < window
-    return F.scaled_dot_product_attention(
-        q.float(),
-        k.repeat_interleave(groups, dim=1).float(),
-        v.repeat_interleave(groups, dim=1).float(),
-        attn_mask=mask.unsqueeze(0).unsqueeze(0),
-        scale=0.125,
-    )
+class _Oracle:
+    """``kvcache::update_and_attend`` itself, stepped alongside the kernel.
+
+    The op is the contract every backend implements, so driving it here checks
+    the Triton kernels against the same placement and masking rules the other
+    backends are checked against -- rather than against a mask rebuilt in this
+    file, which can only ever agree with itself.
+
+    It is stateful in the same way the kernels are: feed it each step's k/v and
+    it keeps the history, so callers do not accumulate one.
+    """
+
+    _SCALE = 0.125
+
+    def __init__(self, capacity: int, window: int = 0) -> None:
+        self._cache = SequenceReferenceCache(
+            CacheConfig(
+                n_layers=1,
+                n_kv_heads=2,
+                head_dim=64,
+                capacity=capacity,
+                dtype=torch.float32,
+                layers=(LayerPolicy.ring(window) if window else LayerPolicy.flat(),),
+            )
+        )
+        self._key = f"cuda-offgraph-test-{id(self)}"
+        REGISTRY.install(self._key, self._cache)
+
+    def step(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        position: torch.Tensor,
+    ) -> torch.Tensor:
+        # The reference keeps its history on CPU in float32; position is
+        # [q_len, n_dims] per the op contract.
+        with REGISTRY.active(self._key):
+            return torch.ops.kvcache.update_and_attend(
+                q.float().cpu(),
+                k.float().cpu(),
+                v.float().cpu(),
+                position.reshape(-1, 1).cpu(),
+                0,
+                self._SCALE,
+                torch.float32,
+            )
+
+    def close(self) -> None:
+        REGISTRY.uninstall(self._key)
+
+
+def _max_abs_diff(actual: torch.Tensor, expected: torch.Tensor) -> float:
+    return (actual.float().cpu() - expected).abs().max().item()
 
 
 class OffGraphKVTest(unittest.TestCase):
@@ -84,23 +127,16 @@ class OffGraphKVTest(unittest.TestCase):
             torch.zeros(1, 2, capacity, 64, device="cuda", dtype=torch.bfloat16),
         )
         capacity_tensor = torch.tensor([capacity], device="cuda")
-        history_k = []
-        history_v = []
+        oracle = _Oracle(capacity)
+        self.addCleanup(oracle.close)
 
         for start in (0, 8):
             out, q, k, v = self._step(
                 storage, capacity_tensor, start, 8, policy=0, window=0
             )
-            history_k.append(k)
-            history_v.append(v)
             position = torch.arange(start, start + 8, device="cuda")
-            expected = _reference(
-                q,
-                torch.cat(history_k, dim=2),
-                torch.cat(history_v, dim=2),
-                position,
-            )
-            self.assertLess((out.float() - expected).abs().max().item(), 1e-2)
+            expected = oracle.step(q, k, v, position)
+            self.assertLess(_max_abs_diff(out, expected), 1e-2)
             self.assertTrue(torch.equal(storage[0][:, :, start : start + 8], k))
             self.assertTrue(torch.equal(storage[1][:, :, start : start + 8], v))
 
@@ -129,19 +165,24 @@ class OffGraphKVTest(unittest.TestCase):
             ),
         )
         capacity = torch.tensor([capacity_value], device="cuda")
-        _, _, history_k, history_v = self._step(
+        oracle = _Oracle(capacity_value)
+        self.addCleanup(oracle.close)
+        _, prefill_q, prefill_k, prefill_v = self._step(
             storage, capacity, 0, 257, policy=0, window=0
+        )
+        oracle.step(
+            prefill_q,
+            prefill_k,
+            prefill_v,
+            torch.arange(0, 257, device="cuda"),
         )
         out, q, k, v = self._step(
             storage, capacity, 257, 1, policy=0, window=0
         )
-        expected = _reference(
-            q,
-            torch.cat((history_k, k), dim=2),
-            torch.cat((history_v, v), dim=2),
-            torch.tensor([257], device="cuda"),
+        expected = oracle.step(
+            q, k, v, torch.tensor([257], device="cuda")
         )
-        self.assertLess((out.float() - expected).abs().max().item(), 1e-2)
+        self.assertLess(_max_abs_diff(out, expected), 1e-2)
 
     def test_flat_rejects_write_past_capacity(self) -> None:
         capacity = torch.tensor([8], device="cuda")
@@ -166,24 +207,17 @@ class OffGraphKVTest(unittest.TestCase):
             ),
         )
         capacity = torch.tensor([physical_capacity], device="cuda")
-        history_k = []
-        history_v = []
+        # The oracle bounds the logical sequence, not the ring's slots.
+        oracle = _Oracle(capacity=1024, window=window)
+        self.addCleanup(oracle.close)
 
         for start, length in ((0, 24), (24, 16)):
             out, q, k, v = self._step(
                 storage, capacity, start, length, policy=1, window=window
             )
-            history_k.append(k)
-            history_v.append(v)
             position = torch.arange(start, start + length, device="cuda")
-            expected = _reference(
-                q,
-                torch.cat(history_k, dim=2),
-                torch.cat(history_v, dim=2),
-                position,
-                window,
-            )
-            self.assertLess((out.float() - expected).abs().max().item(), 1e-2)
+            expected = oracle.step(q, k, v, position)
+            self.assertLess(_max_abs_diff(out, expected), 1e-2)
 
     def test_ring_serves_a_max_write_step_mid_sequence(self) -> None:
         # A step of max_write tokens starting past the window is the chunked
@@ -203,21 +237,13 @@ class OffGraphKVTest(unittest.TestCase):
             ),
         )
         capacity = torch.tensor([physical_capacity], device="cuda")
-        history_k = []
-        history_v = []
+        oracle = _Oracle(capacity=1024, window=window)
+        self.addCleanup(oracle.close)
 
         for start in (0, max_write, 2 * max_write):
             out, q, k, v = self._step(
                 storage, capacity, start, max_write, policy=1, window=window
             )
-            history_k.append(k)
-            history_v.append(v)
             position = torch.arange(start, start + max_write, device="cuda")
-            expected = _reference(
-                q,
-                torch.cat(history_k, dim=2),
-                torch.cat(history_v, dim=2),
-                position,
-                window,
-            )
-            self.assertLess((out.float() - expected).abs().max().item(), 1e-2)
+            expected = oracle.step(q, k, v, position)
+            self.assertLess(_max_abs_diff(out, expected), 1e-2)

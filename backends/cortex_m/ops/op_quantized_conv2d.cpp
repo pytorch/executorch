@@ -77,10 +77,11 @@ bool validate_conv2d_arguments(
     return false;
   }
 
-  if (stride.size() != 2 || padding.size() != 2 || dilation.size() != 2) {
+  if (stride.size() != 2 || (padding.size() != 2 && padding.size() != 4) ||
+      dilation.size() != 2) {
     ET_LOG(
         Error,
-        "quantized_conv2d_out: stride, padding, and dilation must have length 2");
+        "quantized_conv2d_out: stride/dilation must have length 2; padding must have length 2 or 4");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -176,6 +177,7 @@ static Tensor& quantized_conv2d_out_impl(
   conv_params.output_offset = output_offset_val;
   conv_params.stride.h = static_cast<const int32_t>(stride[0]);
   conv_params.stride.w = static_cast<const int32_t>(stride[1]);
+  // Trailing padding is encoded in the planned output dimensions.
   conv_params.padding.h = static_cast<const int32_t>(padding[0]);
   conv_params.padding.w = static_cast<const int32_t>(padding[1]);
   conv_params.dilation.h = static_cast<const int32_t>(dilation[0]);
