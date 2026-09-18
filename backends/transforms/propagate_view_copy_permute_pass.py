@@ -1,6 +1,6 @@
-# Copyright 2026 Arm Limited and/or its affiliates.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -1016,6 +1016,11 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
                 # connects to the rest of the graph.
                 exit_edges.add((parent, candidate))
                 continue
+            if any(exit_user is candidate for _, exit_user in exit_edges):
+                # Another path rejected this operation before this path allowed
+                # it. Only blocks_moving can differ between paths, so keep the
+                # dimension reorder before the whole connected group.
+                return None
             region.add(candidate)
             pending.extend((candidate, user) for user in candidate.users)
         return region, exit_edges
