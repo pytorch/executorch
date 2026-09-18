@@ -25,6 +25,9 @@
 #include <pytorch/tokenizers/sentencepiece.h>
 #include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
+#ifdef EXECUTORCH_USE_HF_RUST_TOKENIZER
+#include <pytorch/tokenizers/rust_hf_tokenizer.h>
+#endif
 
 namespace executorch::extension::llm {
 
@@ -50,6 +53,13 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
       return tekken_tokenizer;
     }
   }
+#ifdef EXECUTORCH_USE_HF_RUST_TOKENIZER
+  auto rust_tok_tokenizer = std::make_unique<tokenizers::RustHFTokenizer>();
+  if (rust_tok_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded Hugging Face .tok tokenizer");
+    return rust_tok_tokenizer;
+  }
+#endif
   auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
     ET_LOG(Info, "Loaded json tokenizer");
