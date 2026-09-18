@@ -78,6 +78,7 @@ def export_and_lower(
     backend: str = "cuda",
     sample: bool = True,
     use_turboquant: bool = False,
+    use_offgraph_kv_cache: bool = False,
     activation_dtype: torch.dtype = torch.bfloat16,
     max_prefill_chunk: int = 512,
     vision_model: nn.Module | None = None,
@@ -92,12 +93,20 @@ def export_and_lower(
             output_dir,
             sample=sample,
             use_turboquant=use_turboquant,
+            use_offgraph_kv_cache=use_offgraph_kv_cache,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
             vision_fp32_mm=vision_fp32_mm,
         )
     elif backend == "mlx":
+        # The off-graph cache is lowered by the CUDA backend only, and dropping
+        # the flag silently would hand back an in-graph model that looks like
+        # what was asked for.
+        if use_offgraph_kv_cache:
+            raise ValueError(
+                "--use-offgraph-kv-cache is not supported by the mlx backend"
+            )
         _export_mlx(
             model,
             config,
@@ -119,7 +128,7 @@ def _solo_constant_methods(
     config: MuseGlimmerConfig,
     max_prefill: int,
     activation_dtype: torch.dtype,
-    mutable_buffer_metadata: str,
+    mutable_buffer_metadata: str | None,
     has_vision: bool,
     max_vision_patches: int,
 ) -> dict[str, object]:
@@ -136,12 +145,13 @@ def _solo_constant_methods(
         "get_vocab_size": config.vocab_size,
         "get_max_prefill_chunk": max_prefill,
         "get_activation_dtype": common.activation_dtype_tag(activation_dtype),
-        "get_mutable_buffer_metadata": mutable_buffer_metadata,
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
         "has_vision_encoder": bool(has_vision),
     }
+    if mutable_buffer_metadata is not None:
+        constant_methods["get_mutable_buffer_metadata"] = mutable_buffer_metadata
     if has_vision:
         constant_methods["get_vision_hidden_size"] = config.dim
         constant_methods["get_max_vision_patches"] = int(max_vision_patches)
@@ -154,6 +164,7 @@ def _export_cuda(
     output_dir: str,
     sample: bool = True,
     use_turboquant: bool = False,
+    use_offgraph_kv_cache: bool = False,
     vision_model: nn.Module | None = None,
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 16384,
@@ -191,16 +202,30 @@ def _export_cuda(
     from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
         add_on_device_sampler,
         cuda_source_transformations,
+        enable_offgraph_kv_cache,
+        offgraph_kv_cache_geometry,
         vision_cuda_source_transformations,
     )
 
     # Always applied: bounds global-attention SDPA to the valid context via a
     # runtime kv_len (O(context) decode). With use_turboquant=True it also swaps
     # the global KV caches for TurboQuant TQ4.
-    cuda_source_transformations(model, use_turboquant=use_turboquant)
+    if use_offgraph_kv_cache and use_turboquant:
+        raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
 
-    # Max prefill chunk must fit in the ring buffer (2 * sliding_window)
+    # A prefill chunk is one write step, so the ring must hold the union of the
+    # step's per-query windows. enable_offgraph_kv_cache sizes it from this.
     max_prefill = min(config.max_seq_len - 1, model._sliding_window * 2)
+
+    offgraph_manifest = None
+    offgraph_geometry = {}
+    if use_offgraph_kv_cache:
+        offgraph_manifest = enable_offgraph_kv_cache(model, max_prefill)
+        # Read the geometry while the model is alive; it is freed before the
+        # constant methods are assembled.
+        offgraph_geometry = offgraph_kv_cache_geometry(model)
+    else:
+        cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     has_vision = vision_model is not None
     programs: dict[str, "torch.export.ExportedProgram"] = {}
@@ -267,7 +292,9 @@ def _export_cuda(
             vision_model, pos_embed_table, max_vision_patches
         )
 
-    mutable_buffer_metadata = common.mutable_buffer_metadata(model)
+    mutable_buffer_metadata = (
+        None if offgraph_manifest else common.mutable_buffer_metadata(model)
+    )
     del model
     if has_vision:
         del vision_model
@@ -275,12 +302,20 @@ def _export_cuda(
     torch.cuda.empty_cache()
 
     def _partitioner_for(name: str) -> "CudaPartitioner":
-        return CudaPartitioner(
-            [
-                CudaBackend.generate_method_name_compile_spec(name),
-                CompileSpec("low_memory_mode", b"ON"),
-            ]
-        )
+        compile_specs = [
+            CudaBackend.generate_method_name_compile_spec(name),
+            CompileSpec("low_memory_mode", b"ON"),
+        ]
+        if offgraph_manifest is not None:
+            compile_specs.extend(
+                (
+                    CompileSpec(
+                        "offgraph_kv_manifest", offgraph_manifest.encode()
+                    ),
+                    CompileSpec("autotune_at_compile_time", b"OFF"),
+                )
+            )
+        return CudaPartitioner(compile_specs)
 
     constant_methods = _solo_constant_methods(
         config=config,
@@ -292,6 +327,13 @@ def _export_cuda(
     )
     constant_methods["get_min_prefill_chunk"] = _CUDA_MIN_PREFILL_CHUNK
     constant_methods["use_sampling"] = sample
+    if offgraph_manifest is not None:
+        # The manifest is a compile spec (the lowering pass needs geometry at
+        # partition time). The runtime instead reads the neutral cache-geometry
+        # constant methods, the same ones the MLX off-graph path publishes.
+        # Sizing already travels as get_max_seq_len (context) and
+        # get_max_prefill_chunk (largest step); only the geometry is new.
+        constant_methods.update(offgraph_geometry)
 
     print(
         f"Lowering {len(programs)} methods to ExecuTorch (CUDA): "
@@ -571,6 +613,11 @@ def main() -> None:
         help="Use TurboQuant TQ4 KV cache on global (NoPE) layers (CUDA).",
     )
     parser.add_argument(
+        "--use-offgraph-kv-cache",
+        action="store_true",
+        help="Allocate CUDA KV cache at runtime instead of storing it in the PTE/PTD.",
+    )
+    parser.add_argument(
         "--activation-dtype",
         default=None,
         choices=list(common.ACTIVATION_DTYPES),
@@ -623,6 +670,10 @@ def main() -> None:
         parser.error("--activation-dtype is only supported with --backend mlx.")
     if args.backend != "mlx" and args.max_prefill_chunk != 512:
         parser.error("--max-prefill-chunk is only supported with --backend mlx.")
+    if args.use_offgraph_kv_cache and args.backend != "cuda":
+        parser.error("--use-offgraph-kv-cache requires --backend cuda.")
+    if args.use_offgraph_kv_cache and args.turboquant:
+        parser.error("--use-offgraph-kv-cache cannot be combined with --turboquant.")
     if args.gguf:
         from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
             load_gguf_model,
@@ -679,6 +730,7 @@ def main() -> None:
         backend=args.backend,
         sample=not args.logits,
         use_turboquant=args.turboquant,
+        use_offgraph_kv_cache=args.use_offgraph_kv_cache,
         activation_dtype=activation_dtype,
         max_prefill_chunk=args.max_prefill_chunk,
         vision_model=vision_model,
