@@ -1968,8 +1968,13 @@ class Interpreter {
       ExecutionState& st,
       StreamOrDevice stream = {}) const {
     size_t pending_bytes = 0;
-    run_chain(prog, chain_idx, st, stream, pending_bytes,
-              /*accumulate_only=*/false);
+    run_chain(
+        prog,
+        chain_idx,
+        st,
+        stream,
+        pending_bytes,
+        /*accumulate_only=*/false);
   }
 
   // Nested chains (IF branches, SCAN bodies) share the caller's counter and

@@ -149,8 +149,7 @@ TEST(MLXEvalThreshold, EnabledAccountsEveryInstruction) {
 
   Interpreter interp;
   interp.set_eval_threshold_bytes(std::numeric_limits<size_t>::max());
-  EXPECT_EQ(
-      interp.eval_threshold_bytes(), std::numeric_limits<size_t>::max());
+  EXPECT_EQ(interp.eval_threshold_bytes(), std::numeric_limits<size_t>::max());
 
   Interpreter::reset_accounting_calls();
   interp.run(program, st);
@@ -215,8 +214,7 @@ TEST(MLXEvalThreshold, OutputsAreUnchangedByTheThreshold) {
   const uint32_t kN = 8;
 
   for (bool nested : {false, true}) {
-    MLXProgram program =
-        nested ? make_if_program(kN) : make_flat_program(kN);
+    MLXProgram program = nested ? make_if_program(kN) : make_flat_program(kN);
     ConstantData constants;
     MutableBufferData bufs;
 
@@ -274,6 +272,5 @@ TEST(MLXEvalThreshold, ValidatesOptionValue) {
   EXPECT_TRUE(eval_threshold_bytes_is_valid(1));
   EXPECT_TRUE(eval_threshold_bytes_is_valid(512 * 1024 * 1024));
   EXPECT_FALSE(eval_threshold_bytes_is_valid(-1));
-  EXPECT_FALSE(eval_threshold_bytes_is_valid(
-      std::numeric_limits<int>::min()));
+  EXPECT_FALSE(eval_threshold_bytes_is_valid(std::numeric_limits<int>::min()));
 }

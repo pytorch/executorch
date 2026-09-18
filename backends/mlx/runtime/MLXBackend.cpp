@@ -299,8 +299,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
               "%s must be >= 0 (0 disables the mechanism), got %d",
               kEvalThresholdBytesKey,
               bytes);
-          throw std::runtime_error(
-              "eval_threshold_bytes must be >= 0");
+          throw std::runtime_error("eval_threshold_bytes must be >= 0");
         }
         handle->interpreter.set_eval_threshold_bytes(
             static_cast<size_t>(bytes));
