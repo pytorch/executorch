@@ -17,8 +17,17 @@
 #include <vector>
 
 namespace executorch {
+
+// Forward declarations for the off-graph KV cache the delegate may be given.
+// The concrete types live in cuda_kv_cache.h, which includes this header.
+namespace extension::llm::cache {
+class Cache;
+} // namespace extension::llm::cache
+
 namespace backends {
 namespace cuda {
+
+class CudaKVCache;
 
 using AOTInductorModelContainerGetConstantDtypeFunc =
     aoti::AOTIRuntimeError (*)(
@@ -92,6 +101,7 @@ enum class CudaGraphPhase {
 // All CUDA graph related state grouped into a single struct.
 struct CudaGraphState {
   CudaGraphPhase phase = CudaGraphPhase::Disabled;
+  int warmup_steps = 0;
   int warmup_remaining = 0;
 
   // Captured graph and executable instance
@@ -109,11 +119,29 @@ struct CudaGraphState {
   CudaGraphState() = default;
 
   ~CudaGraphState() {
+    release();
+  }
+
+  void enable(int steps) {
+    phase = CudaGraphPhase::Warmup;
+    warmup_steps = steps;
+    warmup_remaining = steps;
+  }
+
+  void reset_for_recapture() {
+    const int steps = warmup_steps;
+    release();
+    enable(steps);
+  }
+
+  void release() {
     if (graph_exec) {
       (void)cudaGraphExecDestroy(graph_exec);
+      graph_exec = nullptr;
     }
     if (graph) {
       (void)cudaGraphDestroy(graph);
+      graph = nullptr;
     }
     // Only free input buffers — output buffers are owned by the AOTI runtime
     // (allocated during graph capture via the caching allocator).
@@ -121,6 +149,10 @@ struct CudaGraphState {
       if (ptr)
         (void)cudaFree(ptr);
     }
+    static_input_ptrs.clear();
+    static_output_ptrs.clear();
+    static_input_nbytes.clear();
+    static_output_nbytes.clear();
   }
 
   // Non-copyable: prevent double-free of CUDA resources
@@ -130,6 +162,7 @@ struct CudaGraphState {
   // Movable
   CudaGraphState(CudaGraphState&& other) noexcept
       : phase(other.phase),
+        warmup_steps(other.warmup_steps),
         warmup_remaining(other.warmup_remaining),
         graph(other.graph),
         graph_exec(other.graph_exec),
@@ -143,17 +176,10 @@ struct CudaGraphState {
 
   CudaGraphState& operator=(CudaGraphState&& other) noexcept {
     if (this != &other) {
-      // Clean up existing resources
-      if (graph_exec)
-        (void)cudaGraphExecDestroy(graph_exec);
-      if (graph)
-        (void)cudaGraphDestroy(graph);
-      for (auto* ptr : static_input_ptrs) {
-        if (ptr)
-          (void)cudaFree(ptr);
-      }
+      release();
 
       phase = other.phase;
+      warmup_steps = other.warmup_steps;
       warmup_remaining = other.warmup_remaining;
       graph = other.graph;
       graph_exec = other.graph_exec;
@@ -170,7 +196,12 @@ struct CudaGraphState {
 };
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
+//
+// Forward-declared rather than included: cuda_kv_cache.h includes this header
+// to name CudaDelegateHandle, so including it back would be circular.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
+  aoti::AOTInductorModelContainerRunFunc run_single_threaded{nullptr};
+
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 
@@ -193,6 +224,16 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // SlimTensor handles alive for as long as AOTI may reference their views.
   std::vector<std::shared_ptr<CudaWeightStorage>> fqn_weight_storages;
   std::vector<std::unique_ptr<aoti::slim::SlimTensor>> fqn_weight_tensors;
+
+  // The off-graph KV cache the runner installed for this model, resolved from
+  // the registry at init. Null for an in-graph model, which is the signal that
+  // this program owns its KV state as ordinary (mutable) buffers.
+  //
+  // The shared_ptr is the handle's own claim on the cache, so the cache
+  // outlives the delegate even if the runner drops its guard first; the raw
+  // pointer is the backend face of that same object.
+  std::shared_ptr<::executorch::extension::llm::cache::Cache> kv_cache_shared;
+  CudaKVCache* kv_cache{nullptr};
 };
 
 } // namespace cuda
