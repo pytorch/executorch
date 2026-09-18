@@ -20,7 +20,9 @@
 #include <mlx/ops.h>
 
 #include <algorithm>
-#include <cstdlib>
+#include <atomic>
+#include <cstdint>
+#include <limits>
 
 namespace executorch {
 namespace backends {
@@ -1929,6 +1931,29 @@ inline void exec_argpartition(
 
 class Interpreter {
  public:
+  // Threshold in bytes of pending intermediates before the live per-execution
+  // tensors are evaluated. 0 (the default) disables the mechanism entirely:
+  // no traversal, no nbytes() queries, no accumulation, no root collection.
+  // Set from the kEvalThresholdBytesKey runtime spec, before init() runs the
+  // init chain. See backend_options.h for why this is a threshold and not a
+  // hard limit.
+  void set_eval_threshold_bytes(size_t bytes) {
+    eval_threshold_bytes_ = bytes;
+  }
+  size_t eval_threshold_bytes() const {
+    return eval_threshold_bytes_;
+  }
+
+  // Test-only instrumentation: counts calls to accumulate_instruction_bytes.
+  // Only ever incremented on the enabled path, so the disabled path can be
+  // asserted to be free of the accounting work.
+  static uint64_t accounting_calls() {
+    return accounting_calls_.load(std::memory_order_relaxed);
+  }
+  static void reset_accounting_calls() {
+    accounting_calls_.store(0, std::memory_order_relaxed);
+  }
+
   void run(
       const MLXProgram& prog,
       ExecutionState& st,
@@ -1936,24 +1961,34 @@ class Interpreter {
     run_chain(prog, prog.main_chain_idx, st, stream);
   }
 
-  // Bytes of pending intermediates allowed to accumulate before a forced eval.
-  // 0 disables the barrier entirely (the pre-#22513 behaviour).
-  static size_t eval_budget_bytes() {
-    static const size_t bytes = [] {
-      const char* e = std::getenv("ET_MLX_EVAL_BUDGET_MB");
-      size_t mb = e == nullptr
-          ? 512u
-          : static_cast<size_t>(std::strtoul(e, nullptr, 10));
-      return mb * 1024u * 1024u;
-    }();
-    return bytes;
-  }
-
+  // Entry point: owns the pending-bytes counter for this execution.
   void run_chain(
       const MLXProgram& prog,
       uint32_t chain_idx,
       ExecutionState& st,
       StreamOrDevice stream = {}) const {
+    size_t pending_bytes = 0;
+    run_chain(prog, chain_idx, st, stream, pending_bytes,
+              /*accumulate_only=*/false);
+  }
+
+  // Nested chains (IF branches, SCAN bodies) share the caller's counter and
+  // pass accumulate_only=true: they add their instructions' estimates but must
+  // not trigger a threshold evaluation themselves. Deferring the check until
+  // control returns to the enclosing chain means a SCAN's collected outputs
+  // have been stacked into state and are reachable from the evaluation roots;
+  // evaluating inside the body could otherwise reset the shared counter while
+  // earlier outputs were still retained only in `collected`.
+  //
+  // accumulate_only suppresses only the threshold-triggered evaluation here.
+  // Op-internal evaluations are unaffected.
+  void run_chain(
+      const MLXProgram& prog,
+      uint32_t chain_idx,
+      ExecutionState& st,
+      StreamOrDevice stream,
+      size_t& pending_bytes,
+      bool accumulate_only) const {
     if (chain_idx >= prog.instruction_chains.size()) {
       throw std::runtime_error(
           "run_chain: chain_idx " + std::to_string(chain_idx) +
@@ -1961,62 +1996,30 @@ class Interpreter {
           std::to_string(prog.instruction_chains.size()) + ")");
     }
     const auto& chain = prog.instruction_chains[chain_idx];
-    // MLX is lazy: dispatch() only builds graph nodes, and nothing is
-    // materialized until MLXBackend::execute calls async_eval on the outputs.
-    // For a long chain that means every intermediate in the method is live at
-    // the same time. Whisper-small's 495-instruction encode peaks at 1105 MB of
-    // MLX allocation against 95 MB of steady-state active memory, which is what
-    // makes the model unusable on an iPhone (pytorch/executorch#22513).
-    //
-    // Bound it by evaluating once the intermediates produced since the last
-    // barrier exceed a byte budget. Each barrier costs a GPU sync, so the cost
-    // tracks the NUMBER of barriers, and the budget is on bytes rather than an
-    // instruction count so that only methods which actually allocate get any.
-    // Whisper-small at 512 MB takes 12 barriers in encode and 0 in decode,
-    // where an every-32-instruction rule took 15 and 22 -- and those 22 bought
-    // 50 MB on a method that peaks at 258 MB while costing 21% on an iPhone 16.
-    //
-    // Per instruction we add the largest tensor it touches, which tracks the
-    // size of what it just produced without needing to know which tid is the
-    // output. Evaluating early does not change results (verified
-    // bit-identical).
-    const size_t eval_budget = eval_budget_bytes();
-    size_t pending_bytes = 0;
+    const size_t threshold = eval_threshold_bytes_;
     size_t idx = 0;
     for (const auto& instr : chain) {
       st.begin_op(idx, op_name(instr.op));
       if (instr.op == OpCode::SCAN) {
-        exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+        exec_scan(
+            prog, std::get<ScanNode>(instr.node), st, stream, pending_bytes);
       } else if (instr.op == OpCode::IF) {
-        exec_if(prog, std::get<IfNode>(instr.node), st, stream);
+        exec_if(prog, std::get<IfNode>(instr.node), st, stream, pending_bytes);
       } else {
         dispatch(instr, st, stream);
       }
       st.end_op();
       ++idx;
 
-      if (eval_budget != 0) {
-        size_t widest = 0;
-        for_each_tid(instr, [&](Tid id) {
-          if (id.idx >= st.num_constants && !st.is_mutable_buffer(id)) {
-            uint32_t slot = st.tensor_index(id);
-            if (slot < st.tensors.size() && st.tensors[slot].has_value()) {
-              widest = std::max(widest, st.tensors[slot]->nbytes());
-            }
-          }
-        });
-        pending_bytes += widest;
-        if (pending_bytes >= eval_budget) {
-          std::vector<::mlx::core::array> live;
-          live.reserve(st.tensors.size());
-          for (auto& t : st.tensors) {
-            if (t.has_value()) {
-              live.push_back(*t);
-            }
-          }
-          if (!live.empty()) {
-            ::mlx::core::eval(live);
-          }
+      if (threshold != 0) {
+        // SCAN and IF already accumulated their own child instructions through
+        // the shared counter; charging the parent for them again would double
+        // count.
+        if (instr.op != OpCode::SCAN && instr.op != OpCode::IF) {
+          accumulate_instruction_bytes(instr, st, pending_bytes);
+        }
+        if (!accumulate_only && pending_bytes >= threshold) {
+          evaluate_state_tensors(st);
           pending_bytes = 0;
         }
       }
@@ -2024,25 +2027,79 @@ class Interpreter {
   }
 
  private:
+  // Charge `pending_bytes` for one instruction. The estimate is the largest
+  // per-execution tensor the instruction touches, which tracks the size of what
+  // it just produced without needing to know which tid is its output.
+  // Constants and mutable buffers are excluded: they are not intermediates and
+  // evaluating does not release them.
+  //
+  // Only ever called when the mechanism is enabled.
+  static void accumulate_instruction_bytes(
+      const Instruction& instr,
+      const ExecutionState& st,
+      size_t& pending_bytes) {
+    accounting_calls_.fetch_add(1, std::memory_order_relaxed);
+    size_t widest = 0;
+    for_each_tid(instr, [&](Tid id) {
+      if (id.idx >= st.num_constants && !st.is_mutable_buffer(id)) {
+        uint32_t slot = st.tensor_index(id);
+        if (slot < st.tensors.size() && st.tensors[slot].has_value()) {
+          widest = std::max(widest, st.tensors[slot]->nbytes());
+        }
+      }
+    });
+    add_saturating(pending_bytes, widest);
+  }
+
+  // Saturating add: a pathological program must not wrap the counter back
+  // under the threshold and silently disable the mechanism.
+  static void add_saturating(size_t& acc, size_t add) {
+    if (add > std::numeric_limits<size_t>::max() - acc) {
+      acc = std::numeric_limits<size_t>::max();
+    } else {
+      acc += add;
+    }
+  }
+
+  // Materialize every live per-execution tensor, releasing the graph that
+  // produced them. Results are unchanged by evaluating early.
+  static void evaluate_state_tensors(ExecutionState& st) {
+    std::vector<::mlx::core::array> live;
+    live.reserve(st.tensors.size());
+    for (auto& t : st.tensors) {
+      if (t.has_value()) {
+        live.push_back(*t);
+      }
+    }
+    if (!live.empty()) {
+      ::mlx::core::eval(live);
+    }
+  }
+
+  size_t eval_threshold_bytes_{0};
+  inline static std::atomic<uint64_t> accounting_calls_{0};
+
   void exec_if(
       const MLXProgram& prog,
       const IfNode& n,
       ExecutionState& st,
-      StreamOrDevice s) const {
+      StreamOrDevice s,
+      size_t& pending_bytes) const {
     // Select one branch at runtime based on the integer condition.
     // Nonzero -> then_chain, zero -> else_chain. The selected chain's
     // instructions write the output slot(s) directly.
     const int64_t cond = resolve_int(n.cond, st);
     const uint32_t chain_idx =
         (cond != 0) ? n.then_chain_idx : n.else_chain_idx;
-    run_chain(prog, chain_idx, st, s);
+    run_chain(prog, chain_idx, st, s, pending_bytes, /*accumulate_only=*/true);
   }
 
   void exec_scan(
       const MLXProgram& prog,
       const ScanNode& n,
       ExecutionState& st,
-      StreamOrDevice s) const {
+      StreamOrDevice s,
+      size_t& pending_bytes) const {
     int axis = n.scan_axis;
     int T_int = st.const_tensor_ref(n.originals[0]).shape(axis);
     size_t T = static_cast<size_t>(T_int);
@@ -2064,7 +2121,13 @@ class Interpreter {
                 s));
       }
 
-      run_chain(prog, static_cast<uint32_t>(n.body_chain_idx), st, s);
+      run_chain(
+          prog,
+          static_cast<uint32_t>(n.body_chain_idx),
+          st,
+          s,
+          pending_bytes,
+          /*accumulate_only=*/true);
 
       for (size_t i = 0; i < num_outputs; ++i) {
         collected[i].push_back(st.const_tensor_ref(n.outputs[i]));
@@ -2073,6 +2136,21 @@ class Interpreter {
 
     for (size_t i = 0; i < num_outputs; ++i) {
       st.set_tensor(n.outputs[i], ::mlx::core::stack(collected[i], axis, s));
+    }
+
+    // The stacked outputs are new allocations the body's per-instruction
+    // estimates never saw, so charge for them here. Guarded like every other
+    // piece of the accounting.
+    if (eval_threshold_bytes_ != 0) {
+      for (size_t i = 0; i < num_outputs; ++i) {
+        const Tid id = n.outputs[i];
+        if (id.idx >= st.num_constants && !st.is_mutable_buffer(id)) {
+          uint32_t slot = st.tensor_index(id);
+          if (slot < st.tensors.size() && st.tensors[slot].has_value()) {
+            add_saturating(pending_bytes, st.tensors[slot]->nbytes());
+          }
+        }
+      }
     }
   }
   void dispatch(const Instruction& instr, ExecutionState& st, StreamOrDevice s)

@@ -286,6 +286,26 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         handle->clear_cache_interval_ = spec.get();
       }
 
+      // Per-model lazy-graph evaluation threshold (optional runtime spec,
+      // keyed per delegate). Configured here, before the init chain runs
+      // below, so the init chain is covered by the same setting. 0/unset
+      // disables the mechanism and is the default.
+      if (auto spec = context.get_runtime_spec<int>(kEvalThresholdBytesKey);
+          spec.ok()) {
+        const int bytes = spec.get();
+        if (!eval_threshold_bytes_is_valid(bytes)) {
+          ET_LOG(
+              Error,
+              "%s must be >= 0 (0 disables the mechanism), got %d",
+              kEvalThresholdBytesKey,
+              bytes);
+          throw std::runtime_error(
+              "eval_threshold_bytes must be >= 0");
+        }
+        handle->interpreter.set_eval_threshold_bytes(
+            static_cast<size_t>(bytes));
+      }
+
       if (!processed || !processed->data() || processed->size() == 0) {
         throw std::runtime_error("init: null or empty delegate payload");
       }
