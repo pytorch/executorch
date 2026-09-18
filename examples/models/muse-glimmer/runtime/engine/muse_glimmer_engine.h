@@ -31,6 +31,8 @@
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
+#include <executorch/extension/llm/cache/cache.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 #elif defined(EXECUTORCH_BUILD_MLX)
 #include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/backends/mlx/runtime/mlx_mutable_state.h>
@@ -63,12 +65,9 @@ enum class MuseGlimmerArtifactMode {
 #if defined(EXECUTORCH_BUILD_CUDA)
 using MuseGlimmerMutableStateContextOwner =
     ::executorch::backends::cuda::MutableStateContextOwner;
-using MuseGlimmerOffGraphKVCacheContextOwner =
-    ::executorch::backends::cuda::OffGraphKVCacheContextOwner;
 constexpr int kMuseGlimmerNoMutableSession =
     ::executorch::backends::cuda::kNoMutableSession;
 #elif defined(EXECUTORCH_BUILD_MLX)
-class MuseGlimmerOffGraphKVCacheContextOwner {};
 using MuseGlimmerMutableStateContextOwner =
     ::executorch::backends::mlx::MutableStateContextOwner;
 constexpr int kMuseGlimmerNoMutableSession =
@@ -148,13 +147,10 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
   }
 
 #ifdef EXECUTORCH_BUILD_CUDA
+  // Defined out of line: reading them needs the CUDA cache face, which this
+  // header deliberately does not name.
   std::optional<::executorch::backends::cuda::OffGraphKVMetrics>
-  offgraph_kv_metrics() const {
-    if (offgraph_kv_ == nullptr) {
-      return std::nullopt;
-    }
-    return offgraph_kv_->metrics();
-  }
+  offgraph_kv_metrics() const;
 #endif
 
   MuseGlimmerEngine(const MuseGlimmerEngine&) = delete;
@@ -180,8 +176,7 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
       ::executorch::extension::TensorPtr decode_pos_table_dev,
       std::unique_ptr<MuseGlimmerVisionRuntime> vision_runtime,
       bool rebind_available,
-      std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state,
-      std::unique_ptr<MuseGlimmerOffGraphKVCacheContextOwner> offgraph_kv)
+      std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state)
       : config_(std::move(config)),
         tokenizer_(std::move(tokenizer)),
         metadata_(std::move(metadata)),
@@ -200,8 +195,7 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
         decode_pos_table_dev_(std::move(decode_pos_table_dev)),
         vision_runtime_(std::move(vision_runtime)),
         rebind_available_(rebind_available),
-        mutable_state_(std::move(mutable_state)),
-        offgraph_kv_(std::move(offgraph_kv)) {}
+        mutable_state_(std::move(mutable_state)) {}
 
   MuseGlimmerConfig config_;
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
@@ -224,7 +218,19 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
   std::unique_ptr<MuseGlimmerVisionRuntime> vision_runtime_;
   bool rebind_available_ = false;
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state_;
-  std::unique_ptr<MuseGlimmerOffGraphKVCacheContextOwner> offgraph_kv_;
+#ifdef EXECUTORCH_BUILD_CUDA
+  // The installed off-graph KV cache, or nothing for an in-graph model. The
+  // shared_ptr owns it, the guard keeps it discoverable under its registry key
+  // for as long as methods may load, and the two raw pointers are its faces:
+  // one to step the cache, one to reset it.
+  // The installed off-graph KV cache, held as the neutral type. Stepping it
+  // needs a backend face, but that lookup lives in the .cpp so the runner's
+  // header stays free of CUDA cache types; SequenceControl is what the runner
+  // itself speaks.
+  std::shared_ptr<::executorch::extension::llm::cache::Cache> offgraph_cache_;
+  std::unique_ptr<::executorch::extension::llm::cache::InstallGuard> offgraph_guard_;
+  ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ = nullptr;
+#endif
   std::atomic<int> live_sessions_{0};
 };
 

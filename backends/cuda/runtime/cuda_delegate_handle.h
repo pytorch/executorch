@@ -17,8 +17,17 @@
 #include <vector>
 
 namespace executorch {
+
+// Forward declarations for the off-graph KV cache the delegate may be given.
+// The concrete types live in cuda_kv_cache.h, which includes this header.
+namespace extension::llm::cache {
+class Cache;
+} // namespace extension::llm::cache
+
 namespace backends {
 namespace cuda {
+
+class CudaKVCache;
 
 using AOTInductorModelContainerGetConstantDtypeFunc =
     aoti::AOTIRuntimeError (*)(
@@ -187,6 +196,9 @@ struct CudaGraphState {
 };
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
+//
+// Forward-declared rather than included: cuda_kv_cache.h includes this header
+// to name CudaDelegateHandle, so including it back would be circular.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   aoti::AOTInductorModelContainerRunFunc run_single_threaded{nullptr};
 
@@ -212,6 +224,16 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // SlimTensor handles alive for as long as AOTI may reference their views.
   std::vector<std::shared_ptr<CudaWeightStorage>> fqn_weight_storages;
   std::vector<std::unique_ptr<aoti::slim::SlimTensor>> fqn_weight_tensors;
+
+  // The off-graph KV cache the runner installed for this model, resolved from
+  // the registry at init. Null for an in-graph model, which is the signal that
+  // this program owns its KV state as ordinary (mutable) buffers.
+  //
+  // The shared_ptr is the handle's own claim on the cache, so the cache
+  // outlives the delegate even if the runner drops its guard first; the raw
+  // pointer is the backend face of that same object.
+  std::shared_ptr<::executorch::extension::llm::cache::Cache> kv_cache_shared;
+  CudaKVCache* kv_cache{nullptr};
 };
 
 } // namespace cuda

@@ -46,6 +46,7 @@
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
@@ -450,7 +451,31 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Runtime-owned off-graph buffers must capture their AOTI names before
     // the serialized constants update installs the ordinary weight set.
-    offgraph_kv_note_handle(handle);
+    //
+    // The cache is found by the key the runner published as a runtime spec.
+    // No key means an in-graph model, whose KV state is ordinary mutable
+    // buffers -- that is the whole of the off-graph/in-graph detection, and it
+    // needs nothing from the user.
+    if (auto spec = context.get_runtime_spec<const char*>(
+            ::executorch::extension::llm::cache::kCacheKeyOption);
+        spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
+      const char* cache_key = spec.get();
+      handle->kv_cache_shared =
+          ::executorch::extension::llm::cache::CacheRegistry::global().get(
+              std::string(cache_key));
+      ET_CHECK_OR_RETURN_ERROR(
+          handle->kv_cache_shared != nullptr,
+          InvalidArgument,
+          "init: cache_key '%s' is not installed in the CacheRegistry",
+          cache_key);
+      handle->kv_cache = handle->kv_cache_shared->as<CudaKVCache>();
+      ET_CHECK_OR_RETURN_ERROR(
+          handle->kv_cache != nullptr,
+          InvalidArgument,
+          "init: cache under key '%s' is not a CUDA cache",
+          cache_key);
+      ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->note_handle(handle));
+    }
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
     // cross-method cache model used by the legacy path. The payload only adds
@@ -603,7 +628,9 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
-    ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_rebind_for_execute(handle));
+    if (handle->kv_cache != nullptr) {
+      ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->rebind_for_execute(handle));
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
 
     // ---------------------------------------------------------------
@@ -1006,7 +1033,9 @@ class ET_EXPERIMENTAL CudaBackend final
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
     mutable_state_forget_handle(handle);
-    offgraph_kv_forget_handle(handle);
+    if (handle->kv_cache != nullptr) {
+      handle->kv_cache->forget_handle(handle);
+    }
 
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
@@ -1485,6 +1514,27 @@ auto cls = cuda::CudaBackend();
 executorch::runtime::Backend backend{"CudaBackend", &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
+
+// Publish this backend's off-graph KV cache layouts. A runner asks the factory
+// for (backend_id, kind) and gets back a neutral Cache it can install, without
+// naming any CUDA type.
+const bool cuda_cache_builders_registered = [] {
+  namespace cache = ::executorch::extension::llm::cache;
+  const auto error = cache::CacheFactory::global().register_builder(
+      cuda::kCudaBackendId,
+      cache::kind::kSingle,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+        return cuda::make_cuda_sequence_kv_cache(geometry, cfg);
+      });
+  if (error != executorch::runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to register cache builder for %s:%s",
+        cuda::kCudaBackendId,
+        cache::kind::kSingle);
+  }
+  return true;
+}();
 
 // Auto-register the CudaAllocator so that DeviceMemoryBuffer::create(CUDA)
 // works whenever the CUDA backend library is linked.

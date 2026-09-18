@@ -41,6 +41,7 @@ from .explicit_layout_pass import (
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
+from .fuse_conv_padding_pass import FuseConvPaddingPass
 from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
@@ -60,6 +61,7 @@ class CortexMPassManager(PassManager):
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
         AtenToCortexMPass,
+        FuseConvPaddingPass,
         InitializeScratchBuffersPass,
     ]
 
@@ -73,12 +75,13 @@ class CortexMPassManager(PassManager):
         ConvertConv1dToConv2dPass,
         CortexMReplaceOpsWithChannelsLastVariants,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
-        CortexMCanonicalizeViewCopyPermutePass,
+        # Move layout copies across pads before singleton permutations become views.
         RemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,
         ValidateCortexMExplicitLayoutPass,
         ReplaceQuantNodesPass,
         AtenToCortexMPass,
+        FuseConvPaddingPass,
         InitializeScratchBuffersPass,
     ]
 
