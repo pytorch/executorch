@@ -1516,10 +1516,6 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
 #ifdef EXECUTORCH_BUILD_CUDA
   if (method_names.count(kNumCaches) != 0) {
     ET_CHECK_OR_RETURN_ERROR(
-        !config.enable_cuda_graph,
-        NotSupported,
-        "off-graph KV cache does not support CUDA graph");
-    ET_CHECK_OR_RETURN_ERROR(
         artifact_mode == MuseGlimmerArtifactMode::Autoregressive,
         NotSupported,
         "off-graph KV cache currently supports autoregressive artifacts only");

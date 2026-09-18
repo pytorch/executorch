@@ -168,10 +168,6 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       return error_;
     }
     ET_CHECK_OR_RETURN_ERROR(
-        handle->cuda_graph_state.phase == CudaGraphPhase::Disabled,
-        NotSupported,
-        "offgraph_kv: CUDA graph is not supported");
-    ET_CHECK_OR_RETURN_ERROR(
         !allocations_.empty(),
         InvalidState,
         "offgraph_kv: prepare_step must run before execute");
@@ -429,6 +425,15 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     metrics_.flat_capacity = new_capacity;
     metrics_.growth_count++;
     bound_.clear();
+    // Growth moved every pointer a captured graph baked in, so any handle
+    // running a graph has to capture again. Done only once the growth has
+    // committed: an earlier sweep would throw away a still-valid graph on
+    // every path above that returns an error.
+    for (const auto& item : descriptors_) {
+      if (item.first->cuda_graph_state.phase != CudaGraphPhase::Disabled) {
+        item.first->cuda_graph_state.reset_for_recapture();
+      }
+    }
     ET_LOG(
         Info,
         "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "

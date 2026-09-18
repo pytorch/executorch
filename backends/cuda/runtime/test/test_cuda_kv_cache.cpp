@@ -178,6 +178,17 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
   EXPECT_EQ(reset.flat_capacity, 8);
   EXPECT_EQ(reset.growth_count, 1);
 
+  // Only growth moves the storage, so only growth forces a recapture. The
+  // cache holds 8 slots here, so the step has to ask for more than that: a step
+  // that merely fills it would leave every pointer where the captured graph
+  // baked it in, and nothing would need to be captured again.
+  handle.cuda_graph_state.enable(3);
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  ASSERT_EQ(context.prepare_step(9), Error::Ok);
+  ASSERT_EQ(context.metrics().growth_count, 2);
+  EXPECT_EQ(context.metrics().flat_capacity, 16);
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
+  EXPECT_EQ(handle.cuda_graph_state.warmup_remaining, 3);
   EXPECT_EQ(context.rebind_for_execute(&handle), Error::Ok);
   context.forget_handle(&handle);
 }
