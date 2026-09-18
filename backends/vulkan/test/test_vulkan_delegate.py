@@ -63,9 +63,12 @@ def disable_test(reason):
 
 
 def lower_module(
-    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor],
+    dynamic_shapes=None,
+    compile_options=None,
 ) -> EdgeProgramManager:
-    compile_options = {}
+    compile_options = dict(compile_options or {})
     if dynamic_shapes is not None:
         compile_options["require_dynamic_shapes"] = True
 
@@ -251,6 +254,7 @@ class TestVulkanBackend(unittest.TestCase):
         test_inputs=None,
         first_output_only=False,
         expect_no_delegates=False,
+        compile_options=None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -262,7 +266,12 @@ class TestVulkanBackend(unittest.TestCase):
         model.eval()
         model(*sample_inputs)
 
-        edge_program = lower_module(model, sample_inputs, dynamic_shapes=dynamic_shapes)
+        edge_program = lower_module(
+            model,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            compile_options=compile_options,
+        )
 
         et_program = edge_program.to_executorch()
 
@@ -1346,11 +1355,15 @@ class TestVulkanBackend(unittest.TestCase):
         )
 
     def test_vulkan_backend_buffer_mutation_aliasing_user_output(self):
-        # A mutated buffer returned through a redundant view. Once the view is
-        # removed the buffer-mutation slot and the user output are the same
-        # node, but only the user output gets a slot in the delegate call, so
-        # keeping both would leave the serialized graph expecting one argument
-        # more than the call provides.
+        # A mutated buffer returned through a redundant view, with the mutation
+        # aliased onto its input. Once the view is removed the buffer-mutation
+        # slot and the user output are the same node, but only the user output
+        # gets a slot in the delegate call, so keeping both would leave the
+        # serialized graph expecting one argument more than the call provides.
+        #
+        # Run it twice: the state has to carry over, which is what says the
+        # mutation is really being applied in place rather than quietly
+        # dropped along with its output slot.
         class MutationAliasModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -1360,11 +1373,14 @@ class TestVulkanBackend(unittest.TestCase):
                 self.state.add_(x)
                 return self.state.view(2, 48)
 
-        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+        sample_inputs = (torch.ones(size=(2, 48), dtype=torch.float32),)
+        test_inputs = [(torch.ones(size=(2, 48), dtype=torch.float32),)]
 
         self.lower_module_and_test_output(
             MutationAliasModule(),
             sample_inputs,
+            test_inputs=test_inputs,
+            compile_options={"alias_buffer_mutations": True},
         )
 
     def test_vulkan_backend_view_chain_collapsing_to_input_shape(self):

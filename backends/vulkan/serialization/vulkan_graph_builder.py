@@ -540,24 +540,31 @@ class VkGraphBuilder:
                     "the output node is being serialized before its corresponding "
                     "internal node which is not allowed."
                 )
-            # Mutable buffer outputs are not included as an output to the
-            # delegate call, so they get no output slot. Decide per slot rather
-            # than per node: under alias_buffer_mutations a mutation and a user
-            # output can be the same node, and matching by name alone would
-            # either keep both or drop both.
-            is_user_output = self._is_user_output_slot(idx)
-            if is_user_output is not None:
-                if not is_user_output:
-                    continue
-            elif out_node.name in self.buffer_mutation_inputs:
-                if out_node.name not in self.buffer_mutation_user_outputs:
-                    continue
-                # Without the signature to separate the slots, the mutation and
-                # the user output are indistinguishable occurrences of one node.
-                # It gets a single output slot, not one per occurrence.
-                if out_node.name in emitted_mutation_aliases:
-                    continue
-                emitted_mutation_aliases.add(out_node.name)
+            # A mutation whose buffer is aliased to its input is applied in
+            # place, so its slot is not an output of the delegate call. Decide
+            # per slot rather than per node: the mutation and a user output can
+            # be the same node, and matching by name alone would either keep
+            # both or drop both.
+            #
+            # Only the aliased case is filtered here. Without aliasing the
+            # mutation still needs a slot to carry the new buffer value back,
+            # so the old rule stands: dropping the slot would leave the graph
+            # accepted but never updating the buffer, which is worse than the
+            # argument-count rejection it would otherwise get.
+            if out_node.name in self.buffer_mutation_inputs:
+                is_user_output = self._is_user_output_slot(idx)
+                if is_user_output is not None:
+                    if not is_user_output:
+                        continue
+                else:
+                    if out_node.name not in self.buffer_mutation_user_outputs:
+                        continue
+                    # Without the signature to separate the slots, the mutation
+                    # and the user output are indistinguishable occurrences of
+                    # one node, and together they get a single slot.
+                    if out_node.name in emitted_mutation_aliases:
+                        continue
+                    emitted_mutation_aliases.add(out_node.name)
             elif is_mutable_buffer_node(out_node, self.program):
                 continue
 
