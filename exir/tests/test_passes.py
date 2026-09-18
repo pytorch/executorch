@@ -1616,9 +1616,8 @@ class TestPasses(unittest.TestCase):
             edge.exported_program("forward"), _skip_dim_order=False
         )
 
-        # Check (c_lifted_tensor_*) nodes are all replaced by a prop tensor
-        # named after the first lifted tensor.
-        FileCheck().check_not("c_lifted_tensor_").check("lifted_tensor_0_prop").run(
+        # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.
+        FileCheck().check_not("c_lifted_tensor_").check("_prop_tensor_constant").run(
             edge.exported_program().graph_module.code
         )
         # Validate that the program successfully passes validation to executorch:
@@ -1682,16 +1681,13 @@ class TestPasses(unittest.TestCase):
 
         new_ep = constant_prop_pass(exported_program)
 
-        # Check (_lifted_tensor_constant + to_copy) node is replaced by a prop
-        # tensor named after the lifted constant.
-        FileCheck().check("_lifted_tensor_constant0_prop").check_not(
+        # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
+        FileCheck().check_not("_lifted_tensor_constant").check(
+            "_prop_tensor_constant0"
+        ).check_not(
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
-        ).run(new_ep.graph_module.code)
-        # lift_constant_tensor_pass registers the scalar as a buffer, and so
-        # is its fold.
-        self.assertEqual(
-            list(new_ep.graph_signature.inputs_to_buffers.values()),
-            ["_lifted_tensor_constant0_prop"],
+        ).run(
+            new_ep.graph_module.code
         )
 
     def test_pass_no_user_inputs(self) -> None:
@@ -1766,16 +1762,16 @@ class TestPasses(unittest.TestCase):
         # (1) parameter `a` and (2) user input `x`.
         self.assertEqual(len(aten.graph_signature.input_specs), 2)
         new_ep = constant_prop_pass(aten)
-        # Check that there are exactly two inputs - (1) the propagated value,
-        # a parameter named after `a` and (2) user input.
+        # Check that there are exactly two propagated tensors - (1) propagated
+        # constant and (2) user input.
         self.assertEqual(
             new_ep.graph_signature.input_specs,
             [
                 InputSpec(
-                    kind=InputKind.PARAMETER,
-                    arg=TensorArgument(name="a_prop"),
-                    target="a_prop",
-                    persistent=None,
+                    kind=InputKind.CONSTANT_TENSOR,
+                    arg=TensorArgument(name="_prop_tensor_constant0"),
+                    target="_prop_tensor_constant0",
+                    persistent=True,
                 ),
                 # User input graph signature.
                 aten.graph_signature.input_specs[-1],
@@ -1873,9 +1869,9 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(count_slice(aten.graph_module), 1)
 
         new_ep = constant_prop_pass(aten)
-        # Check there is a propagated tensor, a parameter named after `a`.
-        FileCheck().check("a_prop").run(aten.graph_module.code)
-        self.assertIn("a_prop", new_ep.state_dict)
+        # Check there is a propagated tensor.
+        FileCheck().check("_prop_tensor_constant0").run(aten.graph_module.code)
+        self.assertIn("_prop_tensor_constant0", new_ep.constants)
         self.assertNotIn("a", new_ep.state_dict)
         # No more slice copy.
         self.assertEqual(count_slice(new_ep.graph_module), 0)
@@ -1950,7 +1946,7 @@ class TestPasses(unittest.TestCase):
 
         # dtype casts in parent module are const propagated
         FileCheck().check(
-            "executorch_exir_dialects_edge__ops_aten_mm_default(x, w_prop"
+            "executorch_exir_dialects_edge__ops_aten_mm_default(x, _prop_tensor_constant"
         ).run(program.graph_module.code)
 
     def test_constant_prop_pass_quant_primitives(self) -> None:
@@ -2646,22 +2642,20 @@ class TestPasses(unittest.TestCase):
         targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
         self.assertNotIn(torch.ops.aten.mul.Tensor, targets)
         self.assertIn(torch.ops.aten.sum.default, targets)
-        self.assertEqual(
-            list(new_ep.graph_signature.inputs_to_parameters.values()),
-            ["weight_prop"],
-        )
+        self.assertEqual(list(new_ep.graph_signature.inputs_to_parameters), [])
         self.assertEqual(
             list(new_ep.graph_signature.inputs_to_buffers.values()), ["state"]
         )
-        self.assertEqual(len(new_ep.constants), 0)
+        self.assertEqual(list(new_ep.constants), ["_prop_tensor_constant0"])
         self.assertTrue(torch.equal(new_ep.module()(x), x + 2))
 
     def test_constant_prop_pass_registers_fold_like_its_source(self) -> None:
         """
-        A folded value takes the name, the kind and the custom meta of the
-        placeholder it is computed from. Before decomposition aten.t returns
-        a view of the parameter, which keeps requires_grad: the registered
-        value has to be a detached leaf.
+        With register_like_source a folded value takes the kind and the
+        custom meta of the placeholder it is computed from, and a name made
+        of that placeholder and the expression. Before decomposition aten.t
+        returns a view of the parameter, which keeps requires_grad: the
+        registered value has to be a detached leaf.
         """
 
         class MatmulT(torch.nn.Module):
@@ -2679,16 +2673,17 @@ class TestPasses(unittest.TestCase):
             "delegate_constant_tag": "w.ptd"
         }
 
-        new_ep = constant_prop_pass(ep)
+        new_ep = constant_prop_pass(ep, register_like_source=True)
         new_ep._validate()
 
-        self.assertEqual(
-            set(new_ep.graph_signature.inputs_to_parameters.values()),
-            {"w_prop", "w_prop1"},
-        )
+        names = list(new_ep.graph_signature.inputs_to_parameters.values())
+        self.assertEqual(len(names), 2)
+        for name in names:
+            self.assertRegex(name, r"^w_prop_[0-9a-f]{8}$")
+        self.assertNotEqual(names[0], names[1])
         self.assertNotIn("w", new_ep.state_dict)
         self.assertEqual(len(new_ep.constants), 0)
-        for name in ("w_prop", "w_prop1"):
+        for name in names:
             folded = new_ep.state_dict[name]
             self.assertIsInstance(folded, torch.nn.Parameter)
             self.assertFalse(folded.requires_grad)
@@ -2710,14 +2705,117 @@ class TestPasses(unittest.TestCase):
                 return x * (self.scale * 2)
 
         x = torch.ones(2)
-        new_ep = constant_prop_pass(export(ScaledBuffer(), (x,), strict=True))
+        new_ep = constant_prop_pass(
+            export(ScaledBuffer(), (x,), strict=True), register_like_source=True
+        )
         new_ep._validate()
 
-        self.assertEqual(
-            list(new_ep.graph_signature.inputs_to_buffers.values()), ["scale_prop"]
-        )
+        buffers = list(new_ep.graph_signature.inputs_to_buffers.values())
+        self.assertEqual(len(buffers), 1)
+        self.assertRegex(buffers[0], r"^scale_prop_[0-9a-f]{8}$")
         self.assertEqual(len(new_ep.constants), 0)
         self.assertTrue(torch.equal(new_ep.module()(x), torch.tensor([2.0, 4.0])))
+
+    def test_constant_prop_pass_names_folds_after_their_expression(self) -> None:
+        """
+        With register_like_source the name of a folded value depends on the
+        source and on the expression, not on the method: two methods folding
+        the same expression over the same parameter produce the same name,
+        and two expressions over one parameter produce different names. The
+        external constant map is keyed by the name and shared by the methods.
+        """
+
+        class Transpose(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.ones(3, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x @ self.w.t()
+
+        class ScaledTranspose(Transpose):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x @ (self.w * 2).t()
+
+        x = torch.ones(2, 4)
+        names = {}
+        for method, module in (
+            ("a", Transpose()),
+            ("b", Transpose()),
+            ("c", ScaledTranspose()),
+        ):
+            ep = constant_prop_pass(
+                export(module, (x,), strict=True), register_like_source=True
+            )
+            (names[method],) = ep.graph_signature.inputs_to_parameters.values()
+        self.assertEqual(names["a"], names["b"])
+        self.assertNotEqual(names["a"], names["c"])
+        for name in names.values():
+            self.assertRegex(name, r"^w_prop_[0-9a-f]{8}$")
+
+    def test_constant_prop_pass_registers_folds_in_graph_order(self) -> None:
+        """
+        The placeholders of the folded values and their entries in the
+        program agree, in both registration modes: a caller that binds the
+        graph module by position, the state dict values then the constants
+        then the user inputs, gets the right tensor in every slot.
+        """
+
+        class ThreeFolds(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(3, 4))
+                self.bias = torch.nn.Parameter(torch.randn(3))
+                self.register_buffer("scale", torch.tensor(2.0))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = x @ self.w.t() + x @ (self.w * 2).t() + x @ (self.w + 1).t()
+                return (y + self.bias) * self.scale
+
+        x = torch.randn(2, 4)
+        for register_like_source in (False, True):
+            ep = to_edge(export(ThreeFolds(), (x,), strict=True)).exported_program()
+            expected = ep.module()(x)
+            new_ep = constant_prop_pass(ep, register_like_source=register_like_source)
+            new_ep._validate()
+            # Three folds, bias, scale and x; w and the lifted scalars are
+            # folded away.
+            self.assertEqual(
+                sum(1 for n in new_ep.graph.nodes if n.op == "placeholder"), 6
+            )
+            actual = new_ep.graph_module(
+                *new_ep.state_dict.values(), *new_ep.constants.values(), x
+            )
+            self.assertTrue(torch.allclose(actual[0], expected, atol=1e-6))
+
+    def test_constant_prop_pass_nodes_to_fold(self) -> None:
+        """
+        An allowlist restricts the fold to the given nodes; a node outside it
+        stays an op, and so do the nodes computed from it.
+        """
+
+        class TwoFolds(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.ones(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x * (self.w * 2) + (self.w + 1).sum()
+
+        x = torch.ones(4)
+        ep = export(TwoFolds(), (x,), strict=True)
+        mul = ep.graph.find_nodes(op="call_function", target=torch.ops.aten.mul.Tensor)
+        new_ep = constant_prop_pass(ep, nodes_to_fold={mul[0]})
+
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertEqual(targets.count(torch.ops.aten.mul.Tensor), 1)
+        self.assertIn(torch.ops.aten.add.Tensor, targets)
+        self.assertIn(torch.ops.aten.sum.default, targets)
+        self.assertEqual(list(new_ep.constants), ["_prop_tensor_constant0"])
+        self.assertEqual(
+            list(new_ep.graph_signature.inputs_to_parameters.values()), ["w"]
+        )
+        self.assertTrue(torch.equal(new_ep.module()(x), x * 2 + 8))
 
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
@@ -2757,8 +2855,14 @@ class TestPasses(unittest.TestCase):
 
         # Should go through
         lowered.to_executorch(get_xnnpack_executorch_backend_config([SpecPropPass()]))
-        # The propagated tensor is a parameter named after its source.
-        prop_tensor = const_prop_result.state_dict.get("const_param_prop")
+        self.assertGreater(len(const_prop_result.constants), 0)
+
+        # Find the propagated constant tensor
+        prop_tensor = None
+        for constant_name, constant_tensor in const_prop_result.constants.items():
+            if constant_name.startswith("_prop_tensor_constant"):
+                prop_tensor = constant_tensor
+                break
 
         # Verify the propagated tensor exists and has no zero strides
         self.assertIsNotNone(prop_tensor)
