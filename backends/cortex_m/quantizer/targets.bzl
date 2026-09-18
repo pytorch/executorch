@@ -28,7 +28,6 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/arm:common",
             "//executorch/backends/arm:constants",
             "//executorch/backends/arm/quantizer:arm_quantizer_utils",
-            "//executorch/backends/arm/quantizer:quantization_annotator",
             "//executorch/backends/arm/quantizer:quantization_config",
             "//executorch/backends/cortex_m:quantizer_reporter",
             "//executorch/backends/cortex_m:utils",
